@@ -33,5 +33,20 @@
   "safety": {
     "always_confirm_destructive": true,
     "always_confirm_external_services": true
+  },
+  "amauta": {
+    "daemon_port": 18799,
+    "pg_enabled": true,
+    "pg_url": "postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta",
+    "daemon_enabled": true,
+    "rlm_enabled": false,
+    "rlm_fallback_to_full_files": true,
+    "research_chain": [
+      "memory",
+      "skb",
+      "context7",
+      "perplexity",
+      "webfetch"
+    ]
   }
 }

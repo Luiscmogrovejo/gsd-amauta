@@ -1,9 +1,9 @@
 {
-  "name": "get-shit-done-cc",
-  "version": "1.22.4",
-  "description": "A meta-prompting, context engineering and spec-driven development system for Claude Code, OpenCode, Gemini and Codex by TÂCHES.",
+  "name": "gsd-amauta",
+  "version": "0.1.0",
+  "description": "GSD-Amauta: Claude Code plugin merging GSD spec-driven development with Amauta multi-agent task management, PostgreSQL memory, RLM context engine, and RPETD pipeline.",
   "bin": {
-    "get-shit-done-cc": "bin/install.js"
+    "gsd-amauta-install": "bin/install.js"
   },
   "files": [
     "bin",
@@ -11,40 +11,54 @@
     "get-shit-done",
     "agents",
     "hooks/dist",
-    "scripts"
+    "scripts",
+    "services",
+    "docker",
+    "migrations",
+    "references"
   ],
   "keywords": [
     "claude",
     "claude-code",
+    "opencode",
     "ai",
-    "meta-prompting",
-    "context-engineering",
-    "spec-driven-development",
-    "gemini",
-    "gemini-cli",
-    "codex",
-    "codex-cli"
+    "multi-agent",
+    "task-management",
+    "rpetd",
+    "rlm",
+    "amauta",
+    "postgresql",
+    "memory",
+    "spec-driven-development"
   ],
-  "author": "TÂCHES",
+  "author": "Luis Carlos Mogrovejo de Piérola",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/glittercowboy/get-shit-done.git"
+    "url": "git+https://github.com/robertamauta/gsd-amauta.git"
   },
-  "homepage": "https://github.com/glittercowboy/get-shit-done",
+  "homepage": "https://github.com/robertamauta/gsd-amauta",
   "bugs": {
-    "url": "https://github.com/glittercowboy/get-shit-done/issues"
+    "url": "https://github.com/robertamauta/gsd-amauta/issues"
   },
   "engines": {
-    "node": ">=16.7.0"
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "pg": "^8.13.0"
   },
   "devDependencies": {
     "c8": "^11.0.0",
     "esbuild": "^0.24.0"
   },
   "scripts": {
+    "install": "node bin/install.js",
+    "start-daemon": "python3 services/amauta-daemon.py &",
+    "stop-daemon": "kill $(cat services/amauta-daemon.pid) 2>/dev/null || true",
+    "start-pg": "docker compose -f docker/docker-compose.yml up -d",
+    "stop-pg": "docker compose -f docker/docker-compose.yml down",
+    "migrate": "docker exec gsd-postgres psql -U gsd -d gsd_amauta -f /docker-entrypoint-initdb.d/001-init.sql",
     "build:hooks": "node scripts/build-hooks.js",
-    "prepublishOnly": "npm run build:hooks",
     "test": "node scripts/run-tests.cjs",
     "test:coverage": "c8 --check-coverage --lines 70 --reporter text --include 'get-shit-done/bin/lib/*.cjs' --exclude 'tests/**' --all node scripts/run-tests.cjs"
   }

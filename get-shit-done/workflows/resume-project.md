@@ -96,6 +96,46 @@ fi
 - Flag: "Found interrupted agent"
   </step>
 
+<step name="load_amauta_context">
+**Amauta: Enrich resume context from PG memory (if daemon available):**
+
+```bash
+AMAUTA_CLI="node $HOME/.claude/get-shit-done/bin/gsd-amauta.cjs"
+MEMORY_CLI="node $HOME/.claude/get-shit-done/bin/gsd-memory.cjs"
+AMAUTA_OK=$($AMAUTA_CLI health --json 2>/dev/null | grep -c '"status":"ok"' || echo "0")
+
+if [ "$AMAUTA_OK" = "1" ]; then
+  # Load recent task activity
+  TASK_STATS=$($AMAUTA_CLI stats --json 2>/dev/null || echo "")
+
+  # Load recent RPETD phases for context
+  RECENT_TASKS=$($AMAUTA_CLI board 2>/dev/null | head -30 || echo "")
+
+  # Load relevant memories for the current project
+  PROJECT_NAME=$(head -5 .planning/PROJECT.md 2>/dev/null | grep -E '^#' | head -1 | sed 's/^#* *//' || echo "")
+  if [ -n "$PROJECT_NAME" ]; then
+    MEMORIES=$($MEMORY_CLI search "$PROJECT_NAME" --limit 5 --json 2>/dev/null || echo "")
+  fi
+
+  # Load recent learnings
+  LEARNINGS=$($MEMORY_CLI search "LEARNING" --source auto_learning --limit 5 --json 2>/dev/null || echo "")
+
+  # Load SKB patterns relevant to current phase
+  CURRENT_PHASE=$(grep -oE 'Phase [0-9]+' .planning/STATE.md 2>/dev/null | head -1 | grep -oE '[0-9]+' || echo "")
+  if [ -n "$CURRENT_PHASE" ]; then
+    SKB_PATTERNS=$($MEMORY_CLI skb-search "phase ${CURRENT_PHASE}" --limit 3 --json 2>/dev/null || echo "")
+  fi
+fi
+```
+
+**Use enriched context in status presentation:**
+- If task stats available, include task board summary (done/pending/in-progress counts)
+- If memories found, include "Past learnings relevant to current work"
+- If SKB patterns found, include "Validated patterns for this phase"
+
+**Graceful degradation:** If daemon unavailable, resume proceeds with standard STATE.md + PROJECT.md context only.
+</step>
+
 <step name="present_status">
 Present complete project status to user:
 
@@ -134,6 +174,14 @@ Present complete project status to user:
 
 [If alignment is not ✓:]
 ⚠️  Brief alignment: [status] - [assessment]
+
+[If amauta available and task_stats loaded:]
+📊 Task Board: [done]/[total] tasks complete | [in-progress] in progress
+
+[If memories/learnings loaded:]
+💡 Recent Learnings:
+    - [learning 1 from PG memory]
+    - [learning 2 from PG memory]
 ```
 
 </step>

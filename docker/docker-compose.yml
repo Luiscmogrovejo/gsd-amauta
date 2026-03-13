@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: gsd-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: gsd
+      POSTGRES_PASSWORD: gsd
+      POSTGRES_DB: gsd_amauta
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - gsd-pg-data:/var/lib/postgresql/data
+      - ../migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gsd -d gsd_amauta"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  gsd-pg-data:
+    name: gsd-pg-data

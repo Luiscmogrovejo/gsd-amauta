@@ -1015,6 +1015,63 @@ Use AskUserQuestion:
 node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" commit "docs: create roadmap ([N] phases)" --files .planning/ROADMAP.md .planning/STATE.md .planning/REQUIREMENTS.md
 ```
 
+**Amauta: Create epic and phase stories (if daemon available):**
+
+```bash
+AMAUTA_CLI="node $HOME/.claude/get-shit-done/bin/gsd-amauta.cjs"
+AMAUTA_OK=$($AMAUTA_CLI health --json 2>/dev/null | grep -c '"status":"ok"' || echo "0")
+
+if [ "$AMAUTA_OK" = "1" ]; then
+  # Create project epic
+  PROJECT_TITLE=$(head -5 .planning/PROJECT.md | grep -E '^#' | head -1 | sed 's/^#* *//')
+  EPIC_ID=$($AMAUTA_CLI exec add epic "${PROJECT_TITLE:-New Project}" --agent operator --priority high 2>/dev/null | grep -oE 'EP-[0-9]+' || echo "")
+
+  if [ -n "$EPIC_ID" ]; then
+    # Create a story for each roadmap phase
+    # Parse phases from ROADMAP.md (lines matching "| N | Name |" pattern)
+    grep -E '^\| [0-9]' .planning/ROADMAP.md 2>/dev/null | while IFS='|' read _ num name goal _rest; do
+      PHASE_NUM=$(echo "$num" | tr -d ' ')
+      PHASE_NAME=$(echo "$name" | sed 's/^ *//;s/ *$//')
+      PHASE_GOAL=$(echo "$goal" | sed 's/^ *//;s/ *$//')
+      if [ -n "$PHASE_NAME" ]; then
+        $AMAUTA_CLI exec add story "Phase ${PHASE_NUM}: ${PHASE_NAME}" --parent "$EPIC_ID" --agent operator --description "${PHASE_GOAL}" 2>/dev/null || true
+      fi
+    done
+
+    # Store project initialization as memory
+    node "$HOME/.claude/get-shit-done/bin/gsd-memory.cjs" learn "Project initialized: ${PROJECT_TITLE}. ${PHASE_COUNT} phases in roadmap. Epic: ${EPIC_ID}" 2>/dev/null || true
+  fi
+fi
+```
+
+## 8.5. Cross-Project Learning (if daemon available)
+
+After roadmap creation, query past project memories for relevant learnings:
+
+```bash
+MEMORY_CLI="node $HOME/.claude/get-shit-done/bin/gsd-memory.cjs"
+
+# Step 1: Infer technology tags from current project
+TECH_TAGS=$($MEMORY_CLI infer-tags . --json 2>/dev/null | grep -o '"tags":\s*\[[^]]*\]' | sed 's/"tags":\s*//;s/\[//;s/\]//;s/"//g;s/ //g' || echo "")
+
+if [ -n "$TECH_TAGS" ]; then
+  # Step 2: Search cross-project learnings filtered by technology tags
+  PROJECT_TITLE=$(head -5 .planning/PROJECT.md | grep -E '^#' | head -1 | sed 's/^#* *//')
+  LEARNINGS=$($MEMORY_CLI cross-project "$PROJECT_TITLE" --tags "$TECH_TAGS" --limit 10 --json 2>/dev/null || echo "")
+
+  if [ -n "$LEARNINGS" ] && echo "$LEARNINGS" | grep -q '"count":[1-9]'; then
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo " GSD > CROSS-PROJECT LEARNINGS"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    $MEMORY_CLI cross-project "$PROJECT_TITLE" --tags "$TECH_TAGS" --limit 10 2>/dev/null || true
+  fi
+fi
+```
+
+**Display learnings to user** if any are found. These are patterns, pitfalls, and lessons from past projects using the same technologies. The user and planning agents can incorporate them into the roadmap.
+
 ## 9. Done
 
 Present completion summary:

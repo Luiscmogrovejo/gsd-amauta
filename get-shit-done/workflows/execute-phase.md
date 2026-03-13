@@ -34,6 +34,19 @@ if [[ ! "$ARGUMENTS" =~ --auto ]]; then
   node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" config-set workflow._auto_chain_active false 2>/dev/null
 fi
 ```
+
+**Amauta integration (optional — skip if daemon unavailable):**
+```bash
+# Check if amauta daemon is available
+AMAUTA_CLI="node $HOME/.claude/get-shit-done/bin/gsd-amauta.cjs"
+AMAUTA_OK=$($AMAUTA_CLI health --json 2>/dev/null | grep -c '"status":"ok"' || echo "0")
+
+# If available, look up or create a task for this phase execution
+if [ "$AMAUTA_OK" = "1" ]; then
+  # Search for existing task matching this phase
+  PHASE_TASK_ID=$($AMAUTA_CLI exec search "phase ${PHASE_NUMBER}" --json 2>/dev/null | grep -oE 'TK-[0-9]+' | head -1 || echo "")
+fi
+```
 </step>
 
 <step name="handle_branching">
@@ -77,10 +90,48 @@ Report:
 | 1 | 01-01, 01-02 | {from plan objectives, 3-8 words} |
 | 2 | 01-03 | ... |
 ```
+
+**Amauta: Register plans as tasks (if daemon available):**
+
+For each incomplete plan, create an amauta task so progress is tracked in the task manager:
+
+```bash
+if [ "$AMAUTA_OK" = "1" ]; then
+  # Create a story for this phase execution (if not already existing)
+  PHASE_STORY=$($AMAUTA_CLI exec add story "Phase ${PHASE_NUMBER}: ${PHASE_NAME}" --agent operator 2>/dev/null | grep -oE 'ST-[0-9]+' || echo "")
+
+  # For each incomplete plan: create a task under the phase story
+  for plan in ${incomplete_plans}; do
+    PLAN_OBJECTIVE=$(echo "$PLAN_INDEX_JSON" | python3 -c "import sys,json; plans=json.load(sys.stdin)['plans']; [print(p['objective']) for p in plans if p['id']=='${plan}']" 2>/dev/null || echo "Execute plan ${plan}")
+
+    # Route to executor by file patterns
+    PLAN_FILES=$(echo "$PLAN_INDEX_JSON" | python3 -c "import sys,json; plans=json.load(sys.stdin)['plans']; [print(','.join(p.get('files_modified',[]))) for p in plans if p['id']=='${plan}']" 2>/dev/null || echo "")
+
+    # Determine executor: frontend if .tsx/.css/.html, infra if Dockerfile/docker/ci, backend otherwise
+    EXECUTOR="executor-general"
+    if echo "$PLAN_FILES" | grep -qiE '\.(tsx|jsx|css|scss|html|vue|svelte)'; then
+      EXECUTOR="executor-frontend"
+    elif echo "$PLAN_FILES" | grep -qiE '(docker|ci|deploy|infra|nginx|terraform)'; then
+      EXECUTOR="executor-infra"
+    elif echo "$PLAN_FILES" | grep -qiE '\.(py|js|ts|go|rs|java|sql)'; then
+      EXECUTOR="executor-backend"
+    fi
+
+    $AMAUTA_CLI exec add task "$PLAN_OBJECTIVE" --parent "$PHASE_STORY" --agent "$EXECUTOR" --priority high 2>/dev/null || true
+  done
+fi
+```
 </step>
 
 <step name="execute_waves">
 Execute each wave in sequence. Within a wave: parallel if `PARALLELIZATION=true`, sequential if `false`.
+
+**RPETD: Log R-phase before execution begins (if amauta available):**
+```bash
+if [ "$AMAUTA_OK" = "1" ] && [ -n "$PHASE_TASK_ID" ]; then
+  $AMAUTA_CLI rpetd "$PHASE_TASK_ID" --phase R --content "Phase ${PHASE_NUMBER}: ${incomplete_count} incomplete plans across ${wave_count} waves. Dependencies analyzed, wave grouping determined." 2>/dev/null || true
+fi
+```
 
 **For each wave:**
 
@@ -168,6 +219,13 @@ Execute each wave in sequence. Within a wave: parallel if `PARALLELIZATION=true`
    ---
    ```
 
+   **RPETD: Log E-phase after each successful wave (if amauta available):**
+   ```bash
+   if [ "$AMAUTA_OK" = "1" ] && [ -n "$PHASE_TASK_ID" ]; then
+     $AMAUTA_CLI rpetd "$PHASE_TASK_ID" --phase E --content "Wave ${N}: ${plan_count} plans completed. ${summary_of_what_was_built}" 2>/dev/null || true
+   fi
+   ```
+
    - Bad: "Wave 2 complete. Proceeding to Wave 3."
    - Good: "Terrain system complete — 3 biome types, height-based texturing, physics collision meshes. Vehicle physics (Wave 3) can now reference ground surfaces."
 
@@ -248,6 +306,50 @@ After all waves:
 ### Issues Encountered
 [Aggregate from SUMMARYs, or "None"]
 ```
+</step>
+
+<step name="auto_validate_tasks">
+**Amauta: Auto-spawn validators for completed tasks (if daemon available).**
+
+After all waves complete, check if any amauta tasks moved through RPETD and need validation. The executor must NOT validate their own work.
+
+```bash
+if [ "$AMAUTA_OK" = "1" ]; then
+  # List tasks in validation status
+  VALIDATION_QUEUE=$($AMAUTA_CLI exec list --status validation --json 2>/dev/null || echo "")
+fi
+```
+
+**For each task in validation status, spawn a validator agent:**
+
+```
+Task(
+  subagent_type="general",
+  prompt="You are gsd-validator. Validate task {TASK_ID}.
+
+  Read the validator protocol:
+  @~/.claude/agents/gsd-validator.md
+
+  Steps:
+  1. Review task: node ~/.claude/get-shit-done/bin/gsd-amauta.cjs show {TASK_ID}
+  2. Check all 5 RPETD phases have meaningful content
+  3. Verify T-phase has actual test output (not placeholder)
+  4. Verify D-phase has LEARNING: block
+  5. Verify success criteria against artifacts (files, git commits, test output)
+  6. Check git: git log --oneline --grep='{TASK_ID}'
+
+  If ALL criteria met:
+    node ~/.claude/get-shit-done/bin/gsd-amauta.cjs validate {TASK_ID} --pass --validator validator --notes 'PASS: <evidence>'
+  If criteria NOT met:
+    node ~/.claude/get-shit-done/bin/gsd-amauta.cjs validate {TASK_ID} --fail --validator validator --notes 'FAIL: <reason>' --subtasks '<fix1>|<fix2>'
+
+  Return: task ID, pass/fail, and notes."
+)
+```
+
+**Parallel validation:** If multiple tasks are in validation status, spawn all validators in parallel (one Task call per task in a single message).
+
+**Skip if:** No amauta daemon, or no tasks in validation status.
 </step>
 
 <step name="close_parent_artifacts">
@@ -361,6 +463,14 @@ Also: `/gsd:verify-work {X}` — manual testing first
 ```
 
 Gap closure cycle: `/gsd:plan-phase {X} --gaps` reads VERIFICATION.md → creates gap plans with `gap_closure: true` → user runs `/gsd:execute-phase {X} --gaps-only` → verifier re-runs.
+
+**RPETD: Log T-phase after verification (if amauta available):**
+```bash
+if [ "$AMAUTA_OK" = "1" ] && [ -n "$PHASE_TASK_ID" ]; then
+  VERIFY_STATUS=$(grep "^status:" "$PHASE_DIR"/*-VERIFICATION.md | cut -d: -f2 | tr -d ' ')
+  $AMAUTA_CLI rpetd "$PHASE_TASK_ID" --phase T --content "Verification: ${VERIFY_STATUS}. Phase ${PHASE_NUMBER} goal check complete." 2>/dev/null || true
+fi
+```
 </step>
 
 <step name="update_roadmap">
@@ -381,6 +491,20 @@ Extract from result: `next_phase`, `next_phase_name`, `is_last_phase`.
 
 ```bash
 node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" commit "docs(phase-{X}): complete phase execution" --files .planning/ROADMAP.md .planning/STATE.md .planning/REQUIREMENTS.md {phase_dir}/*-VERIFICATION.md
+```
+
+**RPETD: Log D-phase after roadmap update (if amauta available):**
+```bash
+if [ "$AMAUTA_OK" = "1" ] && [ -n "$PHASE_TASK_ID" ]; then
+  $AMAUTA_CLI rpetd "$PHASE_TASK_ID" --phase D --content "Phase ${PHASE_NUMBER} complete. ${completed_count}/${total_count} plans. LEARNING: ${key_insight_from_phase}" 2>/dev/null || true
+fi
+```
+
+**RPETD: Store phase learnings to memory (if daemon available):**
+```bash
+if [ "$AMAUTA_OK" = "1" ]; then
+  node "$HOME/.claude/get-shit-done/bin/gsd-memory.cjs" learn "Phase ${PHASE_NUMBER} ${PHASE_NAME}: ${key_findings}" 2>/dev/null || true
+fi
 ```
 </step>
 
@@ -457,3 +581,24 @@ Re-run `/gsd:execute-phase {phase}` → discover_plans finds completed SUMMARYs 
 
 STATE.md tracks: last completed plan, current wave, pending checkpoints.
 </resumption>
+
+<amauta_integration>
+## Amauta RPETD Integration
+
+When the Amauta daemon is available, this workflow logs RPETD phases automatically:
+
+| Step | RPETD Phase | What's logged |
+|------|-------------|---------------|
+| discover_plans | R (Research) | Plan inventory, wave grouping, dependencies |
+| execute_waves start | P (Plan) | Wave execution strategy, parallelism config |
+| wave complete | E (Execute) | What was built per wave, deviations |
+| verify_phase_goal | T (Test) | Verification status (passed/gaps/human_needed) |
+| update_roadmap | D (Document) | Phase completion, key learnings |
+
+**Graceful degradation:** All RPETD logging is wrapped in `2>/dev/null || true`. If the daemon is unavailable, execution proceeds normally without any impact.
+
+**CLI tools used:**
+- `gsd-amauta.cjs rpetd` — Log RPETD phase content
+- `gsd-amauta.cjs health` — Check daemon availability
+- `gsd-memory.cjs learn` — Store phase learnings to PG memory
+</amauta_integration>

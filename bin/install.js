@@ -2390,6 +2390,276 @@ function promptLocation(runtimes) {
   });
 }
 
+// ═══════════════════════════════════════════════════════
+// GSD-Amauta Infrastructure Installation
+// ═══════════════════════════════════════════════════════
+
+const { execFileSync: execSync2, spawn: spawn2, execSync: shellExec } = require('child_process');
+
+/**
+ * Install Amauta infrastructure: Docker PG, daemon, CLI tools, config.
+ * Called after the standard GSD install. Gracefully degrades if requirements
+ * are not met (no Docker → skip PG, no Python3 → skip daemon).
+ *
+ * @param {string} targetDir - The installation target directory
+ * @returns {object} Summary of what was installed
+ */
+function installAmauta(targetDir) {
+  const pluginRoot = path.resolve(__dirname, '..');
+  const summary = { docker: false, pg: false, daemon: false, cliTools: [], config: false };
+
+  console.log(`\n  ${cyan}── Amauta Infrastructure ──${reset}\n`);
+
+  // ─── Step 1: Check prerequisites ────────────────
+
+  const hasDocker = checkCommand('docker', ['--version']);
+  const hasPython = checkCommand('python3', ['--version']);
+  const hasDockerCompose = checkCommand('docker', ['compose', 'version']);
+
+  if (!hasDocker) {
+    console.log(`  ${yellow}⚠${reset} Docker not found — skipping PostgreSQL setup`);
+    console.log(`    ${dim}Install Docker Desktop to enable persistent memory${reset}`);
+  }
+  if (!hasPython) {
+    console.log(`  ${yellow}⚠${reset} Python 3 not found — skipping daemon setup`);
+    console.log(`    ${dim}Install Python 3.9+ to enable the task management daemon${reset}`);
+  }
+
+  // ─── Step 2: Docker PostgreSQL ──────────────────
+
+  if (hasDocker && hasDockerCompose) {
+    const composeFile = path.join(pluginRoot, 'docker', 'docker-compose.yml');
+    if (fs.existsSync(composeFile)) {
+      try {
+        console.log(`  ${dim}Starting PostgreSQL container...${reset}`);
+        shellExec(`docker compose -f "${composeFile}" up -d`, {
+          encoding: 'utf-8',
+          timeout: 60000,
+          stdio: 'pipe',
+        });
+
+        // Wait for PG healthy (up to 30 seconds)
+        let pgReady = false;
+        for (let i = 0; i < 30; i++) {
+          try {
+            const result = shellExec(
+              'docker exec gsd-postgres pg_isready -U gsd -d gsd_amauta',
+              { encoding: 'utf-8', timeout: 3000, stdio: 'pipe' }
+            );
+            if (result.includes('accepting')) {
+              pgReady = true;
+              break;
+            }
+          } catch { /* retry */ }
+          // Sleep 1 second
+          shellExec('sleep 1', { stdio: 'pipe' });
+        }
+
+        if (pgReady) {
+          summary.docker = true;
+          summary.pg = true;
+          console.log(`  ${green}✓${reset} PostgreSQL running (127.0.0.1:5433, db=gsd_amauta)`);
+
+          // Check if tables exist
+          try {
+            const tableCheck = shellExec(
+              `docker exec gsd-postgres psql -U gsd -d gsd_amauta -t -c "SELECT count(*) FROM information_schema.tables WHERE table_name LIKE 'gsd_%'"`,
+              { encoding: 'utf-8', timeout: 5000, stdio: 'pipe' }
+            ).trim();
+            if (parseInt(tableCheck) >= 4) {
+              console.log(`  ${green}✓${reset} Database tables verified (${tableCheck.trim()} tables)`);
+            } else {
+              console.log(`  ${dim}Tables will be created on first migration run${reset}`);
+            }
+          } catch {
+            console.log(`  ${dim}Tables will be created on first migration run${reset}`);
+          }
+        } else {
+          console.log(`  ${yellow}⚠${reset} PostgreSQL started but not yet healthy — run install again`);
+          summary.docker = true;
+        }
+      } catch (err) {
+        console.log(`  ${yellow}⚠${reset} Docker Compose failed: ${err.message || 'unknown error'}`);
+        console.log(`    ${dim}Run manually: docker compose -f docker/docker-compose.yml up -d${reset}`);
+      }
+    } else {
+      console.log(`  ${yellow}⚠${reset} docker-compose.yml not found at ${composeFile}`);
+    }
+  }
+
+  // ─── Step 3: Amauta Daemon ──────────────────────
+
+  if (hasPython) {
+    const daemonScript = path.join(pluginRoot, 'services', 'amauta-daemon.py');
+    const amautaPy = path.join(pluginRoot, 'amauta.py');
+
+    if (fs.existsSync(daemonScript) && fs.existsSync(amautaPy)) {
+      try {
+        // Check if daemon is already running
+        let daemonRunning = false;
+        try {
+          const health = shellExec(
+            `curl -s --max-time 2 http://127.0.0.1:${process.env.GSD_AMAUTA_PORT || '18799'}/health`,
+            { encoding: 'utf-8', timeout: 5000, stdio: 'pipe' }
+          );
+          const parsed = JSON.parse(health);
+          daemonRunning = parsed.status === 'ok';
+        } catch { /* not running */ }
+
+        if (daemonRunning) {
+          console.log(`  ${green}✓${reset} Amauta daemon already running`);
+          summary.daemon = true;
+        } else {
+          // Start daemon
+          const dataDir = process.env.AMAUTA_DATA_DIR || path.join(pluginRoot, 'data');
+          fs.mkdirSync(dataDir, { recursive: true });
+
+          const child = spawn2('python3', [daemonScript, 'start'], {
+            detached: true,
+            stdio: 'ignore',
+            env: {
+              ...process.env,
+              AMAUTA_DATA_DIR: dataDir,
+              GSD_AMAUTA_PY: amautaPy,
+            },
+          });
+          child.unref();
+
+          // Wait up to 5 seconds for daemon
+          let started = false;
+          for (let i = 0; i < 25; i++) {
+            try {
+              const h = shellExec(
+                `curl -s --max-time 1 http://127.0.0.1:${process.env.GSD_AMAUTA_PORT || '18799'}/health`,
+                { encoding: 'utf-8', timeout: 3000, stdio: 'pipe' }
+              );
+              if (JSON.parse(h).status === 'ok') {
+                started = true;
+                break;
+              }
+            } catch { /* retry */ }
+            shellExec('sleep 0.2', { stdio: 'pipe' });
+          }
+
+          if (started) {
+            console.log(`  ${green}✓${reset} Amauta daemon started (127.0.0.1:18799)`);
+            summary.daemon = true;
+          } else {
+            console.log(`  ${yellow}⚠${reset} Daemon did not start — run manually:`);
+            console.log(`    ${dim}python3 services/amauta-daemon.py start${reset}`);
+          }
+        }
+      } catch (err) {
+        console.log(`  ${yellow}⚠${reset} Daemon setup failed: ${err.message || 'unknown'}`);
+      }
+    } else {
+      if (!fs.existsSync(daemonScript)) {
+        console.log(`  ${yellow}⚠${reset} amauta-daemon.py not found`);
+      }
+      if (!fs.existsSync(amautaPy)) {
+        console.log(`  ${yellow}⚠${reset} amauta.py not found`);
+      }
+    }
+  }
+
+  // ─── Step 4: CLI Tools ──────────────────────────
+
+  const cliTools = [
+    { name: 'gsd-amauta.cjs', desc: 'Task management CLI' },
+    { name: 'gsd-memory.cjs', desc: 'Memory system CLI' },
+    { name: 'gsd-rlm.cjs', desc: 'RLM context engine CLI' },
+    { name: 'gsd-research.cjs', desc: 'Research chain CLI' },
+  ];
+
+  const binDir = path.join(pluginRoot, 'get-shit-done', 'bin');
+  for (const tool of cliTools) {
+    const toolPath = path.join(binDir, tool.name);
+    if (fs.existsSync(toolPath)) {
+      try {
+        fs.chmodSync(toolPath, '755');
+        summary.cliTools.push(tool.name);
+        console.log(`  ${green}✓${reset} ${tool.name} — ${tool.desc}`);
+      } catch {
+        console.log(`  ${yellow}⚠${reset} Could not chmod ${tool.name}`);
+      }
+    } else {
+      console.log(`  ${dim}○ ${tool.name} — not yet built${reset}`);
+    }
+  }
+
+  // ─── Step 5: Config ─────────────────────────────
+
+  const configDir = path.join(pluginRoot, 'get-shit-done', 'templates');
+  const configPath = path.join(configDir, 'config.json');
+  if (fs.existsSync(configPath)) {
+    try {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      // Update feature flags based on what was installed
+      config.amauta = config.amauta || {};
+      config.amauta.daemon_port = parseInt(process.env.GSD_AMAUTA_PORT || '18799', 10);
+      config.amauta.pg_enabled = summary.pg;
+      config.amauta.pg_url = summary.pg ? (process.env.GSD_POSTGRES_URL || 'postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta') : null;
+      config.amauta.daemon_enabled = summary.daemon;
+      config.amauta.rlm_enabled = false; // Will be enabled when RLM service is built
+      config.amauta.research_chain = ['memory', 'skb', 'context7', 'perplexity', 'webfetch'];
+      fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
+      summary.config = true;
+      console.log(`  ${green}✓${reset} Updated config.json with Amauta settings`);
+    } catch (err) {
+      console.log(`  ${yellow}⚠${reset} Could not update config.json: ${err.message}`);
+    }
+  } else {
+    // Create minimal config
+    const minConfig = {
+      amauta: {
+        daemon_port: parseInt(process.env.GSD_AMAUTA_PORT || '18799', 10),
+        pg_enabled: summary.pg,
+        pg_url: summary.pg ? (process.env.GSD_POSTGRES_URL || 'postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta') : null,
+        daemon_enabled: summary.daemon,
+        rlm_enabled: false,
+        research_chain: ['memory', 'skb', 'context7', 'perplexity', 'webfetch'],
+      },
+    };
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(configPath, JSON.stringify(minConfig, null, 2) + '\n');
+    summary.config = true;
+    console.log(`  ${green}✓${reset} Created config.json with Amauta settings`);
+  }
+
+  // ─── Summary ────────────────────────────────────
+
+  console.log(`\n  ${cyan}── Amauta Summary ──${reset}`);
+  console.log(`  PostgreSQL:  ${summary.pg ? green + '● active' + reset : yellow + '○ inactive' + reset}`);
+  console.log(`  Daemon:      ${summary.daemon ? green + '● active' + reset : yellow + '○ inactive' + reset}`);
+  console.log(`  CLI tools:   ${summary.cliTools.length}/${cliTools.length} installed`);
+  console.log(`  Config:      ${summary.config ? green + '● saved' + reset : yellow + '○ not saved' + reset}`);
+
+  if (!summary.pg || !summary.daemon) {
+    console.log(`\n  ${dim}To enable missing features, set environment variables:${reset}`);
+    if (!summary.pg) console.log(`    ${dim}GSD_POSTGRES_URL=postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta${reset}`);
+    if (!summary.daemon) console.log(`    ${dim}Run: python3 services/amauta-daemon.py start${reset}`);
+  }
+  console.log('');
+
+  return summary;
+}
+
+/**
+ * Check if a command is available on the system.
+ */
+function checkCommand(cmd, args) {
+  try {
+    shellExec(`${cmd} ${args.join(' ')}`, {
+      encoding: 'utf-8',
+      timeout: 10000,
+      stdio: 'pipe',
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Install GSD for all selected runtimes
  */
@@ -2415,6 +2685,16 @@ function installAllRuntimes(runtimes, isGlobal, isInteractive) {
         result.runtime,
         isGlobal
       );
+    }
+
+    // Run Amauta infrastructure install after standard GSD install
+    // Uses the first result's target dir (Claude Code is always included)
+    const claudeResult = results.find(r => r.runtime === 'claude') || results[0];
+    if (claudeResult) {
+      const targetDir = isGlobal
+        ? getGlobalDir(claudeResult.runtime, explicitConfigDir)
+        : path.join(process.cwd(), getDirName(claudeResult.runtime));
+      installAmauta(targetDir);
     }
   };
 
