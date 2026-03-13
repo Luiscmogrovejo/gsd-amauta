@@ -155,7 +155,7 @@ All CRUD endpoints work. Auth with JWT. Input validation. 80%+ test coverage.
 After the questions, run:
 
 ```
-/gsd:new-project
+/amauta:new-project
 ```
 
 This creates your `.planning/` directory with:
@@ -171,14 +171,14 @@ This creates your `.planning/` directory with:
 
 ```
 /clear
-/gsd:discuss-phase 1
+/amauta:discuss-phase 1
 ```
 
 Answer the questions — this locks in your preferences before any code
 is written. Then:
 
 ```
-/gsd:plan-phase 1
+/amauta:plan-phase 1
 ```
 
 This spawns researcher agents, creates the plan, and has a checker verify it.
@@ -187,7 +187,7 @@ This spawns researcher agents, creates the plan, and has a checker verify it.
 
 ```
 /clear
-/gsd:execute-phase 1
+/amauta:execute-phase 1
 ```
 
 Executor agents run in parallel waves. Each one:
@@ -199,15 +199,15 @@ Executor agents run in parallel waves. Each one:
 ### Step 7: Verify and Repeat
 
 ```
-/gsd:verify-work 1    # Manual UAT
-/gsd:progress         # See what's next
+/amauta:verify-work 1    # Manual UAT
+/amauta:progress         # See what's next
 ```
 
 Repeat for each phase. When all phases are done:
 
 ```
-/gsd:audit-milestone
-/gsd:complete-milestone 1.0.0
+/amauta:audit-milestone
+/amauta:complete-milestone 1.0.0
 ```
 
 ---
@@ -222,7 +222,7 @@ claude --dangerously-skip-permissions
 ```
 
 ```
-/gsd:map-codebase
+/amauta:map-codebase
 ```
 
 This runs 4 parallel agents that analyze your code and produce:
@@ -243,7 +243,7 @@ and patterns. With it, they follow them exactly.
 ### Step 2: Define What You're Adding
 
 ```
-/gsd:new-project
+/amauta:new-project
 ```
 
 Answer the questions focused on **what you're adding**, not what already
@@ -282,10 +282,10 @@ amauta board
 From here it's the same as a new project:
 
 ```
-/gsd:discuss-phase 1   # lock in how it should work
-/gsd:plan-phase 1      # research your codebase + plan
-/gsd:execute-phase 1   # run it
-/gsd:verify-work 1     # check it works
+/amauta:discuss-phase 1   # lock in how it should work
+/amauta:plan-phase 1      # research your codebase + plan
+/amauta:execute-phase 1   # run it
+/amauta:verify-work 1     # check it works
 ```
 
 The key difference: at R-phase, agents will query RLM against your existing
@@ -434,9 +434,9 @@ the operator's context. This is by design.
 
 ```
 /clear                  # Clear context window (do this between phases)
-/gsd:resume-work        # Restore context from STATE.md after /clear
-/gsd:progress           # See where you are and what's next
-/gsd:pause-work         # Save handoff before stopping
+/amauta:resume-work        # Restore context from STATE.md after /clear
+/amauta:progress           # See where you are and what's next
+/amauta:pause-work         # Save handoff before stopping
 ```
 
 ---
@@ -460,21 +460,21 @@ claude --dangerously-skip-permissions
 # ── CLAUDE CODE ─────────────────────────────────────────────────────
 
 # Restore context from last session
-/gsd:resume-work
+/amauta:resume-work
 
 # Check the board
 # (or type: @gsd-operator check the board and tell me what to do next)
 
 # Work on the next phase
-/gsd:discuss-phase 2
-/gsd:plan-phase 2
+/amauta:discuss-phase 2
+/amauta:plan-phase 2
 /clear
-/gsd:execute-phase 2
-/gsd:verify-work 2
+/amauta:execute-phase 2
+/amauta:verify-work 2
 /clear
 
 # End of session — save state
-/gsd:pause-work
+/amauta:pause-work
 ```
 
 ```bash
@@ -509,19 +509,19 @@ git log --oneline -10
 
 | Command | What it does |
 |---------|--------------|
-| `/gsd:new-project` | Full project init |
-| `/gsd:map-codebase` | Analyze existing code |
-| `/gsd:discuss-phase N` | Lock in your preferences |
-| `/gsd:plan-phase N` | Research + plan + verify |
-| `/gsd:execute-phase N` | Run all plans in parallel |
-| `/gsd:verify-work N` | Manual UAT |
-| `/gsd:audit-milestone` | Check all criteria met |
-| `/gsd:complete-milestone 1.0.0` | Archive and tag |
-| `/gsd:progress` | Where am I? |
-| `/gsd:resume-work` | Restore context |
-| `/gsd:debug "issue"` | Debug session |
-| `/gsd:quick` | Ad-hoc task |
-| `/gsd:help` | Full command reference |
+| `/amauta:new-project` | Full project init |
+| `/amauta:map-codebase` | Analyze existing code |
+| `/amauta:discuss-phase N` | Lock in your preferences |
+| `/amauta:plan-phase N` | Research + plan + verify |
+| `/amauta:execute-phase N` | Run all plans in parallel |
+| `/amauta:verify-work N` | Manual UAT |
+| `/amauta:audit-milestone` | Check all criteria met |
+| `/amauta:complete-milestone 1.0.0` | Archive and tag |
+| `/amauta:progress` | Where am I? |
+| `/amauta:resume-work` | Restore context |
+| `/amauta:debug "issue"` | Debug session |
+| `/amauta:quick` | Ad-hoc task |
+| `/amauta:help` | Full command reference |
 
 ### amauta CLI
 
@@ -595,7 +595,7 @@ amauta board
 The board starts empty — that's correct. The operator populates it
 when you describe work. Either:
 ```
-@gsd-operator  Set up tasks for [project name]. Use /gsd:new-project output.
+@gsd-operator  Set up tasks for [project name]. Use /amauta:new-project output.
 ```
 Or create tasks manually:
 ```bash

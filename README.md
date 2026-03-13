@@ -64,7 +64,7 @@ All context, learnings, and decisions persist across sessions in PostgreSQL with
 ╔══════════════════════════════════════════════════════════════════════╗
 ║                        CLAUDE CODE SESSION                           ║
 ║                                                                      ║
-║  /gsd:new-project   /gsd:execute-plan   /gsd:test-phase   ...      ║
+║  /amauta:new-project   /amauta:execute-plan   /amauta:test-phase   ...      ║
 ║        │                    │                    │                   ║
 ║        ▼                    ▼                    ▼                   ║
 ║  ┌──────────┐    ┌──────────────────┐    ┌─────────────────┐       ║
@@ -661,7 +661,7 @@ Multi-provider research with deduplication and auto-storage:
 ## 10. Task Lifecycle
 
 ```
-  /gsd:new-project
+  /amauta:new-project
          │
          ▼
   ┌──────────────────────────────────────────────┐
@@ -830,7 +830,7 @@ Add to `~/.zshrc` or `~/.bashrc`:
 
 ```bash
 # Required: PostgreSQL connection
-export GSD_POSTGRES_URL="postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta"
+export GSD_POSTGRES_URL="postgresql://amauta:gsd@127.0.0.1:5433/gsd_amauta"
 
 # Optional: Perplexity research
 export PERPLEXITY_API_KEY="your-key-here"
@@ -866,7 +866,7 @@ npm test   # 583 tests expected
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GSD_POSTGRES_URL` | `postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta` | PostgreSQL connection string |
+| `GSD_POSTGRES_URL` | `postgresql://amauta:gsd@127.0.0.1:5433/gsd_amauta` | PostgreSQL connection string |
 | `GSD_AMAUTA_HOST` | `127.0.0.1` | Daemon bind host |
 | `GSD_AMAUTA_PORT` | `18799` | Daemon port |
 | `GSD_RLM_PORT` | `18798` | RLM service port |

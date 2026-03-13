@@ -96,7 +96,7 @@ fi
 
 ```
 No test runner auto-detected. Please provide the test command:
-  /gsd:test-phase {phase} --test-cmd "your test command"
+  /amauta:test-phase {phase} --test-cmd "your test command"
 ```
 </step>
 
@@ -222,8 +222,8 @@ T-phase evidence logged to {TASK_ID}. Task is ready for validation.
 {FAIL_COUNT} test(s) failed. Review the output above.
 
 **Options:**
-1. Fix failing tests and re-run: `/gsd:test-phase {args}`
-2. Debug failures: `/gsd:debug {error description}`
+1. Fix failing tests and re-run: `/amauta:test-phase {args}`
+2. Debug failures: `/amauta:debug {error description}`
 3. Force log anyway (for expected failures): The T-phase was still logged with failure evidence.
 ```
 

@@ -32,9 +32,9 @@ GSD-Amauta is two systems fused together:
 │  GSD (Get Shit Done)          │  Amauta                          │
 │  ─────────────────────────    │  ──────────────────────────────  │
 │  Slash commands in Claude     │  Task management + agent system  │
-│  /gsd:new-project             │  amauta.cjs board            │
-│  /gsd:plan-phase              │  11 specialist agents            │
-│  /gsd:execute-phase           │  RPETD pipeline enforcement      │
+│  /amauta:new-project             │  amauta.cjs board            │
+│  /amauta:plan-phase              │  11 specialist agents            │
+│  /amauta:execute-phase           │  RPETD pipeline enforcement      │
 │  Creates .planning/ files     │  PostgreSQL memory               │
 │  Phase-based project flow     │  RLM code context engine         │
 │  Roadmap → Plans → Summaries  │  Perplexity research chain       │
@@ -145,20 +145,20 @@ I want to build [describe your project]. Please set up the task structure.
 
 The operator will:
 1. Ask clarifying questions about scope
-2. Run `/gsd:new-project` to create `.planning/` structure
+2. Run `/amauta:new-project` to create `.planning/` structure
 3. Break the project into epics → stories → tasks in Amauta
 4. Assign tasks to the right specialist agents
 
 ### Step 3: Initialize the Project
 
 ```
-/gsd:new-project
+/amauta:new-project
 ```
 
 This single command runs a complete initialization pipeline:
 
 ```
-/gsd:new-project
+/amauta:new-project
       │
       ├── Deep questioning (what are you building? constraints? tech stack?)
       │
@@ -189,7 +189,7 @@ that follows. Be specific about:
 
 ### Step 4: Create Amauta Task Structure
 
-After `/gsd:new-project`, have the operator create the task hierarchy:
+After `/amauta:new-project`, have the operator create the task hierarchy:
 
 ```bash
 CLI="node ~/.claude/get-shit-done/bin/amauta.cjs"
@@ -327,12 +327,12 @@ $CLI status TK-0042 validation
 Research happens at two levels: **project research** (GSD layer) and
 **task research** (Amauta layer). Both feed into each other.
 
-### Level 1: Project Research (GSD — /gsd:new-project)
+### Level 1: Project Research (GSD — /amauta:new-project)
 
-When you run `/gsd:new-project`, 4 parallel researcher agents activate:
+When you run `/amauta:new-project`, 4 parallel researcher agents activate:
 
 ```
-/gsd:new-project
+/amauta:new-project
       │
       └── Spawns 4 gsd-researcher agents in PARALLEL:
             │
@@ -779,13 +779,13 @@ cycle. Queries memory for past failures first.
 **When to engage:** Something is broken and you don't know why.
 
 ```
-/gsd:debug "login button does nothing on Safari iOS"
+/amauta:debug "login button does nothing on Safari iOS"
 ```
 
 ### gsd-roadmapper
 
 **Role:** Creates ROADMAP.md from requirements. Spawned automatically by
-`/gsd:new-project` and `/gsd:new-milestone`.
+`/amauta:new-project` and `/amauta:new-milestone`.
 
 ---
 
@@ -794,15 +794,15 @@ cycle. Queries memory for past failures first.
 ### Project Setup
 
 **Do:**
-- Run `/gsd:discuss-phase N` before every `/gsd:plan-phase N`
+- Run `/amauta:discuss-phase N` before every `/amauta:plan-phase N`
   → Locks in your preferences. Plans built without discussion make assumptions.
-- Use `/gsd:list-phase-assumptions N` before committing to a plan
+- Use `/amauta:list-phase-assumptions N` before committing to a plan
   → See exactly what Claude intends to build before it starts.
-- Run `/gsd:map-codebase` before `/gsd:new-project` on existing code
+- Run `/amauta:map-codebase` before `/amauta:new-project` on existing code
   → Agents understand what exists and don't duplicate or conflict with it.
 
 **Don't:**
-- Skip `/gsd:discuss-phase`. Most "the output was wrong" situations come from
+- Skip `/amauta:discuss-phase`. Most "the output was wrong" situations come from
   Claude guessing what you want instead of you specifying it.
 
 ### Task Quality
@@ -883,7 +883,7 @@ Claude Code has a finite context window. GSD-Amauta is designed around this:
 
 - **Each agent gets a fresh 200K context** — spawn agents for expensive work
 - **Run `/clear` between major phases** — keeps the orchestrator lean
-- **Use `/gsd:resume-work` after `/clear`** — restores state from files, not memory
+- **Use `/amauta:resume-work` after `/clear`** — restores state from files, not memory
 - **RLM replaces file reads** — query for relevant chunks instead of `cat`-ing entire files
 
 ```
@@ -904,9 +904,9 @@ $RLM query "token validation logic" --path src/services/auth.ts  # 30-50 lines
 | Rapid prototyping | `budget` + disable agents | Speed over quality |
 
 ```bash
-/gsd:set-profile quality     # When it matters
-/gsd:set-profile balanced    # Default
-/gsd:set-profile budget      # When cost matters
+/amauta:set-profile quality     # When it matters
+/amauta:set-profile balanced    # Default
+/amauta:set-profile budget      # When cost matters
 ```
 
 ### Output Signals
@@ -915,7 +915,7 @@ If you're getting poor outputs:
 
 | Symptom | Root Cause | Fix |
 |---------|-----------|-----|
-| Plans don't match your vision | Skipped `/gsd:discuss-phase` | Run it, lock in decisions |
+| Plans don't match your vision | Skipped `/amauta:discuss-phase` | Run it, lock in decisions |
 | Agents write the wrong code | Task success criteria too vague | Add `SUCCESS: Given/When/Then` note |
 | Validation fails repeatedly | Tasks too large | Break into smaller tasks |
 | R-phase is shallow | Memory is empty | Start storing learnings now |
@@ -940,20 +940,20 @@ curl -s http://127.0.0.1:18799/health | python3 -m json.tool
 claude --dangerously-skip-permissions
 
 # Restore context
-/gsd:resume-work   # or /gsd:progress
+/amauta:resume-work   # or /amauta:progress
 ```
 
 ### Project Setup
 
 ```bash
-/gsd:new-project                    # Full init: questions → research → roadmap
-/gsd:new-project --auto @prd.md     # From existing document
-/gsd:map-codebase                   # Analyze existing code first (brownfield)
-/gsd:discuss-phase 1                # Lock in your preferences
-/gsd:list-phase-assumptions 1       # Preview Claude's intent
-/gsd:plan-phase 1                   # Research + plan + verify
-/gsd:execute-phase 1                # Run it
-/gsd:verify-work 1                  # UAT
+/amauta:new-project                    # Full init: questions → research → roadmap
+/amauta:new-project --auto @prd.md     # From existing document
+/amauta:map-codebase                   # Analyze existing code first (brownfield)
+/amauta:discuss-phase 1                # Lock in your preferences
+/amauta:list-phase-assumptions 1       # Preview Claude's intent
+/amauta:plan-phase 1                   # Research + plan + verify
+/amauta:execute-phase 1                # Run it
+/amauta:verify-work 1                  # UAT
 ```
 
 ### Task Management
@@ -1030,21 +1030,21 @@ $RES check-providers
 ### Milestones
 
 ```bash
-/gsd:audit-milestone                # Check all criteria met
-/gsd:plan-milestone-gaps            # Create phases for gaps
-/gsd:complete-milestone 1.0.0       # Archive, tag, done
-/gsd:new-milestone "v2.0 Features"  # Start next cycle
+/amauta:audit-milestone                # Check all criteria met
+/amauta:plan-milestone-gaps            # Create phases for gaps
+/amauta:complete-milestone 1.0.0       # Archive, tag, done
+/amauta:new-milestone "v2.0 Features"  # Start next cycle
 ```
 
 ### Troubleshooting
 
 ```bash
-/gsd:health                         # Check .planning/ integrity
-/gsd:health --repair                # Auto-fix issues
-/gsd:debug "description"            # Debug session
-/gsd:progress                       # Where am I?
-/gsd:settings                       # Change config
-/gsd:set-profile budget             # Reduce cost
+/amauta:health                         # Check .planning/ integrity
+/amauta:health --repair                # Auto-fix issues
+/amauta:debug "description"            # Debug session
+/amauta:progress                       # Where am I?
+/amauta:settings                       # Change config
+/amauta:set-profile budget             # Reduce cost
 ```
 
 ---
@@ -1066,7 +1066,7 @@ claude --dangerously-skip-permissions
 
 In Claude Code:
 ```
-/gsd:new-project
+/amauta:new-project
 ```
 
 Answer the questions:
@@ -1102,7 +1102,7 @@ GSD creates:
 ### Day 1: Phase 1 Planning
 
 ```
-/gsd:discuss-phase 1
+/amauta:discuss-phase 1
 ```
 
 Answer:
@@ -1116,7 +1116,7 @@ snake_case for DB columns, camelCase for API JSON responses.
 ```
 
 ```
-/gsd:plan-phase 1
+/amauta:plan-phase 1
 ```
 
 GSD creates `.planning/phases/01-foundation/01-01-PLAN.md`.
@@ -1128,7 +1128,7 @@ GSD creates `.planning/phases/01-foundation/01-01-PLAN.md`.
 ### Day 1: Execute Phase 1
 
 ```
-/gsd:execute-phase 1
+/amauta:execute-phase 1
 ```
 
 Executors run in parallel waves, each following RPETD. You see:
@@ -1160,17 +1160,17 @@ PASS → TK-0003 DONE
 ### Day 1 End: Check State
 
 ```
-/gsd:verify-work 1
-/gsd:progress
+/amauta:verify-work 1
+/amauta:progress
 ```
 
 ### Day 2: Phase 2 — Authentication
 
 ```
-/gsd:discuss-phase 2
-/gsd:plan-phase 2
+/amauta:discuss-phase 2
+/amauta:plan-phase 2
 /clear
-/gsd:execute-phase 2
+/amauta:execute-phase 2
 ```
 
 At R-phase, executor queries memory:
@@ -1185,7 +1185,7 @@ what we learned yesterday.
 ### Day 3: Milestone Complete
 
 ```
-/gsd:audit-milestone
+/amauta:audit-milestone
 ```
 
 Output:
@@ -1199,7 +1199,7 @@ MILESTONE STATUS: READY FOR COMPLETION
 ```
 
 ```
-/gsd:complete-milestone 1.0.0
+/amauta:complete-milestone 1.0.0
 ```
 
 Archived. Tagged. Done.
@@ -1229,7 +1229,7 @@ docker start gsd-postgres
 docker logs gsd-postgres | tail -20
 
 # Verify connection
-psql postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta -c "SELECT 1"
+psql postgresql://amauta:gsd@127.0.0.1:5433/gsd_amauta -c "SELECT 1"
 ```
 
 ### Task Stuck in VALIDATION
@@ -1288,21 +1288,21 @@ $CLI rpetd TK-0042 --phase T --content "T: [corrected with real output]"
 
 ```bash
 # BEFORE planning, always discuss
-/gsd:discuss-phase N
+/amauta:discuss-phase N
 
 # See what Claude is about to build
-/gsd:list-phase-assumptions N
+/amauta:list-phase-assumptions N
 
 # If plan already ran wrong — don't re-execute
 # Instead: note what's wrong, quick-fix with gsd:quick
-/gsd:quick "Fix the auth plan: should use RS256 not HS256"
+/amauta:quick "Fix the auth plan: should use RS256 not HS256"
 ```
 
 ### Context Window Full
 
 ```
 /clear
-/gsd:resume-work   # Restore from STATE.md
+/amauta:resume-work   # Restore from STATE.md
 ```
 
 This is normal and expected. Design for it:

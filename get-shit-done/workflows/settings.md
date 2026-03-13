@@ -195,13 +195,13 @@ Display:
 | Git Branching        | {None/Per Phase/Per Milestone} |
 | Saved as Defaults    | {Yes/No} |
 
-These settings apply to future /gsd:plan-phase and /gsd:execute-phase runs.
+These settings apply to future /amauta:plan-phase and /amauta:execute-phase runs.
 
 Quick commands:
-- /gsd:set-profile <profile> — switch model profile
-- /gsd:plan-phase --research — force research
-- /gsd:plan-phase --skip-research — skip research
-- /gsd:plan-phase --skip-verify — skip plan check
+- /amauta:set-profile <profile> — switch model profile
+- /amauta:plan-phase --research — force research
+- /amauta:plan-phase --skip-research — skip research
+- /amauta:plan-phase --skip-verify — skip plan check
 ```
 </step>
 

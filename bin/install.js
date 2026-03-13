@@ -1365,12 +1365,18 @@ function uninstall(isGlobal, runtime = 'claude') {
       }
     }
   } else {
-    // Claude Code & Gemini: remove commands/gsd/ directory
+    // Claude Code & Gemini: remove commands/gsd/ and commands/amauta/ directories
     const gsdCommandsDir = path.join(targetDir, 'commands', 'gsd');
     if (fs.existsSync(gsdCommandsDir)) {
       fs.rmSync(gsdCommandsDir, { recursive: true });
       removedCount++;
       console.log(`  ${green}✓${reset} Removed commands/gsd/`);
+    }
+    const amautaCommandsDir = path.join(targetDir, 'commands', 'amauta');
+    if (fs.existsSync(amautaCommandsDir)) {
+      fs.rmSync(amautaCommandsDir, { recursive: true });
+      removedCount++;
+      console.log(`  ${green}✓${reset} Removed commands/amauta/`);
     }
   }
 
@@ -1789,6 +1795,13 @@ function writeManifest(configDir, runtime = 'claude') {
       manifest.files['commands/gsd/' + rel] = hash;
     }
   }
+  const amautaCommandsDir = path.join(configDir, 'commands', 'amauta');
+  if (!isOpencode && !isCodex && fs.existsSync(amautaCommandsDir)) {
+    const cmdHashes = generateManifest(amautaCommandsDir);
+    for (const [rel, hash] of Object.entries(cmdHashes)) {
+      manifest.files['commands/amauta/' + rel] = hash;
+    }
+  }
   if (isOpencode && fs.existsSync(opencodeCommandDir)) {
     for (const file of fs.readdirSync(opencodeCommandDir)) {
       if (file.startsWith('gsd-') && file.endsWith('.md')) {
@@ -1874,7 +1887,7 @@ function reportLocalPatches(configDir, runtime = 'claude') {
       ? '/gsd-reapply-patches'
       : runtime === 'codex'
         ? '$gsd-reapply-patches'
-        : '/gsd:reapply-patches';
+        : '/amauta:reapply-patches';
     console.log('');
     console.log('  ' + yellow + 'Local patches detected' + reset + ' (from v' + meta.from_version + '):');
     for (const f of meta.files) {
@@ -1928,43 +1941,69 @@ function install(isGlobal, runtime = 'claude') {
   // Clean up orphaned files from previous versions
   cleanupOrphanedFiles(targetDir);
 
-  // OpenCode uses command/ (flat), Codex uses skills/, Claude/Gemini use commands/gsd/
+  // OpenCode uses command/ (flat), Codex uses skills/, Claude/Gemini use commands/{prefix}/
+  // Install both /gsd: and /amauta: command sets for backward compatibility
   if (isOpencode) {
     // OpenCode: flat structure in command/ directory
     const commandDir = path.join(targetDir, 'command');
     fs.mkdirSync(commandDir, { recursive: true });
     
-    // Copy commands/gsd/*.md as command/gsd-*.md (flatten structure)
+    // Install /gsd: commands (backward compat)
     const gsdSrc = path.join(src, 'commands', 'gsd');
     copyFlattenedCommands(gsdSrc, commandDir, 'gsd', pathPrefix, runtime);
-    if (verifyInstalled(commandDir, 'command/gsd-*')) {
-      const count = fs.readdirSync(commandDir).filter(f => f.startsWith('gsd-')).length;
-      console.log(`  ${green}✓${reset} Installed ${count} commands to command/`);
+
+    // Install /amauta: commands (canonical)
+    const amautaSrc = path.join(src, 'commands', 'amauta');
+    if (fs.existsSync(amautaSrc)) {
+      copyFlattenedCommands(amautaSrc, commandDir, 'amauta', pathPrefix, runtime);
+    }
+
+    const gsdCount = fs.readdirSync(commandDir).filter(f => f.startsWith('gsd-')).length;
+    const amautaCount = fs.readdirSync(commandDir).filter(f => f.startsWith('amauta-')).length;
+    if (gsdCount > 0 || amautaCount > 0) {
+      console.log(`  ${green}✓${reset} Installed ${gsdCount + amautaCount} commands to command/`);
     } else {
-      failures.push('command/gsd-*');
+      failures.push('command/*');
     }
   } else if (isCodex) {
     const skillsDir = path.join(targetDir, 'skills');
     const gsdSrc = path.join(src, 'commands', 'gsd');
     copyCommandsAsCodexSkills(gsdSrc, skillsDir, 'gsd', pathPrefix, runtime);
+    const amautaSrc = path.join(src, 'commands', 'amauta');
+    if (fs.existsSync(amautaSrc)) {
+      copyCommandsAsCodexSkills(amautaSrc, skillsDir, 'amauta', pathPrefix, runtime);
+    }
     const installedSkillNames = listCodexSkillNames(skillsDir);
     if (installedSkillNames.length > 0) {
       console.log(`  ${green}✓${reset} Installed ${installedSkillNames.length} skills to skills/`);
     } else {
-      failures.push('skills/gsd-*');
+      failures.push('skills/*');
     }
   } else {
     // Claude Code & Gemini: nested structure in commands/ directory
     const commandsDir = path.join(targetDir, 'commands');
     fs.mkdirSync(commandsDir, { recursive: true });
     
+    // Install /gsd: commands (backward compat)
     const gsdSrc = path.join(src, 'commands', 'gsd');
     const gsdDest = path.join(commandsDir, 'gsd');
     copyWithPathReplacement(gsdSrc, gsdDest, pathPrefix, runtime, true);
+
+    // Install /amauta: commands (canonical)
+    const amautaSrc = path.join(src, 'commands', 'amauta');
+    if (fs.existsSync(amautaSrc)) {
+      const amautaDest = path.join(commandsDir, 'amauta');
+      copyWithPathReplacement(amautaSrc, amautaDest, pathPrefix, runtime, true);
+    }
+
     if (verifyInstalled(gsdDest, 'commands/gsd')) {
       console.log(`  ${green}✓${reset} Installed commands/gsd`);
     } else {
       failures.push('commands/gsd');
+    }
+    const amautaDest = path.join(commandsDir, 'amauta');
+    if (fs.existsSync(amautaDest) && verifyInstalled(amautaDest, 'commands/amauta')) {
+      console.log(`  ${green}✓${reset} Installed commands/amauta`);
     }
   }
 
@@ -2240,7 +2279,7 @@ function finishInstall(settingsPath, settings, statuslineCommand, shouldInstallS
   if (runtime === 'gemini') program = 'Gemini';
   if (runtime === 'codex') program = 'Codex';
 
-  let command = '/gsd:new-project';
+  let command = '/amauta:new-project';
   if (runtime === 'opencode') command = '/gsd-new-project';
   if (runtime === 'codex') command = '$gsd-new-project';
   console.log(`

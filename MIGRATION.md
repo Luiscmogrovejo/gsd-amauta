@@ -48,7 +48,7 @@ Add to your shell profile (`~/.zshrc`, `~/.bashrc`, etc.):
 
 ```bash
 # Required for PG memory
-export GSD_POSTGRES_URL="postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta"
+export GSD_POSTGRES_URL="postgresql://amauta:gsd@127.0.0.1:5433/gsd_amauta"
 
 # Optional: Perplexity research
 export PERPLEXITY_API_KEY="your-key-here"
@@ -145,7 +145,7 @@ After migration, verify:
 - [ ] Daemon health returns `"status": "ok"` with `"pg_available": true`
 - [ ] RLM health returns `"status": "ok"`
 - [ ] `gsd-memory.cjs count` returns a number (0 is fine for new install)
-- [ ] `/gsd:new-project` slash command works in Claude Code
+- [ ] `/amauta:new-project` slash command works in Claude Code
 - [ ] Existing `.planning/` files are readable
 - [ ] `npm test` passes all tests
 
