@@ -171,3 +171,67 @@ DO $$ BEGIN
             FOR EACH ROW EXECUTE FUNCTION update_updated_at();
     END IF;
 END $$;
+
+-- ═══════════════════════════════════════════════════════
+-- gitflow_log — Git operations audit trail
+-- Tracks branch-create, pr-create, merge, commit per task
+-- ═══════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS gitflow_log (
+    id          SERIAL PRIMARY KEY,
+    task_id     VARCHAR(16),
+    agent_id    VARCHAR(64),
+    action      VARCHAR(64) NOT NULL,
+    branch_name VARCHAR(256),
+    pr_url      TEXT,
+    pr_number   INTEGER,
+    commit_sha  VARCHAR(64),
+    notes       TEXT,
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_gitflow_task ON gitflow_log(task_id);
+CREATE INDEX IF NOT EXISTS idx_gitflow_action ON gitflow_log(action);
+CREATE INDEX IF NOT EXISTS idx_gitflow_created ON gitflow_log(created_at DESC);
+
+-- ═══════════════════════════════════════════════════════
+-- Compatibility views for amauta.py legacy table names
+-- amauta.py uses amauta_memory + agent_shared_knowledge
+-- These views map them to the canonical gsd_* tables
+-- ═══════════════════════════════════════════════════════
+CREATE OR REPLACE VIEW amauta_memory AS
+  SELECT id, text, agent_id, source, tags, metadata, project_id, embedding, created_at, updated_at
+  FROM gsd_memory;
+
+CREATE OR REPLACE FUNCTION amauta_memory_insert() RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  INSERT INTO gsd_memory(id, text, agent_id, source, tags, metadata, created_at, updated_at)
+  VALUES (NEW.id, NEW.text, NEW.agent_id, NEW.source, NEW.tags, NEW.metadata, NEW.created_at, NEW.updated_at);
+  RETURN NEW;
+END; $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_amauta_memory_insert') THEN
+    CREATE TRIGGER trg_amauta_memory_insert
+      INSTEAD OF INSERT ON amauta_memory
+      FOR EACH ROW EXECUTE FUNCTION amauta_memory_insert();
+  END IF;
+END $$;
+
+CREATE OR REPLACE VIEW agent_shared_knowledge AS
+  SELECT id, title, content, category, agent_id, tags, importance, source_task, created_at, updated_at
+  FROM gsd_shared_kb;
+
+CREATE OR REPLACE FUNCTION agent_shared_knowledge_insert() RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  INSERT INTO gsd_shared_kb(id, title, content, category, agent_id, tags, importance, created_at, updated_at)
+  VALUES (NEW.id, NEW.title, NEW.content, NEW.category, NEW.agent_id, NEW.tags, NEW.importance, NEW.created_at, NEW.updated_at);
+  RETURN NEW;
+END; $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_agent_shared_knowledge_insert') THEN
+    CREATE TRIGGER trg_agent_shared_knowledge_insert
+      INSTEAD OF INSERT ON agent_shared_knowledge
+      FOR EACH ROW EXECUTE FUNCTION agent_shared_knowledge_insert();
+  END IF;
+END $$;

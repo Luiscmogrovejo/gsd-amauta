@@ -193,7 +193,10 @@ def _mem_append(row: dict):
         f.write(json.dumps(row, ensure_ascii=True) + "\n")
 
 def _mem_db_url() -> str:
+    # Priority: AMAUTA_MEMORY_DATABASE_URL > GSD_POSTGRES_URL > /srv/amauta/.env
     dsn = os.environ.get("AMAUTA_MEMORY_DATABASE_URL", "").strip()
+    if not dsn:
+        dsn = os.environ.get("GSD_POSTGRES_URL", "").strip()
     if not dsn:
         env_file = Path("/srv/amauta/.env")
         if env_file.exists():
@@ -201,6 +204,8 @@ def _mem_db_url() -> str:
                 if ln.startswith("AMAUTA_MEMORY_DATABASE_URL="):
                     dsn = ln.split("=", 1)[1].strip().strip('"').strip("'")
                     break
+                if ln.startswith("GSD_POSTGRES_URL=") and not dsn:
+                    dsn = ln.split("=", 1)[1].strip().strip('"').strip("'")
     if not dsn:
         return ""
 
@@ -238,15 +243,21 @@ def _mem_db_url() -> str:
 
 def _mem_backend() -> str:
     """Return the configured memory backend ('postgres' or '').
-    Checks env var first, falls back to /srv/amauta/.env (same pattern as _mem_db_url)."""
+    Checks env var first, falls back to /srv/amauta/.env (same pattern as _mem_db_url).
+    If GSD_POSTGRES_URL is set (and no explicit backend override), infers 'postgres'."""
     val = os.environ.get("AMAUTA_MEMORY_BACKEND", "").strip().lower()
     if val:
         return val
+    # If GSD_POSTGRES_URL is set, infer postgres backend automatically
+    if os.environ.get("GSD_POSTGRES_URL", "").strip():
+        return "postgres"
     env_file = Path("/srv/amauta/.env")
     if env_file.exists():
         for ln in env_file.read_text(errors="ignore").splitlines():
             if ln.startswith("AMAUTA_MEMORY_BACKEND="):
                 return ln.split("=", 1)[1].strip().strip('"').strip("'").lower()
+            if ln.startswith("GSD_POSTGRES_URL="):
+                return "postgres"
     return ""
 
 def _mem_pg_available() -> bool:
@@ -1216,47 +1227,74 @@ def _pick_domain_doc(title: str, desc: str) -> str:
     return ""
 
 
+def _rlm_find_node() -> str:
+    """Find node binary — try PATH, then NVM default, then common macOS locations."""
+    import shutil
+    node = shutil.which("node")
+    if node:
+        return node
+    for candidate in [
+        os.path.expanduser("~/.nvm/versions/node/v22.14.0/bin/node"),
+        os.path.expanduser("~/.nvm/versions/node/v20.0.0/bin/node"),
+        "/usr/local/bin/node",
+        "/opt/homebrew/bin/node",
+    ]:
+        if os.path.exists(candidate):
+            return candidate
+    return "node"  # last resort
+
+
+def _rlm_find_cli() -> str:
+    """Find gsd-rlm.cjs — prefer installed ~/.claude path, fallback to source repo."""
+    candidates = [
+        os.path.expanduser("~/.claude/get-shit-done/bin/gsd-rlm.cjs"),
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", ".claude",
+                     "get-shit-done", "bin", "gsd-rlm.cjs"),
+        os.path.join(os.path.dirname(__file__), "get-shit-done", "bin", "gsd-rlm.cjs"),
+    ]
+    for c in candidates:
+        if os.path.exists(os.path.normpath(c)):
+            return os.path.normpath(c)
+    return ""
+
+
 def _rlm_query(query: str, doc_path: str = "", text: str = "", task_id: str = "") -> str:
     """
-    Call the RLM engine via rlm_client.py. Returns answer string or empty on failure.
-    Timeout: 60s to allow RLM pipeline to complete (probe+dispatch+aggregate).
+    Call gsd-rlm.cjs query to get relevant code context.
+    Uses --dir (for directory queries) or --path (for single-file queries).
+    Returns top-k chunk text concatenated, or empty string on failure.
     Best-effort — never raises.
-
-    NOTE: RLM server now handles ALL file types natively (.md, .txt, .py, .json, etc.)
-    via the --path flag. No need to read files client-side anymore.
     """
     import subprocess
     try:
-        cmd = [
-            "python3", "/srv/openclaw/agents/rlm_client.py",
-            "--query", query,
-            "--timeout", "60",
-            "--enrich",
-        ]
+        node = _rlm_find_node()
+        rlm_cli = _rlm_find_cli()
+        if not rlm_cli:
+            return ""
 
-        # Pass file path directly — RLM server handles all file types natively
-        doc_text = text
-        if doc_path and os.path.exists(doc_path):
-            cmd.extend(["--path", doc_path])
-
-        if doc_text:
-            cmd.extend(["--text", doc_text[:10000]])
-
-        if task_id:
-            cmd.extend(["--task-id", task_id])
+        # Determine query target: prefer doc_path, then project cwd
+        if doc_path and os.path.isfile(doc_path):
+            cmd = [node, rlm_cli, "query", query, "--path", doc_path, "--top-k", "3", "--compact"]
+        elif doc_path and os.path.isdir(doc_path):
+            cmd = [node, rlm_cli, "query", query, "--dir", doc_path, "--top-k", "3", "--compact"]
+        elif text:
+            # No path available — skip RLM (can't query plain text without a file)
+            return ""
+        else:
+            # Query current working directory
+            cwd = os.getcwd()
+            cmd = [node, rlm_cli, "query", query, "--dir", cwd, "--top-k", "3", "--compact"]
 
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=70,
-            env={**os.environ, "AMAUTA_DATA_DIR": os.environ.get("AMAUTA_DATA_DIR", "/srv/amauta/data")},
+            cmd, capture_output=True, text=True, timeout=30,
+            env={**os.environ},
         )
         if result.returncode == 0 and result.stdout.strip():
-            import json as _json
-            data = _json.loads(result.stdout)
-            if data.get("ok") and data.get("final_answer"):
-                answer = data["final_answer"]
-                if "failed" in answer.lower() and "no context" in answer.lower():
-                    return ""
-                return answer
+            # Filter out the fallback "RLM service unavailable" message
+            out = result.stdout.strip()
+            if "Suggested @ references" in out or "RLM service unavailable" in out:
+                return ""
+            return out[:1200]
     except Exception:
         pass
     return ""

@@ -89,6 +89,13 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
         env["AMAUTA_DATA_DIR"] = DATA_DIR
         # Strip ANSI codes for clean JSON parsing
         env["NO_COLOR"] = "1"
+        # Bridge GSD_POSTGRES_URL → AMAUTA_MEMORY_DATABASE_URL so amauta.py
+        # enrichment layers (claim-time Layer 1, RPETD Layer 2) can reach PG.
+        pg_url = os.environ.get("GSD_POSTGRES_URL", "")
+        if pg_url and not env.get("AMAUTA_MEMORY_DATABASE_URL"):
+            env["AMAUTA_MEMORY_DATABASE_URL"] = pg_url
+        if not env.get("AMAUTA_MEMORY_BACKEND"):
+            env["AMAUTA_MEMORY_BACKEND"] = "postgres" if pg_url else ""
 
         cmd = [sys.executable, AMAUTA_PY] + args
         try:

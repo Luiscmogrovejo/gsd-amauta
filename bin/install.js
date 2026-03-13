@@ -2554,6 +2554,7 @@ function installAmauta(targetDir) {
           const dataDir = process.env.AMAUTA_DATA_DIR || path.join(pluginRoot, 'data');
           fs.mkdirSync(dataDir, { recursive: true });
 
+          const pgUrl = process.env.GSD_POSTGRES_URL || 'postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta';
           const child = spawn2('python3', [daemonScript, 'start'], {
             detached: true,
             stdio: 'ignore',
@@ -2561,6 +2562,10 @@ function installAmauta(targetDir) {
               ...process.env,
               AMAUTA_DATA_DIR: dataDir,
               GSD_AMAUTA_PY: amautaPy,
+              GSD_POSTGRES_URL: pgUrl,
+              // Bridge to amauta.py enrichment env vars (Layer 1/2 claim+RPETD enrichment)
+              AMAUTA_MEMORY_DATABASE_URL: process.env.AMAUTA_MEMORY_DATABASE_URL || pgUrl,
+              AMAUTA_MEMORY_BACKEND: process.env.AMAUTA_MEMORY_BACKEND || 'postgres',
             },
           });
           child.unref();

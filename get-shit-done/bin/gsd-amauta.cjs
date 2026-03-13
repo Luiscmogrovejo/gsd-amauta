@@ -993,6 +993,31 @@ async function main() {
     return; // daemon run keeps process alive
   }
 
+  // Health check — hit /health directly, no daemon start needed
+  if (command === 'health') {
+    try {
+      const { statusCode, data } = await httpRequest('GET', '/health', null, 3000);
+      if (jsonMode) {
+        // Compact JSON so callers can grep '"status":"ok"' reliably
+        console.log(JSON.stringify(data));
+      } else {
+        const ok = statusCode === 200 && data.status === 'ok';
+        console.log(ok ? 'Daemon: running' : 'Daemon: not running');
+        if (data.pg_available !== undefined) {
+          console.log(`PostgreSQL: ${data.pg_available ? 'ok' : 'unavailable'}`);
+        }
+      }
+      process.exit(statusCode === 200 ? 0 : 1);
+    } catch {
+      if (jsonMode) {
+        console.log(JSON.stringify({ status: 'error', error: 'daemon not running' }));
+      } else {
+        console.log('Daemon: not running');
+      }
+      process.exit(1);
+    }
+  }
+
   // For all other commands, ensure daemon is available
   const useDaemon = await ensureDaemon();
 
