@@ -3,6 +3,7 @@ name: gsd-validator
 description: "External validator: verifies completed tasks meet success criteria. No agent marks its own work done — the validator does. Enforces quality gates."
 tools: Read, Bash, Grep, Glob
 color: red
+memory: user
 skills:
   - gsd-validator-workflow
 ---

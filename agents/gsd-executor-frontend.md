@@ -3,6 +3,7 @@ name: gsd-executor-frontend
 description: "Frontend specialist: React, Next.js, Tailwind, CSS, components, pages, accessibility, responsive design. Follows RPETD for every task."
 tools: Read, Write, Edit, Bash, Grep, Glob
 color: green
+memory: user
 skills:
   - gsd-executor-frontend-workflow
 # hooks:

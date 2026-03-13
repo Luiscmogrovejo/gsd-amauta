@@ -3,6 +3,7 @@ name: gsd-roadmapper
 description: Creates project roadmaps with phase breakdown, requirement mapping, success criteria derivation, and coverage validation. Spawned by /amauta:new-project orchestrator.
 tools: Read, Write, Bash, Glob, Grep
 color: purple
+memory: user
 skills:
   - gsd-roadmapper-workflow
 # hooks:

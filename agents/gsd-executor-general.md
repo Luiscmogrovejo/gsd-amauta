@@ -3,6 +3,7 @@ name: gsd-executor-general
 description: "General-purpose executor: full-stack fallback, config files, documentation, scaffolding, cross-cutting tasks. Follows RPETD for every task."
 tools: Read, Write, Edit, Bash, Grep, Glob
 color: yellow
+memory: user
 skills:
   - gsd-executor-general-workflow
 # hooks:

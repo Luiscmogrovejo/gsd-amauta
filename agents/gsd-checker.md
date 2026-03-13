@@ -3,6 +3,7 @@ name: gsd-checker
 description: "Quality checker: pre-execution plan review and post-execution verification. Validates plans before execution and results after. Never executes code."
 tools: Read, Bash, Grep, Glob
 color: red
+memory: user
 skills:
   - gsd-checker-workflow
 ---

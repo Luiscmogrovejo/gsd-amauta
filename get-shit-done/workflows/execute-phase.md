@@ -117,7 +117,11 @@ if [ "$AMAUTA_OK" = "1" ]; then
       EXECUTOR="executor-backend"
     fi
 
-    $AMAUTA_CLI exec add task "$PLAN_OBJECTIVE" --parent "$PHASE_STORY" --agent "$EXECUTOR" --priority high 2>/dev/null || true
+    TASK_ID=$($AMAUTA_CLI exec add task "$PLAN_OBJECTIVE" --parent "$PHASE_STORY" --agent "$EXECUTOR" --priority high 2>/dev/null | grep -oE 'TK-[0-9]+' || echo "")
+    # Store task ID for executor spawning — associate plan ID to Amauta task ID
+    if [ -n "$TASK_ID" ]; then
+      eval "PLAN_TASK_${plan//-/_}=$TASK_ID"
+    fi
   done
 fi
 ```
@@ -164,68 +168,81 @@ fi
     - `Dockerfile/docker/ci/deploy/terraform` → `gsd-executor-infra`
     - Everything else → `gsd-executor-general`
 
+    **Resolve values before spawning** (substitute these in the actual prompt):
+    - `{plan_number}` = the plan ID (e.g. `01-03`)
+    - `{phase_number}-{phase_name}` = e.g. `01-setup`
+    - `{plan_objective}` = extracted from PLAN_INDEX_JSON for this plan (3-8 words describing what it builds)
+    - `{routed_executor}` = one of: `gsd-executor-frontend`, `gsd-executor-backend`, `gsd-executor-infra`, `gsd-executor-general`
+    - `{executor_model}` = from init JSON
+    - `{plan_task_id}` = the Amauta TK-XXXX assigned to this plan (from PLAN_TASK_* var captured above), or empty string if Amauta unavailable
+    - `{phase_dir}` = phase directory path (e.g. `.planning/phases/01-setup/`)
+    - `{plan_file}` = plan filename (e.g. `01-03-PLAN.md`)
+
     ```
-    Task(
-      subagent_type="{routed_executor}",
-      model="{executor_model}",
-      prompt="
-        <objective>
-        Execute plan {plan_number} of phase {phase_number}-{phase_name}.
-        Commit each task atomically. Create SUMMARY.md. Update STATE.md and ROADMAP.md.
-        </objective>
+     Task(
+       subagent_type="{routed_executor}",
+       model="{executor_model}",
+       prompt="
+         <objective>
+         Execute plan {plan_number} of phase {phase_number}-{phase_name}.
+         Objective: {plan_objective}
+         Commit each task atomically. Create SUMMARY.md. Update STATE.md and ROADMAP.md.
+         </objective>
 
-        <execution_context>
-        @~/.claude/get-shit-done/workflows/execute-plan.md
-        @~/.claude/get-shit-done/templates/summary.md
-        @~/.claude/get-shit-done/references/checkpoints.md
-        @~/.claude/get-shit-done/references/tdd.md
-        </execution_context>
+         <execution_context>
+         @~/.claude/get-shit-done/workflows/execute-plan.md
+         @~/.claude/get-shit-done/templates/summary.md
+         @~/.claude/get-shit-done/references/checkpoints.md
+         @~/.claude/get-shit-done/references/tdd.md
+         </execution_context>
 
-        <amauta_enrichment>
-        BEFORE starting any work, run these context-enrichment queries:
+         <amauta_enrichment>
+         BEFORE starting any work, run these context-enrichment commands (all wrapped in || true):
 
-        1. RLM — find relevant existing code:
-           node ~/.claude/get-shit-done/bin/gsd-rlm.cjs query '{plan_objective}' --dir . --top-k 5 --compact 2>/dev/null || true
+         1. RLM — find relevant existing code for '{plan_objective}':
+            node ~/.claude/get-shit-done/bin/gsd-rlm.cjs query '{plan_objective}' --dir . --top-k 5 --compact 2>/dev/null || true
 
-        2. Memory — find past learnings relevant to this plan:
-           node ~/.claude/get-shit-done/bin/gsd-memory.cjs search '{plan_objective}' 2>/dev/null || true
+         2. Memory — find past learnings for '{plan_objective}':
+            node ~/.claude/get-shit-done/bin/gsd-memory.cjs search '{plan_objective}' 2>/dev/null || true
 
-        3. If an Amauta task ID was assigned for this plan (check TASK_ID env or look for TK-XXXX in the plan), log RPETD phases as you work:
-           CLI='node ~/.claude/get-shit-done/bin/amauta.cjs'
-           $CLI rpetd {TASK_ID} --phase R --content 'R: [RLM findings + memory matches]' 2>/dev/null || true
-           $CLI rpetd {TASK_ID} --phase P --content 'P: [approach from plan]' 2>/dev/null || true
-           $CLI rpetd {TASK_ID} --phase E --content 'E: [what was built, files changed]' 2>/dev/null || true
-           $CLI rpetd {TASK_ID} --phase T --content 'T: [actual test output]' 2>/dev/null || true
-           $CLI rpetd {TASK_ID} --phase D --content 'D: [summary]. LEARNING: [insight]' 2>/dev/null || true
+         3. Amauta task ID for this plan: {plan_task_id}
+            If non-empty, claim and log RPETD phases:
+            CLI='node ~/.claude/get-shit-done/bin/amauta.cjs'
+            $CLI claim {plan_task_id} --agent {routed_executor} 2>/dev/null || true
+            # Log each phase as you complete it:
+            $CLI rpetd {plan_task_id} --phase R --content 'R: [RLM findings + memory matches]' 2>/dev/null || true
+            $CLI rpetd {plan_task_id} --phase P --content 'P: [approach, files to change]' 2>/dev/null || true
+            $CLI rpetd {plan_task_id} --phase E --content 'E: [what was built, files changed, branch name]' 2>/dev/null || true
+            $CLI rpetd {plan_task_id} --phase T --content 'T: [paste actual test/build output here]' 2>/dev/null || true
+            $CLI rpetd {plan_task_id} --phase D --content 'D: [delivery summary]. LEARNING: [reusable insight]' 2>/dev/null || true
 
-        4. After completing all work, store the most important learning:
-           node ~/.claude/get-shit-done/bin/gsd-memory.cjs learn '{key_insight_from_this_plan}' 2>/dev/null || true
+         4. After ALL work is done, store the key learning to memory:
+            node ~/.claude/get-shit-done/bin/gsd-memory.cjs learn '[one sentence: what you learned that future agents should know]' 2>/dev/null || true
+         </amauta_enrichment>
 
-        All Amauta commands are wrapped in || true — if services are unavailable, execution proceeds normally.
-        </amauta_enrichment>
+         <files_to_read>
+         Read these files at execution start using the Read tool:
+         - {phase_dir}/{plan_file} (Plan — this IS your execution instructions)
+         - .planning/STATE.md (Project state)
+         - .planning/config.json (Config, if exists)
+         - ./CLAUDE.md (Project instructions, if exists — follow all project-specific guidelines)
+         - .claude/skills/ or .agents/skills/ (Project skills, if either path exists — list then read each SKILL.md)
+         </files_to_read>
 
-        <files_to_read>
-        Read these files at execution start using the Read tool:
-        - {phase_dir}/{plan_file} (Plan)
-        - .planning/STATE.md (State)
-        - .planning/config.json (Config, if exists)
-        - ./CLAUDE.md (Project instructions, if exists — follow project-specific guidelines and coding conventions)
-        - .claude/skills/ or .agents/skills/ (Project skills, if either exists — list skills, read SKILL.md for each, follow relevant rules during implementation)
-        </files_to_read>
-
-        <success_criteria>
-        - [ ] All tasks executed
-        - [ ] Each task committed individually
-        - [ ] SUMMARY.md created in plan directory
-        - [ ] STATE.md updated with position and decisions
-        - [ ] ROADMAP.md updated with plan progress (via `roadmap update-plan-progress`)
-        - [ ] RLM/memory queried before execution (if available)
-        - [ ] RPETD phases logged to Amauta (if task ID assigned)
-        - [ ] Key learning stored to memory (if available)
-        </success_criteria>
-      "
-    )
-    ```
+         <success_criteria>
+         - [ ] All plan tasks executed
+         - [ ] Each task committed individually with meaningful message
+         - [ ] SUMMARY.md created in plan directory
+         - [ ] STATE.md updated with position and decisions
+         - [ ] ROADMAP.md updated with plan progress
+         - [ ] RLM queried for '{plan_objective}' before execution
+         - [ ] Memory searched for '{plan_objective}' before execution
+         - [ ] RPETD R/P/E/T/D phases logged to {plan_task_id} (if non-empty)
+         - [ ] Key learning stored to memory after completion
+         </success_criteria>
+       "
+     )
+     ```
 
 3. **Wait for all agents in wave to complete.**
 

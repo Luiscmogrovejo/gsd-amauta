@@ -3,6 +3,7 @@ name: gsd-executor-infra
 description: "Infrastructure specialist: Docker, CI/CD, Terraform, Kubernetes, deployment pipelines, monitoring. Follows RPETD for every task."
 tools: Read, Write, Edit, Bash, Grep, Glob
 color: orange
+memory: user
 skills:
   - gsd-executor-infra-workflow
 # hooks:

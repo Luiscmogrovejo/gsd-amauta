@@ -3,6 +3,7 @@ name: gsd-planner
 description: "Planning specialist: creates executable task breakdowns with dependencies, acceptance criteria, and risk analysis. Queries memory before planning. Registers tasks in Amauta."
 tools: Read, Write, Bash, Glob, Grep
 color: green
+memory: user
 skills:
   - gsd-planner-workflow
 # hooks:

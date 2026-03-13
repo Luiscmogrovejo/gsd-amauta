@@ -2061,6 +2061,46 @@ function install(isGlobal, runtime = 'claude') {
     }
   }
 
+  // Copy skills for Claude Code (skills/ dir — referenced by agents' skills: frontmatter field)
+  // Each skill is a directory with SKILL.md; content is injected into agent context at startup.
+  const skillsSrcDir = path.join(src, 'skills');
+  if (fs.existsSync(skillsSrcDir) && !isCodex && !isOpencode && !isGemini) {
+    const skillsDestDir = path.join(targetDir, 'skills');
+    fs.mkdirSync(skillsDestDir, { recursive: true });
+
+    // Remove old GSD skills (gsd-*-workflow) before copying new ones
+    if (fs.existsSync(skillsDestDir)) {
+      for (const entry of fs.readdirSync(skillsDestDir, { withFileTypes: true })) {
+        if (entry.isDirectory() && entry.name.startsWith('gsd-') && entry.name.endsWith('-workflow')) {
+          fs.rmSync(path.join(skillsDestDir, entry.name), { recursive: true, force: true });
+        }
+      }
+    }
+
+    // Copy new skill directories (each contains SKILL.md)
+    const skillEntries = fs.readdirSync(skillsSrcDir, { withFileTypes: true });
+    let skillCount = 0;
+    for (const entry of skillEntries) {
+      if (!entry.isDirectory()) continue;
+      const skillSrc = path.join(skillsSrcDir, entry.name);
+      const skillMdSrc = path.join(skillSrc, 'SKILL.md');
+      if (!fs.existsSync(skillMdSrc)) continue;
+
+      const skillDest = path.join(skillsDestDir, entry.name);
+      fs.mkdirSync(skillDest, { recursive: true });
+
+      // Copy SKILL.md with path prefix substitution
+      let content = fs.readFileSync(skillMdSrc, 'utf8');
+      content = content.replace(/~\/\.claude\//g, pathPrefix);
+      content = content.replace(/\$HOME\/\.claude\//g, toHomePrefix(pathPrefix));
+      fs.writeFileSync(path.join(skillDest, 'SKILL.md'), content);
+      skillCount++;
+    }
+    if (skillCount > 0) {
+      console.log(`  ${green}✓${reset} Installed ${skillCount} skills`);
+    }
+  }
+
   // Copy CHANGELOG.md
   const changelogSrc = path.join(src, 'CHANGELOG.md');
   const changelogDest = path.join(targetDir, 'get-shit-done', 'CHANGELOG.md');

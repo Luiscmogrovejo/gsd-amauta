@@ -3,6 +3,7 @@ name: gsd-executor-backend
 description: "Backend specialist: APIs, services, databases, authentication, migrations, Python, Node.js, SQL. Follows RPETD for every task."
 tools: Read, Write, Edit, Bash, Grep, Glob
 color: blue
+memory: user
 skills:
   - gsd-executor-backend-workflow
 # hooks:

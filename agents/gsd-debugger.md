@@ -3,6 +3,7 @@ name: gsd-debugger
 description: "Debug specialist: investigates bugs using scientific method, queries memory for past failures, manages debug sessions with checkpoints. Uses RLM for codebase analysis."
 tools: Read, Write, Edit, Bash, Grep, Glob
 color: orange
+memory: user
 skills:
   - gsd-debugger-workflow
 # hooks:
