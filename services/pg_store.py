@@ -516,27 +516,97 @@ class PGStore:
     # Embedding / Semantic Search Operations
     # ═══════════════════════════════════════════════════════
 
-    @staticmethod
-    def generate_embedding(text, model="text-embedding-3-small"):
-        """Generate a 1536-dimension embedding via OpenAI API.
+    # Embedding provider configuration
+    # Priority: GSD_EMBEDDING_PROVIDER env var > auto-detect (voyage > openai)
+    EMBEDDING_PROVIDERS = {
+        "voyage": {
+            "env_key": "VOYAGE_API_KEY",
+            "url": "https://api.voyageai.com/v1/embeddings",
+            "default_model": "voyage-code-3",  # optimized for code retrieval
+            "dimensions": 1024,
+            "max_chars": 32000,  # ~8000 tokens
+            "supports_input_type": True,
+        },
+        "openai": {
+            "env_key": "OPENAI_API_KEY",
+            "url": "https://api.openai.com/v1/embeddings",
+            "default_model": "text-embedding-3-small",
+            "dimensions": 1024,  # request 1024 dims (model supports flexible dims)
+            "max_chars": 32000,
+            "supports_input_type": False,
+        },
+    }
 
-        Requires OPENAI_API_KEY environment variable.
-        Returns list[float] of length 1536, or None if API unavailable.
+    @staticmethod
+    def _detect_embedding_provider():
+        """Detect which embedding provider to use.
+
+        Priority: GSD_EMBEDDING_PROVIDER env var > auto-detect (voyage > openai).
+        Returns (provider_name, config_dict) or (None, None) if no API key available.
         """
-        api_key = os.environ.get("OPENAI_API_KEY")
+        explicit = os.environ.get("GSD_EMBEDDING_PROVIDER", "").lower().strip()
+        if explicit and explicit in PGStore.EMBEDDING_PROVIDERS:
+            cfg = PGStore.EMBEDDING_PROVIDERS[explicit]
+            if os.environ.get(cfg["env_key"]):
+                return explicit, cfg
+            # Explicit provider set but no API key — fall through to auto-detect
+
+        # Auto-detect: prefer Voyage (Anthropic-recommended), fall back to OpenAI
+        for name in ("voyage", "openai"):
+            cfg = PGStore.EMBEDDING_PROVIDERS[name]
+            if os.environ.get(cfg["env_key"]):
+                return name, cfg
+
+        return None, None
+
+    @staticmethod
+    def generate_embedding(text, model=None, input_type=None):
+        """Generate a 1024-dimension embedding via Voyage AI or OpenAI API.
+
+        Provider auto-detected: VOYAGE_API_KEY (preferred) or OPENAI_API_KEY.
+        Override with GSD_EMBEDDING_PROVIDER=voyage|openai env var.
+
+        Args:
+            text: The text to embed.
+            model: Override model name (default: provider-specific).
+            input_type: For Voyage only — 'query' or 'document' (improves retrieval).
+
+        Returns list[float] of length 1024, or None if no API key available.
+        """
+        provider_name, cfg = PGStore._detect_embedding_provider()
+        if cfg is None:
+            return None
+
+        api_key = os.environ.get(cfg["env_key"])
         if not api_key:
             return None
 
-        # Truncate to ~8000 tokens (~32k chars) to stay within API limits
-        truncated = text[:32000] if len(text) > 32000 else text
+        # Truncate to stay within API limits
+        max_chars = cfg.get("max_chars", 32000)
+        truncated = text[:max_chars] if len(text) > max_chars else text
 
-        payload = json.dumps({
+        # Build payload
+        use_model = model or cfg["default_model"]
+        payload_dict = {
             "input": truncated,
-            "model": model,
-        }).encode("utf-8")
+            "model": use_model,
+        }
+
+        # Request specific dimensions (both providers support this)
+        if cfg.get("dimensions"):
+            if provider_name == "openai":
+                payload_dict["dimensions"] = cfg["dimensions"]
+            elif provider_name == "voyage":
+                payload_dict["output_dimension"] = cfg["dimensions"]
+
+        # Voyage supports input_type for better retrieval
+        if input_type and cfg.get("supports_input_type"):
+            payload_dict["input_type"] = input_type
+
+        payload = json.dumps(payload_dict).encode("utf-8")
 
         req = urllib.request.Request(
-            "https://api.openai.com/v1/embeddings",
+            cfg["url"],
             data=payload,
             headers={
                 "Content-Type": "application/json",
@@ -556,10 +626,10 @@ class PGStore:
                                      tags=None, metadata=None, project_id=None):
         """Store a memory entry with auto-generated embedding.
 
-        Falls back to memory_store() without embedding if OPENAI_API_KEY is unset.
+        Falls back to memory_store() without embedding if no API key is set.
         Returns the new memory ID.
         """
-        embedding = self.generate_embedding(text)
+        embedding = self.generate_embedding(text, input_type="document")
 
         if embedding is None:
             # No API key or embedding failed — store without embedding
@@ -585,12 +655,12 @@ class PGStore:
     def memory_semantic_search(self, query, project_id=None, source=None, limit=20):
         """Search memories using cosine similarity on pgvector embeddings.
 
-        Requires OPENAI_API_KEY for query embedding generation.
+        Requires VOYAGE_API_KEY or OPENAI_API_KEY for query embedding generation.
         Returns (results, method) tuple — method is 'vector' or 'text_fallback'.
         Falls back to text-based memory_search() if embeddings unavailable.
         """
-        # Generate query embedding
-        query_embedding = self.generate_embedding(query)
+        # Generate query embedding (input_type="query" improves Voyage retrieval)
+        query_embedding = self.generate_embedding(query, input_type="query")
         if query_embedding is None:
             # No API key — fall back to text search
             return self.memory_search(query, project_id, source, limit), "text_fallback"
@@ -652,11 +722,12 @@ class PGStore:
     def memory_backfill_embeddings(self, batch_size=50):
         """Backfill embeddings for memories that don't have one yet.
 
+        Requires VOYAGE_API_KEY or OPENAI_API_KEY.
         Returns dict with counts of processed, succeeded, failed.
         """
-        api_key = os.environ.get("OPENAI_API_KEY")
-        if not api_key:
-            return {"error": "OPENAI_API_KEY not set", "processed": 0}
+        provider_name, cfg = PGStore._detect_embedding_provider()
+        if cfg is None:
+            return {"error": "No embedding API key set (VOYAGE_API_KEY or OPENAI_API_KEY)", "processed": 0}
 
         with self._get_conn() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -674,7 +745,7 @@ class PGStore:
         succeeded = 0
         failed = 0
         for row in rows:
-            embedding = self.generate_embedding(row["text"])
+            embedding = self.generate_embedding(row["text"], input_type="document")
             if embedding:
                 try:
                     with self._get_conn() as conn:
@@ -704,7 +775,8 @@ class PGStore:
         }
 
     def memory_embedding_stats(self):
-        """Get statistics about embedding coverage."""
+        """Get statistics about embedding coverage and active provider."""
+        provider_name, cfg = PGStore._detect_embedding_provider()
         with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
@@ -720,6 +792,9 @@ class PGStore:
                     "with_embedding": row[1],
                     "without_embedding": row[2],
                     "coverage_pct": round(row[1] / max(row[0], 1) * 100, 1),
+                    "provider": provider_name or "none",
+                    "model": cfg["default_model"] if cfg else "none",
+                    "dimensions": cfg["dimensions"] if cfg else 0,
                 }
 
     # ═══════════════════════════════════════════════════════

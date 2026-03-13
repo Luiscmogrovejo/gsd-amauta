@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS gsd_memory (
     tags        JSONB DEFAULT '[]'::jsonb,
     metadata    JSONB DEFAULT '{}'::jsonb,
     project_id  VARCHAR(128),
-    embedding   vector(1536),  -- for future semantic search
+    embedding   vector(1024),  -- semantic search via Voyage AI or OpenAI (1024 dims)
     created_at  TIMESTAMPTZ DEFAULT NOW(),
     updated_at  TIMESTAMPTZ DEFAULT NOW()
 );

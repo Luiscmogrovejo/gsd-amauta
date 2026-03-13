@@ -863,6 +863,13 @@ async function cmdEmbeddingStats(args) {
   console.log(`  With embeddings:   \x1b[92m${d.with_embedding}\x1b[0m`);
   console.log(`  Without embeddings: ${d.without_embedding}`);
   console.log(`  Coverage:          ${d.coverage_pct}%`);
+  console.log(`\n\x1b[1mProvider\x1b[0m`);
+  console.log(`  Active:     ${d.provider === 'none' ? '\x1b[91mnone (no API key set)\x1b[0m' : `\x1b[92m${d.provider}\x1b[0m`}`);
+  console.log(`  Model:      ${d.model || 'none'}`);
+  console.log(`  Dimensions: ${d.dimensions || 0}`);
+  if (d.provider === 'none') {
+    console.log(`\n  Set VOYAGE_API_KEY (recommended) or OPENAI_API_KEY to enable embeddings.`);
+  }
   console.log('');
 }
 

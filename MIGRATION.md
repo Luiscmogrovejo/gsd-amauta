@@ -52,7 +52,22 @@ export GSD_POSTGRES_URL="postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta"
 
 # Optional: Perplexity research
 export PERPLEXITY_API_KEY="your-key-here"
+
+# Optional: Semantic search — choose one (Voyage AI recommended)
+export VOYAGE_API_KEY="your-key-here"     # Recommended (Anthropic partner, voyage-code-3)
+# OR
+export OPENAI_API_KEY="your-key-here"     # Alternative (text-embedding-3-small)
+
+# Optional: Force a specific embedding provider
+# export GSD_EMBEDDING_PROVIDER=voyage    # or "openai"
 ```
+
+**Embedding provider selection**: The system auto-detects which provider to use:
+1. If `VOYAGE_API_KEY` is set → uses **Voyage AI `voyage-code-3`** (optimized for code retrieval, Anthropic-recommended)
+2. If only `OPENAI_API_KEY` is set → uses **OpenAI `text-embedding-3-small`**
+3. If neither is set → falls back to PostgreSQL full-text search (keyword-based, still functional)
+
+Override auto-detection with `GSD_EMBEDDING_PROVIDER=voyage|openai`. Both providers produce 1024-dimension vectors.
 
 ## Step 4: Verify Installation
 
@@ -72,9 +87,37 @@ node ~/.claude/gsd-amauta/get-shit-done/bin/gsd-research.cjs check-providers
 cd ~/.claude/gsd-amauta && npm test
 ```
 
-Expected: all health checks return `"status": "ok"`, tests pass.
+Expected: all health checks return `"status": "ok"`, 583 tests pass.
 
-## Step 5: Migrate Existing Projects
+## Step 5: Apply Database Migrations
+
+If upgrading from an earlier version:
+
+```bash
+# Migration 002: HNSW index for semantic search
+psql "$GSD_POSTGRES_URL" -f ~/.claude/gsd-amauta/migrations/002-embedding-index.sql
+
+# Migration 003: Standardize embeddings to 1024 dimensions (Voyage AI + OpenAI)
+# WARNING: Clears existing embeddings — re-run backfill after
+psql "$GSD_POSTGRES_URL" -f ~/.claude/gsd-amauta/migrations/003-embedding-1024.sql
+```
+
+## Step 6: Backfill Embeddings (Optional)
+
+If you have existing memories and want semantic search:
+
+```bash
+# Check current embedding coverage and active provider
+node ~/.claude/gsd-amauta/get-shit-done/bin/gsd-memory.cjs embedding-stats
+
+# Backfill all memories without embeddings (requires VOYAGE_API_KEY or OPENAI_API_KEY)
+node ~/.claude/gsd-amauta/get-shit-done/bin/gsd-memory.cjs backfill-embeddings
+
+# Test semantic search
+node ~/.claude/gsd-amauta/get-shit-done/bin/gsd-memory.cjs semantic-search "how to handle auth errors"
+```
+
+## Step 7: Migrate Existing Projects
 
 For existing projects with `.planning/` directories:
 
