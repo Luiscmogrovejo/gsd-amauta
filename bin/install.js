@@ -2484,7 +2484,7 @@ const { execFileSync: execSync2, spawn: spawn2, execSync: shellExec } = require(
  * @param {string} targetDir - The installation target directory
  * @returns {object} Summary of what was installed
  */
-function installAmauta(targetDir) {
+async function installAmauta(targetDir) {
   const pluginRoot = path.resolve(__dirname, '..');
   const summary = { docker: false, pg: false, daemon: false, cliTools: [], config: false };
 
@@ -2676,6 +2676,9 @@ function installAmauta(targetDir) {
 
   const configDir = path.join(pluginRoot, 'get-shit-done', 'templates');
   const configPath = path.join(configDir, 'config.json');
+  // Detect RLM service once — used in both the update and create branches
+  const rlmPort = parseInt(process.env.GSD_RLM_PORT || '18798', 10);
+  const rlmRunning = await isPortOpen('127.0.0.1', rlmPort, 800);
   if (fs.existsSync(configPath)) {
     try {
       const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
@@ -2685,8 +2688,16 @@ function installAmauta(targetDir) {
       config.amauta.pg_enabled = summary.pg;
       config.amauta.pg_url = summary.pg ? (process.env.GSD_POSTGRES_URL || 'postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta') : null;
       config.amauta.daemon_enabled = summary.daemon;
-      config.amauta.rlm_enabled = false; // Will be enabled when RLM service is built
-      config.amauta.research_chain = ['memory', 'skb', 'context7', 'perplexity', 'webfetch'];
+      // Set RLM enabled: if service running → enable; otherwise preserve existing value (don't downgrade)
+      if (rlmRunning) {
+        config.amauta.rlm_enabled = true;
+        if (!config.amauta.rlm_fallback_to_full_files) config.amauta.rlm_fallback_to_full_files = true;
+      } else if (config.amauta.rlm_enabled === undefined) {
+        config.amauta.rlm_enabled = false; // Default off when service not detected
+      }
+      // Always ensure fallback is set
+      if (config.amauta.rlm_fallback_to_full_files === undefined) config.amauta.rlm_fallback_to_full_files = true;
+      config.amauta.research_chain = config.amauta.research_chain || ['memory', 'skb', 'context7', 'perplexity', 'webfetch'];
       fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
       summary.config = true;
       console.log(`  ${green}✓${reset} Updated config.json with Amauta settings`);
@@ -2701,7 +2712,8 @@ function installAmauta(targetDir) {
         pg_enabled: summary.pg,
         pg_url: summary.pg ? (process.env.GSD_POSTGRES_URL || 'postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta') : null,
         daemon_enabled: summary.daemon,
-        rlm_enabled: false,
+        rlm_enabled: rlmRunning,
+        rlm_fallback_to_full_files: true,
         research_chain: ['memory', 'skb', 'context7', 'perplexity', 'webfetch'],
       },
     };
@@ -2732,6 +2744,24 @@ function installAmauta(targetDir) {
 /**
  * Check if a command is available on the system.
  */
+/**
+ * Check if a TCP port is open (non-blocking, with timeout).
+ * Used to detect whether RLM / daemon services are running during install.
+ */
+function isPortOpen(host, port, timeoutMs = 800) {
+  return new Promise((resolve) => {
+    const net = require('net');
+    const sock = new net.Socket();
+    let done = false;
+    const finish = (result) => { if (!done) { done = true; sock.destroy(); resolve(result); } };
+    sock.setTimeout(timeoutMs);
+    sock.on('connect', () => finish(true));
+    sock.on('error', () => finish(false));
+    sock.on('timeout', () => finish(false));
+    try { sock.connect(port, host); } catch { finish(false); }
+  });
+}
+
 function checkCommand(cmd, args) {
   try {
     shellExec(`${cmd} ${args.join(' ')}`, {
@@ -2779,7 +2809,7 @@ function installAllRuntimes(runtimes, isGlobal, isInteractive) {
       const targetDir = isGlobal
         ? getGlobalDir(claudeResult.runtime, explicitConfigDir)
         : path.join(process.cwd(), getDirName(claudeResult.runtime));
-      installAmauta(targetDir);
+      installAmauta(targetDir).catch(err => console.log(`  ${yellow}⚠${reset} Amauta setup error: ${err.message}`));
     }
   };
 
