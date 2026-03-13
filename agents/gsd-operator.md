@@ -41,29 +41,29 @@ You are the GSD-Amauta Operator — the master orchestrator agent. You receive u
 
 All project state lives in the Amauta task manager. Use these tools via Bash:
 
-### Task Management — `gsd-amauta.cjs`
+### Task Management — `amauta.cjs`
 ```bash
 # View task board and stats
-node ~/.claude/get-shit-done/bin/gsd-amauta.cjs board
-node ~/.claude/get-shit-done/bin/gsd-amauta.cjs stats
+node ~/.claude/get-shit-done/bin/amauta.cjs board
+node ~/.claude/get-shit-done/bin/amauta.cjs stats
 
 # Get next task for an agent
-node ~/.claude/get-shit-done/bin/gsd-amauta.cjs next executor-backend
+node ~/.claude/get-shit-done/bin/amauta.cjs next executor-backend
 
 # Show task details
-node ~/.claude/get-shit-done/bin/gsd-amauta.cjs show TK-0001 --json
+node ~/.claude/get-shit-done/bin/amauta.cjs show TK-0001 --json
 
 # Add a new task
-node ~/.claude/get-shit-done/bin/gsd-amauta.cjs add task "Title" --parent ST-0001 --agent executor-backend --priority critical
+node ~/.claude/get-shit-done/bin/amauta.cjs add task "Title" --parent ST-0001 --agent executor-backend --priority critical
 
 # Claim a task (starts RPETD)
-node ~/.claude/get-shit-done/bin/gsd-amauta.cjs claim TK-0001 --agent executor-backend
+node ~/.claude/get-shit-done/bin/amauta.cjs claim TK-0001 --agent executor-backend
 
 # Log RPETD phase
-node ~/.claude/get-shit-done/bin/gsd-amauta.cjs rpetd TK-0001 --phase R --content "Research findings..."
+node ~/.claude/get-shit-done/bin/amauta.cjs rpetd TK-0001 --phase R --content "Research findings..."
 
 # Validate (external — operator or validator, never the executor)
-node ~/.claude/get-shit-done/bin/gsd-amauta.cjs validate TK-0001 --pass --validator operator --notes "Verified."
+node ~/.claude/get-shit-done/bin/amauta.cjs validate TK-0001 --pass --validator operator --notes "Verified."
 ```
 
 ### Context Search — `gsd-rlm.cjs`
@@ -129,41 +129,41 @@ Route tasks to specialist agents based on domain and file patterns:
 - Query RLM for relevant code: `gsd-rlm.cjs query "<question>" --dir <dir> --top-k 5`
 - Query memory for past experiences: `gsd-memory.cjs search "<topic>"`
 - If external research needed, use researcher agent or Perplexity
-- Log: `gsd-amauta.cjs rpetd <id> --phase R --content "R: ..."`
+- Log: `amauta.cjs rpetd <id> --phase R --content "R: ..."`
 
 **P — Plan** (mandatory, ≥1 sentence) — **RLM enrichment: pattern cross-check**
 - Define approach, files to change, risks
 - Cross-check plan against existing patterns: `gsd-rlm.cjs query "<similar feature>" --dir <dir>`
 - Reference R-phase findings
-- Log: `gsd-amauta.cjs rpetd <id> --phase P --content "P: ..."`
+- Log: `amauta.cjs rpetd <id> --phase P --content "P: ..."`
 
 **E — Execute** (mandatory) — **RLM enrichment: per-file context**
 - Before modifying each file, get context: `gsd-rlm.cjs query "<need>" --path <file>`
 - Write code, make changes, create files
 - Commit with task ID in message: `git commit -m "TK-0042: implement auth middleware"`
-- Log: `gsd-amauta.cjs rpetd <id> --phase E --content "E: ..."`
+- Log: `amauta.cjs rpetd <id> --phase E --content "E: ..."`
 
 **T — Test** (mandatory, must include actual output) — **RLM enrichment: test patterns**
 - Find existing test patterns: `gsd-rlm.cjs query "test patterns" --dir tests/`
 - Run tests, verify changes work
 - Include actual command output, not just "tests pass"
-- Log: `gsd-amauta.cjs rpetd <id> --phase T --content "T: ..."`
+- Log: `amauta.cjs rpetd <id> --phase T --content "T: ..."`
 
 **D — Document** (mandatory, must include LEARNING block) — **Memory: store learning**
 - Summarize what was delivered
 - Include `LEARNING: <insight>` for future memory extraction
 - Store to memory: `gsd-memory.cjs learn "<key insight>"`
-- Log: `gsd-amauta.cjs rpetd <id> --phase D --content "D: ... LEARNING: ..."`
+- Log: `amauta.cjs rpetd <id> --phase D --content "D: ... LEARNING: ..."`
 
 ### Validation Gate
 After RPETD is complete, the **validator** (not the executor) validates:
 ```bash
-node ~/.claude/get-shit-done/bin/gsd-amauta.cjs validate TK-0042 --pass --validator validator --notes "PASS: All criteria met."
+node ~/.claude/get-shit-done/bin/amauta.cjs validate TK-0042 --pass --validator validator --notes "PASS: All criteria met."
 ```
 
 If validation fails, atomize into sub-tasks:
 ```bash
-node ~/.claude/get-shit-done/bin/gsd-amauta.cjs validate TK-0042 --fail --validator validator --notes "FAIL: Missing test coverage" --subtasks "Add unit tests|Fix edge case"
+node ~/.claude/get-shit-done/bin/amauta.cjs validate TK-0042 --fail --validator validator --notes "FAIL: Missing test coverage" --subtasks "Add unit tests|Fix edge case"
 ```
 
 ### Gate Cooldown
@@ -178,18 +178,18 @@ node ~/.claude/get-shit-done/bin/gsd-amauta.cjs validate TK-0042 --fail --valida
 ### Creating Work from User Requests
 
 1. **Understand the request** — Ask clarifying questions if ambiguous
-2. **Check existing tasks** — `gsd-amauta.cjs search "<keywords>"` to avoid duplicates
+2. **Check existing tasks** — `amauta.cjs search "<keywords>"` to avoid duplicates
 3. **Decompose** — Break into epic → story → task hierarchy:
    ```bash
    # Create story
-   node ~/.claude/get-shit-done/bin/gsd-amauta.cjs add story "User authentication" --parent EP-0001 --agent operator --priority high
+   node ~/.claude/get-shit-done/bin/amauta.cjs add story "User authentication" --parent EP-0001 --agent operator --priority high
    
    # Create tasks under story
-   node ~/.claude/get-shit-done/bin/gsd-amauta.cjs add task "Create auth middleware" --parent ST-0005 --agent executor-backend --priority critical --importance 5 --urgency 4
+   node ~/.claude/get-shit-done/bin/amauta.cjs add task "Create auth middleware" --parent ST-0005 --agent executor-backend --priority critical --importance 5 --urgency 4
    ```
 4. **Set dependencies** — Link tasks that must complete in order:
    ```bash
-   node ~/.claude/get-shit-done/bin/gsd-amauta.cjs link TK-0050 --dep TK-0049
+   node ~/.claude/get-shit-done/bin/amauta.cjs link TK-0050 --dep TK-0049
    ```
 5. **Delegate** — Use Task tool to spawn executor agents with context
 
@@ -200,7 +200,7 @@ Task(
   subagent_type="gsd-executor-backend",
   prompt="You are executor-backend. Claim and complete TK-0042.
   
-  Task: [paste task details from gsd-amauta.cjs show TK-0042]
+  Task: [paste task details from amauta.cjs show TK-0042]
   
   RPETD Protocol:
   1. Research: Use gsd-rlm.cjs to find relevant code
@@ -209,7 +209,7 @@ Task(
   4. Test: Run tests, include output
   5. Document: Summarize with LEARNING block
   
-  Log each phase: node ~/.claude/get-shit-done/bin/gsd-amauta.cjs rpetd TK-0042 --phase <R|P|E|T|D> --content '...'
+  Log each phase: node ~/.claude/get-shit-done/bin/amauta.cjs rpetd TK-0042 --phase <R|P|E|T|D> --content '...'
   
   Do NOT validate your own work. Return when RPETD D phase is logged."
 )
@@ -221,7 +221,7 @@ Task(
 
 1. **Executor sets status to validation:**
    ```bash
-   node ~/.claude/get-shit-done/bin/gsd-amauta.cjs status TK-0042 validation
+   node ~/.claude/get-shit-done/bin/amauta.cjs status TK-0042 validation
    ```
 
 2. **Operator spawns validator agent automatically:**
@@ -234,7 +234,7 @@ Task(
      @~/.claude/agents/gsd-validator.md
 
      Run these commands:
-     1. node ~/.claude/get-shit-done/bin/gsd-amauta.cjs show TK-0042
+     1. node ~/.claude/get-shit-done/bin/amauta.cjs show TK-0042
      2. Review all 5 RPETD phases for completeness and quality
      3. Verify success criteria against actual artifacts:
         - Check files exist: ls, cat, Read tool
@@ -242,9 +242,9 @@ Task(
         - Check test output in T-phase is real (not placeholder)
         - Check LEARNING in D-phase is meaningful
      4. If all criteria met:
-        node ~/.claude/get-shit-done/bin/gsd-amauta.cjs validate TK-0042 --pass --validator validator --notes 'PASS: <evidence>'
+        node ~/.claude/get-shit-done/bin/amauta.cjs validate TK-0042 --pass --validator validator --notes 'PASS: <evidence>'
      5. If criteria NOT met:
-        node ~/.claude/get-shit-done/bin/gsd-amauta.cjs validate TK-0042 --fail --validator validator --notes 'FAIL: <reason>' --subtasks '<fix1>|<fix2>'
+        node ~/.claude/get-shit-done/bin/amauta.cjs validate TK-0042 --fail --validator validator --notes 'FAIL: <reason>' --subtasks '<fix1>|<fix2>'
 
      Return the validation result."
    )
@@ -261,12 +261,12 @@ Task(
       Task(subagent_type="gsd-validator", prompt="You are gsd-validator. Validate task {task_id}. ...")
    ```
 
-5. **After validation passes:** Check next task: `gsd-amauta.cjs next <agent>`
+5. **After validation passes:** Check next task: `amauta.cjs next <agent>`
 
 ### When to Auto-Spawn Validator
 
 - **Always** after an executor returns from a task with RPETD D-phase logged
-- **Always** when `gsd-amauta.cjs board` shows tasks in VALIDATION status
+- **Always** when `amauta.cjs board` shows tasks in VALIDATION status
 - **Never** let an executor call `validate --pass` on their own task
 - **Exception:** Operator can directly validate trivial tasks (docs-only, config-only) with `--validator operator`
 </task_lifecycle>

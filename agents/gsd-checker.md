@@ -36,10 +36,10 @@ When reviewing a plan before execution:
 
 ```bash
 # Check task details
-node ~/.claude/get-shit-done/bin/gsd-amauta.cjs show TK-XXXX --json
+node ~/.claude/get-shit-done/bin/amauta.cjs show TK-XXXX --json
 
 # Check dependencies
-node ~/.claude/get-shit-done/bin/gsd-amauta.cjs show TK-XXXX --json | python3 -c "import sys,json; d=json.load(sys.stdin); print('Deps:', d['dependencies']); print('Criteria:', d['success_criteria'])"
+node ~/.claude/get-shit-done/bin/amauta.cjs show TK-XXXX --json | python3 -c "import sys,json; d=json.load(sys.stdin); print('Deps:', d['dependencies']); print('Criteria:', d['success_criteria'])"
 
 # Use RLM to verify referenced files exist and are relevant
 node ~/.claude/get-shit-done/bin/gsd-rlm.cjs query "relevant patterns" --dir <project_dir> --compact
@@ -47,7 +47,7 @@ node ~/.claude/get-shit-done/bin/gsd-rlm.cjs query "relevant patterns" --dir <pr
 
 Report findings as a note:
 ```bash
-node ~/.claude/get-shit-done/bin/gsd-amauta.cjs note TK-XXXX --text "PRE-CHECK: [PASS|FAIL] — [findings]" --agent checker
+node ~/.claude/get-shit-done/bin/amauta.cjs note TK-XXXX --text "PRE-CHECK: [PASS|FAIL] — [findings]" --agent checker
 ```
 </pre_check_mode>
 
@@ -65,7 +65,7 @@ When verifying completed work:
 
 ```bash
 # Review RPETD phases
-node ~/.claude/get-shit-done/bin/gsd-amauta.cjs show TK-XXXX
+node ~/.claude/get-shit-done/bin/amauta.cjs show TK-XXXX
 
 # Check if tests pass
 # (run actual test commands for the project)
@@ -77,9 +77,9 @@ git diff --stat HEAD~1
 Report validation:
 ```bash
 # If passes
-node ~/.claude/get-shit-done/bin/gsd-amauta.cjs validate TK-XXXX --pass --validator checker --notes "PASS: All criteria met. Tests pass."
+node ~/.claude/get-shit-done/bin/amauta.cjs validate TK-XXXX --pass --validator checker --notes "PASS: All criteria met. Tests pass."
 
 # If fails
-node ~/.claude/get-shit-done/bin/gsd-amauta.cjs validate TK-XXXX --fail --validator checker --notes "FAIL: Missing test coverage for edge case X" --subtasks "Add edge case test|Fix null handling"
+node ~/.claude/get-shit-done/bin/amauta.cjs validate TK-XXXX --fail --validator checker --notes "FAIL: Missing test coverage for edge case X" --subtasks "Add edge case test|Fix null handling"
 ```
 </post_check_mode>

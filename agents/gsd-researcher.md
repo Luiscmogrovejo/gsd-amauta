@@ -84,6 +84,6 @@ Always structure findings as:
 
 Log to RPETD R-phase when research is for a specific task:
 ```bash
-node ~/.claude/get-shit-done/bin/gsd-amauta.cjs rpetd TK-XXXX --phase R --content "R: [research summary with source attribution]"
+node ~/.claude/get-shit-done/bin/amauta.cjs rpetd TK-XXXX --phase R --content "R: [research summary with source attribution]"
 ```
 </output_format>

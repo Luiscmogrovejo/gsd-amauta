@@ -32,7 +32,7 @@ GSD-Amauta is two systems fused together:
 │  GSD (Get Shit Done)          │  Amauta                          │
 │  ─────────────────────────    │  ──────────────────────────────  │
 │  Slash commands in Claude     │  Task management + agent system  │
-│  /gsd:new-project             │  gsd-amauta.cjs board            │
+│  /gsd:new-project             │  amauta.cjs board            │
 │  /gsd:plan-phase              │  11 specialist agents            │
 │  /gsd:execute-phase           │  RPETD pipeline enforcement      │
 │  Creates .planning/ files     │  PostgreSQL memory               │
@@ -192,7 +192,7 @@ that follows. Be specific about:
 After `/gsd:new-project`, have the operator create the task hierarchy:
 
 ```bash
-CLI="node ~/.claude/get-shit-done/bin/gsd-amauta.cjs"
+CLI="node ~/.claude/get-shit-done/bin/amauta.cjs"
 
 # Create epic (top-level project container)
 $CLI add epic "My Project v1.0" --agent operator --priority high
@@ -274,7 +274,7 @@ No agent can mark a task done without completing all 5 phases.
 ### How an Executor Runs a Task
 
 ```bash
-CLI="node ~/.claude/get-shit-done/bin/gsd-amauta.cjs"
+CLI="node ~/.claude/get-shit-done/bin/amauta.cjs"
 RLM="node ~/.claude/get-shit-done/bin/gsd-rlm.cjs"
 MEM="node ~/.claude/get-shit-done/bin/gsd-memory.cjs"
 
@@ -409,7 +409,7 @@ Task(
   
   Run research chain: memory → SKB → Perplexity → synthesize.
   Log findings to task TK-0015 R-phase:
-  node ~/.claude/get-shit-done/bin/gsd-amauta.cjs rpetd TK-0015 --phase R --content 'R: ...'
+  node ~/.claude/get-shit-done/bin/amauta.cjs rpetd TK-0015 --phase R --content 'R: ...'
   Return structured findings."
 )
 ```
@@ -514,7 +514,7 @@ Task(
   prompt="You are gsd-validator. Validate task TK-0042.
 
   Steps:
-  1. node ~/.claude/get-shit-done/bin/gsd-amauta.cjs show TK-0042
+  1. node ~/.claude/get-shit-done/bin/amauta.cjs show TK-0042
   2. Check all 5 RPETD phases for completeness
   3. Verify success criteria against actual artifacts:
      - Files exist: ls src/middleware/auth.ts
@@ -522,9 +522,9 @@ Task(
      - Test output in T-phase is real (not placeholder)
      - LEARNING in D-phase is meaningful
   4. If all pass:
-     node ~/.claude/get-shit-done/bin/gsd-amauta.cjs validate TK-0042 --pass --validator validator --notes 'PASS: all 4 criteria met, tests verified, LEARNING captured'
+     node ~/.claude/get-shit-done/bin/amauta.cjs validate TK-0042 --pass --validator validator --notes 'PASS: all 4 criteria met, tests verified, LEARNING captured'
   5. If any fail:
-     node ~/.claude/get-shit-done/bin/gsd-amauta.cjs validate TK-0042 --fail --validator validator --notes 'FAIL: T-phase missing actual output' --subtasks 'Add real test output to TK-0042'
+     node ~/.claude/get-shit-done/bin/amauta.cjs validate TK-0042 --fail --validator validator --notes 'FAIL: T-phase missing actual output' --subtasks 'Add real test output to TK-0042'
 
   Return the validation result."
 )
@@ -959,7 +959,7 @@ claude --dangerously-skip-permissions
 ### Task Management
 
 ```bash
-CLI="node ~/.claude/get-shit-done/bin/gsd-amauta.cjs"
+CLI="node ~/.claude/get-shit-done/bin/amauta.cjs"
 
 $CLI board                          # Kanban view
 $CLI stats                          # Summary counts

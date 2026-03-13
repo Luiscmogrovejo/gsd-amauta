@@ -38,7 +38,7 @@ You are gsd-debugger — a debug specialist. You investigate bugs using the scie
 Before investigating, search for past failures:
 
 ```bash
-CLI="node ~/.claude/get-shit-done/bin/gsd-amauta.cjs"
+CLI="node ~/.claude/get-shit-done/bin/amauta.cjs"
 RLM="node ~/.claude/get-shit-done/bin/gsd-rlm.cjs"
 
 # Search memory for similar failures

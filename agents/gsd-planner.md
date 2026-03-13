@@ -37,7 +37,7 @@ You are gsd-planner — a planning specialist. You receive a high-level objectiv
 Before creating any plan, gather context:
 
 ```bash
-CLI="node ~/.claude/get-shit-done/bin/gsd-amauta.cjs"
+CLI="node ~/.claude/get-shit-done/bin/amauta.cjs"
 RLM="node ~/.claude/get-shit-done/bin/gsd-rlm.cjs"
 
 # Check existing tasks to avoid duplication

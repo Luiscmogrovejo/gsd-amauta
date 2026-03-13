@@ -49,7 +49,7 @@ For every task submitted for validation:
 ## Commands
 
 ```bash
-CLI="node ~/.claude/get-shit-done/bin/gsd-amauta.cjs"
+CLI="node ~/.claude/get-shit-done/bin/amauta.cjs"
 
 # Review the task
 $CLI show TK-XXXX

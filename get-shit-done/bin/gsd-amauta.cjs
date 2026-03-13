@@ -304,7 +304,7 @@ async function cmdStats(useDaemon, jsonMode) {
 }
 
 async function cmdShow(useDaemon, id, jsonMode) {
-  if (!id) die('Usage: gsd-amauta show <id> [--json]');
+  if (!id) die('Usage: amauta show <id> [--json]');
   const args = jsonMode ? ['show', id, '--json'] : ['show', id];
   if (useDaemon) {
     // Use exec for --json passthrough
@@ -323,7 +323,7 @@ async function cmdShow(useDaemon, id, jsonMode) {
 }
 
 async function cmdNext(useDaemon, agent, jsonMode) {
-  if (!agent) die('Usage: gsd-amauta next <agent>');
+  if (!agent) die('Usage: amauta next <agent>');
   if (useDaemon) {
     const { data } = await httpRequest('GET', `/api/next/${agent}`);
     printResponse(data, true); // next always returns JSON
@@ -359,7 +359,7 @@ async function cmdAdd(useDaemon, argv, jsonMode) {
   // argv: [type, title, ...flags]
   const type = argv[0];
   const title = argv[1];
-  if (!type || !title) die('Usage: gsd-amauta add <type> <title> [--parent P] [--agent A] [--priority P] ...');
+  if (!type || !title) die('Usage: amauta add <type> <title> [--parent P] [--agent A] [--priority P] ...');
   const flags = parseFlags(argv, 2);
   const body = { type, title, ...flags };
 
@@ -383,7 +383,7 @@ async function cmdAdd(useDaemon, argv, jsonMode) {
 }
 
 async function cmdClaim(useDaemon, id, flags, jsonMode) {
-  if (!id) die('Usage: gsd-amauta claim <id> --agent <agent>');
+  if (!id) die('Usage: amauta claim <id> --agent <agent>');
   const body = { id, ...flags };
 
   if (useDaemon) {
@@ -399,7 +399,7 @@ async function cmdClaim(useDaemon, id, flags, jsonMode) {
 }
 
 async function cmdRpetd(useDaemon, id, flags, jsonMode) {
-  if (!id) die('Usage: gsd-amauta rpetd <id> --phase P --content "..."');
+  if (!id) die('Usage: amauta rpetd <id> --phase P --content "..."');
   if (!flags.phase) die('--phase is required (R, P, E, T, or D)');
   if (!flags.content) die('--content is required');
   const body = { id, ...flags };
@@ -594,7 +594,7 @@ async function checkValidationGates(useDaemon, id, flags) {
 }
 
 async function cmdValidate(useDaemon, id, flags, jsonMode) {
-  if (!id) die('Usage: gsd-amauta validate <id> --pass/--fail [--validator V] [--notes N] [--force]');
+  if (!id) die('Usage: amauta validate <id> --pass/--fail [--validator V] [--notes N] [--force]');
   if (flags.pass_result === undefined) die('--pass or --fail is required');
 
   // Check validation gates (unless --force)
@@ -701,7 +701,7 @@ async function promoteToSKB(useDaemon, taskId) {
 }
 
 async function cmdNote(useDaemon, id, flags, jsonMode) {
-  if (!id) die('Usage: gsd-amauta note <id> --text "..." [--agent A]');
+  if (!id) die('Usage: amauta note <id> --text "..." [--agent A]');
   if (!flags.text) die('--text is required');
   const body = { id, ...flags };
 
@@ -718,7 +718,7 @@ async function cmdNote(useDaemon, id, flags, jsonMode) {
 }
 
 async function cmdStatus(useDaemon, id, statusTo, flags, jsonMode) {
-  if (!id || !statusTo) die('Usage: gsd-amauta status <id> <new-status> [--agent A]');
+  if (!id || !statusTo) die('Usage: amauta status <id> <new-status> [--agent A]');
   const body = { id, status_to: statusTo, ...flags };
 
   if (useDaemon) {
@@ -734,7 +734,7 @@ async function cmdStatus(useDaemon, id, statusTo, flags, jsonMode) {
 }
 
 async function cmdSearch(useDaemon, query, jsonMode) {
-  if (!query) die('Usage: gsd-amauta search <query>');
+  if (!query) die('Usage: amauta search <query>');
 
   if (useDaemon) {
     const { data } = await httpRequest('POST', '/api/search', { query });
@@ -747,7 +747,7 @@ async function cmdSearch(useDaemon, query, jsonMode) {
 }
 
 async function cmdScore(useDaemon, id, jsonMode) {
-  if (!id) die('Usage: gsd-amauta score <id>');
+  if (!id) die('Usage: amauta score <id>');
 
   if (useDaemon) {
     const { data } = await httpRequest('GET', `/api/score/${id}`);
@@ -760,7 +760,7 @@ async function cmdScore(useDaemon, id, jsonMode) {
 }
 
 async function cmdAssign(useDaemon, id, flags, jsonMode) {
-  if (!id) die('Usage: gsd-amauta assign <id> --agent <agent>');
+  if (!id) die('Usage: amauta assign <id> --agent <agent>');
   if (!flags.agent) die('--agent is required');
   const body = { id, ...flags };
 
@@ -776,7 +776,7 @@ async function cmdAssign(useDaemon, id, flags, jsonMode) {
 }
 
 async function cmdLink(useDaemon, id, flags, jsonMode) {
-  if (!id) die('Usage: gsd-amauta link <id> --dep <dep-id>');
+  if (!id) die('Usage: amauta link <id> --dep <dep-id>');
   if (!flags.dep) die('--dep is required');
 
   if (useDaemon) {
@@ -790,7 +790,7 @@ async function cmdLink(useDaemon, id, flags, jsonMode) {
 }
 
 async function cmdUnlink(useDaemon, id, flags, jsonMode) {
-  if (!id) die('Usage: gsd-amauta unlink <id> --dep <dep-id>');
+  if (!id) die('Usage: amauta unlink <id> --dep <dep-id>');
   if (!flags.dep) die('--dep is required');
 
   if (useDaemon) {
@@ -804,7 +804,7 @@ async function cmdUnlink(useDaemon, id, flags, jsonMode) {
 }
 
 async function cmdUpdate(useDaemon, id, argv, jsonMode) {
-  if (!id) die('Usage: gsd-amauta update <id> [--field val ...]');
+  if (!id) die('Usage: amauta update <id> [--field val ...]');
 
   if (useDaemon) {
     // Pass through via exec for complex flag sets
@@ -819,7 +819,7 @@ async function cmdUpdate(useDaemon, id, argv, jsonMode) {
 }
 
 async function cmdDelete(useDaemon, id, jsonMode) {
-  if (!id) die('Usage: gsd-amauta delete <id>');
+  if (!id) die('Usage: amauta delete <id>');
 
   if (useDaemon) {
     const { data } = await httpRequest('POST', '/api/exec', { args: ['delete', id] });
@@ -832,7 +832,7 @@ async function cmdDelete(useDaemon, id, jsonMode) {
 }
 
 async function cmdExec(useDaemon, rawArgs, jsonMode) {
-  if (!rawArgs.length) die('Usage: gsd-amauta exec <...args>');
+  if (!rawArgs.length) die('Usage: amauta exec <...args>');
 
   if (useDaemon) {
     const { data } = await httpRequest('POST', '/api/exec', { args: rawArgs });
@@ -845,7 +845,7 @@ async function cmdExec(useDaemon, rawArgs, jsonMode) {
 }
 
 async function cmdDaemon(subcommand) {
-  if (!subcommand) die('Usage: gsd-amauta daemon start|stop|status|run');
+  if (!subcommand) die('Usage: amauta daemon start|stop|status|run');
 
   if (subcommand === 'status') {
     const running = await isDaemonRunning();
@@ -929,12 +929,50 @@ async function main() {
   const rest = rawArgs.slice(1);
 
   if (!command) {
-    die(
-      'Usage: gsd-amauta <command> [args] [--json]\n' +
-      'Commands: board, stats, show, next, list, add, claim, rpetd, validate,\n' +
-      '          note, status, search, score, assign, link, unlink, update,\n' +
-      '          delete, exec, daemon'
+    process.stdout.write(
+      '\n' +
+      '  \x1b[36m█████╗ ███╗   ███╗ █████╗ ██╗   ██╗████████╗ █████╗\x1b[0m\n' +
+      '  \x1b[36m██╔══██╗████╗ ████║██╔══██╗██║   ██║╚══██╔══╝██╔══██╗\x1b[0m\n' +
+      '  \x1b[36m███████║██╔████╔██║███████║██║   ██║   ██║   ███████║\x1b[0m\n' +
+      '  \x1b[36m██╔══██║██║╚██╔╝██║██╔══██║██║   ██║   ██║   ██╔══██║\x1b[0m\n' +
+      '  \x1b[36m██║  ██║██║ ╚═╝ ██║██║  ██║╚██████╔╝   ██║   ██║  ██║\x1b[0m\n' +
+      '  \x1b[36m╚═╝  ╚═╝╚═╝     ╚═╝╚═╝  ╚═╝ ╚═════╝    ╚═╝   ╚═╝  ╚═╝\x1b[0m\n' +
+      '  \x1b[2mv1  ·  Multi-agent task management with RPETD pipeline\x1b[0m\n' +
+      '\n' +
+      '  \x1b[33mUsage:\x1b[0m  amauta <command> [args] [--json]\n' +
+      '\n' +
+      '  \x1b[33mTask commands:\x1b[0m\n' +
+      '    board                       Kanban view of all tasks\n' +
+      '    stats                       Task counts by status\n' +
+      '    list [--type T] [--status S] [--agent A]\n' +
+      '    show <id> [--json]          Full task details\n' +
+      '    next <agent> [--json]       Next task for an agent\n' +
+      '    search <query>              Full-text task search\n' +
+      '    score <id>                  Priority score breakdown\n' +
+      '\n' +
+      '  \x1b[33mCreate / update:\x1b[0m\n' +
+      '    add <type> <title> [--parent ID] [--agent A] [--priority P]\n' +
+      '                            type: epic | story | task\n' +
+      '    update <id> [--field val ...]\n' +
+      '    status <id> <new-status>\n' +
+      '    assign <id> --agent <agent>\n' +
+      '    note <id> --text "..." [--agent A]\n' +
+      '    link <id> --dep <dep-id>    Add dependency\n' +
+      '    unlink <id> --dep <dep-id>  Remove dependency\n' +
+      '    delete <id>\n' +
+      '\n' +
+      '  \x1b[33mRPETD pipeline:\x1b[0m\n' +
+      '    claim <id> --agent <agent>\n' +
+      '    rpetd <id> --phase <R|P|E|T|D> --content "..."\n' +
+      '    validate <id> --pass|--fail --validator <agent> --notes "..."\n' +
+      '                [--subtasks "Fix A|Add B"] [--force]\n' +
+      '\n' +
+      '  \x1b[33mDaemon:\x1b[0m\n' +
+      '    daemon start|stop|status|run\n' +
+      '    exec <...args>              Raw passthrough to amauta.py\n' +
+      '\n'
     );
+    process.exit(1);
   }
 
   // Daemon subcommand doesn't need the daemon running

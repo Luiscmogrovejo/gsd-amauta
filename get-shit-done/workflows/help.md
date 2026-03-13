@@ -15,16 +15,16 @@ docker start gsd-postgres
 python3 ~/gsd-amauta/services/amauta-daemon.py start
 
 # Core task workflow
-node ~/.claude/get-shit-done/bin/gsd-amauta.cjs add epic "My Project"
-node ~/.claude/get-shit-done/bin/gsd-amauta.cjs add story "Feature A" --parent EP-0001
-node ~/.claude/get-shit-done/bin/gsd-amauta.cjs add task "Implement API" --parent ST-0001 --agent executor-backend
-node ~/.claude/get-shit-done/bin/gsd-amauta.cjs claim TK-0001 --agent executor-backend
-node ~/.claude/get-shit-done/bin/gsd-amauta.cjs rpetd TK-0001 --phase R --content "R: research findings..."
-node ~/.claude/get-shit-done/bin/gsd-amauta.cjs rpetd TK-0001 --phase P --content "P: plan..."
-node ~/.claude/get-shit-done/bin/gsd-amauta.cjs rpetd TK-0001 --phase E --content "E: implemented..."
-node ~/.claude/get-shit-done/bin/gsd-amauta.cjs rpetd TK-0001 --phase T --content "T: tests pass..."
-node ~/.claude/get-shit-done/bin/gsd-amauta.cjs rpetd TK-0001 --phase D --content "D: done. LEARNING: ..."
-node ~/.claude/get-shit-done/bin/gsd-amauta.cjs validate TK-0001 --pass --validator validator --notes "PASS"
+node ~/.claude/get-shit-done/bin/amauta.cjs add epic "My Project"
+node ~/.claude/get-shit-done/bin/amauta.cjs add story "Feature A" --parent EP-0001
+node ~/.claude/get-shit-done/bin/amauta.cjs add task "Implement API" --parent ST-0001 --agent executor-backend
+node ~/.claude/get-shit-done/bin/amauta.cjs claim TK-0001 --agent executor-backend
+node ~/.claude/get-shit-done/bin/amauta.cjs rpetd TK-0001 --phase R --content "R: research findings..."
+node ~/.claude/get-shit-done/bin/amauta.cjs rpetd TK-0001 --phase P --content "P: plan..."
+node ~/.claude/get-shit-done/bin/amauta.cjs rpetd TK-0001 --phase E --content "E: implemented..."
+node ~/.claude/get-shit-done/bin/amauta.cjs rpetd TK-0001 --phase T --content "T: tests pass..."
+node ~/.claude/get-shit-done/bin/amauta.cjs rpetd TK-0001 --phase D --content "D: done. LEARNING: ..."
+node ~/.claude/get-shit-done/bin/amauta.cjs validate TK-0001 --pass --validator validator --notes "PASS"
 ```
 
 ## Quick Start — GSD (Phase Planning)
@@ -381,10 +381,10 @@ Epic (EP-XXXX)
         └── Task (TK-XXXX)
 ```
 
-### gsd-amauta.cjs Commands
+### amauta Commands  (Amauta v1)
 
 ```bash
-CLI="node ~/.claude/get-shit-done/bin/gsd-amauta.cjs"
+CLI="node ~/.claude/get-shit-done/bin/amauta.cjs"
 
 # Board & stats
 $CLI board                              # Kanban view of all tasks
@@ -530,7 +530,7 @@ python3 ~/gsd-amauta/services/rlm-service.py &
 ├── agents/               # 11 specialist agent definitions
 ├── commands/gsd/         # Slash commands (source of truth)
 ├── get-shit-done/
-│   ├── bin/              # CLI tools (gsd-amauta.cjs, gsd-memory.cjs, etc.)
+│   ├── bin/              # CLI tools (amauta.cjs, gsd-memory.cjs, etc.)
 │   └── workflows/        # Workflow step files (installed copy)
 ├── services/
 │   ├── amauta-daemon.py  # HTTP daemon :18799
