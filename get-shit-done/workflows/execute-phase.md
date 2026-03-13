@@ -158,42 +158,74 @@ fi
    Pass paths only — executors read files themselves with their fresh 200k context.
    This keeps orchestrator context lean (~10-15%).
 
-   ```
-   Task(
-     subagent_type="gsd-executor-general",
-     model="{executor_model}",
-     prompt="
-       <objective>
-       Execute plan {plan_number} of phase {phase_number}-{phase_name}.
-       Commit each task atomically. Create SUMMARY.md. Update STATE.md and ROADMAP.md.
-       </objective>
+    **Route to specialist executor** based on the plan's file patterns:
+    - `.tsx/.jsx/.css/.html/.vue/.svelte` → `gsd-executor-frontend`
+    - `.py/.js/.ts/.go/.rs/.java/.sql` → `gsd-executor-backend`
+    - `Dockerfile/docker/ci/deploy/terraform` → `gsd-executor-infra`
+    - Everything else → `gsd-executor-general`
 
-       <execution_context>
-       @~/.claude/get-shit-done/workflows/execute-plan.md
-       @~/.claude/get-shit-done/templates/summary.md
-       @~/.claude/get-shit-done/references/checkpoints.md
-       @~/.claude/get-shit-done/references/tdd.md
-       </execution_context>
+    ```
+    Task(
+      subagent_type="{routed_executor}",
+      model="{executor_model}",
+      prompt="
+        <objective>
+        Execute plan {plan_number} of phase {phase_number}-{phase_name}.
+        Commit each task atomically. Create SUMMARY.md. Update STATE.md and ROADMAP.md.
+        </objective>
 
-       <files_to_read>
-       Read these files at execution start using the Read tool:
-       - {phase_dir}/{plan_file} (Plan)
-       - .planning/STATE.md (State)
-       - .planning/config.json (Config, if exists)
-       - ./CLAUDE.md (Project instructions, if exists — follow project-specific guidelines and coding conventions)
-       - .claude/skills/ or .agents/skills/ (Project skills, if either exists — list skills, read SKILL.md for each, follow relevant rules during implementation)
-       </files_to_read>
+        <execution_context>
+        @~/.claude/get-shit-done/workflows/execute-plan.md
+        @~/.claude/get-shit-done/templates/summary.md
+        @~/.claude/get-shit-done/references/checkpoints.md
+        @~/.claude/get-shit-done/references/tdd.md
+        </execution_context>
 
-       <success_criteria>
-       - [ ] All tasks executed
-       - [ ] Each task committed individually
-       - [ ] SUMMARY.md created in plan directory
-       - [ ] STATE.md updated with position and decisions
-       - [ ] ROADMAP.md updated with plan progress (via `roadmap update-plan-progress`)
-       </success_criteria>
-     "
-   )
-   ```
+        <amauta_enrichment>
+        BEFORE starting any work, run these context-enrichment queries:
+
+        1. RLM — find relevant existing code:
+           node ~/.claude/get-shit-done/bin/gsd-rlm.cjs query '{plan_objective}' --dir . --top-k 5 --compact 2>/dev/null || true
+
+        2. Memory — find past learnings relevant to this plan:
+           node ~/.claude/get-shit-done/bin/gsd-memory.cjs search '{plan_objective}' 2>/dev/null || true
+
+        3. If an Amauta task ID was assigned for this plan (check TASK_ID env or look for TK-XXXX in the plan), log RPETD phases as you work:
+           CLI='node ~/.claude/get-shit-done/bin/amauta.cjs'
+           $CLI rpetd {TASK_ID} --phase R --content 'R: [RLM findings + memory matches]' 2>/dev/null || true
+           $CLI rpetd {TASK_ID} --phase P --content 'P: [approach from plan]' 2>/dev/null || true
+           $CLI rpetd {TASK_ID} --phase E --content 'E: [what was built, files changed]' 2>/dev/null || true
+           $CLI rpetd {TASK_ID} --phase T --content 'T: [actual test output]' 2>/dev/null || true
+           $CLI rpetd {TASK_ID} --phase D --content 'D: [summary]. LEARNING: [insight]' 2>/dev/null || true
+
+        4. After completing all work, store the most important learning:
+           node ~/.claude/get-shit-done/bin/gsd-memory.cjs learn '{key_insight_from_this_plan}' 2>/dev/null || true
+
+        All Amauta commands are wrapped in || true — if services are unavailable, execution proceeds normally.
+        </amauta_enrichment>
+
+        <files_to_read>
+        Read these files at execution start using the Read tool:
+        - {phase_dir}/{plan_file} (Plan)
+        - .planning/STATE.md (State)
+        - .planning/config.json (Config, if exists)
+        - ./CLAUDE.md (Project instructions, if exists — follow project-specific guidelines and coding conventions)
+        - .claude/skills/ or .agents/skills/ (Project skills, if either exists — list skills, read SKILL.md for each, follow relevant rules during implementation)
+        </files_to_read>
+
+        <success_criteria>
+        - [ ] All tasks executed
+        - [ ] Each task committed individually
+        - [ ] SUMMARY.md created in plan directory
+        - [ ] STATE.md updated with position and decisions
+        - [ ] ROADMAP.md updated with plan progress (via `roadmap update-plan-progress`)
+        - [ ] RLM/memory queried before execution (if available)
+        - [ ] RPETD phases logged to Amauta (if task ID assigned)
+        - [ ] Key learning stored to memory (if available)
+        </success_criteria>
+      "
+    )
+    ```
 
 3. **Wait for all agents in wave to complete.**
 

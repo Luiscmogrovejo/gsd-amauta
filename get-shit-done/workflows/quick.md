@@ -396,7 +396,7 @@ Offer: 1) Force proceed, 2) Abort
 
 **Step 6: Spawn executor**
 
-Spawn gsd-executor-general with plan reference:
+Spawn executor with RLM/memory enrichment:
 
 ```
 Task(
@@ -410,11 +410,28 @@ Execute quick task ${quick_id}.
 - .claude/skills/ or .agents/skills/ (Project skills, if either exists — list skills, read SKILL.md for each, follow relevant rules during implementation)
 </files_to_read>
 
+<amauta_enrichment>
+BEFORE starting any work, run these context-enrichment queries:
+
+1. RLM — find relevant existing code:
+   node ~/.claude/get-shit-done/bin/gsd-rlm.cjs query '${DESCRIPTION}' --dir . --top-k 5 --compact 2>/dev/null || true
+
+2. Memory — find past learnings:
+   node ~/.claude/get-shit-done/bin/gsd-memory.cjs search '${DESCRIPTION}' 2>/dev/null || true
+
+3. After completing all work, store the most important learning:
+   node ~/.claude/get-shit-done/bin/gsd-memory.cjs learn '{key_insight}' 2>/dev/null || true
+
+All commands are wrapped in || true — if services are unavailable, execution proceeds normally.
+</amauta_enrichment>
+
 <constraints>
 - Execute all tasks in the plan
 - Commit each task atomically
 - Create summary at: ${QUICK_DIR}/${quick_id}-SUMMARY.md
 - Do NOT update ROADMAP.md (quick tasks are separate from planned phases)
+- Query RLM/memory before execution (if available)
+- Store key learning to memory after execution (if available)
 </constraints>
 ",
   subagent_type="gsd-executor-general",

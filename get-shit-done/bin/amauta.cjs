@@ -7,4 +7,4 @@
  *
  * Usage: node amauta.cjs <command> [args]
  */
-require('./gsd-amauta.cjs');
+require(require('path').join(__dirname, 'gsd-amauta.cjs'));

@@ -145,6 +145,8 @@ describe('SPAWN: spawn type consistency', () => {
         const matches = content.matchAll(/subagent_type="([^"]+)"/g);
         for (const match of matches) {
           const agentType = match[1];
+          // Skip template placeholder variables like {routed_executor}
+          if (agentType.startsWith('{') && agentType.endsWith('}')) continue;
           assert.ok(
             validAgentTypes.has(agentType),
             `${file} references unknown agent type: ${agentType}`

@@ -510,16 +510,27 @@ async function checkValidationGates(useDaemon, id, flags) {
   let phases = {}; // { R: '', P: '', E: '', T: '', D: '' }
   let taskData = null; // fallback text
   try {
-    // Always try JSON first (gives full untruncated phase content)
-    const jsonResult = runDirect(['show', id, '--json']);
-    const jsonStr = jsonResult.stdout || jsonResult.output || '';
-    if (jsonStr) {
-      const parsed = JSON.parse(jsonStr);
-      taskType = parsed.type || 'task';
-      phases = parsed.rpetd_phases || {};
+    if (useDaemon) {
+      // Use daemon exec route with --json — always reads from PG, correct path
+      const { data } = await httpRequest('POST', '/api/exec', { args: ['show', id, '--json'] });
+      const jsonStr = data.output || '';
+      if (jsonStr) {
+        const parsed = JSON.parse(jsonStr);
+        taskType = parsed.type || 'task';
+        phases = parsed.rpetd_phases || {};
+      }
+    } else {
+      // No daemon — call Python directly via runDirect
+      const jsonResult = runDirect(['show', id, '--json']);
+      const jsonStr = jsonResult.stdout || jsonResult.output || '';
+      if (jsonStr) {
+        const parsed = JSON.parse(jsonStr);
+        taskType = parsed.type || 'task';
+        phases = parsed.rpetd_phases || {};
+      }
     }
   } catch {
-    // JSON parse failed — fall back to text output
+    // JSON fetch/parse failed — fall back to text output
     try {
       if (useDaemon) {
         const { data } = await httpRequest('GET', `/api/show/${id}`);
