@@ -3,11 +3,31 @@ Display the complete GSD command reference. Output ONLY the reference content. D
 </purpose>
 
 <reference>
-# GSD Command Reference
+# GSD-Amauta Command Reference
 
-**GSD** (Get Shit Done) creates hierarchical project plans optimized for solo agentic development with Claude Code.
+**GSD-Amauta** combines spec-driven development (GSD) with a multi-agent task management system (Amauta). Every task follows the RPETD pipeline (Research → Plan → Execute → Test → Document) enforced by 11 specialist agents.
 
-## Quick Start
+## Quick Start — Amauta (Task Management)
+
+```bash
+# Start services (daemon + PostgreSQL)
+docker start gsd-postgres
+python3 ~/gsd-amauta/services/amauta-daemon.py start
+
+# Core task workflow
+node ~/.claude/get-shit-done/bin/gsd-amauta.cjs add epic "My Project"
+node ~/.claude/get-shit-done/bin/gsd-amauta.cjs add story "Feature A" --parent EP-0001
+node ~/.claude/get-shit-done/bin/gsd-amauta.cjs add task "Implement API" --parent ST-0001 --agent executor-backend
+node ~/.claude/get-shit-done/bin/gsd-amauta.cjs claim TK-0001 --agent executor-backend
+node ~/.claude/get-shit-done/bin/gsd-amauta.cjs rpetd TK-0001 --phase R --content "R: research findings..."
+node ~/.claude/get-shit-done/bin/gsd-amauta.cjs rpetd TK-0001 --phase P --content "P: plan..."
+node ~/.claude/get-shit-done/bin/gsd-amauta.cjs rpetd TK-0001 --phase E --content "E: implemented..."
+node ~/.claude/get-shit-done/bin/gsd-amauta.cjs rpetd TK-0001 --phase T --content "T: tests pass..."
+node ~/.claude/get-shit-done/bin/gsd-amauta.cjs rpetd TK-0001 --phase D --content "D: done. LEARNING: ..."
+node ~/.claude/get-shit-done/bin/gsd-amauta.cjs validate TK-0001 --pass --validator validator --notes "PASS"
+```
+
+## Quick Start — GSD (Phase Planning)
 
 1. `/gsd:new-project` - Initialize project (includes research, requirements, roadmap)
 2. `/gsd:plan-phase 1` - Create detailed plan for first phase
@@ -349,7 +369,180 @@ Join the GSD Discord community.
 
 Usage: `/gsd:join-discord`
 
+## Amauta Task Management CLI
+
+All task state lives in PostgreSQL via the Amauta daemon on `:18799`.
+
+### Task Hierarchy
+
+```
+Epic (EP-XXXX)
+  └── Story (ST-XXXX)
+        └── Task (TK-XXXX)
+```
+
+### gsd-amauta.cjs Commands
+
+```bash
+CLI="node ~/.claude/get-shit-done/bin/gsd-amauta.cjs"
+
+# Board & stats
+$CLI board                              # Kanban view of all tasks
+$CLI stats                              # Task statistics
+$CLI list [--type task] [--status pending] [--agent executor-backend]
+
+# Create items
+$CLI add epic "Title"
+$CLI add story "Title" --parent EP-0001 --agent operator
+$CLI add task "Title" --parent ST-0001 --agent executor-backend --priority high --importance 5 --urgency 4
+
+# Task lifecycle
+$CLI show TK-0001 [--json]             # Full details
+$CLI next executor-backend [--json]    # Next task for agent
+$CLI claim TK-0001 --agent executor-backend
+$CLI status TK-0001 validation         # Change status
+$CLI assign TK-0001 --agent executor-general
+$CLI link TK-0002 --dep TK-0001        # Add dependency
+$CLI note TK-0001 --text "..." --agent checker
+
+# RPETD pipeline
+$CLI rpetd TK-0001 --phase R --content "R: research findings..."
+$CLI rpetd TK-0001 --phase P --content "P: approach..."
+$CLI rpetd TK-0001 --phase E --content "E: implemented X, Y, Z"
+$CLI rpetd TK-0001 --phase T --content "T: npm test output..."
+$CLI rpetd TK-0001 --phase D --content "D: delivered. LEARNING: ..."
+
+# Validation (never self-validate — always a different agent)
+$CLI validate TK-0001 --pass --validator validator --notes "PASS: evidence"
+$CLI validate TK-0001 --fail --validator validator --notes "FAIL: reason" --subtasks "Fix A|Add test B"
+$CLI validate TK-0001 --pass --force --validator operator --notes "PASS: trivial task"
+
+# Search & score
+$CLI search "auth middleware"
+$CLI score TK-0001                      # Priority score breakdown
+```
+
+### gsd-memory.cjs Commands
+
+```bash
+MEM="node ~/.claude/get-shit-done/bin/gsd-memory.cjs"
+
+$MEM store --source lesson-learned --text "Always run migrations before deploy"
+$MEM store --source best-practice --text "Use connection pooling for PG"
+$MEM search "deployment failure"
+$MEM search "postgres" --json
+$MEM learn "key insight"               # Stores as auto_learning
+$MEM list [--limit 20]
+$MEM count
+$MEM health                            # Check daemon + PG status
+$MEM embedding-stats                   # Embedding provider info
+$MEM backfill-embeddings              # Re-embed memories after migration
+$MEM cross-project "react patterns" --tags react,typescript
+```
+
+### gsd-rlm.cjs Commands (Code Context)
+
+```bash
+RLM="node ~/.claude/get-shit-done/bin/gsd-rlm.cjs"
+
+$RLM query "how does auth work" --dir src/ --top-k 5
+$RLM query "database schema" --path migrations/001.sql
+$RLM chunk services/daemon.py          # See how file is chunked
+$RLM check-config --json               # Check RLM mode (rlm vs file-references)
+```
+
+### gsd-research.cjs Commands (Research Chain)
+
+```bash
+RES="node ~/.claude/get-shit-done/bin/gsd-research.cjs"
+
+$RES "PostgreSQL connection pooling best practices"
+$RES check-providers                   # Show available research providers
+```
+
+### Source-Aware Memory Scoring
+
+| Source | Bonus | Use For |
+|--------|-------|---------|
+| `lesson-learned` | +4 | Hard-won failures and fixes |
+| `best-practice` | +4 | Established patterns |
+| `auto_learning` | +3 | Agent-extracted insights |
+| `web_search_result` | +3 | Researched findings |
+| `session-learning` | +3 | Current session discoveries |
+| `distilled` | +2 | Summarized knowledge |
+| `rpetd_phase` | +1 | Phase documentation |
+
+### 11 Specialist Agents
+
+| Agent | Role | Spawned By |
+|-------|------|-----------|
+| `gsd-operator` | Master orchestrator, task routing | User directly |
+| `gsd-planner` | Task breakdown, dependency mapping | Operator |
+| `gsd-researcher` | 4-mode research chain | Operator |
+| `gsd-executor-frontend` | React/CSS/UI | Operator |
+| `gsd-executor-backend` | APIs/DB/Python/Node | Operator |
+| `gsd-executor-infra` | Docker/CI/CD/Terraform | Operator |
+| `gsd-executor-general` | Config/docs/scaffolding | Operator |
+| `gsd-checker` | Pre/post plan review | Operator |
+| `gsd-validator` | External validation gate | Operator (auto) |
+| `gsd-debugger` | Scientific bug investigation | /gsd:debug |
+| `gsd-roadmapper` | Phase/roadmap creation | /gsd:new-project |
+
+### RPETD Pipeline
+
+Every task goes through 5 mandatory phases:
+
+```
+R (Research)  → Query RLM + memory for context
+P (Plan)      → Define approach, files, risks
+E (Execute)   → Write code, commit with task ID
+T (Test)      → Run tests, include actual output
+D (Document)  → Summary with LEARNING block
+              ↓
+Validator (external) → --pass or --fail + subtasks
+```
+
+Gate rules:
+- 20-minute minimum between phases (prevents rushing)
+- No self-validation (executor ≠ validator)
+- Use `--force` to override for trivial tasks tagged `no-gitflow`
+
+### Service Health
+
+```bash
+# Check all services
+curl -s http://127.0.0.1:18799/health | python3 -m json.tool  # Amauta daemon
+curl -s http://127.0.0.1:18798/health | python3 -m json.tool  # RLM service
+docker ps --filter name=gsd-postgres                           # PostgreSQL
+
+# Start services
+docker start gsd-postgres
+python3 ~/gsd-amauta/services/amauta-daemon.py start
+python3 ~/gsd-amauta/services/rlm-service.py &
+```
+
 ## Files & Structure
+
+### Amauta Plugin Structure
+
+```
+~/gsd-amauta/
+├── agents/               # 11 specialist agent definitions
+├── commands/gsd/         # Slash commands (source of truth)
+├── get-shit-done/
+│   ├── bin/              # CLI tools (gsd-amauta.cjs, gsd-memory.cjs, etc.)
+│   └── workflows/        # Workflow step files (installed copy)
+├── services/
+│   ├── amauta-daemon.py  # HTTP daemon :18799
+│   ├── pg_store.py       # PostgreSQL + embedding store
+│   └── rlm-service.py    # RLM context engine :18798
+├── migrations/           # DB migrations (001-003)
+├── docker/               # Docker Compose for PostgreSQL
+├── data/                 # Task data (fallback JSON)
+└── amauta.py             # Core task manager (3920 lines)
+```
+
+### GSD Project Structure
 
 ```
 .planning/
