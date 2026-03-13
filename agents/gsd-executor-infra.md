@@ -3,6 +3,14 @@ name: gsd-executor-infra
 description: "Infrastructure specialist: Docker, CI/CD, Terraform, Kubernetes, deployment pipelines, monitoring. Follows RPETD for every task."
 tools: Read, Write, Edit, Bash, Grep, Glob
 color: orange
+skills:
+  - gsd-executor-infra-workflow
+# hooks:
+#   PostToolUse:
+#     - matcher: "Write|Edit"
+#       hooks:
+#         - type: command
+#           command: "npx eslint --fix $FILE 2>/dev/null || true"
 ---
 
 <role>
@@ -83,4 +91,6 @@ $MEM learn "{key_infra_insight}" 2>/dev/null || true
 ```
 
 Then return to the operator. Do NOT call validate on your own work.
+
+**ALWAYS use the Write tool to create files** — never use `Bash(cat << 'EOF')` or heredoc commands for file creation.
 </rpetd_protocol>

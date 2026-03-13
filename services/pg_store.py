@@ -21,6 +21,8 @@ import os
 import re
 import threading
 import time
+import urllib.request
+import urllib.error
 from contextlib import contextmanager
 from datetime import datetime
 from decimal import Decimal
@@ -230,6 +232,9 @@ class PGStore:
             text_rank = float(d.get("text_rank", 0))
             # Composite score: text relevance (0-1 range) * 10 + source bonus
             d["score"] = round(text_rank * 10 + source_bonus, 2)
+            # Convert Decimal text_rank to float for JSON serialization
+            if "text_rank" in d and isinstance(d["text_rank"], Decimal):
+                d["text_rank"] = float(d["text_rank"])
             # Convert datetime objects to strings for JSON serialization
             for key in ("created_at", "updated_at"):
                 if key in d and isinstance(d[key], datetime):
@@ -506,6 +511,216 @@ class PGStore:
                         if key in r and isinstance(r[key], datetime):
                             r[key] = r[key].isoformat()
                 return [dict(r) for r in results]
+
+    # ═══════════════════════════════════════════════════════
+    # Embedding / Semantic Search Operations
+    # ═══════════════════════════════════════════════════════
+
+    @staticmethod
+    def generate_embedding(text, model="text-embedding-3-small"):
+        """Generate a 1536-dimension embedding via OpenAI API.
+
+        Requires OPENAI_API_KEY environment variable.
+        Returns list[float] of length 1536, or None if API unavailable.
+        """
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            return None
+
+        # Truncate to ~8000 tokens (~32k chars) to stay within API limits
+        truncated = text[:32000] if len(text) > 32000 else text
+
+        payload = json.dumps({
+            "input": truncated,
+            "model": model,
+        }).encode("utf-8")
+
+        req = urllib.request.Request(
+            "https://api.openai.com/v1/embeddings",
+            data=payload,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}",
+            },
+            method="POST",
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+                return result["data"][0]["embedding"]
+        except Exception:
+            return None
+
+    def memory_store_with_embedding(self, text, source="agent", agent_id=None,
+                                     tags=None, metadata=None, project_id=None):
+        """Store a memory entry with auto-generated embedding.
+
+        Falls back to memory_store() without embedding if OPENAI_API_KEY is unset.
+        Returns the new memory ID.
+        """
+        embedding = self.generate_embedding(text)
+
+        if embedding is None:
+            # No API key or embedding failed — store without embedding
+            return self.memory_store(text, source, agent_id, tags, metadata, project_id)
+
+        with self._get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO gsd_memory (text, source, agent_id, tags, metadata, project_id, embedding)
+                    VALUES (%s, %s, %s, %s::jsonb, %s::jsonb, %s, %s::vector)
+                    RETURNING id
+                """, (
+                    text,
+                    source,
+                    agent_id,
+                    json.dumps(tags or []),
+                    json.dumps(metadata or {}),
+                    project_id,
+                    str(embedding),
+                ))
+                return cur.fetchone()[0]
+
+    def memory_semantic_search(self, query, project_id=None, source=None, limit=20):
+        """Search memories using cosine similarity on pgvector embeddings.
+
+        Requires OPENAI_API_KEY for query embedding generation.
+        Returns (results, method) tuple — method is 'vector' or 'text_fallback'.
+        Falls back to text-based memory_search() if embeddings unavailable.
+        """
+        # Generate query embedding
+        query_embedding = self.generate_embedding(query)
+        if query_embedding is None:
+            # No API key — fall back to text search
+            return self.memory_search(query, project_id, source, limit), "text_fallback"
+
+        with self._get_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                conditions = ["embedding IS NOT NULL"]
+                params = []
+
+                if project_id:
+                    conditions.append("project_id = %s")
+                    params.append(project_id)
+
+                if source:
+                    conditions.append("source = %s")
+                    params.append(source)
+
+                where = " AND ".join(conditions)
+
+                # Cosine distance: 1 - (a <=> b) gives similarity in [0, 1]
+                sql = f"""
+                    SELECT *,
+                        (1 - (embedding <=> %s::vector)) as semantic_similarity
+                    FROM gsd_memory
+                    WHERE {where}
+                    ORDER BY embedding <=> %s::vector
+                    LIMIT %s
+                """
+                vec_str = str(query_embedding)
+                cur.execute(sql, [vec_str] + params + [vec_str] + [limit])
+                results = cur.fetchall()
+
+                if not results:
+                    # No embeddings stored yet — fall back to text search
+                    return self.memory_search(query, project_id, source, limit), "text_fallback"
+
+                return self._score_semantic_results(results), "vector"
+
+    def _score_semantic_results(self, rows):
+        """Score semantic search results with source bonuses."""
+        scored = []
+        for row in rows:
+            d = dict(row)
+            source_bonus = SOURCE_SCORES.get(d.get("source", "agent"), 0)
+            similarity = float(d.get("semantic_similarity", 0))
+            # Composite: semantic similarity (0-1) * 10 + source bonus (0-4)
+            d["score"] = round(similarity * 10 + source_bonus, 2)
+            d["semantic_similarity"] = round(similarity, 4)
+            # Convert datetime objects to strings for JSON serialization
+            for key in ("created_at", "updated_at"):
+                if key in d and isinstance(d[key], datetime):
+                    d[key] = d[key].isoformat()
+            # Remove embedding from output (large binary)
+            d.pop("embedding", None)
+            scored.append(d)
+        scored.sort(key=lambda x: x["score"], reverse=True)
+        return scored
+
+    def memory_backfill_embeddings(self, batch_size=50):
+        """Backfill embeddings for memories that don't have one yet.
+
+        Returns dict with counts of processed, succeeded, failed.
+        """
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            return {"error": "OPENAI_API_KEY not set", "processed": 0}
+
+        with self._get_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT id, text FROM gsd_memory
+                    WHERE embedding IS NULL
+                    ORDER BY created_at DESC
+                    LIMIT %s
+                """, (batch_size,))
+                rows = cur.fetchall()
+
+        if not rows:
+            return {"processed": 0, "succeeded": 0, "failed": 0, "remaining": 0}
+
+        succeeded = 0
+        failed = 0
+        for row in rows:
+            embedding = self.generate_embedding(row["text"])
+            if embedding:
+                try:
+                    with self._get_conn() as conn:
+                        with conn.cursor() as cur:
+                            cur.execute("""
+                                UPDATE gsd_memory SET embedding = %s::vector
+                                WHERE id = %s
+                            """, (str(embedding), row["id"]))
+                    succeeded += 1
+                except Exception:
+                    failed += 1
+            else:
+                failed += 1
+
+        # Count remaining
+        remaining = 0
+        with self._get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM gsd_memory WHERE embedding IS NULL")
+                remaining = cur.fetchone()[0]
+
+        return {
+            "processed": len(rows),
+            "succeeded": succeeded,
+            "failed": failed,
+            "remaining": remaining,
+        }
+
+    def memory_embedding_stats(self):
+        """Get statistics about embedding coverage."""
+        with self._get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT
+                        COUNT(*) as total,
+                        COUNT(embedding) as with_embedding,
+                        COUNT(*) - COUNT(embedding) as without_embedding
+                    FROM gsd_memory
+                """)
+                row = cur.fetchone()
+                return {
+                    "total": row[0],
+                    "with_embedding": row[1],
+                    "without_embedding": row[2],
+                    "coverage_pct": round(row[1] / max(row[0], 1) * 100, 1),
+                }
 
     # ═══════════════════════════════════════════════════════
     # Cleanup

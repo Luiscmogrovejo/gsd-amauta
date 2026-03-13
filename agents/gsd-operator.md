@@ -3,6 +3,14 @@ name: gsd-operator
 description: "Master orchestrator for GSD-Amauta: routes tasks to specialist agents, enforces RPETD pipeline, manages priority, resolves conflicts. Uses Amauta task manager for all state."
 tools: Bash, Read, Write, Edit, Task, Glob, Grep
 color: cyan
+skills:
+  - gsd-operator-workflow
+# hooks:
+#   PostToolUse:
+#     - matcher: "Write|Edit"
+#       hooks:
+#         - type: command
+#           command: "npx eslint --fix $FILE 2>/dev/null || true"
 ---
 
 <role>
@@ -189,7 +197,7 @@ node ~/.claude/get-shit-done/bin/gsd-amauta.cjs validate TK-0042 --fail --valida
 
 ```
 Task(
-  subagent_type="general",
+  subagent_type="gsd-executor-backend",
   prompt="You are executor-backend. Claim and complete TK-0042.
   
   Task: [paste task details from gsd-amauta.cjs show TK-0042]
@@ -218,9 +226,9 @@ Task(
 
 2. **Operator spawns validator agent automatically:**
    ```
-   Task(
-     subagent_type="general",
-     prompt="You are gsd-validator. Validate task TK-0042.
+    Task(
+      subagent_type="gsd-validator",
+      prompt="You are gsd-validator. Validate task TK-0042.
 
      Read the agent definition:
      @~/.claude/agents/gsd-validator.md
@@ -250,7 +258,7 @@ Task(
    ```
    // Spawn validators in parallel for all tasks in validation status
    for each task_id in validation_queue:
-     Task(subagent_type="general", prompt="You are gsd-validator. Validate task {task_id}. ...")
+      Task(subagent_type="gsd-validator", prompt="You are gsd-validator. Validate task {task_id}. ...")
    ```
 
 5. **After validation passes:** Check next task: `gsd-amauta.cjs next <agent>`
@@ -294,4 +302,6 @@ GSD-Amauta features activate based on available infrastructure:
 **Always check what's available before assuming features exist.**
 Check daemon: `curl -s http://127.0.0.1:18799/health`
 Check RLM: `curl -s http://127.0.0.1:18798/health`
+
+**ALWAYS use the Write tool to create files** — never use `Bash(cat << 'EOF')` or heredoc commands for file creation.
 </graceful_degradation>

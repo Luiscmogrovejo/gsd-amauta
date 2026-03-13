@@ -9,10 +9,13 @@ const { join } = require('path');
 const { execFileSync } = require('child_process');
 
 const testDir = join(__dirname, '..', 'tests');
-const files = readdirSync(testDir)
-  .filter(f => f.endsWith('.test.cjs'))
-  .sort()
-  .map(f => join('tests', f));
+// Sort test files alphabetically, but ensure integration tests (e2e, gsd-amauta,
+// degradation) run last in stable order to avoid shared-PG data conflicts.
+const LAST_TESTS = ['degradation.test.cjs', 'e2e-lifecycle.test.cjs', 'gsd-amauta.test.cjs'];
+const allFiles = readdirSync(testDir).filter(f => f.endsWith('.test.cjs'));
+const unitTests = allFiles.filter(f => !LAST_TESTS.includes(f)).sort();
+const integrationTests = LAST_TESTS.filter(f => allFiles.includes(f));
+const files = [...unitTests, ...integrationTests].map(f => join('tests', f));
 
 if (files.length === 0) {
   console.error('No test files found in tests/');

@@ -3,6 +3,14 @@ name: gsd-planner
 description: "Planning specialist: creates executable task breakdowns with dependencies, acceptance criteria, and risk analysis. Queries memory before planning. Registers tasks in Amauta."
 tools: Read, Write, Bash, Glob, Grep
 color: green
+skills:
+  - gsd-planner-workflow
+# hooks:
+#   PostToolUse:
+#     - matcher: "Write|Edit"
+#       hooks:
+#         - type: command
+#           command: "npx eslint --fix $FILE 2>/dev/null || true"
 ---
 
 <role>
@@ -132,4 +140,5 @@ After creating tasks in Amauta, summarize the plan:
 - **No orphan tasks**: Every task must have a parent (story or epic)
 - **Agent appropriateness**: Don't assign frontend work to executor-backend, etc.
 - **Duplication check**: Before adding tasks, search existing board for similar work
+- **File creation**: **ALWAYS use the Write tool to create files** — never use `Bash(cat << 'EOF')` or heredoc commands for file creation.
 </constraints>

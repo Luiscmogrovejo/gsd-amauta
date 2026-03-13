@@ -15,7 +15,7 @@ const { convertClaudeToGeminiAgent } = require('../bin/install.js');
 describe('convertClaudeToGeminiAgent', () => {
   test('drops unsupported skills frontmatter while keeping converted tools', () => {
     const input = `---
-name: gsd-codebase-mapper
+name: gsd-operator
 description: Explores codebase and writes structured analysis documents.
 tools: Read, Bash, Grep, Glob, Write
 color: cyan
@@ -30,7 +30,7 @@ Use \${PHASE} in shell examples.
     const result = convertClaudeToGeminiAgent(input);
     const frontmatter = result.split('---')[1] || '';
 
-    assert.ok(frontmatter.includes('name: gsd-codebase-mapper'), 'keeps name');
+    assert.ok(frontmatter.includes('name: gsd-operator'), 'keeps name');
     assert.ok(frontmatter.includes('description: Explores codebase and writes structured analysis documents.'), 'keeps description');
     assert.ok(frontmatter.includes('tools:'), 'adds Gemini tools array');
     assert.ok(frontmatter.includes('  - read_file'), 'maps Read -> read_file');

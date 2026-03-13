@@ -25,8 +25,8 @@ function cmdInitExecutePhase(cwd, phase, raw) {
 
   const result = {
     // Models
-    executor_model: resolveModelInternal(cwd, 'gsd-executor'),
-    verifier_model: resolveModelInternal(cwd, 'gsd-verifier'),
+    executor_model: resolveModelInternal(cwd, 'gsd-executor-general'),
+    verifier_model: resolveModelInternal(cwd, 'gsd-validator'),
 
     // Config flags
     commit_docs: config.commit_docs,
@@ -97,9 +97,9 @@ function cmdInitPlanPhase(cwd, phase, raw) {
 
   const result = {
     // Models
-    researcher_model: resolveModelInternal(cwd, 'gsd-phase-researcher'),
+    researcher_model: resolveModelInternal(cwd, 'gsd-researcher'),
     planner_model: resolveModelInternal(cwd, 'gsd-planner'),
-    checker_model: resolveModelInternal(cwd, 'gsd-plan-checker'),
+    checker_model: resolveModelInternal(cwd, 'gsd-checker'),
 
     // Workflow flags
     research_enabled: config.research,
@@ -187,8 +187,8 @@ function cmdInitNewProject(cwd, raw) {
 
   const result = {
     // Models
-    researcher_model: resolveModelInternal(cwd, 'gsd-project-researcher'),
-    synthesizer_model: resolveModelInternal(cwd, 'gsd-research-synthesizer'),
+    researcher_model: resolveModelInternal(cwd, 'gsd-researcher'),
+    synthesizer_model: resolveModelInternal(cwd, 'gsd-researcher'),
     roadmapper_model: resolveModelInternal(cwd, 'gsd-roadmapper'),
 
     // Config
@@ -224,8 +224,8 @@ function cmdInitNewMilestone(cwd, raw) {
 
   const result = {
     // Models
-    researcher_model: resolveModelInternal(cwd, 'gsd-project-researcher'),
-    synthesizer_model: resolveModelInternal(cwd, 'gsd-research-synthesizer'),
+    researcher_model: resolveModelInternal(cwd, 'gsd-researcher'),
+    synthesizer_model: resolveModelInternal(cwd, 'gsd-researcher'),
     roadmapper_model: resolveModelInternal(cwd, 'gsd-roadmapper'),
 
     // Config
@@ -271,9 +271,9 @@ function cmdInitQuick(cwd, description, raw) {
   const result = {
     // Models
     planner_model: resolveModelInternal(cwd, 'gsd-planner'),
-    executor_model: resolveModelInternal(cwd, 'gsd-executor'),
-    checker_model: resolveModelInternal(cwd, 'gsd-plan-checker'),
-    verifier_model: resolveModelInternal(cwd, 'gsd-verifier'),
+    executor_model: resolveModelInternal(cwd, 'gsd-executor-general'),
+    checker_model: resolveModelInternal(cwd, 'gsd-checker'),
+    verifier_model: resolveModelInternal(cwd, 'gsd-validator'),
 
     // Config
     commit_docs: config.commit_docs,
@@ -343,7 +343,7 @@ function cmdInitVerifyWork(cwd, phase, raw) {
   const result = {
     // Models
     planner_model: resolveModelInternal(cwd, 'gsd-planner'),
-    checker_model: resolveModelInternal(cwd, 'gsd-plan-checker'),
+    checker_model: resolveModelInternal(cwd, 'gsd-checker'),
 
     // Config
     commit_docs: config.commit_docs,
@@ -574,7 +574,7 @@ function cmdInitMapCodebase(cwd, raw) {
 
   const result = {
     // Models
-    mapper_model: resolveModelInternal(cwd, 'gsd-codebase-mapper'),
+    mapper_model: resolveModelInternal(cwd, 'gsd-operator'),
 
     // Config
     commit_docs: config.commit_docs,
@@ -658,7 +658,7 @@ function cmdInitProgress(cwd, raw) {
 
   const result = {
     // Models
-    executor_model: resolveModelInternal(cwd, 'gsd-executor'),
+    executor_model: resolveModelInternal(cwd, 'gsd-executor-general'),
     planner_model: resolveModelInternal(cwd, 'gsd-planner'),
 
     // Config

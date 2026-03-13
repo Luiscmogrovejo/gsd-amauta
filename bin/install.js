@@ -17,17 +17,17 @@ const reset = '\x1b[0m';
 const GSD_CODEX_MARKER = '# GSD Agent Configuration \u2014 managed by get-shit-done installer';
 
 const CODEX_AGENT_SANDBOX = {
-  'gsd-executor': 'workspace-write',
+  'gsd-operator': 'workspace-write',
   'gsd-planner': 'workspace-write',
-  'gsd-phase-researcher': 'workspace-write',
-  'gsd-project-researcher': 'workspace-write',
-  'gsd-research-synthesizer': 'workspace-write',
-  'gsd-verifier': 'workspace-write',
-  'gsd-codebase-mapper': 'workspace-write',
+  'gsd-researcher': 'workspace-write',
+  'gsd-executor-frontend': 'workspace-write',
+  'gsd-executor-backend': 'workspace-write',
+  'gsd-executor-infra': 'workspace-write',
+  'gsd-executor-general': 'workspace-write',
   'gsd-roadmapper': 'workspace-write',
   'gsd-debugger': 'workspace-write',
-  'gsd-plan-checker': 'read-only',
-  'gsd-integration-checker': 'read-only',
+  'gsd-checker': 'read-only',
+  'gsd-validator': 'read-only',
 };
 
 // Get version from package.json

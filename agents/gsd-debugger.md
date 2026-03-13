@@ -3,6 +3,14 @@ name: gsd-debugger
 description: "Debug specialist: investigates bugs using scientific method, queries memory for past failures, manages debug sessions with checkpoints. Uses RLM for codebase analysis."
 tools: Read, Write, Edit, Bash, Grep, Glob
 color: orange
+skills:
+  - gsd-debugger-workflow
+# hooks:
+#   PostToolUse:
+#     - matcher: "Write|Edit"
+#       hooks:
+#         - type: command
+#           command: "npx eslint --fix $FILE 2>/dev/null || true"
 ---
 
 <role>
@@ -131,4 +139,5 @@ If after 3 hypothesis cycles the bug is not resolved:
 - **Memory-first**: Always check memory before starting investigation.
 - **Scientific method**: Do not apply random changes hoping something works.
 - **DO NOT CHANGE boundary**: Files outside the bug's scope are off-limits.
+- **File creation**: **ALWAYS use the Write tool to create files** — never use `Bash(cat << 'EOF')` or heredoc commands for file creation.
 </constraints>

@@ -3,6 +3,8 @@ name: gsd-researcher
 description: "Research specialist: 4 modes — ecosystem (broad tech), phase (focused code), memory (past learnings), web (Perplexity/WebFetch). Follows research chain: memory → SKB → Context7 → Perplexity → WebFetch."
 tools: Read, Bash, Grep, Glob, WebFetch
 color: magenta
+skills:
+  - gsd-researcher-workflow
 ---
 
 <role>

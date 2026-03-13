@@ -70,7 +70,7 @@ describe('getCodexSkillAdapterHeader', () => {
 describe('convertClaudeAgentToCodexAgent', () => {
   test('adds codex_agent_role header and cleans frontmatter', () => {
     const input = `---
-name: gsd-executor
+name: gsd-executor-general
 description: Executes GSD plans with atomic commits
 tools: Read, Write, Edit, Bash, Grep, Glob
 color: yellow
@@ -84,7 +84,7 @@ You are a GSD plan executor.
 
     // Frontmatter rebuilt with only name and description
     assert.ok(result.startsWith('---\n'), 'starts with frontmatter');
-    assert.ok(result.includes('"gsd-executor"'), 'has quoted name');
+    assert.ok(result.includes('"gsd-executor-general"'), 'has quoted name');
     assert.ok(result.includes('"Executes GSD plans with atomic commits"'), 'has quoted description');
     assert.ok(!result.includes('color: yellow'), 'drops color field');
     // Tools should be in <codex_agent_role> but NOT in frontmatter
@@ -94,7 +94,7 @@ You are a GSD plan executor.
 
     // Has codex_agent_role block
     assert.ok(result.includes('<codex_agent_role>'), 'has role header');
-    assert.ok(result.includes('role: gsd-executor'), 'role matches agent name');
+    assert.ok(result.includes('role: gsd-executor-general'), 'role matches agent name');
     assert.ok(result.includes('tools: Read, Write, Edit, Bash, Grep, Glob'), 'tools in role block');
     assert.ok(result.includes('purpose: Executes GSD plans with atomic commits'), 'purpose from description');
     assert.ok(result.includes('</codex_agent_role>'), 'has closing tag');
@@ -128,7 +128,7 @@ Run /gsd:execute-phase to proceed.`;
 
 describe('generateCodexAgentToml', () => {
   const sampleAgent = `---
-name: gsd-executor
+name: gsd-executor-general
 description: Executes plans
 tools: Read, Write, Edit
 color: yellow
@@ -137,24 +137,24 @@ color: yellow
 <role>You are an executor.</role>`;
 
   test('sets workspace-write for executor', () => {
-    const result = generateCodexAgentToml('gsd-executor', sampleAgent);
+    const result = generateCodexAgentToml('gsd-executor-general', sampleAgent);
     assert.ok(result.includes('sandbox_mode = "workspace-write"'), 'has workspace-write');
   });
 
   test('sets read-only for plan-checker', () => {
     const checker = `---
-name: gsd-plan-checker
+name: gsd-checker
 description: Checks plans
 tools: Read, Grep, Glob
 ---
 
 <role>You check plans.</role>`;
-    const result = generateCodexAgentToml('gsd-plan-checker', checker);
+    const result = generateCodexAgentToml('gsd-checker', checker);
     assert.ok(result.includes('sandbox_mode = "read-only"'), 'has read-only');
   });
 
   test('includes developer_instructions from body', () => {
-    const result = generateCodexAgentToml('gsd-executor', sampleAgent);
+    const result = generateCodexAgentToml('gsd-executor-general', sampleAgent);
     assert.ok(result.includes("developer_instructions = '''"), 'has literal triple-quoted instructions');
     assert.ok(result.includes('<role>You are an executor.</role>'), 'body content in instructions');
     assert.ok(result.includes("'''"), 'has closing literal triple quotes');
@@ -176,9 +176,9 @@ describe('CODEX_AGENT_SANDBOX', () => {
 
   test('workspace-write agents have write tools', () => {
     const writeAgents = [
-      'gsd-executor', 'gsd-planner', 'gsd-phase-researcher',
-      'gsd-project-researcher', 'gsd-research-synthesizer', 'gsd-verifier',
-      'gsd-codebase-mapper', 'gsd-roadmapper', 'gsd-debugger',
+      'gsd-operator', 'gsd-planner', 'gsd-researcher',
+      'gsd-executor-frontend', 'gsd-executor-backend', 'gsd-executor-infra',
+      'gsd-executor-general', 'gsd-roadmapper', 'gsd-debugger',
     ];
     for (const name of writeAgents) {
       assert.strictEqual(CODEX_AGENT_SANDBOX[name], 'workspace-write', `${name} is workspace-write`);
@@ -186,7 +186,7 @@ describe('CODEX_AGENT_SANDBOX', () => {
   });
 
   test('read-only agents have no write tools', () => {
-    const readOnlyAgents = ['gsd-plan-checker', 'gsd-integration-checker'];
+    const readOnlyAgents = ['gsd-checker', 'gsd-validator'];
     for (const name of readOnlyAgents) {
       assert.strictEqual(CODEX_AGENT_SANDBOX[name], 'read-only', `${name} is read-only`);
     }
@@ -197,7 +197,7 @@ describe('CODEX_AGENT_SANDBOX', () => {
 
 describe('generateCodexConfigBlock', () => {
   const agents = [
-    { name: 'gsd-executor', description: 'Executes plans' },
+    { name: 'gsd-executor-general', description: 'Executes plans' },
     { name: 'gsd-planner', description: 'Creates plans' },
   ];
 
@@ -222,9 +222,9 @@ describe('generateCodexConfigBlock', () => {
 
   test('includes per-agent sections', () => {
     const result = generateCodexConfigBlock(agents);
-    assert.ok(result.includes('[agents.gsd-executor]'), 'has executor section');
+    assert.ok(result.includes('[agents.gsd-executor-general]'), 'has executor section');
     assert.ok(result.includes('[agents.gsd-planner]'), 'has planner section');
-    assert.ok(result.includes('config_file = "agents/gsd-executor.toml"'), 'has executor config_file');
+    assert.ok(result.includes('config_file = "agents/gsd-executor-general.toml"'), 'has executor config_file');
     assert.ok(result.includes('"Executes plans"'), 'has executor description');
   });
 });
@@ -274,9 +274,9 @@ describe('stripGsdFromCodexConfig', () => {
   });
 
   test('removes [agents.gsd-*] sections', () => {
-    const content = `[agents.gsd-executor]\ndescription = "test"\nconfig_file = "agents/gsd-executor.toml"\n\n[agents.custom-agent]\ndescription = "user agent"\n`;
+    const content = `[agents.gsd-executor-general]\ndescription = "test"\nconfig_file = "agents/gsd-executor-general.toml"\n\n[agents.custom-agent]\ndescription = "user agent"\n`;
     const result = stripGsdFromCodexConfig(content);
-    assert.ok(!result.includes('[agents.gsd-executor]'), 'removes GSD agent section');
+    assert.ok(!result.includes('[agents.gsd-executor-general]'), 'removes GSD agent section');
     assert.ok(result.includes('[agents.custom-agent]'), 'preserves user agent section');
   });
 });
@@ -295,7 +295,7 @@ describe('mergeCodexConfig', () => {
   });
 
   const sampleBlock = generateCodexConfigBlock([
-    { name: 'gsd-executor', description: 'Executes plans' },
+    { name: 'gsd-executor-general', description: 'Executes plans' },
   ]);
 
   test('case 1: creates new config.toml', () => {
@@ -306,7 +306,7 @@ describe('mergeCodexConfig', () => {
     const content = fs.readFileSync(configPath, 'utf8');
     assert.ok(content.includes(GSD_CODEX_MARKER), 'has marker');
     assert.ok(content.includes('multi_agent = true'), 'has feature flag');
-    assert.ok(content.includes('[agents.gsd-executor]'), 'has agent');
+    assert.ok(content.includes('[agents.gsd-executor-general]'), 'has agent');
   });
 
   test('case 2: replaces existing GSD block', () => {
@@ -316,7 +316,7 @@ describe('mergeCodexConfig', () => {
 
     // Re-merge with updated block
     const newBlock = generateCodexConfigBlock([
-      { name: 'gsd-executor', description: 'Updated description' },
+      { name: 'gsd-executor-general', description: 'Updated description' },
       { name: 'gsd-planner', description: 'New agent' },
     ]);
     mergeCodexConfig(configPath, newBlock);
@@ -380,7 +380,7 @@ describe('mergeCodexConfig', () => {
     assert.strictEqual(agentsCount, 1, 'exactly one [agents] section');
     assert.ok(content.includes('other_feature = true'), 'preserves user feature keys');
     assert.ok(content.includes('multi_agent = true'), 'has GSD feature key');
-    assert.ok(content.includes('[agents.gsd-executor]'), 'has agent');
+    assert.ok(content.includes('[agents.gsd-executor-general]'), 'has agent');
   });
 
   test('case 2 re-injects missing feature keys', () => {
@@ -408,9 +408,9 @@ describe('mergeCodexConfig', () => {
       'max_threads = 4',
       'max_depth = 2',
       '',
-      '[agents.gsd-executor]',
+      '[agents.gsd-executor-general]',
       'description = "old"',
-      'config_file = "agents/gsd-executor.toml"',
+      'config_file = "agents/gsd-executor-general.toml"',
       '',
       GSD_CODEX_MARKER,
       '[agents]',
@@ -425,7 +425,7 @@ describe('mergeCodexConfig', () => {
     const agentsCount = (content.match(/^\[agents\]\s*$/gm) || []).length;
     assert.strictEqual(agentsCount, 1, 'exactly one [agents] section');
     assert.ok(content.includes('child_agents_md = false'), 'preserves user feature keys');
-    assert.ok(content.includes('[agents.gsd-executor]'), 'has agent from fresh block');
+    assert.ok(content.includes('[agents.gsd-executor-general]'), 'has agent from fresh block');
   });
 
   test('case 2 idempotent after case 3 with existing [features]', () => {
@@ -473,18 +473,18 @@ describe('installCodexConfig (integration)', () => {
     assert.ok(fs.existsSync(configPath), 'config.toml exists');
     const config = fs.readFileSync(configPath, 'utf8');
     assert.ok(config.includes('multi_agent = true'), 'has multi_agent feature');
-    assert.ok(config.includes('[agents.gsd-executor]'), 'has executor agent');
+    assert.ok(config.includes('[agents.gsd-executor-general]'), 'has executor agent');
 
     // Verify per-agent .toml files
     const agentsDir = path.join(tmpTarget, 'agents');
-    assert.ok(fs.existsSync(path.join(agentsDir, 'gsd-executor.toml')), 'executor .toml exists');
-    assert.ok(fs.existsSync(path.join(agentsDir, 'gsd-plan-checker.toml')), 'plan-checker .toml exists');
+    assert.ok(fs.existsSync(path.join(agentsDir, 'gsd-executor-general.toml')), 'executor .toml exists');
+    assert.ok(fs.existsSync(path.join(agentsDir, 'gsd-checker.toml')), 'checker .toml exists');
 
-    const executorToml = fs.readFileSync(path.join(agentsDir, 'gsd-executor.toml'), 'utf8');
+    const executorToml = fs.readFileSync(path.join(agentsDir, 'gsd-executor-general.toml'), 'utf8');
     assert.ok(executorToml.includes('sandbox_mode = "workspace-write"'), 'executor is workspace-write');
     assert.ok(executorToml.includes('developer_instructions'), 'has developer_instructions');
 
-    const checkerToml = fs.readFileSync(path.join(agentsDir, 'gsd-plan-checker.toml'), 'utf8');
+    const checkerToml = fs.readFileSync(path.join(agentsDir, 'gsd-checker.toml'), 'utf8');
     assert.ok(checkerToml.includes('sandbox_mode = "read-only"'), 'plan-checker is read-only');
   });
 });

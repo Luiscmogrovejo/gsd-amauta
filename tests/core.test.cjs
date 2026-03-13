@@ -83,9 +83,9 @@ describe('loadConfig', () => {
 
   // Bug: loadConfig previously omitted model_overrides from return value
   test('returns model_overrides when present (REG-01)', () => {
-    writeConfig({ model_overrides: { 'gsd-executor': 'opus' } });
+    writeConfig({ model_overrides: { 'gsd-executor-general': 'opus' } });
     const config = loadConfig(tmpDir);
-    assert.deepStrictEqual(config.model_overrides, { 'gsd-executor': 'opus' });
+    assert.deepStrictEqual(config.model_overrides, { 'gsd-executor-general': 'opus' });
   });
 
   test('returns model_overrides as null when not in config', () => {
@@ -146,7 +146,7 @@ describe('resolveModelInternal', () => {
 
   describe('model profile structural validation', () => {
     test('all known agents resolve to a valid string for each profile', () => {
-      const knownAgents = ['gsd-planner', 'gsd-executor', 'gsd-phase-researcher', 'gsd-codebase-mapper'];
+      const knownAgents = ['gsd-planner', 'gsd-executor-general', 'gsd-researcher', 'gsd-operator'];
       const profiles = ['quality', 'balanced', 'budget'];
       const validValues = ['inherit', 'sonnet', 'haiku', 'opus'];
 
@@ -167,22 +167,22 @@ describe('resolveModelInternal', () => {
     test('per-agent override takes precedence over profile', () => {
       writeConfig({
         model_profile: 'balanced',
-        model_overrides: { 'gsd-executor': 'haiku' },
+        model_overrides: { 'gsd-executor-general': 'haiku' },
       });
-      assert.strictEqual(resolveModelInternal(tmpDir, 'gsd-executor'), 'haiku');
+      assert.strictEqual(resolveModelInternal(tmpDir, 'gsd-executor-general'), 'haiku');
     });
 
     test('opus override resolves to inherit', () => {
       writeConfig({
-        model_overrides: { 'gsd-executor': 'opus' },
+        model_overrides: { 'gsd-executor-general': 'opus' },
       });
-      assert.strictEqual(resolveModelInternal(tmpDir, 'gsd-executor'), 'inherit');
+      assert.strictEqual(resolveModelInternal(tmpDir, 'gsd-executor-general'), 'inherit');
     });
 
     test('agents not in override fall back to profile', () => {
       writeConfig({
         model_profile: 'quality',
-        model_overrides: { 'gsd-executor': 'haiku' },
+        model_overrides: { 'gsd-executor-general': 'haiku' },
       });
       // gsd-planner not overridden, should use quality profile -> opus -> inherit
       assert.strictEqual(resolveModelInternal(tmpDir, 'gsd-planner'), 'inherit');

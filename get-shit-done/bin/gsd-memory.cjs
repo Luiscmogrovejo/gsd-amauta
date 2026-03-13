@@ -21,6 +21,9 @@
  *   skb-search <query>   Search shared knowledge base
  *   skb-add              Add entry to shared knowledge base
  *   skb-list             List SKB entries
+ *   semantic-search <q>  Search using embedding cosine similarity
+ *   backfill-embeddings  Generate embeddings for memories without them
+ *   embedding-stats      Show embedding coverage statistics
  *   cross-project <q>    Search learnings across all projects
  *   infer-tags [dir]     Infer technology tags from project files
  *   health               Check PostgreSQL availability via daemon
@@ -738,6 +741,132 @@ async function cmdCrossProject(args) {
 }
 
 // ═══════════════════════════════════════════════════════
+// Semantic Search (pgvector embeddings)
+// ═══════════════════════════════════════════════════════
+
+async function cmdSemanticSearch(args) {
+  const query = args._positional.join(' ');
+  if (!query) {
+    console.error('Usage: gsd-memory.cjs semantic-search <query> [--project <id>] [--source <src>] [--limit <n>] [--json]');
+    process.exit(1);
+  }
+
+  const body = { query, limit: parseInt(args.limit || '20', 10) };
+  if (args.project) body.project_id = args.project;
+  if (args.source) body.source = args.source;
+
+  const res = await tryDaemon('POST', '/api/memory/semantic-search', body);
+
+  if (!res) {
+    process.stderr.write(FILE_MODE_WARN);
+    // Fall back to regular file search (no embeddings in file mode)
+    const results = fileSearch(query).slice(0, body.limit);
+    if (args.json) {
+      console.log(JSON.stringify({ results, count: results.length, mode: 'file', method: 'text' }, null, 2));
+      return;
+    }
+    if (results.length === 0) {
+      console.log('\x1b[2mNo results found.\x1b[0m');
+      return;
+    }
+    console.log(`\n\x1b[1mSemantic Search\x1b[0m  (${results.length} results, file fallback)\n`);
+    results.forEach((mem, i) => process.stdout.write(formatMemory(mem, i)));
+    console.log('');
+    return;
+  }
+
+  if (res.status !== 200) {
+    console.error('Error:', res.data.error || 'Unknown error');
+    process.exit(1);
+  }
+
+  if (args.json) {
+    console.log(JSON.stringify(res.data, null, 2));
+    return;
+  }
+
+  const results = res.data.results || [];
+  const method = res.data.method || 'unknown';
+  if (results.length === 0) {
+    console.log('\x1b[2mNo semantic matches found.\x1b[0m');
+    return;
+  }
+
+  console.log(`\n\x1b[1mSemantic Search\x1b[0m  (${results.length} results, method: ${method})\n`);
+  results.forEach((mem, i) => {
+    const similarity = mem.semantic_similarity ? ` \x1b[36m[sim: ${mem.semantic_similarity}]\x1b[0m` : '';
+    process.stdout.write(formatMemory(mem, i) + similarity + '\n');
+  });
+  console.log('');
+}
+
+async function cmdBackfillEmbeddings(args) {
+  const batchSize = parseInt(args['batch-size'] || args.batch || '50', 10);
+
+  const res = await tryDaemon('POST', '/api/memory/backfill-embeddings', { batch_size: batchSize });
+
+  if (!res) {
+    console.error('\x1b[91mDaemon not available.\x1b[0m Backfill requires PG daemon.');
+    process.exit(1);
+  }
+
+  if (res.status !== 200) {
+    console.error('Error:', res.data.error || 'Unknown error');
+    process.exit(1);
+  }
+
+  if (args.json) {
+    console.log(JSON.stringify(res.data, null, 2));
+    return;
+  }
+
+  const d = res.data;
+  if (d.error) {
+    console.error(`\x1b[91m${d.error}\x1b[0m`);
+    process.exit(1);
+  }
+
+  if (d.processed === 0) {
+    console.log('\x1b[92mAll memories already have embeddings.\x1b[0m');
+    return;
+  }
+
+  console.log(`\n\x1b[1mEmbedding Backfill\x1b[0m`);
+  console.log(`  Processed: ${d.processed}`);
+  console.log(`  Succeeded: \x1b[92m${d.succeeded}\x1b[0m`);
+  if (d.failed > 0) console.log(`  Failed:    \x1b[91m${d.failed}\x1b[0m`);
+  console.log(`  Remaining: ${d.remaining}`);
+  console.log('');
+}
+
+async function cmdEmbeddingStats(args) {
+  const res = await tryDaemon('GET', '/api/memory/embedding-stats');
+
+  if (!res) {
+    console.error('\x1b[91mDaemon not available.\x1b[0m');
+    process.exit(1);
+  }
+
+  if (res.status !== 200) {
+    console.error('Error:', res.data.error || 'Unknown error');
+    process.exit(1);
+  }
+
+  if (args.json) {
+    console.log(JSON.stringify(res.data, null, 2));
+    return;
+  }
+
+  const d = res.data;
+  console.log(`\n\x1b[1mEmbedding Coverage\x1b[0m`);
+  console.log(`  Total memories:    ${d.total}`);
+  console.log(`  With embeddings:   \x1b[92m${d.with_embedding}\x1b[0m`);
+  console.log(`  Without embeddings: ${d.without_embedding}`);
+  console.log(`  Coverage:          ${d.coverage_pct}%`);
+  console.log('');
+}
+
+// ═══════════════════════════════════════════════════════
 // Technology Tag Inference (TK-0056)
 // ═══════════════════════════════════════════════════════
 
@@ -1104,6 +1233,11 @@ function printUsage() {
   count                Count total memories
   distill              Compact old entries (merge duplicates)
 
+\x1b[1mSemantic Search (pgvector):\x1b[0m
+  semantic-search <q>  Search using embedding similarity (requires OPENAI_API_KEY)
+  backfill-embeddings  Generate embeddings for existing memories
+  embedding-stats      Show embedding coverage statistics
+
 \x1b[1mCross-Project Commands:\x1b[0m
   cross-project <q>    Search learnings across all projects
   infer-tags [dir]     Infer technology tags from project files
@@ -1156,6 +1290,9 @@ async function main() {
     'count': cmdCount,
     'distill': cmdDistill,
     'cross-project': cmdCrossProject,
+    'semantic-search': cmdSemanticSearch,
+    'backfill-embeddings': cmdBackfillEmbeddings,
+    'embedding-stats': cmdEmbeddingStats,
     'infer-tags': cmdInferTags,
     'skb-search': cmdSKBSearch,
     'skb-add': cmdSKBAdd,

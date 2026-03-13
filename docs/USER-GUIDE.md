@@ -318,15 +318,15 @@ Disable these to speed up phases in familiar domains or when conserving tokens.
 |-------|-----------|------------|----------|
 | gsd-planner | Opus | Opus | Sonnet |
 | gsd-roadmapper | Opus | Sonnet | Sonnet |
-| gsd-executor | Opus | Sonnet | Sonnet |
-| gsd-phase-researcher | Opus | Sonnet | Haiku |
-| gsd-project-researcher | Opus | Sonnet | Haiku |
-| gsd-research-synthesizer | Sonnet | Sonnet | Haiku |
+| gsd-executor-general | Opus | Sonnet | Sonnet |
+| gsd-researcher | Opus | Sonnet | Haiku |
+| gsd-researcher | Opus | Sonnet | Haiku |
+| gsd-researcher | Sonnet | Sonnet | Haiku |
 | gsd-debugger | Opus | Sonnet | Sonnet |
-| gsd-codebase-mapper | Sonnet | Haiku | Haiku |
-| gsd-verifier | Sonnet | Sonnet | Haiku |
-| gsd-plan-checker | Sonnet | Sonnet | Haiku |
-| gsd-integration-checker | Sonnet | Sonnet | Haiku |
+| gsd-operator | Sonnet | Haiku | Haiku |
+| gsd-validator | Sonnet | Sonnet | Haiku |
+| gsd-checker | Sonnet | Sonnet | Haiku |
+| gsd-checker | Sonnet | Sonnet | Haiku |
 
 **Profile philosophy:**
 - **quality** -- Opus for all decision-making agents, Sonnet for read-only verification. Use when quota is available and the work is critical.

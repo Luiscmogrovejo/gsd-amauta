@@ -160,7 +160,7 @@ fi
 
    ```
    Task(
-     subagent_type="gsd-executor",
+     subagent_type="gsd-executor-general",
      model="{executor_model}",
      prompt="
        <objective>
@@ -324,7 +324,7 @@ fi
 
 ```
 Task(
-  subagent_type="general",
+  subagent_type="gsd-validator",
   prompt="You are gsd-validator. Validate task {TASK_ID}.
 
   Read the validator protocol:
@@ -414,7 +414,7 @@ Phase requirement IDs: {phase_req_ids}
 Check must_haves against actual codebase.
 Cross-reference requirement IDs from PLAN frontmatter against REQUIREMENTS.md — every ID MUST be accounted for.
 Create VERIFICATION.md.",
-  subagent_type="gsd-verifier",
+  subagent_type="gsd-validator",
   model="{verifier_model}"
 )
 ```

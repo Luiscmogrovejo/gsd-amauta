@@ -6,35 +6,33 @@ Model profiles control which Claude model each GSD agent uses. This allows balan
 
 | Agent | `quality` | `balanced` | `budget` |
 |-------|-----------|------------|----------|
+| gsd-operator | opus | opus | sonnet |
 | gsd-planner | opus | opus | sonnet |
 | gsd-roadmapper | opus | sonnet | sonnet |
-| gsd-executor | opus | sonnet | sonnet |
-| gsd-phase-researcher | opus | sonnet | haiku |
-| gsd-project-researcher | opus | sonnet | haiku |
-| gsd-research-synthesizer | sonnet | sonnet | haiku |
+| gsd-researcher | opus | sonnet | haiku |
+| gsd-executor-frontend | opus | sonnet | sonnet |
+| gsd-executor-backend | opus | sonnet | sonnet |
+| gsd-executor-infra | opus | sonnet | sonnet |
+| gsd-executor-general | opus | sonnet | sonnet |
+| gsd-checker | sonnet | sonnet | haiku |
+| gsd-validator | sonnet | sonnet | haiku |
 | gsd-debugger | opus | sonnet | sonnet |
-| gsd-codebase-mapper | sonnet | haiku | haiku |
-| gsd-verifier | sonnet | sonnet | haiku |
-| gsd-plan-checker | sonnet | sonnet | haiku |
-| gsd-integration-checker | sonnet | sonnet | haiku |
-| gsd-nyquist-auditor | sonnet | sonnet | haiku |
 
 ## Profile Philosophy
 
 **quality** - Maximum reasoning power
-- Opus for all decision-making agents
-- Sonnet for read-only verification
+- Opus for all decision-making and execution agents
+- Sonnet for quality checking and validation
 - Use when: quota available, critical architecture work
 
 **balanced** (default) - Smart allocation
-- Opus only for planning (where architecture decisions happen)
-- Sonnet for execution and research (follows explicit instructions)
-- Sonnet for verification (needs reasoning, not just pattern matching)
+- Opus only for orchestration and planning (where architecture decisions happen)
+- Sonnet for execution, research, and validation (follows explicit instructions)
 - Use when: normal development, good balance of quality and cost
 
 **budget** - Minimal Opus usage
 - Sonnet for anything that writes code
-- Haiku for research and verification
+- Haiku for research, checking, and validation
 - Use when: conserving quota, high-volume work, less critical phases
 
 ## Resolution Logic
@@ -56,7 +54,7 @@ Override specific agents without changing the entire profile:
 {
   "model_profile": "balanced",
   "model_overrides": {
-    "gsd-executor": "opus",
+    "gsd-executor-frontend": "opus",
     "gsd-planner": "haiku"
   }
 }
@@ -77,17 +75,17 @@ Per-project default: Set in `.planning/config.json`:
 
 ## Design Rationale
 
-**Why Opus for gsd-planner?**
-Planning involves architecture decisions, goal decomposition, and task design. This is where model quality has the highest impact.
+**Why Opus for gsd-operator and gsd-planner?**
+Orchestration and planning involve architecture decisions, goal decomposition, and task design. This is where model quality has the highest impact.
 
-**Why Sonnet for gsd-executor?**
-Executors follow explicit PLAN.md instructions. The plan already contains the reasoning; execution is implementation.
+**Why Sonnet for executor agents?**
+Executors (frontend, backend, infra, general) follow explicit PLAN.md instructions. The plan already contains the reasoning; execution is implementation.
 
-**Why Sonnet (not Haiku) for verifiers in balanced?**
-Verification requires goal-backward reasoning - checking if code *delivers* what the phase promised, not just pattern matching. Sonnet handles this well; Haiku may miss subtle gaps.
+**Why a single gsd-researcher instead of separate research agents?**
+The previous split (gsd-phase-researcher, gsd-project-researcher, gsd-research-synthesizer) created unnecessary agent proliferation. A single gsd-researcher handles all research tasks with the same model profile.
 
-**Why Haiku for gsd-codebase-mapper?**
-Read-only exploration and pattern extraction. No reasoning required, just structured output from file contents.
+**Why Sonnet (not Haiku) for gsd-checker and gsd-validator in balanced?**
+Checking and validation require goal-backward reasoning — verifying that code *delivers* what the phase promised, not just pattern matching. Sonnet handles this well; Haiku may miss subtle gaps.
 
 **Why `inherit` instead of passing `opus` directly?**
 Claude Code's `"opus"` alias maps to a specific model version. Organizations may block older opus versions while allowing newer ones. GSD returns `"inherit"` for opus-tier agents, causing them to use whatever opus version the user has configured in their session. This avoids version conflicts and silent fallbacks to Sonnet.

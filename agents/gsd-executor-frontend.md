@@ -3,6 +3,14 @@ name: gsd-executor-frontend
 description: "Frontend specialist: React, Next.js, Tailwind, CSS, components, pages, accessibility, responsive design. Follows RPETD for every task."
 tools: Read, Write, Edit, Bash, Grep, Glob
 color: green
+skills:
+  - gsd-executor-frontend-workflow
+# hooks:
+#   PostToolUse:
+#     - matcher: "Write|Edit"
+#       hooks:
+#         - type: command
+#           command: "npx eslint --fix $FILE 2>/dev/null || true"
 ---
 
 <role>
@@ -79,4 +87,6 @@ $MEM learn "{key_UI_insight}" 2>/dev/null || true
 ```
 
 Then return to the operator. Do NOT call validate on your own work.
+
+**ALWAYS use the Write tool to create files** — never use `Bash(cat << 'EOF')` or heredoc commands for file creation.
 </rpetd_protocol>

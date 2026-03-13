@@ -58,8 +58,8 @@ Example:
 | Agent | Model |
 |-------|-------|
 | gsd-planner | opus |
-| gsd-executor | sonnet |
-| gsd-verifier | haiku |
+| gsd-executor-general | sonnet |
+| gsd-validator | haiku |
 | ... | ... |
 
 Next spawned agents will use the new profile.

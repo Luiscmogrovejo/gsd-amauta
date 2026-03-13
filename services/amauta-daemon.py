@@ -252,6 +252,17 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": str(e)}, 500)
             return
 
+        if path == "/api/memory/embedding-stats":
+            if not _pg_store:
+                self._send_json({"error": "PostgreSQL not available"}, 503)
+                return
+            try:
+                stats = _pg_store.memory_embedding_stats()
+                self._send_json(stats)
+            except Exception as e:
+                self._send_json({"error": str(e)}, 500)
+            return
+
         # ─── SKB GET routes (PG required) ─────────────
         if path == "/api/skb/list" or path.startswith("/api/skb/list?"):
             if not _pg_store:
@@ -348,15 +359,27 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": "text is required"}, 400)
                 return
             try:
-                mem_id = _pg_store.memory_store(
-                    text=text,
-                    source=body.get("source", "agent"),
-                    agent_id=body.get("agent_id"),
-                    tags=body.get("tags"),
-                    metadata=body.get("metadata"),
-                    project_id=body.get("project_id"),
-                )
-                self._send_json({"id": mem_id, "stored": True})
+                # Auto-embed if OPENAI_API_KEY is set and body doesn't opt out
+                use_embedding = body.get("embed", True) and os.environ.get("OPENAI_API_KEY")
+                if use_embedding:
+                    mem_id = _pg_store.memory_store_with_embedding(
+                        text=text,
+                        source=body.get("source", "agent"),
+                        agent_id=body.get("agent_id"),
+                        tags=body.get("tags"),
+                        metadata=body.get("metadata"),
+                        project_id=body.get("project_id"),
+                    )
+                else:
+                    mem_id = _pg_store.memory_store(
+                        text=text,
+                        source=body.get("source", "agent"),
+                        agent_id=body.get("agent_id"),
+                        tags=body.get("tags"),
+                        metadata=body.get("metadata"),
+                        project_id=body.get("project_id"),
+                    )
+                self._send_json({"id": mem_id, "stored": True, "embedded": bool(use_embedding)})
             except Exception as e:
                 self._send_json({"error": str(e)}, 500)
             return
@@ -392,6 +415,39 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             try:
                 _pg_store.memory_delete(mem_id)
                 self._send_json({"deleted": True, "id": mem_id})
+            except Exception as e:
+                self._send_json({"error": str(e)}, 500)
+            return
+
+        if path == "/api/memory/semantic-search":
+            if not _pg_store:
+                self._send_json({"error": "PostgreSQL not available", "hint": "Set GSD_POSTGRES_URL"}, 503)
+                return
+            query = body.get("query")
+            if not query:
+                self._send_json({"error": "query is required"}, 400)
+                return
+            try:
+                results, method = _pg_store.memory_semantic_search(
+                    query=query,
+                    project_id=body.get("project_id"),
+                    source=body.get("source"),
+                    limit=body.get("limit", 20),
+                )
+                self._send_json({"results": results, "count": len(results), "method": method})
+            except Exception as e:
+                self._send_json({"error": str(e)}, 500)
+            return
+
+        if path == "/api/memory/backfill-embeddings":
+            if not _pg_store:
+                self._send_json({"error": "PostgreSQL not available", "hint": "Set GSD_POSTGRES_URL"}, 503)
+                return
+            try:
+                result = _pg_store.memory_backfill_embeddings(
+                    batch_size=body.get("batch_size", 50),
+                )
+                self._send_json(result)
             except Exception as e:
                 self._send_json({"error": str(e)}, 500)
             return
