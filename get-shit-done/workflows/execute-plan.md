@@ -67,9 +67,38 @@ grep -n "type=\"checkpoint" .planning/phases/XX-name/{phase}-{plan}-PLAN.md
 | Verify-only | B (segmented) | Segments between checkpoints. After none/human-verify → SUBAGENT. After decision/human-action → MAIN |
 | Decision | C (main) | Execute entirely in main context |
 
-**Pattern A:** init_agent_tracking → spawn Task(subagent_type="gsd-executor-general", model=executor_model) with prompt: execute plan at [path], autonomous, all tasks + SUMMARY + commit, follow deviation/auth rules, report: plan name, tasks, SUMMARY path, commit hash → track agent_id → wait → update tracking → report.
+**Pattern A:** init_agent_tracking → spawn Task(subagent_type="gsd-executor-general", model=executor_model) with prompt:
 
-**Pattern B:** Execute segment-by-segment. Autonomous segments: spawn subagent for assigned tasks only (no SUMMARY/commit). Checkpoints: main context. After all segments: aggregate, create SUMMARY, commit. See segment_execution.
+```
+Execute plan at [path]. Autonomous — all tasks + SUMMARY + commit. Follow deviation/auth rules. Report: plan name, tasks, SUMMARY path, commit hash.
+
+<amauta_enrichment>
+BEFORE starting any work, run these context-enrichment queries:
+
+1. RLM — find relevant existing code:
+   node ~/.claude/get-shit-done/bin/gsd-rlm.cjs query '[plan objective]' --dir . --top-k 5 --compact 2>/dev/null || true
+
+2. Memory — find past learnings:
+   node ~/.claude/get-shit-done/bin/gsd-memory.cjs search '[plan objective]' 2>/dev/null || true
+
+3. If an Amauta task ID is embedded in the plan (TK-XXXX), log RPETD phases as you work:
+   CLI='node ~/.claude/get-shit-done/bin/amauta.cjs'
+   $CLI rpetd TK-XXXX --phase R --content 'R: [RLM findings + memory matches]' 2>/dev/null || true
+   $CLI rpetd TK-XXXX --phase P --content 'P: [approach]' 2>/dev/null || true
+   $CLI rpetd TK-XXXX --phase E --content 'E: [what was built]' 2>/dev/null || true
+   $CLI rpetd TK-XXXX --phase T --content 'T: [test output]' 2>/dev/null || true
+   $CLI rpetd TK-XXXX --phase D --content 'D: [summary]. LEARNING: [insight]' 2>/dev/null || true
+
+4. After completing all work, store the most important learning:
+   node ~/.claude/get-shit-done/bin/gsd-memory.cjs learn '[key insight]' 2>/dev/null || true
+
+All commands are wrapped in || true — execution proceeds normally if services are unavailable.
+</amauta_enrichment>
+```
+
+→ track agent_id → wait → update tracking → report.
+
+**Pattern B:** Execute segment-by-segment. Autonomous segments: spawn subagent for assigned tasks only (no SUMMARY/commit). Include same `<amauta_enrichment>` block in each segment subagent prompt. Checkpoints: main context. After all segments: aggregate, create SUMMARY, commit. See segment_execution.
 
 **Pattern C:** Execute in main using standard flow (step name="execute").
 
