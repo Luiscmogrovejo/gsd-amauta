@@ -209,9 +209,17 @@ describe('E2E Lifecycle', () => {
     test('task status is done', (t) => {
       if (skipIfNoDaemon(t)) return;
       if (!taskId) { t.skip('no task'); return; }
-      const r = amauta(['show', taskId]);
+      // Use --json for unambiguous status check (avoids color-code parsing issues)
+      const r = amauta(['show', taskId, '--json']);
       assert.ok(r.success);
-      assert.ok(r.output.includes('done') || r.output.includes('DONE'));
+      try {
+        const data = JSON.parse(r.output);
+        assert.strictEqual(data.status, 'done', `expected status=done, got: ${data.status}`);
+      } catch {
+        // Fallback: check raw output contains done
+        assert.ok(r.output.includes('done') || r.output.includes('DONE'),
+          `should be done: ${r.output.slice(0, 200)}`);
+      }
     });
   });
 

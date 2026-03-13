@@ -20,7 +20,6 @@ import json
 import os
 import re
 import threading
-import time
 import urllib.request
 import urllib.error
 from contextlib import contextmanager
@@ -289,7 +288,6 @@ class PGStore:
         with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM gsd_memory WHERE id = %s", (mem_id,))
-                conn.commit()
 
     def memory_cross_project_search(self, query, tags=None, exclude_project=None, limit=20):
         """Search memories across ALL projects, optionally filtered by technology tags.
@@ -588,7 +586,7 @@ class PGStore:
         # Build payload
         use_model = model or cfg["default_model"]
         payload_dict = {
-            "input": truncated,
+            "input": [truncated],  # Both OpenAI and Voyage accept list format
             "model": use_model,
         }
 
@@ -709,10 +707,13 @@ class PGStore:
             # Composite: semantic similarity (0-1) * 10 + source bonus (0-4)
             d["score"] = round(similarity * 10 + source_bonus, 2)
             d["semantic_similarity"] = round(similarity, 4)
-            # Convert datetime objects to strings for JSON serialization
+            # Convert types that don't JSON-serialize
             for key in ("created_at", "updated_at"):
                 if key in d and isinstance(d[key], datetime):
                     d[key] = d[key].isoformat()
+            for key, val in d.items():
+                if isinstance(val, Decimal):
+                    d[key] = float(val)
             # Remove embedding from output (large binary)
             d.pop("embedding", None)
             scored.append(d)

@@ -149,11 +149,6 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 args.append("--force")
             elif key == "json_output" and val:
                 args.append("--json")
-            elif key == "pass_result":
-                if val:
-                    args.append("--pass")
-                else:
-                    args.append("--fail")
             elif flag and val is not None:
                 args.append(flag)
                 args.append(str(val))
@@ -337,13 +332,12 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 args.append(body["status_to"])
 
             # Special handling for validate --pass/--fail
+            # Note: --force is handled by _build_args() via flag_map
             if command == "validate":
                 if body.get("pass_result") is True:
                     args.append("--pass")
                 elif body.get("pass_result") is False:
                     args.append("--fail")
-                if body.get("force"):
-                    args.append("--force")
 
             out, err, rc = self._run_amauta(args)
             self._send_json({"output": out, "error": err, "exit_code": rc})
@@ -359,8 +353,10 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": "text is required"}, 400)
                 return
             try:
-                # Auto-embed if OPENAI_API_KEY is set and body doesn't opt out
-                use_embedding = body.get("embed", True) and os.environ.get("OPENAI_API_KEY")
+                # Auto-embed if an embedding API key is set and body doesn't opt out
+                use_embedding = body.get("embed", True) and (
+                    os.environ.get("VOYAGE_API_KEY") or os.environ.get("OPENAI_API_KEY")
+                )
                 if use_embedding:
                     mem_id = _pg_store.memory_store_with_embedding(
                         text=text,

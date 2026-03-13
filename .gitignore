@@ -39,3 +39,4 @@ data/
 *.pem
 *.crt
 __pycache__/
+*.pyc
