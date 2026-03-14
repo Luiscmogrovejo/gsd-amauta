@@ -32,6 +32,7 @@ function run(cliPath, args) {
       env: {
         ...process.env,
         AMAUTA_DATA_DIR: path.join(__dirname, '..', 'data'),
+        GSD_MEMORY_DISTILL_THRESHOLD: '999999',  // Disable auto-distill in tests
       },
       timeout: 15000,
     });

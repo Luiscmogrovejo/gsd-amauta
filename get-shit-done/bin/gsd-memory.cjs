@@ -1150,7 +1150,7 @@ function textSimilarity(a, b) {
 }
 
 // TK-0054: Auto-distill trigger — runs after store if count exceeds threshold
-const AUTO_DISTILL_THRESHOLD = parseInt(process.env.GSD_MEMORY_DISTILL_THRESHOLD || '100', 10);
+const AUTO_DISTILL_THRESHOLD = parseInt(process.env.GSD_MEMORY_DISTILL_THRESHOLD || '500', 10);
 const AUTO_DISTILL_COOLDOWN_MS = parseInt(process.env.GSD_MEMORY_DISTILL_COOLDOWN || '300000', 10); // 5 min default
 let _lastAutoDistillAt = 0;
 

@@ -66,7 +66,7 @@ const path = require('path');
 const DAEMON_HOST = process.env.GSD_AMAUTA_HOST || '127.0.0.1';
 const DAEMON_PORT = parseInt(process.env.GSD_AMAUTA_PORT || '18799', 10);
 const PERPLEXITY_API_KEY = process.env.PERPLEXITY_API_KEY || '';
-const PERPLEXITY_MODEL = process.env.PERPLEXITY_MODEL || 'sonar';
+const PERPLEXITY_MODEL = process.env.PERPLEXITY_MODEL || 'sonar-pro';  // sonar-pro for superior code understanding
 
 const PROVIDER_ORDER = ['memory', 'skb', 'context7', 'perplexity', 'webfetch'];
 
@@ -259,14 +259,15 @@ async function providerPerplexity(query, limit) {
         messages: [
           {
             role: 'system',
-            content: 'You are a technical research assistant. Provide concise, factual answers with sources. Focus on current best practices and official documentation.',
+            content: 'You are a technical research assistant for a software engineering team. Provide concise, factual, actionable answers with sources. Focus on current best practices (2025+), official documentation, and production-grade patterns. Include code examples when relevant.',
           },
           {
             role: 'user',
             content: query,
           },
         ],
-        max_tokens: 2000,
+        temperature: 0.2,     // Low temperature for deterministic code outputs
+        max_tokens: 4096,     // Longer context for code snippets and detailed answers
       },
       {
         Authorization: `Bearer ${PERPLEXITY_API_KEY}`,

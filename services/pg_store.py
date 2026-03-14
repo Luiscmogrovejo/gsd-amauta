@@ -755,10 +755,12 @@ class PGStore:
         "voyage": {
             "env_key": "VOYAGE_API_KEY",
             "url": "https://api.voyageai.com/v1/embeddings",
-            "default_model": "voyage-code-3",  # optimized for code retrieval
-            "dimensions": 1024,
-            "max_chars": 32000,  # ~8000 tokens
-            "supports_input_type": True,
+            "default_model": "voyage-code-3",  # Best for code retrieval (beats OpenAI by 13.8%)
+            "dimensions": 1024,               # Matryoshka: can truncate from 2048 to 1024/512/256
+            "max_chars": 32000,               # 32K token context window
+            "supports_input_type": True,      # "query" vs "document" improves retrieval
+            "rerank_model": "rerank-2.5",     # Post-retrieval reranking (200M free tokens)
+            "rerank_url": "https://api.voyageai.com/v1/rerank",
         },
         "openai": {
             "env_key": "OPENAI_API_KEY",
@@ -855,6 +857,45 @@ class PGStore:
         except Exception:
             return None
 
+    @staticmethod
+    def rerank(query, documents, top_k=10):
+        """Re-rank documents using Voyage rerank-2.5 for improved precision.
+
+        Uses cross-encoder scoring to re-order initial retrieval results.
+        Returns list of {index, relevance_score} sorted by relevance, or None if unavailable.
+        """
+        provider_name, cfg = PGStore._detect_embedding_provider()
+        if provider_name != "voyage" or not cfg.get("rerank_url"):
+            return None
+
+        api_key = os.environ.get(cfg["env_key"])
+        if not api_key:
+            return None
+
+        payload = json.dumps({
+            "query": query,
+            "documents": documents[:100],  # API limit
+            "model": cfg.get("rerank_model", "rerank-2.5"),
+            "top_k": min(top_k, len(documents)),
+        }).encode("utf-8")
+
+        req = urllib.request.Request(
+            cfg["rerank_url"],
+            data=payload,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}",
+            },
+            method="POST",
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+                return result.get("data", [])
+        except Exception:
+            return None
+
     def memory_store_with_embedding(self, text, source="agent", agent_id=None,
                                      tags=None, metadata=None, project_id=None):
         """Store a memory entry with auto-generated embedding.
@@ -930,7 +971,26 @@ class PGStore:
                     # No embeddings stored yet — fall back to text search
                     return self.memory_search(query, project_id, source, limit), "text_fallback"
 
-                return self._score_semantic_results(results), "vector"
+                scored = self._score_semantic_results(results)
+
+                # Post-retrieval reranking via Voyage rerank-2.5 (free tier: 200M tokens)
+                # Improves precision by cross-encoder scoring on top-K candidates
+                try:
+                    docs = [r.get("text", "")[:500] for r in scored]
+                    reranked = PGStore.rerank(query, docs, top_k=limit)
+                    if reranked:
+                        reordered = []
+                        for item in reranked:
+                            idx = item.get("index", 0)
+                            if idx < len(scored):
+                                entry = scored[idx]
+                                entry["rerank_score"] = round(float(item.get("relevance_score", 0)), 4)
+                                reordered.append(entry)
+                        return reordered, "vector+rerank"
+                except Exception:
+                    pass  # Reranking is optional — fall back to vector-only
+
+                return scored, "vector"
 
     def _score_semantic_results(self, rows):
         """Score semantic search results with source bonuses."""

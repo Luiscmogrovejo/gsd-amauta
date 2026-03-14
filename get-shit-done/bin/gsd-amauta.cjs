@@ -1003,8 +1003,10 @@ async function cmdExec(useDaemon, rawArgs, jsonMode) {
   if (!rawArgs.length) die('Usage: amauta exec <...args>');
 
   if (useDaemon) {
-    const { data } = await httpRequest('POST', '/api/exec', { args: rawArgs });
+    const { statusCode, data } = await httpRequest('POST', '/api/exec', { args: rawArgs });
     printResponse(data, jsonMode);
+    // Non-2xx HTTP status = daemon rejected the command (403 = not allowed, 400 = bad request)
+    if (statusCode >= 400) return 1;
     return data.exit_code || 0;
   }
   const result = runDirect(rawArgs);
