@@ -303,11 +303,24 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
         path = self.path.rstrip("/")
         body = self._read_body()
 
-        # Generic command executor
+        # Generic command executor — limited to safe read/query operations
+        # (destructive operations like delete/atomize must use specific routes)
+        _EXEC_ALLOWLIST = {
+            "show", "list", "board", "search", "score", "next", "health",
+            "note", "rpetd", "validate", "status", "claim", "add", "assign",
+            "link", "unlink", "update",
+        }
         if path == "/api/exec":
             args = body.get("args", [])
             if not args:
                 self._send_json({"error": "args required"}, 400)
+                return
+            command = args[0] if args else ""
+            if command not in _EXEC_ALLOWLIST:
+                self._send_json(
+                    {"error": f"Command '{command}' not allowed via /api/exec. Use specific endpoint."},
+                    403,
+                )
                 return
             out, err, rc = self._run_amauta(args)
             self._send_json({"output": out, "error": err, "exit_code": rc})

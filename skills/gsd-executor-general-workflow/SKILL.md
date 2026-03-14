@@ -1,4 +1,4 @@
-# GSD Executor Workflow — General
+# Amauta Executor Workflow — General
 
 ## Context Pipeline (run BEFORE any work)
 

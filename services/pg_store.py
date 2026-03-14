@@ -211,10 +211,10 @@ class PGStore:
                 if tsquery:
                     sql = f"""
                         SELECT *,
-                            ts_rank(to_tsvector('english', text), to_tsquery('english', %s)) as text_rank
+                            ts_rank(to_tsvector('english', text), plainto_tsquery('english', %s)) as text_rank
                         FROM gsd_memory
                         WHERE {where}
-                          AND to_tsvector('english', text) @@ to_tsquery('english', %s)
+                          AND to_tsvector('english', text) @@ plainto_tsquery('english', %s)
                         ORDER BY text_rank DESC
                         LIMIT %s
                     """
@@ -348,10 +348,10 @@ class PGStore:
                 if tsquery:
                     sql = f"""
                         SELECT *,
-                            ts_rank(to_tsvector('english', text), to_tsquery('english', %s)) as text_rank
+                            ts_rank(to_tsvector('english', text), plainto_tsquery('english', %s)) as text_rank
                         FROM gsd_memory
                         WHERE {where}
-                          AND to_tsvector('english', text) @@ to_tsquery('english', %s)
+                          AND to_tsvector('english', text) @@ plainto_tsquery('english', %s)
                         ORDER BY text_rank DESC
                         LIMIT %s
                     """
@@ -417,12 +417,12 @@ class PGStore:
                         SELECT *,
                             ts_rank(
                                 to_tsvector('english', title || ' ' || content),
-                                to_tsquery('english', %s)
+                                plainto_tsquery('english', %s)
                             ) as relevance
                         FROM gsd_shared_kb
                         WHERE {where}
                           AND to_tsvector('english', title || ' ' || content)
-                              @@ to_tsquery('english', %s)
+                              @@ plainto_tsquery('english', %s)
                         ORDER BY relevance DESC, importance DESC
                         LIMIT %s
                     """

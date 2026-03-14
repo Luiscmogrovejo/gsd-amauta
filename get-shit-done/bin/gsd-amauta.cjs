@@ -494,7 +494,15 @@ async function autoLearnFromRpetd(useDaemon, taskId, flags) {
 
 const BRANCH_PATTERNS = /\b(feat|fix|chore|refactor|docs|test|hotfix|release|bugfix|feature)\//i;
 const LEARNING_PATTERN = /LEARNING[:\s]/i;
-const NON_CODE_TYPES = new Set(['epic', 'story']); // These are exempt from branch gate and test gate
+// Types exempt from branch/test/PR gates (code-only gates)
+// Includes research, docs, marketing, finance, planning types that don't produce code artifacts
+const NON_CODE_TYPES = new Set([
+  'epic', 'story',                                    // hierarchy containers
+  'research', 'spike', 'discovery',                  // investigation tasks
+  'docs', 'documentation', 'design', 'spec',         // non-code outputs
+  'marketing', 'finance', 'legal', 'planning',       // business operations
+  'operations', 'ops',                               // operational tasks
+]);
 
 // Test evidence patterns: shell prompts, exit codes, test runner output
 const TEST_EVIDENCE_PATTERNS = [
@@ -779,15 +787,20 @@ async function promoteToSKB(useDaemon, taskId) {
 
 async function cmdNote(useDaemon, id, flags, jsonMode) {
   if (!id) die('Usage: amauta note <id> --text "..." [--agent A]');
-  if (!flags.text) die('--text is required');
-  const body = { id, ...flags };
+  // amauta.py note subparser uses --content (not --text); normalize here
+  const noteText = flags.text || flags.content;
+  if (!noteText) die('--text is required');
+  // Build body using --content as the canonical key for the daemon
+  const body = { id, content: noteText };
+  if (flags.agent) body.agent = flags.agent;
 
   if (useDaemon) {
     const { data } = await httpRequest('POST', '/api/note', body);
     printResponse(data, jsonMode);
     return data.exit_code || 0;
   }
-  const args = ['note', id, '--text', flags.text];
+  // Direct path: amauta.py note expects --content
+  const args = ['note', id, '--content', noteText];
   if (flags.agent) args.push('--agent', flags.agent);
   const result = runDirect(args);
   printResponse(result, jsonMode);

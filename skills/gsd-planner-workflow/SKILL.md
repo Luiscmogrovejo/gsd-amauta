@@ -1,4 +1,4 @@
-# GSD Agent Workflow
+# Amauta Agent Workflow
 
 ## Memory & Context
 ```bash

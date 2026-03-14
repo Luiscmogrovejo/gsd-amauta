@@ -726,7 +726,7 @@ async function cmdCrossProject(args) {
       console.log('\x1b[2mNo cross-project learnings found.\x1b[0m');
       return;
     }
-    console.log(`\n\x1b[1mCross-Project Learnings\x1b[0m  (${results.length} results, file mode)\n`);
+    console.log(`\n\x1b[1mLocal Learnings\x1b[0m  (${results.length} results)\x1b[2m  — file mode: cross-project requires PostgreSQL\x1b[0m\n`);
     results.forEach((mem, i) => process.stdout.write(formatMemory(mem, i)));
     console.log('');
     return;

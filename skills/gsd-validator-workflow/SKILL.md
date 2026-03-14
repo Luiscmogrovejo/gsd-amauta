@@ -1,16 +1,46 @@
-# GSD Agent Workflow
+# Amauta Validator Workflow
 
-## Memory & Context
+## Context Pipeline (run BEFORE validating)
 ```bash
-MEM="node ~/.claude/get-shit-done/bin/gsd-memory.cjs"
+CLI="node ~/.claude/get-shit-done/bin/amauta.cjs"
 RLM="node ~/.claude/get-shit-done/bin/gsd-rlm.cjs"
-$MEM search "{topic}" 2>/dev/null || true
-$RLM query "{topic}" --dir . --top-k 5 --compact 2>/dev/null || true
+MEM="node ~/.claude/get-shit-done/bin/gsd-memory.cjs"
+
+# 1. Show full task (all 5 RPETD phases)
+$CLI show TK-XXXX 2>/dev/null || true
+
+# 2. Memory: find past validation patterns for this domain
+$MEM search "{task_topic}" 2>/dev/null || true
 ```
 
-## Store learnings after completing work
+## 4-Gate Validation Checklist
+```
+Gate 1 — Branch Evidence (E-phase): feat/*, fix/*, chore/*, refactor/* branch name visible
+Gate 2 — Test Evidence (T-phase): raw terminal output with $ prompt, PASS/FAIL, test counts
+Gate 3 — LEARNING Block (D-phase): at least one LEARNING: statement present
+Gate 4 — PR URL (D-phase or E-phase): github.com/.../pull/NNN or "merged" or "PR #NNN"
+         NOTE: branch name alone does NOT satisfy Gate 4 — a PR URL is required
+```
+
+## Validate Command
 ```bash
-$MEM learn "{key insight}" 2>/dev/null || true
+# Pass (all gates met):
+$CLI validate TK-XXXX --pass --validator validator --notes "PASS: All 4 gates met." 2>/dev/null || true
+
+# Fail (gate violation):
+$CLI validate TK-XXXX --fail --validator validator --notes "FAIL: [gate] — [reason]." 2>/dev/null || true
+
+# Force override (legitimate exceptions only):
+$CLI validate TK-XXXX --pass --force --validator validator --notes "PASS: [reason for override]." 2>/dev/null || true
 ```
 
-## Rules: Always query memory before starting. Store learnings after finishing. All || true.
+## Store learnings after validating
+```bash
+$MEM learn "{validation insight}" 2>/dev/null || true
+```
+
+## Rules
+- Never validate your own work — you must be a different agent from the executor
+- Gate 4 requires a PR URL, not just a branch name
+- Use --force only for: local-only tasks, scaffolding, non-code tasks without PRs
+- All commands wrapped in `|| true` — never block on service unavailability

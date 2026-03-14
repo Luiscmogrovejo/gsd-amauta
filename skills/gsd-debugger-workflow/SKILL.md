@@ -1,4 +1,4 @@
-# GSD Debugger Workflow
+# Amauta Debugger Workflow
 
 ## Context Pipeline (run BEFORE any work)
 

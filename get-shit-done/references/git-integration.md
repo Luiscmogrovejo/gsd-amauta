@@ -1,5 +1,5 @@
 <overview>
-Git integration for GSD framework.
+Git integration for GSD-Amauta framework.
 </overview>
 
 <core_principle>

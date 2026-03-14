@@ -1607,25 +1607,20 @@ def _enrich_task_context(item: dict, items: list) -> str:
 
             # ── Pull recent LEARNING + web_search_result from memory for same domain ──
             # This is the core of the "never repeat work" system
+            # Uses the existing _mem_pg_search abstraction (consistent with the rest of amauta.py)
             if _mem_pg_available() and search_q:
                 try:
-                    import psycopg2
-                    conn_e = psycopg2.connect(_mem_db_url())
-                    conn_e.autocommit = True
-                    cur_e = conn_e.cursor()
-                    cur_e.execute("""
-                        SELECT agent_id, source, text, created_at FROM amauta_memory
-                        WHERE source IN ('auto_learning', 'web_search_result', 'lesson-learned', 'best-practice')
-                          AND text ILIKE %s
-                        ORDER BY created_at DESC
-                        LIMIT 4
-                    """, (f"%{words[0]}%" if words else "%",))
-                    prior_learning = cur_e.fetchall()
-                    cur_e.close(); conn_e.close()
-                    if prior_learning:
+                    prior_results = _mem_pg_search(search_q, None, 4)
+                    # Filter to high-signal sources only
+                    prior_results = [r for r in prior_results
+                                     if r.get("source") in ('auto_learning', 'web_search_result',
+                                                            'lesson-learned', 'best-practice')]
+                    if prior_results:
                         learn_lines = ["[PRIOR LEARNING] Agents already learned this — use their findings:"]
-                        for row_e in prior_learning:
-                            learn_lines.append(f"  [{row_e[1]}@{row_e[3].isoformat()[:10]}] {str(row_e[2])[:240].replace(chr(10),' ')}")
+                        for r in prior_results:
+                            src = r.get("source", "")
+                            ts = str(r.get("created_at", ""))[:10]
+                            learn_lines.append(f"  [{src}@{ts}] {str(r.get('text',''))[:240].replace(chr(10),' ')}")
                         parts.append("\n".join(learn_lines))
                 except Exception:
                     pass
@@ -2691,7 +2686,7 @@ def cmd_rpetd(args):
     #   R: RLM analyzes project architecture docs → suggests files/approach
     #      + PG memory search for past experiences on this domain
     #   P: RLM cross-checks plan against architecture constraints
-    #   E: (no auto-enrichment — agent's own execution output)
+    #   E: RLM execution review (branch name, commit format, missing files) + PG past failures
     #   T: RLM validates test output against success criteria
     #   D: PG memory logs delivery for system learning
     phase_supplement = ""
@@ -3730,6 +3725,7 @@ AGENT WORKFLOW (heartbeat cycle):
     a.add_argument("--criteria",           help="Success criteria, pipe-separated")
     a.add_argument("--deliverables",       help="Deliverables, pipe-separated")
     a.add_argument("--checklist",          help="Validation checklist, pipe-separated")
+    a.add_argument("--force",              action="store_true", help="Override hierarchy constraint check")
 
     # ── show ──────────────────────────────────────────────────────────────────
     sh = sub.add_parser("show", help="Full detail of one item")

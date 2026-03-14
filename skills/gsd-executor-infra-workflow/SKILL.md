@@ -1,4 +1,4 @@
-# GSD Executor Workflow — Infra
+# Amauta Executor Workflow — Infra
 
 ## Context Pipeline (run BEFORE any work)
 ```bash

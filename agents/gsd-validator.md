@@ -78,8 +78,8 @@ T-phase must include actual command output. "All tests pass" without output = fa
 ### Gate 3: Learning Captured
 D-phase must include at least one `LEARNING:` statement for future memory.
 
-### Gate 4: PR URL (for gitflow tasks)
-If the task involves code changes, the D-phase or notes should include a PR URL or branch name.
+### Gate 4: PR URL (for code tasks)
+If the task involves code changes, the D-phase or E-phase must include a PR URL (github.com/.../pull/NNN, PR #NNN, or merged evidence). A branch name alone does NOT satisfy this gate.
 
 ### Override
 Use `--force` to override gates for legitimate exceptions (local-only tasks, scaffolding, etc.):
