@@ -210,6 +210,7 @@ Task(
   RESEARCH='node ~/.claude/get-shit-done/bin/gsd-research.cjs'
   $RLM query '[task topic]' --dir . --top-k 5 --compact 2>/dev/null || true
   $MEM search '[task topic]' 2>/dev/null || true
+  $RESEARCH search '[task topic]' 2>/dev/null || true
   $CLI claim TK-0042 --agent executor-backend 2>/dev/null || true
   # IMPORTANT: read back Layer 1 enrichment (deps, siblings, prior failures injected at claim time)
   $CLI show TK-0042 2>/dev/null || true

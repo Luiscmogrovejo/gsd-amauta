@@ -657,3 +657,135 @@ describe('Auto-Learning Feedback Loop', () => {
     assert.ok(sql.includes('gsd_agent_performance'), 'Must be gsd_agent_performance');
   });
 });
+
+// ═══════════════════════════════════════════════════════
+// 15. DSN Credential Sanitization
+// ═══════════════════════════════════════════════════════
+
+describe('DSN Credential Sanitization', () => {
+  test('pg_store.py has _sanitize_error method', () => {
+    const source = fs.readFileSync(path.join(ROOT, 'services', 'pg_store.py'), 'utf-8');
+    assert.ok(source.includes('_sanitize_error'), 'Must have _sanitize_error method');
+    assert.ok(source.includes('[redacted]'), 'Must redact credentials');
+  });
+
+  test('pg_store.py health() uses _sanitize_error for error responses', () => {
+    const source = fs.readFileSync(path.join(ROOT, 'services', 'pg_store.py'), 'utf-8');
+    const healthFn = source.substring(
+      source.indexOf('def health('),
+      source.indexOf('def health(') + 500
+    );
+    assert.ok(healthFn.includes('_sanitize_error'), 'health() must sanitize errors');
+  });
+
+  test('amauta-daemon.py has _safe_error function', () => {
+    const source = fs.readFileSync(path.join(ROOT, 'services', 'amauta-daemon.py'), 'utf-8');
+    assert.ok(source.includes('def _safe_error'), 'Must have _safe_error function');
+    assert.ok(source.includes('[redacted]'), 'Must redact credentials');
+  });
+
+  test('amauta-daemon.py error responses use _safe_error, not raw str(e)', () => {
+    const source = fs.readFileSync(path.join(ROOT, 'services', 'amauta-daemon.py'), 'utf-8');
+    // Should NOT have raw str(e) in error responses
+    const rawStrE = source.match(/_send_json\(\{"error": str\(e\)/g);
+    assert.strictEqual(rawStrE, null, 'Must NOT use raw str(e) in API error responses');
+    // Should use _safe_error(e) instead
+    const safeError = source.match(/_safe_error\(e\)/g);
+    assert.ok(safeError && safeError.length >= 10, 'Must use _safe_error(e) for all error responses');
+  });
+
+  test('amauta-daemon.py imports re module for sanitization', () => {
+    const source = fs.readFileSync(path.join(ROOT, 'services', 'amauta-daemon.py'), 'utf-8');
+    assert.ok(source.includes('import re'), 'Must import re for regex sanitization');
+  });
+});
+
+// ═══════════════════════════════════════════════════════
+// 16. RLM Phase Enrichment (E/T/D fixed)
+// ═══════════════════════════════════════════════════════
+
+describe('RLM Phase Enrichment (E/T/D phases)', () => {
+  test('E-phase calls _pick_domain_doc and guards with if doc_path:', () => {
+    const source = fs.readFileSync(path.join(ROOT, 'amauta.py'), 'utf-8');
+    // Find the E-phase block
+    const ePhase = source.substring(
+      source.indexOf('elif phase == "E"'),
+      source.indexOf('elif phase == "T"')
+    );
+    assert.ok(ePhase.includes('_pick_domain_doc'), 'E-phase must call _pick_domain_doc');
+    assert.ok(ePhase.includes('if doc_path:'), 'E-phase must guard RLM call with if doc_path:');
+    assert.ok(ePhase.includes('_rlm_query'), 'E-phase must call _rlm_query');
+    assert.ok(!ePhase.includes('text=agent_content'), 'E-phase must NOT pass text= without doc_path');
+  });
+
+  test('T-phase calls _pick_domain_doc and guards with if doc_path:', () => {
+    const source = fs.readFileSync(path.join(ROOT, 'amauta.py'), 'utf-8');
+    const tPhase = source.substring(
+      source.indexOf('elif phase == "T"'),
+      source.indexOf('elif phase == "D"')
+    );
+    assert.ok(tPhase.includes('_pick_domain_doc'), 'T-phase must call _pick_domain_doc');
+    assert.ok(tPhase.includes('if doc_path:'), 'T-phase must guard RLM call with if doc_path:');
+  });
+
+  test('D-phase calls _pick_domain_doc and guards with if doc_path:', () => {
+    const source = fs.readFileSync(path.join(ROOT, 'amauta.py'), 'utf-8');
+    const dPhase = source.substring(
+      source.indexOf('elif phase == "D"'),
+      source.indexOf('# ── Write delivery event')
+    );
+    assert.ok(dPhase.includes('_pick_domain_doc'), 'D-phase must call _pick_domain_doc');
+    assert.ok(dPhase.includes('if doc_path:'), 'D-phase must guard RLM call with if doc_path:');
+  });
+
+  test('R-phase and P-phase still call _rlm_query with doc_path', () => {
+    const source = fs.readFileSync(path.join(ROOT, 'amauta.py'), 'utf-8');
+    const rPhase = source.substring(
+      source.indexOf('if phase == "R"'),
+      source.indexOf('elif phase == "P"')
+    );
+    assert.ok(rPhase.includes('doc_path=doc_path'), 'R-phase must pass doc_path');
+    
+    const pPhase = source.substring(
+      source.indexOf('elif phase == "P"'),
+      source.indexOf('elif phase == "E"')
+    );
+    assert.ok(pPhase.includes('doc_path=doc_path'), 'P-phase must pass doc_path');
+  });
+});
+
+// ═══════════════════════════════════════════════════════
+// 17. Operator Context Passing
+// ═══════════════════════════════════════════════════════
+
+describe('Operator Context Passing', () => {
+  test('Operator Task() prompt includes $RESEARCH search call', () => {
+    const source = fs.readFileSync(path.join(ROOT, 'agents', 'gsd-operator.md'), 'utf-8');
+    const taskPrompt = source.substring(
+      source.indexOf('Context Pipeline'),
+      source.indexOf('RPETD Protocol')
+    );
+    assert.ok(taskPrompt.includes('$RESEARCH search'), 'Operator must include $RESEARCH search in context pipeline');
+    assert.ok(taskPrompt.includes('$RLM query'), 'Operator must include $RLM query');
+    assert.ok(taskPrompt.includes('$MEM search'), 'Operator must include $MEM search');
+  });
+});
+
+// ═══════════════════════════════════════════════════════
+// 18. RLM Performance Optimization
+// ═══════════════════════════════════════════════════════
+
+describe('RLM Performance Optimization', () => {
+  test('score_chunks pre-tokenizes chunks (no O(n*m) retokenization)', () => {
+    const source = fs.readFileSync(path.join(ROOT, 'services', 'rlm-service.py'), 'utf-8');
+    const scoreFn = source.substring(
+      source.indexOf('def score_chunks'),
+      source.indexOf('def _tokenize')
+    );
+    assert.ok(scoreFn.includes('chunk_token_sets'), 'Must pre-tokenize chunks into chunk_token_sets');
+    assert.ok(scoreFn.includes('for token_set in chunk_token_sets'), 'Must iterate pre-tokenized sets');
+    // doc_freq loop should iterate chunk_token_sets, not re-call _tokenize per chunk per term
+    const docFreqLoop = scoreFn.substring(scoreFn.indexOf('for term in terms'));
+    assert.ok(docFreqLoop.includes('token_set'), 'doc_freq loop must use pre-tokenized sets');
+  });
+});

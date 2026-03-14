@@ -472,11 +472,12 @@ def score_chunks(chunks, query, top_k=None):
     if not terms:
         return chunks[:top_k]
 
-    # Build IDF across all chunks
+    # Pre-tokenize all chunks once (avoids O(n*m) retokenization)
     n_docs = len(chunks)
+    chunk_token_sets = [_tokenize(c["text"]) for c in chunks]
     doc_freq = {}
     for term in terms:
-        count = sum(1 for c in chunks if term in _tokenize(c["text"]))
+        count = sum(1 for token_set in chunk_token_sets if term in token_set)
         doc_freq[term] = count
 
     scored = []

@@ -15,6 +15,7 @@ Usage:
 import http.server
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -154,6 +155,13 @@ _metrics = _Metrics()
 
 # ── Request Body Size Limit ────────────────────────────────────────────────────
 MAX_BODY_SIZE = int(os.environ.get("AMAUTA_MAX_BODY_SIZE", str(10 * 1024 * 1024)))  # 10MB default
+
+def _safe_error(e):
+    """Sanitize exception messages to prevent DSN/credential leakage."""
+    msg = str(e)
+    msg = re.sub(r'postgresql://[^@]+@', 'postgresql://[redacted]@', msg)
+    msg = re.sub(r'postgres://[^@]+@', 'postgres://[redacted]@', msg)
+    return msg
 
 
 # ═══════════════════════════════════════════════════════
@@ -388,7 +396,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 )
                 self._send_json({"results": results, "count": len(results)})
             except Exception as e:
-                self._send_json({"error": str(e)}, 500)
+                self._send_json({"error": _safe_error(e)}, 500)
             return
 
         if path == "/api/memory/count":
@@ -399,7 +407,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 count = _pg_store.memory_count()
                 self._send_json({"count": count})
             except Exception as e:
-                self._send_json({"error": str(e)}, 500)
+                self._send_json({"error": _safe_error(e)}, 500)
             return
 
         if path == "/api/memory/embedding-stats":
@@ -410,7 +418,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 stats = _pg_store.memory_embedding_stats()
                 self._send_json(stats)
             except Exception as e:
-                self._send_json({"error": str(e)}, 500)
+                self._send_json({"error": _safe_error(e)}, 500)
             return
 
         # ─── Agent Performance GET route (PG required) ──────
@@ -429,7 +437,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 summary = _pg_store.agent_performance_summary(agent_id)
                 self._send_json(summary or {"total_tasks": 0, "agent_id": agent_id})
             except Exception as e:
-                self._send_json({"error": str(e)}, 500)
+                self._send_json({"error": _safe_error(e)}, 500)
             return
 
         # ─── SKB GET routes (PG required) ─────────────
@@ -446,7 +454,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 )
                 self._send_json({"results": results, "count": len(results)})
             except Exception as e:
-                self._send_json({"error": str(e)}, 500)
+                self._send_json({"error": _safe_error(e)}, 500)
             return
 
         # ─── Validation GET routes (PG required) ──────
@@ -459,7 +467,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 results = _pg_store.validation_history(task_id)
                 self._send_json({"results": results, "count": len(results)})
             except Exception as e:
-                self._send_json({"error": str(e)}, 500)
+                self._send_json({"error": _safe_error(e)}, 500)
             return
 
         self._send_json({"error": f"Unknown GET route: {path}"}, 404)
@@ -620,7 +628,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     )
                 self._send_json({"id": mem_id, "stored": True, "embedded": bool(use_embedding)})
             except Exception as e:
-                self._send_json({"error": str(e)}, 500)
+                self._send_json({"error": _safe_error(e)}, 500)
             return
 
         if path == "/api/memory/search":
@@ -640,7 +648,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 )
                 self._send_json({"results": results, "count": len(results)})
             except Exception as e:
-                self._send_json({"error": str(e)}, 500)
+                self._send_json({"error": _safe_error(e)}, 500)
             return
 
         if path == "/api/memory/delete":
@@ -655,7 +663,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 _pg_store.memory_delete(mem_id)
                 self._send_json({"deleted": True, "id": mem_id})
             except Exception as e:
-                self._send_json({"error": str(e)}, 500)
+                self._send_json({"error": _safe_error(e)}, 500)
             return
 
         if path == "/api/memory/semantic-search":
@@ -675,7 +683,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 )
                 self._send_json({"results": results, "count": len(results), "method": method})
             except Exception as e:
-                self._send_json({"error": str(e)}, 500)
+                self._send_json({"error": _safe_error(e)}, 500)
             return
 
         if path == "/api/memory/backfill-embeddings":
@@ -688,7 +696,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 )
                 self._send_json(result)
             except Exception as e:
-                self._send_json({"error": str(e)}, 500)
+                self._send_json({"error": _safe_error(e)}, 500)
             return
 
         if path == "/api/memory/cross-project":
@@ -708,7 +716,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 )
                 self._send_json({"results": results, "count": len(results)})
             except Exception as e:
-                self._send_json({"error": str(e)}, 500)
+                self._send_json({"error": _safe_error(e)}, 500)
             return
 
         # ─── SKB POST routes (PG required) ────────────
@@ -733,7 +741,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 )
                 self._send_json({"id": skb_id, "stored": True})
             except Exception as e:
-                self._send_json({"error": str(e)}, 500)
+                self._send_json({"error": _safe_error(e)}, 500)
             return
 
         if path == "/api/skb/search":
@@ -752,7 +760,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 )
                 self._send_json({"results": results, "count": len(results)})
             except Exception as e:
-                self._send_json({"error": str(e)}, 500)
+                self._send_json({"error": _safe_error(e)}, 500)
             return
 
         # ─── Validation POST route (PG required) ──────
@@ -776,7 +784,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 )
                 self._send_json({"id": vid, "recorded": True})
             except Exception as e:
-                self._send_json({"error": str(e)}, 500)
+                self._send_json({"error": _safe_error(e)}, 500)
             return
 
         # ─── Agent Performance POST route (PG required) ──────
@@ -803,7 +811,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 )
                 self._send_json({"recorded": True})
             except Exception as e:
-                self._send_json({"error": str(e)}, 500)
+                self._send_json({"error": _safe_error(e)}, 500)
             return
 
         self._send_json({"error": f"Unknown POST route: {path}"}, 404)

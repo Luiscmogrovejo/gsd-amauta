@@ -7,7 +7,7 @@ PostgreSQL persistent memory · pgvector semantic search · RLM context engine �
 Everything degrades gracefully to vanilla GSD when infrastructure is unavailable.
 
 ```
-1453 tests (94%+ coverage) · 11 agents · 11 skills · 5 CLI tools · 3 services · 9 specs · 20 agentic AI patterns
+1464 tests (94%+ coverage) · 11 agents · 11 skills · 5 CLI tools · 3 services · 9 specs · 20 agentic AI patterns
 ```
 
 ---
@@ -1032,7 +1032,7 @@ docker ps --filter name=gsd-postgres
 ## 17. Testing
 
 ```bash
-npm test                                          # All 1453 tests
+npm test                                          # All 1464 tests
 
 # Individual suites
 node --test tests/agent-frontmatter.test.cjs     # Agent validation (10 tests)
@@ -1052,14 +1052,14 @@ node --test tests/security-infrastructure.test.cjs # Security & infra audit (77 
 node --test tests/validation-gates.test.cjs      # 4-gate validation (38 tests)
 ```
 
-**1453 tests across 31 files**, covering:
+**1464 tests across 31 files**, covering:
 
 - **Python unit tests** (101): `_score()`, `_deps_met()`, `_dedup_check()`, `_extract_pr_url()`, `_has_branch_evidence()`, `_has_test_evidence()`, `_infer_lane()`, `_infer_domain_tags()`, `_normalize_tags()`, `_task_hygiene_gaps()`, and 20+ more Python functions tested in isolation
 - **E2E pipeline** (184): Full RPETD lifecycle, validation gates, memory pipeline, dependency chains, sprint management, atomization, cross-pipeline integration
 - **RLM + workflows + specs** (73): RLM service structure, 36 workflow files validated, 7+ spec compliance, SQL migration chain, PG store and daemon structure
 - **Validation gates** (38): All 4 gates (BRANCH_EVIDENCE, LEARNING_BLOCK, TEST_EVIDENCE, PR_URL) with pass/fail/skip/edge cases
 - **Auto-learning** (38): Performance tracking, enrichment injection, gate extraction, PG store methods, daemon routes
-- **Security & infrastructure** (77): RLM path traversal, body size limits, daemon auth, migration integrity, Docker config, backup security, Windows compat, .env completeness, connection pool safety, spec compliance, agent architecture, context passing
+- **Security & infrastructure** (88): RLM path traversal, body size limits, daemon auth, migration integrity, Docker config, backup security, Windows compat, .env completeness, connection pool safety, spec compliance, agent architecture, context passing, DSN credential sanitization, RLM phase enrichment, operator context pipeline, RLM performance optimization
 - **Research chain** (15): Agent/skill RESEARCH= variable verification, workflow research integration
 - **Agent frontmatter** (10): Anti-heredoc, skills, hooks, spawn consistency, 11-agent roster
 - **CLI commands** (56): All argument parsing, error paths, routing branches

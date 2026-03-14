@@ -1577,18 +1577,20 @@ def _rpetd_phase_enrich(phase: str, item: dict, agent_content: str) -> str:
             if agent_content and len(agent_content.strip()) > 30:
                 phases_so_far = item.get("rpetd_phases", {}) or {}
                 plan_context = str(phases_so_far.get("P", ""))[:400]
-                rlm_answer = _rlm_query(
-                    f"Task '{title}'. Plan was: {plan_context}. "
-                    f"Execution output: {agent_content[:600]}. "
-                    f"Check: (1) Does the branch name follow feat/TK-XXXX-desc convention? "
-                    f"(2) Are all files from the plan accounted for in the execution? "
-                    f"(3) Does the commit message follow conventional commits format? "
-                    f"(4) Any errors or blockers in the output? Flag any issues.",
-                    text=agent_content[:3000],
-                    task_id=task_id,
-                )
-                if rlm_answer:
-                    supplement_parts.append(f"[RLM] Execution review:\n  {rlm_answer[:600]}")
+                doc_path = _pick_domain_doc(title, desc)
+                if doc_path:
+                    rlm_answer = _rlm_query(
+                        f"Task '{title}'. Plan was: {plan_context}. "
+                        f"Execution output: {agent_content[:600]}. "
+                        f"Check: (1) Does the branch name follow feat/TK-XXXX-desc convention? "
+                        f"(2) Are all files from the plan accounted for in the execution? "
+                        f"(3) Does the commit message follow conventional commits format? "
+                        f"(4) Any errors or blockers in the output? Flag any issues.",
+                        doc_path=doc_path,
+                        task_id=task_id,
+                    )
+                    if rlm_answer:
+                        supplement_parts.append(f"[RLM] Execution review:\n  {rlm_answer[:600]}")
 
             # ── PostgreSQL memory: any past failures on same domain ────────
             if _search_q and _mem_pg_available():
@@ -1606,15 +1608,17 @@ def _rpetd_phase_enrich(phase: str, item: dict, agent_content: str) -> str:
         elif phase == "T":
             # ── RLM criteria validation ────────────────────────────────────
             if criteria_str and agent_content:
-                rlm_answer = _rlm_query(
-                    f"Task: '{title}'. Success criteria: {criteria_str}. "
-                    f"Test output: {agent_content[:800]}. "
-                    f"Does the test output demonstrate that ALL success criteria are met? List any gaps.",
-                    text=agent_content[:2000],
-                    task_id=task_id,
-                )
-                if rlm_answer:
-                    supplement_parts.append(f"[RLM] Criteria check:\n  {rlm_answer[:600]}")
+                doc_path = _pick_domain_doc(title, desc)
+                if doc_path:
+                    rlm_answer = _rlm_query(
+                        f"Task: '{title}'. Success criteria: {criteria_str}. "
+                        f"Test output: {agent_content[:800]}. "
+                        f"Does the test output demonstrate that ALL success criteria are met? List any gaps.",
+                        doc_path=doc_path,
+                        task_id=task_id,
+                    )
+                    if rlm_answer:
+                        supplement_parts.append(f"[RLM] Criteria check:\n  {rlm_answer[:600]}")
             elif agent_content and not criteria_str:
                 if _mem_pg_available():
                     results = _mem_pg_search(f"{item.get('id','')} test validation", None, 3)
@@ -1629,19 +1633,21 @@ def _rpetd_phase_enrich(phase: str, item: dict, agent_content: str) -> str:
             if agent_content and len(agent_content.strip()) > 20:
                 phases_so_far = item.get("rpetd_phases", {}) or {}
                 t_phase = str(phases_so_far.get("T", ""))[:300]
-                rlm_answer = _rlm_query(
-                    f"Task '{title}'. Success criteria: {criteria_str or 'not specified'}. "
-                    f"Test evidence: {t_phase}. "
-                    f"Delivery description: {agent_content[:600]}. "
-                    f"Check: (1) Does the PR/deliverable description reference the task ID? "
-                    f"(2) Does it match what the success criteria required? "
-                    f"(3) Is the PR URL present? "
-                    f"(4) Any red flags that would cause validator to reject this?",
-                    text=agent_content[:2000],
-                    task_id=task_id,
-                )
-                if rlm_answer:
-                    supplement_parts.append(f"[RLM] Delivery check:\n  {rlm_answer[:600]}")
+                doc_path = _pick_domain_doc(title, desc)
+                if doc_path:
+                    rlm_answer = _rlm_query(
+                        f"Task '{title}'. Success criteria: {criteria_str or 'not specified'}. "
+                        f"Test evidence: {t_phase}. "
+                        f"Delivery description: {agent_content[:600]}. "
+                        f"Check: (1) Does the PR/deliverable description reference the task ID? "
+                        f"(2) Does it match what the success criteria required? "
+                        f"(3) Is the PR URL present? "
+                        f"(4) Any red flags that would cause validator to reject this?",
+                        doc_path=doc_path,
+                        task_id=task_id,
+                    )
+                    if rlm_answer:
+                        supplement_parts.append(f"[RLM] Delivery check:\n  {rlm_answer[:600]}")
 
             # ── Write delivery event to amauta_memory ─────────────────────
             # Use "session-learning" source (score boost +3) so this delivery record

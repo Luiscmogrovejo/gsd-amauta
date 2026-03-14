@@ -147,6 +147,16 @@ class PGStore:
                 except Exception:
                     pass
 
+    @staticmethod
+    def _sanitize_error(e):
+        """Sanitize error message to prevent DSN/password leakage."""
+        msg = str(e)
+        # Remove anything before @ in a DSN pattern (contains user:password)
+        import re as _re
+        msg = _re.sub(r'postgresql://[^@]+@', 'postgresql://[redacted]@', msg)
+        msg = _re.sub(r'postgres://[^@]+@', 'postgres://[redacted]@', msg)
+        return msg
+
     def health(self):
         """Check PG connection health."""
         try:
@@ -155,7 +165,7 @@ class PGStore:
                     cur.execute("SELECT 1")
                     return {"status": "ok", "dsn_host": self.dsn.split("@")[-1].split("/")[0]}
         except Exception as e:
-            return {"status": "error", "error": str(e)}
+            return {"status": "error", "error": self._sanitize_error(e)}
 
     # ═══════════════════════════════════════════════════════
     # Memory Operations
