@@ -7,7 +7,7 @@ PostgreSQL persistent memory · pgvector semantic search · RLM context engine �
 Everything degrades gracefully to vanilla GSD when infrastructure is unavailable.
 
 ```
-1101 tests · 11 agents · 11 skills · 5 CLI tools · 3 services · 9 specs · 20 agentic AI patterns
+1302 tests · 11 agents · 11 skills · 5 CLI tools · 3 services · 9 specs · 20 agentic AI patterns
 ```
 
 ---
@@ -857,7 +857,7 @@ node ~/.claude/gsd-amauta/get-shit-done/bin/gsd-rlm.cjs health
 node ~/.claude/gsd-amauta/get-shit-done/bin/gsd-research.cjs check-providers
 
 # Tests
-npm test   # 1101 tests expected
+npm test                                          # 1302 tests expected
 ```
 
 ---
@@ -1032,7 +1032,7 @@ docker ps --filter name=gsd-postgres
 ## 17. Testing
 
 ```bash
-npm test                                          # All 1101 tests
+npm test                                          # All 1302 tests
 
 # Individual suites
 node --test tests/agent-frontmatter.test.cjs     # Agent validation (10 tests)
@@ -1051,7 +1051,7 @@ node --test tests/rlm-workflow-spec.test.cjs     # RLM + workflow + spec (73 tes
 node --test tests/validation-gates.test.cjs      # 4-gate validation (38 tests)
 ```
 
-**1101 tests across 27 files**, covering:
+**1302 tests across 29 files**, covering:
 
 - **Python unit tests** (101): `_score()`, `_deps_met()`, `_dedup_check()`, `_extract_pr_url()`, `_has_branch_evidence()`, `_has_test_evidence()`, `_infer_lane()`, `_infer_domain_tags()`, `_normalize_tags()`, `_task_hygiene_gaps()`, and 20+ more Python functions tested in isolation
 - **E2E pipeline** (184): Full RPETD lifecycle, validation gates, memory pipeline, dependency chains, sprint management, atomization, cross-pipeline integration
@@ -1146,7 +1146,7 @@ gsd-amauta/
 │   ├── test-phase.md
 │   └── ...
 │
-├── tests/                            # 1101 tests (27 files)
+├── tests/                            # 1302 tests (29 files)
 ├── bin/
 │   └── install.js                    # Self-installer (2897 lines)
 └── scripts/
