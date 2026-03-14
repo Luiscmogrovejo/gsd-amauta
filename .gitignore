@@ -44,4 +44,5 @@ __pycache__/
 !.env.example
 credentials.json
 *.secret
+*.bak
 backups/

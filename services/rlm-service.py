@@ -538,11 +538,14 @@ def _compute_score(chunk, query_terms, doc_freq, n_docs):
     if len(query_terms) > 0:
         score /= len(query_terms)
 
-    # Position penalty: later chunks in a file score lower (-0.1 per position)
-    # Prioritizes code near the top of files (imports, class definitions, API surface)
-    chunk_position = chunk.get("start_line", 0) / max(1, chunk.get("start_line", 0) + chunk.get("end_line", 1))
-    position_penalty = 0.1 * chunk_position
-    score = score * (1 - position_penalty)
+    # Position penalty: later chunks in a file score lower
+    # Uses start_line relative to end_line as a proxy for depth in file.
+    # Chunks near the top (imports, class definitions) get no penalty.
+    # Chunks deep in the file get up to ~10% penalty.
+    end = max(1, chunk.get("end_line", 1))
+    start = chunk.get("start_line", 0)
+    depth_ratio = min(1.0, start / end) if end > 0 else 0
+    score = score * (1 - 0.1 * depth_ratio)
 
     return score
 

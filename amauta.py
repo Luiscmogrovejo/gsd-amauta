@@ -207,7 +207,7 @@ def load() -> dict:
             with open(TASKS_FILE) as f:
                 return json.load(f)
         except json.JSONDecodeError as e:
-            # Try to read from the backup .tmp file if the main file is corrupt
+            # Try to read from the .bak backup if the main file is corrupt
             backup = Path(str(TASKS_FILE) + ".bak")
             if backup.exists():
                 try:
@@ -237,9 +237,16 @@ def save(data: dict):
       - no world access (principle of least privilege)
     """
     with _file_lock():
-        # NOTE: pwd/grp imports removed — we use hardcoded uid/gid=1000 (line 207)
         data["metadata"]["updated"] = _now()
         data["metadata"]["version"] = "2.0"
+        # Create .bak backup before writing (recoverable by load() on corruption)
+        bak = Path(str(TASKS_FILE) + ".bak")
+        if TASKS_FILE.exists():
+            try:
+                import shutil
+                shutil.copy2(TASKS_FILE, bak)
+            except OSError:
+                pass  # Best-effort backup
         tmp = tempfile.NamedTemporaryFile(
             mode="w", dir=DATA_DIR, delete=False, suffix=".tmp"
         )
@@ -1092,11 +1099,11 @@ def _score(item: dict, all_items: list) -> float:
     raw_urg = item.get("urgency", 3)
     try:
         imp = max(1, min(5, int(raw_imp if raw_imp is not None else 3)))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         imp = 3
     try:
         urg = max(1, min(5, int(raw_urg if raw_urg is not None else 3)))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         urg = 3
     iid = item.get("id", "")
     dep_p = min(5, _dep_pressure_cache.get(iid, 0))
@@ -2718,15 +2725,14 @@ def cmd_delete(args):
     item  = _find(items, args.id)
     if not item:
         print(c(f"{args.id} not found.", RED)); sys.exit(1)
-    # Remove from parent's children list
+    # Remove from parent's children list (list comprehension handles duplicates)
     for i in items:
-        if item["id"] in i.get("children", []):
-            i["children"].remove(item["id"])
+        if "children" in i:
+            i["children"] = [c for c in i["children"] if c != item["id"]]
     # Remove from other items' dependency lists (prevents silent unblocking)
     for i in items:
-        deps = i.get("dependencies", [])
-        if item["id"] in deps:
-            deps.remove(item["id"])
+        if "dependencies" in i:
+            i["dependencies"] = [d for d in i["dependencies"] if d != item["id"]]
     # Orphan-check: clear parent reference on children of the deleted item
     for child_id in item.get("children", []):
         child = _find(items, child_id)
@@ -3887,7 +3893,11 @@ def cmd_import(args):
     existing_ids = {i["id"] for i in data["items"]}
     added = 0
     for item in incoming.get("items", []):
-        if item["id"] not in existing_ids:
+        iid = item.get("id")
+        if not iid:
+            print(dim(f"  Skipping item without 'id': {str(item.get('title','?'))[:60]}"))
+            continue
+        if iid not in existing_ids:
             data["items"].append(item); added += 1
     save(data)
     print(c(f"Merged: {added} new items added.", GREEN))
