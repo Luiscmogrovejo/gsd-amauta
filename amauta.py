@@ -245,8 +245,8 @@ def save(data: dict):
             try:
                 import shutil
                 shutil.copy2(TASKS_FILE, bak)
-            except OSError:
-                pass  # Best-effort backup
+            except OSError as _bak_err:
+                log.warning("save: .bak backup failed: %s", _bak_err)
         tmp = tempfile.NamedTemporaryFile(
             mode="w", dir=DATA_DIR, delete=False, suffix=".tmp"
         )

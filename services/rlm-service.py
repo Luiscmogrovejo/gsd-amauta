@@ -480,9 +480,12 @@ def score_chunks(chunks, query, top_k=None):
         count = sum(1 for token_set in chunk_token_sets if term in token_set)
         doc_freq[term] = count
 
+    # Compute max end_line across all chunks (proxy for total file lines)
+    max_end_line = max((c.get("end_line", 1) for c in chunks), default=1)
+
     scored = []
     for chunk in chunks:
-        score = _compute_score(chunk, terms, doc_freq, n_docs)
+        score = _compute_score(chunk, terms, doc_freq, n_docs, max_end_line)
         scored.append((score, chunk))
 
     # Sort by score descending, then by start_line ascending for stability
@@ -502,10 +505,11 @@ def _tokenize(text):
     return set(re.findall(r"\b[a-zA-Z_]\w{2,}\b", text.lower()))
 
 
-def _compute_score(chunk, query_terms, doc_freq, n_docs):
+def _compute_score(chunk, query_terms, doc_freq, n_docs, total_lines=1):
     """
     Compute relevance score for a chunk.
     Uses TF-IDF + label boost + position penalty.
+    total_lines: max end_line across all chunks in the file (proxy for file length).
     """
     text = chunk["text"].lower()
     label = chunk.get("label", "").lower()
@@ -538,13 +542,12 @@ def _compute_score(chunk, query_terms, doc_freq, n_docs):
     if len(query_terms) > 0:
         score /= len(query_terms)
 
-    # Position penalty: later chunks in a file score lower
-    # Uses start_line relative to end_line as a proxy for depth in file.
-    # Chunks near the top (imports, class definitions) get no penalty.
-    # Chunks deep in the file get up to ~10% penalty.
-    end = max(1, chunk.get("end_line", 1))
-    start = chunk.get("start_line", 0)
-    depth_ratio = min(1.0, start / end) if end > 0 else 0
+    # Position penalty: later chunks in a file score lower (-0.1 per depth).
+    # Uses start_line / total_lines to compute real position in file.
+    # Chunks at top (imports, class defs) get ~0% penalty.
+    # Chunks at bottom get up to ~10% penalty.
+    tl = max(1, total_lines)
+    depth_ratio = min(1.0, chunk.get("start_line", 0) / tl)
     score = score * (1 - 0.1 * depth_ratio)
 
     return score

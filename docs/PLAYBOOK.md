@@ -416,7 +416,7 @@ Task(
 
 Or use the CLI directly:
 ```bash
-node ~/.claude/get-shit-done/bin/gsd-research.cjs "PostgreSQL connection pooling Node.js best practices"
+node ~/.claude/get-shit-done/bin/gsd-research.cjs search "PostgreSQL connection pooling Node.js best practices"
 node ~/.claude/get-shit-done/bin/gsd-research.cjs check-providers  # see what's available
 ```
 

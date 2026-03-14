@@ -91,7 +91,7 @@ node ~/.claude/get-shit-done/bin/gsd-memory.cjs store --source lesson-learned --
 ### Research Chain — `gsd-research.cjs` (when available)
 ```bash
 # Research with chain: memory → SKB → Context7 → Perplexity → WebFetch
-node ~/.claude/get-shit-done/bin/gsd-research.cjs "best practices for PostgreSQL connection pooling"
+node ~/.claude/get-shit-done/bin/gsd-research.cjs search "best practices for PostgreSQL connection pooling"
 ```
 </cli_tools>
 

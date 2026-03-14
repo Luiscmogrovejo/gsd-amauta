@@ -192,6 +192,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         length = max(0, length)
         if length > MAX_BODY_SIZE:
+            self.close_connection = True  # Prevent keep-alive reuse with unread body
             self.send_response(413)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
@@ -855,6 +856,11 @@ def start_server(foreground=False):
     def shutdown_handler(signum, frame):
         log.info("daemon_shutdown")
         print("\nShutting down daemon...")
+        if _pg_store:
+            try:
+                _pg_store.close()
+            except Exception:
+                pass
         server.shutdown()
         PID_FILE.unlink(missing_ok=True)
         sys.exit(0)
@@ -918,6 +924,11 @@ def start_server(foreground=False):
     except KeyboardInterrupt:
         pass
     finally:
+        if _pg_store:
+            try:
+                _pg_store.close()
+            except Exception:
+                pass
         server.server_close()
         PID_FILE.unlink(missing_ok=True)
 

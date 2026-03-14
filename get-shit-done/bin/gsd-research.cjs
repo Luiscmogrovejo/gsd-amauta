@@ -268,28 +268,43 @@ async function providerWebFetch(query, _limit, url) {
       const parsedUrl = new URL(url);
       const proto = parsedUrl.protocol === 'https:' ? https : http;
 
-      proto.get(url, { timeout: 15000 }, (res) => {
-        let data = '';
-        res.on('data', (chunk) => { data += chunk; });
-        res.on('end', () => {
-          if (data.length === 0) {
-            resolve(null);
+      const MAX_REDIRECTS = 5;
+      const fetchUrl = (targetUrl, redirectCount) => {
+        const parsed = new URL(targetUrl);
+        const p = parsed.protocol === 'https:' ? https : http;
+        p.get(targetUrl, { timeout: 15000 }, (res) => {
+          // Follow redirects (301, 302, 307, 308) up to MAX_REDIRECTS
+          if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirectCount < MAX_REDIRECTS) {
+            const location = res.headers.location.startsWith('http')
+              ? res.headers.location
+              : new URL(res.headers.location, targetUrl).href;
+            res.resume(); // drain the redirect body
+            fetchUrl(location, redirectCount + 1);
             return;
           }
-          resolve({
-            provider: 'webfetch',
-            count: 1,
-            results: [{
-              url,
-              content: data.slice(0, 10000), // Cap at 10K chars
-              status: res.statusCode,
-              contentType: res.headers['content-type'] || 'unknown',
-            }],
+          let data = '';
+          res.on('data', (chunk) => {
+            data += chunk;
+            if (data.length > 100000) res.destroy(); // 100K safety cap during streaming
           });
+          res.on('end', () => {
+            if (data.length === 0) { resolve(null); return; }
+            resolve({
+              provider: 'webfetch',
+              count: 1,
+              results: [{
+                url: targetUrl,
+                content: data.slice(0, 10000),
+                status: res.statusCode,
+                contentType: res.headers['content-type'] || 'unknown',
+              }],
+            });
+          });
+        }).on('error', (err) => {
+          resolve({ provider: 'webfetch', count: 0, results: [], error: err.message });
         });
-      }).on('error', (err) => {
-        resolve({ provider: 'webfetch', count: 0, results: [], error: err.message });
-      });
+      };
+      fetchUrl(url, 0);
     });
   } catch (err) {
     return { provider: 'webfetch', count: 0, results: [], error: err.message };
