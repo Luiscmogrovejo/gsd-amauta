@@ -24,6 +24,26 @@ from collections import defaultdict
 from pathlib import Path
 from socketserver import ThreadingMixIn
 from urllib.parse import parse_qs, urlparse
+import logging
+
+# ── Structured Logging ─────────────────────────────────────────────────────────
+_log_level = os.environ.get("AMAUTA_LOG_LEVEL", "INFO").upper()
+_log_format = os.environ.get("AMAUTA_LOG_FORMAT", "text")  # "text" or "json"
+
+if _log_format == "json":
+    logging.basicConfig(
+        level=getattr(logging, _log_level, logging.INFO),
+        format='{"ts":"%(asctime)s","level":"%(levelname)s","module":"%(name)s","msg":"%(message)s"}',
+        stream=sys.stderr,
+    )
+else:
+    logging.basicConfig(
+        level=getattr(logging, _log_level, logging.INFO),
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        stream=sys.stderr,
+    )
+
+log = logging.getLogger("amauta.daemon")
 
 # PostgreSQL store (optional — graceful degradation)
 _pg_store = None
@@ -60,6 +80,7 @@ def _check_auth(handler) -> bool:
     auth = handler.headers.get("Authorization", "")
     if auth == f"Bearer {DAEMON_AUTH_TOKEN}":
         return True
+    log.warning("auth_failed ip=%s path=%s", handler.client_address[0], handler.path)
     handler.send_response(401)
     handler.send_header("Content-Type", "application/json")
     handler.end_headers()
@@ -84,6 +105,41 @@ class _RateLimiter:
         return True
 
 _rate_limiter = _RateLimiter()
+
+# ── Metrics ────────────────────────────────────────────────────────────────────
+class _Metrics:
+    """Lightweight Prometheus-compatible metrics. No external dependencies."""
+    def __init__(self):
+        self._counters = {}
+        self._start_time = time.time()
+    
+    def inc(self, name, labels=None):
+        key = (name, tuple(sorted((labels or {}).items())))
+        self._counters[key] = self._counters.get(key, 0) + 1
+    
+    def expose(self):
+        """Return Prometheus text format."""
+        lines = [
+            "# HELP amauta_uptime_seconds Daemon uptime in seconds",
+            "# TYPE amauta_uptime_seconds gauge",
+            f"amauta_uptime_seconds {time.time() - self._start_time:.0f}",
+            "",
+        ]
+        # Group counters by name
+        names = {}
+        for (name, label_tuple), value in sorted(self._counters.items()):
+            if name not in names:
+                lines.append(f"# HELP {name} Counter")
+                lines.append(f"# TYPE {name} counter")
+                names[name] = True
+            if label_tuple:
+                label_str = ",".join(f'{k}="{v}"' for k, v in label_tuple)
+                lines.append(f"{name}{{{label_str}}} {value}")
+            else:
+                lines.append(f"{name} {value}")
+        return "\n".join(lines) + "\n"
+
+_metrics = _Metrics()
 
 # ── Request Body Size Limit ────────────────────────────────────────────────────
 MAX_BODY_SIZE = int(os.environ.get("AMAUTA_MAX_BODY_SIZE", str(10 * 1024 * 1024)))  # 10MB default
@@ -226,9 +282,11 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
     # ─── GET routes ──────────────────────────────────
 
     def do_GET(self):
+        log.debug("request method=%s path=%s", self.command, self.path)
         if self.path != "/health" and not _check_auth(self):
             return
         if not _rate_limiter.allow(self.path):
+            log.warning("rate_limited path=%s", self.path)
             self.send_response(429)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
@@ -388,9 +446,11 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
     # ─── POST routes ─────────────────────────────────
 
     def do_POST(self):
+        log.debug("request method=%s path=%s", self.command, self.path)
         if not _check_auth(self):
             return
         if not _rate_limiter.allow(self.path):
+            log.warning("rate_limited path=%s", self.path)
             self.send_response(429)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
@@ -421,6 +481,8 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 )
                 return
             out, err, rc = self._run_amauta(args)
+            if rc != 0:
+                _metrics.inc("amauta_exec_errors_total", {"command": args[0] if args else "unknown"})
             self._send_json({"output": out, "error": err, "exit_code": rc})
             return
 
@@ -758,6 +820,7 @@ def start_server(foreground=False):
 
     # Graceful shutdown
     def shutdown_handler(signum, frame):
+        log.info("daemon_shutdown")
         print("\nShutting down daemon...")
         server.shutdown()
         PID_FILE.unlink(missing_ok=True)
@@ -789,6 +852,7 @@ def start_server(foreground=False):
     else:
         print("  PostgreSQL: pg_store module not found — running without PG")
 
+    log.info("daemon_started port=%d pid=%d", PORT, os.getpid())
     print(f"Amauta daemon listening on {HOST}:{PORT}")
     print(f"  Data dir: {DATA_DIR}")
     print(f"  PID file: {PID_FILE}")
@@ -809,6 +873,7 @@ def start_server(foreground=False):
                 return
             synced = _pg_store.task_upsert_batch(items)
             if synced:
+                log.info("reconcile_complete items=%d", len(items))
                 print(f"[reconcile] Synced {len(items)} tasks to PG mirror", file=sys.stderr)
         except Exception as e:
             print(f"[reconcile] Warning: {e}", file=sys.stderr)

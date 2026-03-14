@@ -33,6 +33,16 @@ import time
 from collections import OrderedDict
 from pathlib import Path
 from socketserver import ThreadingMixIn
+import logging
+
+# ── Structured Logging ─────────────────────────────────────────────────────────
+_log_level = os.environ.get("AMAUTA_LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, _log_level, logging.INFO),
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    stream=sys.stderr,
+)
+log = logging.getLogger("amauta.rlm")
 
 # ═══════════════════════════════════════════════════════
 # Configuration
@@ -130,6 +140,7 @@ def chunk_file(filepath, max_chars=None):
     # Check cache
     cached = CHUNK_CACHE.get(filepath, mtime)
     if cached is not None:
+        log.debug("cache_%s path=%s", "hit", filepath)
         return cached
 
     try:
@@ -155,6 +166,7 @@ def chunk_file(filepath, max_chars=None):
         chunks = _chunk_generic(content, filepath, max_chars)
 
     # Cache results
+    log.debug("cache_%s path=%s", "miss", filepath)
     CHUNK_CACHE.put(filepath, mtime, chunks)
     return chunks
 
@@ -689,6 +701,7 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
             self._send_json({"error": "directory required"}, 400)
             return
 
+        log.debug("rlm_query query=%r top_k=%d", query[:50], top_k)
         directory = os.path.expanduser(directory)
         if not os.path.isdir(directory):
             self._send_json({"error": f"Directory not found: {directory}"}, 404)
@@ -741,6 +754,7 @@ def start_server(foreground=False):
     PID_FILE.write_text(str(os.getpid()))
 
     def shutdown_handler(signum, frame):
+        log.info("rlm_shutdown")
         print("\nShutting down RLM service...")
         server.shutdown()
         PID_FILE.unlink(missing_ok=True)
@@ -749,6 +763,7 @@ def start_server(foreground=False):
     signal.signal(signal.SIGTERM, shutdown_handler)
     signal.signal(signal.SIGINT, shutdown_handler)
 
+    log.info("rlm_started port=%d", PORT)
     print(f"RLM service listening on {HOST}:{PORT}")
     print(f"  Max chunk: {MAX_CHUNK_CHARS} chars")
     print(f"  Cache max: {CACHE_MAX_SIZE} entries")

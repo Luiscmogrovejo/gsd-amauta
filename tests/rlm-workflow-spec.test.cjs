@@ -366,13 +366,16 @@ describe('Spec Compliance — all specs', () => {
 // ═══════════════════════════════════════════════════════
 
 describe('SQL Migration Chain Integrity', () => {
-  const migrationFiles = fs.readdirSync(MIGRATIONS_DIR).filter(f => f.endsWith('.sql')).sort();
+  const allFiles = fs.readdirSync(MIGRATIONS_DIR).filter(f => f.endsWith('.sql')).sort();
+  const migrationFiles = allFiles.filter(f => !f.includes('DOWN'));
+  const downFiles = allFiles.filter(f => f.includes('DOWN'));
 
-  test('4.1 all 5 migration files exist', () => {
-    assert.ok(migrationFiles.length >= 5, `Expected >=5 migrations, got ${migrationFiles.length}`);
+  test('4.1 all 5 UP + 5 DOWN migration files exist', () => {
+    assert.ok(migrationFiles.length >= 5, `Expected >=5 UP migrations, got ${migrationFiles.length}`);
+    assert.ok(downFiles.length >= 5, `Expected >=5 DOWN migrations, got ${downFiles.length}`);
   });
 
-  test('4.2 migrations numbered sequentially', () => {
+  test('4.2 UP migrations numbered sequentially', () => {
     const nums = migrationFiles.map(f => parseInt(f.split('-')[0]));
     for (let i = 0; i < nums.length - 1; i++) {
       assert.ok(nums[i] < nums[i+1], `Migration ${nums[i]} should come before ${nums[i+1]}`);

@@ -25,6 +25,26 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlsplit, urlunsplit
+import logging
+
+# ── Structured Logging ─────────────────────────────────────────────────────────
+_log_level = os.environ.get("AMAUTA_LOG_LEVEL", "INFO").upper()
+_log_format = os.environ.get("AMAUTA_LOG_FORMAT", "text")  # "text" or "json"
+
+if _log_format == "json":
+    logging.basicConfig(
+        level=getattr(logging, _log_level, logging.INFO),
+        format='{"ts":"%(asctime)s","level":"%(levelname)s","module":"%(name)s","msg":"%(message)s"}',
+        stream=sys.stderr,
+    )
+else:
+    logging.basicConfig(
+        level=getattr(logging, _log_level, logging.INFO),
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        stream=sys.stderr,
+    )
+
+log = logging.getLogger("amauta")
 
 # ── ANSI ──────────────────────────────────────────────────────────────────────
 RESET   = "\033[0m"
@@ -201,6 +221,7 @@ def save(data: dict):
             os.fsync(tmp.fileno())
             tmp.close()
             os.replace(tmp.name, TASKS_FILE)
+            log.debug("save: %d items written to %s", len(data.get("items", [])), TASKS_FILE)
             os.chmod(TASKS_FILE, 0o640)  # owner rw + group r — agents run as uid=1000 in containers
             # Always chown to amauta:amauta (uid=1000:gid=1000) so container agents can access
             # Containers run as node/sandbox (uid=1000) which maps to amauta on host
@@ -314,7 +335,11 @@ def _pg_conn():
     """Context manager for PG connections — prevents leaks on exceptions."""
     import psycopg2
     dsn = _mem_db_url()
-    conn = psycopg2.connect(dsn)
+    try:
+        conn = psycopg2.connect(dsn)
+    except Exception as e:
+        log.error("pg_connect_failed: %s", e)
+        raise
     try:
         yield conn
     except Exception:
@@ -1459,6 +1484,8 @@ def _rpetd_phase_enrich(phase: str, item: dict, agent_content: str) -> str:
         criteria = item.get("success_criteria") or []
         criteria_str = " | ".join(str(c) for c in criteria[:5])
 
+        log.debug("phase_enrich phase=%s id=%s", phase, item.get("id", ""))
+
         supplement_parts = []
 
         _stop = {"the","a","an","and","or","for","to","in","on","of","is","it","with","from","by",
@@ -1684,6 +1711,8 @@ def _enrich_task_context(item: dict, items: list) -> str:
         title = item.get("title", "")
         desc = item.get("description", "")
         deps = item.get("dependencies") or []
+
+        log.debug("context_enrich id=%s agent=%s", item.get("id", ""), item.get("assigned_to", ""))
 
         # ── Parent/dependency context ──────────────────────────────────
         if deps:
@@ -1932,6 +1961,7 @@ def cmd_add(args):
 
     items.append(item)
     save(data)
+    log.info("task_created id=%s type=%s title=%r", item["id"], item["type"], item["title"][:60])
     print(c(f"Created {itype} {nid}: {args.title}", GREEN))
     print(dim(f"  assigned=@{item['assigned_to']}  priority={item['priority']}  score={_score(item, items)}"))
 
@@ -2579,12 +2609,13 @@ def cmd_status(args):
             print(dim("  Add missing RPETD evidence and retry status validation."))
             sys.exit(1)
 
-    old = item["status"]
+    old_status = item["status"]
     item["status"] = args.status
     item["updated_at"] = _now()
+    log.info("status_changed id=%s from=%s to=%s", args.id, old_status, args.status)
     if args.note:
         _append_note(item, args.note, args.agent or "system")
-    _mem_log_task_transition(item, old, args.status, args.agent or "system", args.note or "")
+    _mem_log_task_transition(item, old_status, args.status, args.agent or "system", args.note or "")
 
     # ── Gitflow audit: log submission to validation ────────────────────────
     if args.status == "validation" and _needs_gitflow_gate(item):
@@ -2600,7 +2631,7 @@ def cmd_status(args):
         )
 
     save(data)
-    print(c(f"{args.id}: {old} → {args.status}", GREEN))
+    print(c(f"{args.id}: {old_status} → {args.status}", GREEN))
 
 
 def cmd_assign(args):
@@ -2805,6 +2836,7 @@ def cmd_claim(args):
         pass  # Enrichment must never block claims
 
     save(data)
+    log.info("task_claimed id=%s agent=%s", args.id, args.agent)
 
     print(c(f"CLAIMED: {args.id} → in-progress  @{args.agent}", GREEN))
     print(dim(f"  Title: {item['title']}"))
@@ -2919,6 +2951,7 @@ def cmd_rpetd(args):
             )
 
     save(data)
+    log.info("rpetd_phase id=%s phase=%s len=%d", args.id, phase, len(args.content))
 
     complete_str = c(" ✓ RPETD COMPLETE", GREEN) if item.get("rpetd_complete", False) else ""
     print(c(f"[{phase}] {PHASE_NAMES[phase]} logged on {args.id}{complete_str}", GREEN))
@@ -3288,6 +3321,7 @@ def cmd_validate(args):
                 metadata={"task_id": item.get("id"), "phase": "validation", "event": "web_search_result"},
             )
 
+        log.info("task_validated id=%s outcome=pass agent=%s", args.id, item["validated_by"])
         print(c(f"VALIDATED ✓  {args.id} → DONE", GREEN))
 
         # ── Auto-learning: record successful agent performance ──────────
@@ -3365,6 +3399,7 @@ def cmd_validate(args):
                 pr_number=_extract_pr_number(_pr) or None,
                 notes=f"FAIL: {item.get('validation_notes', '')[:200]}"
             )
+        log.warning("task_validated id=%s outcome=fail gate=%s", args.id, _extract_failed_gate(args.notes or ""))
         print(c(f"FAILED ✗  {args.id} → returned to queue", RED))
         print(dim("  Agent must re-claim and redo failing phases."))
 
