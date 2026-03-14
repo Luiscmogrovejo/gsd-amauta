@@ -283,11 +283,8 @@ async function providerWebFetch(query, _limit, url) {
             return;
           }
           let data = '';
-          res.on('data', (chunk) => {
-            data += chunk;
-            if (data.length > 100000) res.destroy(); // 100K safety cap during streaming
-          });
-          res.on('end', () => {
+          let truncated = false;
+          const resolveWithData = () => {
             if (data.length === 0) { resolve(null); return; }
             resolve({
               provider: 'webfetch',
@@ -297,12 +294,24 @@ async function providerWebFetch(query, _limit, url) {
                 content: data.slice(0, 10000),
                 status: res.statusCode,
                 contentType: res.headers['content-type'] || 'unknown',
+                ...(truncated ? { truncated: true } : {}),
               }],
             });
+          };
+          res.on('data', (chunk) => {
+            data += chunk;
+            if (data.length > 100000) {
+              truncated = true;
+              res.destroy(); // 100K safety cap — 'close' will fire, not 'end'
+            }
           });
+          res.on('end', resolveWithData);
+          // res.destroy() emits 'close' but NOT 'end' — must handle both
+          res.on('close', () => { if (truncated) resolveWithData(); });
+          res.on('error', () => { if (truncated) resolveWithData(); });
         }).on('error', (err) => {
           resolve({ provider: 'webfetch', count: 0, results: [], error: err.message });
-        });
+        }).on('timeout', function() { this.destroy(); });
       };
       fetchUrl(url, 0);
     });
