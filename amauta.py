@@ -1603,7 +1603,7 @@ def _enrich_task_context(item: dict, items: list) -> str:
                     conn_e.autocommit = True
                     cur_e = conn_e.cursor()
                     cur_e.execute("""
-                        SELECT agent_id, source, text, created_at FROM amauta_memory
+                        SELECT agent_id, source, text, created_at FROM gsd_memory
                         WHERE source IN ('auto_learning', 'web_search_result', 'lesson-learned', 'best-practice')
                           AND text ILIKE %s
                         ORDER BY created_at DESC
@@ -2928,7 +2928,12 @@ def cmd_validate(args):
         print(c(f"{args.id} not found.", RED)); sys.exit(1)
 
     if item["status"] not in ("validation", "in-progress"):
-        print(c(f"Warning: {args.id} is '{item['status']}', expected 'validation'", YELLOW))
+        if getattr(args, "force", False):
+            print(c(f"Warning: {args.id} is '{item['status']}', expected 'validation' (--force override)", YELLOW))
+        else:
+            print(c(f"BLOCKED: {args.id} is '{item['status']}' — must be 'in-progress' or 'validation' before validation.", RED))
+            print(dim("  Use --force to override status check."))
+            sys.exit(1)
 
     if args.pass_:
         if not item.get("rpetd_complete") and not args.force:
@@ -3211,7 +3216,7 @@ def cmd_board(args):
         if not col:
             print(dim("    (empty)"))
         else:
-            for item in col[:args.limit]:
+            for item in sorted(col[:args.limit], key=lambda i: _score(i, items), reverse=True):
                 tl = _type_label(item.get("type","task"))
                 pl = _priority_label(item.get("priority","medium"))
                 ag = f"@{item.get('assigned_to','?')}"

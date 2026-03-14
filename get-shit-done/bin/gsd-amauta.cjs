@@ -142,6 +142,11 @@ async function startDaemon() {
       GSD_AMAUTA_PORT: String(PORT),
     },
   });
+  child.on('error', (err) => {
+    if (err.code === 'ENOENT') {
+      process.stderr.write('ERROR: python3 not found. Install Python 3.9+ to use Amauta daemon.\n');
+    }
+  });
   child.unref();
 
   // Wait up to 5 seconds for daemon to come online
@@ -398,9 +403,14 @@ async function cmdClaim(useDaemon, id, flags, jsonMode) {
   return result.exit_code;
 }
 
+const VALID_PHASES = new Set(['R', 'P', 'E', 'T', 'D']);
+
 async function cmdRpetd(useDaemon, id, flags, jsonMode) {
   if (!id) die('Usage: amauta rpetd <id> --phase P --content "..."');
   if (!flags.phase) die('--phase is required (R, P, E, T, or D)');
+  const phaseUpper = (flags.phase || '').toUpperCase();
+  if (!VALID_PHASES.has(phaseUpper)) die(`Invalid phase "${flags.phase}". Must be one of: R, P, E, T, D`);
+  flags.phase = phaseUpper; // Normalize to uppercase before passing to daemon
   if (!flags.content) die('--content is required');
   const body = { id, ...flags };
 
@@ -438,35 +448,38 @@ async function autoLearnFromRpetd(useDaemon, taskId, flags) {
 
   try {
     // Store phase summary to memory (source=rpetd_phase, +1 boost)
+    // When daemon is active, amauta.py cmd_rpetd() already stores phase content to PG memory,
+    // so we skip the CJS-side store to avoid duplicates. Only write in direct (no-daemon) mode.
     const phaseText = `[${phase}] ${taskId}: ${content.substring(0, 500)}`;
-    const phaseBody = {
-      text: phaseText,
-      source: 'rpetd_phase',
-      agent_id: agent,
-      metadata: JSON.stringify({ task_id: taskId, phase, timestamp: new Date().toISOString() }),
-    };
 
-    if (useDaemon) {
-      await httpRequest('POST', '/api/memory/store', phaseBody).catch(() => {});
+    if (!useDaemon) {
+      // File-based fallback: append to .planning/memory/ so phase data is not silently lost
+      try {
+        const memDir = path.join(process.cwd(), '.planning', 'memory');
+        fs.mkdirSync(memDir, { recursive: true });
+        const date = new Date().toISOString().split('T')[0];
+        const memFile = path.join(memDir, `${date}.md`);
+        const entry = `- [rpetd_phase] ${new Date().toISOString()}: ${phaseText}\n`;
+        fs.appendFileSync(memFile, entry);
+      } catch { /* best-effort */ }
     }
-    // In direct mode, skip memory auto-store (requires daemon for PG)
 
     // TK-0052: Extract LEARNING from D-phase and store with higher boost
-    if (phase === 'D') {
-      const learningMatch = content.match(/LEARNING[:\s]+(.+?)(?:\n|$)/i);
+    // When daemon is active, amauta.py cmd_rpetd() already extracts and stores D-phase learnings
+    // as 'session-learning' source. Only write in direct (no-daemon) mode to avoid duplicates.
+    if (phase === 'D' && !useDaemon) {
+      const learningMatch = content.match(/LEARNING[:\s]+([\s\S]+?)(?=\n(?:##|\n\s*\[[A-Z]\]|\n\s*Parent:|\n\s*Depends)|$)/i);
       if (learningMatch) {
         const learning = learningMatch[1].trim();
-        const learnBody = {
-          text: `${taskId} — ${learning}`,
-          source: 'auto_learning',
-          agent_id: agent,
-          tags: taskId,
-          metadata: JSON.stringify({ task_id: taskId, extracted_from: 'D-phase', timestamp: new Date().toISOString() }),
-        };
-
-        if (useDaemon) {
-          await httpRequest('POST', '/api/memory/store', learnBody).catch(() => {});
-        }
+        // File-based fallback for D-phase learning
+        try {
+          const memDir = path.join(process.cwd(), '.planning', 'memory');
+          fs.mkdirSync(memDir, { recursive: true });
+          const date = new Date().toISOString().split('T')[0];
+          const memFile = path.join(memDir, `${date}.md`);
+          const entry = `- [auto_learning] ${new Date().toISOString()}: ${taskId} — ${learning}\n`;
+          fs.appendFileSync(memFile, entry);
+        } catch { /* best-effort */ }
       }
     }
   } catch {
@@ -522,7 +535,7 @@ async function checkValidationGates(useDaemon, id, flags) {
     } else {
       // No daemon — call Python directly via runDirect
       const jsonResult = runDirect(['show', id, '--json']);
-      const jsonStr = jsonResult.stdout || jsonResult.output || '';
+      const jsonStr = jsonResult.output || '';
       if (jsonStr) {
         const parsed = JSON.parse(jsonStr);
         taskType = parsed.type || 'task';
@@ -563,22 +576,24 @@ async function checkValidationGates(useDaemon, id, flags) {
   // Check if this is a code task (not epic/story)
   const isCodeTask = !NON_CODE_TYPES.has(taskType);
 
-  // Gate 1: Branch evidence in E-phase
+  // Gate 1: Branch evidence in E-phase (empty E-phase always fails for code tasks)
   if (isCodeTask) {
     const eContent = (phases.E || '').trim();
-    if (eContent) {
-      if (!BRANCH_PATTERNS.test(eContent)) {
-        const hasBranchEvidence = /branch|git checkout|git switch|merged|PR |pull request/i.test(eContent);
-        if (!hasBranchEvidence) {
-          gateFailures.push('BRANCH_EVIDENCE: E-phase has no branch name evidence (feat/*, fix/*, etc). Code tasks must show branch work.');
-        }
+    if (!eContent) {
+      gateFailures.push('BRANCH_EVIDENCE: E-phase is empty. Code tasks require execution evidence with branch name.');
+    } else if (!BRANCH_PATTERNS.test(eContent)) {
+      const hasBranchEvidence = /branch|git checkout|git switch|merged|PR |pull request/i.test(eContent);
+      if (!hasBranchEvidence) {
+        gateFailures.push('BRANCH_EVIDENCE: E-phase has no branch name evidence (feat/*, fix/*, etc). Code tasks must show branch work.');
       }
     }
   }
 
-  // Gate 2: LEARNING block in D-phase
+  // Gate 2: LEARNING block in D-phase (empty D-phase always fails for all tasks)
   const dContent = (phases.D || '').trim();
-  if (dContent && !LEARNING_PATTERN.test(dContent)) {
+  if (!dContent) {
+    gateFailures.push('LEARNING_BLOCK: D-phase is empty. All tasks require a Documentation phase with a LEARNING: block.');
+  } else if (!LEARNING_PATTERN.test(dContent)) {
     gateFailures.push('LEARNING_BLOCK: D-phase has no LEARNING: block. Document what was learned.');
   }
 
@@ -598,6 +613,23 @@ async function checkValidationGates(useDaemon, id, flags) {
       gateFailures.push(
         'TEST_EVIDENCE: T-phase is empty. Code tasks require test execution evidence before validation.'
       );
+    }
+  }
+
+  // Gate 4: PR URL evidence in D-phase or notes (code tasks only)
+  if (isCodeTask) {
+    const allContent = `${phases.D || ''} ${phases.E || ''} ${taskData || ''}`;
+    // Check for PR merge evidence: require past tense "merged" or explicit PR references
+    // Deliberately exclude "merge" (noun/present) to avoid false passes on conflict text
+    const hasMergeEvidence = /\bmerged\b/i.test(allContent) &&
+      !/merge\s+conflict|cannot\s+merge|failed\s+to\s+merge|not\s+merged/i.test(allContent);
+    const hasPrUrl = /(?:github\.com|gitlab\.com|bitbucket\.org)\/[^\s]+\/pull\/\d+/i.test(allContent) ||
+                     /\bPR\s*#?\d+\b/i.test(allContent) ||
+                     /\bpull\s*request\b/i.test(allContent) ||
+                     /\bgh\s+pr\s+/i.test(allContent) ||
+                     hasMergeEvidence;
+    if (!hasPrUrl) {
+      gateFailures.push('PR_URL: No PR/merge evidence found in D-phase or E-phase. Code tasks should reference their PR.');
     }
   }
 
@@ -669,25 +701,35 @@ async function promoteToSKB(useDaemon, taskId) {
       const { data } = await httpRequest('GET', `/api/show/${taskId}`);
       taskOutput = data.output || '';
     } else {
-      const result = runDirect(['show', taskId]);
-      taskOutput = result.stdout || result.output || '';
+      // Use --json to get full phase content (text mode truncates at 300 chars)
+      const result = runDirect(['show', taskId, '--json']);
+      try {
+        const parsed = JSON.parse(result.output || '');
+        const dPhase = (parsed.rpetd_phases || {}).D || '';
+        // Build synthetic taskOutput for title extraction + LEARNING extraction
+        taskOutput = `— ${parsed.title || taskId}\n[D] Document:\n${dPhase}`;
+      } catch {
+        // JSON parse failed, fall back to text output (may be truncated at 300 chars)
+        taskOutput = result.output || '';
+      }
     }
 
     // Extract title
     const titleMatch = taskOutput.match(/— (.+?)$/m);
     taskTitle = titleMatch ? titleMatch[1].trim() : taskId;
 
-    // Extract LEARNING from D-phase
+    // Extract LEARNING from D-phase (supports multi-line LEARNING blocks)
     const dPhaseMatch = taskOutput.match(/\[D\][^\n]*\n([\s\S]*?)(?=\n\s*\[[RPTE]\]|\n\s*Parent:|\n\s*Depends|$)/i);
     const dContent = dPhaseMatch ? dPhaseMatch[1] : '';
-    const learningMatch = dContent.match(/LEARNING[:\s]+(.+?)(?:\n|$)/i);
+    const learningMatch = dContent.match(/LEARNING[:\s]+([\s\S]+?)(?=\n(?:##|\n\s*\[[A-Z]\]|\n\s*Parent:|\n\s*Depends)|$)/i);
 
     if (!learningMatch) return; // No learning to promote
 
-    const learning = learningMatch[1].trim();
+    // Trim each line to remove 6-space indentation from text-format output
+    const learning = learningMatch[1].split('\n').map(l => l.trimStart()).join('\n').trim();
     if (learning.length < 10) return; // Too short to be valuable
 
-    // Store to SKB via daemon
+    // Store to SKB — daemon preferred, file fallback for direct mode
     if (useDaemon) {
       await httpRequest('POST', '/api/skb/store', {
         title: `Validated: ${taskTitle}`,
@@ -696,6 +738,17 @@ async function promoteToSKB(useDaemon, taskId) {
         importance: 6,
         source_task: taskId,
       }).catch(() => {}); // Silent fail — SKB promotion is best-effort
+    } else {
+      // File-based fallback: append to .planning/memory/ so learning is not lost
+      try {
+        const memDir = path.join(process.cwd(), '.planning', 'memory');
+        fs.mkdirSync(memDir, { recursive: true });
+        const date = new Date().toISOString().split('T')[0];
+        const memFile = path.join(memDir, `${date}.md`);
+        const entry = `- [best-practice] ${new Date().toISOString()}: Validated ${taskId} — ${learning}\n`;
+        fs.appendFileSync(memFile, entry);
+        process.stderr.write(`\x1b[93m[no-daemon]\x1b[0m SKB promotion saved to file: ${memFile}\n`);
+      } catch { /* best-effort */ }
     }
 
     // Also store as memory with best-practice source
@@ -705,6 +758,8 @@ async function promoteToSKB(useDaemon, taskId) {
         source: 'best-practice',
         metadata: { from_task: taskId, promoted_from: 'validation' },
       }).catch(() => {});
+    } else {
+      // File fallback already written above — skip duplicate
     }
   } catch {
     // SKB promotion is best-effort — don't fail validation

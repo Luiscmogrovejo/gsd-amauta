@@ -2032,6 +2032,9 @@ function install(isGlobal, runtime = 'claude') {
       }
     }
 
+    // Skills source dir — needed here for non-Claude runtimes to embed SKILL.md in agent body
+    const skillsSrcDir = path.join(src, 'skills');
+
     // Copy new agents
     const agentEntries = fs.readdirSync(agentsSrc, { withFileTypes: true });
     for (const entry of agentEntries) {
@@ -2051,6 +2054,19 @@ function install(isGlobal, runtime = 'claude') {
         } else if (isCodex) {
           content = convertClaudeAgentToCodexAgent(content);
         }
+        // For non-Claude runtimes, embed skill content in agent body
+        // (Claude Code loads skills via skills: frontmatter; other runtimes don't support this)
+        if (isOpencode || isGemini || isCodex) {
+          const agentBase = entry.name.replace('.md', '');
+          const skillDir = path.join(skillsSrcDir, `${agentBase}-workflow`);
+          const skillMdPath = path.join(skillDir, 'SKILL.md');
+          if (fs.existsSync(skillMdPath)) {
+            let skillContent = fs.readFileSync(skillMdPath, 'utf8');
+            skillContent = skillContent.replace(/~\/\.claude\//g, pathPrefix);
+            skillContent = skillContent.replace(/\$HOME\/\.claude\//g, toHomePrefix(pathPrefix));
+            content += '\n\n---\n\n' + skillContent;
+          }
+        }
         fs.writeFileSync(path.join(agentsDest, entry.name), content);
       }
     }
@@ -2063,7 +2079,7 @@ function install(isGlobal, runtime = 'claude') {
 
   // Copy skills for Claude Code (skills/ dir — referenced by agents' skills: frontmatter field)
   // Each skill is a directory with SKILL.md; content is injected into agent context at startup.
-  const skillsSrcDir = path.join(src, 'skills');
+  // (skillsSrcDir is defined earlier, before the agent-copying loop, for non-Claude embedding)
   if (fs.existsSync(skillsSrcDir) && !isCodex && !isOpencode && !isGemini) {
     const skillsDestDir = path.join(targetDir, 'skills');
     fs.mkdirSync(skillsDestDir, { recursive: true });
@@ -2674,8 +2690,11 @@ async function installAmauta(targetDir) {
 
   // ─── Step 5: Config ─────────────────────────────
 
-  const configDir = path.join(pluginRoot, 'get-shit-done', 'templates');
+  // Write to the installed copy, not the source template (avoids mutating npm package files)
+  const configDir = path.join(targetDir, 'get-shit-done', 'templates');
   const configPath = path.join(configDir, 'config.json');
+  // Also read from source template as fallback if installed copy doesn't exist yet
+  const srcConfigPath = path.join(pluginRoot, 'get-shit-done', 'templates', 'config.json');
   // Detect RLM service once — used in both the update and create branches
   const rlmPort = parseInt(process.env.GSD_RLM_PORT || '18798', 10);
   const rlmRunning = await isPortOpen('127.0.0.1', rlmPort, 800);
@@ -2705,20 +2724,21 @@ async function installAmauta(targetDir) {
       console.log(`  ${yellow}⚠${reset} Could not update config.json: ${err.message}`);
     }
   } else {
-    // Create minimal config
-    const minConfig = {
-      amauta: {
-        daemon_port: parseInt(process.env.GSD_AMAUTA_PORT || '18799', 10),
-        pg_enabled: summary.pg,
-        pg_url: summary.pg ? (process.env.GSD_POSTGRES_URL || 'postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta') : null,
-        daemon_enabled: summary.daemon,
-        rlm_enabled: rlmRunning,
-        rlm_fallback_to_full_files: true,
-        research_chain: ['memory', 'skb', 'context7', 'perplexity', 'webfetch'],
-      },
-    };
+    // Seed from source template if available, otherwise create minimal config
+    let baseConfig = {};
+    if (fs.existsSync(srcConfigPath)) {
+      try { baseConfig = JSON.parse(fs.readFileSync(srcConfigPath, 'utf-8')); } catch { /* use empty */ }
+    }
+    baseConfig.amauta = baseConfig.amauta || {};
+    baseConfig.amauta.daemon_port = parseInt(process.env.GSD_AMAUTA_PORT || '18799', 10);
+    baseConfig.amauta.pg_enabled = summary.pg;
+    baseConfig.amauta.pg_url = summary.pg ? (process.env.GSD_POSTGRES_URL || 'postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta') : null;
+    baseConfig.amauta.daemon_enabled = summary.daemon;
+    baseConfig.amauta.rlm_enabled = rlmRunning;
+    baseConfig.amauta.rlm_fallback_to_full_files = true;
+    baseConfig.amauta.research_chain = baseConfig.amauta.research_chain || ['memory', 'skb', 'context7', 'perplexity', 'webfetch'];
     fs.mkdirSync(configDir, { recursive: true });
-    fs.writeFileSync(configPath, JSON.stringify(minConfig, null, 2) + '\n');
+    fs.writeFileSync(configPath, JSON.stringify(baseConfig, null, 2) + '\n');
     summary.config = true;
     console.log(`  ${green}✓${reset} Created config.json with Amauta settings`);
   }

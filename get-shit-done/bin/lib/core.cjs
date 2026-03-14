@@ -128,6 +128,25 @@ function loadConfig(cwd) {
   }
 }
 
+/**
+ * Load Amauta-specific config (rlm_enabled, daemon, PG settings).
+ * Shared by gsd-rlm.cjs, gsd-amauta.cjs, and gsd-memory.cjs.
+ * Checks project-level .planning/config.json first, then plugin template.
+ */
+function loadAmautaConfig(cwd) {
+  const candidates = [
+    path.join(cwd || process.cwd(), '.planning', 'config.json'),
+    path.join(__dirname, '..', '..', 'templates', 'config.json'),
+  ];
+  for (const p of candidates) {
+    try {
+      const cfg = JSON.parse(fs.readFileSync(p, 'utf-8'));
+      return cfg.amauta || {};
+    } catch { /* continue */ }
+  }
+  return {};
+}
+
 // ─── Git utilities ────────────────────────────────────────────────────────────
 
 function isGitIgnored(cwd, targetPath) {
@@ -473,6 +492,7 @@ module.exports = {
   error,
   safeReadFile,
   loadConfig,
+  loadAmautaConfig,
   isGitIgnored,
   execGit,
   escapeRegex,

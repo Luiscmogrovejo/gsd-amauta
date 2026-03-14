@@ -88,40 +88,58 @@ class PGStore:
 
     @contextmanager
     def _get_conn(self):
-        """Get a connection from pool with auto-reconnect."""
+        """Get a connection from pool with auto-reconnect.
+        
+        Uses a single-yield pattern to avoid the double-yield bug where a
+        contextmanager generator yields twice (reconnect path), causing the
+        finally block to run with a stale conn variable and leak the new connection.
+        """
         conn = None
+        reconnected = False
         try:
             conn = self._pool.getconn()
             conn.autocommit = False
-            yield conn
-            conn.commit()
-        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
-            # Connection lost — try reconnecting once
+        except (psycopg2.OperationalError, psycopg2.InterfaceError):
+            # Initial getconn failed — try reconnecting once
             if conn:
                 try:
                     self._pool.putconn(conn, close=True)
                 except Exception:
                     pass
                 conn = None
+            self._connect()
+            conn = self._pool.getconn()
+            conn.autocommit = False
+            reconnected = True
+        try:
+            yield conn
+            conn.commit()
+        except (psycopg2.OperationalError, psycopg2.InterfaceError):
+            # Connection died mid-transaction — rollback and re-raise
             try:
-                self._connect()
-                conn = self._pool.getconn()
-                conn.autocommit = False
-                yield conn
-                conn.commit()
+                conn.rollback()
             except Exception:
-                if conn:
-                    try:
-                        conn.rollback()
-                    except Exception:
-                        pass
-                raise
-        except Exception:
-            if conn:
+                pass
+            if not reconnected:
+                # Try one reconnect for mid-transaction failures
                 try:
-                    conn.rollback()
+                    self._pool.putconn(conn, close=True)
+                    conn = None
                 except Exception:
                     pass
+                try:
+                    self._connect()
+                    conn = self._pool.getconn()
+                    conn.autocommit = False
+                    reconnected = True
+                except Exception:
+                    pass
+            raise
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
             raise
         finally:
             if conn:

@@ -89,7 +89,9 @@ BEFORE starting any work, run these (all wrapped in || true — safe if services
 3. Amauta task tracking (task ID: {plan_task_id}):
    If {plan_task_id} is non-empty, log RPETD phases as you complete each:
    CLI='node ~/.claude/get-shit-done/bin/amauta.cjs'
-   $CLI claim {plan_task_id} --agent executor-general 2>/dev/null || true
+   $CLI claim {plan_task_id} --agent {routed_executor} 2>/dev/null || true
+   # Read back enriched context (Layer 1 injects dependency/sibling/memory/SKB context at claim time)
+   $CLI show {plan_task_id} 2>/dev/null || true
    $CLI rpetd {plan_task_id} --phase R --content 'R: [RLM findings + memory matches + codebase context]' 2>/dev/null || true
    $CLI rpetd {plan_task_id} --phase P --content 'P: [approach, files to change, risks identified]' 2>/dev/null || true
    $CLI rpetd {plan_task_id} --phase E --content 'E: [what was built, files changed, branch name]' 2>/dev/null || true

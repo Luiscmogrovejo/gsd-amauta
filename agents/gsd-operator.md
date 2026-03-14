@@ -202,14 +202,25 @@ Task(
   
   Task: [paste task details from amauta.cjs show TK-0042]
   
+  Context Pipeline (run FIRST — before any work):
+  CLI='node ~/.claude/get-shit-done/bin/amauta.cjs'
+  RLM='node ~/.claude/get-shit-done/bin/gsd-rlm.cjs'
+  MEM='node ~/.claude/get-shit-done/bin/gsd-memory.cjs'
+  $RLM query '[task topic]' --dir . --top-k 5 --compact 2>/dev/null || true
+  $MEM search '[task topic]' 2>/dev/null || true
+  $CLI claim TK-0042 --agent executor-backend 2>/dev/null || true
+  # IMPORTANT: read back Layer 1 enrichment (deps, siblings, prior failures injected at claim time)
+  $CLI show TK-0042 2>/dev/null || true
+  
   RPETD Protocol:
-  1. Research: Use gsd-rlm.cjs to find relevant code
-  2. Plan: Define approach
-  3. Execute: Write code, commit with TK-0042 in message
-  4. Test: Run tests, include output
+  1. Research: Document RLM findings + memory matches
+  2. Plan: Define approach, files to change
+  3. Execute: Write code, commit with TK-0042 in message, include branch name
+  4. Test: Run tests, paste actual output ($ prompt or PASS/FAIL lines)
   5. Document: Summarize with LEARNING block
   
-  Log each phase: node ~/.claude/get-shit-done/bin/amauta.cjs rpetd TK-0042 --phase <R|P|E|T|D> --content '...'
+  Log each phase: $CLI rpetd TK-0042 --phase <R|P|E|T|D> --content '...' 2>/dev/null || true
+  After D-phase: $MEM learn '[key insight]' 2>/dev/null || true
   
   Do NOT validate your own work. Return when RPETD D phase is logged."
 )

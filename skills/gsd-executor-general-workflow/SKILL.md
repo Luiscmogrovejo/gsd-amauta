@@ -18,6 +18,8 @@ $MEM search "{task_topic}" 2>/dev/null || true
 
 ```bash
 $CLI claim TK-XXXX --agent executor-general 2>/dev/null || true
+# Read back Layer 1 enrichment (deps, siblings, prior failures, SKB context injected at claim)
+$CLI show TK-XXXX 2>/dev/null || true
 $CLI rpetd TK-XXXX --phase R --content "R: [RLM findings + memory matches]" 2>/dev/null || true
 $CLI rpetd TK-XXXX --phase P --content "P: [approach, files to change]" 2>/dev/null || true
 $CLI rpetd TK-XXXX --phase E --content "E: [what was done, files changed, branch name]" 2>/dev/null || true

@@ -114,7 +114,8 @@ describe('E2E Lifecycle', () => {
     test('create task under story', (t) => {
       if (skipIfNoDaemon(t)) return;
       if (!storyId) { t.skip('no story'); return; }
-      const r = amauta(['exec', 'add', 'task', 'E2E-LIFECYCLE-TASK', '--parent', storyId, '--agent', 'executor-general', '--priority', 'low', '--description', 'Task for E2E lifecycle test']);
+      const uniqueTitle = `E2E-LIFECYCLE-TASK-${Date.now()}`;
+      const r = amauta(['exec', 'add', 'task', uniqueTitle, '--parent', storyId, '--agent', 'executor-general', '--priority', 'low', '--description', 'Task for E2E lifecycle test']);
       assert.ok(r.success, `add task: ${r.error || r.output}`);
       taskId = extractId(r.output, 'TK');
       assert.ok(taskId, `should get task ID: ${r.output}`);

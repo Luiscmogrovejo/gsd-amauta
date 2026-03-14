@@ -208,8 +208,10 @@ fi
          3. Amauta task ID for this plan: {plan_task_id}
             If non-empty, claim and log RPETD phases:
             CLI='node ~/.claude/get-shit-done/bin/amauta.cjs'
-            $CLI claim {plan_task_id} --agent {routed_executor} 2>/dev/null || true
-            # Log each phase as you complete it:
+         $CLI claim {plan_task_id} --agent {routed_executor} 2>/dev/null || true
+         # Read back enriched context (Layer 1 injects dependency/sibling/memory/SKB context at claim time)
+         $CLI show {plan_task_id} 2>/dev/null || true
+         # Log each phase as you complete it:
             $CLI rpetd {plan_task_id} --phase R --content 'R: [RLM findings + memory matches]' 2>/dev/null || true
             $CLI rpetd {plan_task_id} --phase P --content 'P: [approach, files to change]' 2>/dev/null || true
             $CLI rpetd {plan_task_id} --phase E --content 'E: [what was built, files changed, branch name]' 2>/dev/null || true

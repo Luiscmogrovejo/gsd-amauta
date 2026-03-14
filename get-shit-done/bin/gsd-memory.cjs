@@ -242,9 +242,11 @@ function fileCount() {
 async function tryDaemon(method, urlPath, body = null) {
   try {
     const res = await httpRequest(method, urlPath, body);
-    if (res.status === 503) {
+    // 503 = daemon up but PG unavailable; 5xx = PG mid-request failure
+    // Both trigger file-mode fallback
+    if (res.status === 503 || res.status >= 500) {
       _fileMode = true;
-      return null; // PG unavailable
+      return null; // PG unavailable or daemon error
     }
     return res;
   } catch {
@@ -458,6 +460,9 @@ async function cmdLearn(args) {
   } else {
     console.log(`\x1b[92mStored\x1b[0m ${res.data.id} (source: auto_learning)`);
   }
+
+  // TK-0054: Check if auto-distill is needed (same as cmdStore)
+  await maybeAutoDistill();
 }
 
 async function cmdList(args) {
@@ -557,10 +562,10 @@ async function cmdSKBSearch(args) {
   const body = { query, limit: parseInt(args.limit || '20', 10) };
   if (args.category) body.category = args.category;
 
-  const res = await httpRequest('POST', '/api/skb/search', body);
+  const res = await tryDaemon('POST', '/api/skb/search', body);
 
-  if (res.status === 503) {
-    console.error('PostgreSQL not available.');
+  if (!res) {
+    console.error('SKB requires PostgreSQL. Daemon unavailable — start with: python3 ~/.claude/get-shit-done/services/amauta-daemon.py start');
     process.exit(1);
   }
   if (res.status !== 200) {
@@ -606,10 +611,10 @@ async function cmdSKBAdd(args) {
   if (args.task) body.source_task = args.task;
   if (args.tags) body.tags = args.tags.split(',').map(t => t.trim());
 
-  const res = await httpRequest('POST', '/api/skb/store', body);
+  const res = await tryDaemon('POST', '/api/skb/store', body);
 
-  if (res.status === 503) {
-    console.error('PostgreSQL not available.');
+  if (!res) {
+    console.error('SKB requires PostgreSQL. Daemon unavailable — start with: python3 ~/.claude/get-shit-done/services/amauta-daemon.py start');
     process.exit(1);
   }
   if (res.status !== 200) {
@@ -632,10 +637,10 @@ async function cmdSKBList(args) {
 
   const qs = params.toString();
   const url = qs ? `/api/skb/list?${qs}` : '/api/skb/list';
-  const res = await httpRequest('GET', url);
+  const res = await tryDaemon('GET', url);
 
-  if (res.status === 503) {
-    console.error('PostgreSQL not available.');
+  if (!res) {
+    console.error('SKB requires PostgreSQL. Daemon unavailable — start with: python3 ~/.claude/get-shit-done/services/amauta-daemon.py start');
     process.exit(1);
   }
   if (res.status !== 200) {
@@ -1208,13 +1213,18 @@ async function cmdDistill(args) {
           distilled_at: new Date().toISOString(),
         }),
       };
-      await tryDaemon('POST', '/api/memory/store', mergeBody);
+      const storeRes = await tryDaemon('POST', '/api/memory/store', mergeBody);
 
-      // Delete the originals (all of them — keep entry is replaced by merged)
-      for (const entry of group) {
-        if (entry.id) {
-          await tryDaemon('POST', '/api/memory/delete', { id: entry.id }).catch(() => {});
+      // Only delete originals if the merged entry was stored successfully
+      // This prevents leaving orphaned merged entries with no originals on store failure
+      if (storeRes && storeRes.status === 200) {
+        for (const entry of group) {
+          if (entry.id) {
+            await tryDaemon('POST', '/api/memory/delete', { id: entry.id }).catch(() => {});
+          }
         }
+      } else {
+        process.stderr.write(`\x1b[93m[distill]\x1b[0m Store failed for group — originals preserved to avoid data loss.\n`);
       }
     }
 

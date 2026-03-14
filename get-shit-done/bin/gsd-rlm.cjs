@@ -46,25 +46,13 @@ const RLM_SERVICE = path.join(PLUGIN_ROOT, 'services', 'rlm-service.py');
 
 // ═══════════════════════════════════════════════════════
 // Config Helpers — check rlm_enabled and fallback settings
+// Uses shared loadAmautaConfig from core.cjs
 // ═══════════════════════════════════════════════════════
 
-function loadConfig() {
-  // Check project-level config first, then plugin template
-  const candidates = [
-    path.join(process.cwd(), '.planning', 'config.json'),
-    path.join(PLUGIN_ROOT, 'get-shit-done', 'templates', 'config.json'),
-  ];
-  for (const p of candidates) {
-    try {
-      return JSON.parse(fs.readFileSync(p, 'utf-8'));
-    } catch { /* continue */ }
-  }
-  return {};
-}
+const { loadAmautaConfig } = require('./lib/core.cjs');
 
 function isRlmEnabled() {
-  const cfg = loadConfig();
-  const amauta = cfg.amauta || {};
+  const amauta = loadAmautaConfig();
   // Explicitly disabled via config
   if (amauta.rlm_enabled === false) return false;
   // Default: enabled if service exists
@@ -72,8 +60,7 @@ function isRlmEnabled() {
 }
 
 function shouldFallbackToFiles() {
-  const cfg = loadConfig();
-  const amauta = cfg.amauta || {};
+  const amauta = loadAmautaConfig();
   // Default: true — always fall back to full files when RLM is down
   return amauta.rlm_fallback_to_full_files !== false;
 }
@@ -269,6 +256,18 @@ async function cmdQuery(args, flags) {
   const jsonMode = flags.json;
   const compact = flags.compact;
 
+  // Helper: gracefully degrade to file references on mid-execution service failure
+  const rlmFallback = (err) => {
+    const reason = err && err.code === 'ECONNREFUSED' ? 'service stopped mid-request' : (err && err.message) || 'unknown error';
+    if (shouldFallbackToFiles()) {
+      const suggestions = fallbackSuggestReferences(flags);
+      printFallbackMessage(suggestions, query);
+      return 0;
+    }
+    process.stderr.write(`ERROR: RLM request failed (${reason}). Use --dir/--path or start the service.\n`);
+    return 1;
+  };
+
   if (flags.dir) {
     // Directory query
     const body = {
@@ -281,7 +280,12 @@ async function cmdQuery(args, flags) {
       body.extensions = flags.extensions.split(',').map(e => e.startsWith('.') ? e : `.${e}`);
     }
 
-    const { data } = await httpRequest('POST', '/query', body);
+    let data;
+    try {
+      ({ data } = await httpRequest('POST', '/query', body));
+    } catch (err) {
+      return rlmFallback(err);
+    }
     if (jsonMode) {
       console.log(JSON.stringify(data, null, 2));
     } else {
@@ -299,7 +303,12 @@ async function cmdQuery(args, flags) {
       max_chars: maxChars,
     };
 
-    const { data } = await httpRequest('POST', '/search', body);
+    let data;
+    try {
+      ({ data } = await httpRequest('POST', '/search', body));
+    } catch (err) {
+      return rlmFallback(err);
+    }
     if (jsonMode) {
       console.log(JSON.stringify(data, null, 2));
     } else {
@@ -317,7 +326,12 @@ async function cmdQuery(args, flags) {
       max_chars: maxChars,
     };
 
-    const { data } = await httpRequest('POST', '/search', body);
+    let data;
+    try {
+      ({ data } = await httpRequest('POST', '/search', body));
+    } catch (err) {
+      return rlmFallback(err);
+    }
     if (jsonMode) {
       console.log(JSON.stringify(data, null, 2));
     } else {
@@ -337,7 +351,13 @@ async function cmdChunk(filepath, flags) {
   const resolved = path.resolve(filepath);
   const maxChars = parseInt(flags['max-chars'] || '8000', 10);
 
-  const { data } = await httpRequest('POST', '/chunk', { filepath: resolved, max_chars: maxChars });
+  let data;
+  try {
+    ({ data } = await httpRequest('POST', '/chunk', { filepath: resolved, max_chars: maxChars }));
+  } catch (err) {
+    process.stderr.write(`ERROR: RLM chunk request failed (${err && err.message}). Is the RLM service running?\n`);
+    return 1;
+  }
 
   if (flags.json) {
     console.log(JSON.stringify(data, null, 2));
@@ -362,7 +382,13 @@ async function cmdSearch(args, flags) {
     top_k: topK,
   };
 
-  const { data } = await httpRequest('POST', '/search', body);
+  let data;
+  try {
+    ({ data } = await httpRequest('POST', '/search', body));
+  } catch (err) {
+    process.stderr.write(`ERROR: RLM search request failed (${err && err.message}). Is the RLM service running?\n`);
+    return 1;
+  }
   if (flags.json) {
     console.log(JSON.stringify(data, null, 2));
   } else {
@@ -476,8 +502,7 @@ function printFallbackMessage(suggestions, query) {
 }
 
 async function cmdCheckConfig(flags) {
-  const cfg = loadConfig();
-  const amauta = cfg.amauta || {};
+  const amauta = loadAmautaConfig();
   const serviceUp = await isServiceRunning();
 
   const result = {
