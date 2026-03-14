@@ -515,10 +515,13 @@ class PGStore:
     # ═══════════════════════════════════════════════════════
 
     def validation_record(self, task_id, validator_id, status, evidence=None,
-                          rejection_reason=None):
+                          rejection_reason=None, forced=False):
         """Record a task validation attempt."""
         with self._get_conn() as conn:
             with conn.cursor() as cur:
+                ev = dict(evidence or {})
+                if forced:
+                    ev["forced"] = True
                 cur.execute("""
                     INSERT INTO gsd_task_validations
                         (task_id, validator_id, status, evidence, rejection_reason)
@@ -526,7 +529,7 @@ class PGStore:
                     RETURNING id
                 """, (
                     task_id, validator_id, status,
-                    json.dumps(evidence or {}), rejection_reason,
+                    json.dumps(ev), rejection_reason,
                 ))
                 return cur.fetchone()[0]
 

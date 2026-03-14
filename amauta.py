@@ -1837,7 +1837,7 @@ def _enrich_task_context(item: dict, items: list) -> str:
                            and task_id.lower() not in str(r.get("tags", []))]
                 if relevant:
                     parts.append("[PG MEMORY] Related experiences (check these FIRST — avoid repeating work):")
-                    for r in relevant[:4]:
+                    for r in relevant[:5]:  # CTX-2 spec: max 5 memories
                         src = r.get("source", "")
                         prefix = f"[{src}]" if src else ""
                         parts.append(f"  {prefix} {r['text'][:280].replace(chr(10), ' ')}")
@@ -1872,7 +1872,7 @@ def _enrich_task_context(item: dict, items: list) -> str:
             skb = _skb_search(skb_q, top_k=6)
             if skb:
                 skb_lines = ["[SKB] Global knowledge base (policies / workflow guides / bug fixes):"]
-                for e in skb[:4]:
+                for e in skb[:3]:  # CTX-2 spec: max 3 SKB entries
                     skb_lines.append(f"  [{e['category']}] {e['title']}:")
                     skb_lines.append(f"    {e['content'][:300].replace(chr(10),' ')}")
                 parts.append("\n".join(skb_lines))
@@ -2651,20 +2651,21 @@ def cmd_status(args):
             print(dim("  Use: amauta status <id> validation  (then validator will review + merge PR)"))
             sys.exit(1)
 
-    if args.status == "validation" and _needs_gitflow_gate(item):
+    # Gate 3: test evidence applies to ALL tasks (VAL-3 spec)
+    if args.status == "validation":
         phases = item.get("rpetd_phases", {}) or {}
-        e_phase = str(phases.get("E", ""))
         t_phase = str(phases.get("T", ""))
         missing = []
-        if not _has_branch_evidence(e_phase):
-            missing.append("missing_branch_evidence_E")
         if not _has_test_evidence(t_phase):
             missing.append("missing_test_evidence_T")
-        if not _extract_pr_url(item):
-            # Infra/host-only tasks may legitimately have no PR.
-            # Accept explicit PR_URL:no-pr-needed (or equivalent) marker.
-            if not (_is_infra_host_only(item) and _has_no_pr_needed_marker(item)):
-                missing.append("missing_pr_url_D_or_notes")
+        # Gates 1+4: branch + PR only for code tasks (gitflow gate)
+        if _needs_gitflow_gate(item):
+            e_phase = str(phases.get("E", ""))
+            if not _has_branch_evidence(e_phase):
+                missing.append("missing_branch_evidence_E")
+            if not _extract_pr_url(item):
+                if not (_is_infra_host_only(item) and _has_no_pr_needed_marker(item)):
+                    missing.append("missing_pr_url_D_or_notes")
 
         if missing:
             gate_msg = "GATE_FAIL: " + ", ".join(missing)
@@ -2954,8 +2955,8 @@ def cmd_rpetd(args):
     existing = phases.get(phase, "")
 
     if existing and not args.append:
-        # Default: append with separator
-        phases[phase] = existing + f"\n\n[{_now()}]\n" + args.content
+        # Default: append with separator (RPETD-1 spec: \n---\n)
+        phases[phase] = existing + "\n---\n" + args.content
     else:
         phases[phase] = (existing + "\n" + args.content).strip() if existing else args.content
 

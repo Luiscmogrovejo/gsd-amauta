@@ -182,11 +182,11 @@ function fileSearch(query) {
 
 function fileStore(text, source) {
   ensureDirs();
-  const date = new Date().toISOString().split('T')[0];
-  const file = path.join(MEMORY_DIR, `${date}.md`);
+  const month = new Date().toISOString().slice(0, 7); // YYYY-MM (MEM-1 spec: monthly files)
+  const file = path.join(MEMORY_DIR, `${month}.md`);
   const entry = `\n- [${source}] ${new Date().toISOString()}: ${text}\n`;
   fs.appendFileSync(file, entry);
-  return `file:${date}`;
+  return `file:${month}`;
 }
 
 function fileLearn(text) {
