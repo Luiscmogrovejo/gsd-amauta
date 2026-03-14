@@ -280,6 +280,25 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": str(e)}, 500)
             return
 
+        # ─── Agent Performance GET route (PG required) ──────
+        if path.startswith("/api/agent-performance"):
+            if not _pg_store:
+                self._send_json({"error": "PostgreSQL not available"}, 503)
+                return
+            try:
+                import urllib.parse
+                qs = urllib.parse.urlparse(self.path).query
+                params = urllib.parse.parse_qs(qs)
+                agent_id = params.get("agent_id", [""])[0]
+                if not agent_id:
+                    self._send_json({"error": "agent_id query param required"}, 400)
+                    return
+                summary = _pg_store.agent_performance_summary(agent_id)
+                self._send_json(summary or {"total_tasks": 0, "agent_id": agent_id})
+            except Exception as e:
+                self._send_json({"error": str(e)}, 500)
+            return
+
         # ─── SKB GET routes (PG required) ─────────────
         if path == "/api/skb/list" or path.startswith("/api/skb/list?"):
             if not _pg_store:
@@ -609,6 +628,28 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     rejection_reason=body.get("rejection_reason"),
                 )
                 self._send_json({"id": vid, "recorded": True})
+            except Exception as e:
+                self._send_json({"error": str(e)}, 500)
+            return
+
+        # ─── Agent Performance POST route (PG required) ──────
+        if path == "/api/agent-performance":
+            if not _pg_store:
+                self._send_json({"error": "PostgreSQL not available"}, 503)
+                return
+            try:
+                _pg_store.record_agent_performance(
+                    agent_id=body.get("agent_id", ""),
+                    task_id=body.get("task_id", ""),
+                    outcome=body.get("outcome", "pass"),
+                    task_type=body.get("task_type", "task"),
+                    project_id=body.get("project_id", "default"),
+                    gate_failed=body.get("gate_failed"),
+                    failure_reason=body.get("failure_reason"),
+                    duration_minutes=body.get("duration_minutes"),
+                    learning_captured=body.get("learning_captured"),
+                )
+                self._send_json({"recorded": True})
             except Exception as e:
                 self._send_json({"error": str(e)}, 500)
             return

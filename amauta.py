@@ -615,6 +615,65 @@ def _mem_log_task_transition(item: dict, old_status: str, new_status: str, actor
         },
     )
 
+def _agent_performance_summary(agent_id: str):
+    """Query agent performance from the daemon's pg_store (via HTTP).
+    Returns summary dict or None if PG unavailable."""
+    try:
+        import urllib.request, urllib.error
+        port = int(os.environ.get("GSD_AMAUTA_PORT", "18799"))
+        url = f"http://127.0.0.1:{port}/api/agent-performance?agent_id={agent_id}"
+        req = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            import json as _json
+            return _json.loads(resp.read().decode())
+    except Exception:
+        return None
+
+
+def _extract_failed_gate(notes: str) -> str:
+    """Extract which gate failed from validation notes."""
+    notes_lower = notes.lower()
+    if "branch" in notes_lower or "gate 1" in notes_lower:
+        return "BRANCH_EVIDENCE"
+    if "learning" in notes_lower or "gate 2" in notes_lower:
+        return "LEARNING_BLOCK"
+    if "test" in notes_lower or "gate 3" in notes_lower:
+        return "TEST_EVIDENCE"
+    if "pr" in notes_lower or "pull request" in notes_lower or "gate 4" in notes_lower or "merge" in notes_lower:
+        return "PR_URL"
+    return "UNKNOWN"
+
+
+def _calc_duration_minutes(item):
+    """Calculate minutes from claimed_at to now."""
+    try:
+        claimed = item.get("claimed_at")
+        if not claimed:
+            return None
+        from datetime import datetime
+        claimed_dt = datetime.fromisoformat(str(claimed))
+        now = datetime.now(claimed_dt.tzinfo) if claimed_dt.tzinfo else datetime.now()
+        return max(0, int((now - claimed_dt).total_seconds() / 60))
+    except Exception:
+        return None
+
+
+def _record_agent_performance(agent_id, task_id, outcome, **kwargs):
+    """Record agent performance via daemon HTTP API. Best-effort."""
+    try:
+        import urllib.request, urllib.error
+        port = int(os.environ.get("GSD_AMAUTA_PORT", "18799"))
+        url = f"http://127.0.0.1:{port}/api/agent-performance"
+        body = {"agent_id": agent_id, "task_id": task_id, "outcome": outcome, **kwargs}
+        import json as _json
+        data = _json.dumps(body).encode()
+        req = urllib.request.Request(url, data=data, method="POST",
+                                     headers={"Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=3)
+    except Exception:
+        pass  # Best-effort
+
+
 def cmd_memory(args):
     if args.mem_cmd == "add":
         tags = [t.strip() for t in (args.tags or "").split(",") if t.strip()]
@@ -1697,6 +1756,39 @@ def _enrich_task_context(item: dict, items: list) -> str:
                     skb_lines.append(f"  [{e['category']}] {e['title']}:")
                     skb_lines.append(f"    {e['content'][:300].replace(chr(10),' ')}")
                 parts.append("\n".join(skb_lines))
+
+        # ── Agent performance history (auto-learning feedback loop) ──────
+        # Inject pass/fail history so agents learn from past mistakes
+        owner = item.get("claimed_by") or item.get("assigned_to") or ""
+        if owner and _mem_pg_available():
+            try:
+                perf = _agent_performance_summary(owner)
+                if perf and perf.get("total_tasks", 0) > 0:
+                    total = perf["total_tasks"]
+                    pass_rate = perf.get("pass_rate", 1.0)
+                    perf_lines = []
+                    if pass_rate < 1.0:
+                        fail_count = perf.get("fail_count", 0)
+                        perf_lines.append(f"[AGENT PERFORMANCE] {owner}: {int(pass_rate*100)}% pass rate "
+                                          f"({perf.get('pass_count',0)}/{total}).")
+                        # Show common failure gates
+                        failures = perf.get("common_failures", [])
+                        if failures:
+                            fail_str = ", ".join(f"{f['gate_failed']} ({f['count']}x)" for f in failures[:3])
+                            perf_lines.append(f"  Common issues: {fail_str}")
+                        # Show most recent failure
+                        recent = perf.get("recent_failures", [])
+                        if recent:
+                            r = recent[0]
+                            reason = (r.get("failure_reason") or "")[:150]
+                            perf_lines.append(f"  Last failure: {r['task_id']} — {reason}")
+                        perf_lines.append(f"  TIP: Pay extra attention to the gates above before submitting for validation.")
+                    else:
+                        perf_lines.append(f"[AGENT PERFORMANCE] {owner}: 100% pass rate ({total}/{total}). Keep it up.")
+                    if perf_lines:
+                        parts.append("\n".join(perf_lines))
+            except Exception:
+                pass  # Performance injection is best-effort
 
         if parts:
             ctx = "\n\n".join(parts)
@@ -3179,6 +3271,16 @@ def cmd_validate(args):
             )
 
         print(c(f"VALIDATED ✓  {args.id} → DONE", GREEN))
+
+        # ── Auto-learning: record successful agent performance ──────────
+        _record_agent_performance(
+            agent_id=item.get("claimed_by", ""),
+            task_id=args.id,
+            outcome="pass",
+            task_type=item.get("type", "task"),
+            duration_minutes=_calc_duration_minutes(item),
+            learning_captured=(item.get("rpetd_phases") or {}).get("D", "")[:500],
+        )
     else:
         fail_notes = (args.notes or "").lower()
         non_code_gitflow_false_fail = (
@@ -3247,6 +3349,17 @@ def cmd_validate(args):
             )
         print(c(f"FAILED ✗  {args.id} → returned to queue", RED))
         print(dim("  Agent must re-claim and redo failing phases."))
+
+        # ── Auto-learning: record failed agent performance ──────────
+        _record_agent_performance(
+            agent_id=item.get("claimed_by", ""),
+            task_id=args.id,
+            outcome="fail",
+            task_type=item.get("type", "task"),
+            gate_failed=_extract_failed_gate(args.notes or ""),
+            failure_reason=(args.notes or "")[:500],
+            duration_minutes=_calc_duration_minutes(item),
+        )
 
         # ── Atomize on fail: if --subtasks provided, split into subtasks ──
         if getattr(args, "subtasks", None):

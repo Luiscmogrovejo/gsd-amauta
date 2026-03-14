@@ -653,6 +653,78 @@ class PGStore:
             return False
 
     # ═══════════════════════════════════════════════════════
+    # Agent Performance Tracking (Auto-Learning Feedback Loop)
+    # ═══════════════════════════════════════════════════════
+
+    def record_agent_performance(self, agent_id, task_id, outcome,
+                                  task_type='task', project_id='default',
+                                  gate_failed=None, failure_reason=None,
+                                  duration_minutes=None, learning_captured=None):
+        """Record a validation outcome for agent performance tracking."""
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        INSERT INTO gsd_agent_performance
+                            (agent_id, task_id, task_type, project_id, outcome,
+                             gate_failed, failure_reason, duration_minutes, learning_captured)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (agent_id, task_id, task_type, project_id, outcome,
+                          gate_failed, failure_reason, duration_minutes, learning_captured))
+                    return True
+        except Exception:
+            return False
+
+    def agent_performance_summary(self, agent_id, limit=50):
+        """Get performance summary for an agent — pass/fail rates and common failure patterns."""
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    # Get overall stats
+                    cur.execute("""
+                        SELECT
+                            COUNT(*) as total_tasks,
+                            COUNT(*) FILTER (WHERE outcome = 'pass') as pass_count,
+                            COUNT(*) FILTER (WHERE outcome = 'fail') as fail_count,
+                            ROUND(AVG(duration_minutes) FILTER (WHERE duration_minutes IS NOT NULL)) as avg_duration
+                        FROM gsd_agent_performance
+                        WHERE agent_id = %s
+                    """, (agent_id,))
+                    stats = dict(cur.fetchone())
+                    total = stats.get('total_tasks', 0) or 0
+                    if total == 0:
+                        return None  # No history yet
+
+                    stats['pass_rate'] = round(float(stats.get('pass_count', 0) or 0) / total, 3)
+
+                    # Get common failure gates
+                    cur.execute("""
+                        SELECT gate_failed, COUNT(*) as count
+                        FROM gsd_agent_performance
+                        WHERE agent_id = %s AND outcome = 'fail' AND gate_failed IS NOT NULL
+                        GROUP BY gate_failed
+                        ORDER BY count DESC
+                        LIMIT 5
+                    """, (agent_id,))
+                    stats['common_failures'] = [dict(r) for r in cur.fetchall()]
+
+                    # Get recent failures (last 3)
+                    cur.execute("""
+                        SELECT task_id, failure_reason,
+                               EXTRACT(EPOCH FROM (NOW() - created_at))/3600 as hours_ago
+                        FROM gsd_agent_performance
+                        WHERE agent_id = %s AND outcome = 'fail'
+                        ORDER BY created_at DESC
+                        LIMIT 3
+                    """, (agent_id,))
+                    stats['recent_failures'] = [dict(r) for r in cur.fetchall()]
+
+                    stats['agent_id'] = agent_id
+                    return stats
+        except Exception:
+            return None
+
+    # ═══════════════════════════════════════════════════════
     # Embedding / Semantic Search Operations
     # ═══════════════════════════════════════════════════════
 
