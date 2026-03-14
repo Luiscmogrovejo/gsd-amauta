@@ -7,7 +7,7 @@ PostgreSQL persistent memory · pgvector semantic search · RLM context engine �
 Everything degrades gracefully to vanilla GSD when infrastructure is unavailable.
 
 ```
-1302 tests · 11 agents · 11 skills · 5 CLI tools · 3 services · 9 specs · 20 agentic AI patterns
+1376 tests (94% coverage) · 11 agents · 11 skills · 5 CLI tools · 3 services · 9 specs · 20 agentic AI patterns
 ```
 
 ---
@@ -112,9 +112,9 @@ All context, learnings, and decisions persist across sessions in PostgreSQL with
    │  gsd_tasks           │  ← task state + RPETD work log
    │  gsd_task_valid.     │  ← validation audit trail
    │                      │
-   │  4 tables            │
-   │  21 indexes          │  incl. HNSW for cosine similarity
-   │  3 auto-triggers     │
+    │  6 tables            │
+    │  27 indexes          │  incl. HNSW for cosine similarity
+    │  5 auto-triggers     │
    └──────────────────────┘
 ```
 
@@ -857,7 +857,7 @@ node ~/.claude/gsd-amauta/get-shit-done/bin/gsd-rlm.cjs health
 node ~/.claude/gsd-amauta/get-shit-done/bin/gsd-research.cjs check-providers
 
 # Tests
-npm test                                          # 1302 tests expected
+npm test                                          # 1376 tests expected
 ```
 
 ---
@@ -1032,7 +1032,7 @@ docker ps --filter name=gsd-postgres
 ## 17. Testing
 
 ```bash
-npm test                                          # All 1302 tests
+npm test                                          # All 1376 tests
 
 # Individual suites
 node --test tests/agent-frontmatter.test.cjs     # Agent validation (10 tests)
@@ -1051,7 +1051,7 @@ node --test tests/rlm-workflow-spec.test.cjs     # RLM + workflow + spec (73 tes
 node --test tests/validation-gates.test.cjs      # 4-gate validation (38 tests)
 ```
 
-**1302 tests across 29 files**, covering:
+**1376 tests across 30 files**, covering:
 
 - **Python unit tests** (101): `_score()`, `_deps_met()`, `_dedup_check()`, `_extract_pr_url()`, `_has_branch_evidence()`, `_has_test_evidence()`, `_infer_lane()`, `_infer_domain_tags()`, `_normalize_tags()`, `_task_hygiene_gaps()`, and 20+ more Python functions tested in isolation
 - **E2E pipeline** (184): Full RPETD lifecycle, validation gates, memory pipeline, dependency chains, sprint management, atomization, cross-pipeline integration
@@ -1081,7 +1081,7 @@ gsd-amauta/
 │   └── docker-compose.yml            # PostgreSQL 16 + pgvector :5433
 │
 ├── migrations/
-│   ├── 001-init.sql                  # 5 tables, 24 indexes, 3 triggers
+│   ├── 001-init.sql                  # 5 tables, 20 indexes, 5 triggers
 │   ├── 002-embedding-index.sql       # HNSW index (idempotent)
 │   ├── 003-embedding-1024.sql        # Dim migration 1536→1024 (idempotent)
 │   ├── 004-fulltext-indexes.sql      # GIN FTS indexes + compound indexes
@@ -1146,7 +1146,7 @@ gsd-amauta/
 │   ├── test-phase.md
 │   └── ...
 │
-├── tests/                            # 1302 tests (29 files)
+├── tests/                            # 1376 tests (30 files)
 ├── bin/
 │   └── install.js                    # Self-installer (2897 lines)
 └── scripts/
