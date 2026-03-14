@@ -208,6 +208,9 @@ fi
          2. Memory — find past learnings for '{plan_objective}':
             node ~/.claude/get-shit-done/bin/gsd-memory.cjs search '{plan_objective}' 2>/dev/null || true
 
+         2b. Research chain — get current info (memory -> SKB -> Context7 -> Perplexity -> WebFetch):
+             node ~/.claude/get-shit-done/bin/gsd-research.cjs search '{plan_objective}' 2>/dev/null || true
+
          3. Amauta task ID for this plan: {plan_task_id}
             If non-empty, claim and log RPETD phases:
             CLI='node ~/.claude/get-shit-done/bin/amauta.cjs'

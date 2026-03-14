@@ -207,6 +207,7 @@ Task(
   CLI='node ~/.claude/get-shit-done/bin/amauta.cjs'
   RLM='node ~/.claude/get-shit-done/bin/gsd-rlm.cjs'
   MEM='node ~/.claude/get-shit-done/bin/gsd-memory.cjs'
+  RESEARCH='node ~/.claude/get-shit-done/bin/gsd-research.cjs'
   $RLM query '[task topic]' --dir . --top-k 5 --compact 2>/dev/null || true
   $MEM search '[task topic]' 2>/dev/null || true
   $CLI claim TK-0042 --agent executor-backend 2>/dev/null || true

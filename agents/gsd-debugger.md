@@ -42,6 +42,7 @@ Before investigating, claim the task (loads Layer 1 enrichment) and search for p
 CLI="node ~/.claude/get-shit-done/bin/amauta.cjs"
 RLM="node ~/.claude/get-shit-done/bin/gsd-rlm.cjs"
 MEM="node ~/.claude/get-shit-done/bin/gsd-memory.cjs"
+RESEARCH="node ~/.claude/get-shit-done/bin/gsd-research.cjs"
 
 # Claim the task and read back Layer 1 enrichment
 # (Layer 1 injects prior failures, dependency context, SKB at claim time)

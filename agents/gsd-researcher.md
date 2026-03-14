@@ -44,43 +44,62 @@ $MEM learn "{key_finding}" 2>/dev/null || true
 </task_integration>
 
 <research_modes>
+## CLI Tools
+
+```bash
+CLI="node ~/.claude/get-shit-done/bin/amauta.cjs"
+RLM="node ~/.claude/get-shit-done/bin/gsd-rlm.cjs"
+MEM="node ~/.claude/get-shit-done/bin/gsd-memory.cjs"
+RESEARCH="node ~/.claude/get-shit-done/bin/gsd-research.cjs"
+```
+
 ## Mode 1: Ecosystem Research
 **When:** Starting a new project, evaluating technologies, understanding a domain.
 
-1. Search memory for past research: `gsd-memory.cjs search "<domain>"`
-2. Search SKB for established patterns
-3. Use Perplexity for current ecosystem state (if `PERPLEXITY_API_KEY` set)
-4. Use WebFetch for specific documentation
-5. Synthesize into a research summary
+Use the full research chain — it searches memory, SKB, Context7, Perplexity, and WebFetch in order, stopping at the first sufficient answer:
+```bash
+$RESEARCH search "<domain> best practices" 2>/dev/null || true
+```
+This single command replaces manual multi-step searches. Results are auto-stored to memory.
 
 ## Mode 2: Phase Research
 **When:** Before planning a specific feature or task.
 
 1. Query RLM for existing codebase patterns:
    ```bash
-   node ~/.claude/get-shit-done/bin/gsd-rlm.cjs query "<topic>" --dir <project_dir> --top-k 10
+   $RLM query "<topic>" --dir <project_dir> --top-k 10
    ```
-2. Search memory for related past work
+2. Run research chain for external context:
+   ```bash
+   $RESEARCH search "<topic> implementation patterns" 2>/dev/null || true
+   ```
 3. Check for relevant documentation in the project
 4. Identify patterns, conventions, and potential risks
 
 ## Mode 3: Memory Research
 **When:** Looking for past learnings, failures, and best practices.
 
-1. Search memory: `gsd-memory.cjs search "<keywords>"`
-2. Search SKB: `gsd-memory.cjs skb "<keywords>"`
-3. Cross-reference with task history
+1. Search memory: `$MEM search "<keywords>" 2>/dev/null || true`
+2. Search SKB: `$MEM skb-search "<keywords>" 2>/dev/null || true`
+3. Cross-project search: `$MEM cross-project "<keywords>" 2>/dev/null || true`
 4. Compile relevant learnings
 
 ## Mode 4: Web Research (Perplexity-First)
 **When:** Need current information about libraries, APIs, best practices.
 
-Research chain (stop at first sufficient answer):
-1. **Memory** — Check if we already know this
-2. **SKB** — Check shared knowledge base
-3. **Context7** — Check project-local documentation
-4. **Perplexity** — Search the web via API (if available)
-5. **WebFetch** — Fetch specific URLs as fallback
+Use the research chain CLI — it runs the full 5-step chain automatically:
+```bash
+# Full chain (memory -> SKB -> Context7 -> Perplexity -> WebFetch):
+$RESEARCH search "<topic>" 2>/dev/null || true
+
+# Direct Perplexity query (skips memory/SKB steps):
+$RESEARCH perplexity "<specific question>" 2>/dev/null || true
+
+# Fetch a specific URL:
+$RESEARCH fetch --url "https://docs.example.com/api" 2>/dev/null || true
+```
+
+Results from Perplexity are auto-stored to memory (source=web_search_result, +3 boost) with deduplication.
 </research_modes>
 
 <output_format>

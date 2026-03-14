@@ -52,6 +52,7 @@ For every task submitted for validation:
 ```bash
 CLI="node ~/.claude/get-shit-done/bin/amauta.cjs"
 MEM="node ~/.claude/get-shit-done/bin/gsd-memory.cjs"
+RESEARCH="node ~/.claude/get-shit-done/bin/gsd-research.cjs"
 
 # Note: Validators do NOT claim tasks (claiming is for executors doing the work).
 # The validator reviews the task as an observer, not a participant.

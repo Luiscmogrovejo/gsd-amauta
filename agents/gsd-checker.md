@@ -39,6 +39,7 @@ When reviewing a plan before execution:
 CLI="node ~/.claude/get-shit-done/bin/amauta.cjs"
 RLM="node ~/.claude/get-shit-done/bin/gsd-rlm.cjs"
 MEM="node ~/.claude/get-shit-done/bin/gsd-memory.cjs"
+RESEARCH="node ~/.claude/get-shit-done/bin/gsd-research.cjs"
 
 # Claim the checker task (loads Layer 1 enrichment: dependencies, prior failures, SKB)
 $CLI claim TK-XXXX --agent checker 2>/dev/null || true

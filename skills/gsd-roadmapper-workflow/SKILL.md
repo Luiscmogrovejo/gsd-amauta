@@ -5,6 +5,10 @@
 CLI="node ~/.claude/get-shit-done/bin/amauta.cjs"
 RLM="node ~/.claude/get-shit-done/bin/gsd-rlm.cjs"
 MEM="node ~/.claude/get-shit-done/bin/gsd-memory.cjs"
+RESEARCH="node ~/.claude/get-shit-done/bin/gsd-research.cjs"
+
+# 3. Research chain — current info (memory -> SKB -> Context7 -> Perplexity -> WebFetch):
+$RESEARCH search "{task_topic}" 2>/dev/null || true
 
 # 1. RLM: find existing roadmap and architecture context
 $RLM query "{roadmap_topic}" --dir . --top-k 5 --compact 2>/dev/null || true

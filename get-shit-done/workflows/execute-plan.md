@@ -86,6 +86,9 @@ BEFORE starting any work, run these (all wrapped in || true — safe if services
 2. Memory — find past learnings on this topic:
    node ~/.claude/get-shit-done/bin/gsd-memory.cjs search '{plan_objective}' 2>/dev/null || true
 
+2b. Research chain — get current info (memory -> SKB -> Context7 -> Perplexity -> WebFetch):
+    node ~/.claude/get-shit-done/bin/gsd-research.cjs search '{plan_objective}' 2>/dev/null || true
+
 3. Amauta task tracking (task ID: {plan_task_id}):
    If {plan_task_id} is non-empty, log RPETD phases as you complete each:
    CLI='node ~/.claude/get-shit-done/bin/amauta.cjs'

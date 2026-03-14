@@ -402,7 +402,9 @@ If this roadmapping work has an associated Amauta task ID (TK-XXXX), claim it fi
 
 ```bash
 CLI="node ~/.claude/get-shit-done/bin/amauta.cjs"
+RLM="node ~/.claude/get-shit-done/bin/gsd-rlm.cjs"
 MEM="node ~/.claude/get-shit-done/bin/gsd-memory.cjs"
+RESEARCH="node ~/.claude/get-shit-done/bin/gsd-research.cjs"
 
 # Claim and read back enrichment (skip gracefully if no task assigned)
 $CLI claim TK-XXXX --agent roadmapper 2>/dev/null || true
