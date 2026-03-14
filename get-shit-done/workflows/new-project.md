@@ -209,7 +209,7 @@ Proceed to Step 4 (skip Steps 3 and 5).
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► QUESTIONING
+ AMAUTA ► QUESTIONING
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
@@ -245,6 +245,7 @@ As you go, mentally check the context checklist from `questioning.md`. If gaps r
 
 **Decision gate:**
 
+<if mode="interactive" OR="custom with gates.confirm_project true">
 When you could write a clear PROJECT.md, use AskUserQuestion:
 
 - header: "Ready?"
@@ -256,6 +257,7 @@ When you could write a clear PROJECT.md, use AskUserQuestion:
 If "Keep exploring" — ask what they want to add, or identify gaps and probe naturally.
 
 Loop until "Create PROJECT.md" selected.
+</if>
 
 ## 4. Write PROJECT.md
 
@@ -518,7 +520,7 @@ Use AskUserQuestion:
 Display stage banner:
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► RESEARCHING
+ AMAUTA ► RESEARCHING
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Researching [domain] ecosystem...
@@ -726,7 +728,7 @@ Commit after writing.
 Display research complete banner and key findings:
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► RESEARCH COMPLETE ✓
+ AMAUTA ► RESEARCH COMPLETE ✓
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ## Key Findings
@@ -745,7 +747,7 @@ Files: `.planning/research/`
 Display stage banner:
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► DEFINING REQUIREMENTS
+ AMAUTA ► DEFINING REQUIREMENTS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
@@ -890,7 +892,7 @@ node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" commit "docs: define v1 req
 Display stage banner:
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► CREATING ROADMAP
+ AMAUTA ► CREATING ROADMAP
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ◆ Spawning roadmapper...
@@ -976,6 +978,7 @@ Success criteria:
 
 **CRITICAL: Ask for approval before committing (interactive mode only):**
 
+<if mode="interactive" OR="custom with gates.confirm_roadmap true">
 Use AskUserQuestion:
 - header: "Roadmap"
 - question: "Does this roadmap structure work for you?"
@@ -983,6 +986,7 @@ Use AskUserQuestion:
   - "Approve" — Commit and continue
   - "Adjust phases" — Tell me what to change
   - "Review full file" — Show raw ROADMAP.md
+</if>
 
 **If "Approve":** Continue to commit.
 
@@ -1018,7 +1022,7 @@ node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" commit "docs: create roadma
 **Amauta: Create epic and phase stories (if daemon available):**
 
 ```bash
-AMAUTA_CLI="node $HOME/.claude/get-shit-done/bin/gsd-amauta.cjs"
+AMAUTA_CLI="node $HOME/.claude/get-shit-done/bin/amauta.cjs"
 AMAUTA_OK=$($AMAUTA_CLI health --json 2>/dev/null | grep -c '"status":"ok"' || echo "0")
 
 if [ "$AMAUTA_OK" = "1" ]; then
@@ -1062,7 +1066,7 @@ if [ -n "$TECH_TAGS" ]; then
   if [ -n "$LEARNINGS" ] && echo "$LEARNINGS" | grep -q '"count":[1-9]'; then
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo " GSD > CROSS-PROJECT LEARNINGS"
+    echo " AMAUTA > CROSS-PROJECT LEARNINGS"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     $MEMORY_CLI cross-project "$PROJECT_TITLE" --tags "$TECH_TAGS" --limit 10 2>/dev/null || true
@@ -1078,7 +1082,7 @@ Present completion summary:
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► PROJECT INITIALIZED ✓
+ AMAUTA ► PROJECT INITIALIZED ✓
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 **[Project Name]**

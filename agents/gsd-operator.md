@@ -3,6 +3,7 @@ name: gsd-operator
 description: "Master orchestrator for GSD-Amauta: routes tasks to specialist agents, enforces RPETD pipeline, manages priority, resolves conflicts. Uses Amauta task manager for all state."
 tools: Bash, Read, Write, Edit, Task, Glob, Grep
 color: cyan
+memory: user
 skills:
   - gsd-operator-workflow
 # hooks:

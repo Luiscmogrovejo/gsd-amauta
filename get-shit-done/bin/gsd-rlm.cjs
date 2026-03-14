@@ -126,6 +126,10 @@ async function startService() {
     stdio: 'ignore',
     env: { ...process.env, GSD_RLM_PORT: String(PORT) },
   });
+  child.on('error', (err) => {
+    // Handle ENOENT (python3 not found) gracefully — don't crash the process
+    process.stderr.write(`[rlm] Failed to start RLM service: ${err.message}\n`);
+  });
   child.unref();
 
   for (let i = 0; i < 25; i++) {
@@ -502,7 +506,7 @@ function printFallbackMessage(suggestions, query) {
 }
 
 async function cmdCheckConfig(flags) {
-  const amauta = loadAmautaConfig();
+  // loadAmautaConfig() is called internally by isRlmEnabled() and shouldFallbackToFiles()
   const serviceUp = await isServiceRunning();
 
   const result = {

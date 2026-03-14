@@ -120,7 +120,7 @@ fi
 
 # If a task ID was given, check its RPETD phases for context
 if [ -n "$TASK_ID" ]; then
-  AMAUTA_CLI="node $HOME/.claude/get-shit-done/bin/gsd-amauta.cjs"
+  AMAUTA_CLI="node $HOME/.claude/get-shit-done/bin/amauta.cjs"
   AMAUTA_OK=$($AMAUTA_CLI health --json 2>/dev/null | grep -c '"status":"ok"' || echo "0")
 
   if [ "$AMAUTA_OK" = "1" ]; then
@@ -175,7 +175,7 @@ T-phase content should include:
 **Log results to RPETD T-phase on the target task.**
 
 ```bash
-AMAUTA_CLI="node $HOME/.claude/get-shit-done/bin/gsd-amauta.cjs"
+AMAUTA_CLI="node $HOME/.claude/get-shit-done/bin/amauta.cjs"
 AMAUTA_OK=$($AMAUTA_CLI health --json 2>/dev/null | grep -c '"status":"ok"' || echo "0")
 
 if [ "$AMAUTA_OK" = "1" ] && [ -n "$TASK_ID" ]; then
@@ -230,7 +230,7 @@ T-phase evidence logged to {TASK_ID}. Task is ready for validation.
 **If amauta available and tests passed:**
 ```
 **Next:** Move task to validation:
-  node ~/.claude/get-shit-done/bin/gsd-amauta.cjs status {TASK_ID} validation
+  node ~/.claude/get-shit-done/bin/amauta.cjs status {TASK_ID} validation
 ```
 </step>
 

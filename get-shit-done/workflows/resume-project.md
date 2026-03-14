@@ -100,7 +100,7 @@ fi
 **Amauta: Enrich resume context from PG memory (if daemon available):**
 
 ```bash
-AMAUTA_CLI="node $HOME/.claude/get-shit-done/bin/gsd-amauta.cjs"
+AMAUTA_CLI="node $HOME/.claude/get-shit-done/bin/amauta.cjs"
 MEMORY_CLI="node $HOME/.claude/get-shit-done/bin/gsd-memory.cjs"
 AMAUTA_OK=$($AMAUTA_CLI health --json 2>/dev/null | grep -c '"status":"ok"' || echo "0")
 

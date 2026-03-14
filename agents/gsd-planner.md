@@ -40,12 +40,18 @@ Before creating any plan, gather context:
 ```bash
 CLI="node ~/.claude/get-shit-done/bin/amauta.cjs"
 RLM="node ~/.claude/get-shit-done/bin/gsd-rlm.cjs"
+MEM="node ~/.claude/get-shit-done/bin/gsd-memory.cjs"
+
+# If assigned a task ID, claim it and read back Layer 1 enrichment
+# (Layer 1 injects dependency context, sibling awareness, PG memory, SKB at claim time)
+$CLI claim TK-XXXX --agent planner 2>/dev/null || true
+$CLI show TK-XXXX 2>/dev/null || true
 
 # Check existing tasks to avoid duplication
 $CLI board
 
 # Search memory for past learnings on this topic
-node ~/.claude/get-shit-done/bin/gsd-memory.cjs search "<topic>" 2>/dev/null || true
+$MEM search "<topic>" 2>/dev/null || true
 
 # Search codebase for relevant patterns
 $RLM query "<topic>" --dir <project_dir> --top-k 10 --compact
@@ -68,8 +74,8 @@ $CLI add story "Story title" --parent EP-XXXX --agent operator
 # Create tasks under the story
 $CLI add task "Task title" --parent ST-XXXX --agent executor-backend --priority high
 
-# Set dependencies
-$CLI depends TK-XXXX --on TK-YYYY
+# Set dependencies (use "link" with --dep, not "depends")
+$CLI link TK-XXXX --dep TK-YYYY
 
 # Add success criteria
 $CLI note TK-XXXX --text "SUCCESS_CRITERIA: Given X, When Y, Then Z" --agent planner
@@ -101,6 +107,17 @@ Assign tasks to the right executor:
 - `executor-backend` — Node.js, Python, APIs, databases, business logic
 - `executor-infra` — Docker, CI/CD, deployment, monitoring, scripts
 - `executor-general` — Documentation, config files, agent definitions, cross-cutting
+
+### Step 6: Log RPETD Phases
+After completing the plan, log phases to track planning work:
+```bash
+$CLI rpetd TK-XXXX --phase R --content "R: [RLM findings, memory search results, existing task analysis]" 2>/dev/null || true
+$CLI rpetd TK-XXXX --phase P --content "P: [planning approach — decomposition strategy, risk assessment]" 2>/dev/null || true
+$CLI rpetd TK-XXXX --phase E --content "E: [tasks created — ${count} tasks across ${stories} stories]" 2>/dev/null || true
+$CLI rpetd TK-XXXX --phase T --content "T: [plan review — acceptance criteria added, dependencies validated]" 2>/dev/null || true
+$CLI rpetd TK-XXXX --phase D --content "D: [plan summary]. LEARNING: [key planning insight for future reference]" 2>/dev/null || true
+$MEM learn "{key_planning_insight}" 2>/dev/null || true
+```
 </planning_protocol>
 
 <output_format>

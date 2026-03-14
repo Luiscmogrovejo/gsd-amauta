@@ -39,7 +39,7 @@ Display banner based on active flags:
 If `$DISCUSS_MODE` and `$FULL_MODE`:
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► QUICK TASK (DISCUSS + FULL)
+ AMAUTA ► QUICK TASK (DISCUSS + FULL)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ◆ Discussion + plan checking + verification enabled
@@ -48,7 +48,7 @@ If `$DISCUSS_MODE` and `$FULL_MODE`:
 If `$DISCUSS_MODE` only:
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► QUICK TASK (DISCUSS)
+ AMAUTA ► QUICK TASK (DISCUSS)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ◆ Discussion phase enabled — surfacing gray areas before planning
@@ -57,7 +57,7 @@ If `$DISCUSS_MODE` only:
 If `$FULL_MODE` only:
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► QUICK TASK (FULL MODE)
+ AMAUTA ► QUICK TASK (FULL MODE)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ◆ Plan checking + verification enabled
@@ -114,7 +114,7 @@ Skip this step entirely if NOT `$DISCUSS_MODE`.
 Display banner:
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► DISCUSSING QUICK TASK
+ AMAUTA ► DISCUSSING QUICK TASK
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ◆ Surfacing gray areas for: ${DESCRIPTION}
@@ -295,7 +295,7 @@ Skip this step entirely if NOT `$FULL_MODE`.
 Display banner:
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► CHECKING PLAN
+ AMAUTA ► CHECKING PLAN
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ◆ Spawning plan checker...
@@ -413,6 +413,12 @@ Execute quick task ${quick_id}.
 <amauta_enrichment>
 BEFORE starting any work, run these context-enrichment queries:
 
+0. Amauta task tracking (optional — creates a lightweight task record):
+   QUICK_TASK_ID=$(node ~/.claude/get-shit-done/bin/amauta.cjs add task '${DESCRIPTION}' --agent executor-general --tags quick --priority low 2>/dev/null | grep -oE 'TK-[0-9]+' || echo "")
+   if [ -n "$QUICK_TASK_ID" ]; then
+     node ~/.claude/get-shit-done/bin/amauta.cjs claim "$QUICK_TASK_ID" --agent executor-general 2>/dev/null || true
+   fi
+
 1. RLM — find relevant existing code:
    node ~/.claude/get-shit-done/bin/gsd-rlm.cjs query '${DESCRIPTION}' --dir . --top-k 5 --compact 2>/dev/null || true
 
@@ -421,6 +427,13 @@ BEFORE starting any work, run these context-enrichment queries:
 
 3. After completing all work, store the most important learning:
    node ~/.claude/get-shit-done/bin/gsd-memory.cjs learn '{key_insight}' 2>/dev/null || true
+   if [ -n "$QUICK_TASK_ID" ]; then
+     # Log minimal RPETD (R + E + D) — enough for the task board without full ceremony
+     node ~/.claude/get-shit-done/bin/amauta.cjs rpetd "$QUICK_TASK_ID" --phase R --content "R: Quick task — ${DESCRIPTION}" 2>/dev/null || true
+     node ~/.claude/get-shit-done/bin/amauta.cjs rpetd "$QUICK_TASK_ID" --phase E --content "E: Executed quick task. See ${QUICK_DIR}/${quick_id}-SUMMARY.md" 2>/dev/null || true
+     node ~/.claude/get-shit-done/bin/amauta.cjs rpetd "$QUICK_TASK_ID" --phase D --content "D: Quick task completed. LEARNING: {key_insight}" 2>/dev/null || true
+     node ~/.claude/get-shit-done/bin/amauta.cjs status "$QUICK_TASK_ID" done --agent executor-general 2>/dev/null || true
+   fi
 
 All commands are wrapped in || true — if services are unavailable, execution proceeds normally.
 </amauta_enrichment>
@@ -460,7 +473,7 @@ Skip this step entirely if NOT `$FULL_MODE`.
 Display banner:
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► VERIFYING RESULTS
+ AMAUTA ► VERIFYING RESULTS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ◆ Spawning verifier...
@@ -579,7 +592,7 @@ Display completion output:
 ```
 ---
 
-GSD > QUICK TASK COMPLETE (FULL MODE)
+AMAUTA > QUICK TASK COMPLETE (FULL MODE)
 
 Quick Task ${quick_id}: ${DESCRIPTION}
 
@@ -596,7 +609,7 @@ Ready for next task: /amauta:quick
 ```
 ---
 
-GSD > QUICK TASK COMPLETE
+AMAUTA > QUICK TASK COMPLETE
 
 Quick Task ${quick_id}: ${DESCRIPTION}
 

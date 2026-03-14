@@ -529,6 +529,130 @@ class PGStore:
                 return [dict(r) for r in results]
 
     # ═══════════════════════════════════════════════════════
+    # Task Dual-Write Operations (PG mirror of tasks.json)
+    # ═══════════════════════════════════════════════════════
+    # tasks.json remains primary; PG is a best-effort mirror.
+    # This enables future PG-primary reads and multi-machine setups.
+
+    def task_upsert(self, item):
+        """Upsert a single task item to gsd_tasks (mirror write).
+        Silently returns None if PG is unavailable or the write fails.
+        """
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        INSERT INTO gsd_tasks (
+                            id, project_id, type, title, description, details,
+                            status, priority, assigned_to, claimed_by, claimed_at,
+                            rpetd_r, rpetd_p, rpetd_e, rpetd_t, rpetd_d, rpetd_complete,
+                            importance, urgency,
+                            success_criteria, deliverables, dependencies,
+                            tags, notes, parent_id, validation_notes, validated_by,
+                            test_strategy, phase, plan, evidence, outcome, lesson
+                        ) VALUES (
+                            %(id)s, %(project_id)s, %(type)s, %(title)s, %(description)s, %(details)s,
+                            %(status)s, %(priority)s, %(assigned_to)s, %(claimed_by)s, %(claimed_at)s,
+                            %(rpetd_r)s, %(rpetd_p)s, %(rpetd_e)s, %(rpetd_t)s, %(rpetd_d)s, %(rpetd_complete)s,
+                            %(importance)s, %(urgency)s,
+                            %(success_criteria)s::jsonb, %(deliverables)s::jsonb, %(dependencies)s::jsonb,
+                            %(tags)s::jsonb, %(notes)s::jsonb, %(parent_id)s, %(validation_notes)s, %(validated_by)s,
+                            %(test_strategy)s, %(phase)s, %(plan)s, %(evidence)s::jsonb, %(outcome)s, %(lesson)s
+                        )
+                        ON CONFLICT (id) DO UPDATE SET
+                            type = EXCLUDED.type,
+                            title = EXCLUDED.title,
+                            description = EXCLUDED.description,
+                            details = EXCLUDED.details,
+                            status = EXCLUDED.status,
+                            priority = EXCLUDED.priority,
+                            assigned_to = EXCLUDED.assigned_to,
+                            claimed_by = EXCLUDED.claimed_by,
+                            claimed_at = EXCLUDED.claimed_at,
+                            rpetd_r = EXCLUDED.rpetd_r,
+                            rpetd_p = EXCLUDED.rpetd_p,
+                            rpetd_e = EXCLUDED.rpetd_e,
+                            rpetd_t = EXCLUDED.rpetd_t,
+                            rpetd_d = EXCLUDED.rpetd_d,
+                            rpetd_complete = EXCLUDED.rpetd_complete,
+                            importance = EXCLUDED.importance,
+                            urgency = EXCLUDED.urgency,
+                            success_criteria = EXCLUDED.success_criteria,
+                            deliverables = EXCLUDED.deliverables,
+                            dependencies = EXCLUDED.dependencies,
+                            tags = EXCLUDED.tags,
+                            notes = EXCLUDED.notes,
+                            parent_id = EXCLUDED.parent_id,
+                            validation_notes = EXCLUDED.validation_notes,
+                            validated_by = EXCLUDED.validated_by,
+                            test_strategy = EXCLUDED.test_strategy,
+                            phase = EXCLUDED.phase,
+                            plan = EXCLUDED.plan,
+                            evidence = EXCLUDED.evidence,
+                            outcome = EXCLUDED.outcome,
+                            lesson = EXCLUDED.lesson,
+                            updated_at = NOW()
+                    """, {
+                        "id": item.get("id", ""),
+                        "project_id": item.get("project_id", "default"),
+                        "type": item.get("type", "task"),
+                        "title": item.get("title", ""),
+                        "description": item.get("description", ""),
+                        "details": item.get("details", ""),
+                        "status": item.get("status", "pending"),
+                        "priority": item.get("priority", "medium"),
+                        "assigned_to": item.get("assigned_to", ""),
+                        "claimed_by": item.get("claimed_by"),
+                        "claimed_at": item.get("claimed_at"),
+                        "rpetd_r": (item.get("rpetd_phases") or {}).get("R", ""),
+                        "rpetd_p": (item.get("rpetd_phases") or {}).get("P", ""),
+                        "rpetd_e": (item.get("rpetd_phases") or {}).get("E", ""),
+                        "rpetd_t": (item.get("rpetd_phases") or {}).get("T", ""),
+                        "rpetd_d": (item.get("rpetd_phases") or {}).get("D", ""),
+                        "rpetd_complete": item.get("rpetd_complete", False),
+                        "importance": item.get("importance", 3),
+                        "urgency": item.get("urgency", 3),
+                        "success_criteria": json.dumps(item.get("success_criteria", [])),
+                        "deliverables": json.dumps(item.get("deliverables", [])),
+                        "dependencies": json.dumps(item.get("dependencies", [])),
+                        "tags": json.dumps(item.get("tags", [])),
+                        "notes": json.dumps(item.get("notes", [])),
+                        "parent_id": item.get("parent"),
+                        "validation_notes": item.get("validation_notes", ""),
+                        "validated_by": item.get("validated_by", ""),
+                        "test_strategy": item.get("test_strategy", ""),
+                        "phase": item.get("phase", ""),
+                        "plan": item.get("plan", ""),
+                        "evidence": json.dumps(item.get("evidence", {})),
+                        "outcome": item.get("outcome", ""),
+                        "lesson": item.get("lesson", ""),
+                    })
+                    return item["id"]
+        except Exception as e:
+            # Best-effort — never block task operations, but log so mismatches are diagnosable
+            import sys
+            print(f"\033[2m[pg-mirror] task_upsert failed for {item.get('id', '?')}: {e}\033[0m", file=sys.stderr)
+            return None
+
+    def task_upsert_batch(self, items):
+        """Upsert a batch of task items. Best-effort, never raises."""
+        count = 0
+        for item in items:
+            if self.task_upsert(item):
+                count += 1
+        return count
+
+    def task_delete(self, task_id):
+        """Delete a task from PG mirror. Best-effort."""
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("DELETE FROM gsd_tasks WHERE id = %s", (task_id,))
+                    return cur.rowcount > 0
+        except Exception:
+            return False
+
+    # ═══════════════════════════════════════════════════════
     # Embedding / Semantic Search Operations
     # ═══════════════════════════════════════════════════════
 

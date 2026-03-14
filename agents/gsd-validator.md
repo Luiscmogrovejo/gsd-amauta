@@ -51,8 +51,11 @@ For every task submitted for validation:
 
 ```bash
 CLI="node ~/.claude/get-shit-done/bin/amauta.cjs"
+MEM="node ~/.claude/get-shit-done/bin/gsd-memory.cjs"
 
-# Review the task
+# Note: Validators do NOT claim tasks (claiming is for executors doing the work).
+# The validator reviews the task as an observer, not a participant.
+# Show the task to load all enrichment context and RPETD phases.
 $CLI show TK-XXXX
 
 # Pass validation
@@ -69,17 +72,25 @@ $CLI note TK-XXXX --text "REVIEW: Function handles happy path but needs error ha
 <quality_gates>
 ## Quality Gates
 
-### Gate 1: RPETD Complete
-All 5 phases must have meaningful content. Empty or placeholder content = auto-fail.
+The programmatic gate checks are enforced by `checkValidationGates()` in the CLI (amauta.cjs).
+Gate numbering here matches the SKILL.md gate numbering for consistency.
 
-### Gate 2: Test Evidence
-T-phase must include actual command output. "All tests pass" without output = fail.
+### Gate 1: Branch Evidence (code tasks only)
+E-phase must include a git branch name (feat/*, fix/*, etc.) or evidence of branch work.
 
-### Gate 3: Learning Captured
-D-phase must include at least one `LEARNING:` statement for future memory.
+### Gate 2: LEARNING Block (all tasks)
+At least one phase (preferably D) must contain a `LEARNING:` statement for future memory.
 
-### Gate 4: PR URL (for code tasks)
-If the task involves code changes, the D-phase or E-phase must include a PR URL (github.com/.../pull/NNN, PR #NNN, or merged evidence). A branch name alone does NOT satisfy this gate.
+### Gate 3: Test Evidence (code tasks only)
+T-phase must include actual command output (shell prompt `$`, exit codes, test results).
+"All tests pass" without terminal output = auto-fail.
+
+### Gate 4: PR URL (code tasks only)
+D-phase, E-phase, or task notes must include a PR URL (github.com/.../pull/NNN, PR #NNN, or
+past-tense "merged" evidence). A branch name alone does NOT satisfy this gate.
+
+**Consistency note:** "RPETD Complete" (all 5 phases non-empty) is enforced by `amauta.py cmd_validate`
+at the Python layer before gates are checked — it is pre-gate blocking, not one of the 4 gates.
 
 ### Override
 Use `--force` to override gates for legitimate exceptions (local-only tasks, scaffolding, etc.):

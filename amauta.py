@@ -44,10 +44,18 @@ def dim(t):          return c(t, DIM)
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 AGENTS    = [
+    # Legacy/generic agent names (still valid, kept for backward compatibility)
     "operator", "researcher", "coder", "coder-frontend", "coder-backend", "coder-infra", "coder-ui", "coder-db",
     "marketing", "finance", "validator", "security-auditor", "maintainer",
     "opencode", "opencode-general", "opencode-network", "opencode-memory", "opencode-openclaw", "opencode-project",
     "public-relations", "accountant", "legal",
+    # Current gsd-* agent names (Claude Code / Amauta v1 system)
+    "gsd-operator", "gsd-planner", "gsd-researcher", "gsd-roadmapper",
+    "gsd-executor-backend", "gsd-executor-frontend", "gsd-executor-infra", "gsd-executor-general",
+    "gsd-checker", "gsd-validator", "gsd-debugger",
+    # Short-form aliases used in --agent flags by orchestrators
+    "executor-backend", "executor-frontend", "executor-infra", "executor-general",
+    # Note: AGENTS is informational only — not used for validation in any current code path
 ]
 TYPES     = ["epic", "story", "task", "bug"]
 # Valid parent types for each child type (enforced at task creation)
@@ -65,6 +73,34 @@ PHASE_NAMES = {"R": "Research", "P": "Plan", "E": "Execute", "T": "Test", "D": "
 PREFIX = {"epic": "EP", "story": "ST", "task": "TK", "bug": "BG"}
 
 PRIORITY_SCORE = {"low": 1, "medium": 2, "high": 3, "critical": 5}
+
+# ── Agent classification sets ──────────────────────────────────────────────────
+# Single source-of-truth for agent → lane/gate mapping used by _infer_lane()
+# and _needs_gitflow_gate(). Update HERE; both functions reference these constants.
+OPENCODE_AGENTS: set = {
+    "opencode", "opencode-general", "opencode-network", "opencode-memory",
+    "opencode-openclaw", "opencode-project",
+}
+CODE_AGENTS: set = {
+    # Legacy naming (kept for backward compatibility)
+    "coder", "coder-frontend", "coder-backend", "coder-infra", "coder-ui", "coder-db",
+    "maintainer",
+    # gsd-executor-* agents (current Amauta v1 naming)
+    "gsd-executor-backend", "gsd-executor-frontend", "gsd-executor-infra", "gsd-executor-general",
+    # Short-form aliases used in --agent flags by orchestrators
+    "executor-backend", "executor-frontend", "executor-infra", "executor-general",
+    # gsd-debugger writes bug-fix code and PRs — always requires gitflow gates
+    "gsd-debugger",
+} | OPENCODE_AGENTS
+NON_CODE_AGENTS: set = {
+    # Legacy naming
+    "researcher", "finance", "marketing", "security-auditor", "operator", "validator",
+    "public-relations", "accountant", "legal",
+    # gsd-* non-code agents (coordination, research, planning — no code commits/PRs)
+    "gsd-operator", "gsd-researcher", "gsd-planner", "gsd-roadmapper",
+    "gsd-checker", "gsd-validator",
+    # NOTE: gsd-debugger is intentionally NOT here — it writes bug-fix code/PRs
+}
 
 DOMAIN_TAG_HINTS = {
     "auth": ["auth", "oauth", "token", "login", "signup", "password", "session"],
@@ -152,7 +188,7 @@ def save(data: dict):
       - amauta-dashboard service for read (via amauta-services group)
       - no world access (principle of least privilege)
     """
-    import pwd, grp
+    # NOTE: pwd/grp imports removed — we use hardcoded uid/gid=1000 (line 207)
     data["metadata"]["updated"] = _now()
     data["metadata"]["version"] = "2.0"
     tmp = tempfile.NamedTemporaryFile(
@@ -769,13 +805,18 @@ def _is_memory_hygiene_task(item: dict) -> bool:
 
 def _infer_lane(item: dict) -> str:
     owner = (item.get("assigned_to") or item.get("agent") or "").strip().lower()
-    non_code_agents = {"researcher", "finance", "marketing", "security-auditor", "operator", "validator",
-                       "public-relations", "accountant", "legal"}
     if _is_memory_hygiene_task(item):
         return "non-code"
-    if owner in non_code_agents:
+    if owner in NON_CODE_AGENTS:
         return "non-code"
+    if owner in CODE_AGENTS:
+        return "code"
     if owner:
+        # Unknown agent — warn once so operator can add it to CODE_AGENTS/NON_CODE_AGENTS
+        # Default to "code" (conservative: enforces PR gates rather than skipping them)
+        print(f"\033[2m[lane] Unknown agent '{owner}' — defaulting to code lane. "
+              f"Add to CODE_AGENTS or NON_CODE_AGENTS in amauta.py to suppress this.\033[0m",
+              file=sys.stderr)
         return "code"
     text = " ".join([
         str(item.get("title", "")),
@@ -911,8 +952,11 @@ def _score(item: dict, all_items: list) -> float:
     # Due-date urgency bump
     if item.get("due_date"):
         try:
-            due = datetime.fromisoformat(str(item["due_date"]))
-            days_left = (due - datetime.now()).days
+            due_str = str(item["due_date"])
+            due = datetime.fromisoformat(due_str)
+            # Handle both timezone-aware (from _now()) and naive due_dates
+            now = datetime.now(due.tzinfo) if due.tzinfo else datetime.now()
+            days_left = (due - now).days
             if days_left <= 0:
                 urg = 5
             elif days_left <= 1:
@@ -1222,6 +1266,9 @@ def _pick_domain_doc(title: str, desc: str) -> str:
     """Pick the best architecture doc based on task keywords.
     Returns the first matching doc that exists on disk.
     Multi-word keywords (like 'pull request') are supported.
+    On developer machines without AMAUTA_SHARED_KB_DIR set, all paths will
+    be under /srv/amauta/shared-kb which won't exist — returns "" gracefully
+    and emits a dim hint so developers know what's missing.
     """
     text = (title + " " + desc).lower()
     for keyword, doc_path in _DOMAIN_DOCS.items():
@@ -1235,6 +1282,11 @@ def _pick_domain_doc(title: str, desc: str) -> str:
     for _, doc_path in _DOMAIN_DOCS.items():
         if os.path.exists(doc_path):
             return doc_path
+    # No shared KB found — emit a one-time dim hint so developers know how to enable it
+    if not os.environ.get("AMAUTA_SHARED_KB_DIR") and not os.environ.get("_AMAUTA_KB_WARN_SHOWN"):
+        os.environ["_AMAUTA_KB_WARN_SHOWN"] = "1"
+        print(f"\033[2m[enrichment] AMAUTA_SHARED_KB_DIR not set — domain KB queries skipped. "
+              f"Set AMAUTA_SHARED_KB_DIR to enable architecture-aware enrichment.\033[0m", file=sys.stderr)
     return ""
 
 
@@ -1460,12 +1512,15 @@ def _rpetd_phase_enrich(phase: str, item: dict, agent_content: str) -> str:
                     supplement_parts.append(f"[RLM] Delivery check:\n  {rlm_answer[:600]}")
 
             # ── Write delivery event to amauta_memory ─────────────────────
+            # Use "session-learning" source (score boost +3) so this delivery record
+            # is retrievable in future memory searches for relevant patterns.
+            # Previously used "task_event" (score=0) which made D-phase deliveries invisible.
             if _mem_pg_available():
                 _mem_log_event(
                     item.get("claimed_by", "system"),
                     ["task", task_id.lower(), "event:delivery", f"status:{item.get('status','')}"],
                     f"DELIVERY: {task_id} | {title} | {agent_content[:300]}",
-                    source="rpetd_delivery",
+                    source="session-learning",
                 )
 
             # ── Auto-extract and persist web_search findings ───────────────
@@ -1592,8 +1647,11 @@ def _enrich_task_context(item: dict, items: list) -> str:
             words = [w for w in re.split(r"\W+", title.lower()) if w and len(w) > 2 and w not in stop]
             search_q = " ".join(words[:5])
             if search_q:
-                # Search all sources — especially auto_learning and web_search_result
-                results = _mem_pg_search(search_q, None, 8)
+                # Single DB query — reuse results for both "related experiences" and "prior learnings"
+                # (avoids duplicate query with different top-k that previously existed here)
+                results = _mem_pg_search(search_q, None, 10)
+
+                # Tier 1: All results with score >= 2 (general experience context)
                 relevant = [r for r in results
                            if r.get("score", 0) >= 2
                            and "event:claim" not in str(r.get("tags", []))
@@ -1605,19 +1663,14 @@ def _enrich_task_context(item: dict, items: list) -> str:
                         prefix = f"[{src}]" if src else ""
                         parts.append(f"  {prefix} {r['text'][:280].replace(chr(10), ' ')}")
 
-            # ── Pull recent LEARNING + web_search_result from memory for same domain ──
-            # This is the core of the "never repeat work" system
-            # Uses the existing _mem_pg_search abstraction (consistent with the rest of amauta.py)
-            if _mem_pg_available() and search_q:
+                # Tier 2: High-signal sources only — prior learnings (filter from same result set)
                 try:
-                    prior_results = _mem_pg_search(search_q, None, 4)
-                    # Filter to high-signal sources only
-                    prior_results = [r for r in prior_results
+                    prior_results = [r for r in results
                                      if r.get("source") in ('auto_learning', 'web_search_result',
                                                             'lesson-learned', 'best-practice')]
                     if prior_results:
                         learn_lines = ["[PRIOR LEARNING] Agents already learned this — use their findings:"]
-                        for r in prior_results:
+                        for r in prior_results[:4]:
                             src = r.get("source", "")
                             ts = str(r.get("created_at", ""))[:10]
                             learn_lines.append(f"  [{src}@{ts}] {str(r.get('text',''))[:240].replace(chr(10),' ')}")
@@ -1872,22 +1925,18 @@ def _needs_gitflow_gate(item: dict) -> bool:
 
     owner = (item.get("assigned_to") or item.get("agent") or "").strip().lower()
 
+    # Use module-level constants (CODE_AGENTS / NON_CODE_AGENTS / OPENCODE_AGENTS)
+    # to avoid duplication with _infer_lane(). Both functions must agree on classification.
     # Opencode agents do BOTH code PRs and infra/host config work.
     # When their task is tagged lane:infra (and NOT touching a git repo),
     # they should NOT be gated on PR evidence — there's no repo to PR against.
-    opencode_agents = {"opencode", "opencode-general", "opencode-network", "opencode-memory",
-                       "opencode-openclaw", "opencode-project"}
-    if owner in opencode_agents and "lane:infra" in tags:
+    if owner in OPENCODE_AGENTS and "lane:infra" in tags:
         return False
 
-    code_agents = {"coder", "coder-frontend", "coder-backend", "coder-infra", "coder-ui", "coder-db",
-                   "maintainer"} | opencode_agents
-    non_code_agents = {"researcher", "finance", "marketing", "security-auditor", "operator", "validator",
-                       "public-relations", "accountant", "legal"}
-    if owner in code_agents:
+    if owner in CODE_AGENTS:
         return True
     # Non-code agents produce reports/analysis, not PRs — never gate them
-    if owner in non_code_agents:
+    if owner in NON_CODE_AGENTS:
         return False
 
     text = " ".join([
@@ -2259,7 +2308,7 @@ def _auto_write_learning(item: dict, agent_id: str):
     """
     try:
         if not _mem_pg_available():
-            return False
+            return None  # None = unavailable (not failed); callers should distinguish None vs False
         phases = item.get("rpetd_phases", {}) or {}
         task_id = item.get("id", "")
         title = item.get("title", "")
@@ -2633,12 +2682,15 @@ def cmd_claim(args):
     )
 
     # ── Layer 1: Claim-time context enrichment ─────────────────────────────
-    # Inject parent/sibling/PG/KB context into task notes so agent has rich
-    # context before starting RPETD. Best-effort, non-blocking.
+    # Inject parent/sibling/PG/KB context into task notes AND print to stdout
+    # so the agent receives it immediately (not just written to notes).
+    # Best-effort, non-blocking.
+    enrichment_ctx = ""
     try:
         ctx = _enrich_task_context(item, items)
         if ctx:
             _append_note(item, ctx, "system-enrichment")
+            enrichment_ctx = ctx  # Keep for printing below
     except Exception:
         pass  # Enrichment must never block claims
 
@@ -2652,6 +2704,14 @@ def cmd_claim(args):
         print(dim(f"  Success criteria: {' | '.join(item['success_criteria'][:3])}"))
     print(dim(f"\n  → Log work: amauta rpetd {args.id} --phase R --content \"...\""))
     print(dim(f"  → Finish:   amauta status {args.id} validation --agent {args.agent} --note \"done\""))
+
+    # Print Layer 1 enrichment context so agent receives it at claim time
+    # (not just saved to notes where it would require a separate 'show' call)
+    if enrichment_ctx:
+        print()
+        print(c("  ── Layer 1 Context Enrichment ──", DIM))
+        for line in enrichment_ctx.strip().split("\n")[:30]:  # limit output length
+            print(f"  {dim(line)}")
 
 
 # ── RPETD — inline work log ────────────────────────────────────────────────────
@@ -2965,10 +3025,16 @@ def cmd_validate(args):
         _validator_id = args.validator or "validator"
         if not _has_explicit_learning_written(item) and not args.force:
             auto_ok = _auto_write_learning(item, _validator_id)
+            if auto_ok is None:
+                auto_status = "skipped (PG unavailable)"
+            elif auto_ok:
+                auto_status = "succeeded"
+            else:
+                auto_status = "failed"
             _append_note(
                 item,
                 "LEARNING_GATE BLOCKED: missing explicit LEARNING evidence in RPETD/notes. "
-                f"Auto-capture {'succeeded' if auto_ok else 'failed'} for retention, but PASS is blocked. "
+                f"Auto-capture {auto_status} for retention, but PASS is blocked. "
                 "Agent must add LEARNING: block in D-phase (or memory add evidence) and resubmit.",
                 _validator_id,
             )

@@ -39,7 +39,7 @@ function output(result, raw, rawValue) {
     // Large payloads exceed Claude Code's Bash tool buffer (~50KB).
     // Write to tmpfile and output the path prefixed with @file: so callers can detect it.
     if (json.length > 50000) {
-      const tmpPath = path.join(require('os').tmpdir(), `gsd-${Date.now()}.json`);
+      const tmpPath = path.join(require('os').tmpdir(), `amauta-${Date.now()}.json`);
       fs.writeFileSync(tmpPath, json, 'utf-8');
       process.stdout.write('@file:' + tmpPath);
     } else {

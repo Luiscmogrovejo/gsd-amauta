@@ -16,9 +16,9 @@ $MEM search "{task_topic}" 2>/dev/null || true
 ## 4-Gate Validation Checklist
 ```
 Gate 1 — Branch Evidence (E-phase): feat/*, fix/*, chore/*, refactor/* branch name visible
-Gate 2 — Test Evidence (T-phase): raw terminal output with $ prompt, PASS/FAIL, test counts
-Gate 3 — LEARNING Block (D-phase): at least one LEARNING: statement present
-Gate 4 — PR URL (D-phase or E-phase): github.com/.../pull/NNN or "merged" or "PR #NNN"
+Gate 2 — LEARNING Block (D-phase or any phase): at least one LEARNING: statement present
+Gate 3 — Test Evidence (T-phase): raw terminal output with $ prompt, PASS/FAIL, test counts
+Gate 4 — PR URL (D-phase, E-phase, or notes): github.com/.../pull/NNN or "merged" or "PR #NNN"
          NOTE: branch name alone does NOT satisfy Gate 4 — a PR URL is required
 ```
 

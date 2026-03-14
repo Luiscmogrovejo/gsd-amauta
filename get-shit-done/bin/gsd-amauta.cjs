@@ -6,7 +6,8 @@
  * Communicates with amauta-daemon.py on localhost:18799 via HTTP.
  * Falls back to direct `python3 amauta.py` invocation if daemon is unreachable.
  *
- * Usage: node gsd-amauta.cjs <command> [args] [--json]
+ * Usage: amauta <command> [args] [--json]
+ * (Invoked via: node amauta.cjs | node gsd-amauta.cjs — both delegate here)
  *
  * Commands:
  *   board                               Show task board
@@ -159,10 +160,17 @@ async function startDaemon() {
 
 /**
  * Ensure daemon is running, start it if needed.
+ * Set GSD_AMAUTA_NO_AUTO_START=1 to skip auto-start (useful in tests).
  * @returns {Promise<boolean>}
  */
 async function ensureDaemon() {
   if (await isDaemonRunning()) return true;
+
+  // Allow tests/CI to skip auto-start (saves 5s startup wait per test)
+  if (process.env.GSD_AMAUTA_NO_AUTO_START === '1') {
+    process.stderr.write('WARNING: Daemon not running, using direct CLI (auto-start disabled).\n');
+    return false;
+  }
 
   process.stderr.write('Amauta daemon not running, starting...\n');
   const started = await startDaemon();
@@ -267,11 +275,13 @@ function parseFlags(args, startIndex = 0) {
       if (key === 'pass') { flags.pass_result = true; continue; }
       if (key === 'fail') { flags.pass_result = false; continue; }
       if (key === 'force') { flags.force = true; continue; }
+      // Note: --json is stripped globally before parseFlags is called (see main()),
+      // so this branch is a safety fallback only — not normally reached.
       if (key === 'json') { flags.json_output = true; continue; }
       if (key === 'append') { flags.append = true; continue; }
       // Key-value flags
       const nextVal = args[i + 1];
-      if (nextVal && !nextVal.startsWith('--')) {
+      if (nextVal !== undefined && !nextVal.startsWith('--')) {
         flags[key] = nextVal;
         i++;
       } else {
@@ -418,7 +428,8 @@ async function cmdRpetd(useDaemon, id, flags, jsonMode) {
   if (useDaemon) {
     const { data } = await httpRequest('POST', '/api/rpetd', body);
     printResponse(data, jsonMode);
-    exitCode = data.exit_code || 0;
+    // Use strict undefined check — exit_code of 0 is falsy but means success
+    exitCode = (data.exit_code !== undefined && data.exit_code !== null) ? data.exit_code : 0;
   } else {
     const args = ['rpetd', id, '--phase', flags.phase, '--content', flags.content];
     if (flags.agent) args.push('--agent', flags.agent);
@@ -530,6 +541,7 @@ async function checkValidationGates(useDaemon, id, flags) {
   let taskType = 'task';
   let phases = {}; // { R: '', P: '', E: '', T: '', D: '' }
   let taskData = null; // fallback text
+  let notesText = ''; // extracted notes for Gate 4 PR scan (notes may hold PR URLs)
   try {
     if (useDaemon) {
       // Use daemon exec route with --json — always reads from PG, correct path
@@ -539,6 +551,11 @@ async function checkValidationGates(useDaemon, id, flags) {
         const parsed = JSON.parse(jsonStr);
         taskType = parsed.type || 'task';
         phases = parsed.rpetd_phases || {};
+        // Extract notes text for Gate 4 — notes may contain PR URLs posted after E-phase
+        const notes = parsed.notes || [];
+        notesText = Array.isArray(notes)
+          ? notes.map(n => (typeof n === 'string' ? n : (n && n.text) || '')).join(' ')
+          : String(notes || '');
       }
     } else {
       // No daemon — call Python directly via runDirect
@@ -548,6 +565,10 @@ async function checkValidationGates(useDaemon, id, flags) {
         const parsed = JSON.parse(jsonStr);
         taskType = parsed.type || 'task';
         phases = parsed.rpetd_phases || {};
+        const notes = parsed.notes || [];
+        notesText = Array.isArray(notes)
+          ? notes.map(n => (typeof n === 'string' ? n : (n && n.text) || '')).join(' ')
+          : String(notes || '');
       }
     }
   } catch {
@@ -597,12 +618,15 @@ async function checkValidationGates(useDaemon, id, flags) {
     }
   }
 
-  // Gate 2: LEARNING block in D-phase (empty D-phase always fails for all tasks)
+  // Gate 2: LEARNING block — check D-phase first, then all phases (matches amauta.py _has_learning_written)
+  // D-phase is the canonical location; if missing there, we also accept it in other phases
+  // to be consistent with Python's _has_learning_written() which checks all 5 phases.
   const dContent = (phases.D || '').trim();
+  const allPhasesContent = Object.values(phases).join(' ');
   if (!dContent) {
     gateFailures.push('LEARNING_BLOCK: D-phase is empty. All tasks require a Documentation phase with a LEARNING: block.');
-  } else if (!LEARNING_PATTERN.test(dContent)) {
-    gateFailures.push('LEARNING_BLOCK: D-phase has no LEARNING: block. Document what was learned.');
+  } else if (!LEARNING_PATTERN.test(dContent) && !LEARNING_PATTERN.test(allPhasesContent)) {
+    gateFailures.push('LEARNING_BLOCK: No LEARNING: block found in any RPETD phase. Document what was learned in the D-phase.');
   }
 
   // Gate 3 (TK-0046): Test evidence in T-phase — require raw command output
@@ -624,20 +648,22 @@ async function checkValidationGates(useDaemon, id, flags) {
     }
   }
 
-  // Gate 4: PR URL evidence in D-phase or notes (code tasks only)
+  // Gate 4: PR URL evidence in D-phase, E-phase, notes, or text fallback (code tasks only)
   if (isCodeTask) {
-    const allContent = `${phases.D || ''} ${phases.E || ''} ${taskData || ''}`;
+    // Include notes — PR URLs are often posted as notes after E-phase completes
+    const allContent = `${phases.D || ''} ${phases.E || ''} ${notesText} ${taskData || ''}`;
     // Check for PR merge evidence: require past tense "merged" or explicit PR references
     // Deliberately exclude "merge" (noun/present) to avoid false passes on conflict text
     const hasMergeEvidence = /\bmerged\b/i.test(allContent) &&
       !/merge\s+conflict|cannot\s+merge|failed\s+to\s+merge|not\s+merged|auto-?merge\s+failed/i.test(allContent);
+    // Require explicit URL or PR number — "pull request" phrase alone is not sufficient
+    // (avoids false pass when description merely says "create a pull request")
     const hasPrUrl = /(?:github\.com|gitlab\.com|bitbucket\.org)\/[^\s]+\/pull\/\d+/i.test(allContent) ||
                      /\bPR\s*#?\d+\b/i.test(allContent) ||
-                     /\bpull\s*request\b/i.test(allContent) ||
-                     /\bgh\s+pr\s+/i.test(allContent) ||
+                     /\bgh\s+pr\s+(?:create|view|merge|list|checkout)\b/i.test(allContent) ||
                      hasMergeEvidence;
     if (!hasPrUrl) {
-      gateFailures.push('PR_URL: No PR/merge evidence found in D-phase or E-phase. Code tasks should reference their PR.');
+      gateFailures.push('PR_URL: No PR/merge evidence found in D-phase, E-phase, or notes. Code tasks should reference their PR URL or PR #NNN.');
     }
   }
 
@@ -673,6 +699,24 @@ async function cmdValidate(useDaemon, id, flags, jsonMode) {
     // TK-0031: SKB promotion on validation pass
     if (flags.pass_result && data.exit_code === 0) {
       await promoteToSKB(useDaemon, id);
+
+      // Wire the validation audit trail — write to gsd_task_validations via /api/validation/record
+      // This keeps the PG audit table in sync with the tasks.json validation result.
+      await httpRequest('POST', '/api/validation/record', {
+        task_id: id,
+        validator_id: flags.validator || 'validator',
+        status: 'approved',
+        evidence: { notes: flags.notes || '' },
+      }).catch(e => process.stderr.write(`[best-effort] validation audit write failed: ${e.message || e}\n`));
+    } else if (!flags.pass_result && data.exit_code === 0) {
+      // Record rejections too
+      await httpRequest('POST', '/api/validation/record', {
+        task_id: id,
+        validator_id: flags.validator || 'validator',
+        status: 'rejected',
+        rejection_reason: flags.notes || '',
+        evidence: { subtasks: flags.subtasks || '' },
+      }).catch(e => process.stderr.write(`[best-effort] validation audit write failed: ${e.message || e}\n`));
     }
 
     return data.exit_code || 0;
@@ -690,6 +734,20 @@ async function cmdValidate(useDaemon, id, flags, jsonMode) {
   // TK-0031: SKB promotion on validation pass (direct mode)
   if (flags.pass_result && result.exit_code === 0) {
     await promoteToSKB(useDaemon, id);
+  }
+
+  // Write validation audit record to file when daemon not available
+  // Keeps the validation trail even in no-daemon / no-PG mode
+  if (result.exit_code === 0) {
+    try {
+      const auditDir = path.join(process.cwd(), '.planning', 'memory');
+      fs.mkdirSync(auditDir, { recursive: true });
+      const date = new Date().toISOString().split('T')[0];
+      const auditFile = path.join(auditDir, `${date}.md`);
+      const status = flags.pass_result ? 'approved' : 'rejected';
+      const entry = `- [validation] ${new Date().toISOString()}: ${id} ${status} by ${flags.validator || 'validator'} — ${flags.notes || ''}\n`;
+      fs.appendFileSync(auditFile, entry);
+    } catch { /* best-effort */ }
   }
 
   return result.exit_code;
@@ -756,7 +814,7 @@ async function promoteToSKB(useDaemon, taskId) {
         category: 'pattern',
         importance: 6,
         source_task: taskId,
-      }).catch(() => {}); // Silent fail — SKB promotion is best-effort
+      }).catch(e => process.stderr.write(`[best-effort] SKB store failed: ${e.message || e}\n`));
     } else {
       // File-based fallback: append to .planning/memory/ so learning is not lost
       try {
@@ -776,7 +834,7 @@ async function promoteToSKB(useDaemon, taskId) {
         text: learning,
         source: 'best-practice',
         metadata: { from_task: taskId, promoted_from: 'validation' },
-      }).catch(() => {});
+      }).catch(e => process.stderr.write(`[best-effort] memory best-practice store failed: ${e.message || e}\n`));
     } else {
       // File fallback already written above — skip duplicate
     }
@@ -786,10 +844,10 @@ async function promoteToSKB(useDaemon, taskId) {
 }
 
 async function cmdNote(useDaemon, id, flags, jsonMode) {
-  if (!id) die('Usage: amauta note <id> --text "..." [--agent A]');
-  // amauta.py note subparser uses --content (not --text); normalize here
-  const noteText = flags.text || flags.content;
-  if (!noteText) die('--text is required');
+  if (!id) die('Usage: amauta note <id> --content "..." [--agent A]');
+  // amauta.py note subparser uses --content; also accept --text for backward compat
+  const noteText = flags.content || flags.text;
+  if (!noteText) die('--content is required (also accepts --text)');
   // Build body using --content as the canonical key for the daemon
   const body = { id, content: noteText };
   if (flags.agent) body.agent = flags.agent;
@@ -852,14 +910,15 @@ async function cmdScore(useDaemon, id, jsonMode) {
 async function cmdAssign(useDaemon, id, flags, jsonMode) {
   if (!id) die('Usage: amauta assign <id> --agent <agent>');
   if (!flags.agent) die('--agent is required');
-  const body = { id, ...flags };
+  const body = { id, agent: flags.agent };
 
   if (useDaemon) {
     const { data } = await httpRequest('POST', '/api/assign', body);
     printResponse(data, jsonMode);
     return data.exit_code || 0;
   }
-  const args = ['assign', id, '--agent', flags.agent];
+  // amauta.py assign subparser: positional "id" then positional "agent" (not --agent)
+  const args = ['assign', id, flags.agent];
   const result = runDirect(args);
   printResponse(result, jsonMode);
   return result.exit_code;
@@ -912,7 +971,9 @@ async function cmdDelete(useDaemon, id, jsonMode) {
   if (!id) die('Usage: amauta delete <id>');
 
   if (useDaemon) {
-    const { data } = await httpRequest('POST', '/api/exec', { args: ['delete', id] });
+    // Use dedicated /api/delete route — 'delete' is NOT in _EXEC_ALLOWLIST
+    // and therefore would get a 403 if routed through /api/exec.
+    const { data } = await httpRequest('POST', '/api/delete', { id });
     printResponse(data, jsonMode);
     return data.exit_code || 0;
   }
@@ -1027,7 +1088,7 @@ async function main() {
       '  \x1b[36m██╔══██║██║╚██╔╝██║██╔══██║██║   ██║   ██║   ██╔══██║\x1b[0m\n' +
       '  \x1b[36m██║  ██║██║ ╚═╝ ██║██║  ██║╚██████╔╝   ██║   ██║  ██║\x1b[0m\n' +
       '  \x1b[36m╚═╝  ╚═╝╚═╝     ╚═╝╚═╝  ╚═╝ ╚═════╝    ╚═╝   ╚═╝  ╚═╝\x1b[0m\n' +
-      '  \x1b[2mv1  ·  Multi-agent task management with RPETD pipeline\x1b[0m\n' +
+      '  \x1b[2mv2  ·  Multi-agent task management with RPETD pipeline\x1b[0m\n' +
       '\n' +
       '  \x1b[33mUsage:\x1b[0m  amauta <command> [args] [--json]\n' +
       '\n' +
@@ -1046,7 +1107,7 @@ async function main() {
       '    update <id> [--field val ...]\n' +
       '    status <id> <new-status>\n' +
       '    assign <id> --agent <agent>\n' +
-      '    note <id> --text "..." [--agent A]\n' +
+      '    note <id> --content "..." [--agent A]\n' +
       '    link <id> --dep <dep-id>    Add dependency\n' +
       '    unlink <id> --dep <dep-id>  Remove dependency\n' +
       '    delete <id>\n' +

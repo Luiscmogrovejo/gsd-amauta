@@ -36,14 +36,26 @@ When reviewing a plan before execution:
 6. **Scope** — Is the task appropriately sized (not too big, not trivially small)?
 
 ```bash
+CLI="node ~/.claude/get-shit-done/bin/amauta.cjs"
+RLM="node ~/.claude/get-shit-done/bin/gsd-rlm.cjs"
+MEM="node ~/.claude/get-shit-done/bin/gsd-memory.cjs"
+
+# Claim the checker task (loads Layer 1 enrichment: dependencies, prior failures, SKB)
+$CLI claim TK-XXXX --agent checker 2>/dev/null || true
+# Read back Layer 1 enrichment injected at claim time
+$CLI show TK-XXXX 2>/dev/null || true
+
 # Check task details
-node ~/.claude/get-shit-done/bin/amauta.cjs show TK-XXXX --json
+$CLI show TK-XXXX --json
 
 # Check dependencies
-node ~/.claude/get-shit-done/bin/amauta.cjs show TK-XXXX --json | python3 -c "import sys,json; d=json.load(sys.stdin); print('Deps:', d['dependencies']); print('Criteria:', d['success_criteria'])"
+$CLI show TK-XXXX --json | python3 -c "import sys,json; d=json.load(sys.stdin); print('Deps:', d['dependencies']); print('Criteria:', d['success_criteria'])"
 
 # Use RLM to verify referenced files exist and are relevant
-node ~/.claude/get-shit-done/bin/gsd-rlm.cjs query "relevant patterns" --dir <project_dir> --compact
+$RLM query "relevant patterns" --dir <project_dir> --compact
+
+# Search memory for prior review findings on this domain
+$MEM search "<plan_topic>" 2>/dev/null || true
 ```
 
 Report findings as a note:

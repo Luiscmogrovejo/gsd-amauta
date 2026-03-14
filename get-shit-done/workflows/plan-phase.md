@@ -66,7 +66,7 @@ fi
 2. Display banner:
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► PRD EXPRESS PATH
+ AMAUTA ► PRD EXPRESS PATH
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Using PRD: {PRD_FILE}
@@ -178,12 +178,24 @@ If "Run discuss-phase first": Display `/amauta:discuss-phase {X}` and exit workf
 
 **If `has_research` is true (from init) AND no `--research` flag:** Use existing, skip to step 6.
 
+**Phase context gate:**
+<if mode="interactive" OR="custom with gates.confirm_phases true">
+Display the phase context summary (phase name, requirement IDs, description) and ask:
+Use AskUserQuestion:
+- header: "Phase Context"
+- question: "Phase {X}: {name} — context loaded. Proceed to research and planning?"
+- options:
+  - "Proceed" — Start research
+  - "Adjust context" — I want to update the context first
+If "Adjust context" → let user update CONTEXT.md, then re-read.
+</if>
+
 **If RESEARCH.md missing OR `--research` flag:**
 
 Display banner:
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► RESEARCHING PHASE {X}
+ AMAUTA ► RESEARCHING PHASE {X}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ◆ Spawning researcher...
@@ -299,9 +311,21 @@ Proceed to Step 8 only if user selects 2 or 3.
 ## 8. Spawn gsd-planner Agent
 
 Display banner:
+**Task breakdown confirmation gate:**
+<if mode="interactive" OR="custom with gates.confirm_breakdown true">
+Display the research findings summary and planned approach, then ask:
+Use AskUserQuestion:
+- header: "Ready to Plan"
+- question: "Research complete. Ready to break this phase into tasks?"
+- options:
+  - "Create plans" — Generate task plans from research
+  - "Review research first" — Show me the research findings before planning
+If "Review research first" → display RESEARCH.md content, then re-ask.
+</if>
+
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► PLANNING PHASE {X}
+ AMAUTA ► PLANNING PHASE {X}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ◆ Spawning planner...
@@ -400,7 +424,7 @@ Task(
 Display banner:
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► VERIFYING PLANS
+ AMAUTA ► VERIFYING PLANS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ◆ Spawning plan checker...
@@ -444,7 +468,18 @@ Task(
 
 ## 11. Handle Checker Return
 
-- **`## VERIFICATION PASSED`:** Display confirmation, proceed to step 13.
+- **`## VERIFICATION PASSED`:**
+  <if mode="interactive" OR="custom with gates.confirm_plan true">
+  Display plan summary and ask for confirmation:
+  Use AskUserQuestion:
+  - header: "Plan Ready"
+  - question: "Plans verified by checker. Approve to continue, or request changes?"
+  - options:
+    - "Approve plans" — Continue to commit
+    - "Request changes" — I want to adjust the plans
+  If "Request changes" → go to step 12 (revision loop).
+  </if>
+  Proceed to step 13.
 - **`## ISSUES FOUND`:** Display issues, check iteration count, proceed to step 12.
 
 ## 12. Revision Loop (Max 3 Iterations)
@@ -520,7 +555,7 @@ Check for auto-advance trigger:
 Display banner:
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► AUTO-ADVANCING TO EXECUTE
+ AMAUTA ► AUTO-ADVANCING TO EXECUTE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Plans ready. Launching execute-phase...
@@ -537,7 +572,7 @@ The `--no-transition` flag tells execute-phase to return status after verificati
 - **PHASE COMPLETE** → Display final summary:
   ```
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   GSD ► PHASE ${PHASE} COMPLETE ✓
+   AMAUTA ► PHASE ${PHASE} COMPLETE ✓
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   Auto-advance pipeline finished.
@@ -561,7 +596,7 @@ Route to `<offer_next>` (existing behavior).
 Output this markdown directly (not as a code block):
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► PHASE {X} PLANNED ✓
+ AMAUTA ► PHASE {X} PLANNED ✓
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 **Phase {X}: {Name}** — {N} plan(s) in {M} wave(s)

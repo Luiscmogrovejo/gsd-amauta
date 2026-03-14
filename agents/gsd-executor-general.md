@@ -51,6 +51,11 @@ For every task you receive, follow this exact sequence. **Each phase includes RL
 CLI="node ~/.claude/get-shit-done/bin/amauta.cjs"
 RLM="node ~/.claude/get-shit-done/bin/gsd-rlm.cjs"
 MEM="node ~/.claude/get-shit-done/bin/gsd-memory.cjs"
+
+# Claim the task and read back Layer 1 enrichment
+# (Layer 1 injects dependency context, sibling awareness, PG memory, SKB at claim time)
+$CLI claim TK-XXXX --agent executor-general 2>/dev/null || true
+$CLI show TK-XXXX 2>/dev/null || true
 ```
 
 ### R — Research (RLM: project structure + memory: past learnings)

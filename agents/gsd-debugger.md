@@ -35,15 +35,21 @@ You are gsd-debugger — a debug specialist. You investigate bugs using the scie
 <debug_protocol>
 ## Debug Protocol
 
-### Step 0: Memory Check
-Before investigating, search for past failures:
+### Step 0: Memory Check + Claim Task
+Before investigating, claim the task (loads Layer 1 enrichment) and search for past failures:
 
 ```bash
 CLI="node ~/.claude/get-shit-done/bin/amauta.cjs"
 RLM="node ~/.claude/get-shit-done/bin/gsd-rlm.cjs"
+MEM="node ~/.claude/get-shit-done/bin/gsd-memory.cjs"
+
+# Claim the task and read back Layer 1 enrichment
+# (Layer 1 injects prior failures, dependency context, SKB at claim time)
+$CLI claim TK-XXXX --agent debugger 2>/dev/null || true
+$CLI show TK-XXXX 2>/dev/null || true
 
 # Search memory for similar failures
-node ~/.claude/get-shit-done/bin/gsd-memory.cjs search "<error message or symptom>" 2>/dev/null || true
+$MEM search "<error message or symptom>" 2>/dev/null || true
 
 # Search codebase for the affected area
 $RLM query "<error context>" --dir <project_dir> --top-k 10 --compact
@@ -102,7 +108,7 @@ Extract and store the learning:
 
 ```bash
 # Store the failure pattern in memory
-node ~/.claude/get-shit-done/bin/gsd-memory.cjs store --source lesson-learned --text "BUG: [symptom]. ROOT CAUSE: [cause]. FIX: [solution]. PATTERN: [general pattern]" 2>/dev/null || true
+$MEM store --source lesson-learned --text "BUG: [symptom]. ROOT CAUSE: [cause]. FIX: [solution]. PATTERN: [general pattern]" 2>/dev/null || true
 
 # Log documentation phase
 $CLI rpetd TK-XXXX --phase D --content "LEARNING: [pattern extracted and stored in memory]"

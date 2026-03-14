@@ -38,13 +38,15 @@ fi
 **Amauta integration (optional — skip if daemon unavailable):**
 ```bash
 # Check if amauta daemon is available
-AMAUTA_CLI="node $HOME/.claude/get-shit-done/bin/gsd-amauta.cjs"
+AMAUTA_CLI="node $HOME/.claude/get-shit-done/bin/amauta.cjs"
 AMAUTA_OK=$($AMAUTA_CLI health --json 2>/dev/null | grep -c '"status":"ok"' || echo "0")
 
-# If available, look up or create a task for this phase execution
+# If available, create a tracking task for this phase execution
+# Note: We CREATE a new task rather than search (search results are non-deterministic
+# and could match unrelated tasks that mention "phase N" in their description).
 if [ "$AMAUTA_OK" = "1" ]; then
-  # Search for existing task matching this phase
-  PHASE_TASK_ID=$($AMAUTA_CLI exec search "phase ${PHASE_NUMBER}" --json 2>/dev/null | grep -oE 'TK-[0-9]+' | head -1 || echo "")
+  PHASE_TASK_ID=$($AMAUTA_CLI exec add task "Execute Phase ${PHASE_NUMBER}: ${PHASE_NAME}" \
+    --agent operator --priority high 2>/dev/null | grep -oE 'TK-[0-9]+' | head -1 || echo "")
 fi
 ```
 </step>
@@ -130,10 +132,11 @@ fi
 <step name="execute_waves">
 Execute each wave in sequence. Within a wave: parallel if `PARALLELIZATION=true`, sequential if `false`.
 
-**RPETD: Log R-phase before execution begins (if amauta available):**
+**RPETD: Log R-phase and P-phase before execution begins (if amauta available):**
 ```bash
 if [ "$AMAUTA_OK" = "1" ] && [ -n "$PHASE_TASK_ID" ]; then
   $AMAUTA_CLI rpetd "$PHASE_TASK_ID" --phase R --content "Phase ${PHASE_NUMBER}: ${incomplete_count} incomplete plans across ${wave_count} waves. Dependencies analyzed, wave grouping determined." 2>/dev/null || true
+  $AMAUTA_CLI rpetd "$PHASE_TASK_ID" --phase P --content "P: Wave execution strategy — ${wave_count} waves, parallelization=${PARALLELIZATION}. Plan order: ${incomplete_plans}" 2>/dev/null || true
 fi
 ```
 
@@ -382,7 +385,7 @@ Task(
   @~/.claude/agents/gsd-validator.md
 
   Steps:
-  1. Review task: node ~/.claude/get-shit-done/bin/gsd-amauta.cjs show {TASK_ID}
+  1. Review task: node ~/.claude/get-shit-done/bin/amauta.cjs show {TASK_ID}
   2. Check all 5 RPETD phases have meaningful content
   3. Verify T-phase has actual test output (not placeholder)
   4. Verify D-phase has LEARNING: block
@@ -390,9 +393,9 @@ Task(
   6. Check git: git log --oneline --grep='{TASK_ID}'
 
   If ALL criteria met:
-    node ~/.claude/get-shit-done/bin/gsd-amauta.cjs validate {TASK_ID} --pass --validator validator --notes 'PASS: <evidence>'
+    node ~/.claude/get-shit-done/bin/amauta.cjs validate {TASK_ID} --pass --validator validator --notes 'PASS: <evidence>'
   If criteria NOT met:
-    node ~/.claude/get-shit-done/bin/gsd-amauta.cjs validate {TASK_ID} --fail --validator validator --notes 'FAIL: <reason>' --subtasks '<fix1>|<fix2>'
+    node ~/.claude/get-shit-done/bin/amauta.cjs validate {TASK_ID} --fail --validator validator --notes 'FAIL: <reason>' --subtasks '<fix1>|<fix2>'
 
   Return: task ID, pass/fail, and notes."
 )
@@ -640,8 +643,7 @@ When the Amauta daemon is available, this workflow logs RPETD phases automatical
 
 | Step | RPETD Phase | What's logged |
 |------|-------------|---------------|
-| discover_plans | R (Research) | Plan inventory, wave grouping, dependencies |
-| execute_waves start | P (Plan) | Wave execution strategy, parallelism config |
+| discover_plans + execute_waves start | R (Research) + P (Plan) | R: Plan inventory, wave grouping; P: Wave execution strategy, parallelism config |
 | wave complete | E (Execute) | What was built per wave, deviations |
 | verify_phase_goal | T (Test) | Verification status (passed/gaps/human_needed) |
 | update_roadmap | D (Document) | Phase completion, key learnings |
@@ -649,7 +651,7 @@ When the Amauta daemon is available, this workflow logs RPETD phases automatical
 **Graceful degradation:** All RPETD logging is wrapped in `2>/dev/null || true`. If the daemon is unavailable, execution proceeds normally without any impact.
 
 **CLI tools used:**
-- `gsd-amauta.cjs rpetd` — Log RPETD phase content
-- `gsd-amauta.cjs health` — Check daemon availability
+- `amauta.cjs rpetd` — Log RPETD phase content
+- `amauta.cjs health` — Check daemon availability
 - `gsd-memory.cjs learn` — Store phase learnings to PG memory
 </amauta_integration>

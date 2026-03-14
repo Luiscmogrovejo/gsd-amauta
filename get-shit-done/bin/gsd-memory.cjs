@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * GSD-Memory CLI — PostgreSQL-backed memory and Shared Knowledge Base (SKB)
+ * Amauta Memory CLI — PostgreSQL-backed memory and Shared Knowledge Base (SKB)
  * for Claude Code agents.
  *
  * Communicates with amauta-daemon.py on localhost:18799 via HTTP.
@@ -206,7 +206,7 @@ function fileLearn(text) {
       fs.appendFileSync(STATE_FILE, `\n\n## Learnings\n${entry}\n`);
     }
   } else {
-    fs.writeFileSync(STATE_FILE, `# GSD State\n\n## Learnings\n${entry}\n`);
+    fs.writeFileSync(STATE_FILE, `# Amauta State\n\n## Learnings\n${entry}\n`);
   }
   return 'state:learnings';
 }
@@ -337,7 +337,7 @@ function formatSKB(entry, index) {
 async function cmdSearch(args) {
   const query = args._positional.join(' ');
   if (!query) {
-    console.error('Usage: gsd-memory.cjs search <query> [--agent <id>] [--project <id>] [--source <src>] [--limit <n>] [--json]');
+    console.error('Usage: amauta-memory search <query> [--agent <id>] [--project <id>] [--source <src>] [--limit <n>] [--json]');
     process.exit(1);
   }
 
@@ -390,7 +390,7 @@ async function cmdSearch(args) {
 async function cmdStore(args) {
   const text = args._positional.join(' ');
   if (!text) {
-    console.error('Usage: gsd-memory.cjs store <text> [--source <src>] [--agent <id>] [--project <id>] [--tags <t1,t2>]');
+    console.error('Usage: amauta-memory store <text> [--source <src>] [--agent <id>] [--project <id>] [--tags <t1,t2>]');
     process.exit(1);
   }
 
@@ -414,6 +414,8 @@ async function cmdStore(args) {
     } else {
       console.log(`\x1b[92mStored\x1b[0m ${id} (source: ${source}, file mode)`);
     }
+    // TK-0054: Still check auto-distill even in file mode (counts file entries)
+    await maybeAutoDistill();
     return;
   }
 
@@ -437,7 +439,7 @@ async function cmdLearn(args) {
   // In file mode, use fileLearn for STATE.md integration
   const text = args._positional.join(' ');
   if (!text) {
-    console.error('Usage: gsd-memory.cjs learn <text>');
+    console.error('Usage: amauta-memory learn <text>');
     process.exit(1);
   }
 
@@ -454,6 +456,8 @@ async function cmdLearn(args) {
     } else {
       console.log(`\x1b[92mStored\x1b[0m ${id} (source: auto_learning, file mode → STATE.md)`);
     }
+    // TK-0054: Still check auto-distill even in file mode (counts file entries)
+    await maybeAutoDistill();
     return;
   }
 
@@ -562,7 +566,7 @@ async function cmdCount(args) {
 async function cmdSKBSearch(args) {
   const query = args._positional.join(' ');
   if (!query) {
-    console.error('Usage: gsd-memory.cjs skb-search <query> [--category <cat>] [--limit <n>] [--json]');
+    console.error('Usage: amauta-memory skb-search <query> [--category <cat>] [--limit <n>] [--json]');
     process.exit(1);
   }
 
@@ -599,7 +603,7 @@ async function cmdSKBSearch(args) {
 async function cmdSKBAdd(args) {
   const title = args._positional.join(' ');
   if (!title) {
-    console.error('Usage: gsd-memory.cjs skb-add <title> --content <text> [--category <cat>] [--importance <n>] [--task <id>] [--tags <t1,t2>]');
+    console.error('Usage: amauta-memory skb-add <title> --content <text> [--category <cat>] [--importance <n>] [--task <id>] [--tags <t1,t2>]');
     process.exit(1);
   }
 
@@ -704,7 +708,7 @@ async function cmdHealth(args) {
 async function cmdCrossProject(args) {
   const query = args._positional.join(' ');
   if (!query) {
-    console.error('Usage: gsd-memory.cjs cross-project <query> [--tags <t1,t2>] [--exclude <project_id>] [--limit <n>] [--json]');
+    console.error('Usage: amauta-memory cross-project <query> [--tags <t1,t2>] [--exclude <project_id>] [--limit <n>] [--json]');
     process.exit(1);
   }
 
@@ -760,7 +764,7 @@ async function cmdCrossProject(args) {
 async function cmdSemanticSearch(args) {
   const query = args._positional.join(' ');
   if (!query) {
-    console.error('Usage: gsd-memory.cjs semantic-search <query> [--project <id>] [--source <src>] [--limit <n>] [--json]');
+    console.error('Usage: amauta-memory semantic-search <query> [--project <id>] [--source <src>] [--limit <n>] [--json]');
     process.exit(1);
   }
 
@@ -1214,11 +1218,13 @@ async function cmdDistill(args) {
         text: mergedText.slice(0, 4000),
         source: 'distilled',
         agent_id: keep.agent_id || '',
-        metadata: JSON.stringify({
+        // Send metadata as object — the daemon/pg_store.py handles JSON.stringify internally.
+        // Previously this was JSON.stringify'd here, causing double-encoding in PG.
+        metadata: {
           merged_from: group.map(e => e.id),
           original_count: group.length,
           distilled_at: new Date().toISOString(),
-        }),
+        },
       };
       const storeRes = await tryDaemon('POST', '/api/memory/store', mergeBody);
 
@@ -1227,7 +1233,8 @@ async function cmdDistill(args) {
       if (storeRes && storeRes.status === 200) {
         for (const entry of group) {
           if (entry.id) {
-            await tryDaemon('POST', '/api/memory/delete', { id: entry.id }).catch(() => {});
+            await tryDaemon('POST', '/api/memory/delete', { id: entry.id }).catch(e => 
+              process.stderr.write(`[distill] delete entry ${entry.id} failed: ${e.message || e}\n`));
           }
         }
       } else {
@@ -1248,7 +1255,7 @@ async function cmdDistill(args) {
 
 function printUsage() {
   console.log(`
-\x1b[1mGSD-Memory CLI\x1b[0m — PostgreSQL-backed memory for Claude Code agents
+\x1b[1mAmauta Memory CLI\x1b[0m — PostgreSQL-backed memory for Claude Code agents
 
 \x1b[1mMemory Commands:\x1b[0m
   search <query>       Search memories (source-aware scoring)

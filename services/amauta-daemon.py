@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-GSD-Amauta Daemon — HTTP API wrapping amauta.py task manager.
+Amauta Daemon — HTTP API wrapping amauta.py task manager.
 
 Runs as a background service on localhost:18799.
-Claude Code agents communicate via gsd-amauta.cjs → HTTP → this daemon → amauta.py.
+Claude Code agents communicate via amauta.cjs → HTTP → this daemon → amauta.py.
 
 Usage:
     python3 services/amauta-daemon.py start   # Start daemon (background)
@@ -123,6 +123,17 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             args.append(body["title"])
         if "id" in body and command != "add":
             args.append(body["id"])
+        # assign has TWO positional args: id (above) + agent (positional, not --agent)
+        # amauta.py `assign` subparser: asgn.add_argument("id"); asgn.add_argument("agent")
+        if command == "assign" and "agent" in body:
+            args.append(body["agent"])
+            # Skip the flag_map's --agent processing for assign (handled above as positional)
+            body = {k: v for k, v in body.items() if k != "agent"}
+
+        # link/unlink have TWO positional args: id (above) + dep_id
+        # amauta.py: lk.add_argument("id"); lk.add_argument("dep_id")
+        if command in ("link", "unlink") and "dep_id" in body:
+            args.append(body["dep_id"])
 
         # Named arguments
         flag_map = {
@@ -136,14 +147,16 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             "urgency": "--urgency",
             "phase": "--phase",
             "content": "--content",
-            "status_to": None,  # handled specially
+            "status_to": None,  # handled specially (positional for status command)
             "validator": "--validator",
             "notes": "--notes",
             "note": "--note",
             "query": "--query",
             "text": "--text",
             "tags": "--tags",
-            "force": None,  # boolean flag
+            "subtasks": "--subtasks",  # validate --fail auto-atomize
+            "force": None,   # boolean flag
+            "append": None,  # boolean flag (rpetd --append)
             "json_output": None,  # boolean flag
         }
 
@@ -154,6 +167,8 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
 
             if key == "force" and val:
                 args.append("--force")
+            elif key == "append" and val:
+                args.append("--append")
             elif key == "json_output" and val:
                 args.append("--json")
             elif flag and val is not None:
@@ -347,9 +362,25 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             command = command_map[path]
             args = self._build_args(command, body)
 
-            # Special handling for status command (positional status value)
+            # Special handling for status command — status_to is a POSITIONAL arg
+            # amauta.py: st.add_argument("id"); st.add_argument("status", choices=STATUSES)
+            # It must come IMMEDIATELY after id (before any --flags), so we insert it at position 2
             if command == "status" and "status_to" in body:
-                args.append(body["status_to"])
+                # args is currently ["status", "<id>", ...flags...]
+                # Insert status_to at index 2 (after command + id, before flags)
+                args.insert(2, body["status_to"])
+
+            # Special handling for search command — query is a POSITIONAL arg in amauta.py
+            # amauta.py: sr.add_argument("query") — positional, NOT --query
+            # _build_args sends "query" → "--query" (from flag_map) which argparse rejects.
+            # Rebuild as: ["search", "<query_value>"] with any remaining non-query flags appended.
+            if command == "search" and "--query" in args:
+                query_idx = args.index("--query")
+                query_val = args[query_idx + 1] if query_idx + 1 < len(args) else ""
+                # Remove the --query flag+value from args
+                del args[query_idx:query_idx + 2]
+                # Insert query_val as the first positional arg right after "search"
+                args.insert(1, query_val)  # args is now ["search", "<query>", ...remaining-flags...]
 
             # Special handling for validate --pass/--fail
             # Note: --force is handled by _build_args() via flag_map
@@ -360,6 +391,32 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     args.append("--fail")
 
             out, err, rc = self._run_amauta(args)
+
+            # ── Dual-write: mirror task mutations to PG (best-effort) ──
+            # After amauta.py writes to tasks.json, mirror the affected task to gsd_tasks.
+            # Only for commands that mutate tasks; read commands (show, list, search) skip this.
+            _TASK_MUTATING_COMMANDS = {"add", "claim", "rpetd", "status", "validate",
+                                       "assign", "note", "update", "delete", "link", "unlink", "atomize"}
+            if _pg_store and rc == 0 and command in _TASK_MUTATING_COMMANDS:
+                try:
+                    task_id = body.get("id") or ""
+                    # For add, extract the new task ID from output
+                    if command == "add" and not task_id:
+                        import re as _re
+                        m = _re.search(r"(TK|EP|ST|BG)-\d+", out)
+                        task_id = m.group(0) if m else ""
+                    if command == "delete" and task_id:
+                        _pg_store.task_delete(task_id)
+                    elif task_id:
+                        # Re-read the task from tasks.json via show --json to get current state
+                        show_out, _, show_rc = self._run_amauta(["show", task_id, "--json"])
+                        if show_rc == 0 and show_out.strip():
+                            import json as _json
+                            item = _json.loads(show_out)
+                            _pg_store.task_upsert(item)
+                except Exception:
+                    pass  # PG mirror is best-effort — never block task responses
+
             self._send_json({"output": out, "error": err, "exit_code": rc})
             return
 
@@ -622,7 +679,7 @@ def start_server(foreground=False):
     else:
         print("  PostgreSQL: pg_store module not found — running without PG")
 
-    print(f"GSD-Amauta daemon listening on {HOST}:{PORT}")
+    print(f"Amauta daemon listening on {HOST}:{PORT}")
     print(f"  Data dir: {DATA_DIR}")
     print(f"  PID file: {PID_FILE}")
     print(f"  amauta.py: {AMAUTA_PY}")

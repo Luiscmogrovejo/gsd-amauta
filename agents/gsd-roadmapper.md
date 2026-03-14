@@ -396,6 +396,29 @@ Approve roadmap or provide feedback for revision.
 
 <execution_flow>
 
+## Step 0: Task Tracking Setup
+
+If this roadmapping work has an associated Amauta task ID (TK-XXXX), claim it first to load Layer 1 enrichment (prior roadmap patterns, SKB policies, dependency context).
+
+```bash
+CLI="node ~/.claude/get-shit-done/bin/amauta.cjs"
+MEM="node ~/.claude/get-shit-done/bin/gsd-memory.cjs"
+
+# Claim and read back enrichment (skip gracefully if no task assigned)
+$CLI claim TK-XXXX --agent roadmapper 2>/dev/null || true
+$CLI show TK-XXXX 2>/dev/null || true
+```
+
+Log RPETD phases as you complete each step:
+```bash
+$CLI rpetd TK-XXXX --phase R --content "R: [requirements analyzed, research context loaded]" 2>/dev/null || true
+$CLI rpetd TK-XXXX --phase P --content "P: [phase structure derived, coverage validated]" 2>/dev/null || true
+$CLI rpetd TK-XXXX --phase E --content "E: [ROADMAP.md written, STATE.md initialized]" 2>/dev/null || true
+$CLI rpetd TK-XXXX --phase T --content "T: [coverage validated: X/Y requirements mapped]" 2>/dev/null || true
+$CLI rpetd TK-XXXX --phase D --content "D: [roadmap summary]. LEARNING: [phasing insight]" 2>/dev/null || true
+$MEM learn "{key_phasing_insight}" 2>/dev/null || true
+```
+
 ## Step 1: Receive Context
 
 Orchestrator provides:

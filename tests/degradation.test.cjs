@@ -32,8 +32,9 @@ function runNoDaemon(cliPath, args, cwd = process.cwd()) {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: {
         ...process.env,
-        GSD_AMAUTA_PORT: '59999', // Non-existent port → ECONNREFUSED
+        GSD_AMAUTA_PORT: '59999',         // Non-existent port → ECONNREFUSED
         GSD_AMAUTA_HOST: '127.0.0.1',
+        GSD_AMAUTA_NO_AUTO_START: '1',    // Skip 5s daemon startup wait in tests
       },
       cwd,
       timeout: 10000,
