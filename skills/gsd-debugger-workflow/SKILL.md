@@ -18,6 +18,8 @@ $MEM search "{bug_description}" 2>/dev/null || true
 
 ```bash
 $CLI claim TK-XXXX --agent debugger 2>/dev/null || true
+# Read back Layer 1 enrichment (deps, siblings, prior failures, SKB context injected at claim)
+$CLI show TK-XXXX 2>/dev/null || true
 $CLI rpetd TK-XXXX --phase R --content "R: [Observe — symptoms, stack traces, RLM findings]" 2>/dev/null || true
 $CLI rpetd TK-XXXX --phase P --content "P: [Hypothesize — root cause, affected components]" 2>/dev/null || true
 $CLI rpetd TK-XXXX --phase E --content "E: [Fix — what was changed, files modified, branch name]" 2>/dev/null || true

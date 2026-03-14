@@ -50,6 +50,13 @@ AGENTS    = [
     "public-relations", "accountant", "legal",
 ]
 TYPES     = ["epic", "story", "task", "bug"]
+# Valid parent types for each child type (enforced at task creation)
+VALID_PARENT_TYPES = {
+    "story": {"epic"},
+    "task":  {"story", "epic"},   # allow direct epic → task for simple projects
+    "bug":   {"task", "story", "epic"},
+    "epic":  set(),               # epics have no valid parent (top-level only)
+}
 STATUSES  = ["pending", "in-progress", "validation", "done", "failed", "deferred"]
 PRIORITIES= ["low", "medium", "high", "critical"]
 PHASES    = ["R", "P", "E", "T", "D"]
@@ -1092,119 +1099,123 @@ def _print_item_full(item: dict, all_items: list):
 # ══════════════════════════════════════════════════════════════════════════════
 
 # ── Domain document mapping for RLM architecture queries ─────────────────────
+# Allow developers to override the shared-kb root via env var
+# Default: /srv/amauta/shared-kb (production server path)
+# Dev usage: export AMAUTA_SHARED_KB_DIR=~/my-kb
+_SHARED_KB = os.path.join(os.environ.get("AMAUTA_SHARED_KB_DIR", "/srv/amauta"), "shared-kb")
 _DOMAIN_DOCS = {
     # ── Code domains ──────────────────────────────────────────────────────────
-    "frontend":    "/srv/amauta/shared-kb/AUGMENT_ARCHITECTURE.md",
-    "backend":     "/srv/amauta/shared-kb/AUGMENT_ARCHITECTURE.md",
-    "billing":     "/srv/amauta/shared-kb/AUGMENT_CREDITS_MODEL.md",
-    "pricing":     "/srv/amauta/shared-kb/AUGMENT_CREDITS_MODEL.md",
-    "stripe":      "/srv/amauta/shared-kb/AUGMENT_CREDITS_MODEL.md",
-    "checkout":    "/srv/amauta/shared-kb/AUGMENT_CREDITS_MODEL.md",
-    "credit":      "/srv/amauta/shared-kb/AUGMENT_CREDITS_MODEL.md",
-    "social":      "/srv/amauta/shared-kb/AUGMENT_SOCIAL_LAYER.md",
-    "profile":     "/srv/amauta/shared-kb/AUGMENT_SOCIAL_LAYER.md",
-    "community":   "/srv/amauta/shared-kb/AUGMENT_SOCIAL_LAYER.md",
-    "auth":        "/srv/amauta/shared-kb/AUGMENT_PLATFORM.md",
-    "seo":         "/srv/amauta/shared-kb/AUGMENT_PLATFORM.md",
-    "api":         "/srv/amauta/shared-kb/AUGMENT_ARCHITECTURE.md",
-    "job":         "/srv/amauta/shared-kb/AUGMENT_PLATFORM.md",
-    "infra":       "/srv/amauta/shared-kb/ARCHITECTURE.md",
-    "docker":      "/srv/amauta/shared-kb/ARCHITECTURE.md",
-    "nginx":       "/srv/amauta/shared-kb/ARCHITECTURE.md",
-    "deploy":      "/srv/amauta/shared-kb/ARCHITECTURE.md",
-    "container":   "/srv/amauta/shared-kb/ARCHITECTURE.md",
-    "systemd":     "/srv/amauta/shared-kb/ARCHITECTURE.md",
-    "saas":        "/srv/amauta/shared-kb/AMAUTA_SAAS_ARCHITECTURE.md",
-    "leaderboard": "/srv/amauta/shared-kb/AUGMENT_ARCHITECTURE.md",
-    "xp":          "/srv/amauta/shared-kb/AUGMENT_ARCHITECTURE.md",
-    "league":      "/srv/amauta/shared-kb/AUGMENT_ARCHITECTURE.md",
-    "match":       "/srv/amauta/shared-kb/AUGMENT_ARCHITECTURE.md",
-    "supabase":    "/srv/amauta/shared-kb/SUPABASE_GUIDE.md",
-    "database":    "/srv/amauta/shared-kb/AUGMENT_ARCHITECTURE.md",
-    "postgres":    "/srv/amauta/shared-kb/AUGMENT_ARCHITECTURE.md",
-    "drizzle":     "/srv/amauta/shared-kb/AUGMENT_ARCHITECTURE.md",
-    "dashboard":   "/srv/amauta/shared-kb/AUGMENT_ARCHITECTURE.md",
-    "integration": "/srv/amauta/shared-kb/INTEGRATIONS.md",
-    "webhook":     "/srv/amauta/shared-kb/INTEGRATIONS.md",
-    "hybrid":      "/srv/amauta/shared-kb/HYBRID_ARCHITECTURE_GUIDE.md",
-    "dual":        "/srv/amauta/shared-kb/DUAL_LLM_ARCHITECTURE_SPEC.md",
-    "agentic":     "/srv/amauta/shared-kb/AGENTIC_AI_DESIGN_PATTERNS.md",
-    "pattern":     "/srv/amauta/shared-kb/AGENTIC_AI_DESIGN_PATTERNS.md",
-    "automation":  "/srv/amauta/shared-kb/AUTOMATION.md",
-    "decision":    "/srv/amauta/shared-kb/AUGMENT_DECISIONS_LOG.md",
-    "knowledge":   "/srv/amauta/shared-kb/KNOWLEDGE_BASE.md",
+    "frontend":    os.path.join(_SHARED_KB, "AUGMENT_ARCHITECTURE.md"),
+    "backend":     os.path.join(_SHARED_KB, "AUGMENT_ARCHITECTURE.md"),
+    "billing":     os.path.join(_SHARED_KB, "AUGMENT_CREDITS_MODEL.md"),
+    "pricing":     os.path.join(_SHARED_KB, "AUGMENT_CREDITS_MODEL.md"),
+    "stripe":      os.path.join(_SHARED_KB, "AUGMENT_CREDITS_MODEL.md"),
+    "checkout":    os.path.join(_SHARED_KB, "AUGMENT_CREDITS_MODEL.md"),
+    "credit":      os.path.join(_SHARED_KB, "AUGMENT_CREDITS_MODEL.md"),
+    "social":      os.path.join(_SHARED_KB, "AUGMENT_SOCIAL_LAYER.md"),
+    "profile":     os.path.join(_SHARED_KB, "AUGMENT_SOCIAL_LAYER.md"),
+    "community":   os.path.join(_SHARED_KB, "AUGMENT_SOCIAL_LAYER.md"),
+    "auth":        os.path.join(_SHARED_KB, "AUGMENT_PLATFORM.md"),
+    "seo":         os.path.join(_SHARED_KB, "AUGMENT_PLATFORM.md"),
+    "api":         os.path.join(_SHARED_KB, "AUGMENT_ARCHITECTURE.md"),
+    "job":         os.path.join(_SHARED_KB, "AUGMENT_PLATFORM.md"),
+    "infra":       os.path.join(_SHARED_KB, "ARCHITECTURE.md"),
+    "docker":      os.path.join(_SHARED_KB, "ARCHITECTURE.md"),
+    "nginx":       os.path.join(_SHARED_KB, "ARCHITECTURE.md"),
+    "deploy":      os.path.join(_SHARED_KB, "ARCHITECTURE.md"),
+    "container":   os.path.join(_SHARED_KB, "ARCHITECTURE.md"),
+    "systemd":     os.path.join(_SHARED_KB, "ARCHITECTURE.md"),
+    "saas":        os.path.join(_SHARED_KB, "AMAUTA_SAAS_ARCHITECTURE.md"),
+    "leaderboard": os.path.join(_SHARED_KB, "AUGMENT_ARCHITECTURE.md"),
+    "xp":          os.path.join(_SHARED_KB, "AUGMENT_ARCHITECTURE.md"),
+    "league":      os.path.join(_SHARED_KB, "AUGMENT_ARCHITECTURE.md"),
+    "match":       os.path.join(_SHARED_KB, "AUGMENT_ARCHITECTURE.md"),
+    "supabase":    os.path.join(_SHARED_KB, "SUPABASE_GUIDE.md"),
+    "database":    os.path.join(_SHARED_KB, "AUGMENT_ARCHITECTURE.md"),
+    "postgres":    os.path.join(_SHARED_KB, "AUGMENT_ARCHITECTURE.md"),
+    "drizzle":     os.path.join(_SHARED_KB, "AUGMENT_ARCHITECTURE.md"),
+    "dashboard":   os.path.join(_SHARED_KB, "AUGMENT_ARCHITECTURE.md"),
+    "integration": os.path.join(_SHARED_KB, "INTEGRATIONS.md"),
+    "webhook":     os.path.join(_SHARED_KB, "INTEGRATIONS.md"),
+    "hybrid":      os.path.join(_SHARED_KB, "HYBRID_ARCHITECTURE_GUIDE.md"),
+    "dual":        os.path.join(_SHARED_KB, "DUAL_LLM_ARCHITECTURE_SPEC.md"),
+    "agentic":     os.path.join(_SHARED_KB, "AGENTIC_AI_DESIGN_PATTERNS.md"),
+    "pattern":     os.path.join(_SHARED_KB, "AGENTIC_AI_DESIGN_PATTERNS.md"),
+    "automation":  os.path.join(_SHARED_KB, "AUTOMATION.md"),
+    "decision":    os.path.join(_SHARED_KB, "AUGMENT_DECISIONS_LOG.md"),
+    "knowledge":   os.path.join(_SHARED_KB, "KNOWLEDGE_BASE.md"),
     # ── Non-code domains (researcher/finance/marketing/legal/security) ────────
-    "revenue":     "/srv/amauta/shared-kb/REVENUE_ARCHITECTURE.md",
-    "finance":     "/srv/amauta/shared-kb/FINANCE_SAAS_V3.md",
-    "financial":   "/srv/amauta/shared-kb/FINANCE_SAAS_V3.md",
-    "payment":     "/srv/amauta/shared-kb/FINANCE_SAAS_V3.md",
-    "invoice":     "/srv/amauta/shared-kb/FINANCE_SAAS_V3.md",
-    "subscription":"/srv/amauta/shared-kb/FINANCE_SAAS_V3.md",
-    "budget":      "/srv/amauta/shared-kb/FINANCE_SAAS_V3.md",
-    "accounting":  "/srv/amauta/shared-kb/FINANCE_SAAS_V3.md",
-    "research":    "/srv/amauta/shared-kb/AGENT_SYSTEM_KNOWLEDGE.md",
-    "analysis":    "/srv/amauta/shared-kb/AGENT_SYSTEM_KNOWLEDGE.md",
-    "report":      "/srv/amauta/shared-kb/AGENT_SYSTEM_KNOWLEDGE.md",
-    "market":      "/srv/amauta/shared-kb/GTM_PLAN.md",
-    "competitor":  "/srv/amauta/shared-kb/GTM_PLAN.md",
-    "gtm":         "/srv/amauta/shared-kb/GTM_PLAN.md",
-    "marketing":   "/srv/amauta/shared-kb/GTM_PLAN.md",
-    "content":     "/srv/amauta/shared-kb/GTM_PLAN.md",
-    "brand":       "/srv/amauta/shared-kb/GTM_PLAN.md",
-    "campaign":    "/srv/amauta/shared-kb/GTM_PLAN.md",
-    "growth":      "/srv/amauta/shared-kb/GTM_PLAN.md",
-    "sales":       "/srv/amauta/shared-kb/GTM_PLAN.md",
-    "security":    "/srv/amauta/shared-kb/SECURITY_POLICY.md",
-    "audit":       "/srv/amauta/shared-kb/AUDIT_RUNBOOK.md",
-    "cve":         "/srv/amauta/shared-kb/SECURITY_POLICY.md",
-    "vulnerab":    "/srv/amauta/shared-kb/SECURITY_POLICY.md",
-    "compliance":  "/srv/amauta/shared-kb/SECURITY_POLICY.md",
-    "gdpr":        "/srv/amauta/shared-kb/SECURITY_POLICY.md",
-    "legal":       "/srv/amauta/shared-kb/SECURITY_POLICY.md",
-    "privacy":     "/srv/amauta/shared-kb/SECURITY_POLICY.md",
-    "licensing":   "/srv/amauta/shared-kb/SECURITY_POLICY.md",
-    "frontend_sec":"/srv/amauta/shared-kb/FRONTEND_SECURITY.md",
-    "vps":         "/srv/amauta/shared-kb/VPS_SECURITY_AUDIT.md",
-    "orchestrat":  "/srv/amauta/shared-kb/AGENT_SYSTEM_KNOWLEDGE.md",
-    "coordinat":   "/srv/amauta/shared-kb/COLLABORATION.md",
-    "collaborat":  "/srv/amauta/shared-kb/COLLABORATION.md",
-    "roster":      "/srv/amauta/shared-kb/AGENT_ROSTER.md",
-    "agent":       "/srv/amauta/shared-kb/AGENT_ROSTER.md",
-    "system":      "/srv/amauta/shared-kb/SYSTEM.md",
-    "architecture":"/srv/amauta/shared-kb/ARCHITECTURE.md",
-    "ideas":       "/srv/amauta/shared-kb/IDEAS_SYSTEM.md",
-    "vote":        "/srv/amauta/shared-kb/IDEAS_SYSTEM.md",
-    "daily":       "/srv/amauta/shared-kb/IDEAS_SYSTEM.md",
-    "git":         "/srv/amauta/shared-kb/GIT_WORKFLOW.md",
-    "workflow":    "/srv/amauta/shared-kb/GIT_WORKFLOW.md",
-    "gitflow":     "/srv/amauta/shared-kb/GIT_WORKFLOW.md",
-    "branch":      "/srv/amauta/shared-kb/GIT_WORKFLOW.md",
-    "pull request":"/srv/amauta/shared-kb/GIT_WORKFLOW.md",
-    "dreamteam":   "/srv/amauta/shared-kb/DREAMTEAM_SPEC.md",
-    "tournament":  "/srv/amauta/shared-kb/DREAMTEAM_SPEC.md",
-    "bracket":     "/srv/amauta/shared-kb/DREAMTEAM_SPEC.md",
-    "fantasy":     "/srv/amauta/shared-kb/DREAMTEAM_SPEC.md",
-    "football":    "/srv/amauta/shared-kb/API_FOOTBALL_EVENT_MAPPING.md",
-    "rlm":         "/srv/amauta/shared-kb/RLM_USAGE.md",
-    "memory":      "/srv/openclaw/shared-kb/SHARED_MEMORY.md",
-    "shared_mem":  "/srv/openclaw/shared-kb/SHARED_MEMORY.md",
-    "rpetd":       "/srv/amauta/shared-kb/RPETD_SLA_POLICY.md",
-    "phase":       "/srv/amauta/shared-kb/RPETD_SLA_POLICY.md",
-    "subagent":    "/srv/amauta/shared-kb/SUBAGENT_PATTERNS.md",
-    "parallel":    "/srv/amauta/shared-kb/SUBAGENT_PATTERNS.md",
-    "session":     "/srv/amauta/shared-kb/SUBAGENT_PATTERNS.md",
-    "perplexity":  "/srv/amauta/shared-kb/PERPLEXITY_API.md",
-    "web_search":  "/srv/amauta/shared-kb/PERPLEXITY_API.md",
-    "amauta":      "/srv/amauta/shared-kb/AMAUTA_GUIDE.md",
-    "guide":       "/srv/amauta/shared-kb/AMAUTA_GUIDE.md",
-    "distill":     "/srv/amauta/shared-kb/MEMORY_COMPACTION_PROTOCOL.md",
-    "compaction":  "/srv/amauta/shared-kb/MEMORY_COMPACTION_PROTOCOL.md",
-    "matchfantasy":"/srv/amauta/shared-kb/MATCHFANTASY_LESSONS.md",
-    "lesson":      "/srv/amauta/shared-kb/MATCHFANTASY_LESSONS.md",
-    "inter":       "/srv/amauta/shared-kb/INTER_SERVICE_CONNECTIONS.md",
-    "service":     "/srv/amauta/shared-kb/INTER_SERVICE_CONNECTIONS.md",
+    "revenue":     os.path.join(_SHARED_KB, "REVENUE_ARCHITECTURE.md"),
+    "finance":     os.path.join(_SHARED_KB, "FINANCE_SAAS_V3.md"),
+    "financial":   os.path.join(_SHARED_KB, "FINANCE_SAAS_V3.md"),
+    "payment":     os.path.join(_SHARED_KB, "FINANCE_SAAS_V3.md"),
+    "invoice":     os.path.join(_SHARED_KB, "FINANCE_SAAS_V3.md"),
+    "subscription":os.path.join(_SHARED_KB, "FINANCE_SAAS_V3.md"),
+    "budget":      os.path.join(_SHARED_KB, "FINANCE_SAAS_V3.md"),
+    "accounting":  os.path.join(_SHARED_KB, "FINANCE_SAAS_V3.md"),
+    "research":    os.path.join(_SHARED_KB, "AGENT_SYSTEM_KNOWLEDGE.md"),
+    "analysis":    os.path.join(_SHARED_KB, "AGENT_SYSTEM_KNOWLEDGE.md"),
+    "report":      os.path.join(_SHARED_KB, "AGENT_SYSTEM_KNOWLEDGE.md"),
+    "market":      os.path.join(_SHARED_KB, "GTM_PLAN.md"),
+    "competitor":  os.path.join(_SHARED_KB, "GTM_PLAN.md"),
+    "gtm":         os.path.join(_SHARED_KB, "GTM_PLAN.md"),
+    "marketing":   os.path.join(_SHARED_KB, "GTM_PLAN.md"),
+    "content":     os.path.join(_SHARED_KB, "GTM_PLAN.md"),
+    "brand":       os.path.join(_SHARED_KB, "GTM_PLAN.md"),
+    "campaign":    os.path.join(_SHARED_KB, "GTM_PLAN.md"),
+    "growth":      os.path.join(_SHARED_KB, "GTM_PLAN.md"),
+    "sales":       os.path.join(_SHARED_KB, "GTM_PLAN.md"),
+    "security":    os.path.join(_SHARED_KB, "SECURITY_POLICY.md"),
+    "audit":       os.path.join(_SHARED_KB, "AUDIT_RUNBOOK.md"),
+    "cve":         os.path.join(_SHARED_KB, "SECURITY_POLICY.md"),
+    "vulnerab":    os.path.join(_SHARED_KB, "SECURITY_POLICY.md"),
+    "compliance":  os.path.join(_SHARED_KB, "SECURITY_POLICY.md"),
+    "gdpr":        os.path.join(_SHARED_KB, "SECURITY_POLICY.md"),
+    "legal":       os.path.join(_SHARED_KB, "SECURITY_POLICY.md"),
+    "privacy":     os.path.join(_SHARED_KB, "SECURITY_POLICY.md"),
+    "licensing":   os.path.join(_SHARED_KB, "SECURITY_POLICY.md"),
+    "frontend_sec":os.path.join(_SHARED_KB, "FRONTEND_SECURITY.md"),
+    "vps":         os.path.join(_SHARED_KB, "VPS_SECURITY_AUDIT.md"),
+    "orchestrat":  os.path.join(_SHARED_KB, "AGENT_SYSTEM_KNOWLEDGE.md"),
+    "coordinat":   os.path.join(_SHARED_KB, "COLLABORATION.md"),
+    "collaborat":  os.path.join(_SHARED_KB, "COLLABORATION.md"),
+    "roster":      os.path.join(_SHARED_KB, "AGENT_ROSTER.md"),
+    "agent":       os.path.join(_SHARED_KB, "AGENT_ROSTER.md"),
+    "system":      os.path.join(_SHARED_KB, "SYSTEM.md"),
+    "architecture":os.path.join(_SHARED_KB, "ARCHITECTURE.md"),
+    "ideas":       os.path.join(_SHARED_KB, "IDEAS_SYSTEM.md"),
+    "vote":        os.path.join(_SHARED_KB, "IDEAS_SYSTEM.md"),
+    "daily":       os.path.join(_SHARED_KB, "IDEAS_SYSTEM.md"),
+    "git":         os.path.join(_SHARED_KB, "GIT_WORKFLOW.md"),
+    "workflow":    os.path.join(_SHARED_KB, "GIT_WORKFLOW.md"),
+    "gitflow":     os.path.join(_SHARED_KB, "GIT_WORKFLOW.md"),
+    "branch":      os.path.join(_SHARED_KB, "GIT_WORKFLOW.md"),
+    "pull request":os.path.join(_SHARED_KB, "GIT_WORKFLOW.md"),
+    "dreamteam":   os.path.join(_SHARED_KB, "DREAMTEAM_SPEC.md"),
+    "tournament":  os.path.join(_SHARED_KB, "DREAMTEAM_SPEC.md"),
+    "bracket":     os.path.join(_SHARED_KB, "DREAMTEAM_SPEC.md"),
+    "fantasy":     os.path.join(_SHARED_KB, "DREAMTEAM_SPEC.md"),
+    "football":    os.path.join(_SHARED_KB, "API_FOOTBALL_EVENT_MAPPING.md"),
+    "rlm":         os.path.join(_SHARED_KB, "RLM_USAGE.md"),
+    "memory":      os.path.join(_SHARED_KB, "SHARED_MEMORY.md"),
+    "shared_mem":  os.path.join(_SHARED_KB, "SHARED_MEMORY.md"),
+    "rpetd":       os.path.join(_SHARED_KB, "RPETD_SLA_POLICY.md"),
+    "phase":       os.path.join(_SHARED_KB, "RPETD_SLA_POLICY.md"),
+    "subagent":    os.path.join(_SHARED_KB, "SUBAGENT_PATTERNS.md"),
+    "parallel":    os.path.join(_SHARED_KB, "SUBAGENT_PATTERNS.md"),
+    "session":     os.path.join(_SHARED_KB, "SUBAGENT_PATTERNS.md"),
+    "perplexity":  os.path.join(_SHARED_KB, "PERPLEXITY_API.md"),
+    "web_search":  os.path.join(_SHARED_KB, "PERPLEXITY_API.md"),
+    "amauta":      os.path.join(_SHARED_KB, "AMAUTA_GUIDE.md"),
+    "guide":       os.path.join(_SHARED_KB, "AMAUTA_GUIDE.md"),
+    "distill":     os.path.join(_SHARED_KB, "MEMORY_COMPACTION_PROTOCOL.md"),
+    "compaction":  os.path.join(_SHARED_KB, "MEMORY_COMPACTION_PROTOCOL.md"),
+    "matchfantasy":os.path.join(_SHARED_KB, "MATCHFANTASY_LESSONS.md"),
+    "lesson":      os.path.join(_SHARED_KB, "MATCHFANTASY_LESSONS.md"),
+    "inter":       os.path.join(_SHARED_KB, "INTER_SERVICE_CONNECTIONS.md"),
+    "service":     os.path.join(_SHARED_KB, "INTER_SERVICE_CONNECTIONS.md"),
 }
-_DEFAULT_DOC = "/srv/amauta/shared-kb/AUGMENT_ARCHITECTURE.md"
+_DEFAULT_DOC = os.path.join(_SHARED_KB, "AUGMENT_ARCHITECTURE.md")
 
 
 def _pick_domain_doc(title: str, desc: str) -> str:
@@ -1603,7 +1614,7 @@ def _enrich_task_context(item: dict, items: list) -> str:
                     conn_e.autocommit = True
                     cur_e = conn_e.cursor()
                     cur_e.execute("""
-                        SELECT agent_id, source, text, created_at FROM gsd_memory
+                        SELECT agent_id, source, text, created_at FROM amauta_memory
                         WHERE source IN ('auto_learning', 'web_search_result', 'lesson-learned', 'best-practice')
                           AND text ILIKE %s
                         ORDER BY created_at DESC
@@ -1731,11 +1742,20 @@ def cmd_add(args):
                     {"path": r, "type": "code_file" if "/" in r else "workspace_file", "title": "", "note": ""}
                 )
 
-        # Parent linkage
+        # Parent linkage with hierarchy enforcement
         if args.parent:
             parent = _find(items, args.parent)
             if not parent:
                 print(c(f"Parent {args.parent} not found.", RED)); sys.exit(1)
+            parent_type = parent.get("type", "task")
+            child_type  = item.get("type", "task")
+            allowed     = VALID_PARENT_TYPES.get(child_type, set())
+            if allowed is not None and parent_type not in allowed and not getattr(args, "force", False):
+                print(c(
+                    f"Hierarchy error: a {child_type} cannot be a child of a {parent_type}. "
+                    f"Allowed parents: {', '.join(sorted(allowed)) or 'none'}. "
+                    f"Use --force to override.", RED))
+                sys.exit(1)
             item["parent"] = args.parent
             if nid not in parent.get("children", []):
                 parent.setdefault("children", []).append(nid)

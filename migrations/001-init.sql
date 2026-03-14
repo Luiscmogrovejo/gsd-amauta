@@ -134,7 +134,9 @@ CREATE INDEX IF NOT EXISTS idx_gsd_tasks_tags ON gsd_tasks USING gin(tags);
 -- ═══════════════════════════════════════════════════════
 CREATE TABLE IF NOT EXISTS gsd_task_validations (
     id               SERIAL PRIMARY KEY,
-    task_id          VARCHAR(16) NOT NULL REFERENCES gsd_tasks(id) ON DELETE CASCADE,
+    -- task_id is a plain VARCHAR (no FK to gsd_tasks) because tasks live in tasks.json,
+    -- not in gsd_tasks. Adding the FK caused constraint violations on every validation record.
+    task_id          VARCHAR(16) NOT NULL,
     validator_id     VARCHAR(64) NOT NULL,
     status           VARCHAR(32) NOT NULL
                      CHECK (status IN ('approved', 'rejected')),

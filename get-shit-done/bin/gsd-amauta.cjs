@@ -550,7 +550,7 @@ async function checkValidationGates(useDaemon, id, flags) {
         taskData = data.output || '';
       } else {
         const result = runDirect(['show', id]);
-        taskData = result.stdout || result.output || '';
+        taskData = result.output || '';
       }
     } catch {
       return []; // Can't check gates if show fails — let validation proceed
@@ -622,7 +622,7 @@ async function checkValidationGates(useDaemon, id, flags) {
     // Check for PR merge evidence: require past tense "merged" or explicit PR references
     // Deliberately exclude "merge" (noun/present) to avoid false passes on conflict text
     const hasMergeEvidence = /\bmerged\b/i.test(allContent) &&
-      !/merge\s+conflict|cannot\s+merge|failed\s+to\s+merge|not\s+merged/i.test(allContent);
+      !/merge\s+conflict|cannot\s+merge|failed\s+to\s+merge|not\s+merged|auto-?merge\s+failed/i.test(allContent);
     const hasPrUrl = /(?:github\.com|gitlab\.com|bitbucket\.org)\/[^\s]+\/pull\/\d+/i.test(allContent) ||
                      /\bPR\s*#?\d+\b/i.test(allContent) ||
                      /\bpull\s*request\b/i.test(allContent) ||
@@ -698,8 +698,19 @@ async function promoteToSKB(useDaemon, taskId) {
     let taskOutput = '';
     let taskTitle = '';
     if (useDaemon) {
-      const { data } = await httpRequest('GET', `/api/show/${taskId}`);
-      taskOutput = data.output || '';
+      // Use --json via daemon exec to get full phase content (text show truncates at 300 chars)
+      try {
+        const { data: jsonData } = await httpRequest('POST', '/api/exec', { args: ['show', taskId, '--json'] });
+        const parsed = JSON.parse(jsonData.output || '');
+        const dPhase = (parsed.rpetd_phases || {}).D || '';
+        taskOutput = `— ${parsed.title || taskId}\n[D] Document:\n${dPhase}`;
+      } catch {
+        // JSON path failed, fall back to text (may be truncated at 300 chars)
+        try {
+          const { data } = await httpRequest('GET', `/api/show/${taskId}`);
+          taskOutput = data.output || '';
+        } catch { /* best-effort */ }
+      }
     } else {
       // Use --json to get full phase content (text mode truncates at 300 chars)
       const result = runDirect(['show', taskId, '--json']);

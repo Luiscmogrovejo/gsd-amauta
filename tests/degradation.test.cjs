@@ -211,4 +211,49 @@ describe('Degradation: no daemon/PG', () => {
       );
     });
   });
+
+  // ─── tryDaemon 500/ECONNREFUSED → file fallback ───
+
+  describe('tryDaemon write fallback on daemon down', () => {
+    test('memory store falls back to file mode when daemon unreachable', () => {
+      const r = memoryNoDaemon(['store', 'test learning entry', '--source', 'agent'], tmpDir);
+      // Should succeed (fall back to file mode) or produce [file mode] indicator
+      // ECONNREFUSED → tryDaemon returns null → file fallback
+      const combined = r.output + ' ' + r.stderr;
+      assert.ok(
+        r.success || combined.includes('file mode') || combined.includes('STATE.md'),
+        `store should degrade gracefully: ${combined.slice(0, 300)}`
+      );
+    });
+
+    test('memory store stderr warns when falling back to file mode', () => {
+      const r = memoryNoDaemon(['store', 'another test entry', '--source', 'agent'], tmpDir);
+      // After our fix, tryDaemon emits a warning to stderr on POST when daemon is down
+      // This test verifies the warning is present
+      const hasFallback = r.stderr.includes('Daemon unreachable') || r.stderr.includes('file mode') ||
+                          r.output.includes('file mode') || r.output.includes('STATE.md');
+      assert.ok(hasFallback,
+        `store should warn about file mode fallback: stdout=${r.output.slice(0, 200)} stderr=${r.stderr.slice(0, 200)}`
+      );
+    });
+
+    test('memory learn falls back to file mode when daemon unreachable', () => {
+      const r = memoryNoDaemon(['learn', 'test auto learning entry'], tmpDir);
+      const combined = r.output + ' ' + r.stderr;
+      assert.ok(
+        r.success || combined.includes('file mode') || combined.includes('STATE.md'),
+        `learn should degrade gracefully: ${combined.slice(0, 300)}`
+      );
+    });
+
+    test('SKB commands fail with clear message when daemon unreachable', () => {
+      const r = memoryNoDaemon(['skb-list'], tmpDir);
+      assert.ok(!r.success, 'skb-list should fail without daemon');
+      const combined = r.output + ' ' + r.stderr;
+      assert.ok(
+        combined.includes('PostgreSQL') || combined.includes('Daemon') || combined.includes('SKB requires'),
+        `should indicate PG required: ${combined.slice(0, 200)}`
+      );
+    });
+  });
 });

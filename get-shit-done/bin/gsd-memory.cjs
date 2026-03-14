@@ -246,11 +246,18 @@ async function tryDaemon(method, urlPath, body = null) {
     // Both trigger file-mode fallback
     if (res.status === 503 || res.status >= 500) {
       _fileMode = true;
+      // Warn on write operations so operators know data was not stored in PG
+      if (method === 'POST' || method === 'PUT') {
+        process.stderr.write(`\x1b[93m[memory]\x1b[0m PG unavailable (${res.status}) — write falling back to file mode.\n`);
+      }
       return null; // PG unavailable or daemon error
     }
     return res;
   } catch {
     _fileMode = true;
+    if (method === 'POST' || method === 'PUT') {
+      process.stderr.write('\x1b[93m[memory]\x1b[0m Daemon unreachable — write falling back to file mode.\n');
+    }
     return null; // Daemon unreachable
   }
 }
