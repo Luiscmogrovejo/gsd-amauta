@@ -1138,8 +1138,13 @@ const AUTO_DISTILL_THRESHOLD = parseInt(process.env.GSD_MEMORY_DISTILL_THRESHOLD
 async function maybeAutoDistill() {
   try {
     const res = await tryDaemon('GET', '/api/memory/count');
-    if (!res || res.status !== 200) return;
-    const count = res.data.count || 0;
+    let count = 0;
+    if (res && res.status === 200) {
+      count = res.data.count || 0;
+    } else {
+      // File mode fallback — count file-based entries
+      count = fileCount();
+    }
     if (count >= AUTO_DISTILL_THRESHOLD) {
       process.stderr.write(`\x1b[2mAuto-distill: ${count} entries exceed threshold (${AUTO_DISTILL_THRESHOLD}). Running distill...\x1b[0m\n`);
       await cmdDistill({ threshold: '0.7', 'dry-run': false, _positional: [] });
