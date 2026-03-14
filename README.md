@@ -7,7 +7,7 @@ PostgreSQL persistent memory · pgvector semantic search · RLM context engine �
 Everything degrades gracefully to vanilla GSD when infrastructure is unavailable.
 
 ```
-690 tests · 11 agents · 11 skills · 5 CLI tools · 3 services · 20 agentic AI patterns
+705 tests · 11 agents · 11 skills · 5 CLI tools · 3 services · 7 specs · 20 agentic AI patterns
 ```
 
 ---
@@ -823,7 +823,7 @@ The installer (`bin/install.js`) handles:
 3. Python `psycopg2-binary` dependency
 4. Amauta HTTP daemon startup on port 18799
 5. RLM context service startup on port 18798
-6. Database migrations (001 schema, 002 HNSW index, 003 dimension fix, 004 FTS indexes)
+6. Database migrations (001 schema, 002 HNSW index, 003 dimension fix, 004 FTS indexes, 005 agent performance)
 7. Codex and Gemini CLI config generation
 
 ### Post-Install
@@ -857,7 +857,7 @@ node ~/.claude/gsd-amauta/get-shit-done/bin/gsd-rlm.cjs health
 node ~/.claude/gsd-amauta/get-shit-done/bin/gsd-research.cjs check-providers
 
 # Tests
-npm test   # 690 tests expected
+npm test   # 705 tests expected
 ```
 
 ---
@@ -1032,7 +1032,7 @@ docker ps --filter name=gsd-postgres
 ## 17. Testing
 
 ```bash
-npm test                                          # All 690 tests
+npm test                                          # All 705 tests
 
 # Individual suites
 node --test tests/agent-frontmatter.test.cjs     # Agent validation (42 tests)
@@ -1044,7 +1044,7 @@ node --test tests/e2e-lifecycle.test.cjs         # E2E lifecycle (22 tests)
 node --test tests/gsd-amauta.test.cjs            # CLI unit tests (17 tests)
 ```
 
-**690 tests across 21 files**, covering:
+**705 tests across 22 files**, covering:
 
 - Agent frontmatter: skills, hooks, anti-heredoc, spawn consistency, 11-agent roster
 - CLI commands: all argument parsing, error paths, routing branches
@@ -1061,7 +1061,7 @@ node --test tests/gsd-amauta.test.cjs            # CLI unit tests (17 tests)
 
 ```
 gsd-amauta/
-├── amauta.py                         # Task manager CLI (4045 lines)
+├── amauta.py                         # Task manager CLI (4158 lines)
 ├── package.json
 ├── README.md
 ├── CHANGELOG.md                      # All changes from vanilla GSD
@@ -1072,14 +1072,15 @@ gsd-amauta/
 │   └── docker-compose.yml            # PostgreSQL 16 + pgvector :5433
 │
 ├── migrations/
-│   ├── 001-init.sql                  # 4 tables, 21 indexes, 3 triggers
+│   ├── 001-init.sql                  # 5 tables, 24 indexes, 3 triggers
 │   ├── 002-embedding-index.sql       # HNSW index (idempotent)
 │   ├── 003-embedding-1024.sql        # Dim migration 1536→1024 (idempotent)
-│   └── 004-fulltext-indexes.sql      # GIN FTS indexes + compound indexes
+│   ├── 004-fulltext-indexes.sql      # GIN FTS indexes + compound indexes
+│   └── 005-agent-performance.sql     # Agent performance tracking (auto-learning)
 │
 ├── services/
-│   ├── amauta-daemon.py              # HTTP daemon :18799 (754 lines)
-│   ├── pg_store.py                   # PG pool + memory/SKB/task mirror/embedding (954 lines)
+│   ├── amauta-daemon.py              # HTTP daemon :18799 (795 lines)
+│   ├── pg_store.py                   # PG pool + memory/SKB/task mirror/embedding/perf (1026 lines)
 │   └── rlm-service.py                # RLM context engine :18798 (808 lines)
 │
 ├── agents/                           # 11 agent definitions
@@ -1119,13 +1120,22 @@ gsd-amauta/
 │   ├── gsd-executor-backend-workflow/
 │   └── ... (11 total, matching agents)
 │
+├── specs/                            # 7 formal pipeline specifications
+│   ├── 01-rpetd-pipeline.spec.md
+│   ├── 02-memory-pipeline.spec.md
+│   ├── 03-rlm-context-engine.spec.md
+│   ├── 04-research-chain.spec.md
+│   ├── 05-task-lifecycle.spec.md
+│   ├── 06-agent-architecture.spec.md
+│   └── 07-auto-learning-feedback.spec.md
+│
 ├── commands/gsd/                     # 33 slash commands
 │   ├── new-project.md
 │   ├── execute-plan.md
 │   ├── test-phase.md
 │   └── ...
 │
-├── tests/                            # 690 tests (21 files)
+├── tests/                            # 705 tests (22 files)
 ├── bin/
 │   └── install.js                    # Self-installer (2897 lines)
 └── scripts/

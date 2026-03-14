@@ -637,10 +637,15 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             if not _pg_store:
                 self._send_json({"error": "PostgreSQL not available"}, 503)
                 return
+            _ap_agent = body.get("agent_id", "")
+            _ap_task = body.get("task_id", "")
+            if not _ap_agent or not _ap_task:
+                self._send_json({"error": "agent_id and task_id are required"}, 400)
+                return
             try:
                 _pg_store.record_agent_performance(
-                    agent_id=body.get("agent_id", ""),
-                    task_id=body.get("task_id", ""),
+                    agent_id=_ap_agent,
+                    task_id=_ap_task,
                     outcome=body.get("outcome", "pass"),
                     task_type=body.get("task_type", "task"),
                     project_id=body.get("project_id", "default"),

@@ -50,7 +50,7 @@ Every memory entry has a `source` field that determines search ranking boost:
 - Uses tryDaemon() for graceful error handling
 
 ### MEM-7: File Mode Fallback
-- `fileStore()`: appends to `.planning/memory/<YYYY-MM>.md`
+- `fileStore()`: appends to `.planning/memory/<YYYY-MM-DD>.md`
 - `fileLearn()`: appends to `.planning/STATE.md` under `## Learnings`
 - `fileSearch()`: grep across `.planning/memory/*.md` files
 - `fileCount()`: counts entries across all memory markdown files

@@ -631,15 +631,27 @@ def _agent_performance_summary(agent_id: str):
 
 
 def _extract_failed_gate(notes: str) -> str:
-    """Extract which gate failed from validation notes."""
+    """Extract which gate failed from validation notes.
+    Uses specific phrases to avoid false positives (e.g. 'pr' matching 'project').
+    """
     notes_lower = notes.lower()
-    if "branch" in notes_lower or "gate 1" in notes_lower:
+    # Check for explicit gate constant names first (most reliable)
+    if "branch_evidence" in notes_lower or "gate 1" in notes_lower:
         return "BRANCH_EVIDENCE"
-    if "learning" in notes_lower or "gate 2" in notes_lower:
+    if "learning_block" in notes_lower or "gate 2" in notes_lower:
         return "LEARNING_BLOCK"
-    if "test" in notes_lower or "gate 3" in notes_lower:
+    if "test_evidence" in notes_lower or "gate 3" in notes_lower:
         return "TEST_EVIDENCE"
-    if "pr" in notes_lower or "pull request" in notes_lower or "gate 4" in notes_lower or "merge" in notes_lower:
+    if "pr_url" in notes_lower or "gate 4" in notes_lower:
+        return "PR_URL"
+    # Fallback: match specific phrases (not single words — avoids false positives)
+    if "no branch" in notes_lower or "branch evidence" in notes_lower or "missing branch" in notes_lower:
+        return "BRANCH_EVIDENCE"
+    if "no learning" in notes_lower or "missing learning" in notes_lower:
+        return "LEARNING_BLOCK"
+    if "no test" in notes_lower or "test evidence" in notes_lower or "test output" in notes_lower:
+        return "TEST_EVIDENCE"
+    if "no pr" in notes_lower or "pr url" in notes_lower or "pull request" in notes_lower or "not merged" in notes_lower:
         return "PR_URL"
     return "UNKNOWN"
 

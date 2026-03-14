@@ -62,12 +62,12 @@ On every `validate --pass` or `validate --fail`:
   "fail_count": 6,
   "pass_rate": 0.872,
   "common_failures": [
-    {"gate": "TEST_EVIDENCE", "count": 3},
-    {"gate": "PR_URL", "count": 2},
-    {"gate": "LEARNING_BLOCK", "count": 1}
+    {"gate_failed": "TEST_EVIDENCE", "count": 3},
+    {"gate_failed": "PR_URL", "count": 2},
+    {"gate_failed": "LEARNING_BLOCK", "count": 1}
   ],
   "recent_failures": [
-    {"task_id": "TK-0042", "reason": "Missing pytest output", "when": "2h ago"}
+    {"task_id": "TK-0042", "failure_reason": "Missing pytest output", "hours_ago": 2.0}
   ],
   "avg_duration_minutes": 23
 }
