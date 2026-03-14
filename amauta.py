@@ -17,6 +17,34 @@ import json
 import os
 import re
 import sys
+
+# ── Load .env file (project root or /srv/amauta) ──────────────────────────────
+def _load_dotenv():
+    """Load .env file into os.environ (simple parser, no dependency).
+    Skipped during test runs (NODE_TEST=1 or pytest) to avoid polluting test env."""
+    if os.environ.get("GSD_AMAUTA_NO_AUTO_START") or os.environ.get("PYTEST_CURRENT_TEST"):
+        return  # Skip in test environments
+    for candidate in [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"),
+        "/srv/amauta/.env",
+    ]:
+        if os.path.isfile(candidate):
+            with open(candidate) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    if "=" not in line:
+                        continue
+                    key, _, val = line.partition("=")
+                    key = key.strip()
+                    val = val.strip().strip("'\"")
+                    if key and key not in os.environ:  # Don't override existing env
+                        os.environ[key] = val
+            break
+
+_load_dotenv()
+
 try:
     import fcntl
 except ImportError:

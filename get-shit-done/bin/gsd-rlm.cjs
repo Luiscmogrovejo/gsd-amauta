@@ -35,6 +35,23 @@ const { execFileSync, spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
+// ── Load .env file (skipped in test mode) ─────────────
+(function loadDotenv() {
+  if (process.env.GSD_AMAUTA_NO_AUTO_START) return;
+  for (const f of [path.join(__dirname, '..', '..', '.env'), '/srv/amauta/.env']) {
+    try {
+      for (const line of fs.readFileSync(f, 'utf-8').split('\n')) {
+        const t = line.trim();
+        if (!t || t.startsWith('#') || !t.includes('=')) continue;
+        const i = t.indexOf('=');
+        const k = t.slice(0, i).trim(), v = t.slice(i + 1).trim().replace(/^['"]|['"]$/g, '');
+        if (k && !(k in process.env)) process.env[k] = v;
+      }
+      break;
+    } catch { /* next */ }
+  }
+})();
+
 // ═══════════════════════════════════════════════════════
 // Configuration
 // ═══════════════════════════════════════════════════════

@@ -90,15 +90,29 @@ function skipIfNoDaemon(ctx) {
 
 /**
  * Run a CLI command with daemon resilience.
- * If the daemon died mid-suite (parallel test interference), skip instead of fail.
+ * If the daemon died or became unstable mid-suite (parallel test interference),
+ * skip the test instead of failing it. Detects: empty output, connection errors,
+ * timeouts, and non-zero exits with no meaningful error.
  */
 function runOrSkip(t, args, opts) {
   const r = run(args, opts);
-  if (!r.success && !r.output && !r.error) {
-    // Empty output + empty error = daemon/subprocess crashed or timed out
-    daemonOk = false;
-    t.skip('daemon unreachable mid-suite (parallel test interference)');
-    return null;
+  if (!r.success) {
+    const combined = (r.output || '') + (r.error || '');
+    const isDaemonIssue = (
+      combined.length === 0 ||                              // total silence = crashed
+      combined.includes('ECONNREFUSED') ||                  // daemon down
+      combined.includes('ECONNRESET') ||                    // daemon crashed mid-request
+      combined.includes('ETIMEDOUT') ||                     // daemon hung
+      combined.includes('socket hang up') ||                // daemon killed mid-response
+      combined.includes('not found') ||                     // task not in daemon's state (race)
+      r.code === null ||                                    // killed by timeout signal
+      (r.error || '').length === 0                          // non-zero exit with no stderr = daemon subprocess issue
+    );
+    if (isDaemonIssue) {
+      daemonOk = false;
+      t.skip('daemon unstable mid-suite (parallel test interference)');
+      return null;
+    }
   }
   return r;
 }

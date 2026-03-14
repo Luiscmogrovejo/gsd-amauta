@@ -40,7 +40,7 @@
  *   --importance <n>     SKB importance (1-10, default: 5)
  *   --task <id>          Source task ID for SKB entries
  *
- * Environment:
+ * Environment (auto-loaded from .env):
  *   GSD_AMAUTA_PORT      Daemon port (default: 18799)
  *   GSD_AMAUTA_HOST      Daemon host (default: 127.0.0.1)
  */
@@ -48,6 +48,23 @@
 const http = require('http');
 const path = require('path');
 const fs = require('fs');
+
+// ── Load .env file (skipped in test mode) ─────────────
+(function loadDotenv() {
+  if (process.env.GSD_AMAUTA_NO_AUTO_START) return;
+  for (const f of [path.join(__dirname, '..', '..', '.env'), '/srv/amauta/.env']) {
+    try {
+      for (const line of fs.readFileSync(f, 'utf-8').split('\n')) {
+        const t = line.trim();
+        if (!t || t.startsWith('#') || !t.includes('=')) continue;
+        const i = t.indexOf('=');
+        const k = t.slice(0, i).trim(), v = t.slice(i + 1).trim().replace(/^['"]|['"]$/g, '');
+        if (k && !(k in process.env)) process.env[k] = v;
+      }
+      break;
+    } catch { /* next */ }
+  }
+})();
 
 // ═══════════════════════════════════════════════════════
 // Configuration

@@ -33,7 +33,31 @@
 
 const http = require('http');
 const https = require('https');
+const fs = require('fs');
 const path = require('path');
+
+// ── Load .env file (project root or /srv/amauta, skipped in test mode) ──
+(function loadDotenv() {
+  if (process.env.GSD_AMAUTA_NO_AUTO_START) return;
+  const candidates = [
+    path.join(__dirname, '..', '..', '.env'),
+    '/srv/amauta/.env',
+  ];
+  for (const f of candidates) {
+    try {
+      const lines = fs.readFileSync(f, 'utf-8').split('\n');
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#') || !trimmed.includes('=')) continue;
+        const idx = trimmed.indexOf('=');
+        const key = trimmed.slice(0, idx).trim();
+        let val = trimmed.slice(idx + 1).trim().replace(/^['"]|['"]$/g, '');
+        if (key && !(key in process.env)) process.env[key] = val;
+      }
+      break;
+    } catch { /* file not found, try next */ }
+  }
+})();
 
 // ═══════════════════════════════════════════════════════
 // Configuration

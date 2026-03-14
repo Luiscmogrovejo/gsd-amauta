@@ -28,6 +28,28 @@ import math
 import os
 import re
 import signal
+
+# ── Load .env file (project root) ─────────────────────────────────────────────
+def _load_dotenv():
+    for candidate in [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".env"),
+        "/srv/amauta/.env",
+    ]:
+        if os.path.isfile(candidate):
+            with open(candidate) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    if "=" not in line:
+                        continue
+                    key, _, val = line.partition("=")
+                    key, val = key.strip(), val.strip().strip("'\"")
+                    if key and key not in os.environ:
+                        os.environ[key] = val
+            break
+
+_load_dotenv()
 import sys
 import time
 from collections import OrderedDict
