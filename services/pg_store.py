@@ -225,7 +225,10 @@ class PGStore:
                         return self._score_memories(results)
 
                 # Fallback: ILIKE search
-                keywords = query.split()
+                keywords = [kw.replace('%', '').replace('_', '') for kw in query.split()]
+                keywords = [kw for kw in keywords if kw]
+                if not keywords:
+                    return []
                 ilike_conditions = " OR ".join(["text ILIKE %s"] * len(keywords))
                 ilike_params = [f"%{kw}%" for kw in keywords]
 
@@ -362,7 +365,10 @@ class PGStore:
                         return self._score_memories(results)
 
                 # Fallback: ILIKE search
-                keywords = query.split()
+                keywords = [kw.replace('%', '').replace('_', '') for kw in query.split()]
+                keywords = [kw for kw in keywords if kw]
+                if not keywords:
+                    return []
                 ilike_conditions = " OR ".join(["text ILIKE %s"] * len(keywords))
                 ilike_params = [f"%{kw}%" for kw in keywords]
 
@@ -432,7 +438,10 @@ class PGStore:
                         return self._format_skb_results(results)
 
                 # Fallback: ILIKE
-                keywords = query.split()
+                keywords = [kw.replace('%', '').replace('_', '') for kw in query.split()]
+                keywords = [kw for kw in keywords if kw]
+                if not keywords:
+                    return []
                 ilike_conds = " OR ".join(
                     ["title ILIKE %s OR content ILIKE %s"] * len(keywords)
                 )

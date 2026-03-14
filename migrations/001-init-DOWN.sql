@@ -7,7 +7,7 @@ DROP TRIGGER IF EXISTS trg_gsd_skb_updated ON gsd_shared_kb;
 DROP TRIGGER IF EXISTS trg_gsd_tasks_updated ON gsd_tasks;
 DROP FUNCTION IF EXISTS amauta_memory_insert();
 DROP FUNCTION IF EXISTS agent_shared_knowledge_insert();
-DROP FUNCTION IF EXISTS set_updated_at();
+DROP FUNCTION IF EXISTS update_updated_at();
 DROP VIEW IF EXISTS amauta_memory;
 DROP VIEW IF EXISTS agent_shared_knowledge;
 DROP TABLE IF EXISTS gitflow_log;

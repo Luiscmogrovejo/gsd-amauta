@@ -31,11 +31,18 @@ _log_level = os.environ.get("AMAUTA_LOG_LEVEL", "INFO").upper()
 _log_format = os.environ.get("AMAUTA_LOG_FORMAT", "text")  # "text" or "json"
 
 if _log_format == "json":
-    logging.basicConfig(
-        level=getattr(logging, _log_level, logging.INFO),
-        format='{"ts":"%(asctime)s","level":"%(levelname)s","module":"%(name)s","msg":"%(message)s"}',
-        stream=sys.stderr,
-    )
+    class _JsonFormatter(logging.Formatter):
+        def format(self, record):
+            import json as _json
+            return _json.dumps({
+                "ts": self.formatTime(record),
+                "level": record.levelname,
+                "module": record.name,
+                "msg": record.getMessage()
+            })
+    _handler = logging.StreamHandler(sys.stderr)
+    _handler.setFormatter(_JsonFormatter())
+    logging.basicConfig(level=getattr(logging, _log_level, logging.INFO), handlers=[_handler])
 else:
     logging.basicConfig(
         level=getattr(logging, _log_level, logging.INFO),
@@ -94,15 +101,17 @@ class _RateLimiter:
         self._max = max_requests
         self._window = window_seconds
         self._requests = defaultdict(list)
+        self._lock = threading.Lock()
 
     def allow(self, path: str) -> bool:
         now = time.time()
         key = path.split("?")[0]  # strip query params
-        self._requests[key] = [t for t in self._requests[key] if now - t < self._window]
-        if len(self._requests[key]) >= self._max:
-            return False
-        self._requests[key].append(now)
-        return True
+        with self._lock:
+            self._requests[key] = [t for t in self._requests[key] if now - t < self._window]
+            if len(self._requests[key]) >= self._max:
+                return False
+            self._requests[key].append(now)
+            return True
 
 _rate_limiter = _RateLimiter()
 
@@ -171,6 +180,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
 
     def _read_body(self):
         length = int(self.headers.get("Content-Length", 0))
+        length = max(0, length)
         if length > MAX_BODY_SIZE:
             self.send_response(413)
             self.send_header("Content-Type", "application/json")
@@ -283,7 +293,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         log.debug("request method=%s path=%s", self.command, self.path)
-        if self.path != "/health" and not _check_auth(self):
+        if self.path not in ("/health", "/metrics") and not _check_auth(self):
             return
         if not _rate_limiter.allow(self.path):
             log.warning("rate_limited path=%s", self.path)
@@ -292,6 +302,15 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({"error": "Too many requests. Try again later."}).encode())
             return
+        if self.path == "/metrics":
+            body = _metrics.expose().encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; version=0.0.4")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
         path = self.path.rstrip("/")
 
         if path == "/health":

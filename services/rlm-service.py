@@ -95,6 +95,9 @@ class ChunkCache:
     def put(self, filepath, mtime, chunks):
         key = (filepath, mtime)
         if key in self._cache:
+            # Subtract old size before updating
+            old_chunks = self._cache[key]
+            self._current_bytes -= sum(len(c.get("text", "")) for c in old_chunks) * 2
             self._cache.move_to_end(key)
         else:
             if len(self._cache) >= self._max_size:

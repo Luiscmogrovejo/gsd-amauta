@@ -32,11 +32,18 @@ _log_level = os.environ.get("AMAUTA_LOG_LEVEL", "INFO").upper()
 _log_format = os.environ.get("AMAUTA_LOG_FORMAT", "text")  # "text" or "json"
 
 if _log_format == "json":
-    logging.basicConfig(
-        level=getattr(logging, _log_level, logging.INFO),
-        format='{"ts":"%(asctime)s","level":"%(levelname)s","module":"%(name)s","msg":"%(message)s"}',
-        stream=sys.stderr,
-    )
+    class _JsonFormatter(logging.Formatter):
+        def format(self, record):
+            import json as _json
+            return _json.dumps({
+                "ts": self.formatTime(record),
+                "level": record.levelname,
+                "module": record.name,
+                "msg": record.getMessage()
+            })
+    _handler = logging.StreamHandler(sys.stderr)
+    _handler.setFormatter(_JsonFormatter())
+    logging.basicConfig(level=getattr(logging, _log_level, logging.INFO), handlers=[_handler])
 else:
     logging.basicConfig(
         level=getattr(logging, _log_level, logging.INFO),
@@ -333,7 +340,11 @@ from contextlib import contextmanager
 @contextmanager
 def _pg_conn():
     """Context manager for PG connections — prevents leaks on exceptions."""
-    import psycopg2
+    try:
+        import psycopg2
+    except ImportError:
+        log.error("psycopg2 not installed. Run: pip install psycopg2-binary")
+        raise RuntimeError("psycopg2 required for PostgreSQL operations. Install with: pip install psycopg2-binary")
     dsn = _mem_db_url()
     try:
         conn = psycopg2.connect(dsn)
@@ -389,7 +400,11 @@ def _mem_pg_search(query: str, agent_id: Optional[str], top_k: int) -> list:
             return []
 
         # Build per-term LIKE conditions and score expression
-        like_pats = [f"%{t.replace('%', '').replace('_', '')}%" for t in terms]
+        clean_terms = [t.replace('%', '').replace('_', '') for t in terms]
+        clean_terms = [t for t in clean_terms if t]  # Remove empty
+        if not clean_terms:
+            return []
+        like_pats = [f"%{t}%" for t in clean_terms]
         # WHERE: match any term in text or tags
         where_parts = []
         params: list = []
@@ -480,13 +495,15 @@ def _skb_search(query: str, top_k: int = 5) -> list:
         with _pg_conn() as conn:
             cur = conn.cursor()
             terms = [t.strip() for t in re.split(r"\s+", query.strip()) if t.strip() and len(t) > 2]
+            terms = [t.replace('%', '').replace('_', '') for t in terms]
+            terms = [t for t in terms if t]  # Remove empty after sanitization
             if not terms:
                 cur.close()
                 return []
             # Score by term frequency in title+content, rank by importance DESC
             where_parts, score_parts, params, score_params = [], [], [], []
             for t in terms[:6]:
-                pat = f"%{t.replace('%', '').replace('_', '')}%"
+                pat = f"%{t}%"
                 where_parts.append("(lower(title) LIKE lower(%s) OR lower(content) LIKE lower(%s) OR lower(tags::text) LIKE lower(%s))")
                 params.extend([pat, pat, pat])
                 score_parts.append("(CASE WHEN lower(title) LIKE lower(%s) THEN 2 WHEN lower(content) LIKE lower(%s) THEN 1 ELSE 0 END)")
@@ -1042,7 +1059,7 @@ def _score(item: dict, all_items: list) -> float:
     dep_pressure = number of OTHER items that depend on this one (capped at 5).
     """
     global _dep_pressure_cache, _dep_pressure_cache_key
-    cache_key = id(all_items)
+    cache_key = (len(all_items), id(all_items))
     if cache_key != _dep_pressure_cache_key:
         _dep_pressure_cache = {}
         for x in all_items:
@@ -3761,11 +3778,12 @@ def cmd_skb(args):
             with _pg_conn() as conn:
                 cur = conn.cursor()
                 stop = {"the","a","an","and","or","for","to","in","of","is","with"}
-                words = [w for w in args.query.lower().split() if w not in stop and len(w) > 2][:6]
+                words = [w.replace('%', '').replace('_', '') for w in args.query.lower().split() if w not in stop and len(w) > 2][:6]
+                words = [w for w in words if w]  # Remove empty after sanitization
                 if not words: print("No search terms"); return
                 wp, sp, params, sparams = [], [], [], []
                 for t in words:
-                    pat = f"%{t.replace('%', '').replace('_', '')}%"
+                    pat = f"%{t}%"
                     wp.append("(lower(title) LIKE lower(%s) OR lower(content) LIKE lower(%s) OR lower(tags::text) LIKE lower(%s))")
                     params.extend([pat, pat, pat])
                     sp.append("(CASE WHEN lower(title) LIKE lower(%s) THEN 2 WHEN lower(content) LIKE lower(%s) THEN 1 ELSE 0 END)")
