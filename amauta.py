@@ -17,7 +17,10 @@ import json
 import os
 import re
 import sys
-import fcntl
+try:
+    import fcntl
+except ImportError:
+    fcntl = None  # Not available on Windows; file locking will be skipped
 import socket
 import tempfile
 import uuid
@@ -188,11 +191,13 @@ class _file_lock:
         self._fd = None
     def __enter__(self):
         self._fd = open(_LOCK_FILE, "w")
-        fcntl.flock(self._fd, fcntl.LOCK_EX)
+        if fcntl:
+            fcntl.flock(self._fd, fcntl.LOCK_EX)
         return self
     def __exit__(self, *exc):
         if self._fd:
-            fcntl.flock(self._fd, fcntl.LOCK_UN)
+            if fcntl:
+                fcntl.flock(self._fd, fcntl.LOCK_UN)
             self._fd.close()
 
 # ── Persistence ────────────────────────────────────────────────────────────────

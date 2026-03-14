@@ -21,5 +21,5 @@ EXPOSE 18799 18798
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
   CMD python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:18799/health', timeout=3)" || exit 1
 
-# Default: run daemon (override with CMD for RLM)
-CMD ["python3", "services/amauta-daemon.py"]
+# Default: run daemon in foreground (override with CMD for RLM)
+CMD ["python3", "services/amauta-daemon.py", "run"]

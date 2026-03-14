@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: pgvector/pgvector:pg16
@@ -13,7 +11,11 @@ services:
       - "127.0.0.1:5433:5432"
     volumes:
       - gsd-pg-data:/var/lib/postgresql/data
-      - ../migrations:/docker-entrypoint-initdb.d:ro
+      - ../migrations/001-init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
+      - ../migrations/002-embedding-index.sql:/docker-entrypoint-initdb.d/002-embedding-index.sql:ro
+      - ../migrations/003-embedding-1024.sql:/docker-entrypoint-initdb.d/003-embedding-1024.sql:ro
+      - ../migrations/004-fulltext-indexes.sql:/docker-entrypoint-initdb.d/004-fulltext-indexes.sql:ro
+      - ../migrations/005-agent-performance.sql:/docker-entrypoint-initdb.d/005-agent-performance.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U gsd -d gsd_amauta"]
       interval: 10s

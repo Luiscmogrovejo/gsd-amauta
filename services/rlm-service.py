@@ -37,11 +37,22 @@ import logging
 
 # ── Structured Logging ─────────────────────────────────────────────────────────
 _log_level = os.environ.get("AMAUTA_LOG_LEVEL", "INFO").upper()
-logging.basicConfig(
-    level=getattr(logging, _log_level, logging.INFO),
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    stream=sys.stderr,
-)
+_log_format = os.environ.get("AMAUTA_LOG_FORMAT", "text").lower()
+
+class _JsonFormatter(logging.Formatter):
+    """JSON log format for structured log aggregation."""
+    def format(self, record):
+        return json.dumps({
+            "ts": self.formatTime(record), "level": record.levelname,
+            "logger": record.name, "msg": record.getMessage(),
+        })
+
+_handler = logging.StreamHandler(sys.stderr)
+if _log_format == "json":
+    _handler.setFormatter(_JsonFormatter())
+else:
+    _handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+logging.basicConfig(level=getattr(logging, _log_level, logging.INFO), handlers=[_handler])
 log = logging.getLogger("amauta.rlm")
 
 # ═══════════════════════════════════════════════════════
@@ -72,6 +83,24 @@ SKIP_DIRS = {
     "dist", "build", ".next", ".nuxt", "target", ".tox",
     "coverage", ".nyc_output", ".pytest_cache",
 }
+
+# Sensitive paths that should never be served (path traversal protection)
+_BLOCKED_PATHS = {"/etc/shadow", "/etc/passwd", "/etc/master.passwd"}
+_BLOCKED_PREFIXES = ("/etc/", "/proc/", "/sys/", "/dev/")
+
+def _is_safe_path(filepath: str) -> bool:
+    """Reject requests for system files outside of project directories."""
+    resolved = os.path.realpath(os.path.expanduser(filepath))
+    if resolved in _BLOCKED_PATHS:
+        return False
+    for prefix in _BLOCKED_PREFIXES:
+        if resolved.startswith(prefix):
+            return False
+    # Block hidden dirs in root (e.g. /root/.ssh)
+    parts = Path(resolved).parts
+    if len(parts) >= 3 and parts[1] == "root":
+        return False
+    return True
 
 # ═══════════════════════════════════════════════════════
 # LRU Cache for Chunked Files
@@ -562,15 +591,21 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(data).encode("utf-8"))
 
+    MAX_BODY_SIZE = 50 * 1024 * 1024  # 50 MB
+
     def _read_body(self):
         length = int(self.headers.get("Content-Length", 0))
         if length == 0:
             return {}
+        if length > self.MAX_BODY_SIZE:
+            self._send_json({"error": f"Request body too large ({length} bytes, max {self.MAX_BODY_SIZE})"}, 413)
+            return None
         raw = self.rfile.read(length)
         try:
             return json.loads(raw)
         except json.JSONDecodeError:
-            return {}
+            self._send_json({"error": "Invalid JSON body"}, 400)
+            return None
 
     # ─── GET ─────────────────────────────────────────
 
@@ -596,6 +631,8 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         path = self.path.rstrip("/")
         body = self._read_body()
+        if body is None:
+            return  # Error response already sent by _read_body
 
         if path == "/chunk":
             self._handle_chunk(body)
@@ -618,6 +655,10 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
         filepath = body.get("filepath")
         if not filepath:
             self._send_json({"error": "filepath required"}, 400)
+            return
+
+        if not _is_safe_path(filepath):
+            self._send_json({"error": "Access denied: path is outside allowed scope"}, 403)
             return
 
         filepath = os.path.expanduser(filepath)
@@ -661,6 +702,8 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
         t0 = time.time()
         all_chunks = []
         for p in paths:
+            if not _is_safe_path(p):
+                continue
             p = os.path.expanduser(p)
             if os.path.isfile(p):
                 all_chunks.extend(chunk_file(p, max_chars))
@@ -705,6 +748,9 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
             return
 
         log.debug("rlm_query query=%r top_k=%d", query[:50], top_k)
+        if not _is_safe_path(directory):
+            self._send_json({"error": "Access denied: path is outside allowed scope"}, 403)
+            return
         directory = os.path.expanduser(directory)
         if not os.path.isdir(directory):
             self._send_json({"error": f"Directory not found: {directory}"}, 404)

@@ -84,8 +84,10 @@ def _check_auth(handler) -> bool:
     """Validate bearer token if AMAUTA_DAEMON_TOKEN is set. Returns True if authorized."""
     if not DAEMON_AUTH_TOKEN:
         return True  # No token configured = open access (dev mode)
+    import hmac
     auth = handler.headers.get("Authorization", "")
-    if auth == f"Bearer {DAEMON_AUTH_TOKEN}":
+    expected = f"Bearer {DAEMON_AUTH_TOKEN}"
+    if hmac.compare_digest(auth.encode(), expected.encode()):
         return True
     log.warning("auth_failed ip=%s path=%s", handler.client_address[0], handler.path)
     handler.send_response(401)
@@ -882,7 +884,7 @@ def start_server(foreground=False):
     def _reconcile_tasks_to_pg():
         """Best-effort sync: load tasks.json and upsert all items to PG mirror."""
         try:
-            tasks_file = Path(os.environ.get("AMAUTA_DATA_DIR", ".")) / "tasks.json"
+            tasks_file = Path(DATA_DIR) / "tasks.json"
             if not tasks_file.exists():
                 return
             import json as _json

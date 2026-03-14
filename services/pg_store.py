@@ -115,23 +115,22 @@ class PGStore:
             yield conn
             conn.commit()
         except (psycopg2.OperationalError, psycopg2.InterfaceError):
-            # Connection died mid-transaction — rollback and re-raise
+            # Connection died mid-transaction — rollback and re-raise.
+            # Do NOT allocate a new connection here: the finally block would
+            # putconn() that unused connection, leaking the slot.
             try:
                 conn.rollback()
             except Exception:
                 pass
             if not reconnected:
-                # Try one reconnect for mid-transaction failures
                 try:
                     self._pool.putconn(conn, close=True)
                     conn = None
                 except Exception:
                     pass
+                # Just reconnect the pool so the next caller gets a fresh conn
                 try:
                     self._connect()
-                    conn = self._pool.getconn()
-                    conn.autocommit = False
-                    reconnected = True
                 except Exception:
                     pass
             raise
