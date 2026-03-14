@@ -293,7 +293,8 @@ function formatMemory(mem, index) {
   const src = SOURCE_LABELS[mem.source] || `\x1b[37m${mem.source}\x1b[0m`;
   const score = formatScore(mem.score || 0);
   const agent = mem.agent_id ? ` @${mem.agent_id}` : '';
-  const tags = mem.tags && mem.tags.length ? ` [${mem.tags.join(', ')}]` : '';
+  const tagArr = Array.isArray(mem.tags) ? mem.tags : (typeof mem.tags === 'string' && mem.tags ? mem.tags.split(',').map(t => t.trim()) : []);
+  const tags = tagArr.length ? ` [${tagArr.join(', ')}]` : '';
   const date = mem.created_at ? mem.created_at.split('T')[0] : '';
 
   let out = `  ${index + 1}. ${score} ${src}${agent}${tags}  \x1b[2m${date}\x1b[0m\n`;
