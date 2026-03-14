@@ -2079,8 +2079,8 @@ function install(isGlobal, runtime = 'claude') {
 
   // Copy skills for Claude Code (skills/ dir — referenced by agents' skills: frontmatter field)
   // Each skill is a directory with SKILL.md; content is injected into agent context at startup.
-  // (skillsSrcDir is defined earlier, before the agent-copying loop, for non-Claude embedding)
-  if (fs.existsSync(skillsSrcDir) && !isCodex && !isOpencode && !isGemini) {
+  const _skillsSrcDir = path.join(src, 'skills');
+  if (fs.existsSync(_skillsSrcDir) && !isCodex && !isOpencode && !isGemini) {
     const skillsDestDir = path.join(targetDir, 'skills');
     fs.mkdirSync(skillsDestDir, { recursive: true });
 
@@ -2094,11 +2094,11 @@ function install(isGlobal, runtime = 'claude') {
     }
 
     // Copy new skill directories (each contains SKILL.md)
-    const skillEntries = fs.readdirSync(skillsSrcDir, { withFileTypes: true });
+    const skillEntries = fs.readdirSync(_skillsSrcDir, { withFileTypes: true });
     let skillCount = 0;
     for (const entry of skillEntries) {
       if (!entry.isDirectory()) continue;
-      const skillSrc = path.join(skillsSrcDir, entry.name);
+      const skillSrc = path.join(_skillsSrcDir, entry.name);
       const skillMdSrc = path.join(skillSrc, 'SKILL.md');
       if (!fs.existsSync(skillMdSrc)) continue;
 
