@@ -6,8 +6,8 @@ services:
     container_name: gsd-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: gsd
-      POSTGRES_PASSWORD: gsd
+      POSTGRES_USER: ${POSTGRES_USER:-gsd}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gsd}
       POSTGRES_DB: gsd_amauta
     ports:
       - "127.0.0.1:5433:5432"

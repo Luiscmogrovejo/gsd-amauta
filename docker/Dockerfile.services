@@ -1,0 +1,25 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy service files
+COPY services/ ./services/
+COPY amauta.py .
+
+# Default environment
+ENV GSD_AMAUTA_PORT=18799
+ENV GSD_RLM_PORT=18798
+ENV PYTHONUNBUFFERED=1
+
+EXPOSE 18799 18798
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
+  CMD python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:18799/health', timeout=3)" || exit 1
+
+# Default: run daemon (override with CMD for RLM)
+CMD ["python3", "services/amauta-daemon.py"]

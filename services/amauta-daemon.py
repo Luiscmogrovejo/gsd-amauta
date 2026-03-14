@@ -18,7 +18,9 @@ import os
 import signal
 import subprocess
 import sys
+import time
 import threading
+from collections import defaultdict
 from pathlib import Path
 from socketserver import ThreadingMixIn
 from urllib.parse import parse_qs, urlparse
@@ -48,6 +50,44 @@ DATA_DIR = os.environ.get(
 )
 PID_FILE = Path(__file__).resolve().parent / "amauta-daemon.pid"
 
+# ── Authentication ─────────────────────────────────────────────────────────────
+DAEMON_AUTH_TOKEN = os.environ.get("AMAUTA_DAEMON_TOKEN", "")
+
+def _check_auth(handler) -> bool:
+    """Validate bearer token if AMAUTA_DAEMON_TOKEN is set. Returns True if authorized."""
+    if not DAEMON_AUTH_TOKEN:
+        return True  # No token configured = open access (dev mode)
+    auth = handler.headers.get("Authorization", "")
+    if auth == f"Bearer {DAEMON_AUTH_TOKEN}":
+        return True
+    handler.send_response(401)
+    handler.send_header("Content-Type", "application/json")
+    handler.end_headers()
+    handler.wfile.write(json.dumps({"error": "Unauthorized. Set Authorization: Bearer <AMAUTA_DAEMON_TOKEN>"}).encode())
+    return False
+
+# ── Rate Limiting ──────────────────────────────────────────────────────────────
+class _RateLimiter:
+    """Simple per-path rate limiter. 60 requests per minute per path."""
+    def __init__(self, max_requests=60, window_seconds=60):
+        self._max = max_requests
+        self._window = window_seconds
+        self._requests = defaultdict(list)
+
+    def allow(self, path: str) -> bool:
+        now = time.time()
+        key = path.split("?")[0]  # strip query params
+        self._requests[key] = [t for t in self._requests[key] if now - t < self._window]
+        if len(self._requests[key]) >= self._max:
+            return False
+        self._requests[key].append(now)
+        return True
+
+_rate_limiter = _RateLimiter()
+
+# ── Request Body Size Limit ────────────────────────────────────────────────────
+MAX_BODY_SIZE = int(os.environ.get("AMAUTA_MAX_BODY_SIZE", str(10 * 1024 * 1024)))  # 10MB default
+
 
 # ═══════════════════════════════════════════════════════
 # Threaded HTTP Server
@@ -75,6 +115,12 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
 
     def _read_body(self):
         length = int(self.headers.get("Content-Length", 0))
+        if length > MAX_BODY_SIZE:
+            self.send_response(413)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": f"Payload too large. Max {MAX_BODY_SIZE} bytes"}).encode())
+            return None
         if length == 0:
             return {}
         raw = self.rfile.read(length)
@@ -180,6 +226,14 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
     # ─── GET routes ──────────────────────────────────
 
     def do_GET(self):
+        if self.path != "/health" and not _check_auth(self):
+            return
+        if not _rate_limiter.allow(self.path):
+            self.send_response(429)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Too many requests. Try again later."}).encode())
+            return
         path = self.path.rstrip("/")
 
         if path == "/health":
@@ -334,8 +388,18 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
     # ─── POST routes ─────────────────────────────────
 
     def do_POST(self):
+        if not _check_auth(self):
+            return
+        if not _rate_limiter.allow(self.path):
+            self.send_response(429)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Too many requests. Try again later."}).encode())
+            return
         path = self.path.rstrip("/")
         body = self._read_body()
+        if body is None:
+            return
 
         # Generic command executor — limited to safe read/query operations
         # (destructive operations like delete/atomize must use specific routes)
@@ -730,6 +794,26 @@ def start_server(foreground=False):
     print(f"  PID file: {PID_FILE}")
     print(f"  amauta.py: {AMAUTA_PY}")
     print(f"  PG store: {'active' if _pg_store else 'inactive (file-only mode)'}")
+
+    # ── Startup reconciliation: sync tasks.json → PG ────────────────────
+    def _reconcile_tasks_to_pg():
+        """Best-effort sync: load tasks.json and upsert all items to PG mirror."""
+        try:
+            tasks_file = Path(os.environ.get("AMAUTA_DATA_DIR", ".")) / "tasks.json"
+            if not tasks_file.exists():
+                return
+            import json as _json
+            data = _json.loads(tasks_file.read_text())
+            items = data.get("items", [])
+            if not items or not _pg_store:
+                return
+            synced = _pg_store.task_upsert_batch(items)
+            if synced:
+                print(f"[reconcile] Synced {len(items)} tasks to PG mirror", file=sys.stderr)
+        except Exception as e:
+            print(f"[reconcile] Warning: {e}", file=sys.stderr)
+
+    _reconcile_tasks_to_pg()
 
     try:
         server.serve_forever()

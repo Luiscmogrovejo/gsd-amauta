@@ -43,6 +43,7 @@ PORT = int(os.environ.get("GSD_RLM_PORT", "18798"))
 MAX_CHUNK_CHARS = int(os.environ.get("RLM_MAX_CHUNK_CHARS", "8000"))
 DEFAULT_TOP_K = int(os.environ.get("RLM_DEFAULT_TOP_K", "10"))
 CACHE_MAX_SIZE = int(os.environ.get("RLM_CACHE_SIZE", "200"))
+CACHE_MAX_BYTES = int(os.environ.get("RLM_CACHE_MAX_MB", "512")) * 1024 * 1024  # 512MB default
 PID_FILE = Path(__file__).resolve().parent / "rlm-service.pid"
 
 # File extensions we know how to chunk
@@ -72,6 +73,7 @@ class ChunkCache:
     def __init__(self, max_size=200):
         self._cache = OrderedDict()
         self._max_size = max_size
+        self._current_bytes = 0
 
     def get(self, filepath, mtime):
         key = (filepath, mtime)
@@ -86,11 +88,19 @@ class ChunkCache:
             self._cache.move_to_end(key)
         else:
             if len(self._cache) >= self._max_size:
-                self._cache.popitem(last=False)
+                _, evicted = self._cache.popitem(last=False)
+                self._current_bytes -= sum(len(c.get("text", "")) for c in evicted) * 2
+        # Estimate memory usage and evict if over limit
+        entry_size = sum(len(c.get("text", "")) for c in chunks) * 2  # rough char→bytes estimate
+        while self._current_bytes + entry_size > CACHE_MAX_BYTES and self._cache:
+            _, evicted = self._cache.popitem(last=False)
+            self._current_bytes -= sum(len(c.get("text", "")) for c in evicted) * 2
+        self._current_bytes += entry_size
         self._cache[key] = chunks
 
     def clear(self):
         self._cache.clear()
+        self._current_bytes = 0
 
     @property
     def size(self):

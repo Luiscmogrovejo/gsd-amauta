@@ -188,32 +188,33 @@ def save(data: dict):
       - amauta-dashboard service for read (via amauta-services group)
       - no world access (principle of least privilege)
     """
-    # NOTE: pwd/grp imports removed — we use hardcoded uid/gid=1000 (line 207)
-    data["metadata"]["updated"] = _now()
-    data["metadata"]["version"] = "2.0"
-    tmp = tempfile.NamedTemporaryFile(
-        mode="w", dir=DATA_DIR, delete=False, suffix=".tmp"
-    )
-    try:
-        json.dump(data, tmp, indent=2)
-        tmp.flush()
-        os.fsync(tmp.fileno())
-        tmp.close()
-        os.replace(tmp.name, TASKS_FILE)
-        os.chmod(TASKS_FILE, 0o644)  # owner rw + group/other r — agents run as uid=1000 in containers
-        # Always chown to amauta:amauta (uid=1000:gid=1000) so container agents can access
-        # Containers run as node/sandbox (uid=1000) which maps to amauta on host
+    with _file_lock():
+        # NOTE: pwd/grp imports removed — we use hardcoded uid/gid=1000 (line 207)
+        data["metadata"]["updated"] = _now()
+        data["metadata"]["version"] = "2.0"
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w", dir=DATA_DIR, delete=False, suffix=".tmp"
+        )
         try:
-            os.chown(TASKS_FILE, 1000, 1000)
-        except PermissionError:
-            pass  # running inside container as node — chown not needed, node IS uid=1000
-    except Exception:
-        tmp.close()
-        try:
-            os.unlink(tmp.name)
-        except OSError:
-            pass
-        raise
+            json.dump(data, tmp, indent=2)
+            tmp.flush()
+            os.fsync(tmp.fileno())
+            tmp.close()
+            os.replace(tmp.name, TASKS_FILE)
+            os.chmod(TASKS_FILE, 0o640)  # owner rw + group r — agents run as uid=1000 in containers
+            # Always chown to amauta:amauta (uid=1000:gid=1000) so container agents can access
+            # Containers run as node/sandbox (uid=1000) which maps to amauta on host
+            try:
+                os.chown(TASKS_FILE, 1000, 1000)
+            except PermissionError:
+                pass  # running inside container as node — chown not needed, node IS uid=1000
+        except Exception:
+            tmp.close()
+            try:
+                os.unlink(tmp.name)
+            except OSError:
+                pass
+            raise
 
 # ── Lightweight shared memory store (compat layer) ───────────────────────────
 def _mem_load() -> list:
@@ -306,33 +307,46 @@ def _mem_backend() -> str:
 def _mem_pg_available() -> bool:
     return _mem_backend() == "postgres" and bool(_mem_db_url())
 
-def _mem_pg_add(agent_id: str, tags: list, text: str):
+from contextlib import contextmanager
+
+@contextmanager
+def _pg_conn():
+    """Context manager for PG connections — prevents leaks on exceptions."""
     import psycopg2
     dsn = _mem_db_url()
     conn = psycopg2.connect(dsn)
-    conn.autocommit = True
-    cur = conn.cursor()
-    now = datetime.now(timezone.utc)
-    m = re.search(r"\b(TK-\d{3,6}|BG-\d{3,6}|ST-\d{3,6}|EP-\d{3,6})\b", text or "", flags=re.IGNORECASE)
-    task_id = (m.group(1).upper() if m else "")
-    cur.execute(
-        """
-        INSERT INTO amauta_memory (id, text, agent_id, source, tags, metadata, created_at, updated_at)
-        VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s)
-        """,
-        (
-            str(uuid.uuid4()),
-            text,
-            agent_id,
-            "agent",
-            json.dumps(tags),
-            json.dumps({"via": "amauta memory add", "task_id": task_id}),
-            now,
-            now,
-        ),
-    )
-    cur.close()
-    conn.close()
+    try:
+        yield conn
+    except Exception:
+        conn.rollback() if not conn.autocommit else None
+        raise
+    finally:
+        conn.close()
+
+def _mem_pg_add(agent_id: str, tags: list, text: str):
+    with _pg_conn() as conn:
+        conn.autocommit = True
+        cur = conn.cursor()
+        now = datetime.now(timezone.utc)
+        m = re.search(r"\b(TK-\d{3,6}|BG-\d{3,6}|ST-\d{3,6}|EP-\d{3,6})\b", text or "", flags=re.IGNORECASE)
+        task_id = (m.group(1).upper() if m else "")
+        cur.execute(
+            """
+            INSERT INTO amauta_memory (id, text, agent_id, source, tags, metadata, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s)
+            """,
+            (
+                str(uuid.uuid4()),
+                text,
+                agent_id,
+                "agent",
+                json.dumps(tags),
+                json.dumps({"via": "amauta memory add", "task_id": task_id}),
+                now,
+                now,
+            ),
+        )
+        cur.close()
 
 def _mem_pg_search(query: str, agent_id: Optional[str], top_k: int) -> list:
     """
@@ -341,70 +355,67 @@ def _mem_pg_search(query: str, agent_id: Optional[str], top_k: int) -> list:
     - Returns source field so callers can show where results came from
     - High-signal sources get +3 score boost so they surface above raw task_events
     """
-    import psycopg2
-    dsn = _mem_db_url()
-    conn = psycopg2.connect(dsn)
-    cur = conn.cursor()
+    with _pg_conn() as conn:
+        cur = conn.cursor()
 
-    # Split query into individual terms for OR-based matching
-    terms = [t.strip() for t in re.split(r"\s+", query.strip()) if t.strip()]
-    if not terms:
-        return []
+        # Split query into individual terms for OR-based matching
+        terms = [t.strip() for t in re.split(r"\s+", query.strip()) if t.strip()]
+        if not terms:
+            return []
 
-    # Build per-term LIKE conditions and score expression
-    like_pats = [f"%{t}%" for t in terms]
-    # WHERE: match any term in text or tags
-    where_parts = []
-    params: list = []
-    for pat in like_pats:
-        where_parts.append("(lower(text) LIKE lower(%s) OR lower(tags::text) LIKE lower(%s))")
-        params.extend([pat, pat])
-    where_clause = " OR ".join(where_parts)
+        # Build per-term LIKE conditions and score expression
+        like_pats = [f"%{t.replace('%', '').replace('_', '')}%" for t in terms]
+        # WHERE: match any term in text or tags
+        where_parts = []
+        params: list = []
+        for pat in like_pats:
+            where_parts.append("(lower(text) LIKE lower(%s) OR lower(tags::text) LIKE lower(%s))")
+            params.extend([pat, pat])
+        where_clause = " OR ".join(where_parts)
 
-    # SCORE: base relevance + source boost (auto_learning/web_search_result rank higher)
-    score_parts = []
-    score_params: list = []
-    for pat in like_pats:
-        score_parts.append("(CASE WHEN lower(text) LIKE lower(%s) THEN 1 ELSE 0 END)")
-        score_params.append(pat)
-    # Source-quality boost: learning sources rank above raw task events
-    source_boost = (
-        "CASE source "
-        "WHEN 'auto_learning' THEN 3 "
-        "WHEN 'web_search_result' THEN 3 "
-        "WHEN 'lesson-learned' THEN 4 "
-        "WHEN 'best-practice' THEN 4 "
-        "WHEN 'session-learning' THEN 3 "
-        "WHEN 'distilled' THEN 2 "
-        "WHEN 'rpetd_phase' THEN 1 "
-        "ELSE 0 END"
-    )
-    score_expr = f"({' + '.join(score_parts) if score_parts else '0'}) + ({source_boost})"
+        # SCORE: base relevance + source boost (auto_learning/web_search_result rank higher)
+        score_parts = []
+        score_params: list = []
+        for pat in like_pats:
+            score_parts.append("(CASE WHEN lower(text) LIKE lower(%s) THEN 1 ELSE 0 END)")
+            score_params.append(pat)
+        # Source-quality boost: learning sources rank above raw task events
+        source_boost = (
+            "CASE source "
+            "WHEN 'auto_learning' THEN 3 "
+            "WHEN 'web_search_result' THEN 3 "
+            "WHEN 'lesson-learned' THEN 4 "
+            "WHEN 'best-practice' THEN 4 "
+            "WHEN 'session-learning' THEN 3 "
+            "WHEN 'distilled' THEN 2 "
+            "WHEN 'rpetd_phase' THEN 1 "
+            "ELSE 0 END"
+        )
+        score_expr = f"({' + '.join(score_parts) if score_parts else '0'}) + ({source_boost})"
 
-    if agent_id:
-        sql = f"""
-            SELECT created_at, agent_id, text, tags, source,
-                   ({score_expr}) AS score
-            FROM amauta_memory
-            WHERE agent_id = %s AND ({where_clause})
-            ORDER BY score DESC, created_at DESC
-            LIMIT %s
-        """
-        cur.execute(sql, score_params + [agent_id] + params + [max(1, top_k)])
-    else:
-        sql = f"""
-            SELECT created_at, agent_id, text, tags, source,
-                   ({score_expr}) AS score
-            FROM amauta_memory
-            WHERE {where_clause}
-            ORDER BY score DESC, created_at DESC
-            LIMIT %s
-        """
-        cur.execute(sql, score_params + params + [max(1, top_k)])
+        if agent_id:
+            sql = f"""
+                SELECT created_at, agent_id, text, tags, source,
+                       ({score_expr}) AS score
+                FROM amauta_memory
+                WHERE agent_id = %s AND ({where_clause})
+                ORDER BY score DESC, created_at DESC
+                LIMIT %s
+            """
+            cur.execute(sql, score_params + [agent_id] + params + [max(1, top_k)])
+        else:
+            sql = f"""
+                SELECT created_at, agent_id, text, tags, source,
+                       ({score_expr}) AS score
+                FROM amauta_memory
+                WHERE {where_clause}
+                ORDER BY score DESC, created_at DESC
+                LIMIT %s
+            """
+            cur.execute(sql, score_params + params + [max(1, top_k)])
 
-    rows = cur.fetchall()
-    cur.close()
-    conn.close()
+        rows = cur.fetchall()
+        cur.close()
     out = []
     for created_at, ag, text, tags, source, score in rows:
         out.append(
@@ -420,17 +431,14 @@ def _mem_pg_search(query: str, agent_id: Optional[str], top_k: int) -> list:
     return out
 
 def _mem_pg_stats() -> tuple[int, list]:
-    import psycopg2
-    dsn = _mem_db_url()
-    conn = psycopg2.connect(dsn)
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) FROM amauta_memory")
-    row = cur.fetchone()
-    total = int(row[0]) if row else 0
-    cur.execute("SELECT COALESCE(agent_id, 'unknown') AS a, COUNT(*) AS n FROM amauta_memory GROUP BY a ORDER BY n DESC, a ASC")
-    rows = cur.fetchall()
-    cur.close()
-    conn.close()
+    with _pg_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM amauta_memory")
+        row = cur.fetchone()
+        total = int(row[0]) if row else 0
+        cur.execute("SELECT COALESCE(agent_id, 'unknown') AS a, COUNT(*) AS n FROM amauta_memory GROUP BY a ORDER BY n DESC, a ASC")
+        rows = cur.fetchall()
+        cur.close()
     return total, rows
 
 
@@ -444,32 +452,31 @@ def _skb_search(query: str, top_k: int = 5) -> list:
     if not _mem_pg_available():
         return []
     try:
-        import psycopg2
-        conn = psycopg2.connect(_mem_db_url())
-        cur = conn.cursor()
-        terms = [t.strip() for t in re.split(r"\s+", query.strip()) if t.strip() and len(t) > 2]
-        if not terms:
-            cur.close(); conn.close()
-            return []
-        # Score by term frequency in title+content, rank by importance DESC
-        where_parts, score_parts, params, score_params = [], [], [], []
-        for t in terms[:6]:
-            pat = f"%{t}%"
-            where_parts.append("(lower(title) LIKE lower(%s) OR lower(content) LIKE lower(%s) OR lower(tags::text) LIKE lower(%s))")
-            params.extend([pat, pat, pat])
-            score_parts.append("(CASE WHEN lower(title) LIKE lower(%s) THEN 2 WHEN lower(content) LIKE lower(%s) THEN 1 ELSE 0 END)")
-            score_params.extend([pat, pat])
-        sql = f"""
-            SELECT title, content, category, tags, COALESCE(importance, 5) as imp,
-                   ({' + '.join(score_parts)}) AS score
-            FROM agent_shared_knowledge
-            WHERE {' OR '.join(where_parts)}
-            ORDER BY score DESC, imp DESC
-            LIMIT %s
-        """
-        cur.execute(sql, score_params + params + [max(1, top_k)])
-        rows = cur.fetchall()
-        cur.close(); conn.close()
+        with _pg_conn() as conn:
+            cur = conn.cursor()
+            terms = [t.strip() for t in re.split(r"\s+", query.strip()) if t.strip() and len(t) > 2]
+            if not terms:
+                cur.close()
+                return []
+            # Score by term frequency in title+content, rank by importance DESC
+            where_parts, score_parts, params, score_params = [], [], [], []
+            for t in terms[:6]:
+                pat = f"%{t.replace('%', '').replace('_', '')}%"
+                where_parts.append("(lower(title) LIKE lower(%s) OR lower(content) LIKE lower(%s) OR lower(tags::text) LIKE lower(%s))")
+                params.extend([pat, pat, pat])
+                score_parts.append("(CASE WHEN lower(title) LIKE lower(%s) THEN 2 WHEN lower(content) LIKE lower(%s) THEN 1 ELSE 0 END)")
+                score_params.extend([pat, pat])
+            sql = f"""
+                SELECT title, content, category, tags, COALESCE(importance, 5) as imp,
+                       ({' + '.join(score_parts)}) AS score
+                FROM agent_shared_knowledge
+                WHERE {' OR '.join(where_parts)}
+                ORDER BY score DESC, imp DESC
+                LIMIT %s
+            """
+            cur.execute(sql, score_params + params + [max(1, top_k)])
+            rows = cur.fetchall()
+            cur.close()
         return [
             {"title": r[0], "content": r[1], "category": r[2],
              "tags": r[3] if isinstance(r[3], list) else [],
@@ -491,25 +498,24 @@ def _skb_promote(title: str, content: str, category: str, agent_id: str = "syste
     if not _mem_pg_available():
         return
     try:
-        import psycopg2
-        conn = psycopg2.connect(_mem_db_url())
-        conn.autocommit = True
-        cur = conn.cursor()
-        # Dedup: skip if a very similar title already exists
-        cur.execute("SELECT COUNT(*) FROM agent_shared_knowledge WHERE lower(title) = lower(%s)", (title,))
-        _row = cur.fetchone()
-        if _row and _row[0] > 0:
-            cur.close(); conn.close()
-            return
-        now = datetime.now(timezone.utc)
-        entry_id = f"SKB-{uuid.uuid4().hex[:12]}"
-        cur.execute("""
-            INSERT INTO agent_shared_knowledge
-                (id, title, content, category, agent_id, tags, importance, created_at, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s)
-        """, (entry_id, title, content, category, agent_id,
-              json.dumps(tags or []), importance, now, now))
-        cur.close(); conn.close()
+        with _pg_conn() as conn:
+            conn.autocommit = True
+            cur = conn.cursor()
+            # Dedup: skip if a very similar title already exists
+            cur.execute("SELECT COUNT(*) FROM agent_shared_knowledge WHERE lower(title) = lower(%s)", (title,))
+            _row = cur.fetchone()
+            if _row and _row[0] > 0:
+                cur.close()
+                return
+            now = datetime.now(timezone.utc)
+            entry_id = f"SKB-{uuid.uuid4().hex[:12]}"
+            cur.execute("""
+                INSERT INTO agent_shared_knowledge
+                    (id, title, content, category, agent_id, tags, importance, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s)
+            """, (entry_id, title, content, category, agent_id,
+                  json.dumps(tags or []), importance, now, now))
+            cur.close()
     except Exception:
         pass
 
@@ -530,46 +536,42 @@ def _mem_log_event(agent_id: str, tags: list[str], text: str, *, source: str = "
     }
     try:
         if _mem_pg_available():
-            import psycopg2
-
             now = datetime.now(timezone.utc)
-            dsn = _mem_db_url()
-            conn = psycopg2.connect(dsn)
-            conn.autocommit = True
-            cur = conn.cursor()
+            with _pg_conn() as conn:
+                conn.autocommit = True
+                cur = conn.cursor()
 
-            # Dedup: for learning sources, check if we already wrote for this task
-            if source in ("auto_learning", "web_search_result") and metadata:
-                task_id = (metadata or {}).get("task_id", "")
-                if task_id:
-                    cur.execute(
-                        "SELECT COUNT(*) FROM amauta_memory WHERE source=%s AND metadata->>'task_id'=%s",
-                        (source, task_id)
-                    )
-                    existing = cur.fetchone()
-                    if existing and existing[0] >= 3:
-                        # Already have 3+ entries for this task+source — skip to prevent flooding
-                        cur.close(); conn.close()
-                        return
+                # Dedup: for learning sources, check if we already wrote for this task
+                if source in ("auto_learning", "web_search_result") and metadata:
+                    task_id = (metadata or {}).get("task_id", "")
+                    if task_id:
+                        cur.execute(
+                            "SELECT COUNT(*) FROM amauta_memory WHERE source=%s AND metadata->>'task_id'=%s",
+                            (source, task_id)
+                        )
+                        existing = cur.fetchone()
+                        if existing and existing[0] >= 3:
+                            # Already have 3+ entries for this task+source — skip to prevent flooding
+                            cur.close()
+                            return
 
-            cur.execute(
-                """
-                INSERT INTO amauta_memory (id, text, agent_id, source, tags, metadata, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s)
-                """,
-                (
-                    f"MEM-{uuid.uuid4().hex[:12]}",
-                    text,
-                    agent_id or "system",
-                    source,
-                    json.dumps(clean_tags),
-                    json.dumps(metadata or {}),
-                    now,
-                    now,
-                ),
-            )
-            cur.close()
-            conn.close()
+                cur.execute(
+                    """
+                    INSERT INTO amauta_memory (id, text, agent_id, source, tags, metadata, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s)
+                    """,
+                    (
+                        f"MEM-{uuid.uuid4().hex[:12]}",
+                        text,
+                        agent_id or "system",
+                        source,
+                        json.dumps(clean_tags),
+                        json.dumps(metadata or {}),
+                        now,
+                        now,
+                    ),
+                )
+                cur.close()
         else:
             _mem_append(row)
     except Exception:
@@ -1005,18 +1007,28 @@ def _in_gate_cooldown(item: dict) -> bool:
 
 
 # ── Priority score ─────────────────────────────────────────────────────────────
+_dep_pressure_cache = {}
+_dep_pressure_cache_key = None
+
 def _score(item: dict, all_items: list) -> float:
     """
     Weighted priority score used by `next` to rank tasks.
     Score = (importance×0.4) + (urgency×0.3) + (dep_pressure×0.3)
     dep_pressure = number of OTHER items that depend on this one (capped at 5).
     """
+    global _dep_pressure_cache, _dep_pressure_cache_key
+    cache_key = id(all_items)
+    if cache_key != _dep_pressure_cache_key:
+        _dep_pressure_cache = {}
+        for x in all_items:
+            for dep_id in x.get("dependencies", []):
+                _dep_pressure_cache[dep_id] = _dep_pressure_cache.get(dep_id, 0) + 1
+        _dep_pressure_cache_key = cache_key
+
     imp = max(1, min(5, item.get("importance", 3)))
     urg = max(1, min(5, item.get("urgency", 3)))
-    # How many items depend on this one (it's blocking them)
-    iid = item["id"]
-    blocking = sum(1 for x in all_items if iid in x.get("dependencies", []))
-    dep_p = min(5, blocking)
+    iid = item.get("id", "")
+    dep_p = min(5, _dep_pressure_cache.get(iid, 0))
     # Boost critical priority
     if item.get("priority") == "critical":
         imp = min(5, imp + 1)
@@ -1846,81 +1858,80 @@ def _dedup_check(items, title, agent):
 
 
 def cmd_add(args):
-    with _file_lock():  # prevent duplicate TK IDs under concurrent writes
-        data  = load()
-        items = data["items"]
+    data  = load()
+    items = data["items"]
 
-        # ── Dedup guard: reject if a very similar task already exists ──
-        agent_hint = args.agent if hasattr(args, 'agent') and args.agent else None
-        dup_id = _dedup_check(items, args.title, agent_hint)
-        if dup_id:
-            print(c(f"DEDUP BLOCKED: similar task {dup_id} already exists for @{agent_hint or '?'}. "
-                     f"Add a note to {dup_id} instead of creating a duplicate.", YELLOW))
-            print(dim(f"  Use: amauta note {dup_id} --content \"your context here\""))
-            sys.exit(0)
+    # ── Dedup guard: reject if a very similar task already exists ──
+    agent_hint = args.agent if hasattr(args, 'agent') and args.agent else None
+    dup_id = _dedup_check(items, args.title, agent_hint)
+    if dup_id:
+        print(c(f"DEDUP BLOCKED: similar task {dup_id} already exists for @{agent_hint or '?'}. "
+                 f"Add a note to {dup_id} instead of creating a duplicate.", YELLOW))
+        print(dim(f"  Use: amauta note {dup_id} --content \"your context here\""))
+        sys.exit(0)
 
-        itype = args.type
-        nid   = _next_id(items, itype)
-        item  = _new_item(itype, args.title)
-        item["id"] = nid
+    itype = args.type
+    nid   = _next_id(items, itype)
+    item  = _new_item(itype, args.title)
+    item["id"] = nid
 
-        # Basic fields
-        if args.description:  item["description"]  = args.description
-        if args.details:      item["details"]       = args.details
-        if args.status:       item["status"]        = args.status
-        if args.priority:     item["priority"]      = args.priority
-        if args.agent:        item["assigned_to"]   = args.agent
-        if args.sprint:       item["sprint"]        = args.sprint
-        if args.due:          item["due_date"]      = args.due
-        if args.hours:        item["estimated_hours"] = args.hours
-        if args.importance:   item["importance"]    = args.importance
-        if args.urgency:      item["urgency"]       = args.urgency
-        if args.tags:         item["tags"]          = [t.strip() for t in args.tags.split(",")]
-        if args.deps:         item["dependencies"]  = [d.strip() for d in args.deps.split(",")]
+    # Basic fields
+    if args.description:  item["description"]  = args.description
+    if args.details:      item["details"]       = args.details
+    if args.status:       item["status"]        = args.status
+    if args.priority:     item["priority"]      = args.priority
+    if args.agent:        item["assigned_to"]   = args.agent
+    if args.sprint:       item["sprint"]        = args.sprint
+    if args.due:          item["due_date"]      = args.due
+    if args.hours:        item["estimated_hours"] = args.hours
+    if args.importance:   item["importance"]    = args.importance
+    if args.urgency:      item["urgency"]       = args.urgency
+    if args.tags:         item["tags"]          = [t.strip() for t in args.tags.split(",")]
+    if args.deps:         item["dependencies"]  = [d.strip() for d in args.deps.split(",")]
 
-        # Structured lists
-        if args.criteria:
-            item["success_criteria"] = [s.strip() for s in args.criteria.split("|")]
-        if args.deliverables:
-            item["deliverables"] = [s.strip() for s in args.deliverables.split("|")]
-        if args.checklist:
-            item["validation_checklist"] = [s.strip() for s in args.checklist.split("|")]
-        if args.test_strategy:
-            item["test_strategy"] = args.test_strategy
-        if args.refs:
-            refs = [r.strip() for r in args.refs.split("|") if r.strip()]
-            for r in refs:
-                item.setdefault("doc_refs", []).append(
-                    {"path": r, "type": "code_file" if "/" in r else "workspace_file", "title": "", "note": ""}
-                )
+    # Structured lists
+    if args.criteria:
+        item["success_criteria"] = [s.strip() for s in args.criteria.split("|")]
+    if args.deliverables:
+        item["deliverables"] = [s.strip() for s in args.deliverables.split("|")]
+    if args.checklist:
+        item["validation_checklist"] = [s.strip() for s in args.checklist.split("|")]
+    if args.test_strategy:
+        item["test_strategy"] = args.test_strategy
+    if args.refs:
+        refs = [r.strip() for r in args.refs.split("|") if r.strip()]
+        for r in refs:
+            item.setdefault("doc_refs", []).append(
+                {"path": r, "type": "code_file" if "/" in r else "workspace_file", "title": "", "note": ""}
+            )
 
-        # Parent linkage with hierarchy enforcement
-        if args.parent:
-            parent = _find(items, args.parent)
-            if not parent:
-                print(c(f"Parent {args.parent} not found.", RED)); sys.exit(1)
-            parent_type = parent.get("type", "task")
-            child_type  = item.get("type", "task")
-            allowed     = VALID_PARENT_TYPES.get(child_type, set())
-            if allowed is not None and parent_type not in allowed and not getattr(args, "force", False):
-                print(c(
-                    f"Hierarchy error: a {child_type} cannot be a child of a {parent_type}. "
-                    f"Allowed parents: {', '.join(sorted(allowed)) or 'none'}. "
-                    f"Use --force to override.", RED))
-                sys.exit(1)
-            item["parent"] = args.parent
-            if nid not in parent.get("children", []):
-                parent.setdefault("children", []).append(nid)
+    # Parent linkage with hierarchy enforcement
+    if args.parent:
+        parent = _find(items, args.parent)
+        if not parent:
+            print(c(f"Parent {args.parent} not found.", RED)); sys.exit(1)
+        parent_type = parent.get("type", "task")
+        child_type  = item.get("type", "task")
+        allowed     = VALID_PARENT_TYPES.get(child_type, set())
+        if allowed is not None and parent_type not in allowed and not getattr(args, "force", False):
+            print(c(
+                f"Hierarchy error: a {child_type} cannot be a child of a {parent_type}. "
+                f"Allowed parents: {', '.join(sorted(allowed)) or 'none'}. "
+                f"Use --force to override.", RED))
+            sys.exit(1)
+        item["parent"] = args.parent
+        if nid not in parent.get("children", []):
+            parent.setdefault("children", []).append(nid)
 
-        # Dep validation
-        for dep_id in item["dependencies"]:
-            if not _find(items, dep_id):
-                print(c(f"Dependency {dep_id} not found.", RED)); sys.exit(1)
+    # Dep validation
+    for dep_id in item["dependencies"]:
+        if not _find(items, dep_id):
+            print(c(f"Dependency {dep_id} not found.", RED)); sys.exit(1)
 
-        _augment_task_metadata(item)
+    _augment_task_metadata(item)
 
-        items.append(item)
-        save(data)
+    items.append(item)
+    save(data)
     print(c(f"Created {itype} {nid}: {args.title}", GREEN))
     print(dim(f"  assigned=@{item['assigned_to']}  priority={item['priority']}  score={_score(item, items)}"))
 
@@ -2221,18 +2232,16 @@ def _gitflow_log(task_id: str, agent_id: str, action: str, *,
     try:
         if not _mem_pg_available():
             return
-        import psycopg2
-        conn = psycopg2.connect(_mem_db_url())
-        conn.autocommit = True
-        cur = conn.cursor()
-        cur.execute("""
-            INSERT INTO gitflow_log (task_id, agent_id, action, branch_name,
-                                     pr_url, pr_number, commit_sha, notes)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        """, (task_id, agent_id, action, branch_name, pr_url,
-              pr_number, commit_sha, notes))
-        cur.close()
-        conn.close()
+        with _pg_conn() as conn:
+            conn.autocommit = True
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO gitflow_log (task_id, agent_id, action, branch_name,
+                                         pr_url, pr_number, commit_sha, notes)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """, (task_id, agent_id, action, branch_name, pr_url,
+                  pr_number, commit_sha, notes))
+            cur.close()
     except Exception:
         pass  # Telemetry must not break task operations
 
@@ -2242,16 +2251,15 @@ def _has_gitflow_action(task_id: str, action: str) -> bool:
     try:
         if not task_id or not action or not _mem_pg_available():
             return False
-        import psycopg2
-        conn = psycopg2.connect(_mem_db_url())
-        conn.autocommit = True
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT COUNT(*) FROM gitflow_log WHERE task_id=%s AND action=%s",
-            (task_id, action),
-        )
-        row = cur.fetchone()
-        cur.close(); conn.close()
+        with _pg_conn() as conn:
+            conn.autocommit = True
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT COUNT(*) FROM gitflow_log WHERE task_id=%s AND action=%s",
+                (task_id, action),
+            )
+            row = cur.fetchone()
+            cur.close()
         return bool(row and int(row[0] or 0) > 0)
     except Exception:
         return False
@@ -2276,26 +2284,25 @@ def _has_learning_persisted(item: dict) -> bool:
         return _has_explicit_learning_written(item)
 
     try:
-        import psycopg2
-        conn = psycopg2.connect(_mem_db_url())
-        conn.autocommit = True
-        cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT COUNT(*)
-            FROM amauta_memory
-            WHERE source IN ('auto_learning', 'web_search_result', 'lesson-learned', 'session-learning', 'manual', 'rpetd_phase', 'agent')
-              AND (source <> 'rpetd_phase' OR lower(text) LIKE '%learning%')
-              AND (
-                metadata->>'task_id' = %s
-                OR lower(tags::text) LIKE %s
-                OR lower(text) LIKE %s
-              )
-            """,
-            (task_id, f"%{task_id.lower()}%", f"%{task_id.lower()}%"),
-        )
-        row = cur.fetchone()
-        cur.close(); conn.close()
+        with _pg_conn() as conn:
+            conn.autocommit = True
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT COUNT(*)
+                FROM amauta_memory
+                WHERE source IN ('auto_learning', 'web_search_result', 'lesson-learned', 'session-learning', 'manual', 'rpetd_phase', 'agent')
+                  AND (source <> 'rpetd_phase' OR lower(text) LIKE '%learning%')
+                  AND (
+                    metadata->>'task_id' = %s
+                    OR lower(tags::text) LIKE %s
+                    OR lower(text) LIKE %s
+                  )
+                """,
+                (task_id, f"%{task_id.lower()}%", f"%{task_id.lower()}%"),
+            )
+            row = cur.fetchone()
+            cur.close()
         return bool(row and int(row[0] or 0) > 0)
     except Exception:
         # Fail-open to explicit learning evidence when DB probe is unavailable.

@@ -29,7 +29,7 @@ from decimal import Decimal
 try:
     import psycopg2
     import psycopg2.extras
-    from psycopg2.pool import SimpleConnectionPool
+    from psycopg2.pool import ThreadedConnectionPool
     HAS_PG = True
 except ImportError:
     HAS_PG = False
@@ -56,7 +56,7 @@ SOURCE_SCORES = {
 class PGStore:
     """Thread-safe PostgreSQL store with connection pooling and reconnect."""
 
-    def __init__(self, dsn=None, min_conn=1, max_conn=5):
+    def __init__(self, dsn=None, min_conn=2, max_conn=10):
         """Initialize connection pool.
 
         Args:
@@ -82,7 +82,7 @@ class PGStore:
                     self._pool.closeall()
                 except Exception:
                     pass
-            self._pool = SimpleConnectionPool(
+            self._pool = ThreadedConnectionPool(
                 self.min_conn, self.max_conn, self.dsn
             )
 

@@ -40,3 +40,8 @@ data/
 *.crt
 __pycache__/
 *.pyc
+.env.*
+!.env.example
+credentials.json
+*.secret
+backups/

@@ -891,12 +891,12 @@ describe('File Locking and Concurrency Safety', () => {
       'save() should use atomic write (tmp file + rename)');
   });
 
-  test('8.4 cmd_add uses file lock', () => {
+  test('8.4 save() uses file lock for ALL mutations', () => {
     const content = fs.readFileSync(PY, 'utf-8');
-    const addFn = content.substring(content.indexOf('def cmd_add'));
-    const endIdx = addFn.indexOf('\ndef ');
-    const body = addFn.substring(0, endIdx > 0 ? endIdx : 3000);
-    assert.ok(body.includes('_file_lock'), 'cmd_add should use file lock for concurrent safety');
+    const saveFn = content.substring(content.indexOf('def save('));
+    const endIdx = saveFn.indexOf('\ndef ');
+    const body = saveFn.substring(0, endIdx > 0 ? endIdx : 3000);
+    assert.ok(body.includes('_file_lock'), 'save() should use file lock to protect ALL mutations');
   });
 
   test('8.5 cmd_claim uses save() for atomic write', () => {
