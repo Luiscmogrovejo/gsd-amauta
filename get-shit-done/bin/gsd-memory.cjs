@@ -1134,9 +1134,15 @@ function textSimilarity(a, b) {
 
 // TK-0054: Auto-distill trigger — runs after store if count exceeds threshold
 const AUTO_DISTILL_THRESHOLD = parseInt(process.env.GSD_MEMORY_DISTILL_THRESHOLD || '100', 10);
+const AUTO_DISTILL_COOLDOWN_MS = parseInt(process.env.GSD_MEMORY_DISTILL_COOLDOWN || '300000', 10); // 5 min default
+let _lastAutoDistillAt = 0;
 
 async function maybeAutoDistill() {
   try {
+    // Debounce: skip if auto-distill ran recently (prevents O(n^2) on every store)
+    const now = Date.now();
+    if (now - _lastAutoDistillAt < AUTO_DISTILL_COOLDOWN_MS) return;
+
     const res = await tryDaemon('GET', '/api/memory/count');
     let count = 0;
     if (res && res.status === 200) {
@@ -1146,6 +1152,7 @@ async function maybeAutoDistill() {
       count = fileCount();
     }
     if (count >= AUTO_DISTILL_THRESHOLD) {
+      _lastAutoDistillAt = now;
       process.stderr.write(`\x1b[2mAuto-distill: ${count} entries exceed threshold (${AUTO_DISTILL_THRESHOLD}). Running distill...\x1b[0m\n`);
       await cmdDistill({ threshold: '0.7', 'dry-run': false, _positional: [] });
     }
@@ -1236,11 +1243,17 @@ async function cmdDistill(args) {
       // Only delete originals if the merged entry was stored successfully
       // This prevents leaving orphaned merged entries with no originals on store failure
       if (storeRes && storeRes.status === 200) {
-        for (const entry of group) {
+        // Delete ONLY the duplicate entries, NOT the 'keep' entry (which is merged into the new one)
+        for (const entry of remove) {
           if (entry.id) {
             await tryDaemon('POST', '/api/memory/delete', { id: entry.id }).catch(e => 
               process.stderr.write(`[distill] delete entry ${entry.id} failed: ${e.message || e}\n`));
           }
+        }
+        // Also delete the original 'keep' entry since it's been replaced by the merged entry
+        if (keep.id) {
+          await tryDaemon('POST', '/api/memory/delete', { id: keep.id }).catch(e =>
+            process.stderr.write(`[distill] delete keep entry ${keep.id} failed: ${e.message || e}\n`));
         }
       } else {
         process.stderr.write(`\x1b[93m[distill]\x1b[0m Store failed for group — originals preserved to avoid data loss.\n`);

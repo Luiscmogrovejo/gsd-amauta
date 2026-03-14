@@ -203,7 +203,11 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
         try:
             return json.loads(raw)
         except json.JSONDecodeError:
-            return {}
+            self.send_response(400)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Invalid JSON in request body"}).encode())
+            return None
 
     def _run_amauta(self, args):
         """Run amauta.py with given args, return (stdout, stderr, returncode)."""
@@ -588,8 +592,8 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                             import json as _json
                             item = _json.loads(show_out)
                             _pg_store.task_upsert(item)
-                except Exception:
-                    pass  # PG mirror is best-effort — never block task responses
+                except Exception as _pg_err:
+                    log.warning("pg_mirror_failed task_id=%s error=%s", body.get("id", "?"), _safe_error(_pg_err))
 
             self._send_json({"output": out, "error": err, "exit_code": rc})
             return
@@ -928,6 +932,13 @@ def stop_server():
         pid = int(PID_FILE.read_text().strip())
         os.kill(pid, signal.SIGTERM)
         print(f"Sent SIGTERM to PID {pid}")
+        # Wait briefly for process to die before removing PID file
+        for _ in range(10):
+            time.sleep(0.3)
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                break
         PID_FILE.unlink(missing_ok=True)
     except ProcessLookupError:
         print("Daemon not running (stale PID file)")

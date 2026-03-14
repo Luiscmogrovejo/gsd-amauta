@@ -501,6 +501,18 @@ async function cmdSearch(args) {
   console.log('');
 }
 
+async function cmdFetch(args) {
+  const url = args.url || args._positional[0];
+  if (!url) {
+    console.error('Usage: gsd-research.cjs fetch --url <url> [--json]');
+    process.exit(1);
+  }
+  args._positional = [url];
+  args.provider = 'webfetch';
+  args.url = url;
+  return cmdSearch(args);
+}
+
 async function cmdPerplexity(args) {
   const query = args._positional.join(' ');
   if (!query) {
@@ -618,6 +630,7 @@ async function main() {
 
   const commands = {
     'search': cmdSearch,
+    'fetch': cmdFetch,
     'perplexity': cmdPerplexity,
     'check-providers': cmdCheckProviders,
     'help': () => { printUsage(); },

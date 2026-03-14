@@ -203,8 +203,24 @@ class _file_lock:
 # ── Persistence ────────────────────────────────────────────────────────────────
 def load() -> dict:
     if TASKS_FILE.exists():
-        with open(TASKS_FILE) as f:
-            return json.load(f)
+        try:
+            with open(TASKS_FILE) as f:
+                return json.load(f)
+        except json.JSONDecodeError as e:
+            # Try to read from the backup .tmp file if the main file is corrupt
+            backup = Path(str(TASKS_FILE) + ".bak")
+            if backup.exists():
+                try:
+                    with open(backup) as f:
+                        data = json.load(f)
+                    print(f"\033[93mWARNING: {TASKS_FILE} was corrupt ({e}). Recovered from backup.\033[0m",
+                          file=sys.stderr)
+                    return data
+                except Exception:
+                    pass
+            print(f"\033[91mERROR: {TASKS_FILE} contains invalid JSON: {e}\033[0m", file=sys.stderr)
+            print(f"\033[91mPlease restore from backup or version control.\033[0m", file=sys.stderr)
+            sys.exit(1)
     return {
         "items":    [],
         "sprints":  [],
@@ -1043,7 +1059,7 @@ def _gate_fail_age_seconds(item: dict) -> Optional[int]:
         else:
             ts = _parse_iso(str((n or {}).get("ts", ""))) or _parse_iso(str(item.get("updated_at", "")))
         if not ts:
-            return 0
+            return None  # Unparseable timestamp — don't lock the task in cooldown
         return max(0, int((now - ts).total_seconds()))
     return None
 
@@ -1072,8 +1088,16 @@ def _score(item: dict, all_items: list) -> float:
                 _dep_pressure_cache[dep_id] = _dep_pressure_cache.get(dep_id, 0) + 1
         _dep_pressure_cache_key = cache_key
 
-    imp = max(1, min(5, item.get("importance", 3)))
-    urg = max(1, min(5, item.get("urgency", 3)))
+    raw_imp = item.get("importance", 3)
+    raw_urg = item.get("urgency", 3)
+    try:
+        imp = max(1, min(5, int(raw_imp if raw_imp is not None else 3)))
+    except (TypeError, ValueError):
+        imp = 3
+    try:
+        urg = max(1, min(5, int(raw_urg if raw_urg is not None else 3)))
+    except (TypeError, ValueError):
+        urg = 3
     iid = item.get("id", "")
     dep_p = min(5, _dep_pressure_cache.get(iid, 0))
     # Boost critical priority
@@ -2694,10 +2718,20 @@ def cmd_delete(args):
     item  = _find(items, args.id)
     if not item:
         print(c(f"{args.id} not found.", RED)); sys.exit(1)
-    # Remove from parent
+    # Remove from parent's children list
     for i in items:
         if item["id"] in i.get("children", []):
             i["children"].remove(item["id"])
+    # Remove from other items' dependency lists (prevents silent unblocking)
+    for i in items:
+        deps = i.get("dependencies", [])
+        if item["id"] in deps:
+            deps.remove(item["id"])
+    # Orphan-check: clear parent reference on children of the deleted item
+    for child_id in item.get("children", []):
+        child = _find(items, child_id)
+        if child:
+            child["parent"] = None
     data["items"] = [i for i in items if i["id"] != item["id"]]
     save(data)
     print(c(f"Deleted {args.id}: {item['title']}", RED))
@@ -3491,7 +3525,7 @@ def cmd_board(args):
         if not col:
             print(dim("    (empty)"))
         else:
-            for item in sorted(col[:args.limit], key=lambda i: _score(i, items), reverse=True):
+            for item in sorted(col, key=lambda i: _score(i, items), reverse=True)[:args.limit]:
                 tl = _type_label(item.get("type","task"))
                 pl = _priority_label(item.get("priority","medium"))
                 ag = f"@{item.get('assigned_to','?')}"
@@ -3836,8 +3870,17 @@ def cmd_import(args):
     src = Path(args.file)
     if not src.exists():
         print(c(f"File not found: {args.file}", RED)); sys.exit(1)
-    incoming = json.loads(src.read_text())
+    try:
+        incoming = json.loads(src.read_text())
+    except json.JSONDecodeError as e:
+        print(c(f"Import file contains invalid JSON: {e}", RED)); sys.exit(1)
+    # Schema validation: imported data must have 'items' list
+    if not isinstance(incoming.get("items"), list):
+        print(c("Import file must contain an 'items' array.", RED)); sys.exit(1)
     if args.replace:
+        # Ensure minimum schema
+        incoming.setdefault("metadata", {"created": _now(), "version": "2.0", "updated": _now()})
+        incoming.setdefault("sprints", [])
         save(incoming)
         print(c("Replaced all data.", YELLOW)); return
     data = load()
@@ -3880,9 +3923,9 @@ def cmd_migrate(args):
         elif legacy_agent and assigned_to and legacy_agent != assigned_to:
             mismatched_assignments += 1
 
-        # Fix notes: add 'by' field if missing
+        # Fix notes: add 'by' field if missing (skip string-format notes)
         for note in item.get("notes", []):
-            if "by" not in note:
+            if isinstance(note, dict) and "by" not in note:
                 note["by"] = "system"
                 changed = True
         if changed:

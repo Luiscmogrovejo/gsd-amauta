@@ -132,7 +132,7 @@ final_score = chunk_score × (1 - position_penalty)
 ### Caching:
 - LRU cache keyed by `(filepath, mtime)` — up to 200 entries
 - Cache invalidation on file modification (mtime change)
-- `GET /cache/clear` endpoint for forced invalidation
+- `POST /cache/clear` endpoint for forced invalidation
 
 ---
 
@@ -144,12 +144,13 @@ final_score = chunk_score × (1 - position_penalty)
 |--------|-------------|-------------|
 | `auto_learning` | +3 | System-generated validated learning |
 | `web_search_result` | +3 | Perplexity/WebFetch findings |
-| `lesson-learned` | +3 | Explicit agent-tagged lesson |
+| `lesson-learned` | +4 | Explicit agent-tagged lesson |
 | `session-learning` | +3 | D-phase LEARNING block |
-| `best-practice` | +2 | Promoted best practice |
-| `manual` | +1 | Human-entered memory |
+| `best-practice` | +4 | Promoted best practice |
+| `distilled` | +2 | Auto-distilled consolidated memory |
 | `agent` | +0 | Generic agent memory |
-| `rpetd_phase` | +0 | Phase log (unless contains LEARNING) |
+| `rpetd_phase` | +1 | Phase log (unless contains LEARNING) |
+| `task_event` | +0 | Task lifecycle event |
 
 High-signal sources (boost ≥ 3) are surfaced first in Layer 1 enrichment to give agents the most valuable context.
 
