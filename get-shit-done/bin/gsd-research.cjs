@@ -125,7 +125,7 @@ function httpsRequest(hostname, urlPath, body, headers = {}, timeoutMs = 30000) 
 
 async function providerMemory(query, limit) {
   try {
-    const res = await daemonRequest('POST', '/api/memory/search', { query, limit });
+    const res = await daemonRequest('POST', '/api/memory/search', { query, limit }, 3000);
     if (res.status !== 200 || !res.data.results) return null;
     const results = res.data.results;
     if (results.length === 0) return null;
@@ -148,7 +148,7 @@ async function providerMemory(query, limit) {
 
 async function providerSKB(query, limit) {
   try {
-    const res = await daemonRequest('POST', '/api/skb/search', { query, limit });
+    const res = await daemonRequest('POST', '/api/skb/search', { query, limit }, 3000);
     if (res.status !== 200 || !res.data.results) return null;
     const results = res.data.results;
     if (results.length === 0) return null;
@@ -169,15 +169,58 @@ async function providerSKB(query, limit) {
 }
 
 async function providerContext7(query, _limit) {
-  // Context7 is an MCP tool available to Claude Code agents.
-  // From a CLI, we can't call MCP tools directly.
-  // Return instructions for the agent to use Context7 themselves.
-  return {
-    provider: 'context7',
-    count: 0,
-    results: [],
-    note: 'Context7 is available as MCP tool in Claude Code. Use mcp__context7__resolve-library-id and mcp__context7__get-library-docs directly.',
-  };
+  // Context7 resolves library documentation via npm registry.
+  // Extracts recognized library names from query and fetches package info + readme.
+  try {
+    const libraryPatterns = query.match(/\b(?:react|next|express|fastify|prisma|drizzle|zod|trpc|tailwind|vite|webpack|jest|vitest|playwright|cypress|postgres|redis|mongodb|docker|kubernetes|aws|gcp|azure|langchain|openai|anthropic|supabase|firebase|stripe|auth0|passport|socket\.io|graphql|apollo|nestjs|nuxt|svelte|vue|angular|django|flask|fastapi|spring|laravel|rails)\b/gi);
+    if (!libraryPatterns || libraryPatterns.length === 0) {
+      return {
+        provider: 'context7',
+        count: 0,
+        results: [],
+        note: 'No recognized library names in query. Context7 works best when query mentions specific libraries/frameworks.',
+      };
+    }
+    const libs = [...new Set(libraryPatterns.map(l => l.toLowerCase()))].slice(0, 2);
+    const results = [];
+    for (const lib of libs) {
+      const npmData = await new Promise((resolve) => {
+        const req = https.get(`https://registry.npmjs.org/${encodeURIComponent(lib)}`, { timeout: 3000 }, (res) => {
+          let data = '';
+          let destroyed = false;
+          res.on('data', (chunk) => {
+            data += chunk;
+            if (data.length > 20000) { destroyed = true; res.destroy(); }
+          });
+          res.on('end', () => { try { resolve(JSON.parse(data)); } catch { resolve(null); } });
+          res.on('close', () => { if (destroyed) { try { resolve(JSON.parse(data)); } catch { resolve(null); } } });
+          res.on('error', () => resolve(null));
+        });
+        req.on('error', () => resolve(null));
+        req.on('timeout', () => { req.destroy(); resolve(null); });
+      });
+      if (npmData && npmData.name) {
+        const latest = npmData['dist-tags']?.latest || 'unknown';
+        const desc = npmData.description || '';
+        const homepage = npmData.homepage || npmData.repository?.url || '';
+        const readme = (npmData.readme || '').slice(0, 3000);
+        results.push({
+          library: npmData.name, version: latest, description: desc,
+          homepage: homepage.replace(/^git\+/, '').replace(/\.git$/, ''),
+          readme_excerpt: readme.slice(0, 1500),
+        });
+      }
+    }
+    return {
+      provider: 'context7',
+      count: results.length,
+      results,
+      note: results.length > 0 ? `Found docs for ${results.map(r => r.library).join(', ')}` : 'No library docs found.',
+    };
+  } catch (err) {
+    return { provider: 'context7', count: 0, results: [], error: err.message,
+      note: 'Context7 also available as MCP tool: use mcp__context7__resolve-library-id directly.' };
+  }
 }
 
 async function providerPerplexity(query, limit) {

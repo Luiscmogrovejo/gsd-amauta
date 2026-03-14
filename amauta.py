@@ -1638,26 +1638,34 @@ def _rpetd_phase_enrich(phase: str, item: dict, agent_content: str) -> str:
 
         elif phase == "T":
             # ── RLM criteria validation ────────────────────────────────────
-            if criteria_str and agent_content:
+            if agent_content:
                 doc_path = _pick_domain_doc(title, desc)
                 if doc_path:
-                    rlm_answer = _rlm_query(
-                        f"Task: '{title}'. Success criteria: {criteria_str}. "
-                        f"Test output: {agent_content[:800]}. "
-                        f"Does the test output demonstrate that ALL success criteria are met? List any gaps.",
-                        doc_path=doc_path,
-                        task_id=task_id,
-                    )
+                    if criteria_str:
+                        rlm_prompt = (
+                            f"Task: '{title}'. Success criteria: {criteria_str}. "
+                            f"Test output: {agent_content[:800]}. "
+                            f"Does the test output demonstrate that ALL success criteria are met? List any gaps."
+                        )
+                    else:
+                        rlm_prompt = (
+                            f"Task: '{title}'. Description: {desc[:300]}. "
+                            f"Test output: {agent_content[:800]}. "
+                            f"Analyze the test output: (1) Do the tests actually pass? "
+                            f"(2) Is there adequate coverage for the described task? "
+                            f"(3) Are there any red flags, skipped tests, or missing assertions? List any gaps."
+                        )
+                    rlm_answer = _rlm_query(rlm_prompt, doc_path=doc_path, task_id=task_id)
                     if rlm_answer:
-                        supplement_parts.append(f"[RLM] Criteria check:\n  {rlm_answer[:600]}")
-            elif agent_content and not criteria_str:
-                if _mem_pg_available():
-                    results = _mem_pg_search(f"{item.get('id','')} test validation", None, 3)
-                    if results:
-                        mem_lines = ["[PG] Past validation patterns:"]
-                        for r in results[:2]:
-                            mem_lines.append(f"  - {r['text'][:200].replace(chr(10), ' ')}")
-                        supplement_parts.append("\n".join(mem_lines))
+                        supplement_parts.append(f"[RLM] Test review:\n  {rlm_answer[:600]}")
+            # PG memory fallback: always search for past validation patterns
+            if agent_content and _mem_pg_available():
+                results = _mem_pg_search(f"{item.get('id','')} test validation", None, 3)
+                if results:
+                    mem_lines = ["[PG] Past validation patterns:"]
+                    for r in results[:2]:
+                        mem_lines.append(f"  - {r['text'][:200].replace(chr(10), ' ')}")
+                    supplement_parts.append("\n".join(mem_lines))
 
         elif phase == "D":
             # ── RLM delivery quality check ─────────────────────────────────
@@ -2633,7 +2641,7 @@ def cmd_status(args):
     # the PR is merged and tests pass.
     if args.status == "done" and _needs_gitflow_gate(item):
         caller = (args.agent or "").lower()
-        if caller != "validator" and caller != "opencode":
+        if caller != "validator":
             _append_note(item, f"GATE_BLOCKED: code task cannot be set to done directly. "
                          f"Submit to validation first, validator will verify PR merge. "
                          f"Caller: @{caller}", caller or "system")
