@@ -712,7 +712,6 @@ Tag: v[X.Y]
 <sub>`/clear` first → fresh context window</sub>
 
 ---
-```
 
 </step>
 

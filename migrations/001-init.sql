@@ -206,8 +206,8 @@ CREATE OR REPLACE VIEW amauta_memory AS
 
 CREATE OR REPLACE FUNCTION amauta_memory_insert() RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN
-  INSERT INTO gsd_memory(id, text, agent_id, source, tags, metadata, created_at, updated_at)
-  VALUES (NEW.id, NEW.text, NEW.agent_id, NEW.source, NEW.tags, NEW.metadata, NEW.created_at, NEW.updated_at);
+  INSERT INTO gsd_memory(id, text, agent_id, source, tags, metadata, project_id, created_at, updated_at)
+  VALUES (NEW.id, NEW.text, NEW.agent_id, NEW.source, NEW.tags, NEW.metadata, NEW.project_id, NEW.created_at, NEW.updated_at);
   RETURN NEW;
 END; $$;
 
@@ -225,8 +225,8 @@ CREATE OR REPLACE VIEW agent_shared_knowledge AS
 
 CREATE OR REPLACE FUNCTION agent_shared_knowledge_insert() RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN
-  INSERT INTO gsd_shared_kb(id, title, content, category, agent_id, tags, importance, created_at, updated_at)
-  VALUES (NEW.id, NEW.title, NEW.content, NEW.category, NEW.agent_id, NEW.tags, NEW.importance, NEW.created_at, NEW.updated_at);
+  INSERT INTO gsd_shared_kb(id, title, content, category, agent_id, tags, importance, source_task, created_at, updated_at)
+  VALUES (NEW.id, NEW.title, NEW.content, NEW.category, NEW.agent_id, NEW.tags, NEW.importance, NEW.source_task, NEW.created_at, NEW.updated_at);
   RETURN NEW;
 END; $$;
 

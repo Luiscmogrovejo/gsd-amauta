@@ -2,12 +2,12 @@
 
 **A Claude Code plugin that merges [GSD](https://github.com/get-shit-done/get-shit-done) (Get Shit Done) with [Amauta](https://github.com/robertamauta/amauta) multi-agent task management.**
 
-PostgreSQL persistent memory · pgvector semantic search · RLM context engine · RPETD pipeline enforcement · External validation · Perplexity-first research · 20 agentic AI design patterns
+PostgreSQL persistent memory · pgvector semantic search · RLM context engine · RPETD pipeline enforcement · External validation · Perplexity-first research · Auto-learning feedback loop · 20 agentic AI design patterns
 
 Everything degrades gracefully to vanilla GSD when infrastructure is unavailable.
 
 ```
-860 tests · 11 agents · 11 skills · 5 CLI tools · 3 services · 7 specs · 20 agentic AI patterns
+1101 tests · 11 agents · 11 skills · 5 CLI tools · 3 services · 9 specs · 20 agentic AI patterns
 ```
 
 ---
@@ -857,7 +857,7 @@ node ~/.claude/gsd-amauta/get-shit-done/bin/gsd-rlm.cjs health
 node ~/.claude/gsd-amauta/get-shit-done/bin/gsd-research.cjs check-providers
 
 # Tests
-npm test   # 860 tests expected
+npm test   # 1101 tests expected
 ```
 
 ---
@@ -1032,28 +1032,37 @@ docker ps --filter name=gsd-postgres
 ## 17. Testing
 
 ```bash
-npm test                                          # All 860 tests
+npm test                                          # All 1101 tests
 
 # Individual suites
-node --test tests/agent-frontmatter.test.cjs     # Agent validation (42 tests)
-node --test tests/codex-config.test.cjs          # Codex config (34 tests)
-node --test tests/core.test.cjs                  # Core library (98 tests)
-node --test tests/commands.test.cjs              # Command parsing (105 tests)
-node --test tests/degradation.test.cjs           # Graceful degradation (11 tests)
-node --test tests/e2e-lifecycle.test.cjs         # E2E lifecycle (22 tests)
-node --test tests/gsd-amauta.test.cjs            # CLI unit tests (17 tests)
+node --test tests/agent-frontmatter.test.cjs     # Agent validation (10 tests)
+node --test tests/auto-learning.test.cjs         # Auto-learning feedback loop (38 tests)
+node --test tests/codex-config.test.cjs          # Codex config (33 tests)
+node --test tests/commands.test.cjs              # Command parsing (56 tests)
+node --test tests/comprehensive-e2e.test.cjs    # Comprehensive E2E (117 tests)
+node --test tests/core.test.cjs                  # Core library (72 tests)
+node --test tests/degradation.test.cjs           # Graceful degradation (15 tests)
+node --test tests/e2e-advanced.test.cjs          # Advanced E2E pipeline (67 tests)
+node --test tests/e2e-lifecycle.test.cjs         # E2E lifecycle w/daemon (23 tests)
+node --test tests/pipeline-offline.test.cjs      # RPETD offline pipeline (59 tests)
+node --test tests/python-units.test.cjs          # Python amauta.py units (101 tests)
+node --test tests/research-chain.test.cjs        # Research chain (15 tests)
+node --test tests/rlm-workflow-spec.test.cjs     # RLM + workflow + spec (73 tests)
+node --test tests/validation-gates.test.cjs      # 4-gate validation (38 tests)
 ```
 
-**860 tests across 24 files**, covering:
+**1101 tests across 27 files**, covering:
 
-- Agent frontmatter: skills, hooks, anti-heredoc, spawn consistency, 11-agent roster
-- CLI commands: all argument parsing, error paths, routing branches
-- Core library: config load, model resolution, phase finding, milestone parsing
-- Codex/Gemini: config generation, merging, idempotency
-- E2E lifecycle: epic → story → task → claim → RPETD → validate → done
-- Memory: store, search, cross-project, distill, infer-tags
-- Degradation: file fallback for every PG-backed operation
-- Frontmatter: extract, set, merge, validate, round-trip
+- **Python unit tests** (101): `_score()`, `_deps_met()`, `_dedup_check()`, `_extract_pr_url()`, `_has_branch_evidence()`, `_has_test_evidence()`, `_infer_lane()`, `_infer_domain_tags()`, `_normalize_tags()`, `_task_hygiene_gaps()`, and 20+ more Python functions tested in isolation
+- **E2E pipeline** (184): Full RPETD lifecycle, validation gates, memory pipeline, dependency chains, sprint management, atomization, cross-pipeline integration
+- **RLM + workflows + specs** (73): RLM service structure, 36 workflow files validated, 7+ spec compliance, SQL migration chain, PG store and daemon structure
+- **Validation gates** (38): All 4 gates (BRANCH_EVIDENCE, LEARNING_BLOCK, TEST_EVIDENCE, PR_URL) with pass/fail/skip/edge cases
+- **Auto-learning** (38): Performance tracking, enrichment injection, gate extraction, PG store methods, daemon routes
+- **Research chain** (15): Agent/skill RESEARCH= variable verification, workflow research integration
+- **Agent frontmatter** (10): Anti-heredoc, skills, hooks, spawn consistency, 11-agent roster
+- **CLI commands** (56): All argument parsing, error paths, routing branches
+- **Degradation** (15): File fallback for every PG-backed operation
+- **Core library** (72): Config load, model resolution, phase finding, milestone parsing
 
 ---
 
@@ -1120,14 +1129,16 @@ gsd-amauta/
 │   ├── gsd-executor-backend-workflow/
 │   └── ... (11 total, matching agents)
 │
-├── specs/                            # 7 formal pipeline specifications
+├── specs/                            # 9 formal pipeline specifications
 │   ├── 01-rpetd-pipeline.spec.md
 │   ├── 02-memory-pipeline.spec.md
 │   ├── 03-rlm-context-engine.spec.md
 │   ├── 04-research-chain.spec.md
 │   ├── 05-task-lifecycle.spec.md
 │   ├── 06-agent-architecture.spec.md
-│   └── 07-auto-learning-feedback.spec.md
+│   ├── 07-auto-learning-feedback.spec.md
+│   ├── 08-validation-pipeline.spec.md
+│   └── 09-context-passing-architecture.spec.md
 │
 ├── commands/gsd/                     # 33 slash commands
 │   ├── new-project.md
@@ -1135,7 +1146,7 @@ gsd-amauta/
 │   ├── test-phase.md
 │   └── ...
 │
-├── tests/                            # 860 tests (24 files)
+├── tests/                            # 1101 tests (27 files)
 ├── bin/
 │   └── install.js                    # Self-installer (2897 lines)
 └── scripts/

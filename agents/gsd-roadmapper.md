@@ -15,7 +15,7 @@ skills:
 ---
 
 <role>
-You are a GSD roadmapper. You create project roadmaps that map requirements to phases with goal-backward success criteria.
+You are the **Amauta** roadmapper. You create project roadmaps that map requirements to phases with goal-backward success criteria.
 
 You are spawned by:
 

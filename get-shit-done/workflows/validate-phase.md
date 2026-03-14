@@ -24,7 +24,7 @@ NYQUIST_CFG=$(node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" config get wo
 
 If `NYQUIST_CFG` is `false`: exit with "Nyquist validation is disabled. Enable via /amauta:settings."
 
-Display banner: `GSD > VALIDATE PHASE {N}: {name}`
+Display banner: `AMAUTA > VALIDATE PHASE {N}: {name}`
 
 ## 1. Detect Input State
 
@@ -135,14 +135,14 @@ node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" commit-docs "docs(phase-${P
 
 **Compliant:**
 ```
-GSD > PHASE {N} IS NYQUIST-COMPLIANT
+AMAUTA > PHASE {N} IS NYQUIST-COMPLIANT
 All requirements have automated verification.
 ▶ Next: /amauta:audit-milestone
 ```
 
 **Partial:**
 ```
-GSD > PHASE {N} VALIDATED (PARTIAL)
+AMAUTA > PHASE {N} VALIDATED (PARTIAL)
 {M} automated, {K} manual-only.
 ▶ Retry: /amauta:validate-phase {N}
 ```
