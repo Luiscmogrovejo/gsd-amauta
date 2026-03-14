@@ -2367,19 +2367,18 @@ def _has_learning_written(item: dict) -> bool:
     task_id = item.get("id", "")
     if task_id and _mem_pg_available():
         try:
-            import psycopg2
-            conn = psycopg2.connect(_mem_db_url())
-            conn.autocommit = True
-            cur = conn.cursor()
-            cur.execute(
-                "SELECT COUNT(*) FROM amauta_memory WHERE source IN ('auto_learning','web_search_result') "
-                "AND (metadata->>'task_id' = %s OR tags::text ILIKE %s)",
-                (task_id, f"%{task_id.lower()}%")
-            )
-            row = cur.fetchone()
-            cur.close(); conn.close()
-            if row and row[0] > 0:
-                return True  # Already captured in DB — learning is there
+            with _pg_conn() as conn:
+                conn.autocommit = True
+                cur = conn.cursor()
+                cur.execute(
+                    "SELECT COUNT(*) FROM amauta_memory WHERE source IN ('auto_learning','web_search_result') "
+                    "AND (metadata->>'task_id' = %s OR tags::text ILIKE %s)",
+                    (task_id, f"%{task_id.lower()}%")
+                )
+                row = cur.fetchone()
+                cur.close()
+                if row and row[0] > 0:
+                    return True
         except Exception:
             pass
     return False
@@ -3705,39 +3704,40 @@ def cmd_skb(args):
         if not _mem_pg_available():
             print("SKB not available"); sys.exit(1)
         try:
-            import psycopg2, uuid as _u
-            conn = psycopg2.connect(_mem_db_url()); conn.autocommit = True; cur = conn.cursor()
-            if not getattr(args, 'force', False):
-                cur.execute("SELECT id FROM agent_shared_knowledge WHERE lower(title) = lower(%s)", (args.title,))
-                if cur.fetchone():
-                    print(f"SKB: title already exists: {args.title!r}"); print("  Use --force to overwrite."); cur.close(); conn.close(); return
-            entry_id = f"SKB-{_u.uuid4().hex[:12]}"
-            tags_list = [t.strip() for t in (args.tags or "").split(",") if t.strip()]
-            now = datetime.now(timezone.utc)
-            cur.execute("INSERT INTO agent_shared_knowledge (id,title,content,category,agent_id,tags,importance,created_at,updated_at) VALUES (%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s) ON CONFLICT (id) DO UPDATE SET title=EXCLUDED.title,content=EXCLUDED.content,updated_at=EXCLUDED.updated_at",
-                (entry_id,args.title,args.content,args.category or "workflow",args.agent or "system",json.dumps(tags_list),int(args.importance or 7),now,now))
-            cur.close(); conn.close()
+            import uuid as _u
+            with _pg_conn() as conn:
+                conn.autocommit = True; cur = conn.cursor()
+                if not getattr(args, 'force', False):
+                    cur.execute("SELECT id FROM agent_shared_knowledge WHERE lower(title) = lower(%s)", (args.title,))
+                    if cur.fetchone():
+                        print(f"SKB: title already exists: {args.title!r}"); print("  Use --force to overwrite."); cur.close(); return
+                entry_id = f"SKB-{_u.uuid4().hex[:12]}"
+                tags_list = [t.strip() for t in (args.tags or "").split(",") if t.strip()]
+                now = datetime.now(timezone.utc)
+                cur.execute("INSERT INTO agent_shared_knowledge (id,title,content,category,agent_id,tags,importance,created_at,updated_at) VALUES (%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s) ON CONFLICT (id) DO UPDATE SET title=EXCLUDED.title,content=EXCLUDED.content,updated_at=EXCLUDED.updated_at",
+                    (entry_id,args.title,args.content,args.category or "workflow",args.agent or "system",json.dumps(tags_list),int(args.importance or 7),now,now))
+                cur.close()
             print(f"\033[32mSKB entry created: {entry_id}\033[0m")
             print(f"  Title: {args.title} | Category: {args.category or 'workflow'} | Importance: {args.importance or 7}")
         except Exception as e:
             print(f"\033[31mSKB add failed: {e}\033[0m"); sys.exit(1)
     elif args.skb_cmd == "search":
         try:
-            import psycopg2
-            conn = psycopg2.connect(_mem_db_url()); cur = conn.cursor()
-            stop = {"the","a","an","and","or","for","to","in","of","is","with"}
-            words = [w for w in args.query.lower().split() if w not in stop and len(w) > 2][:6]
-            if not words: print("No search terms"); return
-            wp, sp, params, sparams = [], [], [], []
-            for t in words:
-                pat = f"%{t}%"
-                wp.append("(lower(title) LIKE lower(%s) OR lower(content) LIKE lower(%s) OR lower(tags::text) LIKE lower(%s))")
-                params.extend([pat, pat, pat])
-                sp.append("(CASE WHEN lower(title) LIKE lower(%s) THEN 2 WHEN lower(content) LIKE lower(%s) THEN 1 ELSE 0 END)")
-                sparams.extend([pat, pat])
-            top_k = getattr(args, 'top_k', 5)
-            cur.execute(f"SELECT id,title,category,importance,LEFT(content,300),({' + '.join(sp)}) AS score FROM agent_shared_knowledge WHERE {' OR '.join(wp)} ORDER BY score DESC,importance DESC LIMIT %s", sparams+params+[top_k])
-            rows = cur.fetchall(); cur.close(); conn.close()
+            with _pg_conn() as conn:
+                cur = conn.cursor()
+                stop = {"the","a","an","and","or","for","to","in","of","is","with"}
+                words = [w for w in args.query.lower().split() if w not in stop and len(w) > 2][:6]
+                if not words: print("No search terms"); return
+                wp, sp, params, sparams = [], [], [], []
+                for t in words:
+                    pat = f"%{t.replace('%', '').replace('_', '')}%"
+                    wp.append("(lower(title) LIKE lower(%s) OR lower(content) LIKE lower(%s) OR lower(tags::text) LIKE lower(%s))")
+                    params.extend([pat, pat, pat])
+                    sp.append("(CASE WHEN lower(title) LIKE lower(%s) THEN 2 WHEN lower(content) LIKE lower(%s) THEN 1 ELSE 0 END)")
+                    sparams.extend([pat, pat])
+                top_k = getattr(args, 'top_k', 5)
+                cur.execute(f"SELECT id,title,category,importance,LEFT(content,300),({' + '.join(sp)}) AS score FROM agent_shared_knowledge WHERE {' OR '.join(wp)} ORDER BY score DESC,importance DESC LIMIT %s", sparams+params+[top_k])
+                rows = cur.fetchall(); cur.close()
             if not rows: print(f"No SKB entries for: {args.query!r}"); return
             print(f"SKB ({len(rows)} results for {args.query!r}):")
             for r in rows:
@@ -3746,11 +3746,11 @@ def cmd_skb(args):
             print(f"SKB search failed: {e}")
     elif args.skb_cmd == "stats":
         try:
-            import psycopg2
-            conn = psycopg2.connect(_mem_db_url()); cur = conn.cursor()
-            cur.execute("SELECT COUNT(*) FROM agent_shared_knowledge"); total = cur.fetchone()[0]
-            cur.execute("SELECT category, COUNT(*) FROM agent_shared_knowledge GROUP BY category ORDER BY COUNT(*) DESC")
-            rows = cur.fetchall(); cur.close(); conn.close()
+            with _pg_conn() as conn:
+                cur = conn.cursor()
+                cur.execute("SELECT COUNT(*) FROM agent_shared_knowledge"); total = cur.fetchone()[0]
+                cur.execute("SELECT category, COUNT(*) FROM agent_shared_knowledge GROUP BY category ORDER BY COUNT(*) DESC")
+                rows = cur.fetchall(); cur.close()
             print(f"agent_shared_knowledge: {total} total entries")
             for r in rows: print(f"  {r[1]:4d}  {r[0]}")
         except Exception as e:
