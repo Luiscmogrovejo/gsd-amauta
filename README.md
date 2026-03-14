@@ -7,7 +7,7 @@ PostgreSQL persistent memory · pgvector semantic search · RLM context engine �
 Everything degrades gracefully to vanilla GSD when infrastructure is unavailable.
 
 ```
-705 tests · 11 agents · 11 skills · 5 CLI tools · 3 services · 7 specs · 20 agentic AI patterns
+860 tests · 11 agents · 11 skills · 5 CLI tools · 3 services · 7 specs · 20 agentic AI patterns
 ```
 
 ---
@@ -857,7 +857,7 @@ node ~/.claude/gsd-amauta/get-shit-done/bin/gsd-rlm.cjs health
 node ~/.claude/gsd-amauta/get-shit-done/bin/gsd-research.cjs check-providers
 
 # Tests
-npm test   # 705 tests expected
+npm test   # 860 tests expected
 ```
 
 ---
@@ -1032,7 +1032,7 @@ docker ps --filter name=gsd-postgres
 ## 17. Testing
 
 ```bash
-npm test                                          # All 705 tests
+npm test                                          # All 860 tests
 
 # Individual suites
 node --test tests/agent-frontmatter.test.cjs     # Agent validation (42 tests)
@@ -1044,7 +1044,7 @@ node --test tests/e2e-lifecycle.test.cjs         # E2E lifecycle (22 tests)
 node --test tests/gsd-amauta.test.cjs            # CLI unit tests (17 tests)
 ```
 
-**705 tests across 22 files**, covering:
+**860 tests across 24 files**, covering:
 
 - Agent frontmatter: skills, hooks, anti-heredoc, spawn consistency, 11-agent roster
 - CLI commands: all argument parsing, error paths, routing branches
@@ -1135,7 +1135,7 @@ gsd-amauta/
 │   ├── test-phase.md
 │   └── ...
 │
-├── tests/                            # 705 tests (22 files)
+├── tests/                            # 860 tests (24 files)
 ├── bin/
 │   └── install.js                    # Self-installer (2897 lines)
 └── scripts/
