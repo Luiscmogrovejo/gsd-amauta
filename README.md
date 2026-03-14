@@ -7,7 +7,7 @@ PostgreSQL persistent memory · pgvector semantic search · RLM context engine �
 Everything degrades gracefully to vanilla GSD when infrastructure is unavailable.
 
 ```
-583 tests · 11 agents · 5 CLI tools · 3 services · 20 agentic AI patterns
+690 tests · 11 agents · 11 skills · 5 CLI tools · 3 services · 20 agentic AI patterns
 ```
 
 ---
@@ -283,10 +283,11 @@ Every task is forced through five phases. Validation gates block progress:
   ┌────────────────────────────────────────────────────────┐
   │  VALIDATION                                            │
   │                                                        │
-  │  External gsd-validator checks ALL THREE gates:       │
+  │  External gsd-validator checks ALL FOUR gates:        │
   │    Gate 1: branch evidence in E-log?   ✓ / ✗         │
-  │    Gate 2: test evidence in T-log?     ✓ / ✗         │
-  │    Gate 3: LEARNING in D-log?          ✓ / ✗         │
+  │    Gate 2: LEARNING in D-log (or any)? ✓ / ✗         │
+  │    Gate 3: test evidence in T-log?     ✓ / ✗         │
+  │    Gate 4: PR URL in D/E/notes?        ✓ / ✗         │
   │    Success criteria met?               ✓ / ✗         │
   │                                                        │
   │  PASS ──→ status=done, learnings promoted to SKB     │
@@ -722,7 +723,7 @@ The external validation model — no agent validates its own work:
   ┌──────────────────────────────────────────────────────────┐
   │                   Executor completes work                │
   │                                                          │
-  │  gsd-amauta.cjs status TK-XXXX validation               │
+  │  amauta status TK-XXXX validation                        │
   └────────────────────────┬─────────────────────────────────┘
                            │
                            ▼
@@ -732,10 +733,11 @@ The external validation model — no agent validates its own work:
   │                                                          │
   │  1. Read task details and all RPETD phases              │
   │  2. Check Gate 1: branch evidence in E-log?             │
-  │  3. Check Gate 2: test output in T-log?                 │
-  │  4. Check Gate 3: LEARNING block in D-log?              │
-  │  5. Verify success criteria from P-phase                │
-  │  6. Check dependencies are done                         │
+  │  3. Check Gate 2: LEARNING block in D-log (or any)?    │
+  │  4. Check Gate 3: test output in T-log?                 │
+  │  5. Check Gate 4: PR URL in D/E/notes? (code tasks)   │
+  │  6. Verify success criteria from P-phase                │
+  │  7. Check dependencies are done                         │
   └────────────────────────┬─────────────────────────────────┘
                            │
                  ┌─────────┴──────────┐
@@ -821,7 +823,7 @@ The installer (`bin/install.js`) handles:
 3. Python `psycopg2-binary` dependency
 4. Amauta HTTP daemon startup on port 18799
 5. RLM context service startup on port 18798
-6. Database migrations (001 schema, 002 HNSW index, 003 dimension fix)
+6. Database migrations (001 schema, 002 HNSW index, 003 dimension fix, 004 FTS indexes)
 7. Codex and Gemini CLI config generation
 
 ### Post-Install
@@ -849,13 +851,13 @@ curl http://127.0.0.1:18798/health | python3 -m json.tool
 docker ps --filter name=gsd-postgres
 
 # CLI tools
-node ~/.claude/gsd-amauta/get-shit-done/bin/gsd-amauta.cjs stats
+node ~/.claude/gsd-amauta/get-shit-done/bin/amauta.cjs stats
 node ~/.claude/gsd-amauta/get-shit-done/bin/gsd-memory.cjs health
 node ~/.claude/gsd-amauta/get-shit-done/bin/gsd-rlm.cjs health
 node ~/.claude/gsd-amauta/get-shit-done/bin/gsd-research.cjs check-providers
 
 # Tests
-npm test   # 583 tests expected
+npm test   # 690 tests expected
 ```
 
 ---
@@ -903,28 +905,28 @@ npm test   # 583 tests expected
 
 ## 15. CLI Reference
 
-### Task Management — `gsd-amauta.cjs`
+### Task Management — `amauta` (gsd-amauta.cjs)
 
 ```bash
 # Board and navigation
-gsd-amauta.cjs board                             # Kanban board view
-gsd-amauta.cjs stats                             # Project statistics
-gsd-amauta.cjs show TK-0001                      # Full task detail
-gsd-amauta.cjs next executor-backend             # Next task for agent
-gsd-amauta.cjs list --status pending             # Filter task list
+amauta board                                     # Kanban board view
+amauta stats                                     # Project statistics
+amauta show TK-0001                              # Full task detail
+amauta next executor-backend                     # Next task for agent
+amauta list --status pending                     # Filter task list
 
 # Task creation
-gsd-amauta.cjs exec add epic "Project Name" --agent operator
-gsd-amauta.cjs exec add story "Phase 1" --parent EP-0001
-gsd-amauta.cjs exec add task "Implement auth" --parent ST-0001
+amauta add epic "Project Name" --agent operator
+amauta add story "Phase 1" --parent EP-0001
+amauta add task "Implement auth" --parent ST-0001
 
 # Task lifecycle
-gsd-amauta.cjs claim TK-0001 --agent executor-backend
-gsd-amauta.cjs rpetd TK-0001 --phase R --content "Research findings..."
-gsd-amauta.cjs rpetd TK-0001 --phase E --content "Branch: feat/TK-0001..."
-gsd-amauta.cjs exec status TK-0001 validation
-gsd-amauta.cjs validate TK-0001 --pass --validator gsd-validator
-gsd-amauta.cjs validate TK-0001 --fail --notes "Missing test evidence"
+amauta claim TK-0001 --agent executor-backend
+amauta rpetd TK-0001 --phase R --content "Research findings..."
+amauta rpetd TK-0001 --phase E --content "Branch: feat/TK-0001..."
+amauta status TK-0001 validation
+amauta validate TK-0001 --pass --validator gsd-validator
+amauta validate TK-0001 --fail --notes "Missing test evidence"
 
 # Flags
 # --force    Bypass validation gate checks
@@ -1030,7 +1032,7 @@ docker ps --filter name=gsd-postgres
 ## 17. Testing
 
 ```bash
-npm test                                          # All 583 tests
+npm test                                          # All 690 tests
 
 # Individual suites
 node --test tests/agent-frontmatter.test.cjs     # Agent validation (42 tests)
@@ -1042,7 +1044,7 @@ node --test tests/e2e-lifecycle.test.cjs         # E2E lifecycle (22 tests)
 node --test tests/gsd-amauta.test.cjs            # CLI unit tests (17 tests)
 ```
 
-**583 tests across 19 files**, covering:
+**690 tests across 21 files**, covering:
 
 - Agent frontmatter: skills, hooks, anti-heredoc, spawn consistency, 11-agent roster
 - CLI commands: all argument parsing, error paths, routing branches
@@ -1059,7 +1061,7 @@ node --test tests/gsd-amauta.test.cjs            # CLI unit tests (17 tests)
 
 ```
 gsd-amauta/
-├── amauta.py                         # Task manager CLI (3920 lines)
+├── amauta.py                         # Task manager CLI (4045 lines)
 ├── package.json
 ├── README.md
 ├── CHANGELOG.md                      # All changes from vanilla GSD
@@ -1072,12 +1074,13 @@ gsd-amauta/
 ├── migrations/
 │   ├── 001-init.sql                  # 4 tables, 21 indexes, 3 triggers
 │   ├── 002-embedding-index.sql       # HNSW index (idempotent)
-│   └── 003-embedding-1024.sql        # Dim migration 1536→1024 (idempotent)
+│   ├── 003-embedding-1024.sql        # Dim migration 1536→1024 (idempotent)
+│   └── 004-fulltext-indexes.sql      # GIN FTS indexes + compound indexes
 │
 ├── services/
-│   ├── amauta-daemon.py              # HTTP daemon :18799 (700+ lines)
-│   ├── pg_store.py                   # PG pool + memory/SKB/embedding (730+ lines)
-│   └── rlm-service.py                # RLM context engine :18798 (800+ lines)
+│   ├── amauta-daemon.py              # HTTP daemon :18799 (754 lines)
+│   ├── pg_store.py                   # PG pool + memory/SKB/task mirror/embedding (954 lines)
+│   └── rlm-service.py                # RLM context engine :18798 (808 lines)
 │
 ├── agents/                           # 11 agent definitions
 │   ├── gsd-operator.md               # Master orchestrator
@@ -1094,15 +1097,16 @@ gsd-amauta/
 │
 ├── get-shit-done/
 │   ├── bin/
-│   │   ├── gsd-amauta.cjs            # Task management CLI (1064 lines)
-│   │   ├── gsd-memory.cjs            # Memory + embeddings CLI (1300+ lines)
-│   │   ├── gsd-rlm.cjs               # RLM context CLI (600 lines)
+│   │   ├── amauta.cjs               # Thin wrapper → gsd-amauta.cjs
+│   │   ├── gsd-amauta.cjs            # Task management CLI (1278 lines)
+│   │   ├── gsd-memory.cjs            # Memory + embeddings CLI (1356 lines)
+│   │   ├── gsd-rlm.cjs               # RLM context CLI (630 lines)
 │   │   ├── gsd-research.cjs          # Research chain CLI (641 lines)
 │   │   ├── gsd-tools.cjs             # Original GSD CLI
 │   │   └── lib/
 │   │       ├── core.cjs              # Model profiles, config, phase utils
 │   │       └── init.cjs              # Session init, model resolution
-│   ├── workflows/                    # 33+ workflow .md files
+│   ├── workflows/                    # 36 workflow .md files
 │   ├── templates/                    # config.json, context.md
 │   └── references/
 │       └── model-profiles.md         # 11-agent model assignments
@@ -1110,15 +1114,20 @@ gsd-amauta/
 ├── references/
 │   └── agentic-patterns.md           # 20 patterns × 11 agents matrix
 │
-├── commands/gsd/                     # 34 slash commands
+├── skills/                           # 11 skill workflows (SKILL.md each)
+│   ├── gsd-operator-workflow/
+│   ├── gsd-executor-backend-workflow/
+│   └── ... (11 total, matching agents)
+│
+├── commands/gsd/                     # 33 slash commands
 │   ├── new-project.md
 │   ├── execute-plan.md
 │   ├── test-phase.md
 │   └── ...
 │
-├── tests/                            # 583 tests (19 files)
+├── tests/                            # 690 tests (21 files)
 ├── bin/
-│   └── install.js                    # Self-installer (2752 lines)
+│   └── install.js                    # Self-installer (2897 lines)
 └── scripts/
     └── run-tests.cjs                 # Cross-platform test runner
 ```
