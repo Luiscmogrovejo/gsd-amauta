@@ -9,14 +9,14 @@ See: .planning/PROJECT.md (updated 2026-03-21)
 
 ## Milestone: v2.0
 
-Progress: ██████░░░░ 60%
+Progress: ███████░░░ 70%
 
 | Phase | Status | Plans |
 |-------|--------|-------|
 | 1 — Setup & Onboarding | ✔ Complete | 2 (01-01 done, 01-02 done) |
 | 2 — RPETD Enforcement | ✔ Complete | 1 (02-01 done) |
 | 3 — Memory & RLM | ✔ Complete | 2 (03-01 done, 03-02 done) |
-| 4 — Task Management | ○ Pending | 0 |
+| 4 — Task Management | ◐ In Progress | 2 (04-01 done, 04-02 pending) |
 | 5 — Distribution | ○ Pending | 0 |
 
 ## Decisions
@@ -37,6 +37,9 @@ Progress: ██████░░░░ 60%
 - RLM subprocess managed by daemon via Popen(start_new_session=True) + watchdog thread
 - MtimeIndex JSON persistence enables incremental indexing across RLM restarts
 - Claim enrichment: 2s timeout, silent fallback on RLM failure
+- PG retry queue: file-based JSON at ~/.amauta/data/pg_retry_queue.json, max 1000 items, oldest evicted
+- State machine: ALLOWED_TRANSITIONS dict enforced in cmd_status; cmd_claim/cmd_validate have their own guards
+- Dependency enforcement: _deps_met() checked at claim, validate --pass, AND status done
 
 ## Blockers
 
@@ -56,8 +59,8 @@ Progress: ██████░░░░ 60%
 
 ## Session
 
-- **Last completed:** Plan 03-02 (RLM integration — 5 tasks, 10 tests, subprocess management + incremental indexing)
-- **Next:** Phase 4 planning (Task Management)
+- **Last completed:** Plan 04-01 (PG retry queue + state machine + dependency enforcement)
+- **Next:** Execute Plan 04-02 (board view and advanced task management)
 - **Completed:** 2026-03-21
 
 ---
