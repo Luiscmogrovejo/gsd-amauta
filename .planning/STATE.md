@@ -9,13 +9,13 @@ See: .planning/PROJECT.md (updated 2026-03-21)
 
 ## Milestone: v2.0
 
-Progress: ████░░░░░░ 40%
+Progress: █████░░░░░ 50%
 
 | Phase | Status | Plans |
 |-------|--------|-------|
 | 1 — Setup & Onboarding | ✔ Complete | 2 (01-01 done, 01-02 done) |
 | 2 — RPETD Enforcement | ✔ Complete | 1 (02-01 done) |
-| 3 — Memory & RLM | ▶ In Progress | 0 |
+| 3 — Memory & RLM | ▶ In Progress | 2 (03-01 done, 03-02 pending) |
 | 4 — Task Management | ○ Pending | 0 |
 | 5 — Distribution | ○ Pending | 0 |
 
@@ -32,6 +32,8 @@ Progress: ████░░░░░░ 40%
 - Flag-vs-positional detection via startsWith('--') for cli.cjs status routing
 - Python backend is single authoritative gate enforcer; CJS client-side checks are advisory only
 - _validate_all_gates() returns structured list of {gate, status, reason} dicts for 5 gates
+- TAG_SYNONYMS map duplicated in Python and JS to maintain zero-dependency constraint
+- normalize_tags applied on both store and search paths for tag synonym consistency
 
 ## Blockers
 
@@ -44,11 +46,13 @@ Progress: ████░░░░░░ 40%
 - System status routing: bare `status` with no positional args routes to gsd-memory.cjs cmdStatus; status with id routes to gsd-amauta.cjs
 - Integration tests as static content checks (file existence, string matching) avoid daemon dependency and CI flakiness
 - Pure function tests for gate logic: import with GSD_AMAUTA_NO_AUTO_START=1 to avoid side effects
+- SQLite dict(row) includes rowid from FTS JOIN; must pop("rowid") for PG parity
+- Server-side stats endpoints (distill-status, tag-stats) reduce client round-trips
 
 ## Session
 
-- **Last completed:** 02-01 execution (RPETD gate enforcement with 5 gates, 31 tests, 5 atomic commits)
-- **Next:** Phase 3 planning (Memory & RLM)
+- **Last completed:** Plan 03-01 (Memory system hardening — 6 tasks, 16 parity tests)
+- **Next:** Plan 03-02 (RLM enhancements, wave 2)
 - **Completed:** 2026-03-21
 
 ---
