@@ -1,19 +1,21 @@
 {
   "name": "gsd-amauta",
-  "version": "1.0.0",
-  "description": "Amauta v1: Claude Code plugin for multi-agent task management with RPETD pipeline, PostgreSQL memory, RLM context engine, and GSD spec-driven development.",
+  "version": "2.0.0",
+  "description": "Amauta v2: Claude Code plugin for multi-agent task management with RPETD pipeline, MCP integration, PostgreSQL/SQLite memory, RLM context engine, and GSD spec-driven development.",
   "bin": {
     "gsd-amauta": "bin/cli.cjs",
     "gsd-amauta-install": "bin/install.js",
     "amauta-install": "bin/install.js",
     "amauta": "get-shit-done/bin/amauta.cjs",
-    "amauta-memory": "get-shit-done/bin/gsd-memory.cjs"
+    "amauta-memory": "get-shit-done/bin/gsd-memory.cjs",
+    "gsd-amauta-mcp": "bin/mcp-server.cjs"
   },
   "files": [
     "bin",
     "commands",
     "get-shit-done",
     "agents",
+    "skills",
     "hooks/dist",
     "scripts",
     "services",
@@ -33,7 +35,9 @@
     "amauta",
     "postgresql",
     "memory",
-    "spec-driven-development"
+    "spec-driven-development",
+    "mcp",
+    "ai-agent"
   ],
   "author": "Luis Carlos Mogrovejo de Piérola",
   "license": "MIT",
