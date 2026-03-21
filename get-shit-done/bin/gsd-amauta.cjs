@@ -417,6 +417,7 @@ async function cmdAdd(useDaemon, argv, jsonMode) {
 async function cmdClaim(useDaemon, id, flags, jsonMode) {
   if (!id) die('Usage: amauta claim <id> --agent <agent>');
   const body = { id, ...flags };
+  body.project_dir = process.cwd();
 
   if (useDaemon) {
     const { data } = await httpRequest('POST', '/api/claim', body);

@@ -302,6 +302,69 @@ def _get_store():
     return _pg_store or _sqlite_store
 
 
+def _enrich_with_rlm(task_output, body):
+    """Query RLM for relevant code context based on task title/description.
+
+    Returns enriched output with appended code context, or original output on failure.
+    """
+    if not _rlm_enabled or not _check_rlm_health():
+        return task_output
+
+    # Extract task title/description from body or output
+    query = body.get("title", "") or body.get("description", "")
+    if not query:
+        # Try to parse title from the claim output
+        for line in task_output.split("\n"):
+            if "Title:" in line or "title:" in line:
+                query = line.split(":", 1)[-1].strip()
+                break
+    if not query or len(query) < 5:
+        return task_output
+
+    # Get the project directory from body
+    project_dir = body.get("project_dir") or os.environ.get("GSD_PROJECT_DIR", "")
+    if not project_dir:
+        return task_output
+
+    try:
+        import urllib.request
+        payload = json.dumps({
+            "query": query[:200],  # Truncate long descriptions
+            "directory": project_dir,
+            "top_k": 5,
+            "max_files": 200,
+        }).encode("utf-8")
+
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{RLM_PORT}/query",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            rlm_data = json.loads(resp.read().decode("utf-8"))
+
+        results = rlm_data.get("results", [])
+        if not results:
+            return task_output
+
+        # Append RLM context to output
+        ctx_lines = ["\n\n## Relevant Code Context (auto-injected by RLM)\n"]
+        for r in results[:5]:
+            filepath = r.get("filepath", "")
+            label = r.get("label", "")
+            start = r.get("start_line", 0)
+            end = r.get("end_line", 0)
+            score = r.get("relevance_score", 0)
+            ctx_lines.append(f"- `{filepath}:{start}-{end}` **{label}** (score: {score})")
+        ctx_lines.append("")
+
+        return task_output + "\n".join(ctx_lines)
+    except Exception as e:
+        log.debug("rlm_enrich_failed error=%s", str(e))
+        return task_output
+
+
 # ═══════════════════════════════════════════════════════
 # Threaded HTTP Server
 # ═══════════════════════════════════════════════════════
@@ -776,6 +839,10 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     args.append("--fail")
 
             out, err, rc = self._run_amauta(args)
+
+            # ── RLM context enrichment for claim commands ──
+            if command == "claim" and rc == 0 and _rlm_enabled:
+                out = _enrich_with_rlm(out, body)
 
             # ── Dual-write: mirror task mutations to PG (best-effort) ──
             # After amauta.py writes to tasks.json, mirror the affected task to gsd_tasks.
