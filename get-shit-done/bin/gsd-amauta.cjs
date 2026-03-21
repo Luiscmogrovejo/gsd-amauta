@@ -1105,6 +1105,219 @@ async function cmdDaemon(subcommand) {
 }
 
 // ═══════════════════════════════════════════════════════
+// Audit Commands (Phase 6)
+// ═══════════════════════════════════════════════════════
+
+async function cmdAudit(useDaemon, rest, jsonMode) {
+  const subCmd = rest[0];
+
+  if (subCmd === 'show') {
+    // audit show TK-XXXX — display full audit trail for a task
+    const taskId = rest[1];
+    if (!taskId) die('Usage: amauta audit show <task-id>');
+    return await cmdAuditShow(useDaemon, taskId, jsonMode);
+  }
+
+  if (subCmd === 'export') {
+    // audit export [--format json|csv] [--start DATE] [--end DATE]
+    const flags = parseFlags(rest, 1);
+    return await cmdAuditExport(useDaemon, flags, jsonMode);
+  }
+
+  process.stderr.write(
+    'Usage:\n' +
+    '  amauta audit show <task-id>               Show audit trail for a task\n' +
+    '  amauta audit export [--format json|csv] [--start DATE] [--end DATE]\n' +
+    '                                            Export audit log\n'
+  );
+  return 1;
+}
+
+async function cmdAuditShow(useDaemon, taskId, jsonMode) {
+  if (useDaemon) {
+    const { data } = await httpRequest('GET', `/api/audit/query?task_id=${encodeURIComponent(taskId)}&limit=200`);
+    if (jsonMode) {
+      process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+    } else {
+      const results = data.results || [];
+      if (results.length === 0) {
+        process.stdout.write(`No audit entries for ${taskId}\n`);
+        return 0;
+      }
+      process.stdout.write(`\n  Audit Trail for ${taskId} (${results.length} entries)\n`);
+      process.stdout.write('  ' + '-'.repeat(60) + '\n');
+      for (const entry of results.reverse()) {
+        const ts = (entry.created_at || '').replace('T', ' ').substring(0, 19);
+        const agent = entry.agent_id || entry.actor || '-';
+        const phase = entry.phase ? `[${entry.phase}]` : '';
+        const status = entry.status ? `(${entry.status})` : '';
+        process.stdout.write(`  ${ts}  ${entry.event_type} ${phase} ${status}  @${agent}\n`);
+        if (entry.content) {
+          const preview = entry.content.substring(0, 120).replace(/\n/g, ' ');
+          process.stdout.write(`    ${preview}${entry.content.length > 120 ? '...' : ''}\n`);
+        }
+        if (entry.gate_results && Array.isArray(entry.gate_results)) {
+          for (const g of entry.gate_results) {
+            const icon = g.status === 'PASS' ? 'PASS' : g.status === 'SKIP' ? 'SKIP' : 'FAIL';
+            process.stdout.write(`    GATE[${g.gate}]: ${icon} -- ${g.reason || ''}\n`);
+          }
+        }
+      }
+      process.stdout.write('  ' + '-'.repeat(60) + '\n');
+    }
+    return 0;
+  }
+  // Direct mode: no audit without daemon
+  process.stderr.write('Audit commands require the daemon to be running.\n');
+  return 1;
+}
+
+async function cmdAuditExport(useDaemon, flags, jsonMode) {
+  if (!useDaemon) {
+    process.stderr.write('Audit commands require the daemon to be running.\n');
+    return 1;
+  }
+  const format = flags.format || 'json';
+  const queryParts = [`format=${encodeURIComponent(format)}`];
+  if (flags.start) queryParts.push(`start=${encodeURIComponent(flags.start)}`);
+  if (flags.end) queryParts.push(`end=${encodeURIComponent(flags.end)}`);
+  const qs = queryParts.join('&');
+
+  const { statusCode, data } = await httpRequest('GET', `/api/audit/export?${qs}`);
+
+  if (format === 'csv') {
+    // CSV comes back as raw text in the data object
+    if (typeof data === 'string') {
+      process.stdout.write(data);
+    } else if (data.output) {
+      process.stdout.write(data.output);
+    } else {
+      process.stdout.write(JSON.stringify(data));
+    }
+  } else {
+    process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+  }
+  return statusCode === 200 ? 0 : 1;
+}
+
+// ═══════════════════════════════════════════════════════
+// Backup Commands (Phase 8: Data Durability)
+// ═══════════════════════════════════════════════════════
+
+async function cmdBackup(useDaemon, rest, jsonMode) {
+  if (!useDaemon) {
+    process.stderr.write('Backup commands require the daemon to be running.\n');
+    return 1;
+  }
+
+  const subCmd = rest[0];
+
+  if (subCmd === 'create') {
+    const flags = parseFlags(rest, 1);
+    const body = {};
+    if (flags.output) body.output_path = flags.output;
+
+    const { statusCode, data } = await httpRequest('POST', '/api/backup/create', body);
+    if (jsonMode) {
+      process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+    } else {
+      if (data.created) {
+        process.stdout.write(`Backup created: ${data.path}\n`);
+        process.stdout.write(`  Checksum: ${data.checksum}\n`);
+        const counts = data.counts || {};
+        for (const [table, count] of Object.entries(counts)) {
+          process.stdout.write(`  ${table}: ${count} rows\n`);
+        }
+      } else {
+        process.stderr.write(`Backup failed: ${data.error || 'unknown error'}\n`);
+      }
+    }
+    return statusCode === 200 ? 0 : 1;
+  }
+
+  if (subCmd === 'restore') {
+    const filePath = rest[1];
+    if (!filePath) die('Usage: amauta backup restore <file> [--mode merge|replace]');
+    const flags = parseFlags(rest, 2);
+    const mode = flags.mode || 'merge';
+
+    const { statusCode, data } = await httpRequest('POST', '/api/backup/restore', {
+      file: filePath,
+      mode,
+    });
+    if (jsonMode) {
+      process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+    } else {
+      if (data.tables_restored !== undefined) {
+        process.stdout.write(`Restore complete (mode: ${data.mode})\n`);
+        process.stdout.write(`  Schema version: ${data.schema_version}\n`);
+        process.stdout.write(`  Tables restored: ${data.tables_restored}\n`);
+        const imported = data.rows_imported || {};
+        for (const [table, count] of Object.entries(imported)) {
+          process.stdout.write(`  ${table}: ${count} rows\n`);
+        }
+      } else {
+        process.stderr.write(`Restore failed: ${data.error || 'unknown error'}\n`);
+      }
+    }
+    return statusCode === 200 ? 0 : 1;
+  }
+
+  if (subCmd === 'verify') {
+    const filePath = rest[1];
+    const qs = filePath ? `?file=${encodeURIComponent(filePath)}` : '';
+    const { statusCode, data } = await httpRequest('GET', `/api/backup/verify${qs}`);
+    if (jsonMode) {
+      process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+    } else {
+      const valid = data.valid;
+      process.stdout.write(`Verification: ${valid ? 'PASSED' : 'FAILED'}\n`);
+      for (const check of (data.checks || [])) {
+        process.stdout.write(`  [ok] ${check}\n`);
+      }
+      for (const err of (data.errors || [])) {
+        process.stdout.write(`  [FAIL] ${err}\n`);
+      }
+      if (data.file_size_human) {
+        process.stdout.write(`  Size: ${data.file_size_human}\n`);
+      }
+      if (data.created_at) {
+        process.stdout.write(`  Created: ${data.created_at}\n`);
+      }
+    }
+    return statusCode === 200 && data.valid ? 0 : 1;
+  }
+
+  if (subCmd === 'list') {
+    const { statusCode, data } = await httpRequest('GET', '/api/backup/list');
+    if (jsonMode) {
+      process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+    } else {
+      const backups = data.backups || [];
+      if (backups.length === 0) {
+        process.stdout.write('No backups found.\n');
+      } else {
+        process.stdout.write(`Backups (${backups.length}):\n`);
+        for (const b of backups) {
+          process.stdout.write(`  ${b.filename}  ${b.size_human}  ${b.modified}\n`);
+        }
+      }
+    }
+    return statusCode === 200 ? 0 : 1;
+  }
+
+  process.stderr.write(
+    'Usage:\n' +
+    '  amauta backup create [--output PATH]     Create a backup\n' +
+    '  amauta backup restore <file> [--mode merge|replace]\n' +
+    '                                           Restore from backup\n' +
+    '  amauta backup verify [file]              Verify backup integrity\n' +
+    '  amauta backup list                       List available backups\n'
+  );
+  return 1;
+}
+
+// ═══════════════════════════════════════════════════════
 // CLI Router
 // ═══════════════════════════════════════════════════════
 
@@ -1157,6 +1370,17 @@ async function main() {
       '    rpetd <id> --phase <R|P|E|T|D> --content "..."\n' +
       '    validate <id> --pass|--fail --validator <agent> --notes "..."\n' +
       '                [--subtasks "Fix A|Add B"] [--force] [--json]\n' +
+      '\n' +
+      '  \x1b[33mAudit:\x1b[0m\n' +
+      '    audit show <task-id>         Full audit trail for a task\n' +
+      '    audit export [--format json|csv] [--start DATE] [--end DATE]\n' +
+      '                                 Export audit log report\n' +
+      '\n' +
+      '  \x1b[33mBackup / Restore:\x1b[0m\n' +
+      '    backup create [--output PATH]           Export all data\n' +
+      '    backup restore <file> [--mode merge|replace]\n' +
+      '    backup verify [file]                    Check integrity\n' +
+      '    backup list                             List backups\n' +
       '\n' +
       '  \x1b[33mDaemon:\x1b[0m\n' +
       '    daemon start|stop|status|run\n' +
@@ -1301,6 +1525,14 @@ async function main() {
 
     case 'exec':
       exitCode = await cmdExec(useDaemon, rest, jsonMode);
+      break;
+
+    case 'audit':
+      exitCode = await cmdAudit(useDaemon, rest, jsonMode);
+      break;
+
+    case 'backup':
+      exitCode = await cmdBackup(useDaemon, rest, jsonMode);
       break;
 
     default:

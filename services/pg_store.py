@@ -1245,6 +1245,342 @@ class PGStore:
                 }
 
     # ═══════════════════════════════════════════════════════
+    # Audit Log Operations (Append-Only)
+    # ═══════════════════════════════════════════════════════
+    # CRITICAL: No UPDATE or DELETE on gsd_audit_log — only INSERT and SELECT.
+
+    def audit_log(self, task_id, event_type, agent_id=None, actor=None,
+                  phase=None, status=None, gate_results=None, content=None,
+                  metadata=None):
+        """Insert an immutable audit log entry. Returns the new row ID."""
+        with self._get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO gsd_audit_log
+                        (task_id, event_type, agent_id, actor, phase, status,
+                         gate_results, content, metadata)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s::jsonb)
+                    RETURNING id
+                """, (
+                    task_id, event_type, agent_id, actor, phase, status,
+                    json.dumps(gate_results) if gate_results else None,
+                    content,
+                    json.dumps(metadata or {}),
+                ))
+                return cur.fetchone()[0]
+
+    def audit_query(self, task_id=None, event_type=None, start_date=None,
+                    end_date=None, limit=100):
+        """Query audit log entries with optional filters.
+
+        Args:
+            task_id: Filter by task ID.
+            event_type: Filter by event type.
+            start_date: ISO date string for range start.
+            end_date: ISO date string for range end.
+            limit: Max rows returned.
+
+        Returns list of dicts.
+        """
+        with self._get_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                conditions = []
+                params = []
+
+                if task_id:
+                    conditions.append("task_id = %s")
+                    params.append(task_id)
+                if event_type:
+                    conditions.append("event_type = %s")
+                    params.append(event_type)
+                if start_date:
+                    conditions.append("created_at >= %s::timestamptz")
+                    params.append(start_date)
+                if end_date:
+                    conditions.append("created_at <= %s::timestamptz")
+                    params.append(end_date)
+
+                where = " AND ".join(conditions) if conditions else "TRUE"
+                sql = f"""
+                    SELECT * FROM gsd_audit_log
+                    WHERE {where}
+                    ORDER BY created_at DESC
+                    LIMIT %s
+                """
+                cur.execute(sql, params + [limit])
+                results = cur.fetchall()
+                for r in results:
+                    for key in ("created_at",):
+                        if key in r and isinstance(r[key], datetime):
+                            r[key] = r[key].isoformat()
+                    # Ensure gate_results and metadata are dicts (not strings)
+                    for key in ("gate_results", "metadata"):
+                        if key in r and r[key] is None:
+                            r[key] = None
+                return [dict(r) for r in results]
+
+    def audit_count(self):
+        """Count total audit log entries."""
+        with self._get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM gsd_audit_log")
+                return cur.fetchone()[0]
+
+    # ═══════════════════════════════════════════════════════
+    # Backup Export / Import (Phase 8: Data Durability)
+    # ═══════════════════════════════════════════════════════
+
+    def _rows_to_dicts(self, rows):
+        """Convert RealDictCursor rows to plain dicts with JSON-safe types."""
+        results = []
+        for row in rows:
+            d = dict(row)
+            for key, val in d.items():
+                if isinstance(val, datetime):
+                    d[key] = val.isoformat()
+                elif isinstance(val, Decimal):
+                    d[key] = float(val)
+            # Remove embedding from exports (large binary, not portable)
+            d.pop("embedding", None)
+            results.append(d)
+        return results
+
+    def export_all_memory(self):
+        """Export all rows from gsd_memory."""
+        with self._get_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("SELECT * FROM gsd_memory ORDER BY id")
+                return self._rows_to_dicts(cur.fetchall())
+
+    def export_all_tasks(self):
+        """Export all rows from gsd_tasks."""
+        with self._get_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("SELECT * FROM gsd_tasks ORDER BY id")
+                return self._rows_to_dicts(cur.fetchall())
+
+    def export_all_skb(self):
+        """Export all rows from gsd_shared_kb."""
+        with self._get_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("SELECT * FROM gsd_shared_kb ORDER BY id")
+                return self._rows_to_dicts(cur.fetchall())
+
+    def export_all_validations(self):
+        """Export all rows from gsd_task_validations."""
+        with self._get_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("SELECT * FROM gsd_task_validations ORDER BY id")
+                return self._rows_to_dicts(cur.fetchall())
+
+    def export_all_agent_performance(self):
+        """Export all rows from gsd_agent_performance (if table exists)."""
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    cur.execute("SELECT * FROM gsd_agent_performance ORDER BY id")
+                    return self._rows_to_dicts(cur.fetchall())
+        except Exception:
+            return []
+
+    def export_all_audit(self):
+        """Export all rows from gsd_audit_log (if table exists)."""
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    cur.execute("SELECT * FROM gsd_audit_log ORDER BY id")
+                    return self._rows_to_dicts(cur.fetchall())
+        except Exception:
+            return []
+
+    def import_memory(self, rows, mode="merge"):
+        """Import memory rows from backup.
+
+        Args:
+            rows: List of row dicts.
+            mode: 'merge' (INSERT ... ON CONFLICT DO NOTHING) or
+                  'replace' (TRUNCATE + INSERT).
+
+        Returns:
+            Number of rows imported.
+        """
+        if not rows:
+            return 0
+        with self._get_conn() as conn:
+            with conn.cursor() as cur:
+                if mode == "replace":
+                    cur.execute("TRUNCATE gsd_memory CASCADE")
+                count = 0
+                for row in rows:
+                    try:
+                        cur.execute("""
+                            INSERT INTO gsd_memory (id, text, source, agent_id, tags, metadata, project_id, created_at, updated_at)
+                            VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s, %s)
+                            ON CONFLICT (id) DO NOTHING
+                        """, (
+                            row.get("id"),
+                            row.get("text", ""),
+                            row.get("source", "agent"),
+                            row.get("agent_id"),
+                            json.dumps(row.get("tags", [])) if isinstance(row.get("tags"), (list, dict)) else row.get("tags", "[]"),
+                            json.dumps(row.get("metadata", {})) if isinstance(row.get("metadata"), (list, dict)) else row.get("metadata", "{}"),
+                            row.get("project_id"),
+                            row.get("created_at"),
+                            row.get("updated_at"),
+                        ))
+                        count += cur.rowcount
+                    except Exception:
+                        pass  # Skip bad rows
+                return count
+
+    def import_tasks(self, rows, mode="merge"):
+        """Import task rows from backup."""
+        if not rows:
+            return 0
+        with self._get_conn() as conn:
+            with conn.cursor() as cur:
+                if mode == "replace":
+                    cur.execute("TRUNCATE gsd_tasks CASCADE")
+                count = 0
+                for row in rows:
+                    try:
+                        cur.execute("""
+                            INSERT INTO gsd_tasks (
+                                id, project_id, type, title, description, details,
+                                status, priority, assigned_to, claimed_by, claimed_at,
+                                rpetd_r, rpetd_p, rpetd_e, rpetd_t, rpetd_d, rpetd_complete,
+                                importance, urgency,
+                                success_criteria, deliverables, dependencies,
+                                tags, notes, parent_id, validation_notes, validated_by,
+                                test_strategy, phase, plan, evidence, outcome, lesson,
+                                created_at, updated_at
+                            ) VALUES (
+                                %s, %s, %s, %s, %s, %s,
+                                %s, %s, %s, %s, %s,
+                                %s, %s, %s, %s, %s, %s,
+                                %s, %s,
+                                %s::jsonb, %s::jsonb, %s::jsonb,
+                                %s::jsonb, %s::jsonb, %s, %s, %s,
+                                %s, %s, %s, %s::jsonb, %s, %s,
+                                %s, %s
+                            )
+                            ON CONFLICT (id) DO NOTHING
+                        """, (
+                            row.get("id"), row.get("project_id", "default"),
+                            row.get("type", "task"), row.get("title", ""),
+                            row.get("description", ""), row.get("details", ""),
+                            row.get("status", "pending"), row.get("priority", "medium"),
+                            row.get("assigned_to", ""), row.get("claimed_by"),
+                            row.get("claimed_at"),
+                            row.get("rpetd_r", ""), row.get("rpetd_p", ""),
+                            row.get("rpetd_e", ""), row.get("rpetd_t", ""),
+                            row.get("rpetd_d", ""), row.get("rpetd_complete", False),
+                            row.get("importance", 3), row.get("urgency", 3),
+                            json.dumps(row.get("success_criteria", [])) if isinstance(row.get("success_criteria"), (list, dict)) else row.get("success_criteria", "[]"),
+                            json.dumps(row.get("deliverables", [])) if isinstance(row.get("deliverables"), (list, dict)) else row.get("deliverables", "[]"),
+                            json.dumps(row.get("dependencies", [])) if isinstance(row.get("dependencies"), (list, dict)) else row.get("dependencies", "[]"),
+                            json.dumps(row.get("tags", [])) if isinstance(row.get("tags"), (list, dict)) else row.get("tags", "[]"),
+                            json.dumps(row.get("notes", [])) if isinstance(row.get("notes"), (list, dict)) else row.get("notes", "[]"),
+                            row.get("parent_id"), row.get("validation_notes", ""),
+                            row.get("validated_by", ""),
+                            row.get("test_strategy", ""), row.get("phase", ""),
+                            row.get("plan", ""),
+                            json.dumps(row.get("evidence", {})) if isinstance(row.get("evidence"), (list, dict)) else row.get("evidence", "{}"),
+                            row.get("outcome", ""), row.get("lesson", ""),
+                            row.get("created_at"), row.get("updated_at"),
+                        ))
+                        count += cur.rowcount
+                    except Exception:
+                        pass
+                return count
+
+    def import_skb(self, rows, mode="merge"):
+        """Import SKB rows from backup."""
+        if not rows:
+            return 0
+        with self._get_conn() as conn:
+            with conn.cursor() as cur:
+                if mode == "replace":
+                    cur.execute("TRUNCATE gsd_shared_kb CASCADE")
+                count = 0
+                for row in rows:
+                    try:
+                        cur.execute("""
+                            INSERT INTO gsd_shared_kb (id, title, content, category, agent_id, tags, importance, source_task, created_at, updated_at)
+                            VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s)
+                            ON CONFLICT (id) DO NOTHING
+                        """, (
+                            row.get("id"), row.get("title", ""),
+                            row.get("content", ""), row.get("category"),
+                            row.get("agent_id"),
+                            json.dumps(row.get("tags", [])) if isinstance(row.get("tags"), (list, dict)) else row.get("tags", "[]"),
+                            row.get("importance", 5), row.get("source_task"),
+                            row.get("created_at"), row.get("updated_at"),
+                        ))
+                        count += cur.rowcount
+                    except Exception:
+                        pass
+                return count
+
+    def import_validations(self, rows, mode="merge"):
+        """Import validation rows from backup."""
+        if not rows:
+            return 0
+        with self._get_conn() as conn:
+            with conn.cursor() as cur:
+                if mode == "replace":
+                    cur.execute("TRUNCATE gsd_task_validations CASCADE")
+                count = 0
+                for row in rows:
+                    try:
+                        cur.execute("""
+                            INSERT INTO gsd_task_validations (task_id, validator_id, status, evidence, rejection_reason, created_at)
+                            VALUES (%s, %s, %s, %s::jsonb, %s, %s)
+                        """, (
+                            row.get("task_id"), row.get("validator_id"),
+                            row.get("status"),
+                            json.dumps(row.get("evidence", {})) if isinstance(row.get("evidence"), (list, dict)) else row.get("evidence", "{}"),
+                            row.get("rejection_reason"),
+                            row.get("created_at"),
+                        ))
+                        count += cur.rowcount
+                    except Exception:
+                        pass
+                return count
+
+    def import_agent_performance(self, rows, mode="merge"):
+        """Import agent performance rows from backup."""
+        if not rows:
+            return 0
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor() as cur:
+                    if mode == "replace":
+                        cur.execute("TRUNCATE gsd_agent_performance CASCADE")
+                    count = 0
+                    for row in rows:
+                        try:
+                            cur.execute("""
+                                INSERT INTO gsd_agent_performance
+                                    (agent_id, task_id, task_type, project_id, outcome,
+                                     gate_failed, failure_reason, duration_minutes, learning_captured, created_at)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            """, (
+                                row.get("agent_id"), row.get("task_id"),
+                                row.get("task_type", "task"), row.get("project_id", "default"),
+                                row.get("outcome", "pass"),
+                                row.get("gate_failed"), row.get("failure_reason"),
+                                row.get("duration_minutes"), row.get("learning_captured"),
+                                row.get("created_at"),
+                            ))
+                            count += cur.rowcount
+                        except Exception:
+                            pass
+                    return count
+        except Exception:
+            return 0
+
+    # ═══════════════════════════════════════════════════════
     # Cleanup
     # ═══════════════════════════════════════════════════════
 

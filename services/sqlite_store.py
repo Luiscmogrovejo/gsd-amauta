@@ -247,6 +247,21 @@ class SQLiteStore:
                     created_at       TEXT DEFAULT (datetime('now'))
                 );
 
+                -- Audit Log (append-only, immutable)
+                CREATE TABLE IF NOT EXISTS gsd_audit_log (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id     TEXT NOT NULL,
+                    event_type  TEXT NOT NULL,
+                    agent_id    TEXT,
+                    actor       TEXT,
+                    phase       TEXT,
+                    status      TEXT,
+                    gate_results TEXT,
+                    content     TEXT,
+                    metadata    TEXT DEFAULT '{}',
+                    created_at  TEXT DEFAULT (datetime('now'))
+                );
+
                 -- Indexes
                 CREATE INDEX IF NOT EXISTS idx_memory_project ON gsd_memory(project_id);
                 CREATE INDEX IF NOT EXISTS idx_memory_source ON gsd_memory(source);
@@ -256,6 +271,9 @@ class SQLiteStore:
                 CREATE INDEX IF NOT EXISTS idx_validations_task ON gsd_task_validations(task_id);
                 CREATE INDEX IF NOT EXISTS idx_skb_category ON gsd_shared_kb(category);
                 CREATE INDEX IF NOT EXISTS idx_skb_importance ON gsd_shared_kb(importance);
+                CREATE INDEX IF NOT EXISTS idx_audit_task ON gsd_audit_log(task_id);
+                CREATE INDEX IF NOT EXISTS idx_audit_type ON gsd_audit_log(event_type);
+                CREATE INDEX IF NOT EXISTS idx_audit_created ON gsd_audit_log(created_at);
             """)
 
     # ═══════════════════════════════════════════════════════
@@ -793,6 +811,77 @@ class SQLiteStore:
             return {r["status"]: r["cnt"] for r in rows}
 
     # ═══════════════════════════════════════════════════════
+    # Audit Log Operations (Append-Only)
+    # ═══════════════════════════════════════════════════════
+    # CRITICAL: No UPDATE or DELETE on gsd_audit_log — only INSERT and SELECT.
+
+    def audit_log(self, task_id, event_type, agent_id=None, actor=None,
+                  phase=None, status=None, gate_results=None, content=None,
+                  metadata=None):
+        """Insert an immutable audit log entry. Returns the new row ID."""
+        with self._get_conn() as conn:
+            cur = conn.execute(
+                """INSERT INTO gsd_audit_log
+                       (task_id, event_type, agent_id, actor, phase, status,
+                        gate_results, content, metadata)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    task_id, event_type, agent_id, actor, phase, status,
+                    json.dumps(gate_results) if gate_results else None,
+                    content,
+                    json.dumps(metadata or {}),
+                ),
+            )
+            return cur.lastrowid
+
+    def audit_query(self, task_id=None, event_type=None, start_date=None,
+                    end_date=None, limit=100):
+        """Query audit log entries with optional filters. Returns list of dicts."""
+        with self._get_conn() as conn:
+            conditions = []
+            params = []
+
+            if task_id:
+                conditions.append("task_id = ?")
+                params.append(task_id)
+            if event_type:
+                conditions.append("event_type = ?")
+                params.append(event_type)
+            if start_date:
+                conditions.append("created_at >= ?")
+                params.append(start_date)
+            if end_date:
+                conditions.append("created_at <= ?")
+                params.append(end_date)
+
+            where = " AND ".join(conditions) if conditions else "1=1"
+            sql = f"""
+                SELECT * FROM gsd_audit_log
+                WHERE {where}
+                ORDER BY created_at DESC
+                LIMIT ?
+            """
+            rows = conn.execute(sql, params + [limit]).fetchall()
+            results = []
+            for r in rows:
+                d = dict(r)
+                # Parse JSON fields
+                for key in ("gate_results", "metadata"):
+                    if key in d and isinstance(d[key], str):
+                        try:
+                            d[key] = json.loads(d[key])
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+                results.append(d)
+            return results
+
+    def audit_count(self):
+        """Count total audit log entries."""
+        with self._get_conn() as conn:
+            row = conn.execute("SELECT COUNT(*) FROM gsd_audit_log").fetchone()
+            return row[0]
+
+    # ═══════════════════════════════════════════════════════
     # PG Retry Queue (no-op — SQLite is not a mirror target)
     # ═══════════════════════════════════════════════════════
 
@@ -815,6 +904,223 @@ class SQLiteStore:
     def agent_performance_summary(self, agent_id, limit=50):
         """Not available in SQLite mode."""
         return None
+
+    # ═══════════════════════════════════════════════════════
+    # Backup Export / Import (Phase 8: Data Durability)
+    # ═══════════════════════════════════════════════════════
+
+    def _rows_to_dicts(self, rows):
+        """Convert sqlite3.Row objects to plain dicts with parsed JSON fields."""
+        results = []
+        json_fields = {"tags", "metadata", "evidence", "success_criteria",
+                        "deliverables", "dependencies", "notes", "gate_results"}
+        for row in rows:
+            d = dict(row)
+            d.pop("rowid", None)
+            for key in json_fields:
+                if key in d and isinstance(d[key], str):
+                    try:
+                        d[key] = json.loads(d[key])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+            results.append(d)
+        return results
+
+    def export_all_memory(self):
+        """Export all rows from gsd_memory."""
+        with self._get_conn() as conn:
+            rows = conn.execute("SELECT * FROM gsd_memory ORDER BY id").fetchall()
+            return self._rows_to_dicts(rows)
+
+    def export_all_tasks(self):
+        """Export all rows from gsd_tasks."""
+        with self._get_conn() as conn:
+            rows = conn.execute("SELECT * FROM gsd_tasks ORDER BY id").fetchall()
+            return self._rows_to_dicts(rows)
+
+    def export_all_skb(self):
+        """Export all rows from gsd_shared_kb."""
+        with self._get_conn() as conn:
+            rows = conn.execute("SELECT * FROM gsd_shared_kb ORDER BY id").fetchall()
+            return self._rows_to_dicts(rows)
+
+    def export_all_validations(self):
+        """Export all rows from gsd_task_validations."""
+        with self._get_conn() as conn:
+            rows = conn.execute("SELECT * FROM gsd_task_validations ORDER BY id").fetchall()
+            return self._rows_to_dicts(rows)
+
+    def export_all_agent_performance(self):
+        """Export all rows from gsd_agent_performance (not available in SQLite)."""
+        return []
+
+    def export_all_audit(self):
+        """Export all rows from gsd_audit_log."""
+        try:
+            with self._get_conn() as conn:
+                rows = conn.execute("SELECT * FROM gsd_audit_log ORDER BY id").fetchall()
+                return self._rows_to_dicts(rows)
+        except Exception:
+            return []
+
+    def import_memory(self, rows, mode="merge"):
+        """Import memory rows from backup.
+
+        Args:
+            rows: List of row dicts.
+            mode: 'merge' (INSERT OR IGNORE) or 'replace' (DELETE ALL + INSERT).
+
+        Returns:
+            Number of rows imported.
+        """
+        if not rows:
+            return 0
+        with self._get_conn() as conn:
+            if mode == "replace":
+                conn.execute("DELETE FROM gsd_memory")
+            count = 0
+            for row in rows:
+                try:
+                    conn.execute(
+                        """INSERT OR IGNORE INTO gsd_memory
+                               (id, text, source, agent_id, tags, metadata, project_id, created_at, updated_at)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (
+                            row.get("id"),
+                            row.get("text", ""),
+                            row.get("source", "agent"),
+                            row.get("agent_id"),
+                            json.dumps(row.get("tags", [])) if isinstance(row.get("tags"), (list, dict)) else row.get("tags", "[]"),
+                            json.dumps(row.get("metadata", {})) if isinstance(row.get("metadata"), (list, dict)) else row.get("metadata", "{}"),
+                            row.get("project_id"),
+                            row.get("created_at"),
+                            row.get("updated_at"),
+                        ),
+                    )
+                    count += conn.execute("SELECT changes()").fetchone()[0]
+                except Exception:
+                    pass
+            return count
+
+    def import_tasks(self, rows, mode="merge"):
+        """Import task rows from backup."""
+        if not rows:
+            return 0
+        with self._get_conn() as conn:
+            if mode == "replace":
+                conn.execute("DELETE FROM gsd_tasks")
+            count = 0
+            for row in rows:
+                try:
+                    conn.execute(
+                        """INSERT OR IGNORE INTO gsd_tasks (
+                               id, project_id, type, title, description, details,
+                               status, priority, assigned_to, claimed_by, claimed_at,
+                               rpetd_r, rpetd_p, rpetd_e, rpetd_t, rpetd_d, rpetd_complete,
+                               importance, urgency,
+                               success_criteria, deliverables, dependencies,
+                               tags, notes, parent_id, validation_notes, validated_by,
+                               test_strategy, phase, plan, evidence, outcome, lesson,
+                               created_at, updated_at
+                           ) VALUES (
+                               ?, ?, ?, ?, ?, ?,
+                               ?, ?, ?, ?, ?,
+                               ?, ?, ?, ?, ?, ?,
+                               ?, ?,
+                               ?, ?, ?,
+                               ?, ?, ?, ?, ?,
+                               ?, ?, ?, ?, ?, ?,
+                               ?, ?
+                           )""",
+                        (
+                            row.get("id"), row.get("project_id", "default"),
+                            row.get("type", "task"), row.get("title", ""),
+                            row.get("description", ""), row.get("details", ""),
+                            row.get("status", "pending"), row.get("priority", "medium"),
+                            row.get("assigned_to", ""), row.get("claimed_by"),
+                            row.get("claimed_at"),
+                            row.get("rpetd_r", ""), row.get("rpetd_p", ""),
+                            row.get("rpetd_e", ""), row.get("rpetd_t", ""),
+                            row.get("rpetd_d", ""),
+                            1 if row.get("rpetd_complete") else 0,
+                            row.get("importance", 3), row.get("urgency", 3),
+                            json.dumps(row.get("success_criteria", [])) if isinstance(row.get("success_criteria"), (list, dict)) else row.get("success_criteria", "[]"),
+                            json.dumps(row.get("deliverables", [])) if isinstance(row.get("deliverables"), (list, dict)) else row.get("deliverables", "[]"),
+                            json.dumps(row.get("dependencies", [])) if isinstance(row.get("dependencies"), (list, dict)) else row.get("dependencies", "[]"),
+                            json.dumps(row.get("tags", [])) if isinstance(row.get("tags"), (list, dict)) else row.get("tags", "[]"),
+                            json.dumps(row.get("notes", [])) if isinstance(row.get("notes"), (list, dict)) else row.get("notes", "[]"),
+                            row.get("parent_id"), row.get("validation_notes", ""),
+                            row.get("validated_by", ""),
+                            row.get("test_strategy", ""), row.get("phase", ""),
+                            row.get("plan", ""),
+                            json.dumps(row.get("evidence", {})) if isinstance(row.get("evidence"), (list, dict)) else row.get("evidence", "{}"),
+                            row.get("outcome", ""), row.get("lesson", ""),
+                            row.get("created_at"), row.get("updated_at"),
+                        ),
+                    )
+                    count += conn.execute("SELECT changes()").fetchone()[0]
+                except Exception:
+                    pass
+            return count
+
+    def import_skb(self, rows, mode="merge"):
+        """Import SKB rows from backup."""
+        if not rows:
+            return 0
+        with self._get_conn() as conn:
+            if mode == "replace":
+                conn.execute("DELETE FROM gsd_shared_kb")
+            count = 0
+            for row in rows:
+                try:
+                    conn.execute(
+                        """INSERT OR IGNORE INTO gsd_shared_kb
+                               (id, title, content, category, agent_id, tags, importance, source_task, created_at, updated_at)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (
+                            row.get("id"), row.get("title", ""),
+                            row.get("content", ""), row.get("category"),
+                            row.get("agent_id"),
+                            json.dumps(row.get("tags", [])) if isinstance(row.get("tags"), (list, dict)) else row.get("tags", "[]"),
+                            row.get("importance", 5), row.get("source_task"),
+                            row.get("created_at"), row.get("updated_at"),
+                        ),
+                    )
+                    count += conn.execute("SELECT changes()").fetchone()[0]
+                except Exception:
+                    pass
+            return count
+
+    def import_validations(self, rows, mode="merge"):
+        """Import validation rows from backup."""
+        if not rows:
+            return 0
+        with self._get_conn() as conn:
+            if mode == "replace":
+                conn.execute("DELETE FROM gsd_task_validations")
+            count = 0
+            for row in rows:
+                try:
+                    conn.execute(
+                        """INSERT INTO gsd_task_validations
+                               (task_id, validator_id, status, evidence, rejection_reason, created_at)
+                           VALUES (?, ?, ?, ?, ?, ?)""",
+                        (
+                            row.get("task_id"), row.get("validator_id"),
+                            row.get("status"),
+                            json.dumps(row.get("evidence", {})) if isinstance(row.get("evidence"), (list, dict)) else row.get("evidence", "{}"),
+                            row.get("rejection_reason"),
+                            row.get("created_at"),
+                        ),
+                    )
+                    count += conn.execute("SELECT changes()").fetchone()[0]
+                except Exception:
+                    pass
+            return count
+
+    def import_agent_performance(self, rows, mode="merge"):
+        """Import agent performance rows (no-op in SQLite)."""
+        return 0
 
     # ═══════════════════════════════════════════════════════
     # Cleanup

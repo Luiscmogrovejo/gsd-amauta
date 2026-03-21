@@ -801,6 +801,45 @@ def _record_agent_performance(agent_id, task_id, outcome, **kwargs):
         pass  # Best-effort
 
 
+def _audit_log_event(task_id, event_type, agent_id=None, actor=None,
+                     phase=None, status=None, gate_results=None,
+                     content=None, metadata=None):
+    """Write an immutable audit log entry via daemon HTTP API.
+
+    Best-effort: never blocks or raises. Uses /api/audit/log endpoint.
+    Falls back silently if daemon is unreachable.
+    """
+    try:
+        import urllib.request
+        port = int(os.environ.get("GSD_AMAUTA_PORT", "18799"))
+        url = f"http://127.0.0.1:{port}/api/audit/log"
+        body = {
+            "task_id": task_id,
+            "event_type": event_type,
+        }
+        if agent_id:
+            body["agent_id"] = agent_id
+        if actor:
+            body["actor"] = actor
+        if phase:
+            body["phase"] = phase
+        if status:
+            body["status"] = status
+        if gate_results:
+            body["gate_results"] = gate_results
+        if content:
+            body["content"] = str(content)[:4000]  # Truncate large content
+        if metadata:
+            body["metadata"] = metadata
+        import json as _json
+        data = _json.dumps(body).encode()
+        req = urllib.request.Request(url, data=data, method="POST",
+                                     headers={"Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=3)
+    except Exception:
+        pass  # Best-effort — never break the main workflow
+
+
 def cmd_memory(args):
     if args.mem_cmd == "add":
         tags = [t.strip() for t in (args.tags or "").split(",") if t.strip()]
@@ -2789,6 +2828,17 @@ def cmd_status(args):
         )
 
     save(data)
+
+    # ── Audit log: record status change ──
+    _audit_log_event(
+        task_id=args.id,
+        event_type="status_change",
+        agent_id=args.agent or "system",
+        status=args.status,
+        content=args.note or "",
+        metadata={"old_status": old_status, "new_status": args.status},
+    )
+
     print(c(f"{args.id}: {old_status} → {args.status}", GREEN))
 
 
@@ -3005,6 +3055,14 @@ def cmd_claim(args):
     save(data)
     log.info("task_claimed id=%s agent=%s", args.id, args.agent)
 
+    # ── Audit log: record claim event ──
+    _audit_log_event(
+        task_id=args.id,
+        event_type="claim",
+        agent_id=args.agent,
+        metadata={"title": item.get("title", "")},
+    )
+
     print(c(f"CLAIMED: {args.id} → in-progress  @{args.agent}", GREEN))
     print(dim(f"  Title: {item['title']}"))
     if item.get("details"):
@@ -3119,6 +3177,16 @@ def cmd_rpetd(args):
 
     save(data)
     log.info("rpetd_phase id=%s phase=%s len=%d", args.id, phase, len(args.content))
+
+    # ── Audit log: record RPETD phase write ──
+    _audit_log_event(
+        task_id=args.id,
+        event_type="rpetd_phase",
+        agent_id=args.agent or item.get("claimed_by", "system"),
+        phase=phase,
+        content=args.content,
+        metadata={"title": item.get("title", ""), "rpetd_complete": item.get("rpetd_complete", False)},
+    )
 
     complete_str = c(" ✓ RPETD COMPLETE", GREEN) if item.get("rpetd_complete", False) else ""
     print(c(f"[{phase}] {PHASE_NAMES[phase]} logged on {args.id}{complete_str}", GREEN))
@@ -3587,6 +3655,20 @@ def cmd_validate(args):
             duration_minutes=_calc_duration_minutes(item),
             learning_captured=(item.get("rpetd_phases") or {}).get("D", "")[:500],
         )
+
+        # ── Audit log: record validation pass ──
+        _audit_log_event(
+            task_id=args.id,
+            event_type="validation",
+            agent_id=item["validated_by"],
+            status="force" if (failures and args.force) else "pass",
+            gate_results=[dict(g) for g in gate_results],
+            content=item.get("validation_notes", ""),
+            metadata={
+                "forced": bool(failures and args.force),
+                "failed_gates": [g["gate"] for g in failures] if failures else [],
+            },
+        )
     else:
         # JSON output for --fail path
         if getattr(args, "json_output", False):
@@ -3670,6 +3752,19 @@ def cmd_validate(args):
             gate_failed=_extract_failed_gate(args.notes or ""),
             failure_reason=(args.notes or "")[:500],
             duration_minutes=_calc_duration_minutes(item),
+        )
+
+        # ── Audit log: record validation fail ──
+        _audit_log_event(
+            task_id=args.id,
+            event_type="validation",
+            agent_id=item["validated_by"],
+            status="fail",
+            content=item.get("validation_notes", ""),
+            metadata={
+                "gate_failed": _extract_failed_gate(args.notes or ""),
+                "failure_reason": (args.notes or "")[:500],
+            },
         )
 
         # ── Atomize on fail: if --subtasks provided, split into subtasks ──
