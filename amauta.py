@@ -1190,6 +1190,30 @@ def _status_label(status: str) -> str:
 def _priority_label(priority: str) -> str:
     return c(priority.upper(), PRIORITY_COL.get(priority, WHITE))
 
+def _rpetd_indicator(item: dict) -> str:
+    """Return RPETD progress indicator like R✓P✓E○T○D○ with ANSI colors."""
+    phases = item.get("rpetd_phases", {}) or {}
+    parts = []
+    for ph in PHASES:
+        content = (phases.get(ph, "") or "").strip()
+        if content:
+            parts.append(f"{ph}{c('✓', GREEN)}")
+        else:
+            parts.append(f"{ph}{dim('○')}")
+    return "".join(parts)
+
+def _dep_badge(item: dict, all_items: list) -> str:
+    """Return dependency blocking badge or empty string."""
+    deps = item.get("dependencies", [])
+    if not deps:
+        return ""
+    blocking = [d for d in deps
+               if (dep := _find(all_items, d)) is not None
+               and dep.get("status") != "done"]
+    if blocking:
+        return c(f" [blocked:{len(blocking)}]", YELLOW)
+    return ""
+
 def _print_item_line(item: dict, indent: int = 0, score: Optional[float] = None):
     pad = "  " * indent
     tl  = _type_label(item.get("type", "task"))
@@ -3697,14 +3721,24 @@ def cmd_board(args):
         if not col:
             print(dim("    (empty)"))
         else:
+            rpetd_complete_count = 0
             for item in sorted(col, key=lambda i: _score(i, items), reverse=True)[:args.limit]:
                 tl = _type_label(item.get("type","task"))
                 pl = _priority_label(item.get("priority","medium"))
                 ag = f"@{item.get('assigned_to','?')}"
-                print(f"    {tl} {bold(item['id'])}  {pl}  {ag}")
-                print(f"       {item['title'][:60]}")
+                ri = _rpetd_indicator(item)
+                db = _dep_badge(item, items)
+                if item.get("rpetd_complete"):
+                    rpetd_complete_count += 1
+                print(f"    {tl} {bold(item['id'])}  {ri}  {pl}  {ag}{db}")
+                print(f"       {item['title'][:45]}")
             if len(col) > args.limit:
                 print(dim(f"    … {len(col)-args.limit} more"))
+            total_in_col = len(col)
+            if total_in_col > 0:
+                # Count all RPETD-complete in column (not just displayed)
+                all_complete = sum(1 for i in col if i.get("rpetd_complete"))
+                print(dim(f"    {all_complete}/{total_in_col} RPETD-complete"))
         print()
 
 
