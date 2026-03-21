@@ -435,6 +435,22 @@ class SQLiteStore:
             ).fetchall()
             return {r["source"]: r["cnt"] for r in rows}
 
+    def memory_tag_stats(self):
+        """Get tag usage statistics."""
+        with self._get_conn() as conn:
+            rows = conn.execute("SELECT tags FROM gsd_memory WHERE tags != '[]'").fetchall()
+            tag_counts = {}
+            for row in rows:
+                try:
+                    tags = json.loads(row["tags"]) if isinstance(row["tags"], str) else row["tags"]
+                    for tag in (tags or []):
+                        tag_counts[tag] = tag_counts.get(tag, 0) + 1
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            # Sort by count descending, take top 20
+            sorted_tags = sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)[:20]
+            return {"tags": dict(sorted_tags), "unique_tags": len(tag_counts)}
+
     def memory_cross_project_search(self, query, tags=None, exclude_project=None, limit=20):
         """Search memories across ALL projects (simplified for SQLite)."""
         if tags:

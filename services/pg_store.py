@@ -368,6 +368,23 @@ class PGStore:
         except Exception:
             return {}
 
+    def memory_tag_stats(self):
+        """Get tag usage statistics."""
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        SELECT tag, COUNT(*) as cnt
+                        FROM gsd_memory, jsonb_array_elements_text(tags) AS tag
+                        GROUP BY tag
+                        ORDER BY cnt DESC
+                        LIMIT 20
+                    """)
+                    rows = cur.fetchall()
+                    return {"tags": {r[0]: r[1] for r in rows}, "unique_tags": len(rows)}
+        except Exception:
+            return {"tags": {}, "unique_tags": 0}
+
     def memory_cross_project_search(self, query, tags=None, exclude_project=None, limit=20):
         """Search memories across ALL projects, optionally filtered by technology tags.
 

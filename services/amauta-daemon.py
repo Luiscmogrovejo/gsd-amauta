@@ -521,6 +521,19 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": _safe_error(e)}, 500)
             return
 
+        # ─── Memory Tag Stats GET route ──────────────
+        if path == "/api/memory/tag-stats":
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
+                return
+            try:
+                stats = store.memory_tag_stats()
+                self._send_json(stats)
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
         # ─── Agent Performance GET route (PG or SQLite) ──────
         if path.startswith("/api/agent-performance"):
             store = _get_store()

@@ -1396,24 +1396,26 @@ async function cmdStatus(args) {
     const rlmHealth = await checkRlmHealth();
 
     if (args.json) {
-      // Also fetch infra details
+      // Fetch all details for JSON output
+      const result = {
+        version: pkg.version,
+        health: h,
+        rlm_status: rlmHealth.running ? 'running' : 'offline',
+        rlm_port: rlmHealth.port,
+      };
       try {
         const infraRes = await httpRequest('GET', '/api/infra');
-        console.log(JSON.stringify({
-          version: pkg.version,
-          health: h,
-          infra: infraRes.data,
-          rlm_status: rlmHealth.running ? 'running' : 'offline',
-          rlm_port: rlmHealth.port,
-        }, null, 2));
-      } catch {
-        console.log(JSON.stringify({
-          version: pkg.version,
-          health: h,
-          rlm_status: rlmHealth.running ? 'running' : 'offline',
-          rlm_port: rlmHealth.port,
-        }, null, 2));
-      }
+        result.infra = infraRes.data;
+      } catch { /* optional */ }
+      try {
+        const distillRes = await httpRequest('GET', '/api/memory/distill-status');
+        if (distillRes.status === 200) result.memory_stats = distillRes.data;
+      } catch { /* optional */ }
+      try {
+        const tagRes = await httpRequest('GET', '/api/memory/tag-stats');
+        if (tagRes.status === 200) result.tag_stats = tagRes.data;
+      } catch { /* optional */ }
+      console.log(JSON.stringify(result, null, 2));
       return;
     }
 
@@ -1451,14 +1453,47 @@ async function cmdStatus(args) {
       console.log(`  Embeddings: \x1b[90mnot available\x1b[0m (requires PostgreSQL + pgvector)`);
     }
 
-    // Try to get counts
+    // Try to get enhanced memory statistics
+    try {
+      const distillRes = await httpRequest('GET', '/api/memory/distill-status');
+      if (distillRes.status === 200) {
+        const ds = distillRes.data;
+        console.log(`  Memories:   ${ds.total} stored`);
+
+        // Per-source breakdown
+        if (ds.by_source && Object.keys(ds.by_source).length > 0) {
+          const sorted = Object.entries(ds.by_source).sort((a, b) => b[1] - a[1]);
+          const parts = sorted.map(([src, cnt]) => {
+            const label = SOURCE_LABELS[src] || src;
+            return `${label}: ${cnt}`;
+          });
+          console.log(`  By source:  ${parts.join(', ')}`);
+        }
+
+        // Distillation status
+        if (ds.needs_distill) {
+          console.log(`  Distill:    \x1b[93mrecommended\x1b[0m (${ds.total} >= ${ds.distill_threshold} threshold)`);
+        } else {
+          console.log(`  Distill:    \x1b[92mok\x1b[0m (${ds.total} < ${ds.distill_threshold} threshold)`);
+        }
+      }
+    } catch { /* distill-status endpoint may not exist yet */ }
+
+    // Tag distribution
+    try {
+      const tagRes = await httpRequest('GET', '/api/memory/tag-stats');
+      if (tagRes.status === 200 && tagRes.data.unique_tags > 0) {
+        const tags = tagRes.data.tags;
+        const top5 = Object.entries(tags).slice(0, 5);
+        const tagStr = top5.map(([t, c]) => `\x1b[96m${t}\x1b[0m(${c})`).join(', ');
+        console.log(`  Tags:       ${tagRes.data.unique_tags} unique — top: ${tagStr}`);
+      }
+    } catch { /* tag-stats endpoint may not exist yet */ }
+
+    // Task counts
     try {
       const infraRes = await httpRequest('GET', '/api/infra');
       const infra = infraRes.data;
-
-      if (infra.memory_count !== undefined && infra.memory_count >= 0) {
-        console.log(`  Memories:   ${infra.memory_count} stored`);
-      }
 
       if (infra.task_counts) {
         const tc = infra.task_counts;
