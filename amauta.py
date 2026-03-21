@@ -3346,19 +3346,39 @@ def cmd_validate(args):
         gate_results = _validate_all_gates(item)
         failures = [g for g in gate_results if g["status"] == "FAIL"]
 
-        # Print structured gate results
-        print(f"\n  {'─' * 50}")
-        print(f"  Validation Gates for {args.id}:")
-        print(f"  {'─' * 50}")
-        for g in gate_results:
-            if g["status"] == "PASS":
-                icon = c("PASS", GREEN)
-            elif g["status"] == "SKIP":
-                icon = c("SKIP", DIM)
+        # JSON output mode — clean JSON without ANSI, then continue to normal processing
+        if getattr(args, "json_output", False):
+            result = {
+                "task_id": args.id,
+                "gates": gate_results,
+                "passed": len(failures) == 0,
+                "failed_count": len(failures),
+                "forced": bool(args.force),
+            }
+            if len(failures) == 0 or args.force:
+                result["status"] = "done"
             else:
-                icon = c("FAIL", RED)
-            print(f"  GATE[{g['gate']}]: {icon} -- {g['reason']}")
-        print(f"  {'─' * 50}")
+                result["status"] = "blocked"
+            print(json.dumps(result))
+            if failures and not args.force:
+                sys.exit(1)
+            # Continue to normal pass processing (status update, etc.)
+
+        # Print structured gate results (text mode only)
+        _is_json = getattr(args, "json_output", False)
+        if not _is_json:
+            print(f"\n  {'─' * 50}")
+            print(f"  Validation Gates for {args.id}:")
+            print(f"  {'─' * 50}")
+            for g in gate_results:
+                if g["status"] == "PASS":
+                    icon = c("PASS", GREEN)
+                elif g["status"] == "SKIP":
+                    icon = c("SKIP", DIM)
+                else:
+                    icon = c("FAIL", RED)
+                print(f"  GATE[{g['gate']}]: {icon} -- {g['reason']}")
+            print(f"  {'─' * 50}")
 
         if failures and not args.force:
             # Record each failure
@@ -3367,11 +3387,12 @@ def cmd_validate(args):
                             args.validator or "validator")
             item["updated_at"] = _now()
             save(data)
-            print(c(f"\n  {args.id}: PASS blocked — {len(failures)} gate(s) failed", RED))
-            print(dim("  Fix the issues above or use --force to override."))
+            if not _is_json:
+                print(c(f"\n  {args.id}: PASS blocked — {len(failures)} gate(s) failed", RED))
+                print(dim("  Fix the issues above or use --force to override."))
             sys.exit(1)
 
-        if failures and args.force:
+        if failures and args.force and not _is_json:
             print(c(f"\n  Warning: {len(failures)} gate(s) failed but --force override applied", YELLOW))
 
         # ── LEARNING persistence check (existing behavior, non-blocking) ─────
@@ -3480,6 +3501,10 @@ def cmd_validate(args):
             learning_captured=(item.get("rpetd_phases") or {}).get("D", "")[:500],
         )
     else:
+        # JSON output for --fail path
+        if getattr(args, "json_output", False):
+            print(json.dumps({"task_id": args.id, "status": "failed", "notes": args.notes or ""}))
+
         fail_notes = (args.notes or "").lower()
         non_code_gitflow_false_fail = (
             ("gitflow" in fail_notes or "no pr url" in fail_notes or "pull request" in fail_notes)
@@ -4211,6 +4236,7 @@ AGENT WORKFLOW (heartbeat cycle):
     vg.add_argument("--fail",               action="store_true")
     v.add_argument("--notes");     v.add_argument("--validator")
     v.add_argument("--force", action="store_true", help="Override RPETD check")
+    v.add_argument("--json", dest="json_output", action="store_true", help="Output validation results as JSON")
     v.add_argument("--subtasks", help="Pipe-separated subtask titles to atomize on --fail (e.g. 'fix A|fix B|fix C')")
 
     # ── board ─────────────────────────────────────────────────────────────────
