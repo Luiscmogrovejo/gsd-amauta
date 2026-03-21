@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Amauta v1: Claude Code plugin for multi-agent task management with RPETD pipeline, PostgreSQL memory, RLM context engine, and GSD spec-driven development.",
   "bin": {
+    "gsd-amauta": "bin/cli.cjs",
     "gsd-amauta-install": "bin/install.js",
     "amauta-install": "bin/install.js",
     "amauta": "get-shit-done/bin/amauta.cjs",
