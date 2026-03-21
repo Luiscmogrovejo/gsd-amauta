@@ -793,6 +793,18 @@ class SQLiteStore:
             return {r["status"]: r["cnt"] for r in rows}
 
     # ═══════════════════════════════════════════════════════
+    # PG Retry Queue (no-op — SQLite is not a mirror target)
+    # ═══════════════════════════════════════════════════════
+
+    def enqueue_retry(self, item):
+        """No-op for SQLite (SQLite is not a mirror target)."""
+        pass
+
+    def flush_retry_queue(self):
+        """No-op for SQLite."""
+        return 0, 0, 0
+
+    # ═══════════════════════════════════════════════════════
     # Agent Performance (stub — no table in SQLite for now)
     # ═══════════════════════════════════════════════════════
 

@@ -718,9 +718,9 @@ class PGStore:
                     })
                     return item["id"]
         except Exception as e:
-            # Best-effort — never block task operations, but log so mismatches are diagnosable
             import sys
             print(f"\033[2m[pg-mirror] task_upsert failed for {item.get('id', '?')}: {e}\033[0m", file=sys.stderr)
+            self.enqueue_retry(item)
             return None
 
     def task_upsert_batch(self, items):
@@ -752,6 +752,77 @@ class PGStore:
                     return {row[0]: row[1] for row in cur.fetchall()}
         except Exception:
             return {}
+
+    # ═══════════════════════════════════════════════════════
+    # PG Retry Queue (file-based persistence for failed upserts)
+    # ═══════════════════════════════════════════════════════
+
+    RETRY_QUEUE_MAX = 1000
+
+    def _retry_queue_path(self):
+        """Path to the retry queue JSON file."""
+        data_dir = os.environ.get("AMAUTA_DATA_DIR",
+                                   os.path.join(os.path.expanduser("~"), ".amauta"))
+        return os.path.join(data_dir, "pg_retry_queue.json")
+
+    def _load_retry_queue(self):
+        """Load pending retry items from disk."""
+        path = self._retry_queue_path()
+        if not os.path.exists(path):
+            return []
+        try:
+            with open(path) as f:
+                items = json.load(f)
+            return items if isinstance(items, list) else []
+        except (json.JSONDecodeError, OSError):
+            return []
+
+    def _save_retry_queue(self, items):
+        """Persist retry queue to disk. Evicts oldest if over RETRY_QUEUE_MAX."""
+        if len(items) > self.RETRY_QUEUE_MAX:
+            evicted = len(items) - self.RETRY_QUEUE_MAX
+            items = items[-self.RETRY_QUEUE_MAX:]
+            import sys
+            print(f"\033[93m[pg-retry] queue overflow: evicted {evicted} oldest items\033[0m",
+                  file=sys.stderr)
+        path = self._retry_queue_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        try:
+            with open(tmp, "w") as f:
+                json.dump(items, f)
+            os.replace(tmp, path)
+        except OSError as e:
+            import sys
+            print(f"\033[91m[pg-retry] save failed: {e}\033[0m", file=sys.stderr)
+
+    def enqueue_retry(self, item):
+        """Add a failed task upsert to the retry queue."""
+        queue = self._load_retry_queue()
+        # Deduplicate: remove existing entry for same task ID
+        queue = [q for q in queue if q.get("id") != item.get("id")]
+        queue.append(item)
+        if len(queue) > 500:
+            import sys
+            print(f"\033[93m[pg-retry] queue high: {len(queue)} items pending\033[0m",
+                  file=sys.stderr)
+        self._save_retry_queue(queue)
+
+    def flush_retry_queue(self):
+        """Attempt to upsert all queued items. Returns (succeeded, failed, remaining)."""
+        queue = self._load_retry_queue()
+        if not queue:
+            return 0, 0, 0
+        succeeded = 0
+        still_failed = []
+        for item in queue:
+            result = self.task_upsert(item)
+            if result is not None:
+                succeeded += 1
+            else:
+                still_failed.append(item)
+        self._save_retry_queue(still_failed)
+        return succeeded, len(still_failed), len(still_failed)
 
     # ═══════════════════════════════════════════════════════
     # Agent Performance Tracking (Auto-Learning Feedback Loop)
