@@ -2732,6 +2732,17 @@ def cmd_status(args):
             print(dim("  Add missing RPETD evidence and retry status validation."))
             sys.exit(1)
 
+    # ── DEPENDENCY CHECK for done ──
+    items = data["items"]
+    if args.status == "done" and not _deps_met(item, items):
+        if not getattr(args, "force", False):
+            blocking = [d for d in item.get("dependencies", [])
+                       if (dep := _find(items, d)) is not None
+                       and dep.get("status") != "done"]
+            print(c(f"{args.id}: cannot set to done -- blocked by: {', '.join(blocking)}", RED))
+            print(dim("  Use --force to override."))
+            sys.exit(1)
+
     old_status = item["status"]
     item["status"] = args.status
     item["updated_at"] = _now()
@@ -3421,6 +3432,31 @@ def cmd_validate(args):
 
         if failures and args.force and not _is_json:
             print(c(f"\n  Warning: {len(failures)} gate(s) failed but --force override applied", YELLOW))
+
+        # ── DEPENDENCY CHECK: block done if deps are incomplete ──
+        if not _deps_met(item, data["items"]) and not args.force:
+            blocking = [d for d in item.get("dependencies", [])
+                       if (dep := _find(data["items"], d)) is not None
+                       and dep.get("status") != "done"]
+            _append_note(item, f"DEP_BLOCK: cannot mark done, blocked by: {', '.join(blocking)}",
+                        args.validator or "validator")
+            item["updated_at"] = _now()
+            save(data)
+            if not _is_json:
+                print(c(f"\n  {args.id}: PASS blocked -- dependencies incomplete", RED))
+                for bid in blocking:
+                    bdep = _find(data["items"], bid)
+                    bstatus = bdep.get("status", "?") if bdep else "not found"
+                    print(dim(f"    {bid}: {bstatus}"))
+                print(dim("  Complete blocking tasks first or use --force to override."))
+            else:
+                dep_result = {
+                    "task_id": args.id,
+                    "status": "dep_blocked",
+                    "blocking": blocking,
+                }
+                print(json.dumps(dep_result))
+            sys.exit(1)
 
         # ── LEARNING persistence check (existing behavior, non-blocking) ─────
         _validator_id = args.validator or "validator"
