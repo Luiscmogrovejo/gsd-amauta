@@ -5,11 +5,11 @@
 See: .planning/PROJECT.md (updated 2026-03-21)
 
 **Core value:** Zero-config quality pipeline for any developer in under 60 seconds
-**Current focus:** Phase 5 — Distribution (Phase 4 complete)
+**Current focus:** v2.0 COMPLETE — all 5 phases done
 
 ## Milestone: v2.0
 
-Progress: ████████░░ 80%
+Progress: ██████████ 100%
 
 | Phase | Status | Plans |
 |-------|--------|-------|
@@ -17,7 +17,7 @@ Progress: ████████░░ 80%
 | 2 — RPETD Enforcement | ✔ Complete | 1 (02-01 done) |
 | 3 — Memory & RLM | ✔ Complete | 2 (03-01 done, 03-02 done) |
 | 4 — Task Management | ✔ Complete | 2 (04-01 done, 04-02 done) |
-| 5 — Distribution | ○ Pending | 0 |
+| 5 — Distribution | ✔ Complete | 2 (05-01 done, 05-02 done) |
 
 ## Decisions
 
@@ -42,6 +42,10 @@ Progress: ████████░░ 80%
 - Dependency enforcement: _deps_met() checked at claim, validate --pass, AND status done
 - Board RPETD indicator on task ID line; title truncated 60->45 chars to fit
 - Column RPETD-complete counts all items (not just displayed subset)
+- MCP server: stdio transport only (avoids port conflict with daemon on 18799); thin proxy to daemon HTTP API
+- MCP server: zero external deps (readline + http + process only); no @modelcontextprotocol/sdk needed
+- MCP registration: best-effort in postinstall; skip silently if claude CLI not on PATH
+- Package version bump 1.0.0 -> 2.0.0 for v2 milestone completion
 
 ## Blockers
 
@@ -61,8 +65,8 @@ Progress: ████████░░ 80%
 
 ## Session
 
-- **Last completed:** Plan 04-02 (rich board view with RPETD indicators and dependency badges)
-- **Next:** Plan Phase 5 (Distribution)
+- **Last completed:** Plan 05-02 (MCP server + registration + npm v2.0.0 package)
+- **Next:** v2.0 milestone complete. Ready for npm publish.
 - **Completed:** 2026-03-21
 
 ---
