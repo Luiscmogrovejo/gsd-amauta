@@ -162,3 +162,75 @@ print('OK' if has_enqueue and has_flush else f'MISSING enqueue={has_enqueue} flu
     assert.equal(out, 'OK');
   });
 });
+
+describe('Rich Board (TASK-04)', () => {
+  it('_rpetd_indicator returns indicators for each phase', () => {
+    const out = pyExec(`
+import sys; sys.path.insert(0, '.')
+import importlib.util
+spec = importlib.util.spec_from_file_location('amauta', '${AMAUTA_PY}')
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+item = {"rpetd_phases": {"R": "researched", "P": "planned", "E": "", "T": "", "D": ""}}
+result = mod._rpetd_indicator(item)
+# Strip ANSI for checking content
+import re
+clean = re.sub(r'\\033\\[[0-9;]*m', '', result)
+print(clean)
+    `);
+    // Should contain all 5 phase letters
+    assert.ok(out.includes('R'), 'missing R');
+    assert.ok(out.includes('P'), 'missing P');
+    assert.ok(out.includes('E'), 'missing E');
+    assert.ok(out.includes('T'), 'missing T');
+    assert.ok(out.includes('D'), 'missing D');
+  });
+
+  it('_rpetd_indicator shows check for filled phases', () => {
+    const out = pyExec(`
+import sys; sys.path.insert(0, '.')
+import importlib.util, re
+spec = importlib.util.spec_from_file_location('amauta', '${AMAUTA_PY}')
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+item = {"rpetd_phases": {"R": "done", "P": "done", "E": "done", "T": "done", "D": "done"}}
+result = mod._rpetd_indicator(item)
+clean = re.sub(r'\\033\\[[0-9;]*m', '', result)
+checks = clean.count('\\u2713')
+print(checks)
+    `);
+    assert.equal(out, '5');
+  });
+
+  it('_dep_badge returns empty for no deps', () => {
+    const out = pyExec(`
+import sys; sys.path.insert(0, '.')
+import importlib.util
+spec = importlib.util.spec_from_file_location('amauta', '${AMAUTA_PY}')
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+item = {"id": "TK-0001", "dependencies": []}
+print(repr(mod._dep_badge(item, [item])))
+    `);
+    assert.equal(out, "''");
+  });
+
+  it('_dep_badge shows blocking count for unmet deps', () => {
+    const out = pyExec(`
+import sys; sys.path.insert(0, '.')
+import importlib.util, re
+spec = importlib.util.spec_from_file_location('amauta', '${AMAUTA_PY}')
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+items = [
+    {"id": "TK-0001", "status": "in-progress"},
+    {"id": "TK-0002", "status": "pending"},
+    {"id": "TK-0003", "dependencies": ["TK-0001", "TK-0002"], "status": "in-progress"},
+]
+result = mod._dep_badge(items[2], items)
+clean = re.sub(r'\\033\\[[0-9;]*m', '', result)
+print(clean.strip())
+    `);
+    assert.ok(out.includes('blocked:2'), `expected blocked:2 but got: ${out}`);
+  });
+});
