@@ -711,7 +711,27 @@ async function cmdValidate(useDaemon, id, flags, jsonMode) {
 
   if (useDaemon) {
     const { data } = await httpRequest('POST', '/api/validate', body);
-    printResponse(data, jsonMode);
+
+    // Parse server-side gate results from Python output
+    const output = data.output || '';
+    const gateLines = output.split('\n').filter(l => l.includes('GATE['));
+
+    // JSON mode: parse and forward structured gate JSON from Python --json output
+    if (jsonMode && output.trim().startsWith('{')) {
+      try {
+        const gateJson = JSON.parse(output.trim().split('\n')[0]);
+        console.log(JSON.stringify(gateJson, null, 2));
+        return gateJson.passed ? 0 : 1;
+      } catch { /* fall through to default printResponse */ }
+    }
+
+    // Text mode: if server printed gate results, pass through directly
+    if (gateLines.length > 0 && !jsonMode) {
+      process.stdout.write(output);
+      if (data.exit_code !== 0) return data.exit_code;
+    } else {
+      printResponse(data, jsonMode);
+    }
 
     // TK-0031: SKB promotion on validation pass
     if (flags.pass_result && data.exit_code === 0) {
@@ -1135,7 +1155,7 @@ async function main() {
       '    claim <id> --agent <agent>\n' +
       '    rpetd <id> --phase <R|P|E|T|D> --content "..."\n' +
       '    validate <id> --pass|--fail --validator <agent> --notes "..."\n' +
-      '                [--subtasks "Fix A|Add B"] [--force]\n' +
+      '                [--subtasks "Fix A|Add B"] [--force] [--json]\n' +
       '\n' +
       '  \x1b[33mDaemon:\x1b[0m\n' +
       '    daemon start|stop|status|run\n' +
