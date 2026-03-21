@@ -281,7 +281,7 @@ async function cmdQuery(args, flags) {
   const rlmFallback = (err) => {
     const reason = err && err.code === 'ECONNREFUSED' ? 'service stopped mid-request' : (err && err.message) || 'unknown error';
     if (shouldFallbackToFiles()) {
-      const suggestions = fallbackSuggestReferences(flags);
+      const suggestions = fallbackSuggestReferences(flags, query);
       printFallbackMessage(suggestions, query);
       return 0;
     }
@@ -465,60 +465,86 @@ async function cmdStop() {
 // Fallback — suggest @ references when RLM is down
 // ═══════════════════════════════════════════════════════
 
-function fallbackSuggestReferences(flags) {
+function fallbackSuggestReferences(flags, query) {
   const suggestions = [];
+  const keywords = (query || '').toLowerCase().split(/\s+/).filter(w => w.length > 2);
 
   if (flags.path) {
     const p = path.resolve(flags.path);
     if (fs.existsSync(p)) {
-      suggestions.push(p);
+      suggestions.push({ path: p, score: 10 }); // Explicit path gets highest score
     }
   }
 
   if (flags.paths && Array.isArray(flags.paths)) {
     for (const fp of flags.paths) {
       const p = path.resolve(fp);
-      if (fs.existsSync(p)) suggestions.push(p);
+      if (fs.existsSync(p)) suggestions.push({ path: p, score: 10 });
     }
   }
 
   if (flags.dir) {
-    // List files in the directory that match common code extensions
     const dir = path.resolve(flags.dir);
     if (fs.existsSync(dir)) {
       try {
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
         const codeExts = new Set(['.py', '.js', '.ts', '.tsx', '.jsx', '.cjs', '.mjs', '.sql', '.md', '.yml', '.yaml', '.json', '.sh', '.css', '.scss']);
-        for (const entry of entries) {
-          if (entry.isFile()) {
-            const ext = path.extname(entry.name).toLowerCase();
-            if (codeExts.has(ext)) {
-              suggestions.push(path.join(dir, entry.name));
+        const entries = [];
+
+        // Recursive scan up to 2 levels deep for keyword-scored suggestions
+        function scanDir(d, depth) {
+          if (depth > 2) return;
+          try {
+            for (const entry of fs.readdirSync(d, { withFileTypes: true })) {
+              if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.name === '__pycache__') continue;
+              const full = path.join(d, entry.name);
+              if (entry.isFile()) {
+                const ext = path.extname(entry.name).toLowerCase();
+                if (codeExts.has(ext)) entries.push(full);
+              } else if (entry.isDirectory()) {
+                scanDir(full, depth + 1);
+              }
             }
-          }
+          } catch { /* permission error */ }
         }
-        // Cap at 10 files to avoid overwhelming context
-        suggestions.splice(10);
+        scanDir(dir, 0);
+
+        // Score each file by keyword matches in filename and path
+        for (const fp of entries) {
+          const name = path.basename(fp).toLowerCase();
+          const relPath = fp.toLowerCase();
+          let score = 0;
+          for (const kw of keywords) {
+            if (name.includes(kw)) score += 3;
+            else if (relPath.includes(kw)) score += 1;
+          }
+          suggestions.push({ path: fp, score });
+        }
       } catch { /* ignore */ }
     }
   }
 
-  return suggestions;
+  // Sort by score descending, take top 10
+  suggestions.sort((a, b) => b.score - a.score);
+  return suggestions.slice(0, 10).map(s => s.path);
 }
 
 function printFallbackMessage(suggestions, query) {
-  process.stderr.write(`${YELLOW}RLM service unavailable — falling back to file references.${RESET}\n`);
-  process.stderr.write(`${DIM}Query was: "${query}"${RESET}\n\n`);
+  process.stderr.write(`${YELLOW}RLM service unavailable -- falling back to file references.${RESET}\n`);
+  if (query) {
+    process.stderr.write(`${DIM}Query was: "${query}"${RESET}\n\n`);
+  }
 
   if (suggestions.length > 0) {
-    console.log(`${BOLD}Suggested @ references (use Read tool instead):${RESET}`);
+    console.log(`${BOLD}Suggested files (sorted by likely relevance):${RESET}`);
     for (const s of suggestions) {
       const rel = s.replace(process.cwd() + '/', '').replace(process.env.HOME + '/', '~/');
-      console.log(`  @${rel}`);
+      console.log(`  ${CYAN}${rel}${RESET}`);
     }
-    console.log(`\n${DIM}Tip: Use the Read tool to read these files directly.${RESET}`);
+    console.log(`\n${DIM}Use the Read tool to examine these files directly.${RESET}`);
+    console.log(`${DIM}Start RLM for smarter results: gsd-rlm start${RESET}`);
   } else {
     console.log(`${DIM}No file suggestions available. Use Read/Glob tools to find relevant files.${RESET}`);
+    console.log(`${DIM}Start RLM for code-aware search: gsd-rlm start${RESET}`);
   }
 }
 
@@ -598,7 +624,7 @@ async function main() {
   if (!isRlmEnabled()) {
     const parsed = parseArgs(rest);
     const query = parsed.positional.join(' ') || '';
-    const suggestions = fallbackSuggestReferences(parsed.flags);
+    const suggestions = fallbackSuggestReferences(parsed.flags, query);
     printFallbackMessage(suggestions, query);
     process.exit(0);
   }
@@ -610,7 +636,7 @@ async function main() {
     if (shouldFallbackToFiles()) {
       const parsed = parseArgs(rest);
       const query = parsed.positional.join(' ') || '';
-      const suggestions = fallbackSuggestReferences(parsed.flags);
+      const suggestions = fallbackSuggestReferences(parsed.flags, query);
       printFallbackMessage(suggestions, query);
       process.exit(0);
     }
