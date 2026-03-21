@@ -195,6 +195,97 @@ class _Metrics:
 
 _metrics = _Metrics()
 
+# ── RLM Service Management ───────────────────────────────────────────────────
+RLM_SERVICE_PY = str(Path(__file__).resolve().parent / "rlm-service.py")
+RLM_PORT = int(os.environ.get("GSD_RLM_PORT", "18798"))
+RLM_MAX_RESTARTS = 3
+_rlm_process = None
+_rlm_restart_count = 0
+_rlm_enabled = os.environ.get("GSD_RLM_ENABLED", "true").lower() != "false"
+
+
+def _start_rlm():
+    """Start RLM service as a subprocess."""
+    global _rlm_process, _rlm_restart_count
+    if not _rlm_enabled:
+        log.info("rlm_disabled")
+        return False
+    if not Path(RLM_SERVICE_PY).exists():
+        log.warning("rlm_not_found path=%s", RLM_SERVICE_PY)
+        return False
+
+    try:
+        env = os.environ.copy()
+        env["GSD_RLM_PORT"] = str(RLM_PORT)
+        _rlm_process = subprocess.Popen(
+            [sys.executable, RLM_SERVICE_PY, "run"],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        # Wait for health check
+        import urllib.request
+        for _ in range(25):  # 5 seconds max
+            time.sleep(0.2)
+            try:
+                req = urllib.request.urlopen(f"http://127.0.0.1:{RLM_PORT}/health", timeout=1)
+                if req.status == 200:
+                    log.info("rlm_started pid=%d port=%d", _rlm_process.pid, RLM_PORT)
+                    return True
+            except Exception:
+                pass
+        log.warning("rlm_start_timeout")
+        return False
+    except Exception as e:
+        log.error("rlm_start_failed error=%s", str(e))
+        return False
+
+
+def _stop_rlm():
+    """Stop managed RLM subprocess."""
+    global _rlm_process
+    if _rlm_process is None:
+        return
+    try:
+        _rlm_process.terminate()
+        try:
+            _rlm_process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            _rlm_process.kill()
+        log.info("rlm_stopped pid=%d", _rlm_process.pid)
+    except Exception as e:
+        log.warning("rlm_stop_error error=%s", str(e))
+    _rlm_process = None
+
+
+def _check_rlm_health():
+    """Check if RLM is still responding. Returns True if healthy."""
+    try:
+        import urllib.request
+        req = urllib.request.urlopen(f"http://127.0.0.1:{RLM_PORT}/health", timeout=2)
+        return req.status == 200
+    except Exception:
+        return False
+
+
+def _rlm_watchdog():
+    """Background thread: periodically check RLM health and restart if needed."""
+    global _rlm_restart_count
+    while True:
+        time.sleep(30)  # Check every 30 seconds
+        if not _rlm_enabled or _rlm_process is None:
+            continue
+        if _rlm_process.poll() is not None or not _check_rlm_health():
+            if _rlm_restart_count < RLM_MAX_RESTARTS:
+                _rlm_restart_count += 1
+                log.warning("rlm_restart attempt=%d/%d", _rlm_restart_count, RLM_MAX_RESTARTS)
+                _stop_rlm()
+                _start_rlm()
+            else:
+                log.error("rlm_max_restarts_exceeded")
+
+
 # ── Request Body Size Limit ────────────────────────────────────────────────────
 MAX_BODY_SIZE = int(os.environ.get("AMAUTA_MAX_BODY_SIZE", str(10 * 1024 * 1024)))  # 10MB default
 
@@ -386,6 +477,10 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 "pg_available": _pg_store is not None,
                 "backend": _infra_result.get("backend") if _infra_result else ("postgresql" if _pg_store else "file"),
                 "features": _infra_result.get("features", []) if _infra_result else [],
+                "rlm_managed": _rlm_enabled,
+                "rlm_running": _check_rlm_health() if _rlm_enabled else False,
+                "rlm_port": RLM_PORT if _rlm_enabled else None,
+                "rlm_restarts": _rlm_restart_count,
             }
             if _pg_store:
                 health["pg_health"] = _pg_store.health()
@@ -1007,6 +1102,7 @@ def start_server(foreground=False):
     def shutdown_handler(signum, frame):
         log.info("daemon_shutdown")
         print("\nShutting down daemon...")
+        _stop_rlm()
         for s in (_pg_store, _sqlite_store):
             if s:
                 try:
@@ -1117,11 +1213,25 @@ def start_server(foreground=False):
 
     _reconcile_tasks_to_store()
 
+    # ── Start RLM service ────────────────────────────────────────────────────
+    if _rlm_enabled:
+        rlm_started = _start_rlm()
+        if rlm_started:
+            print(f"  RLM: started (PID {_rlm_process.pid}, port {RLM_PORT})")
+            # Start watchdog thread
+            watchdog = threading.Thread(target=_rlm_watchdog, daemon=True)
+            watchdog.start()
+        else:
+            print(f"  RLM: not started (set GSD_RLM_ENABLED=false to disable)")
+    else:
+        print(f"  RLM: disabled (GSD_RLM_ENABLED=false)")
+
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
+        _stop_rlm()
         for s in (_pg_store, _sqlite_store):
             if s:
                 try:
