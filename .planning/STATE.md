@@ -5,17 +5,17 @@
 See: .planning/PROJECT.md (updated 2026-03-21)
 
 **Core value:** Zero-config quality pipeline for any developer in under 60 seconds
-**Current focus:** Phase 3 — Memory & RLM (Phase 2 complete)
+**Current focus:** Phase 4 — Task Management (Phase 3 complete)
 
 ## Milestone: v2.0
 
-Progress: █████░░░░░ 50%
+Progress: ██████░░░░ 60%
 
 | Phase | Status | Plans |
 |-------|--------|-------|
 | 1 — Setup & Onboarding | ✔ Complete | 2 (01-01 done, 01-02 done) |
 | 2 — RPETD Enforcement | ✔ Complete | 1 (02-01 done) |
-| 3 — Memory & RLM | ▶ In Progress | 2 (03-01 done, 03-02 pending) |
+| 3 — Memory & RLM | ✔ Complete | 2 (03-01 done, 03-02 done) |
 | 4 — Task Management | ○ Pending | 0 |
 | 5 — Distribution | ○ Pending | 0 |
 
@@ -34,6 +34,9 @@ Progress: █████░░░░░ 50%
 - _validate_all_gates() returns structured list of {gate, status, reason} dicts for 5 gates
 - TAG_SYNONYMS map duplicated in Python and JS to maintain zero-dependency constraint
 - normalize_tags applied on both store and search paths for tag synonym consistency
+- RLM subprocess managed by daemon via Popen(start_new_session=True) + watchdog thread
+- MtimeIndex JSON persistence enables incremental indexing across RLM restarts
+- Claim enrichment: 2s timeout, silent fallback on RLM failure
 
 ## Blockers
 
@@ -48,11 +51,13 @@ Progress: █████░░░░░ 50%
 - Pure function tests for gate logic: import with GSD_AMAUTA_NO_AUTO_START=1 to avoid side effects
 - SQLite dict(row) includes rowid from FTS JOIN; must pop("rowid") for PG parity
 - Server-side stats endpoints (distill-status, tag-stats) reduce client round-trips
+- importlib.util.spec_from_file_location needed for hyphenated Python filenames (rlm-service.py) in tests
+- Keyword scoring for fallback: filename match >> path match provides good heuristic without embeddings
 
 ## Session
 
-- **Last completed:** Plan 03-01 (Memory system hardening — 6 tasks, 16 parity tests)
-- **Next:** Plan 03-02 (RLM enhancements, wave 2)
+- **Last completed:** Plan 03-02 (RLM integration — 5 tasks, 10 tests, subprocess management + incremental indexing)
+- **Next:** Phase 4 planning (Task Management)
 - **Completed:** 2026-03-21
 
 ---
