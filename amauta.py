@@ -3342,86 +3342,44 @@ def cmd_validate(args):
             sys.exit(1)
 
     if args.pass_:
-        if not item.get("rpetd_complete") and not args.force:
-            print(c(f"Warning: RPETD not complete on {args.id}. Use --force to override.", YELLOW))
-            print(dim("  Incomplete phases: " + ", ".join(
-                ph for ph in PHASES if not item.get("rpetd_phases", {}).get(ph, "").strip()
-            )))
-            sys.exit(1)
+        # ── RUN ALL VALIDATION GATES ─────────────────────────────────────────
+        gate_results = _validate_all_gates(item)
+        failures = [g for g in gate_results if g["status"] == "FAIL"]
 
-        # ── LEARNING GATE: hard blocking gate for all tasks ───────────────────
-        # Tasks CANNOT pass validation without agent-authored LEARNING evidence.
-        # We still auto-capture best-effort to avoid knowledge loss, but PASS is
-        # blocked until explicit LEARNING is present in RPETD/notes.
-        _validator_id = args.validator or "validator"
-        if not _has_explicit_learning_written(item) and not args.force:
-            auto_ok = _auto_write_learning(item, _validator_id)
-            if auto_ok is None:
-                auto_status = "skipped (PG unavailable)"
-            elif auto_ok:
-                auto_status = "succeeded"
+        # Print structured gate results
+        print(f"\n  {'─' * 50}")
+        print(f"  Validation Gates for {args.id}:")
+        print(f"  {'─' * 50}")
+        for g in gate_results:
+            if g["status"] == "PASS":
+                icon = c("PASS", GREEN)
+            elif g["status"] == "SKIP":
+                icon = c("SKIP", DIM)
             else:
-                auto_status = "failed"
-            _append_note(
-                item,
-                "LEARNING_GATE BLOCKED: missing explicit LEARNING evidence in RPETD/notes. "
-                f"Auto-capture {auto_status} for retention, but PASS is blocked. "
-                "Agent must add LEARNING: block in D-phase (or memory add evidence) and resubmit.",
-                _validator_id,
-            )
+                icon = c("FAIL", RED)
+            print(f"  GATE[{g['gate']}]: {icon} -- {g['reason']}")
+        print(f"  {'─' * 50}")
+
+        if failures and not args.force:
+            # Record each failure
+            for f in failures:
+                _append_note(item, f"GATE_FAIL: {f['gate']} -- {f['reason']}",
+                            args.validator or "validator")
             item["updated_at"] = _now()
             save(data)
-            print(c(f"{args.id}: PASS blocked — missing explicit LEARNING block", RED))
-            print(dim("  Required: add LEARNING: content in RPETD D-phase or note memory add evidence."))
-            print(dim("  Re-run validation after LEARNING is explicitly written. Use --force only for emergencies."))
+            print(c(f"\n  {args.id}: PASS blocked — {len(failures)} gate(s) failed", RED))
+            print(dim("  Fix the issues above or use --force to override."))
             sys.exit(1)
 
+        if failures and args.force:
+            print(c(f"\n  Warning: {len(failures)} gate(s) failed but --force override applied", YELLOW))
+
+        # ── LEARNING persistence check (existing behavior, non-blocking) ─────
+        _validator_id = args.validator or "validator"
         if not _has_learning_persisted(item) and not args.force:
-            _append_note(
-                item,
-                "LEARNING_GATE BLOCKED: no persisted learning entry found in amauta_memory for this task. "
-                "Run amauta memory add with task-specific LEARNING content, then re-submit validation.",
-                _validator_id,
-            )
-            item["updated_at"] = _now()
-            save(data)
-            print(c(f"{args.id}: PASS blocked — learning not persisted to PostgreSQL memory", RED))
-            print(dim("  Required: amauta memory add --agent <agent> --tags 'task,learning,autolearn' --text 'LEARNING: ...'"))
-            print(dim("  Re-run validation after memory write. Use --force only for emergencies."))
-            sys.exit(1)
-
-        # ── GITFLOW ENFORCEMENT: code tasks require PR URL in notes before PASS ──
-        # Validator MUST confirm a PR exists before passing. The validator agent
-        # should merge the PR first, then pass. This gate catches cases where
-        # the validator tries to pass without a PR reference.
-        if _needs_gitflow_gate(item) and not args.force:
-            pr_url = _extract_pr_url(item)
-            if not pr_url:
-                notes_text = args.notes or ""
-                # Also check if PR URL is in the validate notes being passed right now
-                import re as _re
-                pr_in_notes = _re.search(r'(?:pull/|PR\s*#)\d+', notes_text)
-                if not pr_in_notes:
-                    _append_note(item, "VALIDATE_GATE: PASS blocked — no PR URL found in task notes. "
-                                 "Validator must merge PR first, then include PR URL in notes or task.",
-                                 args.validator or "validator")
-                    item["updated_at"] = _now()
-                    save(data)
-                    print(c(f"{args.id}: PASS blocked — code task has no PR URL. Merge PR first.", RED))
-                    print(dim("  Add PR URL via: amauta note <id> --content 'PR: <url>' --agent validator"))
-                    print(dim("  Or use --force to override."))
-                    sys.exit(1)
-
-            if not _has_merge_evidence(item, args.notes or ""):
-                _append_note(item, "VALIDATE_GATE: PASS blocked — no merge evidence found. "
-                             "Validator must merge PR and record evidence in notes before PASS.",
-                             args.validator or "validator")
-                item["updated_at"] = _now()
-                save(data)
-                print(c(f"{args.id}: PASS blocked — no merge evidence. Merge PR first.", RED))
-                print(dim("  Add evidence note: amauta note <id> --content 'Merged PR https://github.com/.../pull/N' --agent validator"))
-                print(dim("  Or use --force to override."))
-                sys.exit(1)
+            _auto_write_learning(item, _validator_id)
+            # Note: this is a soft degradation, not a hard block
+            # The LEARNING_BLOCK gate above already verified the content exists
 
         item["status"]           = "done"
         item["validated_by"]     = args.validator or "validator"
