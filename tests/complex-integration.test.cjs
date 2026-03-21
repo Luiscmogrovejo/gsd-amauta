@@ -82,7 +82,7 @@ function makeTask(d, overrides = {}) {
         R: 'R: done', P: 'P: done',
         E: 'E: git checkout -b feat/TK-0001. feat/TK-0001 branch.',
         T: 'T: npm test\n10 tests passed\nexit 0',
-        D: 'D: https://github.com/org/repo/pull/1 merged. LEARNING: Always test first.'
+        D: 'D: https://github.com/org/repo/pull/1 merged. LEARNING: Always test first and validate edge cases thoroughly.'
       },
       rpetd_complete: true, notes: overrides.notes || [],
       created_at: new Date().toISOString(), updated_at: new Date().toISOString(),

@@ -462,7 +462,8 @@ describe('Validation Gates — Advanced E2E', () => {
       tags: ['lane:non-code', 'non-code', 'no-gitflow'],
       phases: {
         R: 'R: done', P: 'P: done', E: 'E: research complete',
-        T: 'T: verified findings', D: 'D: LEARNING: Research methodology improved.'
+        T: 'T: verified findings against three sources and documentation thoroughly',
+        D: 'D: LEARNING: Research methodology improved by cross-referencing multiple documentation sources.'
       }
     });
     const r = py(['validate', tk, '--pass', '--validator', 'gsd-validator', '--notes', 'Good research'], d);
@@ -499,8 +500,9 @@ describe('Validation Gates — Advanced E2E', () => {
       status: 'validation',
       tags: ['lane:infra', 'no-gitflow'],
       phases: {
-        R: 'R: done', P: 'P: done', E: 'E: configured Docker',
-        T: 'T: docker compose up exit 0', D: 'D: LEARNING: Docker networking.'
+        R: 'R: done', P: 'P: done', E: 'E: configured Docker compose and networking',
+        T: 'T: docker compose up exit 0, all services healthy',
+        D: 'D: LEARNING: Docker networking requires explicit subnet configuration for service discovery.'
       }
     });
     const r = py(['validate', tk, '--pass', '--validator', 'gsd-validator'], d);

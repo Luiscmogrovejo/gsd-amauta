@@ -615,9 +615,10 @@ describe('Agent classification (amauta.py)', () => {
     fs.writeFileSync(path.join(dataDir, 'tasks.json'), JSON.stringify(tasks, null, 2));
 
     const r = py(['validate', 'TK-AGENT3', '--pass', '--validator', 'gsd-validator', '--notes', 'research reviewed'], dataDir);
-    // Gate 4 should be SKIPPED for non-code/research tasks
-    const gate4Block = r.error.includes('PR_URL') || r.output.includes('PR_URL');
-    assert.ok(!gate4Block,
+    // Gate 4 should be SKIPPED for non-code/research tasks — check for FAIL specifically, not just keyword
+    const stripped = (r.output || '').replace(/\x1b\[[0-9;]*m/g, '');
+    const gate4Failed = stripped.includes('GATE[PR_URL]: FAIL');
+    assert.ok(!gate4Failed,
       `researcher should skip PR gate: err=${r.error.slice(0, 200)} out=${r.output.slice(0, 200)}`);
   }));
 

@@ -150,11 +150,11 @@ describe('Daemon Security', () => {
   });
 
   test('Daemon reconcile uses module-level DATA_DIR not os.environ default "."', () => {
-    const reconcile = daemonSource.substring(
-      daemonSource.indexOf('def _reconcile_tasks_to_pg'),
-      daemonSource.indexOf('def _reconcile_tasks_to_pg') + 500
-    );
-    assert.ok(!reconcile.includes('os.environ.get("AMAUTA_DATA_DIR", ".")'), 
+    if (!daemonSource) daemonSource = fs.readFileSync(daemonPath, 'utf-8');
+    const fnStart = daemonSource.indexOf('def _reconcile_tasks_to_store');
+    assert.ok(fnStart !== -1, 'Must have _reconcile_tasks_to_store function');
+    const reconcile = daemonSource.substring(fnStart, fnStart + 500);
+    assert.ok(!reconcile.includes('os.environ.get("AMAUTA_DATA_DIR", ".")'),
       'Must not use os.environ default "." — should use module-level DATA_DIR');
     assert.ok(reconcile.includes('DATA_DIR'), 'Must reference DATA_DIR');
   });
