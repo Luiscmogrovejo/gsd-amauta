@@ -44,6 +44,42 @@ SOURCE_SCORES = {
     "agent": 0,
 }
 
+# ═══════════════════════════════════════════════════════
+# Tag synonym normalization (shared with pg_store.py)
+# ═══════════════════════════════════════════════════════
+
+TAG_SYNONYMS = {
+    "postgres": "postgresql",
+    "pg": "postgresql",
+    "k8s": "kubernetes",
+    "kube": "kubernetes",
+    "js": "javascript",
+    "ts": "typescript",
+    "py": "python",
+    "node": "nodejs",
+    "react-native": "react",
+    "reactnative": "react",
+    "mongo": "mongodb",
+    "gql": "graphql",
+    "tf": "terraform",
+    "docker-compose": "docker",
+    "compose": "docker",
+}
+
+
+def normalize_tags(tags):
+    """Normalize tag variations to canonical forms."""
+    if not tags:
+        return tags
+    normalized = []
+    seen = set()
+    for tag in tags:
+        canonical = TAG_SYNONYMS.get(tag.lower().strip(), tag.lower().strip())
+        if canonical not in seen:
+            normalized.append(canonical)
+            seen.add(canonical)
+    return normalized
+
 
 def _gen_id(prefix="mem"):
     """Generate a short random ID matching PG's format."""
@@ -242,13 +278,14 @@ class SQLiteStore:
     def memory_store(self, text, source="agent", agent_id=None, tags=None,
                      metadata=None, project_id=None):
         """Store a memory entry. Returns the new memory ID."""
+        tags = normalize_tags(tags) if tags else []
         mem_id = _gen_id("mem")
         with self._get_conn() as conn:
             conn.execute(
                 """INSERT INTO gsd_memory (id, text, source, agent_id, tags, metadata, project_id)
                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (mem_id, text, source, agent_id,
-                 json.dumps(tags or []), json.dumps(metadata or {}),
+                 json.dumps(tags), json.dumps(metadata or {}),
                  project_id),
             )
         return mem_id
@@ -392,6 +429,8 @@ class SQLiteStore:
 
     def memory_cross_project_search(self, query, tags=None, exclude_project=None, limit=20):
         """Search memories across ALL projects (simplified for SQLite)."""
+        if tags:
+            tags = normalize_tags(tags)
         with self._get_conn() as conn:
             conditions = []
             params = []

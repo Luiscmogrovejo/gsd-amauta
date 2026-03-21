@@ -52,6 +52,42 @@ SOURCE_SCORES = {
     "agent": 0,
 }
 
+# ═══════════════════════════════════════════════════════
+# Tag synonym normalization (shared with sqlite_store.py)
+# ═══════════════════════════════════════════════════════
+
+TAG_SYNONYMS = {
+    "postgres": "postgresql",
+    "pg": "postgresql",
+    "k8s": "kubernetes",
+    "kube": "kubernetes",
+    "js": "javascript",
+    "ts": "typescript",
+    "py": "python",
+    "node": "nodejs",
+    "react-native": "react",
+    "reactnative": "react",
+    "mongo": "mongodb",
+    "gql": "graphql",
+    "tf": "terraform",
+    "docker-compose": "docker",
+    "compose": "docker",
+}
+
+
+def normalize_tags(tags):
+    """Normalize tag variations to canonical forms."""
+    if not tags:
+        return tags
+    normalized = []
+    seen = set()
+    for tag in tags:
+        canonical = TAG_SYNONYMS.get(tag.lower().strip(), tag.lower().strip())
+        if canonical not in seen:
+            normalized.append(canonical)
+            seen.add(canonical)
+    return normalized
+
 
 class PGStore:
     """Thread-safe PostgreSQL store with connection pooling and reconnect."""
@@ -177,6 +213,7 @@ class PGStore:
 
         Returns the new memory ID.
         """
+        tags = normalize_tags(tags) if tags else []
         with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
@@ -187,7 +224,7 @@ class PGStore:
                     text,
                     source,
                     agent_id,
-                    json.dumps(tags or []),
+                    json.dumps(tags),
                     json.dumps(metadata or {}),
                     project_id,
                 ))
@@ -332,6 +369,8 @@ class PGStore:
 
         Returns list of scored memory dicts.
         """
+        if tags and len(tags) > 0:
+            tags = normalize_tags(tags)
         with self._get_conn() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 conditions = []
@@ -672,6 +711,18 @@ class PGStore:
                     return cur.rowcount > 0
         except Exception:
             return False
+
+    def task_count_by_status(self):
+        """Get task counts grouped by status."""
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT status, COUNT(*) as cnt FROM gsd_tasks GROUP BY status"
+                    )
+                    return {row[0]: row[1] for row in cur.fetchall()}
+        except Exception:
+            return {}
 
     # ═══════════════════════════════════════════════════════
     # Agent Performance Tracking (Auto-Learning Feedback Loop)

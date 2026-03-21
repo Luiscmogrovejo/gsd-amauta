@@ -91,6 +91,26 @@ const SOURCE_LABELS = {
 };
 
 // ═══════════════════════════════════════════════════════
+// Tag Synonym Normalization (shared with Python stores)
+// ═══════════════════════════════════════════════════════
+
+const TAG_SYNONYMS = {
+  postgres: 'postgresql', pg: 'postgresql',
+  k8s: 'kubernetes', kube: 'kubernetes',
+  js: 'javascript', ts: 'typescript', py: 'python',
+  node: 'nodejs', mongo: 'mongodb', gql: 'graphql',
+  tf: 'terraform', 'docker-compose': 'docker', compose: 'docker',
+  'react-native': 'react', reactnative: 'react',
+};
+
+function normalizeTags(tags) {
+  if (!tags || !Array.isArray(tags)) return tags;
+  const seen = new Set();
+  return tags.map(t => TAG_SYNONYMS[t.toLowerCase().trim()] || t.toLowerCase().trim())
+             .filter(t => { if (seen.has(t)) return false; seen.add(t); return true; });
+}
+
+// ═══════════════════════════════════════════════════════
 // HTTP Client (matches gsd-rlm.cjs / gsd-amauta.cjs pattern)
 // ═══════════════════════════════════════════════════════
 
@@ -415,7 +435,7 @@ async function cmdStore(args) {
   const body = { text, source };
   if (args.agent) body.agent_id = args.agent;
   if (args.project) body.project_id = args.project;
-  if (args.tags) body.tags = args.tags.split(',').map(t => t.trim());
+  if (args.tags) body.tags = normalizeTags(args.tags.split(',').map(t => t.trim()));
   if (args.metadata) {
     try { body.metadata = JSON.parse(args.metadata); } catch { /* ignore */ }
   }
@@ -730,7 +750,7 @@ async function cmdCrossProject(args) {
   }
 
   const body = { query, limit: parseInt(args.limit || '10', 10) };
-  if (args.tags) body.tags = args.tags.split(',').map(t => t.trim().toLowerCase());
+  if (args.tags) body.tags = normalizeTags(args.tags.split(',').map(t => t.trim().toLowerCase()));
   if (args.exclude) body.exclude_project = args.exclude;
 
   const res = await tryDaemon('POST', '/api/memory/cross-project', body);
