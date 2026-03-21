@@ -1288,6 +1288,166 @@ async function cmdDistill(args) {
   }
 }
 
+// ═══════════════════════════════════════════════════════
+// Infrastructure Status (Smart Detection)
+// ═══════════════════════════════════════════════════════
+
+async function cmdStatus(args) {
+  const pkg = require('../../package.json');
+  const rlmPort = parseInt(process.env.GSD_RLM_PORT || '18798', 10);
+
+  // Helper: check RLM health via HTTP GET to its /health endpoint
+  function checkRlmHealth() {
+    return new Promise((resolve) => {
+      const req = http.request({
+        hostname: '127.0.0.1',
+        port: rlmPort,
+        path: '/health',
+        method: 'GET',
+        timeout: 2000,
+      }, (res) => {
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => {
+          resolve({ running: res.statusCode === 200, port: rlmPort });
+        });
+      });
+      req.on('error', () => resolve({ running: false, port: rlmPort }));
+      req.on('timeout', () => { req.destroy(); resolve({ running: false, port: rlmPort }); });
+      req.end();
+    });
+  }
+
+  try {
+    // Try daemon health first
+    const healthRes = await httpRequest('GET', '/health');
+    const h = healthRes.data;
+
+    // Check RLM health in parallel
+    const rlmHealth = await checkRlmHealth();
+
+    if (args.json) {
+      // Also fetch infra details
+      try {
+        const infraRes = await httpRequest('GET', '/api/infra');
+        console.log(JSON.stringify({
+          version: pkg.version,
+          health: h,
+          infra: infraRes.data,
+          rlm_status: rlmHealth.running ? 'running' : 'offline',
+          rlm_port: rlmHealth.port,
+        }, null, 2));
+      } catch {
+        console.log(JSON.stringify({
+          version: pkg.version,
+          health: h,
+          rlm_status: rlmHealth.running ? 'running' : 'offline',
+          rlm_port: rlmHealth.port,
+        }, null, 2));
+      }
+      return;
+    }
+
+    // Header with version
+    console.log(`\n\x1b[1mGSD-Amauta v${pkg.version} Status\x1b[0m\n`);
+
+    // Backend detection
+    const backend = h.backend || (h.pg_available ? 'postgresql' : 'file');
+    const backendColor = backend === 'postgresql' ? '\x1b[92m' :
+                         backend === 'sqlite' ? '\x1b[93m' : '\x1b[91m';
+    console.log(`  Backend:    ${backendColor}${backend}\x1b[0m`);
+
+    // Connection details
+    if (h.pg_health && h.pg_health.status === 'ok') {
+      console.log(`  PG Host:    ${h.pg_health.dsn_host || 'unknown'}`);
+    } else if (h.sqlite_health && h.sqlite_health.status === 'ok') {
+      console.log(`  DB Path:    ${h.sqlite_health.path || 'unknown'}`);
+    }
+
+    // Features
+    const features = h.features || [];
+    if (features.length > 0) {
+      console.log(`  Features:   ${features.join(', ')}`);
+    }
+
+    // Embeddings
+    const hasEmbeddings = features.includes('embeddings');
+    const hasVoyage = process.env.VOYAGE_API_KEY || false;
+    const hasOpenAI = process.env.OPENAI_API_KEY || false;
+    if (hasEmbeddings && (hasVoyage || hasOpenAI)) {
+      console.log(`  Embeddings: \x1b[92mavailable\x1b[0m (${hasVoyage ? 'Voyage AI' : 'OpenAI'})`);
+    } else if (hasEmbeddings) {
+      console.log(`  Embeddings: \x1b[93mnot active\x1b[0m (no VOYAGE_API_KEY or OPENAI_API_KEY)`);
+    } else {
+      console.log(`  Embeddings: \x1b[90mnot available\x1b[0m (requires PostgreSQL + pgvector)`);
+    }
+
+    // Try to get counts
+    try {
+      const infraRes = await httpRequest('GET', '/api/infra');
+      const infra = infraRes.data;
+
+      if (infra.memory_count !== undefined && infra.memory_count >= 0) {
+        console.log(`  Memories:   ${infra.memory_count} stored`);
+      }
+
+      if (infra.task_counts) {
+        const tc = infra.task_counts;
+        const total = Object.values(tc).reduce((a, b) => a + b, 0);
+        const parts = [];
+        if (tc.pending) parts.push(`${tc.pending} pending`);
+        if (tc['in-progress']) parts.push(`${tc['in-progress']} in-progress`);
+        if (tc.done) parts.push(`${tc.done} done`);
+        if (tc.validation) parts.push(`${tc.validation} validation`);
+        console.log(`  Tasks:      ${total} (${parts.join(', ')})`);
+      }
+    } catch { /* infra endpoint may not exist yet */ }
+
+    // Daemon info
+    console.log(`  Daemon:     \x1b[92mrunning\x1b[0m (PID ${h.pid}, port ${h.port})`);
+
+    // RLM info
+    if (rlmHealth.running) {
+      console.log(`  RLM:        \x1b[92mrunning\x1b[0m (port ${rlmHealth.port})`);
+    } else {
+      console.log(`  RLM:        \x1b[90moffline\x1b[0m`);
+    }
+    console.log('');
+
+  } catch (err) {
+    // Check RLM even when daemon is offline
+    const rlmHealth = await checkRlmHealth();
+
+    if (args.json) {
+      console.log(JSON.stringify({
+        version: pkg.version,
+        daemon: 'offline',
+        error: err.message,
+        rlm_status: rlmHealth.running ? 'running' : 'offline',
+        rlm_port: rlmHealth.port,
+      }, null, 2));
+      return;
+    }
+    console.log(`\n\x1b[1mGSD-Amauta v${pkg.version} Status\x1b[0m\n`);
+    console.log(`  Daemon:     \x1b[91moffline\x1b[0m`);
+    console.log(`  Backend:    \x1b[93mfile mode\x1b[0m (daemon not running)`);
+
+    // Show file-mode counts
+    const memCount = fileCount();
+    console.log(`  Memories:   ${memCount} (file mode)`);
+
+    // RLM info
+    if (rlmHealth.running) {
+      console.log(`  RLM:        \x1b[92mrunning\x1b[0m (port ${rlmHealth.port})`);
+    } else {
+      console.log(`  RLM:        \x1b[90moffline\x1b[0m`);
+    }
+
+    console.log(`\n  Start daemon: python3 services/amauta-daemon.py start`);
+    console.log('');
+  }
+}
+
 function printUsage() {
   console.log(`
 \x1b[1mAmauta Memory CLI\x1b[0m — PostgreSQL-backed memory for Claude Code agents
@@ -1315,6 +1475,7 @@ function printUsage() {
   skb-list             List SKB entries
 
 \x1b[1mSystem:\x1b[0m
+  status               Show backend, features, and counts
   health               Check daemon & PG status
 
 \x1b[1mOptions:\x1b[0m
@@ -1364,6 +1525,7 @@ async function main() {
     'skb-search': cmdSKBSearch,
     'skb-add': cmdSKBAdd,
     'skb-list': cmdSKBList,
+    'status': cmdStatus,
     'health': cmdHealth,
     'help': () => { printUsage(); },
   };
