@@ -124,6 +124,21 @@ VALID_PARENT_TYPES = {
     "epic":  set(),               # epics have no valid parent (top-level only)
 }
 STATUSES  = ["pending", "in-progress", "validation", "done", "failed", "deferred"]
+
+# ── State Machine ─────────────────────────────────────────────────────────────
+# Allowed transitions: current_status -> {set of valid next statuses}
+# `cmd_claim()` enforces pending/failed/deferred -> in-progress (its own guard)
+# `cmd_validate()` enforces validation/in-progress -> done|failed (its own guard)
+# This dict enforces the `status` command (raw status changes by agents/operators)
+ALLOWED_TRANSITIONS = {
+    "pending":      {"in-progress", "deferred", "failed"},
+    "in-progress":  {"validation", "failed", "deferred", "pending"},
+    "validation":   {"done", "failed", "in-progress", "pending"},
+    "done":         {"pending"},           # reopen only
+    "failed":       {"pending", "in-progress", "deferred"},
+    "deferred":     {"pending", "in-progress"},
+}
+
 PRIORITIES= ["low", "medium", "high", "critical"]
 PHASES    = ["R", "P", "E", "T", "D"]
 PHASE_NAMES = {"R": "Research", "P": "Plan", "E": "Execute", "T": "Test", "D": "Document"}
@@ -2663,6 +2678,18 @@ def cmd_status(args):
     if not item:
         print(c(f"{args.id} not found.", RED)); sys.exit(1)
 
+    # ── STATE MACHINE: reject invalid transitions ──
+    old = item["status"]
+    new = args.status
+    allowed = ALLOWED_TRANSITIONS.get(old, set())
+    if new not in allowed and not getattr(args, "force", False):
+        print(c(f"INVALID TRANSITION: {args.id} cannot go from '{old}' to '{new}'", RED))
+        print(dim(f"  Allowed from '{old}': {', '.join(sorted(allowed))}"))
+        print(dim("  Use --force to override state machine."))
+        sys.exit(1)
+    if new not in allowed and getattr(args, "force", False):
+        print(c(f"Warning: overriding state machine ({old} -> {new}) with --force", YELLOW))
+
     # ── GITFLOW ENFORCEMENT: code tasks MUST go through validator to reach done ──
     # Agents cannot shortcut `status done` for code tasks — they MUST submit to
     # validation first, then the validator uses `validate --pass` after confirming
@@ -4183,6 +4210,7 @@ AGENT WORKFLOW (heartbeat cycle):
     st.add_argument("status", choices=STATUSES)
     st.add_argument("--note")
     st.add_argument("--agent")
+    st.add_argument("--force", action="store_true", help="Override state machine / dependency checks")
 
     # ── assign ────────────────────────────────────────────────────────────────
     asgn = sub.add_parser("assign", help="Assign to agent")
