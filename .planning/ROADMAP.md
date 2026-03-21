@@ -6,7 +6,7 @@
 
 | # | Phase | Goal | Requirements | Plans |
 |---|-------|------|--------------|-------|
-| 1 | Setup & Onboarding | One-command install that detects and configures the best available backend | SETUP-01 through SETUP-05 | 1/2 In Progress |
+| 1 | Setup & Onboarding | One-command install that detects and configures the best available backend | SETUP-01 through SETUP-05 | 2/2 Complete |
 | 2 | RPETD Enforcement | Strict quality gates that prevent tasks from completing without evidence | RPETD-01 through RPETD-05 | 0 |
 | 3 | Memory & RLM | Reliable memory across backends with auto-start RLM and incremental indexing | MEM-01 through MEM-05, RLM-01 through RLM-04 | 0 |
 | 4 | Task Management | Robust task state machine with dependency enforcement and rich board view | TASK-01 through TASK-04 | 0 |

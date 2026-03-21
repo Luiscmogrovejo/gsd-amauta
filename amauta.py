@@ -3239,6 +3239,89 @@ def cmd_atomize(args):
         sys.exit(1)
 
 
+# ── VALIDATION GATES ──────────────────────────────────────────────────────────
+def _validate_all_gates(item: dict) -> list:
+    """Run all validation gates and return structured results.
+
+    Returns list of dicts: [{"gate": str, "status": "PASS"|"FAIL"|"SKIP", "reason": str}, ...]
+    Non-code tasks are exempt from BRANCH_EVIDENCE and PR_URL gates.
+    """
+    results = []
+    phases = item.get("rpetd_phases", {}) or {}
+    is_code = _needs_gitflow_gate(item)
+
+    # Gate 0: RPETD completeness -- all 5 phases must have content
+    empty_phases = [ph for ph in PHASES if not (phases.get(ph, "") or "").strip()]
+    if empty_phases:
+        results.append({"gate": "RPETD_COMPLETE", "status": "FAIL",
+                        "reason": f"Empty phases: {', '.join(empty_phases)}"})
+    else:
+        results.append({"gate": "RPETD_COMPLETE", "status": "PASS", "reason": "All 5 phases have content"})
+
+    # Gate 1: BRANCH_EVIDENCE (code tasks only)
+    if is_code:
+        e_phase = str(phases.get("E", "") or "")
+        if _has_branch_evidence(e_phase):
+            results.append({"gate": "BRANCH_EVIDENCE", "status": "PASS", "reason": "Branch pattern found in E-phase"})
+        else:
+            results.append({"gate": "BRANCH_EVIDENCE", "status": "FAIL",
+                            "reason": "No branch/commit evidence in E-phase. Expected: git checkout -b, branch:, feat/, fix/, or commit SHA"})
+    else:
+        results.append({"gate": "BRANCH_EVIDENCE", "status": "SKIP", "reason": "Non-code task exempt"})
+
+    # Gate 2: TEST_EVIDENCE
+    t_phase = str(phases.get("T", "") or "")
+    if is_code:
+        if not t_phase.strip():
+            results.append({"gate": "TEST_EVIDENCE", "status": "FAIL", "reason": "T-phase is empty"})
+        elif _has_test_evidence(t_phase):
+            results.append({"gate": "TEST_EVIDENCE", "status": "PASS", "reason": "Test evidence found in T-phase"})
+        else:
+            results.append({"gate": "TEST_EVIDENCE", "status": "FAIL",
+                            "reason": "T-phase has no test output evidence. Expected: exit codes, test counts, shell prompts, pass/fail verdicts"})
+    else:
+        # Non-code: T-phase must have content but relaxed pattern matching
+        if t_phase.strip() and len(t_phase.strip()) > 20:
+            results.append({"gate": "TEST_EVIDENCE", "status": "PASS", "reason": "Verification content present"})
+        elif t_phase.strip():
+            results.append({"gate": "TEST_EVIDENCE", "status": "FAIL",
+                            "reason": f"T-phase too brief ({len(t_phase.strip())} chars). Provide substantive verification evidence (>20 chars)"})
+        else:
+            results.append({"gate": "TEST_EVIDENCE", "status": "FAIL", "reason": "T-phase is empty"})
+
+    # Gate 3: LEARNING_BLOCK
+    d_phase = str(phases.get("D", "") or "")
+    if _has_explicit_learning_written(item):
+        # Check quality: LEARNING content must be substantive (>20 chars after keyword)
+        learning_match = re.search(r"LEARNING\s*:\s*(.+)", d_phase, re.I | re.S)
+        if learning_match and len(learning_match.group(1).strip()) >= 20:
+            results.append({"gate": "LEARNING_BLOCK", "status": "PASS", "reason": "LEARNING block found with substantive content"})
+        elif learning_match:
+            results.append({"gate": "LEARNING_BLOCK", "status": "FAIL",
+                            "reason": f"LEARNING block too brief ({len(learning_match.group(1).strip())} chars). Provide at least 20 chars of insight"})
+        else:
+            # LEARNING found in other phases (not D), accept it
+            results.append({"gate": "LEARNING_BLOCK", "status": "PASS", "reason": "LEARNING block found in RPETD phases"})
+    else:
+        results.append({"gate": "LEARNING_BLOCK", "status": "FAIL",
+                        "reason": "No LEARNING: block in RPETD phases or notes. Add LEARNING: in D-phase"})
+
+    # Gate 4: PR_URL (code tasks only)
+    if is_code:
+        pr_url = _extract_pr_url(item)
+        if pr_url:
+            results.append({"gate": "PR_URL", "status": "PASS", "reason": f"PR URL found: {pr_url}"})
+        elif _is_infra_host_only(item) or _has_no_pr_needed_marker(item):
+            results.append({"gate": "PR_URL", "status": "SKIP", "reason": "Infra/no-PR-needed exemption"})
+        else:
+            results.append({"gate": "PR_URL", "status": "FAIL",
+                            "reason": "No PR URL in D-phase or notes. Add PR link or mark PR_URL: no-pr-needed"})
+    else:
+        results.append({"gate": "PR_URL", "status": "SKIP", "reason": "Non-code task exempt"})
+
+    return results
+
+
 # ── VALIDATE ───────────────────────────────────────────────────────────────────
 def cmd_validate(args):
     """
