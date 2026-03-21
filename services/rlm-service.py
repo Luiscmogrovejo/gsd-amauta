@@ -173,6 +173,81 @@ class ChunkCache:
 
 CHUNK_CACHE = ChunkCache(max_size=CACHE_MAX_SIZE)
 
+
+# ═══════════════════════════════════════════════════════
+# Persistent Mtime Index (cross-restart incremental indexing)
+# ═══════════════════════════════════════════════════════
+
+class MtimeIndex:
+    """Persistent file modification time index.
+
+    Stores {filepath: mtime} in a JSON file so we can skip unchanged files
+    across service restarts. The ChunkCache handles in-memory caching;
+    this handles the cross-restart case.
+    """
+
+    def __init__(self, index_path=None):
+        self._path = index_path or os.path.join(
+            os.environ.get("GSD_DATA_DIR", os.path.expanduser("~/.amauta/data")),
+            "rlm-index.json",
+        )
+        self._index = {}
+        self._load()
+
+    def _load(self):
+        """Load index from disk."""
+        try:
+            if os.path.exists(self._path):
+                with open(self._path, "r") as f:
+                    self._index = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            self._index = {}
+
+    def _save(self):
+        """Persist index to disk."""
+        try:
+            os.makedirs(os.path.dirname(self._path), exist_ok=True)
+            with open(self._path, "w") as f:
+                json.dump(self._index, f)
+        except OSError as e:
+            log.warning("mtime_index_save_failed error=%s", str(e))
+
+    def is_changed(self, filepath):
+        """Check if file has changed since last index."""
+        try:
+            current_mtime = os.stat(filepath).st_mtime
+        except OSError:
+            return True  # File gone or unreadable -- treat as changed
+        stored_mtime = self._index.get(filepath)
+        return stored_mtime is None or current_mtime != stored_mtime
+
+    def update(self, filepath):
+        """Record current mtime for a file."""
+        try:
+            self._index[filepath] = os.stat(filepath).st_mtime
+        except OSError:
+            pass
+
+    def prune(self, existing_files):
+        """Remove entries for files that no longer exist."""
+        stale = [fp for fp in self._index if fp not in existing_files]
+        for fp in stale:
+            del self._index[fp]
+        if stale:
+            log.debug("mtime_index_pruned count=%d", len(stale))
+
+    def save_if_dirty(self):
+        """Persist to disk (call after batch updates)."""
+        self._save()
+
+    @property
+    def size(self):
+        return len(self._index)
+
+
+MTIME_INDEX = MtimeIndex()
+
+
 # ═══════════════════════════════════════════════════════
 # Code-Aware Chunking
 # ═══════════════════════════════════════════════════════
@@ -656,6 +731,15 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
                 "cache_max": CACHE_MAX_SIZE,
                 "max_chunk_chars": MAX_CHUNK_CHARS,
                 "pid": os.getpid(),
+                "index_size": MTIME_INDEX.size,
+            })
+            return
+
+        if path == "/cache/stats":
+            self._send_json({
+                "chunk_cache_size": CHUNK_CACHE.size,
+                "chunk_cache_max": CACHE_MAX_SIZE,
+                "mtime_index_size": MTIME_INDEX.size,
             })
             return
 
@@ -800,9 +884,25 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
 
         files = scan_directory(directory, ext_set, max_files)
 
+        # Incremental indexing: only re-chunk changed files
+        existing_set = set(files)
+        MTIME_INDEX.prune(existing_set)
+
         all_chunks = []
+        changed_count = 0
+        cached_count = 0
         for f in files:
-            all_chunks.extend(chunk_file(f, max_chars))
+            if MTIME_INDEX.is_changed(f):
+                chunks = chunk_file(f, max_chars)
+                MTIME_INDEX.update(f)
+                changed_count += 1
+            else:
+                # File hasn't changed -- still need chunks from cache
+                chunks = chunk_file(f, max_chars)  # ChunkCache handles the actual skip
+                cached_count += 1
+            all_chunks.extend(chunks)
+
+        MTIME_INDEX.save_if_dirty()
 
         results = score_chunks(all_chunks, query, top_k)
         elapsed_ms = round((time.time() - t0) * 1000, 1)
@@ -813,9 +913,12 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
             "directory": directory,
             "results": results,
             "files_scanned": len(files),
+            "files_changed": changed_count,
+            "files_cached": cached_count,
             "total_chunks": len(all_chunks),
             "returned": len(results),
             "elapsed_ms": elapsed_ms,
+            "index_size": MTIME_INDEX.size,
         })
 
 
