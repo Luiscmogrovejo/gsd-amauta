@@ -501,6 +501,26 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": _safe_error(e)}, 500)
             return
 
+        # ─── Memory Distill Status GET route ──────────
+        if path == "/api/memory/distill-status":
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
+                return
+            try:
+                total = store.memory_count()
+                source_counts = store.memory_count_by_source()
+                threshold = int(os.environ.get("GSD_MEMORY_DISTILL_THRESHOLD", "500"))
+                self._send_json({
+                    "total": total,
+                    "by_source": source_counts,
+                    "distill_threshold": threshold,
+                    "needs_distill": total >= threshold,
+                })
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
         # ─── Agent Performance GET route (PG or SQLite) ──────
         if path.startswith("/api/agent-performance"):
             store = _get_store()

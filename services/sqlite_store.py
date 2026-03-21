@@ -427,6 +427,14 @@ class SQLiteStore:
         with self._get_conn() as conn:
             conn.execute("DELETE FROM gsd_memory WHERE id = ?", (mem_id,))
 
+    def memory_count_by_source(self):
+        """Count memories grouped by source."""
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                "SELECT source, COUNT(*) as cnt FROM gsd_memory GROUP BY source"
+            ).fetchall()
+            return {r["source"]: r["cnt"] for r in rows}
+
     def memory_cross_project_search(self, query, tags=None, exclude_project=None, limit=20):
         """Search memories across ALL projects (simplified for SQLite)."""
         if tags:

@@ -356,6 +356,18 @@ class PGStore:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM gsd_memory WHERE id = %s", (mem_id,))
 
+    def memory_count_by_source(self):
+        """Count memories grouped by source."""
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT source, COUNT(*) as cnt FROM gsd_memory GROUP BY source"
+                    )
+                    return {row[0]: row[1] for row in cur.fetchall()}
+        except Exception:
+            return {}
+
     def memory_cross_project_search(self, query, tags=None, exclude_project=None, limit=20):
         """Search memories across ALL projects, optionally filtered by technology tags.
 

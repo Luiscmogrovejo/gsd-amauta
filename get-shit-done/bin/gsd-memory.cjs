@@ -1225,17 +1225,21 @@ async function maybeAutoDistill() {
     const now = Date.now();
     if (now - _lastAutoDistillAt < AUTO_DISTILL_COOLDOWN_MS) return;
 
-    const res = await tryDaemon('GET', '/api/memory/count');
+    // Use server-side distill-status endpoint for threshold check
+    const res = await tryDaemon('GET', '/api/memory/distill-status');
     let count = 0;
+    let needsDistill = false;
     if (res && res.status === 200) {
-      count = res.data.count || 0;
+      count = res.data.total || 0;
+      needsDistill = res.data.needs_distill || false;
     } else {
       // File mode fallback — count file-based entries
       count = fileCount();
+      needsDistill = count >= AUTO_DISTILL_THRESHOLD;
     }
-    if (count >= AUTO_DISTILL_THRESHOLD) {
+    if (needsDistill) {
       _lastAutoDistillAt = now;
-      process.stderr.write(`\x1b[2mAuto-distill: ${count} entries exceed threshold (${AUTO_DISTILL_THRESHOLD}). Running distill...\x1b[0m\n`);
+      process.stderr.write(`\x1b[2mAuto-distill: ${count} entries exceed threshold. Running distill...\x1b[0m\n`);
       await cmdDistill({ threshold: '0.7', 'dry-run': false, _positional: [] });
     }
   } catch { /* silent */ }
