@@ -104,6 +104,24 @@ try:
 except ImportError:
     SQLiteStore = None  # type: ignore
 
+# Backup manager (Phase 8: Data Durability)
+_backup_manager = None
+_HAS_BACKUP_MODULE = False
+try:
+    from backup import BackupManager
+    _HAS_BACKUP_MODULE = True
+except ImportError:
+    BackupManager = None  # type: ignore
+
+# OIDC authentication (optional — graceful degradation)
+_oidc = None
+_HAS_OIDC_MODULE = False
+try:
+    from oidc_auth import OIDCAuth
+    _HAS_OIDC_MODULE = True
+except ImportError:
+    OIDCAuth = None  # type: ignore
+
 # ═══════════════════════════════════════════════════════
 # Configuration
 # ═══════════════════════════════════════════════════════
@@ -138,6 +156,37 @@ def _check_auth(handler) -> bool:
     handler.end_headers()
     handler.wfile.write(json.dumps({"error": "Unauthorized. Set Authorization: Bearer <AMAUTA_DAEMON_TOKEN>"}).encode())
     return False
+
+# ── OIDC Authentication ───────────────────────────────────────────────────────
+def _check_oidc(handler):
+    """Validate OIDC Bearer token if GSD_OIDC_ISSUER is configured.
+
+    Returns dict: {"valid": True, "sub": "...", ...} or {"valid": False, "error": "..."}.
+    When OIDC is not enabled, returns valid with sub="local".
+    """
+    if _oidc is None or not _oidc.is_enabled():
+        return {"valid": True, "sub": "local"}
+
+    # Health and metrics endpoints bypass OIDC
+    path = handler.path.split("?")[0].rstrip("/")
+    if path in ("/health", "/metrics"):
+        return {"valid": True, "sub": "health-check"}
+
+    auth_header = handler.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return {"valid": False, "error": "Missing or invalid Authorization header. Expected: Bearer <token>"}
+
+    token = auth_header[7:]  # Strip "Bearer " prefix
+    result = _oidc.validate_token(token)
+
+    if result["valid"]:
+        log.info("oidc_auth_ok sub=%s path=%s", result.get("sub", "?"), handler.path)
+    else:
+        log.warning("oidc_auth_failed error=%s path=%s ip=%s",
+                     result.get("error", "?"), handler.path, handler.client_address[0])
+
+    return result
+
 
 # ── Rate Limiting ──────────────────────────────────────────────────────────────
 class _RateLimiter:
@@ -511,6 +560,12 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
         log.debug("request method=%s path=%s", self.command, self.path)
         if self.path not in ("/health", "/metrics") and not _check_auth(self):
             return
+        # OIDC validation (SSO-03: all endpoints except /health, /metrics)
+        oidc_result = _check_oidc(self)
+        if not oidc_result["valid"]:
+            self._send_json({"error": oidc_result["error"]}, 401)
+            return
+        self._oidc_sub = oidc_result.get("sub", "anonymous")
         if not _rate_limiter.allow(self.path):
             log.warning("rate_limited path=%s", self.path)
             self.send_response(429)
@@ -544,6 +599,8 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 "rlm_running": _check_rlm_health() if _rlm_enabled else False,
                 "rlm_port": RLM_PORT if _rlm_enabled else None,
                 "rlm_restarts": _rlm_restart_count,
+                "oidc_enabled": _oidc.is_enabled() if _oidc else False,
+                "oidc_issuer": _oidc.issuer if _oidc and _oidc.is_enabled() else None,
             }
             if _pg_store:
                 health["pg_health"] = _pg_store.health()
@@ -730,6 +787,64 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": _safe_error(e)}, 500)
             return
 
+        # ─── Audit Log GET routes (PG or SQLite) ─────────
+        if path == "/api/audit/query" or path.startswith("/api/audit/query?"):
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
+                return
+            params = parse_qs(urlparse(self.path).query) if "?" in self.path else {}
+            try:
+                results = store.audit_query(
+                    task_id=params.get("task_id", [None])[0],
+                    event_type=params.get("event_type", [None])[0],
+                    start_date=params.get("start", [None])[0],
+                    end_date=params.get("end", [None])[0],
+                    limit=int(params.get("limit", ["100"])[0]),
+                )
+                self._send_json({"results": results, "count": len(results)})
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
+        if path == "/api/audit/export" or path.startswith("/api/audit/export?"):
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
+                return
+            params = parse_qs(urlparse(self.path).query) if "?" in self.path else {}
+            fmt = params.get("format", ["json"])[0].lower()
+            try:
+                results = store.audit_query(
+                    start_date=params.get("start", [None])[0],
+                    end_date=params.get("end", [None])[0],
+                    limit=int(params.get("limit", ["10000"])[0]),
+                )
+                if fmt == "csv":
+                    import csv
+                    import io
+                    output = io.StringIO()
+                    if results:
+                        writer = csv.DictWriter(output, fieldnames=results[0].keys())
+                        writer.writeheader()
+                        for row in results:
+                            # Flatten complex fields to JSON strings for CSV
+                            flat = {}
+                            for k, v in row.items():
+                                flat[k] = json.dumps(v) if isinstance(v, (dict, list)) else v
+                            writer.writerow(flat)
+                    csv_text = output.getvalue()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/csv")
+                    self.send_header("Content-Disposition", "attachment; filename=audit-export.csv")
+                    self.end_headers()
+                    self.wfile.write(csv_text.encode("utf-8"))
+                else:
+                    self._send_json({"results": results, "count": len(results), "format": "json"})
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
         # ─── Validation GET routes (PG or SQLite) ──────
         if path.startswith("/api/validation/"):
             store = _get_store()
@@ -744,6 +859,31 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": _safe_error(e)}, 500)
             return
 
+        # ─── Backup GET routes (Phase 8: Data Durability) ──
+        if path == "/api/backup/list":
+            if not _backup_manager:
+                self._send_json({"error": "Backup module not available"}, 503)
+                return
+            try:
+                backups = _backup_manager.list_backups()
+                self._send_json({"backups": backups, "count": len(backups)})
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
+        if path == "/api/backup/verify" or path.startswith("/api/backup/verify?"):
+            if not _backup_manager:
+                self._send_json({"error": "Backup module not available"}, 503)
+                return
+            params = parse_qs(urlparse(self.path).query) if "?" in self.path else {}
+            input_path = params.get("file", [None])[0]
+            try:
+                result = _backup_manager.verify(input_path)
+                self._send_json(result)
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
         self._send_json({"error": f"Unknown GET route: {path}"}, 404)
 
     # ─── POST routes ─────────────────────────────────
@@ -752,6 +892,12 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
         log.debug("request method=%s path=%s", self.command, self.path)
         if not _check_auth(self):
             return
+        # OIDC validation (SSO-03: all POST endpoints require valid token)
+        oidc_result = _check_oidc(self)
+        if not oidc_result["valid"]:
+            self._send_json({"error": oidc_result["error"]}, 401)
+            return
+        self._oidc_sub = oidc_result.get("sub", "anonymous")
         if not _rate_limiter.allow(self.path):
             log.warning("rate_limited path=%s", self.path)
             self.send_response(429)
@@ -1033,6 +1179,34 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": _safe_error(e)}, 500)
             return
 
+        # ─── Audit Log POST route (PG or SQLite) ────────
+        if path == "/api/audit/log":
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
+                return
+            task_id = body.get("task_id")
+            event_type = body.get("event_type")
+            if not task_id or not event_type:
+                self._send_json({"error": "task_id and event_type are required"}, 400)
+                return
+            try:
+                row_id = store.audit_log(
+                    task_id=task_id,
+                    event_type=event_type,
+                    agent_id=body.get("agent_id"),
+                    actor=body.get("actor"),
+                    phase=body.get("phase"),
+                    status=body.get("status"),
+                    gate_results=body.get("gate_results"),
+                    content=body.get("content"),
+                    metadata=body.get("metadata"),
+                )
+                self._send_json({"id": row_id, "logged": True})
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
         # ─── SKB POST routes (PG or SQLite) ────────────
         if path == "/api/skb/store":
             store = _get_store()
@@ -1132,6 +1306,47 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": _safe_error(e)}, 500)
             return
 
+        # ─── Backup POST routes (Phase 8: Data Durability) ──
+        if path == "/api/backup/create":
+            if not _backup_manager:
+                self._send_json({"error": "Backup module not available"}, 503)
+                return
+            try:
+                output_path = body.get("output_path") if body else None
+                path_result, counts, checksum = _backup_manager.create(output_path)
+                self._send_json({
+                    "path": path_result,
+                    "counts": counts,
+                    "checksum": checksum,
+                    "created": True,
+                })
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
+        if path == "/api/backup/restore":
+            if not _backup_manager:
+                self._send_json({"error": "Backup module not available"}, 503)
+                return
+            input_path = body.get("file") if body else None
+            if not input_path:
+                self._send_json({"error": "file is required"}, 400)
+                return
+            mode = body.get("mode", "merge")
+            if mode not in ("merge", "replace"):
+                self._send_json({"error": "mode must be 'merge' or 'replace'"}, 400)
+                return
+            try:
+                result = _backup_manager.restore(input_path, mode)
+                self._send_json(result)
+            except FileNotFoundError as e:
+                self._send_json({"error": str(e)}, 404)
+            except ValueError as e:
+                self._send_json({"error": str(e)}, 422)
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
         self._send_json({"error": f"Unknown POST route: {path}"}, 404)
 
 
@@ -1182,6 +1397,21 @@ def start_server(foreground=False):
 
     signal.signal(signal.SIGTERM, shutdown_handler)
     signal.signal(signal.SIGINT, shutdown_handler)
+
+    # ─── OIDC Authentication Init ───────────────────
+    global _oidc
+    if _HAS_OIDC_MODULE:
+        try:
+            _oidc = OIDCAuth()
+            if _oidc.is_enabled():
+                print(f"  OIDC: enabled (issuer: {_oidc.issuer})")
+            else:
+                print(f"  OIDC: disabled (GSD_OIDC_ISSUER or GSD_OIDC_CLIENT_ID not set)")
+        except Exception as e:
+            print(f"  OIDC: init failed ({e}) — running without OIDC")
+            _oidc = None
+    else:
+        print(f"  OIDC: module not found — running without OIDC")
 
     # ─── Smart Infrastructure Detection ─────────────
     global _pg_store, _sqlite_store, _infra_result
@@ -1279,6 +1509,26 @@ def start_server(foreground=False):
             print(f"[reconcile] Warning: {e}", file=sys.stderr)
 
     _reconcile_tasks_to_store()
+
+    # ── Initialize BackupManager + auto-backup (Phase 8: DUR-05) ─────────
+    global _backup_manager
+    _active_store = _get_store()
+    if _HAS_BACKUP_MODULE and _active_store:
+        try:
+            _backup_manager = BackupManager(_active_store)
+            auto_path = _backup_manager.auto_backup()
+            if auto_path:
+                log.info("auto_backup_created path=%s", auto_path)
+                print(f"  Auto-backup: {auto_path}")
+            else:
+                print(f"  Auto-backup: already exists for today")
+        except Exception as e:
+            log.warning("auto_backup_failed error=%s", str(e))
+            print(f"  Auto-backup: failed ({e})")
+    elif _HAS_BACKUP_MODULE:
+        print(f"  Backup: no store available (backup disabled)")
+    else:
+        print(f"  Backup: module not found")
 
     # ── Start RLM service ────────────────────────────────────────────────────
     if _rlm_enabled:
