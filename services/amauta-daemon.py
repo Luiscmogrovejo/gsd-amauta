@@ -77,6 +77,15 @@ else:
 
 log = logging.getLogger("amauta.daemon")
 
+# Infrastructure detection
+_HAS_INFRA_DETECT = False
+_infra_result = None
+try:
+    from infra_detect import detect_infrastructure
+    _HAS_INFRA_DETECT = True
+except ImportError:
+    detect_infrastructure = None  # type: ignore
+
 # PostgreSQL store (optional — graceful degradation)
 _pg_store = None
 _HAS_PG_MODULE = False
@@ -85,6 +94,15 @@ try:
     _HAS_PG_MODULE = True
 except ImportError:
     PGStore = None  # type: ignore
+
+# SQLite store (fallback when PG unavailable)
+_sqlite_store = None
+_HAS_SQLITE_MODULE = False
+try:
+    from sqlite_store import SQLiteStore
+    _HAS_SQLITE_MODULE = True
+except ImportError:
+    SQLiteStore = None  # type: ignore
 
 # ═══════════════════════════════════════════════════════
 # Configuration
@@ -186,6 +204,11 @@ def _safe_error(e):
     msg = re.sub(r'postgresql://[^@]+@', 'postgresql://[redacted]@', msg)
     msg = re.sub(r'postgres://[^@]+@', 'postgres://[redacted]@', msg)
     return msg
+
+
+def _get_store():
+    """Return the active store (PGStore or SQLiteStore), or None."""
+    return _pg_store or _sqlite_store
 
 
 # ═══════════════════════════════════════════════════════
@@ -361,10 +384,35 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 "amauta_py": AMAUTA_PY,
                 "pid": os.getpid(),
                 "pg_available": _pg_store is not None,
+                "backend": _infra_result.get("backend") if _infra_result else ("postgresql" if _pg_store else "file"),
+                "features": _infra_result.get("features", []) if _infra_result else [],
             }
             if _pg_store:
                 health["pg_health"] = _pg_store.health()
+            elif _sqlite_store:
+                health["sqlite_health"] = _sqlite_store.health()
             self._send_json(health)
+            return
+
+        if path == "/api/infra":
+            infra = _infra_result or {
+                "backend": "postgresql" if _pg_store else ("sqlite" if _sqlite_store else "file"),
+                "features": [],
+                "message": "Infrastructure detection not available",
+            }
+            # Add live counts
+            store = _pg_store or _sqlite_store
+            if store:
+                try:
+                    infra["memory_count"] = store.memory_count()
+                except Exception:
+                    infra["memory_count"] = -1
+                try:
+                    if hasattr(store, "task_count_by_status"):
+                        infra["task_counts"] = store.task_count_by_status()
+                except Exception:
+                    pass
+            self._send_json(infra)
             return
 
         if path == "/api/board":
@@ -410,14 +458,15 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             self._send_json({"output": out, "error": err, "exit_code": rc})
             return
 
-        # ─── Memory GET routes (PG required) ─────────
+        # ─── Memory GET routes (PG or SQLite) ─────────
         if path == "/api/memory/list" or path.startswith("/api/memory/list?"):
-            if not _pg_store:
-                self._send_json({"error": "PostgreSQL not available", "hint": "Set GSD_POSTGRES_URL"}, 503)
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available", "hint": "Set GSD_POSTGRES_URL or enable SQLite"}, 503)
                 return
             params = parse_qs(urlparse(self.path).query) if "?" in self.path else {}
             try:
-                results = _pg_store.memory_list(
+                results = store.memory_list(
                     project_id=params.get("project_id", [None])[0],
                     source=params.get("source", [None])[0],
                     limit=int(params.get("limit", ["50"])[0]),
@@ -429,31 +478,34 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             return
 
         if path == "/api/memory/count":
-            if not _pg_store:
-                self._send_json({"error": "PostgreSQL not available"}, 503)
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
                 return
             try:
-                count = _pg_store.memory_count()
+                count = store.memory_count()
                 self._send_json({"count": count})
             except Exception as e:
                 self._send_json({"error": _safe_error(e)}, 500)
             return
 
         if path == "/api/memory/embedding-stats":
-            if not _pg_store:
-                self._send_json({"error": "PostgreSQL not available"}, 503)
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
                 return
             try:
-                stats = _pg_store.memory_embedding_stats()
+                stats = store.memory_embedding_stats()
                 self._send_json(stats)
             except Exception as e:
                 self._send_json({"error": _safe_error(e)}, 500)
             return
 
-        # ─── Agent Performance GET route (PG required) ──────
+        # ─── Agent Performance GET route (PG or SQLite) ──────
         if path.startswith("/api/agent-performance"):
-            if not _pg_store:
-                self._send_json({"error": "PostgreSQL not available"}, 503)
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
                 return
             try:
                 import urllib.parse
@@ -463,20 +515,21 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 if not agent_id:
                     self._send_json({"error": "agent_id query param required"}, 400)
                     return
-                summary = _pg_store.agent_performance_summary(agent_id)
+                summary = store.agent_performance_summary(agent_id)
                 self._send_json(summary or {"total_tasks": 0, "agent_id": agent_id})
             except Exception as e:
                 self._send_json({"error": _safe_error(e)}, 500)
             return
 
-        # ─── SKB GET routes (PG required) ─────────────
+        # ─── SKB GET routes (PG or SQLite) ─────────────
         if path == "/api/skb/list" or path.startswith("/api/skb/list?"):
-            if not _pg_store:
-                self._send_json({"error": "PostgreSQL not available"}, 503)
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
                 return
             params = parse_qs(urlparse(self.path).query) if "?" in self.path else {}
             try:
-                results = _pg_store.skb_list(
+                results = store.skb_list(
                     category=params.get("category", [None])[0],
                     limit=int(params.get("limit", ["50"])[0]),
                     offset=int(params.get("offset", ["0"])[0]),
@@ -486,14 +539,15 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": _safe_error(e)}, 500)
             return
 
-        # ─── Validation GET routes (PG required) ──────
+        # ─── Validation GET routes (PG or SQLite) ──────
         if path.startswith("/api/validation/"):
-            if not _pg_store:
-                self._send_json({"error": "PostgreSQL not available"}, 503)
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
                 return
             task_id = path.split("/")[-1]
             try:
-                results = _pg_store.validation_history(task_id)
+                results = store.validation_history(task_id)
                 self._send_json({"results": results, "count": len(results)})
             except Exception as e:
                 self._send_json({"error": _safe_error(e)}, 500)
@@ -600,7 +654,8 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             # Only for commands that mutate tasks; read commands (show, list, search) skip this.
             _TASK_MUTATING_COMMANDS = {"add", "claim", "rpetd", "status", "validate",
                                        "assign", "note", "update", "delete", "link", "unlink", "atomize"}
-            if _pg_store and rc == 0 and command in _TASK_MUTATING_COMMANDS:
+            _mirror_store = _get_store()
+            if _mirror_store and rc == 0 and command in _TASK_MUTATING_COMMANDS:
                 try:
                     task_id = body.get("id") or ""
                     # For add, extract the new task ID from output
@@ -609,24 +664,25 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                         m = _re.search(r"(TK|EP|ST|BG)-\d+", out)
                         task_id = m.group(0) if m else ""
                     if command == "delete" and task_id:
-                        _pg_store.task_delete(task_id)
+                        _mirror_store.task_delete(task_id)
                     elif task_id:
                         # Re-read the task from tasks.json via show --json to get current state
                         show_out, _, show_rc = self._run_amauta(["show", task_id, "--json"])
                         if show_rc == 0 and show_out.strip():
                             import json as _json
                             item = _json.loads(show_out)
-                            _pg_store.task_upsert(item)
+                            _mirror_store.task_upsert(item)
                 except Exception as _pg_err:
-                    log.warning("pg_mirror_failed task_id=%s error=%s", body.get("id", "?"), _safe_error(_pg_err))
+                    log.warning("store_mirror_failed task_id=%s error=%s", body.get("id", "?"), _safe_error(_pg_err))
 
             self._send_json({"output": out, "error": err, "exit_code": rc})
             return
 
-        # ─── Memory POST routes (PG required) ────────
+        # ─── Memory POST routes (PG or SQLite) ────────
         if path == "/api/memory/store":
-            if not _pg_store:
-                self._send_json({"error": "PostgreSQL not available", "hint": "Set GSD_POSTGRES_URL"}, 503)
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available", "hint": "Set GSD_POSTGRES_URL or enable SQLite"}, 503)
                 return
             text = body.get("text")
             if not text:
@@ -637,8 +693,8 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 use_embedding = body.get("embed", True) and (
                     os.environ.get("VOYAGE_API_KEY") or os.environ.get("OPENAI_API_KEY")
                 )
-                if use_embedding:
-                    mem_id = _pg_store.memory_store_with_embedding(
+                if use_embedding and hasattr(store, 'memory_store_with_embedding'):
+                    mem_id = store.memory_store_with_embedding(
                         text=text,
                         source=body.get("source", "agent"),
                         agent_id=body.get("agent_id"),
@@ -647,7 +703,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                         project_id=body.get("project_id"),
                     )
                 else:
-                    mem_id = _pg_store.memory_store(
+                    mem_id = store.memory_store(
                         text=text,
                         source=body.get("source", "agent"),
                         agent_id=body.get("agent_id"),
@@ -655,21 +711,22 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                         metadata=body.get("metadata"),
                         project_id=body.get("project_id"),
                     )
-                self._send_json({"id": mem_id, "stored": True, "embedded": bool(use_embedding)})
+                self._send_json({"id": mem_id, "stored": True, "embedded": bool(use_embedding and _pg_store)})
             except Exception as e:
                 self._send_json({"error": _safe_error(e)}, 500)
             return
 
         if path == "/api/memory/search":
-            if not _pg_store:
-                self._send_json({"error": "PostgreSQL not available"}, 503)
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
                 return
             query = body.get("query")
             if not query:
                 self._send_json({"error": "query is required"}, 400)
                 return
             try:
-                results = _pg_store.memory_search(
+                results = store.memory_search(
                     query=query,
                     project_id=body.get("project_id"),
                     source=body.get("source"),
@@ -681,30 +738,32 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             return
 
         if path == "/api/memory/delete":
-            if not _pg_store:
-                self._send_json({"error": "PostgreSQL not available"}, 503)
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
                 return
             mem_id = body.get("id")
             if not mem_id:
                 self._send_json({"error": "id is required"}, 400)
                 return
             try:
-                _pg_store.memory_delete(mem_id)
+                store.memory_delete(mem_id)
                 self._send_json({"deleted": True, "id": mem_id})
             except Exception as e:
                 self._send_json({"error": _safe_error(e)}, 500)
             return
 
         if path == "/api/memory/semantic-search":
-            if not _pg_store:
-                self._send_json({"error": "PostgreSQL not available", "hint": "Set GSD_POSTGRES_URL"}, 503)
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available", "hint": "Set GSD_POSTGRES_URL or enable SQLite"}, 503)
                 return
             query = body.get("query")
             if not query:
                 self._send_json({"error": "query is required"}, 400)
                 return
             try:
-                results, method = _pg_store.memory_semantic_search(
+                results, method = store.memory_semantic_search(
                     query=query,
                     project_id=body.get("project_id"),
                     source=body.get("source"),
@@ -716,11 +775,12 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             return
 
         if path == "/api/memory/backfill-embeddings":
-            if not _pg_store:
-                self._send_json({"error": "PostgreSQL not available", "hint": "Set GSD_POSTGRES_URL"}, 503)
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available", "hint": "Set GSD_POSTGRES_URL"}, 503)
                 return
             try:
-                result = _pg_store.memory_backfill_embeddings(
+                result = store.memory_backfill_embeddings(
                     batch_size=body.get("batch_size", 50),
                 )
                 self._send_json(result)
@@ -729,15 +789,16 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             return
 
         if path == "/api/memory/cross-project":
-            if not _pg_store:
-                self._send_json({"error": "PostgreSQL not available", "hint": "Set GSD_POSTGRES_URL"}, 503)
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available", "hint": "Set GSD_POSTGRES_URL or enable SQLite"}, 503)
                 return
             query = body.get("query")
             if not query:
                 self._send_json({"error": "query is required"}, 400)
                 return
             try:
-                results = _pg_store.memory_cross_project_search(
+                results = store.memory_cross_project_search(
                     query=query,
                     tags=body.get("tags"),
                     exclude_project=body.get("exclude_project"),
@@ -748,10 +809,40 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": _safe_error(e)}, 500)
             return
 
-        # ─── SKB POST routes (PG required) ────────────
+        # ─── Auto-capture POST route (session learning) ──
+        if path == "/api/memory/auto-capture":
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
+                return
+            context = body.get("context")
+            if not context:
+                self._send_json({"error": "context is required"}, 400)
+                return
+            try:
+                agent_id = body.get("agent_id", "unknown")
+                project_id = body.get("project_id")
+                tags = body.get("tags", [])
+                # Truncate oversized context to 4000 chars
+                text = context[:4000] if len(context) > 4000 else context
+                mem_id = store.memory_store(
+                    text=text,
+                    source="session-learning",
+                    agent_id=agent_id,
+                    tags=tags,
+                    metadata={"auto_captured": True, "capture_reason": body.get("reason", "context_compaction")},
+                    project_id=project_id,
+                )
+                self._send_json({"id": mem_id, "stored": True, "source": "session-learning", "chars": len(text)})
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
+        # ─── SKB POST routes (PG or SQLite) ────────────
         if path == "/api/skb/store":
-            if not _pg_store:
-                self._send_json({"error": "PostgreSQL not available"}, 503)
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
                 return
             title = body.get("title")
             content = body.get("content")
@@ -759,7 +850,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": "title and content are required"}, 400)
                 return
             try:
-                skb_id = _pg_store.skb_store(
+                skb_id = store.skb_store(
                     title=title,
                     content=content,
                     category=body.get("category"),
@@ -774,15 +865,16 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             return
 
         if path == "/api/skb/search":
-            if not _pg_store:
-                self._send_json({"error": "PostgreSQL not available"}, 503)
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
                 return
             query = body.get("query")
             if not query:
                 self._send_json({"error": "query is required"}, 400)
                 return
             try:
-                results = _pg_store.skb_search(
+                results = store.skb_search(
                     query=query,
                     category=body.get("category"),
                     limit=body.get("limit", 20),
@@ -792,10 +884,11 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": _safe_error(e)}, 500)
             return
 
-        # ─── Validation POST route (PG required) ──────
+        # ─── Validation POST route (PG or SQLite) ──────
         if path == "/api/validation/record":
-            if not _pg_store:
-                self._send_json({"error": "PostgreSQL not available"}, 503)
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
                 return
             task_id = body.get("task_id")
             validator_id = body.get("validator_id")
@@ -804,7 +897,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": "task_id, validator_id, and status are required"}, 400)
                 return
             try:
-                vid = _pg_store.validation_record(
+                vid = store.validation_record(
                     task_id=task_id,
                     validator_id=validator_id,
                     status=status_val,
@@ -816,10 +909,11 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": _safe_error(e)}, 500)
             return
 
-        # ─── Agent Performance POST route (PG required) ──────
+        # ─── Agent Performance POST route (PG or SQLite) ──────
         if path == "/api/agent-performance":
-            if not _pg_store:
-                self._send_json({"error": "PostgreSQL not available"}, 503)
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
                 return
             _ap_agent = body.get("agent_id", "")
             _ap_task = body.get("task_id", "")
@@ -827,7 +921,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": "agent_id and task_id are required"}, 400)
                 return
             try:
-                _pg_store.record_agent_performance(
+                store.record_agent_performance(
                     agent_id=_ap_agent,
                     task_id=_ap_task,
                     outcome=body.get("outcome", "pass"),
@@ -880,11 +974,12 @@ def start_server(foreground=False):
     def shutdown_handler(signum, frame):
         log.info("daemon_shutdown")
         print("\nShutting down daemon...")
-        if _pg_store:
-            try:
-                _pg_store.close()
-            except Exception:
-                pass
+        for s in (_pg_store, _sqlite_store):
+            if s:
+                try:
+                    s.close()
+                except Exception:
+                    pass
         server.shutdown()
         PID_FILE.unlink(missing_ok=True)
         sys.exit(0)
@@ -892,39 +987,83 @@ def start_server(foreground=False):
     signal.signal(signal.SIGTERM, shutdown_handler)
     signal.signal(signal.SIGINT, shutdown_handler)
 
-    # ─── Initialize PostgreSQL store (optional) ─────
-    global _pg_store
-    pg_url = os.environ.get("GSD_POSTGRES_URL")
-    if _HAS_PG_MODULE and pg_url:
-        try:
-            _pg_store = PGStore(dsn=pg_url)
-            h = _pg_store.health()
-            print(f"  PostgreSQL: connected ({h.get('dsn_host', 'unknown')})")
-        except Exception as e:
-            print(f"  PostgreSQL: FAILED ({e}) — running without PG")
-            _pg_store = None
-    elif _HAS_PG_MODULE:
-        # Try default DSN
-        try:
-            _pg_store = PGStore()
-            h = _pg_store.health()
-            print(f"  PostgreSQL: connected ({h.get('dsn_host', 'unknown')})")
-        except Exception as e:
-            print(f"  PostgreSQL: not available ({e}) — running without PG")
-            _pg_store = None
+    # ─── Smart Infrastructure Detection ─────────────
+    global _pg_store, _sqlite_store, _infra_result
+
+    if _HAS_INFRA_DETECT:
+        _infra_result = detect_infrastructure()
+        log.info("infra_detected backend=%s", _infra_result["backend"])
+        print(f"  Infrastructure: {_infra_result['message']}")
+        print(f"  Features: {', '.join(_infra_result['features'])}")
+
+        if _infra_result["backend"] == "postgresql":
+            # Set env var so downstream components (amauta.py, etc.) can use it
+            os.environ["GSD_POSTGRES_URL"] = _infra_result["connection_url"]
+            if _HAS_PG_MODULE:
+                try:
+                    _pg_store = PGStore(dsn=_infra_result["connection_url"])
+                    h = _pg_store.health()
+                    print(f"  PostgreSQL: connected ({h.get('dsn_host', 'unknown')})")
+                except Exception as e:
+                    print(f"  PostgreSQL: FAILED ({_safe_error(e)}) — trying SQLite fallback")
+                    _pg_store = None
+            else:
+                print("  PostgreSQL: pg_store module not found")
+
+        if _infra_result["backend"] == "sqlite" or (_infra_result["backend"] == "postgresql" and _pg_store is None):
+            # SQLite fallback
+            if _HAS_SQLITE_MODULE:
+                sqlite_path = _infra_result.get("connection_url", "").replace("sqlite:///", "")
+                if not sqlite_path:
+                    sqlite_path = None  # Let SQLiteStore use its default
+                try:
+                    _sqlite_store = SQLiteStore(db_path=sqlite_path or None)
+                    h = _sqlite_store.health()
+                    print(f"  SQLite: active ({h.get('path', 'unknown')})")
+                    os.environ["GSD_BACKEND"] = "sqlite"
+                    os.environ["GSD_SQLITE_PATH"] = _sqlite_store.db_path
+                except Exception as e:
+                    print(f"  SQLite: FAILED ({e})")
+                    _sqlite_store = None
+            else:
+                print("  SQLite: sqlite_store module not found")
     else:
-        print("  PostgreSQL: pg_store module not found — running without PG")
+        # Legacy path: no infra_detect module, use original PG init
+        pg_url = os.environ.get("GSD_POSTGRES_URL")
+        if _HAS_PG_MODULE and pg_url:
+            try:
+                _pg_store = PGStore(dsn=pg_url)
+                h = _pg_store.health()
+                print(f"  PostgreSQL: connected ({h.get('dsn_host', 'unknown')})")
+            except Exception as e:
+                print(f"  PostgreSQL: FAILED ({_safe_error(e)}) — running without PG")
+                _pg_store = None
+        elif _HAS_PG_MODULE:
+            try:
+                _pg_store = PGStore()
+                h = _pg_store.health()
+                print(f"  PostgreSQL: connected ({h.get('dsn_host', 'unknown')})")
+            except Exception as e:
+                print(f"  PostgreSQL: not available ({_safe_error(e)}) — running without PG")
+                _pg_store = None
+        else:
+            print("  PostgreSQL: pg_store module not found — running without PG")
 
     log.info("daemon_started port=%d pid=%d", PORT, os.getpid())
     print(f"Amauta daemon listening on {HOST}:{PORT}")
     print(f"  Data dir: {DATA_DIR}")
     print(f"  PID file: {PID_FILE}")
     print(f"  amauta.py: {AMAUTA_PY}")
-    print(f"  PG store: {'active' if _pg_store else 'inactive (file-only mode)'}")
+    if _pg_store:
+        print(f"  Store: PostgreSQL (active)")
+    elif _sqlite_store:
+        print(f"  Store: SQLite (fallback, path: {_sqlite_store.db_path})")
+    else:
+        print(f"  Store: inactive (file-only mode)")
 
-    # ── Startup reconciliation: sync tasks.json → PG ────────────────────
-    def _reconcile_tasks_to_pg():
-        """Best-effort sync: load tasks.json and upsert all items to PG mirror."""
+    # ── Startup reconciliation: sync tasks.json → store ─────────────────
+    def _reconcile_tasks_to_store():
+        """Best-effort sync: load tasks.json and upsert all items to store mirror."""
         try:
             tasks_file = Path(DATA_DIR) / "tasks.json"
             if not tasks_file.exists():
@@ -932,27 +1071,30 @@ def start_server(foreground=False):
             import json as _json
             data = _json.loads(tasks_file.read_text())
             items = data.get("items", [])
-            if not items or not _pg_store:
+            store = _get_store()
+            if not items or not store:
                 return
-            synced = _pg_store.task_upsert_batch(items)
+            synced = store.task_upsert_batch(items)
+            backend = "PG" if _pg_store else "SQLite"
             if synced:
-                log.info("reconcile_complete items=%d", len(items))
-                print(f"[reconcile] Synced {len(items)} tasks to PG mirror", file=sys.stderr)
+                log.info("reconcile_complete items=%d backend=%s", len(items), backend)
+                print(f"[reconcile] Synced {len(items)} tasks to {backend} mirror", file=sys.stderr)
         except Exception as e:
             print(f"[reconcile] Warning: {e}", file=sys.stderr)
 
-    _reconcile_tasks_to_pg()
+    _reconcile_tasks_to_store()
 
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
-        if _pg_store:
-            try:
-                _pg_store.close()
-            except Exception:
-                pass
+        for s in (_pg_store, _sqlite_store):
+            if s:
+                try:
+                    s.close()
+                except Exception:
+                    pass
         server.server_close()
         PID_FILE.unlink(missing_ok=True)
 

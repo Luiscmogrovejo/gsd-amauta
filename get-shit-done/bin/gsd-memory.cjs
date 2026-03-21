@@ -795,6 +795,51 @@ async function cmdCrossProject(args) {
 }
 
 // ═══════════════════════════════════════════════════════
+// Auto-Capture (session learning before context compaction)
+// ═══════════════════════════════════════════════════════
+
+async function cmdAutoCapture(args) {
+  const context = args._positional.join(' ');
+  if (!context) {
+    console.error('Usage: gsd-memory auto-capture <context> [--agent <id>] [--project <id>] [--reason <reason>] [--tags <t1,t2>]');
+    process.exit(1);
+  }
+
+  const body = {
+    context,
+    agent_id: args.agent || 'unknown',
+    reason: args.reason || 'context_compaction',
+  };
+  if (args.project) body.project_id = args.project;
+  if (args.tags) body.tags = normalizeTags(args.tags.split(',').map(t => t.trim()));
+
+  const res = await tryDaemon('POST', '/api/memory/auto-capture', body);
+
+  if (!res) {
+    // File-based fallback
+    process.stderr.write(FILE_MODE_WARN);
+    const id = fileStore(context, 'session-learning');
+    if (args.json) {
+      console.log(JSON.stringify({ id, stored: true, mode: 'file' }, null, 2));
+    } else {
+      console.log(`\x1b[92mAuto-captured\x1b[0m ${id} (session-learning, file mode)`);
+    }
+    return;
+  }
+
+  if (res.status !== 200) {
+    console.error('Error:', res.data.error || 'Unknown error');
+    process.exit(1);
+  }
+
+  if (args.json) {
+    console.log(JSON.stringify(res.data, null, 2));
+  } else {
+    console.log(`\x1b[92mAuto-captured\x1b[0m ${res.data.id} (${res.data.chars} chars, source: session-learning)`);
+  }
+}
+
+// ═══════════════════════════════════════════════════════
 // Semantic Search (pgvector embeddings)
 // ═══════════════════════════════════════════════════════
 
@@ -1479,6 +1524,7 @@ function printUsage() {
   list                 List recent memories
   count                Count total memories
   distill              Compact old entries (merge duplicates)
+  auto-capture <text>  Store session context before compaction
 
 \x1b[1mSemantic Search (pgvector):\x1b[0m
   semantic-search <q>  Search using embedding similarity (requires OPENAI_API_KEY)
@@ -1537,6 +1583,7 @@ async function main() {
     'list': cmdList,
     'count': cmdCount,
     'distill': cmdDistill,
+    'auto-capture': cmdAutoCapture,
     'cross-project': cmdCrossProject,
     'semantic-search': cmdSemanticSearch,
     'backfill-embeddings': cmdBackfillEmbeddings,
