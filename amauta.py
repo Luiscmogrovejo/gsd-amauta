@@ -4538,6 +4538,26 @@ AGENT WORKFLOW (heartbeat cycle):
     # ── migrate ───────────────────────────────────────────────────────────────
     sub.add_parser("migrate", help="Upgrade existing tasks to v2 schema (idempotent)")
 
+    # ── audit ─────────────────────────────────────────────────────────────────
+    au = sub.add_parser("audit", help="Query and export the immutable audit log")
+    au_sub = au.add_subparsers(dest="audit_cmd", required=True)
+
+    au_ex = au_sub.add_parser("export", help="Export audit log as JSON or CSV")
+    au_ex.add_argument("--format", choices=["json", "csv"], default="json",
+                       help="Output format: json (default) or csv")
+    au_ex.add_argument("--start", help="Start date filter (ISO format, e.g. 2026-01-01)")
+    au_ex.add_argument("--end",   help="End date filter (ISO format, e.g. 2026-03-31)")
+    au_ex.add_argument("--limit", type=int, default=10000,
+                       help="Max records to return (default 10000)")
+    au_ex.add_argument("--output", "-o", help="Write output to this file path instead of stdout")
+
+    au_sh = au_sub.add_parser("show", help="Show audit trail for a specific task")
+    au_sh.add_argument("id", help="Task ID (e.g. TK-0001)")
+    au_sh.add_argument("--limit", type=int, default=100,
+                       help="Max records to show (default 100)")
+    au_sh.add_argument("--format", choices=["table", "json"], default="table",
+                       help="Output format: table (default) or json")
+
     return p
 
 
