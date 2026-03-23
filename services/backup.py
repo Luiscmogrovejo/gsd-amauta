@@ -65,6 +65,7 @@ class BackupManager:
                 "gsd_shared_kb": self._export_table("skb"),
                 "gsd_task_validations": self._export_table("validations"),
                 "gsd_agent_performance": self._export_table("agent_performance"),
+                "gsd_audit_log": self._export_table("audit"),
             },
             "counts": {},
             "checksum": None,
@@ -142,6 +143,7 @@ class BackupManager:
             "gsd_shared_kb": "import_skb",
             "gsd_task_validations": "import_validations",
             "gsd_agent_performance": "import_agent_performance",
+            "gsd_audit_log": "import_audit",
         }
 
         for table_name, method_name in table_importers.items():
@@ -297,8 +299,16 @@ class BackupManager:
         except Exception as e:
             result["errors"].append(f"gsd_tasks count failed: {e}")
 
+        try:
+            result["counts"]["gsd_audit_log"] = self.store.audit_count()
+            result["checks"].append(
+                f"gsd_audit_log: {result['counts']['gsd_audit_log']} rows"
+            )
+        except Exception as e:
+            result["errors"].append(f"gsd_audit_log count failed: {e}")
+
         # Check exportability (can we read all tables?)
-        for table_type in ("memory", "tasks", "skb", "validations"):
+        for table_type in ("memory", "tasks", "skb", "validations", "audit"):
             method = f"export_all_{table_type}"
             if hasattr(self.store, method):
                 result["checks"].append(f"export_{table_type}: available")
@@ -369,7 +379,7 @@ class BackupManager:
         """Export all rows from a table type via store methods.
 
         Args:
-            table_type: One of 'memory', 'tasks', 'skb', 'validations', 'agent_performance'.
+            table_type: One of 'memory', 'tasks', 'skb', 'validations', 'agent_performance', 'audit'.
 
         Returns:
             List of dicts (rows), or [] if the method is not available or fails.
