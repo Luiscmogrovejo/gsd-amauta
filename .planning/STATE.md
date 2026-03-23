@@ -16,7 +16,7 @@ Progress: ██████░░░░ 60% (3/5 phases implemented, 2 gap clos
 | 6 — Audit Log | ✓ Implemented (AUDIT-03, AUDIT-04 CLI missing) | 1 |
 | 7 — SSO/OIDC | ✓ Implemented (SSO-04 actor wiring broken) | 1 |
 | 8 — Data Durability | ✓ Implemented (DUR-01 missing audit table) | 1 |
-| 9 — Audit CLI + SSO Actor Wiring | ○ Pending (gap closure) | 0 |
+| 9 — Audit CLI + SSO Actor Wiring | ◑ In Progress (09-01 pending, 09-02 complete) | 2 |
 | 10 — Backup Audit Inclusion | ○ Pending (gap closure) | 0 |
 
 ## Previous Milestone: v2.0 — Self-Upgrade (COMPLETE)
@@ -38,6 +38,11 @@ All 5 phases done: Setup, RPETD, Memory & RLM, Task Management, Distribution.
 - 2 broken CLI flows (amauta audit export/show)
 - 0/8 phases have VERIFICATION.md (verification never run)
 - Gap closure phases 9-10 created to fix all issues
+
+## Phase 9 Progress (2026-03-23)
+
+- 09-02 COMPLETE: SSO-04 actor wiring fixed (1 line in amauta-daemon.py, 12 tests added)
+- 09-01 PENDING: Audit CLI subcommands (amauta audit export/show) not yet implemented
 
 ## Blockers
 

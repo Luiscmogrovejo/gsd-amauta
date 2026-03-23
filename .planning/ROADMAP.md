@@ -9,7 +9,7 @@
 | 6 | Audit Log | Immutable audit trail for every validation and RPETD event | AUDIT-01 through AUDIT-05 | 0 |
 | 7 | SSO/OIDC | Token-based identity for API requests with graceful degradation | SSO-01 through SSO-05 | 0 |
 | 8 | Data Durability | Backup/restore/verify for all persistent data | DUR-01 through DUR-05 | 0 |
-| 9 | Audit CLI + SSO Actor Wiring | Wire audit CLI subcommands and fix SSO actor tracking in audit records | AUDIT-03, AUDIT-04, SSO-04 | 0 |
+| 9 | Audit CLI + SSO Actor Wiring | Wire audit CLI subcommands and fix SSO actor tracking in audit records | AUDIT-03, AUDIT-04, SSO-04 | 2 (09-01 pending, 09-02 complete) |
 | 10 | Backup Audit Inclusion | Include gsd_audit_log table in backup create/restore/verify | DUR-01 | 0 |
 
 ## Phase Details
