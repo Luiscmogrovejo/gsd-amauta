@@ -4291,6 +4291,87 @@ def cmd_unlink(args):
         print(dim(f"{args.id} does not depend on {args.dep_id}"))
 
 
+# ── AUDIT — query and export immutable audit log ────────────────────────────────
+def cmd_audit(args):
+    """Query and export the gsd_audit_log via daemon HTTP API."""
+    import urllib.request
+    import urllib.error
+    import json as _json
+
+    port = int(os.environ.get("GSD_AMAUTA_PORT", "18799"))
+
+    if args.audit_cmd == "export":
+        # Build query string
+        params = [f"format={args.format}", f"limit={args.limit}"]
+        if args.start:
+            params.append(f"start={args.start}")
+        if args.end:
+            params.append(f"end={args.end}")
+        url = f"http://127.0.0.1:{port}/api/audit/export?{'&'.join(params)}"
+        try:
+            req = urllib.request.Request(url, method="GET")
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                raw = resp.read()
+                content_type = resp.headers.get("Content-Type", "")
+        except urllib.error.URLError as e:
+            print(f"\033[31maudit export: daemon not reachable — {e}\033[0m", file=sys.stderr)
+            print("  Is the daemon running? Try: amauta-daemon start", file=sys.stderr)
+            sys.exit(1)
+        except Exception as e:
+            print(f"\033[31maudit export failed: {e}\033[0m", file=sys.stderr)
+            sys.exit(1)
+
+        # Handle output destination
+        if args.output:
+            with open(args.output, "wb") as f:
+                f.write(raw)
+            print(f"audit export: written to {args.output}")
+        elif args.format == "csv":
+            sys.stdout.write(raw.decode("utf-8"))
+        else:
+            # JSON — pretty print
+            data = _json.loads(raw.decode("utf-8"))
+            print(_json.dumps(data, indent=2, default=str))
+
+    elif args.audit_cmd == "show":
+        task_id = args.id
+        url = f"http://127.0.0.1:{port}/api/audit/query?task_id={task_id}&limit={args.limit}"
+        try:
+            req = urllib.request.Request(url, method="GET")
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = _json.loads(resp.read().decode("utf-8"))
+        except urllib.error.URLError as e:
+            print(f"\033[31maudit show: daemon not reachable — {e}\033[0m", file=sys.stderr)
+            print("  Is the daemon running? Try: amauta-daemon start", file=sys.stderr)
+            sys.exit(1)
+        except Exception as e:
+            print(f"\033[31maudit show failed: {e}\033[0m", file=sys.stderr)
+            sys.exit(1)
+
+        results = data.get("results", [])
+        count = data.get("count", len(results))
+
+        if args.format == "json":
+            print(_json.dumps(data, indent=2, default=str))
+            return
+
+        # Table format
+        print(f"\033[1mAudit trail for {task_id}\033[0m  ({count} records)")
+        if not results:
+            print("  (no audit records found)")
+            return
+        # Column widths
+        print(f"\n{'TIMESTAMP':<26}  {'EVENT TYPE':<20}  {'ACTOR':<16}  {'PHASE':<6}  STATUS")
+        print("─" * 90)
+        for r in results:
+            ts       = str(r.get("created_at", ""))[:25]
+            etype    = str(r.get("event_type", ""))[:20]
+            actor    = str(r.get("actor") or r.get("agent_id") or "—")[:16]
+            phase    = str(r.get("phase") or "—")[:6]
+            status   = str(r.get("status") or "—")
+            print(f"{ts:<26}  {etype:<20}  {actor:<16}  {phase:<6}  {status}")
+
+
 # ── PARSER ─────────────────────────────────────────────────────────────────────
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
