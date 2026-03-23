@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: milestone
-status: unknown
-last_updated: "2026-03-23T13:18:35.386Z"
+status: complete
+last_updated: "2026-03-23T14:00:00.000Z"
 progress:
   total_phases: 5
-  completed_phases: 3
-  total_plans: 4
-  completed_plans: 4
-  percent: 80
+  completed_phases: 5
+  total_plans: 5
+  completed_plans: 5
+  percent: 100
 ---
 
 # GSD-Amauta — Project State
@@ -19,19 +19,19 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-21)
 
 **Core value:** Trustworthy quality pipeline with accountability, identity, and data safety
-**Current focus:** Phase 9 — Audit CLI + SSO Actor Wiring (gap closure)
+**Current focus:** Milestone v2.1 complete — all 5 phases done, all gaps closed
 
 ## Milestone: v2.1 — Durability & Compliance
 
-Progress: ████████░░ 80% (3/5 phases implemented, phase 9 gap closure complete, phase 10 pending)
+Progress: ██████████ 100% (5/5 phases complete, all gaps closed)
 
 | Phase | Status | Plans |
 |-------|--------|-------|
-| 6 — Audit Log | ✓ Implemented (AUDIT-03, AUDIT-04 CLI missing) | 1 |
-| 7 — SSO/OIDC | ✓ Implemented (SSO-04 actor wiring broken) | 1 |
-| 8 — Data Durability | ✓ Implemented (DUR-01 missing audit table) | 1 |
+| 6 — Audit Log | ✓ Complete | 1 |
+| 7 — SSO/OIDC | ✓ Complete | 1 |
+| 8 — Data Durability | ✓ Complete | 1 |
 | 9 — Audit CLI + SSO Actor Wiring | ✓ Complete (09-01 done, 09-02 done) | 2 |
-| 10 — Backup Audit Inclusion | ○ Pending (gap closure) | 0 |
+| 10 — Backup Audit Inclusion | ✓ Complete (10-01 done, DUR-01 closed) | 1 |
 
 ## Previous Milestone: v2.0 — Self-Upgrade (COMPLETE)
 
@@ -64,9 +64,21 @@ All 5 phases done: Setup, RPETD, Memory & RLM, Task Management, Distribution.
 - cmd_audit uses nested subparser pattern (dest="audit_cmd") consistent with refs/sprint/skb
 - URLError caught explicitly and exits 1 with actionable stderr message
 
+## Phase 10 Progress (2026-03-23)
+
+- 10-01 COMPLETE: gsd_audit_log wired into backup pipeline (import_audit in both stores, 4 backup.py edits, 6 tests)
+- DUR-01 CLOSED: audit rows now backed up, restored, and verified end-to-end
+- 156 total tests passing, 0 regressions
+
+## Phase 10 Decisions (10-01)
+
+- Replace mode for audit uses DELETE + INSERT (not alias-as-merge): behavioral consistency with other tables, user explicitly chose replace
+- No migration needed: gsd_audit_log created by Phase 6 migration 006
+- Backward compat handled by existing tables.get() guard in restore() — zero extra code
+
 ## Blockers
 
-(None — gap closure phases address all audit findings)
+(None — milestone v2.1 complete)
 
 ---
 *Milestone v2.1 started: 2026-03-21*
