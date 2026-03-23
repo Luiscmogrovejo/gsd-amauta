@@ -963,6 +963,51 @@ class SQLiteStore:
         except Exception:
             return []
 
+    def import_audit(self, rows, mode="merge"):
+        """Import audit log rows from backup.
+
+        Merge mode: INSERT OR IGNORE — skips rows with colliding IDs (append-only log safe).
+        Replace mode: DELETE + INSERT — mirrors other import methods; user explicitly chose replace.
+
+        Args:
+            rows: List of row dicts from export_all_audit().
+            mode: 'merge' or 'replace'.
+
+        Returns:
+            Number of rows imported.
+        """
+        if not rows:
+            return 0
+        with self._get_conn() as conn:
+            if mode == "replace":
+                conn.execute("DELETE FROM gsd_audit_log")
+            count = 0
+            for row in rows:
+                try:
+                    conn.execute(
+                        """INSERT OR IGNORE INTO gsd_audit_log
+                               (id, task_id, event_type, agent_id, actor, phase, status,
+                                gate_results, content, metadata, created_at)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (
+                            row.get("id"),
+                            row.get("task_id"),
+                            row.get("event_type"),
+                            row.get("agent_id"),
+                            row.get("actor"),
+                            row.get("phase"),
+                            row.get("status"),
+                            json.dumps(row.get("gate_results", {})) if isinstance(row.get("gate_results"), (list, dict)) else row.get("gate_results", "{}"),
+                            row.get("content"),
+                            json.dumps(row.get("metadata", {})) if isinstance(row.get("metadata"), (list, dict)) else row.get("metadata", "{}"),
+                            row.get("created_at"),
+                        ),
+                    )
+                    count += conn.execute("SELECT changes()").fetchone()[0]
+                except Exception:
+                    pass
+            return count
+
     def import_memory(self, rows, mode="merge"):
         """Import memory rows from backup.
 
