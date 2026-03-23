@@ -4674,6 +4674,7 @@ def main():
         "stats":       cmd_stats,
         "memory":      cmd_memory,
         "skb":         cmd_skb,
+        "audit":       cmd_audit,
         "export":      cmd_export,
         "import":      cmd_import,
         "migrate":     cmd_migrate,
