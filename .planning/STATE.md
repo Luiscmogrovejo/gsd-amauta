@@ -1,74 +1,47 @@
-# GSD-Amauta v2 — Project State
+# GSD-Amauta — Project State
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-03-21)
 
-**Core value:** Zero-config quality pipeline for any developer in under 60 seconds
-**Current focus:** v2.0 COMPLETE — all 5 phases done
+**Core value:** Trustworthy quality pipeline with accountability, identity, and data safety
+**Current focus:** Phase 9 — Audit CLI + SSO Actor Wiring (gap closure)
 
-## Milestone: v2.0
+## Milestone: v2.1 — Durability & Compliance
 
-Progress: ██████████ 100%
+Progress: ██████░░░░ 60% (3/5 phases implemented, 2 gap closure pending)
 
 | Phase | Status | Plans |
 |-------|--------|-------|
-| 1 — Setup & Onboarding | ✔ Complete | 2 (01-01 done, 01-02 done) |
-| 2 — RPETD Enforcement | ✔ Complete | 1 (02-01 done) |
-| 3 — Memory & RLM | ✔ Complete | 2 (03-01 done, 03-02 done) |
-| 4 — Task Management | ✔ Complete | 2 (04-01 done, 04-02 done) |
-| 5 — Distribution | ✔ Complete | 2 (05-01 done, 05-02 done) |
+| 6 — Audit Log | ✓ Implemented (AUDIT-03, AUDIT-04 CLI missing) | 1 |
+| 7 — SSO/OIDC | ✓ Implemented (SSO-04 actor wiring broken) | 1 |
+| 8 — Data Durability | ✓ Implemented (DUR-01 missing audit table) | 1 |
+| 9 — Audit CLI + SSO Actor Wiring | ○ Pending (gap closure) | 0 |
+| 10 — Backup Audit Inclusion | ○ Pending (gap closure) | 0 |
+
+## Previous Milestone: v2.0 — Self-Upgrade (COMPLETE)
+
+All 5 phases done: Setup, RPETD, Memory & RLM, Task Management, Distribution.
+34 tasks, 39 commits, 1714 tests, 100% pass rate.
 
 ## Decisions
 
-- Chose SQLite as zero-config fallback over requiring Docker
-- Chose local PG auto-detection over always requiring Docker
-- Chose coarse granularity (5 phases) for this upgrade
-- Chose YOLO mode for self-upgrade execution
-- Merged TK-V2-0102/TK-V2-0104 (both modify infra_detect.py with overlapping changes)
-- Docker compose v2/v1 fallback: try `docker compose` first, fall back to `docker-compose`
-- auto_start=True default for init flow; daemon can pass False to avoid side effects
-- RLM default port is 18798 (not 18800); corrected during Plan 01-02
-- Flag-vs-positional detection via startsWith('--') for cli.cjs status routing
-- Python backend is single authoritative gate enforcer; CJS client-side checks are advisory only
-- _validate_all_gates() returns structured list of {gate, status, reason} dicts for 5 gates
-- TAG_SYNONYMS map duplicated in Python and JS to maintain zero-dependency constraint
-- normalize_tags applied on both store and search paths for tag synonym consistency
-- RLM subprocess managed by daemon via Popen(start_new_session=True) + watchdog thread
-- MtimeIndex JSON persistence enables incremental indexing across RLM restarts
-- Claim enrichment: 2s timeout, silent fallback on RLM failure
-- PG retry queue: file-based JSON at ~/.amauta/data/pg_retry_queue.json, max 1000 items, oldest evicted
-- State machine: ALLOWED_TRANSITIONS dict enforced in cmd_status; cmd_claim/cmd_validate have their own guards
-- Dependency enforcement: _deps_met() checked at claim, validate --pass, AND status done
-- Board RPETD indicator on task ID line; title truncated 60->45 chars to fit
-- Column RPETD-complete counts all items (not just displayed subset)
-- MCP server: stdio transport only (avoids port conflict with daemon on 18799); thin proxy to daemon HTTP API
-- MCP server: zero external deps (readline + http + process only); no @modelcontextprotocol/sdk needed
-- MCP registration: best-effort in postinstall; skip silently if claude CLI not on PATH
-- Package version bump 1.0.0 -> 2.0.0 for v2 milestone completion
+- Audit log is append-only (no UPDATE/DELETE) for compliance
+- SSO is optional — no-auth when OIDC vars not set
+- Backups are local-only (no cloud sync — local-first philosophy)
+- Phase numbering continues from v2.0 (6, 7, 8)
+
+## Audit Results (2026-03-23)
+
+- 10/15 requirements satisfied, 5 gaps found
+- 2 cross-phase integration failures (SSO→Audit actor, Backup→Audit table)
+- 2 broken CLI flows (amauta audit export/show)
+- 0/8 phases have VERIFICATION.md (verification never run)
+- Gap closure phases 9-10 created to fix all issues
 
 ## Blockers
 
-(None)
-
-## Learnings
-
-- infra_detect.py __main__ block enables any Python service module to be invoked as CLI for JSON output
-- bin/cli.cjs dispatcher pattern: new commands routed here, everything else delegates to gsd-amauta.cjs
-- System status routing: bare `status` with no positional args routes to gsd-memory.cjs cmdStatus; status with id routes to gsd-amauta.cjs
-- Integration tests as static content checks (file existence, string matching) avoid daemon dependency and CI flakiness
-- Pure function tests for gate logic: import with GSD_AMAUTA_NO_AUTO_START=1 to avoid side effects
-- SQLite dict(row) includes rowid from FTS JOIN; must pop("rowid") for PG parity
-- Server-side stats endpoints (distill-status, tag-stats) reduce client round-trips
-- importlib.util.spec_from_file_location needed for hyphenated Python filenames (rlm-service.py) in tests
-- Keyword scoring for fallback: filename match >> path match provides good heuristic without embeddings
-
-## Session
-
-- **Last completed:** Plan 05-02 (MCP server + registration + npm v2.0.0 package)
-- **Next:** v2.0 milestone complete. Ready for npm publish.
-- **Completed:** 2026-03-21
+(None — gap closure phases address all audit findings)
 
 ---
-*Initialized: 2026-03-21*
-*Updated: 2026-03-21*
+*Milestone v2.1 started: 2026-03-21*
