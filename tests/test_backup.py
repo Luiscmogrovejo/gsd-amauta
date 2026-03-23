@@ -73,6 +73,18 @@ class BackupTestBase(unittest.TestCase):
             status="approved",
             evidence={"notes": "Looks good"},
         )
+        self.store.audit_log(
+            task_id="TK-TEST-001",
+            event_type="validation",
+            agent_id="test-agent",
+            status="pass",
+        )
+        self.store.audit_log(
+            task_id="TK-TEST-001",
+            event_type="rpetd_phase",
+            agent_id="test-agent",
+            phase="R",
+        )
 
     def tearDown(self):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
@@ -357,6 +369,104 @@ class TestBackupList(BackupTestBase):
             self.assertIn("size_human", backups[0])
         finally:
             backup_module.BACKUP_DIR = orig_dir
+
+
+class TestBackupAuditInclusion(BackupTestBase):
+    """DUR-01: gsd_audit_log must be included in backup create/restore/verify."""
+
+    def test_create_includes_audit_log_key(self):
+        """Backup JSON must contain gsd_audit_log in tables and counts."""
+        output = os.path.join(self.backup_dir, "audit-create.json.gz")
+        path, counts, _ = self.mgr.create(output)
+
+        self.assertIn("gsd_audit_log", counts,
+                      "gsd_audit_log missing from backup counts")
+        self.assertEqual(counts["gsd_audit_log"], 2,
+                         f"Expected 2 audit rows, got {counts['gsd_audit_log']}")
+
+        with gzip.open(path, "rt", encoding="utf-8") as f:
+            data = json.load(f)
+        self.assertIn("gsd_audit_log", data["tables"])
+        self.assertEqual(len(data["tables"]["gsd_audit_log"]), 2)
+
+    def test_restore_merge_imports_audit_rows(self):
+        """Merge restore to fresh DB must import all audit rows."""
+        output = os.path.join(self.backup_dir, "audit-merge.json.gz")
+        self.mgr.create(output)
+
+        new_db = os.path.join(self.tmpdir, "audit-new.db")
+        new_store = SQLiteStore(db_path=new_db)
+        new_mgr = BackupManager(new_store)
+
+        result = new_mgr.restore(output, mode="merge")
+        self.assertIn("gsd_audit_log", result["rows_imported"])
+        self.assertEqual(result["rows_imported"]["gsd_audit_log"], 2)
+        self.assertEqual(new_store.audit_count(), 2)
+
+    def test_restore_merge_no_duplicates_on_rerun(self):
+        """Merge restore into same store must not duplicate audit rows."""
+        output = os.path.join(self.backup_dir, "audit-dup.json.gz")
+        self.mgr.create(output)
+
+        original_count = self.store.audit_count()
+        self.mgr.restore(output, mode="merge")
+        self.assertEqual(self.store.audit_count(), original_count,
+                         "Merge re-import should not create duplicate audit rows")
+
+    def test_restore_replace_repopulates_audit(self):
+        """Replace restore must truncate and repopulate audit table."""
+        output = os.path.join(self.backup_dir, "audit-replace.json.gz")
+        self.mgr.create(output)
+
+        # Add an extra audit row that should be removed on replace
+        self.store.audit_log(
+            task_id="TK-EXTRA",
+            event_type="validation",
+            agent_id="extra-agent",
+            status="fail",
+        )
+        self.assertEqual(self.store.audit_count(), 3)
+
+        self.mgr.restore(output, mode="replace")
+        self.assertEqual(self.store.audit_count(), 2,
+                         "After replace, audit count should match backup (2)")
+
+    def test_verify_file_checks_audit_count(self):
+        """verify(file) must include gsd_audit_log count check in result."""
+        output = os.path.join(self.backup_dir, "audit-verify.json.gz")
+        self.mgr.create(output)
+
+        result = self.mgr.verify(output)
+        self.assertTrue(result["valid"], f"verify failed: {result.get('errors')}")
+        audit_checks = [c for c in result["checks"] if "gsd_audit_log" in c]
+        self.assertTrue(len(audit_checks) > 0,
+                        f"Expected gsd_audit_log in verify checks, got: {result['checks']}")
+
+    def test_restore_old_backup_without_audit_key(self):
+        """Old backup without gsd_audit_log key must restore cleanly (0 audit rows)."""
+        output = os.path.join(self.backup_dir, "old-backup.json.gz")
+        self.mgr.create(output)
+
+        # Strip out gsd_audit_log to simulate an old backup
+        with gzip.open(output, "rt", encoding="utf-8") as f:
+            data = json.load(f)
+        data["tables"].pop("gsd_audit_log", None)
+        data["counts"].pop("gsd_audit_log", None)
+        # Recompute checksum to keep it valid
+        data_for_hash = json.dumps(data["tables"], sort_keys=True, default=str)
+        data["checksum"] = hashlib.sha256(data_for_hash.encode("utf-8")).hexdigest()
+        with gzip.open(output, "wt", encoding="utf-8") as f:
+            json.dump(data, f)
+
+        new_db = os.path.join(self.tmpdir, "old-compat.db")
+        new_store = SQLiteStore(db_path=new_db)
+        new_mgr = BackupManager(new_store)
+
+        # Must not raise; audit count should be 0
+        result = new_mgr.restore(output, mode="merge")
+        self.assertEqual(result["rows_imported"].get("gsd_audit_log", 0), 0,
+                         "Old backup should restore 0 audit rows, not error")
+        self.assertEqual(new_store.audit_count(), 0)
 
 
 if __name__ == "__main__":
