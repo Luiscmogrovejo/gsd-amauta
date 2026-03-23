@@ -1393,6 +1393,54 @@ class PGStore:
         except Exception:
             return []
 
+    def import_audit(self, rows, mode="merge"):
+        """Import audit log rows from backup.
+
+        Merge mode: INSERT ... ON CONFLICT (id) DO NOTHING — preserves existing history.
+        Replace mode: TRUNCATE + INSERT — mirrors behavior of all other import methods.
+        Note: replace mode is the only case where append-only semantics are relaxed;
+        the user explicitly requested a full restore, so existing records are dropped.
+
+        Args:
+            rows: List of row dicts from export_all_audit().
+            mode: 'merge' or 'replace'.
+
+        Returns:
+            Number of rows imported.
+        """
+        if not rows:
+            return 0
+        with self._get_conn() as conn:
+            with conn.cursor() as cur:
+                if mode == "replace":
+                    cur.execute("TRUNCATE gsd_audit_log CASCADE")
+                count = 0
+                for row in rows:
+                    try:
+                        cur.execute("""
+                            INSERT INTO gsd_audit_log
+                                (id, task_id, event_type, agent_id, actor, phase, status,
+                                 gate_results, content, metadata, created_at)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s::jsonb, %s)
+                            ON CONFLICT (id) DO NOTHING
+                        """, (
+                            row.get("id"),
+                            row.get("task_id"),
+                            row.get("event_type"),
+                            row.get("agent_id"),
+                            row.get("actor"),
+                            row.get("phase"),
+                            row.get("status"),
+                            json.dumps(row.get("gate_results", {})) if isinstance(row.get("gate_results"), (list, dict)) else row.get("gate_results", "{}"),
+                            row.get("content"),
+                            json.dumps(row.get("metadata", {})) if isinstance(row.get("metadata"), (list, dict)) else row.get("metadata", "{}"),
+                            row.get("created_at"),
+                        ))
+                        count += cur.rowcount
+                    except Exception:
+                        pass
+                return count
+
     def import_memory(self, rows, mode="merge"):
         """Import memory rows from backup.
 
