@@ -1195,7 +1195,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     task_id=task_id,
                     event_type=event_type,
                     agent_id=body.get("agent_id"),
-                    actor=body.get("actor"),
+                    actor=body.get("actor") or self._oidc_sub or None,
                     phase=body.get("phase"),
                     status=body.get("status"),
                     gate_results=body.get("gate_results"),
