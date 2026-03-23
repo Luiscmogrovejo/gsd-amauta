@@ -9,14 +9,14 @@ See: .planning/PROJECT.md (updated 2026-03-21)
 
 ## Milestone: v2.1 — Durability & Compliance
 
-Progress: ██████░░░░ 60% (3/5 phases implemented, 2 gap closure pending)
+Progress: ████████░░ 80% (3/5 phases implemented, phase 9 gap closure complete, phase 10 pending)
 
 | Phase | Status | Plans |
 |-------|--------|-------|
 | 6 — Audit Log | ✓ Implemented (AUDIT-03, AUDIT-04 CLI missing) | 1 |
 | 7 — SSO/OIDC | ✓ Implemented (SSO-04 actor wiring broken) | 1 |
 | 8 — Data Durability | ✓ Implemented (DUR-01 missing audit table) | 1 |
-| 9 — Audit CLI + SSO Actor Wiring | ◑ In Progress (09-01 pending, 09-02 complete) | 2 |
+| 9 — Audit CLI + SSO Actor Wiring | ✓ Complete (09-01 done, 09-02 done) | 2 |
 | 10 — Backup Audit Inclusion | ○ Pending (gap closure) | 0 |
 
 ## Previous Milestone: v2.0 — Self-Upgrade (COMPLETE)
@@ -42,7 +42,13 @@ All 5 phases done: Setup, RPETD, Memory & RLM, Task Management, Distribution.
 ## Phase 9 Progress (2026-03-23)
 
 - 09-02 COMPLETE: SSO-04 actor wiring fixed (1 line in amauta-daemon.py, 12 tests added)
-- 09-01 PENDING: Audit CLI subcommands (amauta audit export/show) not yet implemented
+- 09-01 COMPLETE: Audit CLI subcommands added (amauta audit export/show, 17 tests, 4 commits)
+
+## Phase 9 Decisions (09-01)
+
+- stdlib-only (urllib.request) for daemon calls — no third-party imports introduced
+- cmd_audit uses nested subparser pattern (dest="audit_cmd") consistent with refs/sprint/skb
+- URLError caught explicitly and exits 1 with actionable stderr message
 
 ## Blockers
 
