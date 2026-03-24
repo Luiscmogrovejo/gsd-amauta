@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: milestone
 status: unknown
-last_updated: "2026-03-24T22:00:00.000Z"
+last_updated: "2026-03-24T17:58:31.000Z"
 progress:
   total_phases: 9
   completed_phases: 5
   total_plans: 10
-  completed_plans: 8
-  percent: 40
+  completed_plans: 9
+  percent: 45
 ---
 
 # GSD-Amauta — Project State
@@ -19,16 +19,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-24)
 
 **Core value:** Every built system actually fires during task execution — no dead code, no bypasses, agents are smarter with fewer tokens.
-**Current focus:** Milestone v2.2 — Phase 11 COMPLETE, Phase 12 IN PROGRESS (12-01 DONE, 12-02 and 12-03 remaining).
+**Current focus:** Milestone v2.2 — Phase 11 COMPLETE, Phase 12 IN PROGRESS (12-01 DONE, 12-02 DONE, 12-03 remaining).
 
 ## Milestone: v2.2 — Wiring & Hardening
 
-Progress: ████░░░░░░ 40% (1/4 phases complete, 8/10 plans done)
+Progress: ████▌░░░░░ 45% (1/4 phases complete, 9/10 plans done)
 
 | Phase | Status | Plans | Requirements |
 |-------|--------|-------|-------------|
 | 11 — Context Engine Activation | **DONE** | 2 (11-01 DONE, 11-02 DONE) | **RLM-01 DONE**, **RLM-02 DONE**, **RLM-03 DONE**, **RLM-04 DONE**, **RLM-05 DONE** |
-| 12 — Semantic Memory Pipeline | **IN PROGRESS** | 3 (12-01 DONE, 12-02, 12-03) | **SEM-01 DONE**, **SEM-02 DONE**, SEM-03, SEM-04, SEM-05, SEM-06, **SEM-07 DONE** |
+| 12 — Semantic Memory Pipeline | **IN PROGRESS** | 3 (12-01 DONE, 12-02 DONE, 12-03) | **SEM-01 DONE**, **SEM-02 DONE**, **SEM-03 DONE**, **SEM-04 DONE**, SEM-05, **SEM-06 DONE**, **SEM-07 DONE** |
 | 13 — Validation Hardening | ○ Pending | 0 | GATE-01 through GATE-06 |
 | 14 — Pipeline Integration | ○ Pending | 0 | WIRE-01 through WIRE-04 |
 
@@ -101,9 +101,18 @@ Wave 1 plans (12-01, 12-02) are independent and parallelizable. Wave 2 (12-03) d
 - 10 new tests (semantic search, daemon writes, full learning), 210 total tests all green
 - 5 atomic commits: 17ec1bc, ec5ec88, 487d073, f921b74, 56ef8d5
 
+## Plan 12-02 Execution (2026-03-24)
+
+- `_jaccard_similarity()` helper added: word-overlap (3+ char words), threshold 0.7 matches gsd-research.cjs
+- `_skb_promote()` dedup replaced exact title match with Jaccard combined title+content against last 50 entries
+- E-phase enrichment adds second memory query for past execution patterns via `_mem_semantic_search()`
+- T-phase enrichment replaced useless task-ID search with domain-based `_mem_semantic_search()` for test strategies
+- 11 new tests + 1 timing test fix, 221 total tests all green
+- 4 atomic commits: edc4290, 69dd81b, a4b6b4f, 594ba89
+
 ## Blockers
 
-(None — Plan 12-02 ready for execution)
+(None — Plan 12-03 ready for execution)
 
 ---
 *Milestone v2.2 started: 2026-03-24*
