@@ -3667,11 +3667,11 @@ def cmd_validate(args):
         print(c(f"{args.id} not found.", RED)); sys.exit(1)
 
     if item["status"] not in ("validation", "in-progress"):
-        if getattr(args, "force", False):
-            print(c(f"Warning: {args.id} is '{item['status']}', expected 'validation' (--force override)", YELLOW))
+        if args.force_reason:
+            print(c(f"Warning: {args.id} is '{item['status']}', expected 'validation' (--force-reason override)", YELLOW))
         else:
             print(c(f"BLOCKED: {args.id} is '{item['status']}' — must be 'in-progress' or 'validation' before validation.", RED))
-            print(dim("  Use --force to override status check."))
+            print(dim("  Use --force-reason 'justification' to override status check."))
             sys.exit(1)
 
     if args.pass_:
@@ -3686,14 +3686,14 @@ def cmd_validate(args):
                 "gates": gate_results,
                 "passed": len(failures) == 0,
                 "failed_count": len(failures),
-                "forced": bool(args.force),
+                "forced": bool(args.force_reason),
             }
-            if len(failures) == 0 or args.force:
+            if len(failures) == 0 or args.force_reason:
                 result["status"] = "done"
             else:
                 result["status"] = "blocked"
             print(json.dumps(result))
-            if failures and not args.force:
+            if failures and not args.force_reason:
                 sys.exit(1)
             # Continue to normal pass processing (status update, etc.)
 
@@ -3713,7 +3713,7 @@ def cmd_validate(args):
                 print(f"  GATE[{g['gate']}]: {icon} -- {g['reason']}")
             print(f"  {'─' * 50}")
 
-        if failures and not args.force:
+        if failures and not args.force_reason:
             # Record each failure
             for f in failures:
                 _append_note(item, f"GATE_FAIL: {f['gate']} -- {f['reason']}",
@@ -3722,14 +3722,14 @@ def cmd_validate(args):
             save(data)
             if not _is_json:
                 print(c(f"\n  {args.id}: PASS blocked — {len(failures)} gate(s) failed", RED))
-                print(dim("  Fix the issues above or use --force to override."))
+                print(dim("  Fix the issues above or use --force-reason 'justification' to override."))
             sys.exit(1)
 
-        if failures and args.force and not _is_json:
-            print(c(f"\n  Warning: {len(failures)} gate(s) failed but --force override applied", YELLOW))
+        if failures and args.force_reason and not _is_json:
+            print(c(f"\n  Warning: {len(failures)} gate(s) failed but --force-reason override applied: {args.force_reason}", YELLOW))
 
         # ── DEPENDENCY CHECK: block done if deps are incomplete ──
-        if not _deps_met(item, data["items"]) and not args.force:
+        if not _deps_met(item, data["items"]) and not args.force_reason:
             blocking = [d for d in item.get("dependencies", [])
                        if (dep := _find(data["items"], d)) is not None
                        and dep.get("status") != "done"]
@@ -3743,7 +3743,7 @@ def cmd_validate(args):
                     bdep = _find(data["items"], bid)
                     bstatus = bdep.get("status", "?") if bdep else "not found"
                     print(dim(f"    {bid}: {bstatus}"))
-                print(dim("  Complete blocking tasks first or use --force to override."))
+                print(dim("  Complete blocking tasks first or use --force-reason 'justification' to override."))
             else:
                 dep_result = {
                     "task_id": args.id,
@@ -3755,7 +3755,7 @@ def cmd_validate(args):
 
         # ── LEARNING persistence check (existing behavior, non-blocking) ─────
         _validator_id = args.validator or "validator"
-        if not _has_learning_persisted(item) and not args.force:
+        if not _has_learning_persisted(item) and not args.force_reason:
             _auto_write_learning(item, _validator_id)
             # Note: this is a soft degradation, not a hard block
             # The LEARNING_BLOCK gate above already verified the content exists
@@ -3864,11 +3864,12 @@ def cmd_validate(args):
             task_id=args.id,
             event_type="validation",
             agent_id=item["validated_by"],
-            status="force" if (failures and args.force) else "pass",
+            status="force" if (failures and args.force_reason) else "pass",
             gate_results=[dict(g) for g in gate_results],
             content=item.get("validation_notes", ""),
             metadata={
-                "forced": bool(failures and args.force),
+                "forced": bool(failures and args.force_reason),
+                "force_reason": args.force_reason if (failures and args.force_reason) else "",
                 "failed_gates": [g["gate"] for g in failures] if failures else [],
             },
         )
@@ -4712,7 +4713,8 @@ AGENT WORKFLOW (heartbeat cycle):
     vg.add_argument("--pass", dest="pass_", action="store_true")
     vg.add_argument("--fail",               action="store_true")
     v.add_argument("--notes");     v.add_argument("--validator")
-    v.add_argument("--force", action="store_true", help="Override RPETD check")
+    v.add_argument("--force-reason", dest="force_reason", type=str, default="",
+                   help="Override RPETD gates with mandatory justification (non-empty string required)")
     v.add_argument("--json", dest="json_output", action="store_true", help="Output validation results as JSON")
     v.add_argument("--subtasks", help="Pipe-separated subtask titles to atomize on --fail (e.g. 'fix A|fix B|fix C')")
 
