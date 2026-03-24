@@ -691,41 +691,69 @@ def _mem_log_event(agent_id: str, tags: list[str], text: str, *, source: str = "
     try:
         if _mem_pg_available():
             now = datetime.now(timezone.utc)
-            with _pg_conn() as conn:
-                conn.autocommit = True
-                cur = conn.cursor()
 
-                # Dedup: for learning sources, check if we already wrote for this task
-                if source in ("auto_learning", "web_search_result") and metadata:
-                    task_id = (metadata or {}).get("task_id", "")
-                    if task_id:
+            # Dedup: for learning sources, check if we already wrote for this task
+            if source in ("auto_learning", "web_search_result") and metadata:
+                task_id = (metadata or {}).get("task_id", "")
+                if task_id:
+                    with _pg_conn() as conn:
+                        conn.autocommit = True
+                        cur = conn.cursor()
                         cur.execute(
                             "SELECT COUNT(*) FROM amauta_memory WHERE source=%s AND metadata->>'task_id'=%s",
                             (source, task_id)
                         )
                         existing = cur.fetchone()
+                        cur.close()
                         if existing and existing[0] >= 3:
-                            # Already have 3+ entries for this task+source — skip to prevent flooding
-                            cur.close()
-                            return
+                            return  # Already have 3+ entries -- skip to prevent flooding
 
-                cur.execute(
-                    """
-                    INSERT INTO amauta_memory (id, text, agent_id, source, tags, metadata, created_at, updated_at)
-                    VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s)
-                    """,
-                    (
-                        f"MEM-{uuid.uuid4().hex[:12]}",
-                        text,
-                        agent_id or "system",
-                        source,
-                        json.dumps(clean_tags),
-                        json.dumps(metadata or {}),
-                        now,
-                        now,
-                    ),
+            # Try daemon HTTP route first (auto-generates embeddings via Voyage AI)
+            stored_via_daemon = False
+            try:
+                import urllib.request, json as _json
+                port = os.environ.get("GSD_DAEMON_PORT", "18799")
+                url = f"http://127.0.0.1:{port}/api/memory/store"
+                body = _json.dumps({
+                    "text": text,
+                    "source": source,
+                    "agent_id": agent_id or "system",
+                    "tags": clean_tags,
+                    "metadata": metadata or {},
+                }).encode("utf-8")
+                req = urllib.request.Request(
+                    url, data=body, method="POST",
+                    headers={"Content-Type": "application/json"},
                 )
-                cur.close()
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    result = _json.loads(resp.read())
+                    if result.get("stored"):
+                        stored_via_daemon = True
+            except Exception:
+                pass
+
+            # Fallback: direct SQL INSERT (no embedding, but data is not lost)
+            if not stored_via_daemon:
+                with _pg_conn() as conn:
+                    conn.autocommit = True
+                    cur = conn.cursor()
+                    cur.execute(
+                        """
+                        INSERT INTO amauta_memory (id, text, agent_id, source, tags, metadata, created_at, updated_at)
+                        VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s)
+                        """,
+                        (
+                            f"MEM-{uuid.uuid4().hex[:12]}",
+                            text,
+                            agent_id or "system",
+                            source,
+                            json.dumps(clean_tags),
+                            json.dumps(metadata or {}),
+                            now,
+                            now,
+                        ),
+                    )
+                    cur.close()
         else:
             _mem_append(row)
     except Exception:
