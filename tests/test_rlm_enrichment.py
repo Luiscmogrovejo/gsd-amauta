@@ -179,7 +179,8 @@ class TestEnrichmentTiming(unittest.TestCase):
     @patch("amauta._rlm_query", return_value="")
     @patch("amauta._mem_pg_available", return_value=False)
     @patch("amauta._skb_search", return_value=[])
-    def test_all_phases_under_budget(self, mock_skb, mock_pg, mock_rlm, mock_doc):
+    @patch("amauta._mem_semantic_search", return_value=[])
+    def test_all_phases_under_budget(self, mock_sem, mock_skb, mock_pg, mock_rlm, mock_doc):
         """Full RPETD cycle (5 phases) should complete within 1.5s with mocked RLM."""
         item = {
             "id": "TK-TIME",
