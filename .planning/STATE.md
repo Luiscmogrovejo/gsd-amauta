@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: milestone
 status: unknown
-last_updated: "2026-03-24T19:20:19.000Z"
+last_updated: "2026-03-24T19:24:45.832Z"
 progress:
   total_phases: 9
   completed_phases: 7
-  total_plans: 12
-  completed_plans: 12
-  percent: 75
+  total_plans: 14
+  completed_plans: 13
+  percent: 87
 ---
 
 # GSD-Amauta — Project State
@@ -19,18 +19,18 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-24)
 
 **Core value:** Every built system actually fires during task execution — no dead code, no bypasses, agents are smarter with fewer tokens.
-**Current focus:** Milestone v2.2 — Phase 11 COMPLETE, Phase 12 COMPLETE, Phase 13 COMPLETE. Phase 14 pending (depends on 11-13).
+**Current focus:** Milestone v2.2 — Phase 11 COMPLETE, Phase 12 COMPLETE, Phase 13 COMPLETE. Phase 14 IN PROGRESS (14-01 DONE, 14-02 pending).
 
 ## Milestone: v2.2 — Wiring & Hardening
 
-Progress: ████████░░ 75% (3/4 phases complete, 12/12 plans done)
+Progress: █████████░ 87% (3/4 phases complete, 13/14 plans done)
 
 | Phase | Status | Plans | Requirements |
 |-------|--------|-------|-------------|
 | 11 — Context Engine Activation | **DONE** | 2 (11-01 DONE, 11-02 DONE) | **RLM-01 DONE**, **RLM-02 DONE**, **RLM-03 DONE**, **RLM-04 DONE**, **RLM-05 DONE** |
 | 12 — Semantic Memory Pipeline | **DONE** | 3 (12-01 DONE, 12-02 DONE, 12-03 DONE) | **SEM-01 DONE**, **SEM-02 DONE**, **SEM-03 DONE**, **SEM-04 DONE**, **SEM-05 DONE**, **SEM-06 DONE**, **SEM-07 DONE** |
 | 13 — Validation Hardening | **DONE** | 2 (13-01 DONE, 13-02 DONE) | **GATE-01 DONE**, **GATE-02 DONE**, **GATE-03 DONE**, **GATE-04 DONE**, **GATE-05 DONE**, **GATE-06 DONE** |
-| 14 — Pipeline Integration | ○ Pending | 0 | WIRE-01 through WIRE-04 |
+| 14 — Pipeline Integration | ▶ In Progress | 2 (14-01 DONE, 14-02) | WIRE-01, **WIRE-02 DONE**, **WIRE-03 DONE**, WIRE-04 |
 
 ## Research Completed (2026-03-24)
 
@@ -152,9 +152,28 @@ Both plans are Wave 1 and independent (touch different functions). 8 test files 
 - All 71 pipeline-offline tests, 114 deep-python tests, 241 Python tests pass
 - 4 atomic commits: 78b3731, 3930cb1, f27fcef, 26cfd13
 
+## Phase 14 Planning (2026-03-24)
+
+2 plans, 1 wave (both parallelizable), 8 tasks covering all 4 WIRE requirements:
+
+| Plan | Wave | Tasks | Requirements | Key Changes |
+|------|------|-------|-------------|-------------|
+| 14-01 | 1 | 3 | WIRE-02, WIRE-03 | Performance tiebreaker in execute-phase.md routing, PG_SYNC_WARN in daemon response |
+| 14-02 | 1 | 5 | WIRE-01, WIRE-04 | MCP auto-registration in install.js, embedding coverage endpoint, health dashboard enhancement |
+
+Both plans are Wave 1 and independent (touch different files). 14-01 modifies execute-phase.md + amauta-daemon.py. 14-02 modifies install.js + gsd-memory.cjs + amauta-daemon.py (different section).
+
+## Plan 14-01 Execution (2026-03-24)
+
+- Performance tiebreaker added to execute-phase.md routing: queries daemon for pass_rate, falls back to executor-general when <70% (5+ tasks)
+- `_pg_sync_warning` var captures dual-write failures, appends `[PG_SYNC_WARN]` to HTTP response output field
+- CLI already prints `data.output` to stdout, so agents see the warning without any CJS changes
+- 5 new tests in test_pg_sync_warn.py: format, success silence, append order, diagnostic info, JSON compat
+- 3 atomic commits: a83dbad, de84fb2, 8c311b6
+
 ## Blockers
 
-(None — Phase 13 complete. Phase 14 ready for planning.)
+(None — Plan 14-02 ready for execution.)
 
 ---
 *Milestone v2.2 started: 2026-03-24*
