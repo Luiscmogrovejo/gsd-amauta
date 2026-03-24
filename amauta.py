@@ -1837,6 +1837,22 @@ def _rpetd_phase_enrich(phase: str, item: dict, agent_content: str) -> str:
                         mem_lines.append(f"  - {r['text'][:200].replace(chr(10), ' ')}")
                     supplement_parts.append("\n".join(mem_lines))
 
+            # -- PostgreSQL memory: past execution patterns for similar tasks --
+            if _search_q:
+                try:
+                    pattern_results = _mem_semantic_search(f"{title} implementation approach pattern", top_k=3)
+                    relevant_patterns = [r for r in pattern_results
+                                         if r.get("score", 0) >= 2
+                                         and r.get("source") in ("auto_learning", "session-learning",
+                                                                   "lesson-learned", "best-practice")]
+                    if relevant_patterns:
+                        pat_lines = ["[PG] Past execution patterns (reuse these approaches):"]
+                        for r in relevant_patterns[:3]:
+                            pat_lines.append(f"  - [{r.get('source','')}] {r['text'][:250].replace(chr(10), ' ')}")
+                        supplement_parts.append("\n".join(pat_lines))
+                except Exception:
+                    pass
+
         elif phase == "T":
             # ── RLM criteria validation ────────────────────────────────────
             if agent_content:
