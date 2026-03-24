@@ -1504,6 +1504,17 @@ function uninstall(isGlobal, runtime = 'claude') {
       delete settings.hooks;
     }
 
+    // Remove MCP server registration
+    if (settings.mcpServers && settings.mcpServers['gsd-amauta']) {
+      delete settings.mcpServers['gsd-amauta'];
+      // Clean up empty mcpServers object
+      if (Object.keys(settings.mcpServers).length === 0) {
+        delete settings.mcpServers;
+      }
+      settingsModified = true;
+      console.log(`  ${green}\u2713${reset} Removed MCP server registration`);
+    }
+
     if (settingsModified) {
       writeSettings(settingsPath, settings);
       removedCount++;
@@ -2300,6 +2311,20 @@ function install(isGlobal, runtime = 'claude') {
       });
       console.log(`  ${green}✓${reset} Configured context window monitor hook`);
     }
+  }
+
+  // Register MCP server (Claude Code only — MCP is not supported by other runtimes)
+  if (runtime === 'claude') {
+    const mcpServerPath = path.resolve(__dirname, 'mcp-server.cjs');
+    if (!settings.mcpServers) {
+      settings.mcpServers = {};
+    }
+    settings.mcpServers['gsd-amauta'] = {
+      command: 'node',
+      args: [mcpServerPath],
+      disabled: false,
+    };
+    console.log(`  ${green}\u2713${reset} Registered MCP server (6 tools)`);
   }
 
   return { settingsPath, settings, statuslineCommand, runtime };
