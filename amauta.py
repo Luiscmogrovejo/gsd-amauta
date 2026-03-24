@@ -1717,9 +1717,9 @@ def _rpetd_phase_enrich(phase: str, item: dict, agent_content: str) -> str:
             if rlm_answer:
                 supplement_parts.append(f"[RLM] Code context:\n  {rlm_answer[:600]}")
 
-            # ── PostgreSQL memory: related experiences ─────────────────────
-            if _search_q and _mem_pg_available():
-                results = _mem_pg_search(_search_q, None, 5)
+            # ── PostgreSQL memory: semantic search for related experiences ──
+            if _search_q:
+                results = _mem_semantic_search(f"{title} {desc[:200]}", top_k=5)
                 relevant = [r for r in results
                             if r.get("score", 0) >= 2
                             and "event:claim" not in str(r.get("tags", []))]
@@ -1972,43 +1972,37 @@ def _enrich_task_context(item: dict, items: list) -> str:
                 txt = fn.get("text", fn) if isinstance(fn, dict) else fn
                 parts.append(f"  - {str(txt)[:200]}")
 
-        # ── PG memory search for related experiences ───────────────────
-        if _mem_pg_available():
-            stop = {"the","a","an","and","or","for","to","in","on","of","is","it","with","from","by",
-                     "all","this","that","be","as","at","have","do","not","but","are","code","augment"}
-            words = [w for w in re.split(r"\W+", title.lower()) if w and len(w) > 2 and w not in stop]
-            search_q = " ".join(words[:5])
-            if search_q:
-                # Single DB query — reuse results for both "related experiences" and "prior learnings"
-                # (avoids duplicate query with different top-k that previously existed here)
-                results = _mem_pg_search(search_q, None, 10)
+        # ── PG memory: semantic search for related experiences ──────────
+        search_q = f"{title} {desc[:200]}"
+        if search_q.strip():
+            results = _mem_semantic_search(search_q, top_k=10)
 
-                # Tier 1: All results with score >= 2 (general experience context)
-                relevant = [r for r in results
-                           if r.get("score", 0) >= 2
-                           and "event:claim" not in str(r.get("tags", []))
-                           and task_id.lower() not in str(r.get("tags", []))]
-                if relevant:
-                    parts.append("[PG MEMORY] Related experiences (check these FIRST — avoid repeating work):")
-                    for r in relevant[:5]:  # CTX-2 spec: max 5 memories
+            # Tier 1: All results with score >= 2 (general experience context)
+            relevant = [r for r in results
+                       if r.get("score", 0) >= 2
+                       and "event:claim" not in str(r.get("tags", []))
+                       and task_id.lower() not in str(r.get("tags", []))]
+            if relevant:
+                parts.append("[PG MEMORY] Related experiences (check these FIRST — avoid repeating work):")
+                for r in relevant[:5]:  # CTX-2 spec: max 5 memories
+                    src = r.get("source", "")
+                    prefix = f"[{src}]" if src else ""
+                    parts.append(f"  {prefix} {r['text'][:280].replace(chr(10), ' ')}")
+
+            # Tier 2: High-signal sources only — prior learnings (filter from same result set)
+            try:
+                prior_results = [r for r in results
+                                 if r.get("source") in ('auto_learning', 'web_search_result',
+                                                        'lesson-learned', 'best-practice')]
+                if prior_results:
+                    learn_lines = ["[PRIOR LEARNING] Agents already learned this — use their findings:"]
+                    for r in prior_results[:4]:
                         src = r.get("source", "")
-                        prefix = f"[{src}]" if src else ""
-                        parts.append(f"  {prefix} {r['text'][:280].replace(chr(10), ' ')}")
-
-                # Tier 2: High-signal sources only — prior learnings (filter from same result set)
-                try:
-                    prior_results = [r for r in results
-                                     if r.get("source") in ('auto_learning', 'web_search_result',
-                                                            'lesson-learned', 'best-practice')]
-                    if prior_results:
-                        learn_lines = ["[PRIOR LEARNING] Agents already learned this — use their findings:"]
-                        for r in prior_results[:4]:
-                            src = r.get("source", "")
-                            ts = str(r.get("created_at", ""))[:10]
-                            learn_lines.append(f"  [{src}@{ts}] {str(r.get('text',''))[:240].replace(chr(10),' ')}")
-                        parts.append("\n".join(learn_lines))
-                except Exception:
-                    pass
+                        ts = str(r.get("created_at", ""))[:10]
+                        learn_lines.append(f"  [{src}@{ts}] {str(r.get('text',''))[:240].replace(chr(10),' ')}")
+                    parts.append("\n".join(learn_lines))
+            except Exception:
+                pass
 
         # ── Domain KB guide reference ──────────────────────────────────
         doc_path = _pick_domain_doc(title, desc)
