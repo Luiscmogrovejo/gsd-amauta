@@ -1012,3 +1012,153 @@ describe('gsd- prefix consistency across all layers', () => {
     }
   });
 });
+
+// ═══════════════════════════════════════════════════════
+// Plan 13-02: Self-validation block + mandatory note + audit force
+// ═══════════════════════════════════════════════════════
+
+describe('Self-validation block (Plan 13-02)', () => {
+
+  test('SELF-VALIDATION BLOCKED when claimed_by == validator', () => withTmp(dataDir => {
+    const addResult = py(['add', 'task', 'Self-val test', '--agent', 'executor-backend'], dataDir);
+    const taskId = extractId(addResult.output, 'TK');
+    assert.ok(taskId, `should get task ID: ${addResult.output}`);
+    py(['claim', taskId, '--agent', 'executor-backend'], dataDir);
+    // Fill RPETD phases
+    for (const phase of ['R', 'P', 'E', 'T', 'D']) {
+      py(['rpetd', taskId, '--phase', phase, '--content', `${phase}: test content for self-validation test`, '--agent', 'executor-backend'], dataDir);
+    }
+    py(['status', taskId, 'validation', '--agent', 'executor-backend'], dataDir);
+    // Validate as same agent -- should be blocked
+    const r = py(['validate', taskId, '--pass', '--validator', 'executor-backend', '--notes', 'self-val attempt'], dataDir);
+    assert.ok(!r.success, 'Self-validation should be blocked (exit code != 0)');
+    const combined = (r.output + ' ' + r.error).toLowerCase();
+    assert.ok(combined.includes('self-validation blocked') || combined.includes('self_validation_blocked'),
+        `Output should mention SELF-VALIDATION BLOCKED: ${r.output.slice(0, 300)}`);
+  }));
+
+  test('self-validation allowed with --force-reason', () => withTmp(dataDir => {
+    const addResult = py(['add', 'task', 'Self-val force test', '--agent', 'executor-backend'], dataDir);
+    const taskId = extractId(addResult.output, 'TK');
+    assert.ok(taskId);
+    py(['claim', taskId, '--agent', 'executor-backend'], dataDir);
+    for (const phase of ['R', 'P', 'E', 'T', 'D']) {
+      py(['rpetd', taskId, '--phase', phase, '--content', `${phase}: test content for self-validation override`, '--agent', 'executor-backend'], dataDir);
+    }
+    py(['status', taskId, 'validation', '--agent', 'executor-backend'], dataDir);
+    const r = py(['validate', taskId, '--pass', '--validator', 'executor-backend',
+        '--force-reason', 'single-developer-testing', '--notes', 'self-val with reason'], dataDir);
+    assert.ok(r.success, `Self-validation with --force-reason should succeed: ${r.error || r.output}`);
+  }));
+
+  test('different claimed_by and validator passes self-validation check', () => withTmp(dataDir => {
+    const addResult = py(['add', 'task', 'Cross-val test', '--agent', 'executor-backend'], dataDir);
+    const taskId = extractId(addResult.output, 'TK');
+    assert.ok(taskId);
+    py(['claim', taskId, '--agent', 'executor-backend'], dataDir);
+    for (const phase of ['R', 'P', 'E', 'T', 'D']) {
+      py(['rpetd', taskId, '--phase', phase, '--content', `${phase}: test content for cross validation`, '--agent', 'executor-backend'], dataDir);
+    }
+    py(['status', taskId, 'validation', '--agent', 'executor-backend'], dataDir);
+    // Validate as different agent
+    const r = py(['validate', taskId, '--pass', '--validator', 'gsd-validator',
+        '--force-reason', 'test-override', '--notes', 'cross-validation ok'], dataDir);
+    assert.ok(r.success, `Cross-validation should succeed: ${r.error || r.output}`);
+  }));
+
+  test('SELF-VALIDATION BLOCKED on --fail path too', () => withTmp(dataDir => {
+    const addResult = py(['add', 'task', 'Self-val fail test', '--agent', 'executor-backend'], dataDir);
+    const taskId = extractId(addResult.output, 'TK');
+    assert.ok(taskId);
+    py(['claim', taskId, '--agent', 'executor-backend'], dataDir);
+    py(['status', taskId, 'validation', '--agent', 'executor-backend'], dataDir);
+    // Try to fail-validate as same agent
+    const r = py(['validate', taskId, '--fail', '--validator', 'executor-backend', '--notes', 'self-fail attempt'], dataDir);
+    assert.ok(!r.success, 'Self-validation on --fail should also be blocked');
+    const combined = (r.output + ' ' + r.error).toLowerCase();
+    assert.ok(combined.includes('self-validation blocked') || combined.includes('self_validation_blocked'),
+        'Should mention self-validation block on fail path');
+  }));
+
+});
+
+describe('Mandatory --note on failed/deferred (Plan 13-02)', () => {
+
+  test('status failed without --note is blocked', () => withTmp(dataDir => {
+    const addResult = py(['add', 'task', 'Note test failed', '--agent', 'test'], dataDir);
+    const taskId = extractId(addResult.output, 'TK');
+    assert.ok(taskId);
+    py(['claim', taskId, '--agent', 'test'], dataDir);
+    const r = py(['status', taskId, 'failed', '--agent', 'test'], dataDir);
+    assert.ok(!r.success, 'Setting failed without --note should be blocked');
+    const combined = (r.output + ' ' + r.error).toLowerCase();
+    assert.ok(combined.includes('--note'), 'Error should mention --note requirement');
+  }));
+
+  test('status failed with --note succeeds', () => withTmp(dataDir => {
+    const addResult = py(['add', 'task', 'Note test ok', '--agent', 'test'], dataDir);
+    const taskId = extractId(addResult.output, 'TK');
+    assert.ok(taskId);
+    py(['claim', taskId, '--agent', 'test'], dataDir);
+    const r = py(['status', taskId, 'failed', '--agent', 'test', '--note', 'dependency not available'], dataDir);
+    assert.ok(r.success, `Setting failed with --note should succeed: ${r.error || r.output}`);
+  }));
+
+  test('status deferred without --note is blocked', () => withTmp(dataDir => {
+    const addResult = py(['add', 'task', 'Defer test', '--agent', 'test'], dataDir);
+    const taskId = extractId(addResult.output, 'TK');
+    assert.ok(taskId);
+    py(['claim', taskId, '--agent', 'test'], dataDir);
+    const r = py(['status', taskId, 'deferred', '--agent', 'test'], dataDir);
+    assert.ok(!r.success, 'Setting deferred without --note should be blocked');
+    const combined = (r.output + ' ' + r.error).toLowerCase();
+    assert.ok(combined.includes('--note'), 'Error should mention --note requirement');
+  }));
+
+  test('status deferred with --note succeeds', () => withTmp(dataDir => {
+    const addResult = py(['add', 'task', 'Defer test ok', '--agent', 'test'], dataDir);
+    const taskId = extractId(addResult.output, 'TK');
+    assert.ok(taskId);
+    py(['claim', taskId, '--agent', 'test'], dataDir);
+    const r = py(['status', taskId, 'deferred', '--agent', 'test', '--note', 'waiting on upstream dependency'], dataDir);
+    assert.ok(r.success, `Setting deferred with --note should succeed: ${r.error || r.output}`);
+  }));
+
+  test('status pending without --note succeeds (not required)', () => withTmp(dataDir => {
+    const addResult = py(['add', 'task', 'Pending test', '--agent', 'test'], dataDir);
+    const taskId = extractId(addResult.output, 'TK');
+    assert.ok(taskId);
+    py(['claim', taskId, '--agent', 'test'], dataDir);
+    const r = py(['status', taskId, 'pending', '--agent', 'test'], dataDir);
+    assert.ok(r.success, `Setting pending without --note should succeed: ${r.error || r.output}`);
+  }));
+
+  test('status to in-progress without --note succeeds (not required)', () => withTmp(dataDir => {
+    const addResult = py(['add', 'task', 'Progress test', '--agent', 'test'], dataDir);
+    const taskId = extractId(addResult.output, 'TK');
+    assert.ok(taskId);
+    // pending -> deferred (needs note) -> in-progress (no note needed)
+    py(['claim', taskId, '--agent', 'test'], dataDir);
+    py(['status', taskId, 'deferred', '--agent', 'test', '--note', 'temp defer'], dataDir);
+    const r = py(['status', taskId, 'in-progress', '--agent', 'test'], dataDir);
+    assert.ok(r.success, `Setting in-progress without --note should succeed: ${r.error || r.output}`);
+  }));
+
+});
+
+describe('Audit forced flag in cmd_status (Plan 13-02)', () => {
+
+  test('amauta.py contains forced field in status audit metadata', () => {
+    const content = fs.readFileSync(path.join(__dirname, '..', 'amauta.py'), 'utf-8');
+    assert.ok(content.includes('"forced": bool(getattr(args, "force", False))'),
+        'Status audit metadata should include forced field');
+  });
+
+  test('self_validated field exists in validation audit metadata', () => {
+    const content = fs.readFileSync(path.join(__dirname, '..', 'amauta.py'), 'utf-8');
+    const matches = (content.match(/"self_validated":/g) || []).length;
+    assert.ok(matches >= 2,
+        `self_validated should appear in both pass and fail audit paths (found ${matches})`);
+  });
+
+});
