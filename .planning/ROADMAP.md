@@ -6,8 +6,8 @@
 
 | # | Phase | Goal | Requirements | Plans |
 |---|-------|------|--------------|-------|
-| 11 | Context Engine Activation | RLM fires on every RPETD phase, direct HTTP calls, BM25 scoring | RLM-01, RLM-02, RLM-03, RLM-04, RLM-05 | 2 (11-01 DONE, 11-02 DONE) -- **PHASE COMPLETE** |
-| 12 | Semantic Memory Pipeline | pgvector wired into RPETD, auto-embedding, research chain, dedup | SEM-01, SEM-02, SEM-03, SEM-04, SEM-05, SEM-06, SEM-07 | 0 |
+| 11 | Context Engine Activation | Complete    | 2026-03-24 | 2 (11-01 DONE, 11-02 DONE) -- **PHASE COMPLETE** |
+| 12 | Semantic Memory Pipeline | In Progress | SEM-01, SEM-02, SEM-03, SEM-04, SEM-05, SEM-06, SEM-07 | 3 (12-01 DONE, 12-02, 12-03) |
 | 13 | Validation Hardening | Gates can't be bypassed without justification, tighter evidence patterns | GATE-01, GATE-02, GATE-03, GATE-04, GATE-05, GATE-06 | 0 |
 | 14 | Pipeline Integration | MCP registered, performance routing, health dashboard, dual-write alerting | WIRE-01, WIRE-02, WIRE-03, WIRE-04 | 0 |
 

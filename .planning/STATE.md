@@ -1,15 +1,15 @@
 ---
 gsd_state_version: 1.0
 milestone: v2.2
-milestone_name: Wiring & Hardening
-status: in_progress
-last_updated: "2026-03-24T14:00:00.000Z"
+milestone_name: milestone
+status: unknown
+last_updated: "2026-03-24T22:00:00.000Z"
 progress:
-  total_phases: 4
-  completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
-  percent: 25
+  total_phases: 9
+  completed_phases: 5
+  total_plans: 10
+  completed_plans: 8
+  percent: 40
 ---
 
 # GSD-Amauta — Project State
@@ -19,16 +19,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-24)
 
 **Core value:** Every built system actually fires during task execution — no dead code, no bypasses, agents are smarter with fewer tokens.
-**Current focus:** Milestone v2.2 — Phase 11 COMPLETE (all 5 RLM requirements done). Phase 12 (Semantic Memory) next.
+**Current focus:** Milestone v2.2 — Phase 11 COMPLETE, Phase 12 IN PROGRESS (12-01 DONE, 12-02 and 12-03 remaining).
 
 ## Milestone: v2.2 — Wiring & Hardening
 
-Progress: ██░░░░░░░░ 25% (1/4 phases complete, 2/2 plans done)
+Progress: ████░░░░░░ 40% (1/4 phases complete, 8/10 plans done)
 
 | Phase | Status | Plans | Requirements |
 |-------|--------|-------|-------------|
 | 11 — Context Engine Activation | **DONE** | 2 (11-01 DONE, 11-02 DONE) | **RLM-01 DONE**, **RLM-02 DONE**, **RLM-03 DONE**, **RLM-04 DONE**, **RLM-05 DONE** |
-| 12 — Semantic Memory Pipeline | ○ Pending | 0 | SEM-01 through SEM-07 |
+| 12 — Semantic Memory Pipeline | **IN PROGRESS** | 3 (12-01 DONE, 12-02, 12-03) | **SEM-01 DONE**, **SEM-02 DONE**, SEM-03, SEM-04, SEM-05, SEM-06, **SEM-07 DONE** |
 | 13 — Validation Hardening | ○ Pending | 0 | GATE-01 through GATE-06 |
 | 14 — Pipeline Integration | ○ Pending | 0 | WIRE-01 through WIRE-04 |
 
@@ -43,8 +43,8 @@ Progress: ██░░░░░░░░ 25% (1/4 phases complete, 2/2 plans don
 ## Key Audit Findings
 
 - ~~RLM Layer 2 enrichment gated behind `AMAUTA_SHARED_KB_DIR` (doesn't exist on Mac) — 0% of RLM calls execute~~ **FIXED (Plan 11-02)**
-- `memory_semantic_search()` in pg_store.py is complete dead code — never called from RPETD
-- `_mem_log_event()` writes directly to PG, bypassing daemon — no embeddings generated
+- ~~`memory_semantic_search()` in pg_store.py is complete dead code — never called from RPETD~~ **FIXED (Plan 12-01): R-phase and claim-time now use _mem_semantic_search() which calls daemon semantic-search endpoint**
+- ~~`_mem_log_event()` writes directly to PG, bypassing daemon — no embeddings generated~~ **FIXED (Plan 12-01): _mem_log_event() routes through daemon POST /api/memory/store for auto-embedding**
 - `--force` on validate bypasses ALL 4 gates + dependency check + learning persistence (7 bypass points)
 - Test evidence accepts any >100 chars as proxy (trivially gameable)
 - Research chain (`gsd-research.cjs`) never auto-invoked during any RPETD phase
@@ -80,9 +80,30 @@ All 10 phases done (5 from v2.0 + 5 from v2.1). Audit log, SSO, backup all shipp
 - 11 new integration tests (3 test classes), 200 total tests all green
 - 3 atomic commits: 4a9790f, 8bb12e3, 61bb286
 
+## Phase 12 Planning (2026-03-24)
+
+3 plans, 2 waves, 12 tasks covering all 7 SEM requirements:
+
+| Plan | Wave | Tasks | Requirements | Key Changes |
+|------|------|-------|-------------|-------------|
+| 12-01 | 1 | 5 | SEM-01, SEM-02, SEM-07 | `_mem_semantic_search()` helper, daemon-routed writes, remove double-truncation |
+| 12-02 | 1 | 4 | SEM-03, SEM-04, SEM-06 | E-phase patterns, T-phase domain search, SKB Jaccard dedup |
+| 12-03 | 2 | 3 | SEM-05 | `_research_chain_query()` helper, auto-invoke in R-phase when <2 results |
+
+Wave 1 plans (12-01, 12-02) are independent and parallelizable. Wave 2 (12-03) depends on 12-01.
+
+## Plan 12-01 Execution (2026-03-24)
+
+- `_mem_semantic_search()` helper added: daemon HTTP POST to `/api/memory/semantic-search` with LIKE fallback
+- R-phase and claim-time enrichment wired to use semantic search with `title + desc[:200]` query
+- `_mem_log_event()` routes through daemon `POST /api/memory/store` for auto-embedding, SQL fallback
+- `_auto_write_learning()` double-truncation removed: full phase content stored (2-5KB vs ~900 chars)
+- 10 new tests (semantic search, daemon writes, full learning), 210 total tests all green
+- 5 atomic commits: 17ec1bc, ec5ec88, 487d073, f921b74, 56ef8d5
+
 ## Blockers
 
-(None — Phase 12 ready for planning)
+(None — Plan 12-02 ready for execution)
 
 ---
 *Milestone v2.2 started: 2026-03-24*
