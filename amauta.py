@@ -1874,14 +1874,22 @@ def _rpetd_phase_enrich(phase: str, item: dict, agent_content: str) -> str:
                 rlm_answer = _rlm_query(rlm_prompt, doc_path=doc_path, task_id=task_id)
                 if rlm_answer:
                     supplement_parts.append(f"[RLM] Test review:\n  {rlm_answer[:600]}")
-            # PG memory fallback: always search for past validation patterns
-            if agent_content and _mem_pg_available():
-                results = _mem_pg_search(f"{item.get('id','')} test validation", None, 3)
-                if results:
-                    mem_lines = ["[PG] Past validation patterns:"]
-                    for r in results[:2]:
-                        mem_lines.append(f"  - {r['text'][:200].replace(chr(10), ' ')}")
-                    supplement_parts.append("\n".join(mem_lines))
+            # PG memory: past test strategies for similar domains
+            if _search_q:
+                try:
+                    t_results = _mem_semantic_search(f"{title} testing strategy validation evidence", top_k=5)
+                    t_relevant = [r for r in t_results
+                                  if r.get("score", 0) >= 2
+                                  and any(kw in r.get("text", "").lower()
+                                          for kw in ("test", "validat", "assert", "coverage", "pass",
+                                                     "playwright", "pytest", "evidence", "criteria"))]
+                    if t_relevant:
+                        t_lines = ["[PG] Past test strategies (adapt these for current task):"]
+                        for r in t_relevant[:3]:
+                            t_lines.append(f"  - [{r.get('source','')}] {r['text'][:250].replace(chr(10), ' ')}")
+                        supplement_parts.append("\n".join(t_lines))
+                except Exception:
+                    pass
 
         elif phase == "D":
             # ── RLM delivery quality check ─────────────────────────────────
