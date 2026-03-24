@@ -3689,6 +3689,24 @@ def cmd_validate(args):
             print(dim("  Use --force-reason 'justification' to override status check."))
             sys.exit(1)
 
+    # ── SELF-VALIDATION CHECK: claimed_by != validated_by ──
+    claimer = (item.get("claimed_by") or "").strip().lower()
+    validator_id = (args.validator or "validator").strip().lower()
+    force_reason = getattr(args, "force_reason", "") or ""
+    if claimer and validator_id and claimer == validator_id:
+        if force_reason:
+            print(c(f"Warning: self-validation for {args.id} (claimed by @{claimer}, validated by @{validator_id}). "
+                    f"Override reason: {force_reason}", YELLOW))
+        else:
+            print(c(f"SELF-VALIDATION BLOCKED: {args.id} was claimed by @{claimer}. "
+                    f"Cannot be validated by the same agent.", RED))
+            print(dim("  Use --force-reason 'justification' to override self-validation check."))
+            _append_note(item, f"SELF_VALIDATION_BLOCKED: claimed_by={claimer}, validator={validator_id}",
+                        validator_id)
+            item["updated_at"] = _now()
+            save(data)
+            sys.exit(1)
+
     if args.pass_:
         # ── RUN ALL VALIDATION GATES ─────────────────────────────────────────
         gate_results = _validate_all_gates(item, test_exempt=getattr(args, "test_exempt", False))
@@ -3887,6 +3905,7 @@ def cmd_validate(args):
                 "force_reason": args.force_reason if (failures and args.force_reason) else "",
                 "test_exempt": getattr(args, "test_exempt", False),
                 "failed_gates": [g["gate"] for g in failures] if failures else [],
+                "self_validated": bool(claimer and validator_id and claimer == validator_id),
             },
         )
     else:
@@ -3984,6 +4003,7 @@ def cmd_validate(args):
             metadata={
                 "gate_failed": _extract_failed_gate(args.notes or ""),
                 "failure_reason": (args.notes or "")[:500],
+                "self_validated": bool(claimer and validator_id and claimer == validator_id),
             },
         )
 
