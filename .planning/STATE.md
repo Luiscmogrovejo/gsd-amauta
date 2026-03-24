@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: milestone
 status: unknown
-last_updated: "2026-03-24T21:06:00.000Z"
+last_updated: "2026-03-24T19:20:19.000Z"
 progress:
   total_phases: 9
-  completed_phases: 6
+  completed_phases: 7
   total_plans: 12
-  completed_plans: 11
-  percent: 60
+  completed_plans: 12
+  percent: 75
 ---
 
 # GSD-Amauta — Project State
@@ -19,17 +19,17 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-24)
 
 **Core value:** Every built system actually fires during task execution — no dead code, no bypasses, agents are smarter with fewer tokens.
-**Current focus:** Milestone v2.2 — Phase 11 COMPLETE, Phase 12 COMPLETE. Phase 13 IN PROGRESS (13-01 DONE, 13-02 pending).
+**Current focus:** Milestone v2.2 — Phase 11 COMPLETE, Phase 12 COMPLETE, Phase 13 COMPLETE. Phase 14 pending (depends on 11-13).
 
 ## Milestone: v2.2 — Wiring & Hardening
 
-Progress: ██████░░░░ 60% (2/4 phases complete, 11/12 plans done)
+Progress: ████████░░ 75% (3/4 phases complete, 12/12 plans done)
 
 | Phase | Status | Plans | Requirements |
 |-------|--------|-------|-------------|
 | 11 — Context Engine Activation | **DONE** | 2 (11-01 DONE, 11-02 DONE) | **RLM-01 DONE**, **RLM-02 DONE**, **RLM-03 DONE**, **RLM-04 DONE**, **RLM-05 DONE** |
 | 12 — Semantic Memory Pipeline | **DONE** | 3 (12-01 DONE, 12-02 DONE, 12-03 DONE) | **SEM-01 DONE**, **SEM-02 DONE**, **SEM-03 DONE**, **SEM-04 DONE**, **SEM-05 DONE**, **SEM-06 DONE**, **SEM-07 DONE** |
-| 13 — Validation Hardening | In Progress | 2 (13-01 DONE, 13-02) | **GATE-01 DONE**, **GATE-02 DONE**, **GATE-03 DONE**, GATE-04, GATE-05, GATE-06 |
+| 13 — Validation Hardening | **DONE** | 2 (13-01 DONE, 13-02 DONE) | **GATE-01 DONE**, **GATE-02 DONE**, **GATE-03 DONE**, **GATE-04 DONE**, **GATE-05 DONE**, **GATE-06 DONE** |
 | 14 — Pipeline Integration | ○ Pending | 0 | WIRE-01 through WIRE-04 |
 
 ## Research Completed (2026-03-24)
@@ -59,6 +59,8 @@ Progress: ██████░░░░ 60% (2/4 phases complete, 11/12 plans d
 - --force → --force-reason on validate (keep --force on add/status)
 - All memories route through daemon HTTP for auto-embedding
 - Phases 11-13 are independent; Phase 14 depends on all three
+- Self-validation block on both --pass and --fail paths (failing agent should not decide its own fate)
+- Mandatory --note on failed/deferred only (not pending/in-progress) to balance accountability with workflow friction
 
 ## Previous Milestone: v2.1 — Durability & Compliance (COMPLETE)
 
@@ -140,9 +142,19 @@ Both plans are Wave 1 and independent (touch different functions). 8 test files 
 - 38 Python tests (7 new), 241 total Python tests green (1 pre-existing failure unrelated)
 - 5 atomic commits: 4daeef2, 535d3c7, 4da09e0, 3a409c7, da83bce
 
+## Plan 13-02 Execution (2026-03-24)
+
+- Self-validation block: `claimed_by == validated_by` comparison blocks validation, `--force-reason` overrides with audit
+- `self_validated` boolean added to audit metadata on both pass and fail validation paths
+- Mandatory `--note` on failed/deferred transitions: check runs before data modifications for clean rejection
+- `forced: true` added to `cmd_status()` audit metadata via `getattr(args, "force", False)`
+- 12 new E2E tests (4 self-val + 6 note + 2 audit), 3 existing tests fixed for --note
+- All 71 pipeline-offline tests, 114 deep-python tests, 241 Python tests pass
+- 4 atomic commits: 78b3731, 3930cb1, f27fcef, 26cfd13
+
 ## Blockers
 
-(None — Plan 13-02 ready for execution.)
+(None — Phase 13 complete. Phase 14 ready for planning.)
 
 ---
 *Milestone v2.2 started: 2026-03-24*
