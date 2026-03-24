@@ -119,6 +119,23 @@ if [ "$AMAUTA_OK" = "1" ]; then
       EXECUTOR="executor-backend"
     fi
 
+    # Performance tiebreaker: if chosen executor has low pass rate, consider fallback
+    if [ "$AMAUTA_OK" = "1" ]; then
+      PERF_JSON=$(curl -s --max-time 2 "http://127.0.0.1:18799/api/agent-performance?agent_id=${EXECUTOR}" 2>/dev/null || echo '{}')
+      PASS_RATE=$(echo "$PERF_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('pass_rate',100))" 2>/dev/null || echo "100")
+      TOTAL_TASKS=$(echo "$PERF_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('total_tasks',0))" 2>/dev/null || echo "0")
+
+      if [ "$TOTAL_TASKS" -ge 5 ] 2>/dev/null && [ "$PASS_RATE" -lt 70 ] 2>/dev/null; then
+        # Check if executor-general has better track record
+        ALT_JSON=$(curl -s --max-time 2 "http://127.0.0.1:18799/api/agent-performance?agent_id=executor-general" 2>/dev/null || echo '{}')
+        ALT_RATE=$(echo "$ALT_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('pass_rate',0))" 2>/dev/null || echo "0")
+        if [ "$ALT_RATE" -gt 85 ] 2>/dev/null; then
+          echo "[PERF_ROUTING] ${EXECUTOR} pass rate ${PASS_RATE}% (${TOTAL_TASKS} tasks) < 70%. Routing to executor-general (${ALT_RATE}% pass rate) instead."
+          EXECUTOR="executor-general"
+        fi
+      fi
+    fi
+
     TASK_ID=$($AMAUTA_CLI exec add task "$PLAN_OBJECTIVE" --parent "$PHASE_STORY" --agent "$EXECUTOR" --priority high 2>/dev/null | grep -oE 'TK-[0-9]+' || echo "")
     # Store task ID for executor spawning — associate plan ID to Amauta task ID
     if [ -n "$TASK_ID" ]; then
@@ -170,6 +187,7 @@ fi
     - `.py/.js/.ts/.go/.rs/.java/.sql` → `gsd-executor-backend`
     - `Dockerfile/docker/ci/deploy/terraform` → `gsd-executor-infra`
     - Everything else → `gsd-executor-general`
+    - Performance data: If primary executor has <70% pass rate (5+ tasks), falls back to executor-general
 
     **Resolve values before spawning** (substitute these in the actual prompt):
     - `{plan_number}` = the plan ID (e.g. `01-03`)
