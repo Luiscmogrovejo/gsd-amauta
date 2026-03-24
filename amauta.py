@@ -3624,19 +3624,35 @@ def _validate_all_gates(item: dict, *, test_exempt: bool = False) -> list:
     # Gate 3: LEARNING_BLOCK
     d_phase = str(phases.get("D", "") or "")
     if _has_explicit_learning_written(item):
-        # Check quality: LEARNING content must be substantive (>20 chars after keyword)
+        # Check quality: LEARNING content must be substantive (>=100 chars after keyword)
         learning_match = re.search(r"LEARNING\s*:\s*(.+)", d_phase, re.I | re.S)
-        if learning_match and len(learning_match.group(1).strip()) >= 20:
+        if learning_match and len(learning_match.group(1).strip()) >= 100:
             results.append({"gate": "LEARNING_BLOCK", "status": "PASS", "reason": "LEARNING block found with substantive content"})
         elif learning_match:
             results.append({"gate": "LEARNING_BLOCK", "status": "FAIL",
-                            "reason": f"LEARNING block too brief ({len(learning_match.group(1).strip())} chars). Provide at least 20 chars of insight"})
+                            "reason": f"LEARNING block too brief ({len(learning_match.group(1).strip())} chars). Provide at least 100 chars of substantive insight"})
         else:
-            # LEARNING found in other phases (not D), accept it
-            results.append({"gate": "LEARNING_BLOCK", "status": "PASS", "reason": "LEARNING block found in RPETD phases"})
+            # LEARNING found in other phases (not D) -- verify content quality
+            # Search all phases for the LEARNING block with sufficient content
+            _learning_ok = False
+            for _ph_key in ("R", "P", "E", "T", "D"):
+                _ph_text = str(phases.get(_ph_key, "") or "")
+                _lm = re.search(r"LEARNING\s*:\s*(.+)", _ph_text, re.I | re.S)
+                if _lm and len(_lm.group(1).strip()) >= 100:
+                    _learning_ok = True
+                    break
+                _lm2 = re.search(r"(?:LESSON|what\.worked|what\.failed|reusable\.pattern)\s*:\s*(.+)", _ph_text, re.I | re.S)
+                if _lm2 and len(_lm2.group(1).strip()) >= 100:
+                    _learning_ok = True
+                    break
+            if _learning_ok:
+                results.append({"gate": "LEARNING_BLOCK", "status": "PASS", "reason": "LEARNING block found with substantive content in RPETD phases"})
+            else:
+                results.append({"gate": "LEARNING_BLOCK", "status": "FAIL",
+                                "reason": "LEARNING keyword found but content too brief. Provide at least 100 chars of substantive insight after LEARNING:/LESSON:/what.worked:/what.failed:/reusable.pattern:"})
     else:
         results.append({"gate": "LEARNING_BLOCK", "status": "FAIL",
-                        "reason": "No LEARNING: block in RPETD phases or notes. Add LEARNING: in D-phase"})
+                        "reason": "No LEARNING: block in RPETD phases or notes. Add LEARNING: in D-phase with >=100 chars of insight"})
 
     # Gate 4: PR_URL (code tasks only)
     if is_code:
