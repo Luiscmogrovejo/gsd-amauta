@@ -440,7 +440,7 @@ describe('cmd_update() — field updates', () => {
   test('5.5 update status to deferred', () => withTmp(d => {
     const r1 = py(['add', 'task', 'Update status test'], d);
     const tk = id(r1.out);
-    const r = py(['status', tk, 'deferred'], d);
+    const r = py(['status', tk, 'deferred', '--note', 'test: update status to deferred'], d);
     assert.ok(r.ok, `Status update failed: ${r.out} ${r.err}`);
     const data = readTasks(d);
     const item = data.items.find(i => i.id === tk);

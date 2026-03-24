@@ -2952,6 +2952,12 @@ def cmd_status(args):
     if new not in allowed and getattr(args, "force", False):
         print(c(f"Warning: overriding state machine ({old} -> {new}) with --force", YELLOW))
 
+    # ── MANDATORY NOTE for failed/deferred transitions ──
+    if new in ("failed", "deferred") and not (args.note or "").strip():
+        print(c(f"BLOCKED: transitioning {args.id} to '{new}' requires --note with an explanation.", RED))
+        print(dim(f"  Example: amauta status {args.id} {new} --note 'reason for {new}' --agent <agent>"))
+        sys.exit(1)
+
     # ── GITFLOW ENFORCEMENT: code tasks MUST go through validator to reach done ──
     # Agents cannot shortcut `status done` for code tasks — they MUST submit to
     # validation first, then the validator uses `validate --pass` after confirming

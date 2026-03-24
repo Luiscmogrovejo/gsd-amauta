@@ -274,7 +274,7 @@ describe('amauta.py direct invocation', () => {
     py(['claim', id, '--agent', 'gsd-executor-general'], dataDir);
 
     // Move to deferred (a non-gated transition — no RPETD required)
-    const r = py(['status', id, 'deferred', '--agent', 'gsd-executor-general'], dataDir);
+    const r = py(['status', id, 'deferred', '--agent', 'gsd-executor-general', '--note', 'test: non-gated transition'], dataDir);
     assert.ok(r.success, `status to deferred should succeed: ${r.error || r.output}`);
 
     // Verify the status changed
@@ -720,7 +720,7 @@ describe('Command routing correctness (offline)', () => {
     py(['claim', id, '--agent', 'gsd-executor-general'], dataDir);
 
     // Move to deferred (a valid non-gated transition)
-    const r = py(['status', id, 'deferred', '--agent', 'gsd-executor-general'], dataDir);
+    const r = py(['status', id, 'deferred', '--agent', 'gsd-executor-general', '--note', 'test: status routing'], dataDir);
     // Should not fail with argparse error about wrong positional ordering
     const argError = r.error.includes('invalid choice') && !r.error.includes('deferred');
     assert.ok(!argError, `status should accept deferred: ${r.error.slice(0, 200)}`);
