@@ -1,67 +1,88 @@
-# Requirements: GSD-Amauta v2.1 — Durability & Compliance
+# Requirements: GSD-Amauta v2.3 — Clean Foundations
 
-**Defined:** 2026-03-21
-**Core Value:** Trustworthy quality pipeline with accountability, identity, and data safety
+**Defined:** 2026-03-24
+**Core Value:** Every built system actually fires during task execution — now with clean data, reliable task management, and efficient token usage.
 
-## v2.1 Requirements
+## v2.3 Requirements
 
-### Audit Log Export
+### Task Manager Reliability (TASK)
 
-- [ ] **AUDIT-01**: Every validation decision (pass/fail/force) is logged with timestamp, validator agent, task ID, gate results, and evidence
-- [ ] **AUDIT-02**: Every RPETD phase log is timestamped and stored with the agent that wrote it
-- [ ] **AUDIT-03**: `amauta audit export` generates a JSON or CSV report of all validation decisions for a project or date range
-- [ ] **AUDIT-04**: `amauta audit show TK-XXXX` displays the full audit trail for a specific task (all RPETD phases, validation attempts, gate results)
-- [ ] **AUDIT-05**: Audit records are immutable — once written, cannot be modified or deleted (append-only table)
+- [ ] **TASK-01**: `amauta archive` moves done tasks >7 days to archive file, reducing working set by 52%
+- [ ] **TASK-02**: TOCTOU race fixed — all cmd_* functions acquire file lock before load(), not just before save()
+- [ ] **TASK-03**: Stale task watchdog thread in daemon auto-reverts in-progress tasks >48h with no RPETD activity
+- [ ] **TASK-04**: Dual-write retry queue flushed automatically every 60s by daemon watchdog thread
+- [ ] **TASK-05**: `amauta reconcile` command diffs tasks.json vs PG and reports/fixes mismatches
+- [ ] **TASK-06**: Dual-write mirrors all 7 currently-dropped fields (doc_refs, risks, validation_checklist, estimated_hours, due_date, sprint, children)
 
-### SSO/OIDC Integration
+### Data Quality (DATA)
 
-- [ ] **SSO-01**: Daemon supports OIDC token validation — requests with a Bearer token are verified against a configured OIDC issuer
-- [ ] **SSO-02**: Configuration via environment variables: `GSD_OIDC_ISSUER`, `GSD_OIDC_CLIENT_ID`, `GSD_OIDC_AUDIENCE`
-- [ ] **SSO-03**: When SSO enabled, all API endpoints require valid token (except /health)
-- [ ] **SSO-04**: Token subject (sub claim) is logged as the actor in audit records
-- [ ] **SSO-05**: Graceful degradation — when OIDC vars not set, daemon runs without auth (current behavior)
+- [x] **DATA-01**: Purge ~1,800 test/synthetic entries from gsd_memory (TK-0001, E2E-LIFECYCLE patterns) -- DONE: 1,918 purged, 218 remain
+- [x] **DATA-02**: Purge ~91 test artifact entries from agent_shared_knowledge (SKB) -- DONE: 111 purged, 5 remain
+- [ ] **DATA-03**: Fix distill function — exclude `source='distilled'` entries from distill input to prevent re-merging
+- [ ] **DATA-04**: Pre-store embedding dedup — cosine similarity >0.95 against existing entries = skip insert
+- [ ] **DATA-05**: Auto-set `project_id` from CWD basename on every memory write for project isolation
+- [ ] **DATA-06**: Route test/E2E memory writes to `project_id='__test__'` when `NODE_ENV=test` or `GSD_TEST_MODE=1`
 
-### Data Durability
+### Memory Optimization (MEM)
 
-- [ ] **DUR-01**: `amauta backup create` exports all memory, tasks, SKB, and audit logs to a single compressed JSON file
-- [ ] **DUR-02**: `amauta backup restore <file>` imports a backup file, merging or replacing existing data (user choice)
-- [ ] **DUR-03**: Backup includes schema version for forward/backward compatibility checking
-- [ ] **DUR-04**: `amauta backup verify` checks data integrity — counts, checksums, and schema validation against the current database
-- [ ] **DUR-05**: Automatic daily backup when daemon starts (saves to `~/.amauta/backups/`, keeps last 7)
+- [ ] **MEM-01**: Default semantic search excludes `source IN ('task_event', 'rpetd_phase')` noise sources
+- [ ] **MEM-02**: Tiered retention policy — archive task_event after 30 days, rpetd_phase after 90 days
+- [ ] **MEM-03**: Recency decay in scoring — subtract 0.5 points per 30 days since last access/creation
+
+### Token Efficiency (TOKEN)
+
+- [ ] **TOKEN-01**: Skip Layer 2 R-phase RLM/memory enrichment when Layer 1 ran within 5 minutes (dedup)
+- [ ] **TOKEN-02**: Research chain truncates Perplexity output to 1,500 chars with preamble stripping
+- [ ] **TOKEN-03**: RPETD phase content capped at 2,000 chars per phase write (guidance + soft enforcement)
+
+## Future Requirements (v2.4+)
+
+- **SETUP-01**: One-command setup: `npx gsd-amauta init` configures everything
+- **DOCKER-01**: Docker auto-start: detect Docker, start PG container if no local PG
+- **HYBRID-01**: Voyage AI re-ranking for hybrid RLM scoring (semantic + TF-IDF)
+- **LAYER3-01**: Layer 3 agent-initiated context (rlm_client.py)
+- **BRIDGE-01**: Claude Code TaskCreate/TaskUpdate bridge
+- **SUMM-01**: LLM-based memory summarization (replace concatenation merging)
+- **SYN-01**: RLM synonym expansion for semantic code queries
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| Multi-user RBAC | Single-user tool — SSO is for identity, not role management |
-| Cloud backup sync | Local-first philosophy — user manages their own backups |
-| Encryption at rest | OS-level encryption (FileVault, LUKS) handles this |
-| Web-based audit viewer | CLI-first — export to JSON/CSV for external tools |
+| Web UI dashboard | CLI-first tool, no web interface |
+| Multi-user collaboration | Single developer tool |
+| Cloud-hosted memory | Local-first philosophy |
+| LLM-based memory summarization | Too expensive for single-user; concatenation with dedup is sufficient for v2.3 |
+| Task manager rewrite | Surgical fixes, not rewrite; amauta.py stays monolithic for now |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUDIT-01 | Phase 6 | Pending |
-| AUDIT-02 | Phase 6 | Pending |
-| AUDIT-03 | Phase 9 (gap closure) | Pending |
-| AUDIT-04 | Phase 9 (gap closure) | Pending |
-| AUDIT-05 | Phase 6 | Pending |
-| SSO-01 | Phase 7 | Pending |
-| SSO-02 | Phase 7 | Pending |
-| SSO-03 | Phase 7 | Pending |
-| SSO-04 | Phase 9 (gap closure) | Pending |
-| SSO-05 | Phase 7 | Pending |
-| DUR-01 | Phase 10 (gap closure) | Pending |
-| DUR-02 | Phase 8 | Pending |
-| DUR-03 | Phase 8 | Pending |
-| DUR-04 | Phase 8 | Pending |
-| DUR-05 | Phase 8 | Pending |
+| DATA-01 | Phase 15 | Complete (2026-03-24) |
+| DATA-02 | Phase 15 | Complete (2026-03-24) |
+| DATA-03 | Phase 16 | Pending |
+| DATA-04 | Phase 16 | Pending |
+| DATA-05 | Phase 16 | Pending |
+| DATA-06 | Phase 16 | Pending |
+| TASK-01 | Phase 17 | Pending |
+| TASK-02 | Phase 17 | Pending |
+| TASK-03 | Phase 17 | Pending |
+| TASK-04 | Phase 17 | Pending |
+| TASK-05 | Phase 17 | Pending |
+| TASK-06 | Phase 17 | Pending |
+| MEM-01 | Phase 18 | Pending |
+| MEM-02 | Phase 18 | Pending |
+| MEM-03 | Phase 18 | Pending |
+| TOKEN-01 | Phase 19 | Pending |
+| TOKEN-02 | Phase 19 | Pending |
+| TOKEN-03 | Phase 19 | Pending |
 
 **Coverage:**
-- v2.1 requirements: 15 total
-- Mapped to phases: 15
-- Unmapped: 0 ✓
+- v2.3 requirements: 18 total
+- Mapped to phases: 18/18
+- Unmapped: 0
 
 ---
-*Requirements defined: 2026-03-21*
+*Requirements defined: 2026-03-24*
+*Last updated: 2026-03-24 after deep research*
