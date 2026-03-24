@@ -582,6 +582,56 @@ def _mem_semantic_search(query: str, top_k: int = 5) -> list:
             return _mem_pg_search(query, None, top_k)
     return []
 
+def _research_chain_query(query: str, limit: int = 3) -> list:
+    """
+    Invoke gsd-research.cjs research chain for web-augmented context.
+    Chain order: Memory -> SKB -> Context7 -> Perplexity -> WebFetch.
+    Returns list of result dicts with 'text' and 'source' keys.
+    Only called when local memory has insufficient results.
+    Best-effort -- never raises, returns [] on failure.
+    """
+    import subprocess, shutil
+    try:
+        node_path = shutil.which("node")
+        if not node_path:
+            return []
+        script = os.path.expanduser("~/.claude/get-shit-done/bin/gsd-research.cjs")
+        if not os.path.isfile(script):
+            return []
+
+        result = subprocess.run(
+            [node_path, script, "search", query, "--json", "--limit", str(limit)],
+            capture_output=True, text=True, timeout=45,
+            env={**os.environ, "NODE_NO_WARNINGS": "1"},
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return []
+
+        import json as _json
+        data = _json.loads(result.stdout)
+        # gsd-research.cjs returns { query, results: [ { provider, count, results: [...] } ] }
+        # Flatten: extract inner results from each provider block
+        provider_blocks = data if isinstance(data, list) else data.get("results", [])
+        out = []
+        for block in provider_blocks:
+            # Each block is { provider, count, results: [{text,...}] }
+            source = block.get("provider", "research") if isinstance(block, dict) else "research"
+            inner = block.get("results", []) if isinstance(block, dict) else []
+            for r in inner:
+                text = r.get("text", r.get("content", r.get("answer", "")))
+                if text and len(text.strip()) > 20:
+                    out.append({"text": text[:500], "source": source})
+                if len(out) >= limit:
+                    break
+            if len(out) >= limit:
+                break
+        return out
+    except subprocess.TimeoutExpired:
+        log.debug("research_chain timeout after 45s")
+    except Exception:
+        pass
+    return []
+
 def _mem_pg_stats() -> tuple[int, list]:
     with _pg_conn() as conn:
         cur = conn.cursor()
