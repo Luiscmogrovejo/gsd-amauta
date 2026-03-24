@@ -1,84 +1,80 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.1
-milestone_name: milestone
-status: unknown
-last_updated: "2026-03-23T13:36:12.748Z"
+milestone: v2.2
+milestone_name: Wiring & Hardening
+status: in_progress
+last_updated: "2026-03-24T12:00:00.000Z"
 progress:
-  total_phases: 5
-  completed_phases: 4
-  total_plans: 5
-  completed_plans: 5
-  percent: 100
+  total_phases: 4
+  completed_phases: 0
+  total_plans: 2
+  completed_plans: 1
+  percent: 12
 ---
 
 # GSD-Amauta — Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-21)
+See: .planning/PROJECT.md (updated 2026-03-24)
 
-**Core value:** Trustworthy quality pipeline with accountability, identity, and data safety
-**Current focus:** Milestone v2.1 complete — all 5 phases done, all gaps closed
+**Core value:** Every built system actually fires during task execution — no dead code, no bypasses, agents are smarter with fewer tokens.
+**Current focus:** Milestone v2.2 — Phase 11 plan 11-01 complete (BM25 + HTTP transport). Plan 11-02 (Layer 1 wiring) next.
 
-## Milestone: v2.1 — Durability & Compliance
+## Milestone: v2.2 — Wiring & Hardening
 
-Progress: ██████████ 100% (5/5 phases complete, all gaps closed)
+Progress: █░░░░░░░░░ 12% (0/4 phases complete, 1/2 plans done)
 
-| Phase | Status | Plans |
-|-------|--------|-------|
-| 6 — Audit Log | ✓ Complete | 1 |
-| 7 — SSO/OIDC | ✓ Complete | 1 |
-| 8 — Data Durability | ✓ Complete | 1 |
-| 9 — Audit CLI + SSO Actor Wiring | ✓ Complete (09-01 done, 09-02 done) | 2 |
-| 10 — Backup Audit Inclusion | ✓ Complete (10-01 done, DUR-01 closed) | 1 |
+| Phase | Status | Plans | Requirements |
+|-------|--------|-------|-------------|
+| 11 — Context Engine Activation | ◐ In Progress | 2 (11-01 DONE, 11-02 pending) | RLM-01, RLM-02, **RLM-03 DONE**, **RLM-04 DONE**, **RLM-05 DONE** |
+| 12 — Semantic Memory Pipeline | ○ Pending | 0 | SEM-01 through SEM-07 |
+| 13 — Validation Hardening | ○ Pending | 0 | GATE-01 through GATE-06 |
+| 14 — Pipeline Integration | ○ Pending | 0 | WIRE-01 through WIRE-04 |
 
-## Previous Milestone: v2.0 — Self-Upgrade (COMPLETE)
+## Research Completed (2026-03-24)
 
-All 5 phases done: Setup, RPETD, Memory & RLM, Task Management, Distribution.
-34 tasks, 39 commits, 1714 tests, 100% pass rate.
+4 deep research documents produced by parallel researcher agents:
+- `.planning/research/RLM-INTEGRATION.md` (24KB) — RLM is 100% dead on Mac, fix is surgical
+- `.planning/research/PGVECTOR-SEMANTIC.md` (26KB) — semantic search fully built, never called
+- `.planning/research/RPETD-ENFORCEMENT.md` (26KB) — 11 --force bypass points, loose gates
+- `.planning/research/PIPELINE-WIRING.md` (27KB) — research chain orphaned, MCP not registered
+
+## Key Audit Findings
+
+- RLM Layer 2 enrichment gated behind `AMAUTA_SHARED_KB_DIR` (doesn't exist on Mac) — 0% of RLM calls execute
+- `memory_semantic_search()` in pg_store.py is complete dead code — never called from RPETD
+- `_mem_log_event()` writes directly to PG, bypassing daemon — no embeddings generated
+- `--force` on validate bypasses ALL 4 gates + dependency check + learning persistence (7 bypass points)
+- Test evidence accepts any >100 chars as proxy (trivially gameable)
+- Research chain (`gsd-research.cjs`) never auto-invoked during any RPETD phase
+- MCP server built but not registered in Claude Code settings
+- Agent performance tracks pass/fail but never influences task routing
 
 ## Decisions
 
-- Audit log is append-only (no UPDATE/DELETE) for compliance
-- SSO is optional — no-auth when OIDC vars not set
-- Backups are local-only (no cloud sync — local-first philosophy)
-- Phase numbering continues from v2.0 (6, 7, 8)
+- v2.2 is a patch: zero breaking changes, additive fixes only
+- stdlib-only Python (urllib.request for HTTP, no new pip deps)
+- RLM should query project CWD, not external shared KB docs
+- --force → --force-reason on validate (keep --force on add/status)
+- All memories route through daemon HTTP for auto-embedding
+- Phases 11-13 are independent; Phase 14 depends on all three
 
-## Audit Results (2026-03-23)
+## Previous Milestone: v2.1 — Durability & Compliance (COMPLETE)
 
-- 10/15 requirements satisfied, 5 gaps found
-- 2 cross-phase integration failures (SSO→Audit actor, Backup→Audit table)
-- 2 broken CLI flows (amauta audit export/show)
-- 0/8 phases have VERIFICATION.md (verification never run)
-- Gap closure phases 9-10 created to fix all issues
+All 10 phases done (5 from v2.0 + 5 from v2.1). Audit log, SSO, backup all shipped.
 
-## Phase 9 Progress (2026-03-23)
+## Plan 11-01 Execution (2026-03-24)
 
-- 09-02 COMPLETE: SSO-04 actor wiring fixed (1 line in amauta-daemon.py, 12 tests added)
-- 09-01 COMPLETE: Audit CLI subcommands added (amauta audit export/show, 17 tests, 4 commits)
-
-## Phase 9 Decisions (09-01)
-
-- stdlib-only (urllib.request) for daemon calls — no third-party imports introduced
-- cmd_audit uses nested subparser pattern (dest="audit_cmd") consistent with refs/sprint/skb
-- URLError caught explicitly and exits 1 with actionable stderr message
-
-## Phase 10 Progress (2026-03-23)
-
-- 10-01 COMPLETE: gsd_audit_log wired into backup pipeline (import_audit in both stores, 4 backup.py edits, 6 tests)
-- DUR-01 CLOSED: audit rows now backed up, restored, and verified end-to-end
-- 156 total tests passing, 0 regressions
-
-## Phase 10 Decisions (10-01)
-
-- Replace mode for audit uses DELETE + INSERT (not alias-as-merge): behavioral consistency with other tables, user explicitly chose replace
-- No migration needed: gsd_audit_log created by Phase 6 migration 006
-- Backward compat handled by existing tables.get() guard in restore() — zero extra code
+- BM25 scoring (k1=1.5, b=0.75) replaced TF-IDF in rlm-service.py -- short focused chunks rank higher
+- camelCase/snake_case splitting added to tokenizer -- `getUserProfile` -> {get, user, profile}
+- _rlm_query() rewritten from subprocess to urllib.request HTTP POST -- ~150-300ms saved per call
+- 23 new tests (15 scoring + 8 HTTP transport), 189 total tests all green
+- 5 atomic commits: 080061e, 9568168, 664f05a, 124f6d5, 86f6c4d
 
 ## Blockers
 
-(None — milestone v2.1 complete)
+(None — Plan 11-02 ready for execution)
 
 ---
-*Milestone v2.1 started: 2026-03-21*
+*Milestone v2.2 started: 2026-03-24*

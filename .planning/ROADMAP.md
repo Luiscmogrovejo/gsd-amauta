@@ -1,3 +1,72 @@
+# Roadmap: GSD-Amauta v2.2 — Wiring & Hardening
+
+**Milestone:** v2.2
+**Phases:** 4 (continuing from v2.1 Phase 10 → starts at Phase 11)
+**Requirements:** 22
+
+| # | Phase | Goal | Requirements | Plans |
+|---|-------|------|--------------|-------|
+| 11 | Context Engine Activation | RLM fires on every RPETD phase, direct HTTP calls, BM25 scoring | RLM-01, RLM-02, RLM-03, RLM-04, RLM-05 | 2 (11-01 DONE, 11-02 pending) |
+| 12 | Semantic Memory Pipeline | pgvector wired into RPETD, auto-embedding, research chain, dedup | SEM-01, SEM-02, SEM-03, SEM-04, SEM-05, SEM-06, SEM-07 | 0 |
+| 13 | Validation Hardening | Gates can't be bypassed without justification, tighter evidence patterns | GATE-01, GATE-02, GATE-03, GATE-04, GATE-05, GATE-06 | 0 |
+| 14 | Pipeline Integration | MCP registered, performance routing, health dashboard, dual-write alerting | WIRE-01, WIRE-02, WIRE-03, WIRE-04 | 0 |
+
+## Phase Details
+
+### Phase 11: Context Engine Activation
+**Goal:** RLM enrichment works on every RPETD phase for every task, querying the project's own codebase via direct HTTP with BM25 scoring
+**Dependencies:** None (standalone)
+**Success Criteria:**
+1. `_rpetd_phase_enrich()` calls `_rlm_query()` on all 5 phases without `if doc_path:` gate
+2. `_rlm_query()` queries project CWD via HTTP GET to localhost:18798 (no subprocess)
+3. `_enrich_task_context()` (Layer 1) includes 2 RLM queries for relevant code at claim-time
+4. rlm-service.py uses BM25 formula with document length normalization
+5. Tokenizer splits camelCase and snake_case identifiers into component words
+6. Full RPETD cycle adds ≤1.5s from RLM
+7. All existing tests pass, new tests cover HTTP path and BM25
+
+### Phase 12: Semantic Memory Pipeline
+**Goal:** Memory queries use vector similarity instead of LIKE matching, all writes generate embeddings, research chain fires automatically in R-phase
+**Dependencies:** None (standalone)
+**Success Criteria:**
+1. R-phase calls daemon `/api/memory/semantic-search` instead of `_mem_pg_search()` LIKE query
+2. All `_mem_log_event()` calls route through daemon HTTP for auto-embedding
+3. E-phase enrichment queries memory for past failures (top 3)
+4. T-phase enrichment queries memory for past test strategies (top 3)
+5. R-phase auto-invokes research chain when PG memory returns <2 results
+6. `_skb_promote()` checks Jaccard similarity >0.7 before inserting
+7. `_auto_write_learning()` stores full phase content without double-truncation
+
+### Phase 13: Validation Hardening
+**Goal:** Validation gates cannot be bypassed without explicit justification, evidence patterns catch real issues
+**Dependencies:** None (standalone)
+**Success Criteria:**
+1. `--force` on validate replaced with `--force-reason "text"` (non-empty required)
+2. Test evidence gate removes 100-char proxy; requires structured signal or --test-exempt
+3. Learning gate requires >100 chars with structured keyword
+4. Self-validation block: claimed_by != validated_by unless --force-reason
+5. failed/deferred transitions require --note
+6. --force on status records forced:true in audit log
+
+### Phase 14: Pipeline Integration
+**Goal:** All systems visible and connected — MCP registered, performance influences routing, failures surface
+**Dependencies:** Phases 11-13
+**Success Criteria:**
+1. install.js registers MCP server in ~/.claude/settings.json
+2. Execute-phase uses agent pass rate as tiebreaker in routing
+3. Dual-write failures append [PG_SYNC_WARN] to stdout
+4. `amauta status` shows all system health
+
+---
+
+**Full details:** See `milestones/v2.2-ROADMAP.md`
+
+**Previous milestone (v2.1):** See below (archived)
+
+---
+
+# (Archived below: v2.1 roadmap)
+
 # Roadmap: GSD-Amauta v2.1 — Durability & Compliance
 
 **Milestone:** v2.1
