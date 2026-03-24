@@ -750,6 +750,23 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": _safe_error(e)}, 500)
             return
 
+        # ─── Embedding Coverage GET route ──────────────
+        if path == "/api/memory/embedding-coverage":
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
+                return
+            try:
+                stats = store.memory_embedding_stats()
+                self._send_json({
+                    "total": stats.get("total", 0),
+                    "with_embeddings": stats.get("with_embedding", 0),
+                    "coverage_pct": stats.get("coverage_pct", 0),
+                })
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
         # ─── Agent Performance GET route (PG or SQLite) ──────
         if path.startswith("/api/agent-performance"):
             store = _get_store()
