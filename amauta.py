@@ -3569,7 +3569,7 @@ def cmd_atomize(args):
 
 
 # ── VALIDATION GATES ──────────────────────────────────────────────────────────
-def _validate_all_gates(item: dict) -> list:
+def _validate_all_gates(item: dict, *, test_exempt: bool = False) -> list:
     """Run all validation gates and return structured results.
 
     Returns list of dicts: [{"gate": str, "status": "PASS"|"FAIL"|"SKIP", "reason": str}, ...]
@@ -3600,7 +3600,10 @@ def _validate_all_gates(item: dict) -> list:
 
     # Gate 2: TEST_EVIDENCE
     t_phase = str(phases.get("T", "") or "")
-    if is_code:
+    if test_exempt:
+        results.append({"gate": "TEST_EVIDENCE", "status": "SKIP",
+                        "reason": "--test-exempt flag: task exempt from test evidence gate"})
+    elif is_code:
         if not t_phase.strip():
             results.append({"gate": "TEST_EVIDENCE", "status": "FAIL", "reason": "T-phase is empty"})
         elif _has_test_evidence(t_phase):
@@ -3672,7 +3675,7 @@ def cmd_validate(args):
 
     if args.pass_:
         # ── RUN ALL VALIDATION GATES ─────────────────────────────────────────
-        gate_results = _validate_all_gates(item)
+        gate_results = _validate_all_gates(item, test_exempt=getattr(args, "test_exempt", False))
         failures = [g for g in gate_results if g["status"] == "FAIL"]
 
         # JSON output mode — clean JSON without ANSI, then continue to normal processing
@@ -3866,6 +3869,7 @@ def cmd_validate(args):
             metadata={
                 "forced": bool(failures and args.force_reason),
                 "force_reason": args.force_reason if (failures and args.force_reason) else "",
+                "test_exempt": getattr(args, "test_exempt", False),
                 "failed_gates": [g["gate"] for g in failures] if failures else [],
             },
         )
@@ -4711,6 +4715,8 @@ AGENT WORKFLOW (heartbeat cycle):
     v.add_argument("--notes");     v.add_argument("--validator")
     v.add_argument("--force-reason", dest="force_reason", type=str, default="",
                    help="Override RPETD gates with mandatory justification (non-empty string required)")
+    v.add_argument("--test-exempt", dest="test_exempt", action="store_true",
+                   help="Exempt this task from test evidence gate (e.g., scaffolding, docs-only)")
     v.add_argument("--json", dest="json_output", action="store_true", help="Output validation results as JSON")
     v.add_argument("--subtasks", help="Pipe-separated subtask titles to atomize on --fail (e.g. 'fix A|fix B|fix C')")
 
