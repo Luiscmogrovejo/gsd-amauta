@@ -1590,41 +1590,51 @@ def _rlm_find_cli() -> str:
 
 def _rlm_query(query: str, doc_path: str = "", text: str = "", task_id: str = "") -> str:
     """
-    Call gsd-rlm.cjs query to get relevant code context.
-    Uses --dir (for directory queries) or --path (for single-file queries).
+    Query RLM service via direct HTTP POST.
+    Uses /search for single-file queries, /query for directory queries.
+    Falls back to querying project CWD when no doc_path is provided.
     Returns top-k chunk text concatenated, or empty string on failure.
-    Best-effort — never raises.
+    Best-effort -- never raises.
     """
-    import subprocess
+    import urllib.request, urllib.error, json as _json
     try:
-        node = _rlm_find_node()
-        rlm_cli = _rlm_find_cli()
-        if not rlm_cli:
-            return ""
+        port = os.environ.get("GSD_RLM_PORT", "18798")
+        base_url = f"http://127.0.0.1:{port}"
 
-        # Determine query target: prefer doc_path, then project cwd
+        # Determine endpoint and body based on doc_path type
         if doc_path and os.path.isfile(doc_path):
-            cmd = [node, rlm_cli, "query", query, "--path", doc_path, "--top-k", "3", "--compact"]
+            body = {"query": query, "paths": [doc_path], "top_k": 3, "max_chars": 8000}
+            endpoint = "/search"
         elif doc_path and os.path.isdir(doc_path):
-            cmd = [node, rlm_cli, "query", query, "--dir", doc_path, "--top-k", "3", "--compact"]
+            body = {"query": query, "directory": doc_path, "top_k": 3, "max_chars": 8000}
+            endpoint = "/query"
         elif text:
-            # No path available — skip RLM (can't query plain text without a file)
+            # No path available -- skip RLM (can't query plain text without a file)
             return ""
         else:
-            # Query current working directory
-            cwd = os.getcwd()
-            cmd = [node, rlm_cli, "query", query, "--dir", cwd, "--top-k", "3", "--compact"]
+            # Fallback: query current working directory (project source files)
+            body = {"query": query, "directory": os.getcwd(), "top_k": 3, "max_chars": 8000}
+            endpoint = "/query"
 
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=30,
-            env={**os.environ},
+        data = _json.dumps(body).encode("utf-8")
+        req = urllib.request.Request(
+            f"{base_url}{endpoint}",
+            data=data,
+            method="POST",
+            headers={"Content-Type": "application/json"},
         )
-        if result.returncode == 0 and result.stdout.strip():
-            # Filter out the fallback "RLM service unavailable" message
-            out = result.stdout.strip()
-            if "Suggested @ references" in out or "RLM service unavailable" in out:
-                return ""
-            return out[:1200]
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            result = _json.loads(resp.read())
+            results = result.get("results", [])
+            if results:
+                lines = []
+                for r in results[:3]:
+                    fp = r.get("filepath", "?")
+                    sl = r.get("start_line", 0)
+                    el = r.get("end_line", 0)
+                    label = r.get("label", "")
+                    lines.append(f"{fp}:{sl}-{el} {label}")
+                return "\n".join(lines)[:1200]
     except Exception:
         pass
     return ""
