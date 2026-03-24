@@ -2902,11 +2902,10 @@ def _has_test_evidence(t_phase: str) -> bool:
     t = t_phase or ""
     success = re.compile(
         r"exit\s*(?:code\s*)?[:=]?\s*0\b"           # exit 0, exit code 0, exit=0
-        r"|\b\d+\s+(?:tests?\s+)?passed\b|\bpassed\b" # N passed, N tests passed, passed
+        r"|\b\d+\s+(?:tests?\s+)?passed\b"          # N passed, N tests passed (quantified only)
         r"|\b0\s+failed\b|all tests passed"           # 0 failed, all tests passed
         r"|build\s+pass|build\s+successful"           # build pass/successful
         r"|lint\s+pass|lint.*completed"                # lint pass/completed
-        r"|tsc\s+--noemit"                             # tsc --noEmit (ran type-check)
         r"|go\s+test.*\bok\b|cargo\s+test.*\bok\b"    # go test ok, cargo test ok
         r"|status\s*checks?.*(?:success|pass)"         # status checks success/pass
         r"|ci\s*checks?.*(?:success|pass)"             # ci checks success/pass
@@ -2914,11 +2913,12 @@ def _has_test_evidence(t_phase: str) -> bool:
         r"|checks\s*green"                             # checks green
         r"|_CODE\s*=\s*0\b"                            # PASS_CODE=0, GOOD_CODE=0
         r"|\[COMPLETED\]"                              # lint-staged [COMPLETED]
-        r"|criteria.*(?:met|satisfied|appear\s+met)"   # RLM: criteria met/satisfied
-        r"|successfully\b"                             # ran successfully
         r"|verification.*(?:pass|complete|confirm)"    # verification pass/complete
-        r"|prettier\s+--write"                         # prettier ran
-        r"|eslint\s+--fix",                            # eslint ran
+        r"|\$\s"                                       # shell prompt (real terminal output)
+        r"|>>>\s"                                      # Python REPL prompt
+        r"|pytest.*\d+\s+passed"                       # pytest output
+        r"|PASS\s+\S"                                  # Jest/Vitest PASS lines
+        r"|Tests:\s+\d+\s+passed",                     # Jest summary line
         re.I,
     )
     # RPETD T is append-only in some flows. If a task was previously blocked but
@@ -2932,10 +2932,6 @@ def _has_test_evidence(t_phase: str) -> bool:
     )
     if blocker.search(t):
         return False
-    # If T-phase has substantial content (>100 chars) but no clear pass/fail signal,
-    # allow it through — the validator will review the evidence manually.
-    if len(t) > 100:
-        return True
     return False
 
 def cmd_status(args):
