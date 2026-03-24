@@ -991,6 +991,8 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             if command == "claim" and rc == 0 and _rlm_enabled:
                 out = _enrich_with_rlm(out, body)
 
+            _pg_sync_warning = ""
+
             # ── Dual-write: mirror task mutations to PG (best-effort) ──
             # After amauta.py writes to tasks.json, mirror the affected task to gsd_tasks.
             # Only for commands that mutate tasks; read commands (show, list, search) skip this.
@@ -1015,9 +1017,10 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                             item = _json.loads(show_out)
                             _mirror_store.task_upsert(item)
                 except Exception as _pg_err:
+                    _pg_sync_warning = f"\n[PG_SYNC_WARN] PG mirror failed for {body.get('id', '?')}: {_safe_error(_pg_err)}"
                     log.warning("store_mirror_failed task_id=%s error=%s", body.get("id", "?"), _safe_error(_pg_err))
 
-            self._send_json({"output": out, "error": err, "exit_code": rc})
+            self._send_json({"output": out + _pg_sync_warning, "error": err, "exit_code": rc})
             return
 
         # ─── Memory POST routes (PG or SQLite) ────────
