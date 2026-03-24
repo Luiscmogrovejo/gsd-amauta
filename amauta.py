@@ -2724,11 +2724,11 @@ def _auto_write_learning(item: dict, agent_id: str):
         task_id = item.get("id", "")
         title = item.get("title", "")
         criteria = " | ".join(str(c) for c in (item.get("success_criteria") or [])[:3])
-        r_text = str(phases.get("R", ""))[:300]
-        p_text = str(phases.get("P", ""))[:200]
-        e_text = str(phases.get("E", ""))[:200]
-        t_text = str(phases.get("T", ""))[:200]
-        d_text = str(phases.get("D", ""))[:400]
+        r_text = str(phases.get("R", ""))
+        p_text = str(phases.get("P", ""))
+        e_text = str(phases.get("E", ""))
+        t_text = str(phases.get("T", ""))
+        d_text = str(phases.get("D", ""))
         lane = "code" if _needs_gitflow_gate(item) else "non-code"
         owner = item.get("claimed_by") or item.get("assigned_to") or "system"
 
@@ -2737,7 +2737,7 @@ def _auto_write_learning(item: dict, agent_id: str):
         for _ph, _ph_txt in [("R", r_text), ("P", p_text), ("D", d_text)]:
             ws_m = re.search(r'web.?search\s+findings?[:\s]+(.{20,300})', str(_ph_txt), re.I | re.S)
             if ws_m:
-                ws_findings = ws_m.group(1).strip()[:200]
+                ws_findings = ws_m.group(1).strip()
                 break
 
         # Extract failure patterns
@@ -2748,11 +2748,11 @@ def _auto_write_learning(item: dict, agent_id: str):
         learning_text = (
             f"AUTO-LEARNING: {task_id} | {title}\n"
             f"Agent: {owner} | Lane: {lane}\n"
-            f"R-phase findings: {r_text[:200]}\n"
-            f"P-phase design: {p_text[:150]}\n"
-            f"E-phase execution: {e_text[:150]}\n"
-            f"T-phase evidence: {t_text[:150]}\n"
-            f"D-phase delivery: {d_text[:250]}\n"
+            f"R-phase findings: {r_text}\n"
+            f"P-phase design: {p_text}\n"
+            f"E-phase execution: {e_text}\n"
+            f"T-phase evidence: {t_text}\n"
+            f"D-phase delivery: {d_text}\n"
             f"web_search findings: {ws_findings or 'not recorded'}\n"
             f"Past failures on task: {fail_summary}\n"
             f"Criteria met: {criteria or 'not specified'}\n"
