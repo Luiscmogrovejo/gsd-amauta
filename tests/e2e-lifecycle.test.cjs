@@ -211,12 +211,12 @@ describe('E2E Lifecycle', () => {
         `status validation: ${r.error || r.output}`);
     });
 
-    test('validate --pass --force', (t) => {
+    test('validate --pass --force-reason', (t) => {
       if (skipIfNoDaemon(t)) return;
       if (!taskId) { t.skip('no task'); return; }
       // Move to validation status first — validate --pass requires validation/in-progress
       amauta(['status', taskId, 'validation', '--agent', 'executor-general']);
-      const r = amauta(['validate', taskId, '--pass', '--force', '--validator', 'e2e-test', '--notes', 'E2E automated pass']);
+      const r = amauta(['validate', taskId, '--pass', '--force-reason', 'automated-test-override', '--validator', 'e2e-test', '--notes', 'E2E automated pass']);
       assert.ok(r.success, `validate: ${r.error || r.output}`);
       assert.ok(r.output.includes('VALIDATED') || r.output.includes('DONE') || r.output.includes('done'));
     });

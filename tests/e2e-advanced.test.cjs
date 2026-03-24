@@ -405,7 +405,7 @@ describe('Validation Gates — Advanced E2E', () => {
           R: 'R: researched', P: 'P: planned',
           E: 'E: git checkout -b feat/TK-0001. Code done.',
           T: 'T: npm test\n10 tests passed\nexit 0',
-          D: 'D: https://github.com/org/repo/pull/1 merged to main. LEARNING: Always handle edge cases.'
+          D: 'D: https://github.com/org/repo/pull/1 merged to main. LEARNING: Always handle edge cases because unhandled exceptions in production cause cascading failures that impact downstream services and degrade user experience significantly.'
         },
         rpetd_complete: true, notes: overrides.notes || [],
         created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
@@ -463,20 +463,20 @@ describe('Validation Gates — Advanced E2E', () => {
       phases: {
         R: 'R: done', P: 'P: done', E: 'E: research complete',
         T: 'T: verified findings against three sources and documentation thoroughly',
-        D: 'D: LEARNING: Research methodology improved by cross-referencing multiple documentation sources.'
+        D: 'D: LEARNING: Research methodology improved by cross-referencing multiple documentation sources because single-source research misses conflicting information and produces incomplete recommendations that fail in practice.'
       }
     });
     const r = py(['validate', tk, '--pass', '--validator', 'gsd-validator', '--notes', 'Good research'], d);
     assert.ok(r.ok, `Non-code validation should pass: ${r.out} ${r.err}`);
   }));
 
-  test('4.5 validate with --force bypasses gates', () => withTmp(d => {
+  test('4.5 validate with --force-reason bypasses gates', () => withTmp(d => {
     const tk = createReadyTask(d, {
       status: 'validation',
       phases: { R: '', P: '', E: '', T: '', D: '' }  // Empty phases
     });
-    const r = py(['validate', tk, '--pass', '--validator', 'gsd-validator', '--force'], d);
-    assert.ok(r.ok, `Force should bypass all gates: ${r.out} ${r.err}`);
+    const r = py(['validate', tk, '--pass', '--validator', 'gsd-validator', '--force-reason', 'automated-test-override'], d);
+    assert.ok(r.ok, `Force-reason should bypass all gates: ${r.out} ${r.err}`);
   }));
 
   test('4.6 status validation requires branch evidence for code tasks', () => withTmp(d => {
@@ -502,7 +502,7 @@ describe('Validation Gates — Advanced E2E', () => {
       phases: {
         R: 'R: done', P: 'P: done', E: 'E: configured Docker compose and networking',
         T: 'T: docker compose up exit 0, all services healthy',
-        D: 'D: LEARNING: Docker networking requires explicit subnet configuration for service discovery.'
+        D: 'D: LEARNING: Docker networking requires explicit subnet configuration for service discovery because default bridge networks do not support DNS resolution between containers in multi-service deployments.'
       }
     });
     const r = py(['validate', tk, '--pass', '--validator', 'gsd-validator'], d);
@@ -847,7 +847,7 @@ describe('Cross-Pipeline Integration — E2E', () => {
     py(['rpetd', tk, '--phase', 'P', '--content', 'P: Plan: 1. Model 2. Routes 3. Tests'], d);
     py(['rpetd', tk, '--phase', 'E', '--content', 'E: git checkout -b feat/TK-auth. Code done. https://github.com/org/repo/pull/1 merged to main.'], d);
     py(['rpetd', tk, '--phase', 'T', '--content', 'T: npm test\n15 tests passed, 0 failed\nexit 0'], d);
-    py(['rpetd', tk, '--phase', 'D', '--content', 'D: https://github.com/org/repo/pull/1 merged to main. LEARNING: Always add input validation to auth routes.'], d);
+    py(['rpetd', tk, '--phase', 'D', '--content', 'D: https://github.com/org/repo/pull/1 merged to main. LEARNING: Always add input validation to auth routes because unvalidated input creates SQL injection and XSS attack vectors that compromise the entire authentication system.'], d);
 
     // Status → validation
     py(['status', tk, 'validation'], d);

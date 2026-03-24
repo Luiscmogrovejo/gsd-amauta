@@ -235,7 +235,7 @@ describe('Validation Gates — complex E2E', () => {
     P: 'P: Plan with Given/When/Then.',
     E: overrides.E || 'E: Implemented on feat/test-branch.',
     T: overrides.T || '$ npm test\n10 tests passed, 0 failed\nexit 0',
-    D: overrides.D || 'D: Delivered successfully. LEARNING: always validate edge cases before merging. https://github.com/org/repo/pull/42',
+    D: overrides.D || 'D: Delivered successfully. LEARNING: always validate edge cases before merging to main because untested edge cases cause regressions that are expensive to debug in production environments and erode user trust. https://github.com/org/repo/pull/42',
     ...overrides,
   });
 
@@ -261,8 +261,8 @@ describe('Validation Gates — complex E2E', () => {
 
   test('2.4 Gate 2 passes: LEARNING in R-phase instead of D', () => withTmp(d => {
     makeTask(d, { phases: fullPhases({
-      R: 'R: LEARNING: async patterns are significantly better here for handling concurrent requests.',
-      D: 'D: delivered. LEARNING: confirmed async approach works well for this use case. https://github.com/org/repo/pull/42'
+      R: 'R: LEARNING: async patterns are significantly better here for handling concurrent requests because blocking IO calls cause thread starvation under load and degrade response times significantly in production.',
+      D: 'D: delivered. LEARNING: confirmed async approach works well for this use case because it handles concurrent requests without blocking the event loop and reduces p99 latency by over forty percent in benchmarks. https://github.com/org/repo/pull/42'
     }), rpetd_complete: true });
     const r = run(CLI, ['validate', 'TK-E2E1', '--pass', '--validator', 'v', '--notes', 'ok'], d);
     const combined = r.out + r.err;
@@ -284,7 +284,7 @@ describe('Validation Gates — complex E2E', () => {
   }));
 
   test('2.7 Gate 4 passes: github PR URL', () => withTmp(d => {
-    makeTask(d, { phases: fullPhases({ D: 'D: LEARNING: x. See https://github.com/org/repo/pull/99' }), rpetd_complete: true });
+    makeTask(d, { phases: fullPhases({ D: 'D: LEARNING: always validate PR URLs before merging because missing URLs mean reviewers cannot verify code changes were properly reviewed through the standard pull request workflow. See https://github.com/org/repo/pull/99' }), rpetd_complete: true });
     const r = run(CLI, ['validate', 'TK-E2E1', '--pass', '--validator', 'v', '--notes', 'ok'], d);
     const g4f = r.err.includes('PR_URL');
     assert.ok(!g4f, 'github URL should satisfy Gate 4');
@@ -297,35 +297,35 @@ describe('Validation Gates — complex E2E', () => {
   }));
 
   test('2.9 Gate 4 passes: "merged" keyword', () => withTmp(d => {
-    makeTask(d, { phases: fullPhases({ D: 'D: LEARNING: x. Changes merged into main.' }), rpetd_complete: true });
+    makeTask(d, { phases: fullPhases({ D: 'D: LEARNING: always confirm changes are merged into main by checking the PR status because stale branches create confusion and merge conflicts that compound over time. Changes merged into main. https://github.com/org/repo/pull/33' }), rpetd_complete: true });
     const r = run(CLI, ['validate', 'TK-E2E1', '--pass', '--validator', 'v', '--notes', 'ok'], d);
     assert.ok(!r.err.includes('PR_URL'));
   }));
 
   test('2.10 Gate 4 fails: only branch name, no PR', () => withTmp(d => {
-    makeTask(d, { phases: fullPhases({ E: 'E: feat/branch done.', D: 'D: LEARNING: x.' }), rpetd_complete: true });
+    makeTask(d, { phases: fullPhases({ E: 'E: feat/branch done.', D: 'D: LEARNING: always create a pull request before validation because code review catches bugs that automated tests miss and provides an audit trail for compliance purposes.' }), rpetd_complete: true });
     const r = run(CLI, ['validate', 'TK-E2E1', '--pass', '--validator', 'v', '--notes', 'ok'], d);
     assert.ok(r.err.includes('PR_URL') || !r.ok);
   }));
 
   test('2.11 Gate 4 passes: PR URL in notes', () => withTmp(d => {
-    makeTask(d, { phases: fullPhases({ E: 'E: feat/x', D: 'D: LEARNING: x.' }),
+    makeTask(d, { phases: fullPhases({ E: 'E: feat/x', D: 'D: LEARNING: always include PR URLs in notes when they are not in the D-phase because validators need a direct link to verify that the code review process was completed properly.' }),
       notes: [{ text: 'PR: https://github.com/o/r/pull/1', by: 'agent', ts: new Date().toISOString() }], rpetd_complete: true });
     const r = run(CLI, ['validate', 'TK-E2E1', '--pass', '--validator', 'v', '--notes', 'ok'], d);
     assert.ok(!r.err.includes('PR_URL'));
   }));
 
   test('2.12 Gate 4 false negative prevention: "merge conflict" should NOT satisfy', () => withTmp(d => {
-    makeTask(d, { phases: fullPhases({ E: 'E: feat/x. merge conflict on main.', D: 'D: LEARNING: x.' }), rpetd_complete: true });
+    makeTask(d, { phases: fullPhases({ E: 'E: feat/x. merge conflict on main.', D: 'D: LEARNING: merge conflicts must be resolved before validation because unresolved conflicts indicate the code has not been properly integrated into the target branch.' }), rpetd_complete: true });
     const r = run(CLI, ['validate', 'TK-E2E1', '--pass', '--validator', 'v', '--notes', 'ok'], d);
     assert.ok(r.err.includes('PR_URL') || !r.ok, 'merge conflict should NOT satisfy Gate 4');
   }));
 
-  test('2.13 --force bypasses all gates', () => withTmp(d => {
+  test('2.13 --force-reason bypasses all gates', () => withTmp(d => {
     makeTask(d, { phases: { R: '', P: '', E: '', T: '', D: '' }, rpetd_complete: true });
-    const r = run(CLI, ['validate', 'TK-E2E1', '--pass', '--force', '--validator', 'v', '--notes', 'forced'], d);
+    const r = run(CLI, ['validate', 'TK-E2E1', '--pass', '--force-reason', 'automated-test-override', '--validator', 'v', '--notes', 'forced'], d);
     const anyGate = r.err.includes('EVIDENCE') || r.err.includes('BLOCK') || r.err.includes('PR_URL');
-    assert.ok(!anyGate, '--force should bypass all gates');
+    assert.ok(!anyGate, '--force-reason should bypass all gates');
   }));
 
   test('2.14 --fail skips gate checking', () => withTmp(d => {
@@ -335,17 +335,17 @@ describe('Validation Gates — complex E2E', () => {
     assert.ok(!anyGate, '--fail should not run gates');
   }));
 
-  test('2.15 --force works with no-gitflow tagged tasks', () => withTmp(d => {
+  test('2.15 --force-reason works with no-gitflow tagged tasks', () => withTmp(d => {
     makeTask(d, { phases: fullPhases({ E: 'E: done locally.', D: 'D: LEARNING: x.' }),
       tags: ['no-gitflow'], rpetd_complete: true });
-    const r = run(CLI, ['validate', 'TK-E2E1', '--pass', '--force', '--validator', 'v', '--notes', 'local only'], d);
+    const r = run(CLI, ['validate', 'TK-E2E1', '--pass', '--force-reason', 'automated-test-override', '--validator', 'v', '--notes', 'local only'], d);
     const anyGate = r.err.includes('BRANCH_EVIDENCE') || r.err.includes('PR_URL');
-    assert.ok(!anyGate, '--force with no-gitflow should pass cleanly');
+    assert.ok(!anyGate, '--force-reason with no-gitflow should pass cleanly');
   }));
 
   test('2.16 validate --pass writes audit trail in offline mode', () => withTmp(d => {
     makeTask(d, { phases: fullPhases(), rpetd_complete: true, tags: ['no-gitflow'] });
-    run(CLI, ['validate', 'TK-E2E1', '--pass', '--force', '--validator', 'test-v', '--notes', 'audit test'], d);
+    run(CLI, ['validate', 'TK-E2E1', '--pass', '--force-reason', 'automated-test-override', '--validator', 'test-v', '--notes', 'audit test'], d);
     const memDir = path.join(d, '.planning', 'memory');
     if (fs.existsSync(memDir)) {
       const content = fs.readdirSync(memDir).filter(f => f.endsWith('.md'))
@@ -395,7 +395,7 @@ describe('Validation Gates — complex E2E', () => {
   }));
 
   test('2.23 gitlab PR URL satisfies Gate 4', () => withTmp(d => {
-    makeTask(d, { phases: fullPhases({ D: 'D: LEARNING: x. https://gitlab.com/org/repo/pull/7' }), rpetd_complete: true });
+    makeTask(d, { phases: fullPhases({ D: 'D: LEARNING: always include the full pull request URL in the D-phase so that validators can verify the code review was completed and all CI checks passed before merging. https://gitlab.com/org/repo/pull/7' }), rpetd_complete: true });
     const r = run(CLI, ['validate', 'TK-E2E1', '--pass', '--validator', 'v', '--notes', 'ok'], d);
     assert.ok(!r.err.includes('PR_URL'));
   }));
@@ -407,7 +407,7 @@ describe('Validation Gates — complex E2E', () => {
   }));
 
   test('2.25 non-code agent (researcher) skips Gate 1 and 4', () => withTmp(d => {
-    makeTask(d, { type: 'research', agent: 'gsd-researcher', phases: fullPhases({ E: 'E: researched.', D: 'D: LEARNING: finding.' }), rpetd_complete: true });
+    makeTask(d, { type: 'research', agent: 'gsd-researcher', phases: fullPhases({ E: 'E: researched.', D: 'D: LEARNING: research tasks should document findings thoroughly with references to sources because undocumented research gets repeated by other agents wasting time and resources.' }), rpetd_complete: true });
     const r = run(CLI, ['validate', 'TK-E2E1', '--pass', '--validator', 'v', '--notes', 'ok'], d);
     assert.ok(!r.err.includes('BRANCH_EVIDENCE') && !r.err.includes('PR_URL'));
   }));
@@ -839,7 +839,7 @@ describe('Cross-pipeline integration', () => {
     py(['rpetd', tk, '--phase', 'E', '--content', 'E: feat/int-test. PR #1 merged.'], d);
     py(['rpetd', tk, '--phase', 'T', '--content', 'T: $ npm test\nPASS 3/3'], d);
     py(['rpetd', tk, '--phase', 'D', '--content', 'D: done. LEARNING: integration works.'], d);
-    const v = run(CLI, ['validate', tk, '--pass', '--force', '--validator', 'gsd-validator', '--notes', 'E2E pass'], d);
+    const v = run(CLI, ['validate', tk, '--pass', '--force-reason', 'automated-test-override', '--validator', 'gsd-validator', '--notes', 'E2E pass'], d);
     assert.ok(v.ok, `validate should pass: ${v.err}`);
   }));
 

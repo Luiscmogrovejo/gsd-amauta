@@ -334,8 +334,8 @@ describe('Full RPETD pipeline (offline CLI)', () => {
       assert.ok(r.success, `rpetd ${phase} failed: ${r.error || r.output}`);
     }
 
-    // Step 4: Validate with --force (bypasses gates)
-    const validate = cli(['validate', taskId, '--pass', '--force', '--validator', 'gsd-validator', '--notes', 'E2E offline test pass'], dataDir);
+    // Step 4: Validate with --force-reason (bypasses gates)
+    const validate = cli(['validate', taskId, '--pass', '--force-reason', 'automated-test-override', '--validator', 'gsd-validator', '--notes', 'E2E offline test pass'], dataDir);
     assert.ok(validate.success, `validate failed: ${validate.error || validate.output}`);
 
     // Step 5: Verify task is done

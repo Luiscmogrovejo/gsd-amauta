@@ -532,7 +532,8 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             "text": "--text",
             "tags": "--tags",
             "subtasks": "--subtasks",  # validate --fail auto-atomize
-            "force": None,   # boolean flag
+            "force": None,   # boolean flag (add, status commands)
+            "force_reason": "--force-reason",  # validate command: requires justification string
             "append": None,  # boolean flag (rpetd --append)
             "json_output": None,  # boolean flag
         }

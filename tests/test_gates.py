@@ -47,6 +47,13 @@ def _make_item(
     }
 
 
+# Standard LEARNING text used across tests (>=100 chars)
+_LEARNING_100 = (
+    "always validate all gate conditions before marking tasks as done "
+    "because skipping gates leads to incomplete work and quality degradation in production"
+)
+
+
 # ── _has_branch_evidence tests ────────────────────────────────────────────────
 class TestBranchEvidence(unittest.TestCase):
     def test_git_checkout_branch(self):
@@ -77,7 +84,7 @@ class TestTestEvidence(unittest.TestCase):
         self.assertTrue(_has_test_evidence("$ npm test\n5 passing\nexit code: 0"))
 
     def test_trivial_tests_pass(self):
-        """'tests pass' is only 10 chars, below 100 char proxy threshold."""
+        """'tests pass' has no structured signal -- should fail."""
         self.assertFalse(_has_test_evidence("tests pass"))
 
     def test_enoent_error(self):
@@ -89,16 +96,40 @@ class TestTestEvidence(unittest.TestCase):
     def test_empty_string(self):
         self.assertFalse(_has_test_evidence(""))
 
-    def test_long_content_proxy(self):
-        """Content >100 chars with no clear signal should pass as proxy."""
+    def test_long_content_proxy_removed(self):
+        """Content >100 chars with no clear signal should now FAIL (proxy removed)."""
         content = "x" * 101
-        self.assertTrue(_has_test_evidence(content))
+        self.assertFalse(_has_test_evidence(content))
 
     def test_exit_code_zero(self):
         self.assertTrue(_has_test_evidence("exit code: 0"))
 
     def test_permission_denied_blocker(self):
         self.assertFalse(_has_test_evidence("permission denied"))
+
+    def test_shell_prompt_pattern(self):
+        """Shell prompt character should be detected as test evidence."""
+        self.assertTrue(_has_test_evidence("$ npm test\nsome output"))
+
+    def test_python_repl_prompt(self):
+        """Python REPL prompt should be detected."""
+        self.assertTrue(_has_test_evidence(">>> import foo\n"))
+
+    def test_pytest_summary(self):
+        """Pytest summary line should pass."""
+        self.assertTrue(_has_test_evidence("pytest: 12 passed in 3.2s"))
+
+    def test_jest_pass_line(self):
+        """Jest PASS line should be detected."""
+        self.assertTrue(_has_test_evidence("PASS src/foo.test.ts"))
+
+    def test_bare_passed_removed(self):
+        """Bare 'passed' without a number should no longer match."""
+        self.assertFalse(_has_test_evidence("passed"))
+
+    def test_successfully_removed(self):
+        """Bare 'successfully' should no longer match."""
+        self.assertFalse(_has_test_evidence("ran successfully"))
 
 
 # ── _has_explicit_learning_written tests ──────────────────────────────────────
@@ -146,7 +177,7 @@ class TestValidateAllGates(unittest.TestCase):
                 "P": "Plan: update documentation and verify",
                 "E": "Executed the documentation updates",
                 "T": "Verified all links work and content is accurate and complete",
-                "D": "LEARNING: documentation changes need cross-reference checks to avoid broken links",
+                "D": "LEARNING: " + _LEARNING_100,
             },
             item_type="task",
             agent="gsd-planner",
@@ -164,7 +195,7 @@ class TestValidateAllGates(unittest.TestCase):
                 "P": "Plan: implement JWT refresh",
                 "E": "git checkout -b feat/TK-001-auth\nImplemented refresh tokens\ncommit abc1234",
                 "T": "$ npm test\n12 passing (300ms)\nexit code: 0",
-                "D": "LEARNING: JWT refresh rotation requires storing old tokens for revocation window",
+                "D": "LEARNING: JWT refresh rotation requires storing old tokens for revocation window and implementing a grace period for concurrent requests to avoid race conditions",
             },
             agent="executor-backend",
         )
@@ -184,7 +215,7 @@ class TestValidateAllGates(unittest.TestCase):
                 "P": "Plan: add validation endpoint",
                 "E": "git checkout -b feat/TK-001-validate\ncommit abc1234",
                 "T": "$ npm test\n5 passing\nexit code: 0",
-                "D": "LEARNING: consolidated gate checks reduce scattered validation logic significantly",
+                "D": "LEARNING: consolidated gate checks reduce scattered validation logic significantly and make it easier to audit bypass decisions across all agent types in production",
             },
             agent="executor-backend",
             notes=[{"text": "PR: https://github.com/org/repo/pull/42"}],
@@ -205,7 +236,7 @@ class TestValidateAllGates(unittest.TestCase):
                 "P": "plan",
                 "E": "did some work on the code",
                 "T": "$ npm test\n5 passing\nexit code: 0",
-                "D": "LEARNING: always include branch name in execution logs for traceability",
+                "D": "LEARNING: always include branch name in execution logs for traceability because without it reviewers cannot verify which code was deployed or rolled back during incidents",
             },
             agent="executor-backend",
         )
@@ -221,7 +252,7 @@ class TestValidateAllGates(unittest.TestCase):
                 "P": "plan",
                 "E": "git checkout -b feat/TK-001-test",
                 "T": "tests pass",
-                "D": "LEARNING: always paste actual test runner output, not just a summary statement",
+                "D": "LEARNING: always paste actual test runner output not just a summary statement because summaries can mask underlying failures and give false confidence in code quality",
             },
             agent="executor-backend",
         )
@@ -230,14 +261,14 @@ class TestValidateAllGates(unittest.TestCase):
         self.assertEqual(gate_map["TEST_EVIDENCE"], "FAIL")
 
     def test_learning_too_short_fails(self):
-        """D-phase LEARNING block with <20 chars should fail LEARNING_BLOCK gate."""
+        """D-phase LEARNING block with <100 chars should fail LEARNING_BLOCK gate."""
         item = _make_item(
             rpetd={
                 "R": "research",
                 "P": "plan",
                 "E": "git checkout -b feat/TK-001-learn",
                 "T": "$ npm test\n5 passing\nexit code: 0",
-                "D": "LEARNING: x",
+                "D": "LEARNING: this is a short learning block that does not meet minimum",
             },
             agent="executor-backend",
         )
@@ -253,7 +284,7 @@ class TestValidateAllGates(unittest.TestCase):
                 "P": "plan",
                 "E": "executed",
                 "T": "verified all documentation is correct and links work properly",
-                "D": "LEARNING: non-code tasks still benefit from structured documentation workflow",
+                "D": "LEARNING: non-code tasks still benefit from structured documentation workflow because systematic verification catches broken cross-references and stale content before it reaches users",
             },
             tags=["lane:non-code"],
             agent="gsd-planner",
@@ -271,7 +302,7 @@ class TestValidateAllGates(unittest.TestCase):
                 "P": "plan",
                 "E": "executed",
                 "T": "looks good",
-                "D": "LEARNING: always provide substantive verification evidence even for non-code tasks",
+                "D": "LEARNING: always provide substantive verification evidence even for non-code tasks because cursory reviews miss configuration drift and documentation staleness that compound over time",
             },
             tags=["lane:non-code"],
             agent="gsd-planner",
@@ -302,6 +333,22 @@ class TestValidateAllGates(unittest.TestCase):
         self.assertIn("TEST_EVIDENCE", gate_names)
         self.assertIn("LEARNING_BLOCK", gate_names)
         self.assertIn("PR_URL", gate_names)
+
+    def test_test_exempt_skips_test_evidence(self):
+        """--test-exempt should SKIP the TEST_EVIDENCE gate."""
+        item = _make_item(
+            rpetd={
+                "R": "research",
+                "P": "plan",
+                "E": "git checkout -b feat/TK-001-exempt",
+                "T": "scaffolding task, no tests applicable",
+                "D": "LEARNING: " + "a" * 100 + " scaffolding tasks need test-exempt flag when there are no testable behaviors",
+            },
+            agent="executor-backend",
+        )
+        results = _validate_all_gates(item, test_exempt=True)
+        gate_map = {r["gate"]: r["status"] for r in results}
+        self.assertEqual(gate_map["TEST_EVIDENCE"], "SKIP")
 
 
 if __name__ == "__main__":

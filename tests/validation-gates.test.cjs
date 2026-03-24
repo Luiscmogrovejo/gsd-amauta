@@ -86,7 +86,12 @@ function parseFlags(args, startIndex = 0) {
       const key = args[i].slice(2);
       if (key === 'pass') { flags.pass_result = true; continue; }
       if (key === 'fail') { flags.pass_result = false; continue; }
-      if (key === 'force') { flags.force = true; continue; }
+      if (key === 'force-reason') {
+        const reason = args[i + 1];
+        flags.force_reason = (reason !== undefined && !reason.startsWith('--')) ? reason : '';
+        if (flags.force_reason) i++;
+        continue;
+      }
       if (key === 'json') { flags.json_output = true; continue; }
       if (key === 'append') { flags.append = true; continue; }
       const nextVal = args[i + 1];
@@ -116,9 +121,9 @@ describe('parseFlags()', () => {
     assert.strictEqual(flags.pass_result, false);
   });
 
-  test('--force sets force: true', () => {
-    const flags = parseFlags(['TK-0001', '--force'], 1);
-    assert.strictEqual(flags.force, true);
+  test('--force-reason sets force_reason with value', () => {
+    const flags = parseFlags(['TK-0001', '--force-reason', 'test-justification'], 1);
+    assert.strictEqual(flags.force_reason, 'test-justification');
   });
 
   test('--append sets append: true', () => {
@@ -164,14 +169,14 @@ describe('parseFlags()', () => {
   });
 
   test('startIndex 0 parses from beginning', () => {
-    const flags = parseFlags(['--pass', '--force']);
+    const flags = parseFlags(['--pass', '--force-reason', 'auto-test']);
     assert.strictEqual(flags.pass_result, true);
-    assert.strictEqual(flags.force, true);
+    assert.strictEqual(flags.force_reason, 'auto-test');
   });
 
   test('positional args before startIndex are skipped', () => {
-    const flags = parseFlags(['TK-0001', 'ignore', '--force'], 2);
-    assert.strictEqual(flags.force, true);
+    const flags = parseFlags(['TK-0001', 'ignore', '--force-reason', 'skip-test'], 2);
+    assert.strictEqual(flags.force_reason, 'skip-test');
     assert.strictEqual(flags.pass_result, undefined);
   });
 });
@@ -244,7 +249,7 @@ describe('Validation gates (CLI offline mode)', () => {
       P: overrides.P || 'Plan: will implement feature on feat/test-branch.',
       E: overrides.E !== undefined ? overrides.E : 'Execute: implemented on feat/test-branch. Files changed: src/main.js',
       T: overrides.T !== undefined ? overrides.T : '$ node --test\n5 tests passed, 0 failed\nexit 0',
-      D: overrides.D !== undefined ? overrides.D : 'LEARNING: always test edge cases thoroughly before merging. https://github.com/org/repo/pull/42',
+      D: overrides.D !== undefined ? overrides.D : 'LEARNING: always test edge cases thoroughly before merging to main because untested code causes regressions that are expensive to debug in production environments. https://github.com/org/repo/pull/42',
     };
 
     const tasks = {
@@ -291,7 +296,7 @@ describe('Validation gates (CLI offline mode)', () => {
 
   test('Gate 2 PASS: D-phase has LEARNING block', () => withTmp(tmpDir => {
     const { dataDir, taskId } = setupTask(tmpDir, {
-      D: 'Summary: implemented. LEARNING: always write tests first and validate edge cases. https://github.com/org/repo/pull/12',
+      D: 'Summary: implemented. LEARNING: always write tests first and validate edge cases thoroughly because skipping test-first development leads to fragile code that breaks during integration and costs more time to fix later. https://github.com/org/repo/pull/12',
       E: 'feat/my-branch: implemented changes.',
       T: '$ npm test\n10 tests passed, 0 failed\nexit 0',
     });
@@ -314,8 +319,8 @@ describe('Validation gates (CLI offline mode)', () => {
 
   test('Gate 2 PASS: LEARNING in R-phase (not just D)', () => withTmp(tmpDir => {
     const { dataDir, taskId } = setupTask(tmpDir, {
-      R: 'LEARNING: found that async patterns work better here for concurrency.',
-      D: 'Summary: implemented feature. LEARNING: confirmed async approach is superior for this use case. https://github.com/org/repo/pull/5',
+      R: 'LEARNING: found that async patterns work better here for concurrency because blocking IO calls cause thread starvation under load and degrade response times significantly in production.',
+      D: 'Summary: implemented feature. LEARNING: confirmed async approach is superior for this use case because it handles concurrent requests without blocking the event loop and reduces p99 latency by over forty percent. https://github.com/org/repo/pull/5',
       E: 'feat/branch: done.',
       T: '$ pytest\n5 tests passed in 1.2s\nexit 0',
     });
@@ -328,7 +333,7 @@ describe('Validation gates (CLI offline mode)', () => {
     const { dataDir, taskId } = setupTask(tmpDir, {
       E: 'Implemented on feat/my-feature branch.',
       T: '$ npm test\n5 tests passed, 0 failed\nexit 0',
-      D: 'LEARNING: feature branches work well for isolating changes and ensuring clean PRs. https://github.com/org/repo/pull/20',
+      D: 'LEARNING: feature branches work well for isolating changes and ensuring clean PRs because they prevent half-finished work from contaminating the main branch and allow parallel development. https://github.com/org/repo/pull/20',
     });
     const r = runCLI(['validate', taskId, '--pass', '--validator', 'test', '--notes', 'gate test'],
       { AMAUTA_DATA_DIR: dataDir });
@@ -339,7 +344,7 @@ describe('Validation gates (CLI offline mode)', () => {
     const { dataDir, taskId } = setupTask(tmpDir, {
       E: 'feat/my-branch: done.',
       T: '$ npm test\n5 tests passed, 0 failed\nexit 0',
-      D: 'LEARNING: tests confirm the fix works and prevent regression in edge cases. https://github.com/org/repo/pull/10',
+      D: 'LEARNING: tests confirm the fix works and prevent regression in edge cases by catching breaking changes early before they reach production environments and affect end users. https://github.com/org/repo/pull/10',
     });
     const r = runCLI(['validate', taskId, '--pass', '--validator', 'test', '--notes', 'gate test'],
       { AMAUTA_DATA_DIR: dataDir });
@@ -350,7 +355,7 @@ describe('Validation gates (CLI offline mode)', () => {
     const { dataDir, taskId } = setupTask(tmpDir, {
       E: 'feat/branch: done.',
       T: '',
-      D: 'LEARNING: something useful about testing. https://github.com/org/repo/pull/10',
+      D: 'LEARNING: something useful about testing that helps prevent regressions and ensures code quality remains high throughout the development lifecycle and deployment process. https://github.com/org/repo/pull/10',
     });
     const r = runCLI(['validate', taskId, '--pass', '--validator', 'test', '--notes', 'gate test'],
       { AMAUTA_DATA_DIR: dataDir });
@@ -363,7 +368,7 @@ describe('Validation gates (CLI offline mode)', () => {
       type: 'research',
       agent: 'gsd-researcher',
       T: 'Verified findings against three independent sources and cross-referenced documentation thoroughly.',
-      D: 'LEARNING: researched the topic thoroughly and documented all key findings for future reference.',
+      D: 'LEARNING: researched the topic thoroughly and documented all key findings for future reference because comprehensive documentation prevents knowledge loss when team members rotate and accelerates onboarding.',
     });
     const r = runCLI(['validate', taskId, '--pass', '--validator', 'test', '--notes', 'gate test'],
       { AMAUTA_DATA_DIR: dataDir });
@@ -374,7 +379,7 @@ describe('Validation gates (CLI offline mode)', () => {
     const { dataDir, taskId } = setupTask(tmpDir, {
       E: 'feat/branch: implemented.',
       T: '$ npm test\n5 tests passed, 0 failed\nexit 0',
-      D: 'LEARNING: important insight about error handling patterns in auth modules. See https://github.com/org/repo/pull/42',
+      D: 'LEARNING: important insight about error handling patterns in auth modules where unhandled promise rejections crash the server silently and require explicit catch blocks for every async auth call. See https://github.com/org/repo/pull/42',
     });
     const r = runCLI(['validate', taskId, '--pass', '--validator', 'test', '--notes', 'gate test'],
       { AMAUTA_DATA_DIR: dataDir });
@@ -385,7 +390,7 @@ describe('Validation gates (CLI offline mode)', () => {
     const { dataDir, taskId } = setupTask(tmpDir, {
       E: 'feat/branch: implemented.',
       T: '$ npm test\n5 tests passed, 0 failed\nexit 0',
-      D: 'LEARNING: useful pattern discovered for handling concurrent database connections safely. https://github.com/org/repo/pull/42',
+      D: 'LEARNING: useful pattern discovered for handling concurrent database connections safely using connection pooling with max-idle timeouts to prevent resource exhaustion under heavy load conditions in production. https://github.com/org/repo/pull/42',
     });
     const r = runCLI(['validate', taskId, '--pass', '--validator', 'test', '--notes', 'gate test'],
       { AMAUTA_DATA_DIR: dataDir });
@@ -396,7 +401,7 @@ describe('Validation gates (CLI offline mode)', () => {
     const { dataDir, taskId } = setupTask(tmpDir, {
       E: 'feat/branch: implemented.',
       T: '$ npm test\n5 tests passed, 0 failed\nexit 0',
-      D: 'LEARNING: changes merged into main successfully with all tests passing. https://github.com/org/repo/pull/33',
+      D: 'LEARNING: changes merged into main successfully with all tests passing after resolving merge conflicts carefully by rebasing instead of merging to keep a linear commit history. https://github.com/org/repo/pull/33',
     });
     const r = runCLI(['validate', taskId, '--pass', '--validator', 'test', '--notes', 'gate test'],
       { AMAUTA_DATA_DIR: dataDir });
@@ -407,7 +412,7 @@ describe('Validation gates (CLI offline mode)', () => {
     const { dataDir, taskId } = setupTask(tmpDir, {
       E: 'feat/my-branch: implemented changes. No PR created yet.',
       T: '$ npm test\n5 tests passed\nexit 0',
-      D: 'LEARNING: tested on feat/my-branch branch and verified functionality.',
+      D: 'LEARNING: tested on feat/my-branch branch and verified functionality thoroughly with both unit tests and manual testing but forgot to create a pull request before attempting validation.',
     });
     const r = runCLI(['validate', taskId, '--pass', '--validator', 'test', '--notes', 'gate test'],
       { AMAUTA_DATA_DIR: dataDir });
@@ -419,7 +424,7 @@ describe('Validation gates (CLI offline mode)', () => {
     const { dataDir, taskId } = setupTask(tmpDir, {
       E: 'feat/branch: implemented.',
       T: '$ npm test\n5 tests passed, 0 failed\nexit 0',
-      D: 'LEARNING: useful insight about code organization and module boundaries in the auth layer.',
+      D: 'LEARNING: useful insight about code organization and module boundaries in the auth layer where separating concerns between token validation and session management reduces coupling significantly.',
       notes: [{ ts: new Date().toISOString(), by: 'executor', text: 'PR submitted: https://github.com/org/repo/pull/88' }],
     });
     const r = runCLI(['validate', taskId, '--pass', '--validator', 'test', '--notes', 'gate test'],
@@ -427,17 +432,17 @@ describe('Validation gates (CLI offline mode)', () => {
     assert.ok(validationSucceeded(r), `Gate 4 should PASS with PR URL in notes: ${r.error || r.output}`);
   }));
 
-  test('--force bypasses ALL gates', () => withTmp(tmpDir => {
+  test('--force-reason bypasses ALL gates', () => withTmp(tmpDir => {
     const { dataDir, taskId } = setupTask(tmpDir, {
       E: '', T: '', D: '',
     });
-    const r = runCLI(['validate', taskId, '--pass', '--force', '--validator', 'test', '--notes', 'forced'],
+    const r = runCLI(['validate', taskId, '--pass', '--force-reason', 'automated-test-override', '--validator', 'test', '--notes', 'forced'],
       { AMAUTA_DATA_DIR: dataDir });
-    // With --force, Python prints gate results but still proceeds to mark task as done.
+    // With --force-reason, Python prints gate results but still proceeds to mark task as done.
     // The key assertion is that the command succeeds (VALIDATED) or the output confirms force override.
     const validated = r.output.includes('VALIDATED') || r.output.includes('DONE') ||
-                      r.output.includes('done') || r.output.includes('force override applied');
-    assert.ok(r.success || validated, `--force should bypass all gates and succeed: err=${r.error} out=${r.output}`);
+                      r.output.includes('done') || r.output.includes('force-reason override applied');
+    assert.ok(r.success || validated, `--force-reason should bypass all gates and succeed: err=${r.error} out=${r.output}`);
   }));
 
   test('validate --fail does NOT run gates', () => withTmp(tmpDir => {
@@ -555,7 +560,7 @@ describe('promoteToSKB() file fallback (offline)', () => {
           P: 'P: Planned the approach.',
           E: 'E: Implemented on feat/test-branch. PR #99 merged.',
           T: '$ npm test\nPASS 3/3',
-          D: 'D: Done. LEARNING: always add integration tests for this pattern.',
+          D: 'D: Done. LEARNING: always add integration tests for this pattern because unit tests alone miss cross-module interactions and database transaction issues that only surface during real execution flows.',
         },
         rpetd_complete: true,
         notes: [],
@@ -573,13 +578,13 @@ describe('promoteToSKB() file fallback (offline)', () => {
     };
     fs.writeFileSync(path.join(dataDir, 'tasks.json'), JSON.stringify(tasks, null, 2));
 
-    // Run validate --pass --force in offline mode
+    // Run validate --pass --force-reason in offline mode
     execFileSync(process.execPath, [
       CLI_PATH,
       'validate', 'TK-SKB1',
-      '--pass', '--force',
+      '--pass', '--force-reason', 'automated-test-override',
       '--validator', 'e2e-test',
-      '--notes', 'All gates met via force',
+      '--notes', 'All gates met via force-reason',
     ], {
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -620,7 +625,7 @@ describe('promoteToSKB() file fallback (offline)', () => {
 // ═══════════════════════════════════════════════════════
 
 describe('Validation audit trail (offline mode)', () => {
-  test('validate --pass --force writes audit entry to .planning/memory/', () => withTmp(tmpDir => {
+  test('validate --pass --force-reason writes audit entry to .planning/memory/', () => withTmp(tmpDir => {
     const dataDir = path.join(tmpDir, 'data');
     fs.mkdirSync(dataDir, { recursive: true });
 
@@ -639,7 +644,7 @@ describe('Validation audit trail (offline mode)', () => {
           P: 'P: Plan.',
           E: 'E: Execute. PR #1 merged.',
           T: '$ npm test\nPASS 1/1',
-          D: 'D: Done. LEARNING: test audit trail.',
+          D: 'D: Done. LEARNING: test audit trail by verifying that every validation decision is recorded with timestamps and agent identity so that compliance reviews can trace the full approval chain.',
         },
         rpetd_complete: true,
         notes: [],
@@ -661,7 +666,7 @@ describe('Validation audit trail (offline mode)', () => {
       execFileSync(process.execPath, [
         CLI_PATH,
         'validate', 'TK-AUDIT1',
-        '--pass', '--force',
+        '--pass', '--force-reason', 'automated-test-override',
         '--validator', 'audit-test',
         '--notes', 'Audit trail test',
       ], {

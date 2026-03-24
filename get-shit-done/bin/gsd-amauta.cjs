@@ -291,6 +291,12 @@ function parseFlags(args, startIndex = 0) {
       // Boolean flags (no value)
       if (key === 'pass') { flags.pass_result = true; continue; }
       if (key === 'fail') { flags.pass_result = false; continue; }
+      if (key === 'force-reason') {
+        const reason = args[i + 1];
+        flags.force_reason = (reason !== undefined && !reason.startsWith('--')) ? reason : '';
+        if (flags.force_reason) i++;
+        continue;
+      }
       if (key === 'force') { flags.force = true; continue; }
       // Note: --json is stripped globally before parseFlags is called (see main()),
       // so this branch is a safety fallback only — not normally reached.
@@ -689,16 +695,16 @@ async function checkValidationGates(useDaemon, id, flags) {
 }
 
 async function cmdValidate(useDaemon, id, flags, jsonMode) {
-  if (!id) die('Usage: amauta validate <id> --pass/--fail [--validator V] [--notes N] [--force]');
+  if (!id) die('Usage: amauta validate <id> --pass/--fail [--validator V] [--notes N] [--force-reason "justification"]');
   if (flags.pass_result === undefined) die('--pass or --fail is required');
 
-  // Check validation gates (unless --force)
-  if (flags.pass_result && !flags.force) {
+  // Check validation gates (unless --force-reason)
+  if (flags.pass_result && !flags.force_reason) {
     const gateFailures = await checkValidationGates(useDaemon, id, flags);
     if (gateFailures.length > 0) {
       const msg = '\x1b[91mValidation gates failed:\x1b[0m\n' +
         gateFailures.map(g => '  - ' + g).join('\n') +
-        '\n\nFix the issues or use --force to override.';
+        '\n\nFix the issues or use --force-reason "justification" to override.';
       if (jsonMode) {
         console.log(JSON.stringify({ error: 'Gate check failed', gates: gateFailures }));
       } else {
@@ -764,7 +770,7 @@ async function cmdValidate(useDaemon, id, flags, jsonMode) {
   else args.push('--fail');
   if (flags.validator) args.push('--validator', flags.validator);
   if (flags.notes) args.push('--notes', flags.notes);
-  if (flags.force) args.push('--force');
+  if (flags.force_reason) args.push('--force-reason', flags.force_reason);
   if (flags.subtasks) args.push('--subtasks', flags.subtasks);
   const result = runDirect(args);
   printResponse(result, jsonMode);
@@ -1369,7 +1375,7 @@ async function main() {
       '    claim <id> --agent <agent>\n' +
       '    rpetd <id> --phase <R|P|E|T|D> --content "..."\n' +
       '    validate <id> --pass|--fail --validator <agent> --notes "..."\n' +
-      '                [--subtasks "Fix A|Add B"] [--force] [--json]\n' +
+      '                [--subtasks "Fix A|Add B"] [--force-reason "justification"] [--json]\n' +
       '\n' +
       '  \x1b[33mAudit:\x1b[0m\n' +
       '    audit show <task-id>         Full audit trail for a task\n' +

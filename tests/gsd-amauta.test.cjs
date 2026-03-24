@@ -269,12 +269,12 @@ describe('gsd-amauta.cjs', () => {
       assert.ok(r.success, `update tags should succeed: ${r.error || r.output}`);
     });
 
-    test('11. validate --pass --force', async (t) => {
+    test('11. validate --pass --force-reason', async (t) => {
       if (await skipIfNoDaemonAsync(t)) return;
       if (!testTaskId) { t.skip('no test task'); return; }
       runOrSkip(t, ['status', testTaskId, 'validation', '--agent', 'executor-general']);
       if (!daemonOk) return;
-      const r = runOrSkip(t, ['validate', testTaskId, '--pass', '--force', '--validator', 'test-suite', '--notes', 'automated test pass']);
+      const r = runOrSkip(t, ['validate', testTaskId, '--pass', '--force-reason', 'automated-test-override', '--validator', 'test-suite', '--notes', 'automated test pass']);
       if (!r) return;
       assert.ok(r.success, `validate should succeed: ${r.error || r.output}`);
       assert.ok(
