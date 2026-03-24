@@ -1974,6 +1974,35 @@ def _enrich_task_context(item: dict, items: list) -> str:
         if doc_path:
             parts.append(f"[DOMAIN KB] Reference: {os.path.basename(doc_path)}")
 
+        # -- RLM: existing implementations in project codebase --------
+        # Query 1: What files/functions already exist for this task's domain?
+        # This prevents the "write from scratch" anti-pattern.
+        _stop_rlm = {"the","a","an","and","or","for","to","in","on","of","is","it","with","from","by",
+                      "all","this","that","be","as","at","have","do","not","but","are","code","augment",
+                      "implement","build","add","create","fix","update"}
+        _rlm_words = [w for w in re.split(r"\W+", (title + " " + desc).lower())
+                      if w and len(w) > 2 and w not in _stop_rlm]
+        _rlm_q = " ".join(_rlm_words[:6])
+        if _rlm_q:
+            rlm_code = _rlm_query(
+                f"For task '{title}': what files, functions, or modules already exist "
+                f"that relate to {_rlm_q}? List file paths and function names.",
+                doc_path=doc_path,  # uses KB doc if available, falls back to CWD
+                task_id=task_id,
+            )
+            if rlm_code:
+                parts.append(f"[RLM] Existing implementations (start here, don't rewrite):\n  {rlm_code[:600]}")
+
+            # Query 2: What patterns and constraints apply?
+            rlm_patterns = _rlm_query(
+                f"What architectural constraints, data models, or API patterns apply "
+                f"to '{title}'? What existing patterns must be followed?",
+                doc_path=doc_path,
+                task_id=task_id,
+            )
+            if rlm_patterns:
+                parts.append(f"[RLM] Patterns to follow:\n  {rlm_patterns[:600]}")
+
         # ── agent_shared_knowledge: global policies + best practices ──
         stop2 = {"the","a","an","and","or","for","to","in","on","of","is","it","with","from","by",
                  "all","this","that","be","as","at","have","do","not","but","are","augment","code"}
