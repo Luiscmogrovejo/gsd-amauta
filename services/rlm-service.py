@@ -597,9 +597,25 @@ def score_chunks(chunks, query, top_k=None):
     return result
 
 
+def _split_identifiers(text):
+    """Pre-process text to split camelCase and snake_case identifiers into words.
+    getUserProfile -> get User Profile
+    get_user_profile -> get user profile
+    HTMLParser -> HTML Parser
+    """
+    # Split camelCase: insert space before uppercase letters that follow lowercase
+    text = re.sub(r'([a-z])([A-Z])', r'\1 \2', text)
+    # Split sequences of uppercase followed by uppercase+lowercase (e.g., HTMLParser -> HTML Parser)
+    text = re.sub(r'([A-Z]+)([A-Z][a-z])', r'\1 \2', text)
+    # Replace underscores with spaces
+    text = text.replace('_', ' ')
+    return text
+
+
 def _tokenize(text):
-    """Extract lowercase word tokens from text."""
-    return set(re.findall(r"\b[a-zA-Z_]\w{2,}\b", text.lower()))
+    """Extract lowercase word tokens from text, splitting camelCase and snake_case."""
+    text = _split_identifiers(text)
+    return set(re.findall(r"\b[a-zA-Z]\w{2,}\b", text.lower()))
 
 
 def _compute_score(chunk, query_terms, doc_freq, n_docs, total_lines=1):
