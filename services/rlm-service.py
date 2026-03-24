@@ -557,7 +557,7 @@ def _chunk_generic(content, filepath, max_chars):
 
 def score_chunks(chunks, query, top_k=None):
     """
-    Score chunks against a query using TF-IDF-like term matching.
+    Score chunks against a query using BM25 with label boost and position penalty.
     Returns chunks sorted by relevance score (descending).
     """
     top_k = top_k or DEFAULT_TOP_K
@@ -572,17 +572,24 @@ def score_chunks(chunks, query, top_k=None):
     # Pre-tokenize all chunks once (avoids O(n*m) retokenization)
     n_docs = len(chunks)
     chunk_token_sets = [_tokenize(c["text"]) for c in chunks]
+
+    # BM25: compute document frequency per query term
     doc_freq = {}
     for term in terms:
         count = sum(1 for token_set in chunk_token_sets if term in token_set)
         doc_freq[term] = count
 
+    # BM25: compute average document length (in tokens)
+    doc_lengths = [len(ts) for ts in chunk_token_sets]
+    avgdl = sum(doc_lengths) / max(1, len(doc_lengths))
+
     # Compute max end_line across all chunks (proxy for total file lines)
     max_end_line = max((c.get("end_line", 1) for c in chunks), default=1)
 
     scored = []
-    for chunk in chunks:
-        score = _compute_score(chunk, terms, doc_freq, n_docs, max_end_line)
+    for i, chunk in enumerate(chunks):
+        score = _compute_score(chunk, terms, doc_freq, n_docs, max_end_line,
+                               avgdl, doc_lengths[i])
         scored.append((score, chunk))
 
     # Sort by score descending, then by start_line ascending for stability
@@ -618,32 +625,41 @@ def _tokenize(text):
     return set(re.findall(r"\b[a-zA-Z]\w{2,}\b", text.lower()))
 
 
-def _compute_score(chunk, query_terms, doc_freq, n_docs, total_lines=1):
+# BM25 parameters
+BM25_K1 = 1.5   # Term frequency saturation — higher = more weight to repeated terms
+BM25_B = 0.75   # Length normalization — 0 = no normalization, 1 = full normalization
+
+
+def _compute_score(chunk, query_terms, doc_freq, n_docs, total_lines=1,
+                   avgdl=1.0, doc_len=1):
     """
-    Compute relevance score for a chunk.
-    Uses TF-IDF + label boost + position penalty.
-    total_lines: max end_line across all chunks in the file (proxy for file length).
+    Compute relevance score for a chunk using BM25.
+    BM25 adds term frequency saturation and document length normalization
+    over basic term matching, which improves ranking for mixed-size code chunks.
     """
     text = chunk["text"].lower()
     label = chunk.get("label", "").lower()
-    text_tokens = _tokenize(text)
     label_tokens = _tokenize(label)
 
     score = 0.0
 
     for term in query_terms:
-        if term not in text_tokens and term not in label_tokens:
+        # Term frequency in this chunk's text
+        tf = text.count(term)
+        if tf == 0 and term not in label_tokens:
             continue
 
-        # TF: count occurrences in text
-        tf = text.lower().count(term)
-        tf_normalized = 1 + math.log(tf) if tf > 0 else 0
-
-        # IDF
+        # BM25 IDF: log((N - df + 0.5) / (df + 0.5) + 1)
         df = doc_freq.get(term, 0)
-        idf = math.log((n_docs + 1) / (df + 1)) + 1 if df > 0 else 0
+        idf = math.log((n_docs - df + 0.5) / (df + 0.5) + 1)
 
-        term_score = tf_normalized * idf
+        # BM25 TF with length normalization:
+        # (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * dl / avgdl))
+        dl = max(1, doc_len)
+        avg = max(1.0, avgdl)
+        tf_score = (tf * (BM25_K1 + 1)) / (tf + BM25_K1 * (1 - BM25_B + BM25_B * dl / avg))
+
+        term_score = tf_score * idf
 
         # Label boost: 2x if term appears in the chunk label (function/class name)
         if term in label_tokens:
@@ -656,9 +672,6 @@ def _compute_score(chunk, query_terms, doc_freq, n_docs, total_lines=1):
         score /= len(query_terms)
 
     # Position penalty: later chunks in a file score lower (-0.1 per depth).
-    # Uses start_line / total_lines to compute real position in file.
-    # Chunks at top (imports, class defs) get ~0% penalty.
-    # Chunks at bottom get up to ~10% penalty.
     tl = max(1, total_lines)
     depth_ratio = min(1.0, chunk.get("start_line", 0) / tl)
     score = score * (1 - 0.1 * depth_ratio)
