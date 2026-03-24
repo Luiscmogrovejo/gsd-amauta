@@ -541,6 +541,47 @@ def _mem_pg_search(query: str, agent_id: Optional[str], top_k: int) -> list:
         )
     return out
 
+def _mem_semantic_search(query: str, top_k: int = 5) -> list:
+    """
+    Semantic memory search via daemon HTTP endpoint (pgvector cosine similarity).
+    Falls back to _mem_pg_search() LIKE-based search if daemon is unavailable.
+    Returns same format as _mem_pg_search(): list of dicts with ts, agent_id, text, tags, source, score.
+    """
+    import urllib.request, urllib.error, json as _json
+    try:
+        port = os.environ.get("GSD_DAEMON_PORT", "18799")
+        url = f"http://127.0.0.1:{port}/api/memory/semantic-search"
+        body = _json.dumps({"query": query, "limit": top_k}).encode("utf-8")
+        req = urllib.request.Request(
+            url, data=body, method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = _json.loads(resp.read())
+            results = data.get("results", [])
+            # Normalize to _mem_pg_search format
+            out = []
+            for r in results:
+                raw_score = r.get("score", r.get("similarity", 0))
+                if isinstance(raw_score, float):
+                    score = int(raw_score * 10)
+                else:
+                    score = int(raw_score or 0)
+                out.append({
+                    "ts": r.get("created_at", r.get("ts", "")),
+                    "agent_id": r.get("agent_id", ""),
+                    "text": r.get("text", ""),
+                    "tags": r.get("tags", []),
+                    "source": r.get("source", "unknown"),
+                    "score": score,
+                })
+            return out
+    except Exception:
+        # Fallback to LIKE-based search
+        if _mem_pg_available():
+            return _mem_pg_search(query, None, top_k)
+    return []
+
 def _mem_pg_stats() -> tuple[int, list]:
     with _pg_conn() as conn:
         cur = conn.cursor()
