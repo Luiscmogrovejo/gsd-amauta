@@ -638,7 +638,7 @@ def _compute_score(chunk, query_terms, doc_freq, n_docs, total_lines=1,
     over basic term matching, which improves ranking for mixed-size code chunks.
     """
     text = chunk["text"].lower()
-    label = chunk.get("label", "").lower()
+    label = chunk.get("label", "")
     label_tokens = _tokenize(label)
 
     score = 0.0
