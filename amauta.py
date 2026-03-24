@@ -1825,6 +1825,19 @@ def _rpetd_phase_enrich(phase: str, item: dict, agent_content: str) -> str:
                         mem_lines.append(f"  - {r['text'][:250].replace(chr(10), ' ')}")
                     supplement_parts.append("\n".join(mem_lines))
 
+            # ── Research chain: auto-invoke when local memory is insufficient ──
+            # Only fires when semantic search found <2 results (unfamiliar domain)
+            mem_result_count = len(locals().get('relevant', []))
+            if mem_result_count < 2:
+                research_q = f"{title} {desc[:200]}"
+                research_results = _research_chain_query(research_q, limit=3)
+                if research_results:
+                    res_lines = ["[RESEARCH] Web-augmented context (auto-invoked, <2 local memories):"]
+                    for r in research_results[:3]:
+                        src = r.get("source", "research")
+                        res_lines.append(f"  [{src}] {r['text'][:300].replace(chr(10), ' ')}")
+                    supplement_parts.append("\n".join(res_lines))
+
             # ── agent_shared_knowledge: global policies + workflow guides ──
             skb = _skb_search(_search_q or title, top_k=5)
             if skb:
