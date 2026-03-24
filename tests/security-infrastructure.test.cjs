@@ -686,12 +686,14 @@ describe('DSN Credential Sanitization', () => {
 
   test('amauta-daemon.py error responses use _safe_error, not raw str(e)', () => {
     const source = fs.readFileSync(path.join(ROOT, 'services', 'amauta-daemon.py'), 'utf-8');
-    // Should NOT have raw str(e) in error responses
-    const rawStrE = source.match(/_send_json\(\{"error": str\(e\)/g);
-    assert.strictEqual(rawStrE, null, 'Must NOT use raw str(e) in API error responses');
-    // Should use _safe_error(e) instead
+    // Should NOT have raw str(e) in 500-level error responses.
+    // FileNotFoundError (404) and ValueError (422) are allowed to use str(e)
+    // because those produce safe, known error messages.
+    const rawStrE = source.match(/_send_json\(\{"error": str\(e\)\}, 500\)/g);
+    assert.strictEqual(rawStrE, null, 'Must NOT use raw str(e) in 500-level API error responses');
+    // Should use _safe_error(e) instead for 500s
     const safeError = source.match(/_safe_error\(e\)/g);
-    assert.ok(safeError && safeError.length >= 10, 'Must use _safe_error(e) for all error responses');
+    assert.ok(safeError && safeError.length >= 10, 'Must use _safe_error(e) for all 500-level error responses');
   });
 
   test('amauta-daemon.py imports re module for sanitization', () => {
@@ -705,7 +707,7 @@ describe('DSN Credential Sanitization', () => {
 // ═══════════════════════════════════════════════════════
 
 describe('RLM Phase Enrichment (E/T/D phases)', () => {
-  test('E-phase calls _pick_domain_doc and guards with if doc_path:', () => {
+  test('E-phase calls _pick_domain_doc and _rlm_query without doc_path gate', () => {
     const source = fs.readFileSync(path.join(ROOT, 'amauta.py'), 'utf-8');
     // Find the E-phase block
     const ePhase = source.substring(
@@ -713,29 +715,31 @@ describe('RLM Phase Enrichment (E/T/D phases)', () => {
       source.indexOf('elif phase == "T"')
     );
     assert.ok(ePhase.includes('_pick_domain_doc'), 'E-phase must call _pick_domain_doc');
-    assert.ok(ePhase.includes('if doc_path:'), 'E-phase must guard RLM call with if doc_path:');
+    // Phase 11 removed if doc_path: gates — RLM is called unconditionally
+    assert.ok(!ePhase.includes('if doc_path:'), 'E-phase must NOT gate RLM call with if doc_path: (removed in Phase 11)');
     assert.ok(ePhase.includes('_rlm_query'), 'E-phase must call _rlm_query');
-    assert.ok(!ePhase.includes('text=agent_content'), 'E-phase must NOT pass text= without doc_path');
   });
 
-  test('T-phase calls _pick_domain_doc and guards with if doc_path:', () => {
+  test('T-phase calls _pick_domain_doc and _rlm_query without doc_path gate', () => {
     const source = fs.readFileSync(path.join(ROOT, 'amauta.py'), 'utf-8');
     const tPhase = source.substring(
       source.indexOf('elif phase == "T"'),
       source.indexOf('elif phase == "D"')
     );
     assert.ok(tPhase.includes('_pick_domain_doc'), 'T-phase must call _pick_domain_doc');
-    assert.ok(tPhase.includes('if doc_path:'), 'T-phase must guard RLM call with if doc_path:');
+    // Phase 11 removed if doc_path: gates — RLM is called unconditionally
+    assert.ok(!tPhase.includes('if doc_path:'), 'T-phase must NOT gate RLM call with if doc_path: (removed in Phase 11)');
   });
 
-  test('D-phase calls _pick_domain_doc and guards with if doc_path:', () => {
+  test('D-phase calls _pick_domain_doc and _rlm_query without doc_path gate', () => {
     const source = fs.readFileSync(path.join(ROOT, 'amauta.py'), 'utf-8');
     const dPhase = source.substring(
       source.indexOf('elif phase == "D"'),
       source.indexOf('# ── Write delivery event')
     );
     assert.ok(dPhase.includes('_pick_domain_doc'), 'D-phase must call _pick_domain_doc');
-    assert.ok(dPhase.includes('if doc_path:'), 'D-phase must guard RLM call with if doc_path:');
+    // Phase 11 removed if doc_path: gates — RLM is called unconditionally
+    assert.ok(!dPhase.includes('if doc_path:'), 'D-phase must NOT gate RLM call with if doc_path: (removed in Phase 11)');
   });
 
   test('R-phase and P-phase still call _rlm_query with doc_path', () => {

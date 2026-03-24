@@ -82,7 +82,7 @@ function makeTask(d, overrides = {}) {
         R: 'R: done', P: 'P: done',
         E: 'E: git checkout -b feat/TK-0001. feat/TK-0001 branch.',
         T: 'T: npm test\n10 tests passed\nexit 0',
-        D: 'D: https://github.com/org/repo/pull/1 merged. LEARNING: Always test first and validate edge cases thoroughly.'
+        D: 'D: https://github.com/org/repo/pull/1 merged. LEARNING: Always run the full test suite before marking a task as done. Edge cases around validation gates, branch naming conventions, and PR URL extraction must be verified with real data, not just build passes.'
       },
       rpetd_complete: true, notes: overrides.notes || [],
       created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
@@ -816,7 +816,7 @@ describe('Validation Pipeline — advanced E2E', () => {
         P: 'P: Created research plan',
         E: 'E: Analyzed all papers and synthesized findings',
         T: 'T: Verified findings against industry reports',
-        D: 'D: Research report complete. LEARNING: The field is moving toward transformer-based models.'
+        D: 'D: Research report complete. LEARNING: The field is moving toward transformer-based models for all NLP tasks. Fine-tuning on domain-specific corpora yields 15-20% accuracy improvements over zero-shot prompting across multiple benchmarks.'
       }
     });
     const r = py(['validate', 'TK-0001', '--pass', '--validator', 'gsd-validator'], d);
@@ -832,7 +832,7 @@ describe('Validation Pipeline — advanced E2E', () => {
         P: 'P: Plan: update nginx.conf and reload',
         E: 'E: Updated /etc/nginx/nginx.conf. PR_URL: no-pr-needed (host-only change)',
         T: 'T: nginx -t exit 0. Service reload successful.',
-        D: 'D: LEARNING: Always test nginx config with -t before reloading.'
+        D: 'D: LEARNING: Always test nginx config with nginx -t before reloading the service. A syntax error in the config file will cause a full outage if you reload without testing first. Also verify upstream blocks resolve correctly.'
       }
     });
     const r = py(['validate', 'TK-0001', '--pass', '--validator', 'gsd-validator'], d);

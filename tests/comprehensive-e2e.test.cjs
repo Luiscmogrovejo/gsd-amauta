@@ -816,12 +816,12 @@ describe('Spec compliance verification', () => {
     assert.ok(c.includes("outcome IN ('pass', 'fail')"));
   });
 
-  test('6.12 5 UP + 5 DOWN migration files exist', () => {
+  test('6.12 6 UP + 6 DOWN migration files exist', () => {
     const migs = fs.readdirSync(path.join(__dirname, '..', 'migrations')).filter(f => f.endsWith('.sql'));
     const up = migs.filter(f => !f.includes('DOWN'));
     const down = migs.filter(f => f.includes('DOWN'));
-    assert.strictEqual(up.length, 5, `Expected 5 UP migrations, got ${up.length}`);
-    assert.strictEqual(down.length, 5, `Expected 5 DOWN migrations, got ${down.length}`);
+    assert.strictEqual(up.length, 6, `Expected 6 UP migrations, got ${up.length}`);
+    assert.strictEqual(down.length, 6, `Expected 6 DOWN migrations, got ${down.length}`);
   });
 });
 

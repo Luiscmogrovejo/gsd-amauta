@@ -89,7 +89,9 @@ class TestRpetdPhaseEnrichGateFree(unittest.TestCase):
     @patch("amauta._rlm_query", return_value="")
     @patch("amauta._mem_pg_available", return_value=False)
     @patch("amauta._skb_search", return_value=[])
-    def test_rlm_empty_result_no_crash(self, mock_skb, mock_pg, mock_rlm, mock_doc):
+    @patch("amauta._mem_semantic_search", return_value=[])
+    @patch("amauta._research_chain_query", return_value=[])
+    def test_rlm_empty_result_no_crash(self, mock_research, mock_mem_search, mock_skb, mock_pg, mock_rlm, mock_doc):
         """When RLM returns empty, enrichment should still work (best-effort)."""
         result = amauta._rpetd_phase_enrich("R", self._make_item(), "research")
         # Should not crash and should not include [RLM] in output

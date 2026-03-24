@@ -564,12 +564,12 @@ print(_has_test_evidence("cargo test ok"))
     assert.strictEqual(r, 'True');
   });
 
-  test('tsc --noEmit detected', () => {
+  test('tsc --noEmit no longer accepted (loose pattern removed in Phase 13)', () => {
     const r = pyEval(`
 from amauta import _has_test_evidence
 print(_has_test_evidence("tsc --noEmit"))
 `);
-    assert.strictEqual(r, 'True');
+    assert.strictEqual(r, 'False');
   });
 
   test('checks green detected', () => {
@@ -596,12 +596,12 @@ print(_has_test_evidence("permission denied accessing /usr/local/bin"))
     assert.strictEqual(r, 'False');
   });
 
-  test('substantial content >100 chars with no signal returns true', () => {
+  test('substantial content >100 chars with no signal returns false (proxy removed in Phase 13)', () => {
     const r = pyEval(`
 from amauta import _has_test_evidence
 print(_has_test_evidence("x" * 101))
 `);
-    assert.strictEqual(r, 'True');
+    assert.strictEqual(r, 'False');
   });
 
   test('short content <100 chars with no signal returns false', () => {
@@ -628,20 +628,20 @@ print(_has_test_evidence("[COMPLETED] lint-staged"))
     assert.strictEqual(r, 'True');
   });
 
-  test('criteria met detected', () => {
+  test('criteria met no longer accepted (loose pattern removed in Phase 13)', () => {
     const r = pyEval(`
 from amauta import _has_test_evidence
 print(_has_test_evidence("All criteria appear met"))
 `);
-    assert.strictEqual(r, 'True');
+    assert.strictEqual(r, 'False');
   });
 
-  test('eslint --fix detected', () => {
+  test('eslint --fix no longer accepted (loose pattern removed in Phase 13)', () => {
     const r = pyEval(`
 from amauta import _has_test_evidence
 print(_has_test_evidence("eslint --fix src/"))
 `);
-    assert.strictEqual(r, 'True');
+    assert.strictEqual(r, 'False');
   });
 
   test('ci checks success detected', () => {
