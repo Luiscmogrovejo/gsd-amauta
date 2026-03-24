@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: Wiring & Hardening
 status: in_progress
-last_updated: "2026-03-24T12:00:00.000Z"
+last_updated: "2026-03-24T14:00:00.000Z"
 progress:
   total_phases: 4
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 1
-  percent: 12
+  completed_plans: 2
+  percent: 25
 ---
 
 # GSD-Amauta — Project State
@@ -19,15 +19,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-24)
 
 **Core value:** Every built system actually fires during task execution — no dead code, no bypasses, agents are smarter with fewer tokens.
-**Current focus:** Milestone v2.2 — Phase 11 plan 11-01 complete (BM25 + HTTP transport). Plan 11-02 (Layer 1 wiring) next.
+**Current focus:** Milestone v2.2 — Phase 11 COMPLETE (all 5 RLM requirements done). Phase 12 (Semantic Memory) next.
 
 ## Milestone: v2.2 — Wiring & Hardening
 
-Progress: █░░░░░░░░░ 12% (0/4 phases complete, 1/2 plans done)
+Progress: ██░░░░░░░░ 25% (1/4 phases complete, 2/2 plans done)
 
 | Phase | Status | Plans | Requirements |
 |-------|--------|-------|-------------|
-| 11 — Context Engine Activation | ◐ In Progress | 2 (11-01 DONE, 11-02 pending) | RLM-01, RLM-02, **RLM-03 DONE**, **RLM-04 DONE**, **RLM-05 DONE** |
+| 11 — Context Engine Activation | **DONE** | 2 (11-01 DONE, 11-02 DONE) | **RLM-01 DONE**, **RLM-02 DONE**, **RLM-03 DONE**, **RLM-04 DONE**, **RLM-05 DONE** |
 | 12 — Semantic Memory Pipeline | ○ Pending | 0 | SEM-01 through SEM-07 |
 | 13 — Validation Hardening | ○ Pending | 0 | GATE-01 through GATE-06 |
 | 14 — Pipeline Integration | ○ Pending | 0 | WIRE-01 through WIRE-04 |
@@ -42,7 +42,7 @@ Progress: █░░░░░░░░░ 12% (0/4 phases complete, 1/2 plans don
 
 ## Key Audit Findings
 
-- RLM Layer 2 enrichment gated behind `AMAUTA_SHARED_KB_DIR` (doesn't exist on Mac) — 0% of RLM calls execute
+- ~~RLM Layer 2 enrichment gated behind `AMAUTA_SHARED_KB_DIR` (doesn't exist on Mac) — 0% of RLM calls execute~~ **FIXED (Plan 11-02)**
 - `memory_semantic_search()` in pg_store.py is complete dead code — never called from RPETD
 - `_mem_log_event()` writes directly to PG, bypassing daemon — no embeddings generated
 - `--force` on validate bypasses ALL 4 gates + dependency check + learning persistence (7 bypass points)
@@ -72,9 +72,17 @@ All 10 phases done (5 from v2.0 + 5 from v2.1). Audit log, SSO, backup all shipp
 - 23 new tests (15 scoring + 8 HTTP transport), 189 total tests all green
 - 5 atomic commits: 080061e, 9568168, 664f05a, 124f6d5, 86f6c4d
 
+## Plan 11-02 Execution (2026-03-24)
+
+- Removed all 5 `if doc_path:` gates from `_rpetd_phase_enrich()` -- RLM now fires on every phase
+- Added 2 RLM queries to `_enrich_task_context()` -- "Existing implementations" and "Patterns to follow"
+- P-phase compound condition simplified: `if doc_path and agent_content:` -> `if agent_content:`
+- 11 new integration tests (3 test classes), 200 total tests all green
+- 3 atomic commits: 4a9790f, 8bb12e3, 61bb286
+
 ## Blockers
 
-(None — Plan 11-02 ready for execution)
+(None — Phase 12 ready for planning)
 
 ---
 *Milestone v2.2 started: 2026-03-24*
