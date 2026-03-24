@@ -3041,7 +3041,11 @@ def cmd_status(args):
         agent_id=args.agent or "system",
         status=args.status,
         content=args.note or "",
-        metadata={"old_status": old_status, "new_status": args.status},
+        metadata={
+            "old_status": old_status,
+            "new_status": args.status,
+            "forced": bool(getattr(args, "force", False)),
+        },
     )
 
     print(c(f"{args.id}: {old_status} → {args.status}", GREEN))
