@@ -1415,6 +1415,32 @@ async function cmdStatus(args) {
         const tagRes = await httpRequest('GET', '/api/memory/tag-stats');
         if (tagRes.status === 200) result.tag_stats = tagRes.data;
       } catch { /* optional */ }
+
+      // Embedding coverage for JSON
+      try {
+        const embRes = await httpRequest('GET', '/api/memory/embedding-coverage');
+        if (embRes.status === 200) result.embedding_coverage = embRes.data;
+      } catch { /* optional */ }
+
+      // SKB stats for JSON
+      try {
+        const skbRes = await httpRequest('GET', '/api/skb/list?limit=1');
+        if (skbRes.status === 200) result.skb_stats = skbRes.data;
+      } catch { /* optional */ }
+
+      // Agent performance for JSON
+      try {
+        const agents = ['executor-backend', 'executor-frontend', 'executor-infra', 'executor-general'];
+        const perfMap = {};
+        for (const agent of agents) {
+          try {
+            const perfRes = await httpRequest('GET', `/api/agent-performance?agent_id=${agent}`);
+            if (perfRes.status === 200 && perfRes.data) perfMap[agent] = perfRes.data;
+          } catch { /* skip */ }
+        }
+        if (Object.keys(perfMap).length > 0) result.agent_performance = perfMap;
+      } catch { /* optional */ }
+
       console.log(JSON.stringify(result, null, 2));
       return;
     }
@@ -1489,6 +1515,45 @@ async function cmdStatus(args) {
         console.log(`  Tags:       ${tagRes.data.unique_tags} unique — top: ${tagStr}`);
       }
     } catch { /* tag-stats endpoint may not exist yet */ }
+
+    // Embedding coverage
+    try {
+      const embRes = await httpRequest('GET', '/api/memory/embedding-coverage');
+      if (embRes.status === 200 && embRes.data) {
+        const ec = embRes.data;
+        const pct = ec.total > 0 ? Math.round((ec.with_embeddings / ec.total) * 100) : 0;
+        const color = pct >= 80 ? '\x1b[92m' : pct >= 50 ? '\x1b[93m' : '\x1b[91m';
+        console.log(`  Embeddings: ${color}${pct}%\x1b[0m coverage (${ec.with_embeddings}/${ec.total} memories)`);
+      }
+    } catch { /* embedding-coverage endpoint may not exist yet */ }
+
+    // SKB (Shared Knowledge Base) stats
+    try {
+      const skbRes = await httpRequest('GET', '/api/skb/list?limit=1');
+      if (skbRes.status === 200 && skbRes.data) {
+        const entries = skbRes.data.total || skbRes.data.count || 0;
+        console.log(`  SKB:        ${entries} entries`);
+      }
+    } catch { /* skb endpoint may not exist yet */ }
+
+    // Agent performance summary
+    try {
+      const agents = ['executor-backend', 'executor-frontend', 'executor-infra', 'executor-general'];
+      const perfParts = [];
+      for (const agent of agents) {
+        try {
+          const perfRes = await httpRequest('GET', `/api/agent-performance?agent_id=${agent}`);
+          if (perfRes.status === 200 && perfRes.data && perfRes.data.total_tasks > 0) {
+            const p = perfRes.data;
+            const rateColor = p.pass_rate >= 80 ? '\x1b[92m' : p.pass_rate >= 60 ? '\x1b[93m' : '\x1b[91m';
+            perfParts.push(`${agent.replace('executor-', '')}: ${rateColor}${p.pass_rate}%\x1b[0m (${p.total_tasks})`);
+          }
+        } catch { /* individual agent query may fail */ }
+      }
+      if (perfParts.length > 0) {
+        console.log(`  Agents:     ${perfParts.join(', ')}`);
+      }
+    } catch { /* agent performance queries failed */ }
 
     // Task counts
     try {
