@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: milestone
-status: unknown
-last_updated: "2026-03-24T19:24:45.832Z"
+status: complete
+last_updated: "2026-03-24T20:37:53.000Z"
 progress:
   total_phases: 9
-  completed_phases: 7
+  completed_phases: 8
   total_plans: 14
-  completed_plans: 13
-  percent: 87
+  completed_plans: 14
+  percent: 100
 ---
 
 # GSD-Amauta — Project State
@@ -19,18 +19,18 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-24)
 
 **Core value:** Every built system actually fires during task execution — no dead code, no bypasses, agents are smarter with fewer tokens.
-**Current focus:** Milestone v2.2 — Phase 11 COMPLETE, Phase 12 COMPLETE, Phase 13 COMPLETE. Phase 14 IN PROGRESS (14-01 DONE, 14-02 pending).
+**Current focus:** Milestone v2.2 COMPLETE. All 4 phases done, all 14 plans done, all 22 requirements satisfied.
 
 ## Milestone: v2.2 — Wiring & Hardening
 
-Progress: █████████░ 87% (3/4 phases complete, 13/14 plans done)
+Progress: ██████████ 100% (4/4 phases complete, 14/14 plans done)
 
 | Phase | Status | Plans | Requirements |
 |-------|--------|-------|-------------|
 | 11 — Context Engine Activation | **DONE** | 2 (11-01 DONE, 11-02 DONE) | **RLM-01 DONE**, **RLM-02 DONE**, **RLM-03 DONE**, **RLM-04 DONE**, **RLM-05 DONE** |
 | 12 — Semantic Memory Pipeline | **DONE** | 3 (12-01 DONE, 12-02 DONE, 12-03 DONE) | **SEM-01 DONE**, **SEM-02 DONE**, **SEM-03 DONE**, **SEM-04 DONE**, **SEM-05 DONE**, **SEM-06 DONE**, **SEM-07 DONE** |
 | 13 — Validation Hardening | **DONE** | 2 (13-01 DONE, 13-02 DONE) | **GATE-01 DONE**, **GATE-02 DONE**, **GATE-03 DONE**, **GATE-04 DONE**, **GATE-05 DONE**, **GATE-06 DONE** |
-| 14 — Pipeline Integration | ▶ In Progress | 2 (14-01 DONE, 14-02) | WIRE-01, **WIRE-02 DONE**, **WIRE-03 DONE**, WIRE-04 |
+| 14 — Pipeline Integration | **DONE** | 2 (14-01 DONE, 14-02 DONE) | **WIRE-01 DONE**, **WIRE-02 DONE**, **WIRE-03 DONE**, **WIRE-04 DONE** |
 
 ## Research Completed (2026-03-24)
 
@@ -48,8 +48,8 @@ Progress: █████████░ 87% (3/4 phases complete, 13/14 plans d
 - ~~`--force` on validate bypasses ALL 4 gates + dependency check + learning persistence (7 bypass points)~~ **FIXED (Plan 13-01): --force-reason requires non-empty justification string, recorded in audit**
 - ~~Test evidence accepts any >100 chars as proxy (trivially gameable)~~ **FIXED (Plan 13-01): 100-char proxy removed, 6 loose patterns stripped, 5 strong patterns added**
 - ~~Research chain (`gsd-research.cjs`) never auto-invoked during any RPETD phase~~ **FIXED (Plan 12-03): R-phase auto-invokes research chain when <2 local memory results**
-- MCP server built but not registered in Claude Code settings
-- Agent performance tracks pass/fail but never influences task routing
+- ~~MCP server built but not registered in Claude Code settings~~ **FIXED (Plan 14-02): install.js auto-registers mcpServers.gsd-amauta for Claude runtime**
+- ~~Agent performance tracks pass/fail but never influences task routing~~ **FIXED (Plan 14-01): pass_rate tiebreaker in execute-phase routing**
 
 ## Decisions
 
@@ -170,6 +170,16 @@ Both plans are Wave 1 and independent (touch different files). 14-01 modifies ex
 - CLI already prints `data.output` to stdout, so agents see the warning without any CJS changes
 - 5 new tests in test_pg_sync_warn.py: format, success silence, append order, diagnostic info, JSON compat
 - 3 atomic commits: a83dbad, de84fb2, 8c311b6
+
+## Plan 14-02 Execution (2026-03-24)
+
+- MCP server auto-registered in settings.json during Claude Code install (runtime === 'claude' guard)
+- Uninstall flow cleans up mcpServers['gsd-amauta'] entry and empty mcpServers object
+- New `/api/memory/embedding-coverage` endpoint reuses existing `memory_embedding_stats()` store method
+- Health dashboard enhanced: embedding coverage % (color-coded), SKB entry count, agent performance summary
+- JSON output (`--json`) includes embedding_coverage, skb_stats, agent_performance fields
+- 19 new tests (9 MCP registration + 10 health dashboard), 247 Python tests green
+- 5 atomic commits: f902a82, b16c1b1, 14dd214, 57073b5, d18eda9
 
 ## Blockers
 
