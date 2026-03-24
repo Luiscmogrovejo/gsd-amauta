@@ -641,6 +641,21 @@ def _skb_search(query: str, top_k: int = 5) -> list:
         return []
 
 
+def _jaccard_similarity(text_a: str, text_b: str) -> float:
+    """
+    Compute Jaccard word-overlap similarity between two texts.
+    Returns 0.0-1.0 where 1.0 = identical word sets.
+    Used for SKB deduplication (threshold: 0.7).
+    """
+    words_a = set(re.findall(r'\w{3,}', text_a.lower()))
+    words_b = set(re.findall(r'\w{3,}', text_b.lower()))
+    if not words_a or not words_b:
+        return 0.0
+    intersection = words_a & words_b
+    union = words_a | words_b
+    return len(intersection) / len(union) if union else 0.0
+
+
 def _skb_promote(title: str, content: str, category: str, agent_id: str = "system",
                  tags: Optional[list] = None, importance: int = 7):
     """
@@ -655,12 +670,15 @@ def _skb_promote(title: str, content: str, category: str, agent_id: str = "syste
         with _pg_conn() as conn:
             conn.autocommit = True
             cur = conn.cursor()
-            # Dedup: skip if a very similar title already exists
-            cur.execute("SELECT COUNT(*) FROM agent_shared_knowledge WHERE lower(title) = lower(%s)", (title,))
-            _row = cur.fetchone()
-            if _row and _row[0] > 0:
-                cur.close()
-                return
+            # Dedup: skip if a semantically similar entry already exists (Jaccard > 0.7)
+            combined_new = f"{title} {content}"
+            cur.execute("SELECT title, content FROM agent_shared_knowledge ORDER BY created_at DESC LIMIT 50")
+            existing_rows = cur.fetchall()
+            for existing_title, existing_content in existing_rows:
+                combined_existing = f"{existing_title} {existing_content}"
+                if _jaccard_similarity(combined_new, combined_existing) > 0.7:
+                    cur.close()
+                    return  # Near-duplicate found -- skip
             now = datetime.now(timezone.utc)
             entry_id = f"SKB-{uuid.uuid4().hex[:12]}"
             cur.execute("""
