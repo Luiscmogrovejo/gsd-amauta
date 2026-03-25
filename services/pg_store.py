@@ -655,7 +655,9 @@ class PGStore:
                             importance, urgency,
                             success_criteria, deliverables, dependencies,
                             tags, notes, parent_id, validation_notes, validated_by,
-                            test_strategy, phase, plan, evidence, outcome, lesson
+                            test_strategy, phase, plan, evidence, outcome, lesson,
+                            doc_refs, risks, validation_checklist,
+                            estimated_hours, due_date, sprint, children
                         ) VALUES (
                             %(id)s, %(project_id)s, %(type)s, %(title)s, %(description)s, %(details)s,
                             %(status)s, %(priority)s, %(assigned_to)s, %(claimed_by)s, %(claimed_at)s,
@@ -663,7 +665,9 @@ class PGStore:
                             %(importance)s, %(urgency)s,
                             %(success_criteria)s::jsonb, %(deliverables)s::jsonb, %(dependencies)s::jsonb,
                             %(tags)s::jsonb, %(notes)s::jsonb, %(parent_id)s, %(validation_notes)s, %(validated_by)s,
-                            %(test_strategy)s, %(phase)s, %(plan)s, %(evidence)s::jsonb, %(outcome)s, %(lesson)s
+                            %(test_strategy)s, %(phase)s, %(plan)s, %(evidence)s::jsonb, %(outcome)s, %(lesson)s,
+                            %(doc_refs)s::jsonb, %(risks)s::jsonb, %(validation_checklist)s::jsonb,
+                            %(estimated_hours)s, %(due_date)s, %(sprint)s, %(children)s::jsonb
                         )
                         ON CONFLICT (id) DO UPDATE SET
                             type = EXCLUDED.type,
@@ -697,6 +701,13 @@ class PGStore:
                             evidence = EXCLUDED.evidence,
                             outcome = EXCLUDED.outcome,
                             lesson = EXCLUDED.lesson,
+                            doc_refs = EXCLUDED.doc_refs,
+                            risks = EXCLUDED.risks,
+                            validation_checklist = EXCLUDED.validation_checklist,
+                            estimated_hours = EXCLUDED.estimated_hours,
+                            due_date = EXCLUDED.due_date,
+                            sprint = EXCLUDED.sprint,
+                            children = EXCLUDED.children,
                             updated_at = NOW()
                     """, {
                         "id": item.get("id", ""),
@@ -732,6 +743,13 @@ class PGStore:
                         "evidence": json.dumps(item.get("evidence", {})),
                         "outcome": item.get("outcome", ""),
                         "lesson": item.get("lesson", ""),
+                        "doc_refs": json.dumps(item.get("doc_refs", [])),
+                        "risks": json.dumps(item.get("risks", [])),
+                        "validation_checklist": json.dumps(item.get("validation_checklist", [])),
+                        "estimated_hours": item.get("estimated_hours"),
+                        "due_date": item.get("due_date"),
+                        "sprint": item.get("sprint"),
+                        "children": json.dumps(item.get("children", [])),
                     })
                     return item["id"]
         except Exception as e:
