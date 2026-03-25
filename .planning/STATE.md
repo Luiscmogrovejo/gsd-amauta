@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: milestone
-status: Phase 17 planned (TASK-01 through TASK-06), 3 plans, 10 tasks, 2 waves
-stopped_at: Phase 17 planned, ready for execution
-last_updated: "2026-03-25T03:09:21.635Z"
-last_activity: 2026-03-25 -- Phase 17 planned (3 plans, 10 tasks, 2 waves)
+status: Phase 17 in progress -- Plan 17-01 complete, 17-02 complete, 17-03 pending
+stopped_at: Completed 17-01-PLAN.md (archive cmd + TOCTOU fix)
+last_updated: "2026-03-25T03:12:16.000Z"
+last_activity: 2026-03-25 -- Plan 17-01 complete (archive + TOCTOU fix, 13 tests)
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 6
-  completed_plans: 4
-  percent: 60
+  completed_plans: 5
+  percent: 80
 ---
 
 # GSD-Amauta -- Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-24)
 
 **Core value:** Every built system actually fires during task execution -- no dead code, no bypasses, agents are smarter with fewer tokens.
-**Current focus:** Milestone v2.3 -- Clean Foundations. Phase 17 planned, ready for execution.
+**Current focus:** Milestone v2.3 -- Clean Foundations. Phase 17 in progress (2/3 plans done).
 
 ## Current Position
 
 Phase: 17 of 19 (Task Manager Reliability) -- in progress
-Plan: 17-02 done (1/3 plans done)
-Status: Plan 17-02 complete (watchdog + retry flush), 17-01 and 17-03 pending
-Last activity: 2026-03-25 -- Plan 17-02 complete (stale watchdog + retry queue flusher)
+Plan: 17-01 + 17-02 done (2/3 plans done)
+Status: Plan 17-01 complete (archive + TOCTOU), 17-02 complete (watchdog + retry), 17-03 pending
+Last activity: 2026-03-25 -- Plan 17-01 complete (archive cmd + TOCTOU fix, 13 tests)
 
-Progress: [█████████░] 90%
+Progress: [████████░░] 80%
 
 ## Performance Metrics
 
@@ -54,7 +54,7 @@ Progress: [█████████░] 90%
 |-------|-------|-------|----------|
 | 15 -- Data Purge | 1 | ~6 min | ~6 min |
 | 16 -- Data Integrity | 2/2 | ~21 min | ~10 min |
-| 17 -- Task Manager Reliability | 1/3 | ~4 min | ~4 min |
+| 17 -- Task Manager Reliability | 2/3 | ~10 min | ~5 min |
 
 **Recent Trend:** Accelerating (~5 min/plan in v2.3 vs ~25 min in v2.2)
 
@@ -86,14 +86,16 @@ None yet.
 - ~~Deep audit found 87 orphaned tasks and ~1,800 test entries -- Phase 15 must handle this carefully~~ RESOLVED: 1,918 memory + 111 SKB test entries purged
 - ~~Distillation re-merging bug is actively degrading memory quality -- Phase 16 is urgent~~ RESOLVED: cmdDistill now excludes source='distilled' from input (Plan 16-01)
 - ~~7 fields dropped during dual-write -- silent data loss accumulating since v2.0~~ PLANNED: Plan 17-03 adds migration 007 + task_upsert update for all 7 fields
-- Phase 17 TOCTOU fix touches 17 cmd_* functions -- high-touch, must test thoroughly
+- ~~Phase 17 TOCTOU fix touches 17 cmd_* functions -- high-touch, must test thoroughly~~ RESOLVED: All 17 wrapped, 13 tests pass (Plan 17-01)
+- Phase 17-01: Reentrant lock via thread-local flag (_lock_held) -- save() keeps its own lock for standalone safety
+- Phase 17-01: Archive fallback always active in cmd_show (auto-checks archive when task not found in active set)
 - Phase 17-02: Watchdog reads tasks.json directly (not subprocess list) for efficiency
 - Phase 17-02: Retry flusher only starts when _pg_store is available; _Metrics extended with set_gauge()
 
 ## Session Continuity
 
-Last session: 2026-03-25 03:08
-Stopped at: Completed 17-02-PLAN.md (watchdog + retry flush)
+Last session: 2026-03-25 03:12
+Stopped at: Completed 17-01-PLAN.md (archive cmd + TOCTOU fix)
 Resume file: None
 
 ## Previous Milestone: v2.2 -- Wiring & Hardening (COMPLETE)
