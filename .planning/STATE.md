@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: milestone
-status: in-progress
-stopped_at: Plan 18-01 complete (source filtering + recency decay). 18-02 tiered retention remaining.
-last_updated: "2026-03-25T05:00:00.000Z"
-last_activity: 2026-03-25 -- Plan 18-01 complete (5 tasks, 12 tests, 4 commits)
+status: completed
+stopped_at: Completed 18-02-PLAN.md (tiered retention). Phase 18 COMPLETE.
+last_updated: "2026-03-25T03:57:04.421Z"
+last_activity: 2026-03-25 -- Plan 18-02 complete (4 tasks, 12 tests, 3 commits)
 progress:
   total_phases: 5
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 8
-  completed_plans: 7
-  percent: 87
+  completed_plans: 8
+  percent: 97
 ---
 
 # GSD-Amauta -- Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-24)
 
 **Core value:** Every built system actually fires during task execution -- no dead code, no bypasses, agents are smarter with fewer tokens.
-**Current focus:** Milestone v2.3 -- Clean Foundations. Phase 18 planned (0/2 plans done).
+**Current focus:** Milestone v2.3 -- Clean Foundations. Phase 18 COMPLETE (2/2 plans done).
 
 ## Current Position
 
-Phase: 18 of 19 (Memory Optimization) -- IN PROGRESS
-Plan: 1/2 done (18-01 Source Filtering + Recency Decay COMPLETE, 18-02 Tiered Retention pending)
-Status: 18-01 shipped. Default search now excludes noise sources; recency decay active.
-Last activity: 2026-03-25 -- Plan 18-01 complete (5 tasks, 12 tests, 4 commits)
+Phase: 18 of 19 (Memory Optimization) -- COMPLETE
+Plan: 2/2 done (18-01 Source Filtering + Recency Decay, 18-02 Tiered Retention)
+Status: Phase 18 complete. Memory optimization shipped: source filtering, recency decay, tiered retention.
+Last activity: 2026-03-25 -- Plan 18-02 complete (4 tasks, 12 tests, 3 commits)
 
-Progress: [████████░░] 87%
+Progress: [██████████] 97%
 
 ## Performance Metrics
 
@@ -56,9 +56,9 @@ Progress: [████████░░] 87%
 | 16 -- Data Integrity | 2/2 | ~21 min | ~10 min |
 | 17 -- Task Manager Reliability | 3/3 | ~22 min | ~7 min |
 
-| 18 -- Memory Optimization | 1/2 | ~25 min | ~25 min |
+| 18 -- Memory Optimization | 2/2 | ~29 min | ~14 min |
 
-**Recent Trend:** Accelerating (~5 min/plan in v2.3 vs ~25 min in v2.2)
+**Recent Trend:** Accelerating (~8 min/plan in v2.3 vs ~25 min in v2.2)
 
 ## Accumulated Context
 
@@ -96,8 +96,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-25 05:00
-Stopped at: Completed 18-01-PLAN.md (source filtering + recency decay). 18-02 tiered retention next.
+Last session: 2026-03-25T03:57:04.418Z
+Stopped at: Completed 18-02-PLAN.md (tiered retention). Phase 18 COMPLETE.
 Resume file: None
 
 ## Previous Milestone: v2.2 -- Wiring & Hardening (COMPLETE)

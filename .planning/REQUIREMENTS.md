@@ -26,7 +26,7 @@
 ### Memory Optimization (MEM)
 
 - [ ] **MEM-01**: Default semantic search excludes `source IN ('task_event', 'rpetd_phase')` noise sources
-- [ ] **MEM-02**: Tiered retention policy — archive task_event after 30 days, rpetd_phase after 90 days
+- [x] **MEM-02**: Tiered retention policy — archive task_event after 30 days, rpetd_phase after 90 days
 - [ ] **MEM-03**: Recency decay in scoring — subtract 0.5 points per 30 days since last access/creation
 
 ### Token Efficiency (TOKEN)
@@ -72,7 +72,7 @@
 | TASK-05 | Phase 17 | Pending |
 | TASK-06 | Phase 17 | Pending |
 | MEM-01 | Phase 18 | Pending |
-| MEM-02 | Phase 18 | Pending |
+| MEM-02 | Phase 18 | Complete |
 | MEM-03 | Phase 18 | Pending |
 | TOKEN-01 | Phase 19 | Pending |
 | TOKEN-02 | Phase 19 | Pending |
