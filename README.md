@@ -437,55 +437,57 @@ graph LR
 
 ## Installation
 
-### Prerequisites
-
-- **Node.js** 18+
-- **Python** 3.9+ with pip
-- **Docker** (for PostgreSQL) -- optional, SQLite fallback available
-- **Claude Code** CLI
-
-### Quick Start
+### Option 1: One-Line Install (Recommended)
 
 ```bash
-# Clone to Claude Code user directory
-git clone https://github.com/robertamauta/gsd-amauta.git ~/.claude/gsd-amauta
-cd ~/.claude/gsd-amauta
+curl -fsSL https://raw.githubusercontent.com/Luiscmogrovejo/gsd-amauta/master/scripts/install-remote.sh | bash
+```
 
-# Install -- sets up PG, daemon, RLM, agents, workflows, commands
+This downloads and installs everything — no `git clone` needed. Your team just runs this one command.
+
+### Option 2: Clone + Install
+
+```bash
+git clone https://github.com/Luiscmogrovejo/gsd-amauta.git ~/.claude/gsd-amauta
+cd ~/.claude/gsd-amauta
 npm install
 ```
 
-The installer (`bin/install.js`) handles:
-1. GSD agents, workflows, slash commands, hooks -- installed to `~/.claude/`
-2. Docker PostgreSQL 16 + pgvector on port 5433 (or detects local PG, or falls back to SQLite)
-3. Python `psycopg2-binary` dependency
-4. Amauta HTTP daemon on port 18799
-5. RLM context service on port 18798
-6. Database migrations (5 SQL files: schema, HNSW index, dimension fix, FTS indexes, agent performance)
-7. MCP server auto-registration
+### What the Installer Does
 
-### Post-Install
+1. Installs 11 agents, 34 slash commands, 11 skills, 3 hooks to `~/.claude/`
+2. Detects infrastructure: local PostgreSQL → Docker PG → SQLite fallback
+3. Starts Amauta daemon (`:18799`) + RLM service (`:18798`)
+4. Runs database migrations (7 SQL files)
+5. Registers MCP server in Claude Code settings
+6. Copies Python backend (amauta.py, daemon, pg_store, rlm-service)
 
-Add to `~/.zshrc` or `~/.bashrc`:
+### Prerequisites
+
+- **Node.js** 18+ and **Python** 3.9+
+- **Claude Code** CLI
+- **Docker** (optional — for PostgreSQL; SQLite fallback works without it)
+
+### Post-Install (Optional API Keys)
 
 ```bash
-# Required: PostgreSQL connection
-export GSD_POSTGRES_URL="postgresql://amauta:gsd@127.0.0.1:5433/gsd_amauta"
+# Add to ~/.zshrc or ~/.bashrc
 
-# Optional: Perplexity research
+# Optional: Perplexity for research chain
 export PERPLEXITY_API_KEY="your-key-here"
 
-# Optional: Semantic search embeddings (choose one)
-export VOYAGE_API_KEY="your-key-here"     # Recommended
-# export OPENAI_API_KEY="your-key-here"   # Alternative
+# Optional: Voyage AI for semantic search embeddings
+export VOYAGE_API_KEY="your-key-here"
 ```
+
+Without API keys, Amauta still works — semantic search falls back to text matching, research uses local memory only.
 
 ### Verify
 
 ```bash
-curl http://127.0.0.1:18799/health | python3 -m json.tool
-curl http://127.0.0.1:18798/health | python3 -m json.tool
-npm test
+curl -s http://127.0.0.1:18799/health | python3 -m json.tool  # Daemon
+curl -s http://127.0.0.1:18798/health | python3 -m json.tool  # RLM
+python3 -m pytest tests/ -q                                     # Tests
 ```
 
 ---
