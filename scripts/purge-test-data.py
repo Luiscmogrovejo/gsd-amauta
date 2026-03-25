@@ -109,6 +109,10 @@ MEMORY_PATTERNS = [
         "name": "E2E test memory entry",
         "where": "text LIKE '%E2E test memory entry%'",
     },
+    {
+        "name": "E2E lifecycle test validates (test artifact leaked to best-practice)",
+        "where": "text LIKE 'E2E lifecycle test validates%'",
+    },
 ]
 
 # gsd_shared_kb purge patterns
