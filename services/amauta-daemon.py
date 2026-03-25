@@ -460,6 +460,14 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({"error": "Invalid JSON in request body"}).encode())
             return None
 
+    def _resolve_project_id(self, body):
+        """DATA-05/DATA-06: Auto-set project_id from request body, CWD, or test mode."""
+        # DATA-06: Force __test__ in test mode (highest priority)
+        if os.environ.get("NODE_ENV") == "test" or os.environ.get("GSD_TEST_MODE") == "1" or os.environ.get("PYTEST_CURRENT_TEST"):
+            return "__test__"
+        # DATA-05: Use explicit value or fall back to server CWD basename
+        return body.get("project_id") or os.path.basename(os.getcwd())
+
     def _run_amauta(self, args):
         """Run amauta.py with given args, return (stdout, stderr, returncode)."""
         env = os.environ.copy()
@@ -1051,6 +1059,8 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             if not text:
                 self._send_json({"error": "text is required"}, 400)
                 return
+            # DATA-05/DATA-06: Auto-set project_id from CWD or test mode
+            project_id = self._resolve_project_id(body)
             try:
                 # Auto-embed if an embedding API key is set and body doesn't opt out
                 use_embedding = body.get("embed", True) and (
@@ -1063,7 +1073,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                         agent_id=body.get("agent_id"),
                         tags=body.get("tags"),
                         metadata=body.get("metadata"),
-                        project_id=body.get("project_id"),
+                        project_id=project_id,
                     )
                     # DATA-04: Handle dedup response from pre-store similarity check
                     if isinstance(mem_id, dict) and mem_id.get("dedup_skipped"):
@@ -1081,9 +1091,9 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                         agent_id=body.get("agent_id"),
                         tags=body.get("tags"),
                         metadata=body.get("metadata"),
-                        project_id=body.get("project_id"),
+                        project_id=project_id,
                     )
-                self._send_json({"id": mem_id, "stored": True, "embedded": bool(use_embedding and _pg_store)})
+                self._send_json({"id": mem_id, "stored": True, "embedded": bool(use_embedding and _pg_store), "project_id": project_id})
             except Exception as e:
                 self._send_json({"error": _safe_error(e)}, 500)
             return
@@ -1193,7 +1203,8 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 return
             try:
                 agent_id = body.get("agent_id", "unknown")
-                project_id = body.get("project_id")
+                # DATA-05/DATA-06: Auto-set project_id from CWD or test mode
+                project_id = self._resolve_project_id(body)
                 tags = body.get("tags", [])
                 # Truncate oversized context to 4000 chars
                 text = context[:4000] if len(context) > 4000 else context
@@ -1205,7 +1216,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     metadata={"auto_captured": True, "capture_reason": body.get("reason", "context_compaction")},
                     project_id=project_id,
                 )
-                self._send_json({"id": mem_id, "stored": True, "source": "session-learning", "chars": len(text)})
+                self._send_json({"id": mem_id, "stored": True, "source": "session-learning", "chars": len(text), "project_id": project_id})
             except Exception as e:
                 self._send_json({"error": _safe_error(e)}, 500)
             return
