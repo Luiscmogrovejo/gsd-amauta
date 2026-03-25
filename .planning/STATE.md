@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: milestone
-status: Phase 17 in progress -- Plan 17-01 complete, 17-02 complete, 17-03 pending
-stopped_at: Completed 17-01-PLAN.md (archive cmd + TOCTOU fix)
-last_updated: "2026-03-25T03:12:16.000Z"
-last_activity: 2026-03-25 -- Plan 17-01 complete (archive + TOCTOU fix, 13 tests)
+status: Phase 17 COMPLETE -- All 3 plans done (17-01 archive+TOCTOU, 17-02 watchdog+retry, 17-03 field-sync+reconcile)
+stopped_at: Completed 17-03-PLAN.md (full field sync + reconcile command)
+last_updated: "2026-03-25T03:42:00.000Z"
+last_activity: 2026-03-25 -- Plan 17-03 complete (migration 007, full field upsert, reconcile cmd, 17 tests)
 progress:
   total_phases: 5
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 6
-  completed_plans: 5
-  percent: 80
+  completed_plans: 6
+  percent: 100
 ---
 
 # GSD-Amauta -- Project State
@@ -21,23 +21,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-24)
 
 **Core value:** Every built system actually fires during task execution -- no dead code, no bypasses, agents are smarter with fewer tokens.
-**Current focus:** Milestone v2.3 -- Clean Foundations. Phase 17 in progress (2/3 plans done).
+**Current focus:** Milestone v2.3 -- Clean Foundations. Phase 17 COMPLETE (3/3 plans done).
 
 ## Current Position
 
-Phase: 17 of 19 (Task Manager Reliability) -- in progress
-Plan: 17-01 + 17-02 done (2/3 plans done)
-Status: Plan 17-01 complete (archive + TOCTOU), 17-02 complete (watchdog + retry), 17-03 pending
-Last activity: 2026-03-25 -- Plan 17-01 complete (archive cmd + TOCTOU fix, 13 tests)
+Phase: 17 of 19 (Task Manager Reliability) -- COMPLETE
+Plan: All 3 plans done (17-01, 17-02, 17-03)
+Status: Phase 17 complete. Archive, TOCTOU, watchdog, retry, field sync, reconcile all shipped.
+Last activity: 2026-03-25 -- Plan 17-03 complete (migration 007 + full field upsert + reconcile cmd, 17 tests)
 
-Progress: [████████░░] 80%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity (from v2.2):**
-- Total plans completed: 9 (v2.2) + 3 (v2.3) = 12
-- Average duration: ~18 min per plan (improving)
-- Total execution time: ~4.5 hours
+- Total plans completed: 9 (v2.2) + 6 (v2.3) = 15
+- Average duration: ~16 min per plan (improving)
+- Total execution time: ~5 hours
 
 **By Phase (v2.2):**
 
@@ -54,7 +54,7 @@ Progress: [████████░░] 80%
 |-------|-------|-------|----------|
 | 15 -- Data Purge | 1 | ~6 min | ~6 min |
 | 16 -- Data Integrity | 2/2 | ~21 min | ~10 min |
-| 17 -- Task Manager Reliability | 2/3 | ~10 min | ~5 min |
+| 17 -- Task Manager Reliability | 3/3 | ~22 min | ~7 min |
 
 **Recent Trend:** Accelerating (~5 min/plan in v2.3 vs ~25 min in v2.2)
 
@@ -85,7 +85,7 @@ None yet.
 
 - ~~Deep audit found 87 orphaned tasks and ~1,800 test entries -- Phase 15 must handle this carefully~~ RESOLVED: 1,918 memory + 111 SKB test entries purged
 - ~~Distillation re-merging bug is actively degrading memory quality -- Phase 16 is urgent~~ RESOLVED: cmdDistill now excludes source='distilled' from input (Plan 16-01)
-- ~~7 fields dropped during dual-write -- silent data loss accumulating since v2.0~~ PLANNED: Plan 17-03 adds migration 007 + task_upsert update for all 7 fields
+- ~~7 fields dropped during dual-write -- silent data loss accumulating since v2.0~~ RESOLVED: Migration 007 + task_upsert update for all 7 fields + reconcile command (Plan 17-03)
 - ~~Phase 17 TOCTOU fix touches 17 cmd_* functions -- high-touch, must test thoroughly~~ RESOLVED: All 17 wrapped, 13 tests pass (Plan 17-01)
 - Phase 17-01: Reentrant lock via thread-local flag (_lock_held) -- save() keeps its own lock for standalone safety
 - Phase 17-01: Archive fallback always active in cmd_show (auto-checks archive when task not found in active set)
@@ -94,8 +94,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-25 03:12
-Stopped at: Completed 17-01-PLAN.md (archive cmd + TOCTOU fix)
+Last session: 2026-03-25 03:42
+Stopped at: Completed 17-03-PLAN.md (full field sync + reconcile command). Phase 17 COMPLETE.
 Resume file: None
 
 ## Previous Milestone: v2.2 -- Wiring & Hardening (COMPLETE)

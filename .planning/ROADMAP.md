@@ -8,7 +8,7 @@
 
 - [x] **Phase 15: Data Purge** - Delete ~1,900 synthetic/test entries from gsd_memory and SKB (completed 2026-03-24)
 - [x] **Phase 16: Data Integrity** - Fix distillation bug, embedding dedup, project isolation for writes (completed 2026-03-25)
-- [ ] **Phase 17: Task Manager Reliability** - Archival, file locking, stale watchdog, dual-write reconciliation
+- [x] **Phase 17: Task Manager Reliability** - Archival, file locking, stale watchdog, dual-write reconciliation (completed 2026-03-25)
 - [ ] **Phase 18: Memory Optimization** - Source filtering, tiered retention, recency decay scoring
 - [ ] **Phase 19: Token Efficiency** - Enrichment dedup, research truncation, RPETD content caps
 
@@ -78,7 +78,7 @@
 |-------|----------------|--------|-----------|
 | 15. Data Purge | 1/1 | Complete    | 2026-03-24 |
 | 16. Data Integrity | 2/2 | Complete    | 2026-03-25 |
-| 17. Task Manager Reliability | 2/3 | In Progress | - |
+| 17. Task Manager Reliability | 3/3 | Complete    | 2026-03-25 |
 | 18. Memory Optimization | 0/TBD | Not started | - |
 | 19. Token Efficiency | 0/TBD | Not started | - |
 
