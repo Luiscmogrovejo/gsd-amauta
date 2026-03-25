@@ -396,8 +396,13 @@ class SQLiteStore:
         scored.sort(key=lambda x: x["score"], reverse=True)
         return scored
 
-    def memory_list(self, project_id=None, source=None, limit=50, offset=0):
-        """List memories with optional filters."""
+    def memory_list(self, project_id=None, source=None, exclude_source=None, limit=50, offset=0):
+        """List memories with optional filters.
+
+        Args:
+            exclude_source: Single source string or list of sources to exclude from results.
+                            Used by distill to skip re-merging source='distilled' entries (DATA-03).
+        """
         with self._get_conn() as conn:
             conditions = []
             params = []
@@ -407,6 +412,14 @@ class SQLiteStore:
             if source:
                 conditions.append("source = ?")
                 params.append(source)
+            if exclude_source:
+                if isinstance(exclude_source, list):
+                    placeholders = ", ".join(["?"] * len(exclude_source))
+                    conditions.append(f"source NOT IN ({placeholders})")
+                    params.extend(exclude_source)
+                else:
+                    conditions.append("source != ?")
+                    params.append(exclude_source)
 
             where = " AND ".join(conditions) if conditions else "1=1"
             sql = f"""
