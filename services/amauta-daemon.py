@@ -1264,12 +1264,16 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": "query is required"}, 400)
                 return
             try:
-                results = store.memory_search(
+                kwargs = dict(
                     query=query,
                     project_id=body.get("project_id"),
                     source=body.get("source"),
                     limit=body.get("limit", 20),
                 )
+                # MEM-01: include_noise=true bypasses default source exclusion
+                if body.get("include_noise"):
+                    kwargs["exclude_sources"] = None
+                results = store.memory_search(**kwargs)
                 self._send_json({"results": results, "count": len(results)})
             except Exception as e:
                 self._send_json({"error": _safe_error(e)}, 500)
@@ -1301,12 +1305,16 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": "query is required"}, 400)
                 return
             try:
-                results, method = store.memory_semantic_search(
+                kwargs = dict(
                     query=query,
                     project_id=body.get("project_id"),
                     source=body.get("source"),
                     limit=body.get("limit", 20),
                 )
+                # MEM-01: include_noise=true bypasses default source exclusion
+                if body.get("include_noise"):
+                    kwargs["exclude_sources"] = None
+                results, method = store.memory_semantic_search(**kwargs)
                 self._send_json({"results": results, "count": len(results), "method": method})
             except Exception as e:
                 self._send_json({"error": _safe_error(e)}, 500)

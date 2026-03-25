@@ -514,12 +514,18 @@ def _mem_pg_add(agent_id: str, tags: list, text: str):
         )
         cur.close()
 
-def _mem_pg_search(query: str, agent_id: Optional[str], top_k: int) -> list:
+_DEFAULT_EXCLUDE_SOURCES = ("task_event", "rpetd_phase")
+_RECENCY_DECAY_PER_30D = float(os.environ.get("GSD_RECENCY_DECAY_PER_30D", "0.5"))
+_MAX_RECENCY_PENALTY = 3.0
+
+def _mem_pg_search(query: str, agent_id: Optional[str], top_k: int,
+                   exclude_sources=_DEFAULT_EXCLUDE_SOURCES) -> list:
     """
-    Search gsd_memory with source-aware scoring.
+    Search gsd_memory with source-aware scoring + recency decay.
     - Boosts auto_learning + web_search_result + lesson-learned (high signal)
     - Returns source field so callers can show where results came from
-    - High-signal sources get +3 score boost so they surface above raw task_events
+    - MEM-01: Excludes task_event/rpetd_phase by default
+    - MEM-03: Applies recency decay post-query
     """
     with _pg_conn() as conn:
         cur = conn.cursor()
@@ -542,6 +548,14 @@ def _mem_pg_search(query: str, agent_id: Optional[str], top_k: int) -> list:
             where_parts.append("(lower(text) LIKE lower(%s) OR lower(tags::text) LIKE lower(%s))")
             params.extend([pat, pat])
         where_clause = " OR ".join(where_parts)
+
+        # MEM-01: Exclude low-signal sources by default
+        exclude_clause = ""
+        exclude_params: list = []
+        if exclude_sources:
+            placeholders = ", ".join(["%s"] * len(exclude_sources))
+            exclude_clause = f" AND source NOT IN ({placeholders})"
+            exclude_params = list(exclude_sources)
 
         # SCORE: base relevance + source boost (auto_learning/web_search_result rank higher)
         score_parts = []
@@ -568,26 +582,42 @@ def _mem_pg_search(query: str, agent_id: Optional[str], top_k: int) -> list:
                 SELECT created_at, agent_id, text, tags, source,
                        ({score_expr}) AS score
                 FROM gsd_memory
-                WHERE agent_id = %s AND ({where_clause})
+                WHERE agent_id = %s AND ({where_clause}){exclude_clause}
                 ORDER BY score DESC, created_at DESC
                 LIMIT %s
             """
-            cur.execute(sql, score_params + [agent_id] + params + [max(1, top_k)])
+            cur.execute(sql, score_params + [agent_id] + params + exclude_params + [max(1, top_k)])
         else:
             sql = f"""
                 SELECT created_at, agent_id, text, tags, source,
                        ({score_expr}) AS score
                 FROM gsd_memory
-                WHERE {where_clause}
+                WHERE ({where_clause}){exclude_clause}
                 ORDER BY score DESC, created_at DESC
                 LIMIT %s
             """
-            cur.execute(sql, score_params + params + [max(1, top_k)])
+            cur.execute(sql, score_params + params + exclude_params + [max(1, top_k)])
 
         rows = cur.fetchall()
         cur.close()
+    now = datetime.now(timezone.utc)
     out = []
     for created_at, ag, text, tags, source, score in rows:
+        # MEM-03: Post-query recency decay
+        recency_penalty = 0.0
+        if _RECENCY_DECAY_PER_30D > 0 and created_at is not None:
+            try:
+                ca = created_at if hasattr(created_at, 'tzinfo') else datetime.fromisoformat(str(created_at))
+                if ca.tzinfo is None:
+                    ca = ca.replace(tzinfo=timezone.utc)
+                days_old = max((now - ca).days, 0)
+                recency_penalty = min(
+                    _RECENCY_DECAY_PER_30D * (days_old / 30.0),
+                    _MAX_RECENCY_PENALTY,
+                )
+            except (ValueError, TypeError, AttributeError):
+                pass
+        final_score = int(score or 0) - recency_penalty
         out.append(
             {
                 "ts": created_at.isoformat() if hasattr(created_at, "isoformat") else str(created_at),
@@ -595,22 +625,30 @@ def _mem_pg_search(query: str, agent_id: Optional[str], top_k: int) -> list:
                 "text": text,
                 "tags": tags if isinstance(tags, list) else [],
                 "source": source or "unknown",
-                "score": int(score or 0),
+                "score": round(final_score, 2),
             }
         )
+    # Re-sort by score after decay adjustment
+    out.sort(key=lambda x: x["score"], reverse=True)
     return out
 
-def _mem_semantic_search(query: str, top_k: int = 5) -> list:
+def _mem_semantic_search(query: str, top_k: int = 5, include_noise: bool = False) -> list:
     """
     Semantic memory search via daemon HTTP endpoint (pgvector cosine similarity).
     Falls back to _mem_pg_search() LIKE-based search if daemon is unavailable.
     Returns same format as _mem_pg_search(): list of dicts with ts, agent_id, text, tags, source, score.
+
+    Args:
+        include_noise: When True, includes task_event/rpetd_phase sources in results.
     """
     import urllib.request, urllib.error, json as _json
     try:
         port = os.environ.get("GSD_DAEMON_PORT", "18799")
         url = f"http://127.0.0.1:{port}/api/memory/semantic-search"
-        body = _json.dumps({"query": query, "limit": top_k}).encode("utf-8")
+        req_body = {"query": query, "limit": top_k}
+        if include_noise:
+            req_body["include_noise"] = True
+        body = _json.dumps(req_body).encode("utf-8")
         req = urllib.request.Request(
             url, data=body, method="POST",
             headers={"Content-Type": "application/json"},

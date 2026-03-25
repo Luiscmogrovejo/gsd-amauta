@@ -389,7 +389,7 @@ function formatSKB(entry, index) {
 async function cmdSearch(args) {
   const query = args._positional.join(' ');
   if (!query) {
-    console.error('Usage: amauta-memory search <query> [--agent <id>] [--project <id>] [--source <src>] [--limit <n>] [--json]');
+    console.error('Usage: amauta-memory search <query> [--agent <id>] [--project <id>] [--source <src>] [--limit <n>] [--include-noise] [--json]');
     process.exit(1);
   }
 
@@ -397,6 +397,8 @@ async function cmdSearch(args) {
   if (args.agent) body.agent_id = args.agent;
   if (args.project) body.project_id = args.project;
   if (args.source) body.source = args.source;
+  // MEM-01: --include-noise bypasses default exclusion of task_event/rpetd_phase
+  if (args['include-noise']) body.include_noise = true;
 
   const res = await tryDaemon('POST', '/api/memory/search', body);
 
@@ -861,13 +863,15 @@ async function cmdAutoCapture(args) {
 async function cmdSemanticSearch(args) {
   const query = args._positional.join(' ');
   if (!query) {
-    console.error('Usage: amauta-memory semantic-search <query> [--project <id>] [--source <src>] [--limit <n>] [--json]');
+    console.error('Usage: amauta-memory semantic-search <query> [--project <id>] [--source <src>] [--limit <n>] [--include-noise] [--json]');
     process.exit(1);
   }
 
   const body = { query, limit: parseInt(args.limit || '20', 10) };
   if (args.project) body.project_id = args.project;
   if (args.source) body.source = args.source;
+  // MEM-01: --include-noise bypasses default exclusion of task_event/rpetd_phase
+  if (args['include-noise']) body.include_noise = true;
 
   const res = await tryDaemon('POST', '/api/memory/semantic-search', body);
 
