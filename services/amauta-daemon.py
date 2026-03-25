@@ -143,6 +143,7 @@ STALE_CHECK_INTERVAL = 300  # 5 minutes
 STALE_THRESHOLD_HOURS = int(os.environ.get("GSD_STALE_HOURS", "48"))
 RETRY_FLUSH_INTERVAL = int(os.environ.get("GSD_RETRY_FLUSH_INTERVAL", "60"))
 RETENTION_CHECK_INTERVAL = 86400  # 24 hours — retention cleanup runs daily
+_shutdown_event = threading.Event()
 
 # ── Authentication ─────────────────────────────────────────────────────────────
 DAEMON_AUTH_TOKEN = os.environ.get("AMAUTA_DAEMON_TOKEN", "")
@@ -499,8 +500,9 @@ def _memory_retention_thread():
 
     Calls store.memory_retention_cleanup() to move old task_event (>30d) and
     rpetd_phase (>90d) entries to gsd_memory_archive. Runs daily.
+    Uses _shutdown_event.wait() instead of time.sleep() for interruptible blocking.
     """
-    while True:
+    while not _shutdown_event.is_set():
         try:
             store = _get_store()
             if store and hasattr(store, 'memory_retention_cleanup'):
@@ -512,7 +514,7 @@ def _memory_retention_thread():
                     log.debug("retention_cleanup nothing_to_archive")
         except Exception as e:
             log.error("retention_cleanup_error: %s", e)
-        time.sleep(RETENTION_CHECK_INTERVAL)
+        _shutdown_event.wait(timeout=RETENTION_CHECK_INTERVAL)
 
 
 # ── Request Body Size Limit ────────────────────────────────────────────────────
@@ -1639,6 +1641,7 @@ def start_server(foreground=False):
 
     # Graceful shutdown
     def shutdown_handler(signum, frame):
+        _shutdown_event.set()  # Wake sleeping threads for graceful exit
         log.info("daemon_shutdown")
         print("\nShutting down daemon...")
         _stop_rlm()
