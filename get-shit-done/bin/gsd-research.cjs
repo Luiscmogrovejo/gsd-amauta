@@ -69,6 +69,7 @@ const PERPLEXITY_API_KEY = process.env.PERPLEXITY_API_KEY || '';
 const PERPLEXITY_MODEL = process.env.PERPLEXITY_MODEL || 'sonar-pro';  // sonar-pro for superior code understanding
 
 const PROVIDER_ORDER = ['memory', 'skb', 'context7', 'perplexity', 'webfetch'];
+const PERPLEXITY_OUTPUT_CAP = 1500; // chars -- cap Perplexity output to prevent 4K token injection
 
 // ═══════════════════════════════════════════════════════
 // HTTP Helpers
@@ -309,7 +310,7 @@ async function providerPerplexity(query, limit) {
       provider: 'perplexity',
       count: 1,
       results: [{
-        text: answer,
+        text: stripPreamble(answer).slice(0, PERPLEXITY_OUTPUT_CAP),
         citations,
         model: res.data.model || PERPLEXITY_MODEL,
       }],
@@ -473,6 +474,32 @@ function parseArgs(argv) {
     i++;
   }
   return args;
+}
+
+// ═══════════════════════════════════════════════════════
+// Text Processing
+// ═══════════════════════════════════════════════════════
+
+/**
+ * Strip common Perplexity preamble patterns from the start of answers.
+ * These boilerplate sentences waste tokens without adding value.
+ */
+function stripPreamble(text) {
+  if (!text) return text;
+  const patterns = [
+    /^(?:here\s+(?:is|are)\s+(?:a\s+)?(?:comprehensive|detailed|brief|quick)?\s*(?:overview|summary|breakdown|look|analysis|guide|explanation)[^.]*[.:]\s*)/i,
+    /^(?:based\s+on\s+(?:my\s+)?(?:research|analysis|findings|the\s+(?:available\s+)?(?:information|data|sources))[^.]*[.:]\s*)/i,
+    /^(?:i\s+found\s+(?:that\s+)?(?:the\s+following|several|some|a\s+few)[^.]*[.:]\s*)/i,
+    /^(?:sure[,!.]?\s*(?:here\s+(?:is|are))?[^.]*[.:]\s*)/i,
+    /^(?:let\s+me\s+(?:provide|explain|break\s+down|summarize)[^.]*[.:]\s*)/i,
+    /^(?:certainly[,!.]?\s*)/i,
+    /^(?:absolutely[,!.]?\s*)/i,
+  ];
+  let result = text;
+  for (const pattern of patterns) {
+    result = result.replace(pattern, '');
+  }
+  return result.trim();
 }
 
 // ═══════════════════════════════════════════════════════
