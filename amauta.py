@@ -643,7 +643,7 @@ def _mem_pg_search(query: str, agent_id: Optional[str], top_k: int,
     out.sort(key=lambda x: x["score"], reverse=True)
     return out
 
-def _mem_semantic_search(query: str, top_k: int = 5, include_noise: bool = False) -> list:
+def _mem_semantic_search(query: str, top_k: int = 5, include_noise: bool = False, project_id: str = None) -> list:
     """
     Semantic memory search via daemon HTTP endpoint (pgvector cosine similarity).
     Falls back to _mem_pg_search() LIKE-based search if daemon is unavailable.
@@ -657,6 +657,8 @@ def _mem_semantic_search(query: str, top_k: int = 5, include_noise: bool = False
         port = os.environ.get("GSD_DAEMON_PORT", "18799")
         url = f"http://127.0.0.1:{port}/api/memory/semantic-search"
         req_body = {"query": query, "limit": top_k}
+        if project_id:
+            req_body["project_id"] = project_id
         if include_noise:
             req_body["include_noise"] = True
         body = _json.dumps(req_body).encode("utf-8")
@@ -919,6 +921,24 @@ def _mem_log_event(agent_id: str, tags: list[str], text: str, *, source: str = "
 
             # Fallback: direct SQL INSERT (no embedding, but data is not lost)
             if not stored_via_daemon:
+                # Idempotency guard: check if daemon already stored this entry
+                # (handles partial-success race where HTTP raises after daemon committed)
+                already_stored = False
+                try:
+                    with _pg_conn() as conn:
+                        conn.autocommit = True
+                        cur = conn.cursor()
+                        cur.execute(
+                            "SELECT COUNT(*) FROM gsd_memory WHERE text=%s AND source=%s AND project_id=%s AND created_at > NOW() - INTERVAL '10 seconds'",
+                            (text, source, project_id)
+                        )
+                        row = cur.fetchone()
+                        already_stored = row and row[0] > 0
+                        cur.close()
+                except Exception:
+                    pass  # If check fails, proceed with insert (better duplicate than lost data)
+                if already_stored:
+                    return  # Skip fallback -- daemon already stored this entry
                 with _pg_conn() as conn:
                     conn.autocommit = True
                     cur = conn.cursor()
