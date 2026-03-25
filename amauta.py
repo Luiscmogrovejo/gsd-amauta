@@ -3471,6 +3471,17 @@ def cmd_rpetd(args):
         else:
             phases[phase] = (existing + "\n" + args.content).strip() if existing else args.content
 
+        # ── Soft cap warning: guide agents toward concise phase content ──
+        content_len = len(args.content)
+        if content_len > RPETD_SOFT_CAP:
+            phase_target = RPETD_PHASE_GUIDANCE.get(phase, RPETD_SOFT_CAP)
+            print(
+                f"\033[33m[RPETD] Phase {phase} content ({content_len} chars) exceeds soft cap "
+                f"({RPETD_SOFT_CAP} chars). Target for {phase}-phase: ~{phase_target} chars. "
+                f"Keep it concise -- key findings only, not raw output.\033[0m",
+                file=sys.stderr,
+            )
+
         # ── Layer 2: RPETD Phase Enrichment via RLM + PostgreSQL ───────────────
         # Each phase gets intelligent context injection:
         #   R: RLM analyzes project architecture docs → suggests files/approach
