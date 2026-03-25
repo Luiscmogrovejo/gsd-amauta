@@ -487,13 +487,17 @@ function parseArgs(argv) {
 function stripPreamble(text) {
   if (!text) return text;
   const patterns = [
-    /^(?:here\s+(?:is|are)\s+(?:a\s+)?(?:comprehensive|detailed|brief|quick)?\s*(?:overview|summary|breakdown|look|analysis|guide|explanation)[^.:]{0,80}[.:]\s*)/i,
-    /^(?:based\s+on\s+(?:my\s+)?(?:research|analysis|findings|the\s+(?:available\s+)?(?:information|data|sources))[^.:,]{0,60}[.:,]\s*)/i,
-    /^(?:i\s+found\s+(?:that\s+)?(?:the\s+following|several|some|a\s+few)[^.:]{0,80}[.:]\s*)/i,
-    /^(?:sure[,!.]?\s*(?:here\s+(?:is|are))?[^.:]{0,60}[.:]\s*)/i,
-    /^(?:let\s+me\s+(?:provide|explain|break\s+down|summarize)[^.:]{0,80}[.:]\s*)/i,
+    /^(?:here\s+(?:is|are)\s+(?:a\s+)?(?:comprehensive|detailed|brief|quick)?\s*(?:overview|summary|breakdown|look|analysis|guide|explanation)[^.:]{0,120}[.:]\s*)/i,
+    /^(?:based\s+on\s+(?:my\s+)?(?:research|analysis|findings|the\s+(?:available\s+)?(?:information|data|sources))[^.:,]{0,100}[.:,]\s*)/i,
+    /^(?:i\s+found\s+(?:that\s+)?(?:the\s+following|several|some|a\s+few)[^.:]{0,120}[.:]\s*)/i,
+    /^(?:sure[,!.]?\s*(?:here\s+(?:is|are))?[^.:]{0,100}[.:]\s*)/i,
+    /^(?:let\s+me\s+(?:provide|explain|break\s+down|summarize)[^.:]{0,120}[.:]\s*)/i,
     /^(?:certainly[,!.]?\s*)/i,
     /^(?:absolutely[,!.]?\s*)/i,
+    // v2.3 gap closure: additional Perplexity preamble patterns
+    /^(?:the\s+following\s+(?:is|provides|summarizes|outlines)\s+[^.:]{0,120}[.:]\s*)/i,
+    /^(?:to\s+(?:answer|address|respond\s+to)\s+(?:your|this|the)\s+(?:question|query|request)[^.:,]{0,100}[.:,]\s*)/i,
+    /^(?:(?:great|good)\s+question[.!,]\s*)/i,
   ];
   let result = text;
   for (const pattern of patterns) {
