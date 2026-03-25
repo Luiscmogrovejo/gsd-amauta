@@ -4632,10 +4632,18 @@ def cmd_reconcile(args):
         "estimated_hours", "due_date", "sprint", "children",
         "success_criteria", "deliverables", "dependencies",
         "tags", "notes", "evidence",
+        # v2.3 gap closure: 9 fields that task_upsert writes but compare was ignoring
+        "importance", "urgency", "rpetd_complete", "claimed_at",
+        "rpetd_r", "rpetd_p", "rpetd_e", "rpetd_t", "rpetd_d",
     ]
 
     # Map JSON field names to PG field names where they differ
     json_to_pg = {"parent": "parent_id"}
+    # rpetd_phases is a dict in JSON but 5 individual columns in PG
+    rpetd_json_to_pg = {
+        "rpetd_r": "R", "rpetd_p": "P", "rpetd_e": "E",
+        "rpetd_t": "T", "rpetd_d": "D",
+    }
 
     field_mismatches = []
     for item in items:
@@ -4649,7 +4657,11 @@ def cmd_reconcile(args):
                 if pf == field:
                     json_field = jf
                     break
-            json_val = item.get(json_field)
+            # rpetd_phases dict -> individual PG columns
+            if field in rpetd_json_to_pg:
+                json_val = (item.get("rpetd_phases") or {}).get(rpetd_json_to_pg[field], "")
+            else:
+                json_val = item.get(json_field)
             pg_val = pg.get(field)
             # Normalize for comparison (JSONB comes back as Python dicts/lists from psycopg2)
             if isinstance(json_val, (list, dict)):
