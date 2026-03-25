@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: milestone
-status: Phase 16 complete (DATA-03 through DATA-06), ready for Phase 17
-stopped_at: Phase 16 complete, ready for Phase 17
-last_updated: "2026-03-25T01:03:40Z"
-last_activity: 2026-03-25 -- Plan 16-02 complete (5 tasks, 5 commits, 11 new tests)
+status: Phase 17 planned (TASK-01 through TASK-06), 3 plans, 10 tasks, 2 waves
+stopped_at: Phase 17 planned, ready for execution
+last_updated: "2026-03-25T03:09:21.635Z"
+last_activity: 2026-03-25 -- Phase 17 planned (3 plans, 10 tasks, 2 waves)
 progress:
   total_phases: 5
   completed_phases: 2
-  total_plans: 3
-  completed_plans: 3
+  total_plans: 6
+  completed_plans: 4
   percent: 60
 ---
 
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-24)
 
 **Core value:** Every built system actually fires during task execution -- no dead code, no bypasses, agents are smarter with fewer tokens.
-**Current focus:** Milestone v2.3 -- Clean Foundations. Phase 16 complete, ready for Phase 17.
+**Current focus:** Milestone v2.3 -- Clean Foundations. Phase 17 planned, ready for execution.
 
 ## Current Position
 
-Phase: 16 of 19 (Data Integrity) -- complete
-Plan: 16-02 complete (2/2 plans done)
-Status: Phase 16 complete (DATA-03 through DATA-06), ready for Phase 17
-Last activity: 2026-03-25 -- Plan 16-02 complete (5 tasks, 5 commits, 11 new tests)
+Phase: 17 of 19 (Task Manager Reliability) -- in progress
+Plan: 17-02 done (1/3 plans done)
+Status: Plan 17-02 complete (watchdog + retry flush), 17-01 and 17-03 pending
+Last activity: 2026-03-25 -- Plan 17-02 complete (stale watchdog + retry queue flusher)
 
-Progress: [######....] 60%
+Progress: [█████████░] 90%
 
 ## Performance Metrics
 
@@ -54,8 +54,9 @@ Progress: [######....] 60%
 |-------|-------|-------|----------|
 | 15 -- Data Purge | 1 | ~6 min | ~6 min |
 | 16 -- Data Integrity | 2/2 | ~21 min | ~10 min |
+| 17 -- Task Manager Reliability | 1/3 | ~4 min | ~4 min |
 
-**Recent Trend:** Accelerating (~9 min/plan in v2.3 vs ~25 min in v2.2)
+**Recent Trend:** Accelerating (~5 min/plan in v2.3 vs ~25 min in v2.2)
 
 ## Accumulated Context
 
@@ -84,12 +85,15 @@ None yet.
 
 - ~~Deep audit found 87 orphaned tasks and ~1,800 test entries -- Phase 15 must handle this carefully~~ RESOLVED: 1,918 memory + 111 SKB test entries purged
 - ~~Distillation re-merging bug is actively degrading memory quality -- Phase 16 is urgent~~ RESOLVED: cmdDistill now excludes source='distilled' from input (Plan 16-01)
-- 7 fields dropped during dual-write -- silent data loss accumulating since v2.0
+- ~~7 fields dropped during dual-write -- silent data loss accumulating since v2.0~~ PLANNED: Plan 17-03 adds migration 007 + task_upsert update for all 7 fields
+- Phase 17 TOCTOU fix touches 17 cmd_* functions -- high-touch, must test thoroughly
+- Phase 17-02: Watchdog reads tasks.json directly (not subprocess list) for efficiency
+- Phase 17-02: Retry flusher only starts when _pg_store is available; _Metrics extended with set_gauge()
 
 ## Session Continuity
 
-Last session: 2026-03-25 01:03
-Stopped at: Phase 16 complete, ready for Phase 17
+Last session: 2026-03-25 03:08
+Stopped at: Completed 17-02-PLAN.md (watchdog + retry flush)
 Resume file: None
 
 ## Previous Milestone: v2.2 -- Wiring & Hardening (COMPLETE)

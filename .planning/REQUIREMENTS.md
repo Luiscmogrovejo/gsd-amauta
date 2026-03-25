@@ -9,8 +9,8 @@
 
 - [ ] **TASK-01**: `amauta archive` moves done tasks >7 days to archive file, reducing working set by 52%
 - [ ] **TASK-02**: TOCTOU race fixed — all cmd_* functions acquire file lock before load(), not just before save()
-- [ ] **TASK-03**: Stale task watchdog thread in daemon auto-reverts in-progress tasks >48h with no RPETD activity
-- [ ] **TASK-04**: Dual-write retry queue flushed automatically every 60s by daemon watchdog thread
+- [x] **TASK-03**: Stale task watchdog thread in daemon auto-reverts in-progress tasks >48h with no RPETD activity
+- [x] **TASK-04**: Dual-write retry queue flushed automatically every 60s by daemon watchdog thread
 - [ ] **TASK-05**: `amauta reconcile` command diffs tasks.json vs PG and reports/fixes mismatches
 - [ ] **TASK-06**: Dual-write mirrors all 7 currently-dropped fields (doc_refs, risks, validation_checklist, estimated_hours, due_date, sprint, children)
 
@@ -67,8 +67,8 @@
 | DATA-06 | Phase 16 | Complete |
 | TASK-01 | Phase 17 | Pending |
 | TASK-02 | Phase 17 | Pending |
-| TASK-03 | Phase 17 | Pending |
-| TASK-04 | Phase 17 | Pending |
+| TASK-03 | Phase 17 | Complete |
+| TASK-04 | Phase 17 | Complete |
 | TASK-05 | Phase 17 | Pending |
 | TASK-06 | Phase 17 | Pending |
 | MEM-01 | Phase 18 | Pending |

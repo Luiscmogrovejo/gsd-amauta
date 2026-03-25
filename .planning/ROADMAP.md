@@ -7,7 +7,7 @@
 ## Phases
 
 - [x] **Phase 15: Data Purge** - Delete ~1,900 synthetic/test entries from gsd_memory and SKB (completed 2026-03-24)
-- [ ] **Phase 16: Data Integrity** - Fix distillation bug, embedding dedup, project isolation for writes
+- [x] **Phase 16: Data Integrity** - Fix distillation bug, embedding dedup, project isolation for writes (completed 2026-03-25)
 - [ ] **Phase 17: Task Manager Reliability** - Archival, file locking, stale watchdog, dual-write reconciliation
 - [ ] **Phase 18: Memory Optimization** - Source filtering, tiered retention, recency decay scoring
 - [ ] **Phase 19: Token Efficiency** - Enrichment dedup, research truncation, RPETD content caps
@@ -48,7 +48,7 @@
   4. Dual-write retry queue entries are flushed every 60s by the daemon; `amauta reconcile` reports zero mismatches after flush
   5. `amauta reconcile` diffs tasks.json vs PG and reports/fixes field-level mismatches including doc_refs, risks, validation_checklist, estimated_hours, due_date, sprint, children
   6. All 7 previously-dropped fields survive a round-trip through dual-write (JSON -> PG -> JSON comparison matches)
-**Plans**: TBD
+**Plans**: 17-01 (3 tasks: archive cmd + TOCTOU fix + tests) + 17-02 (3 tasks: stale watchdog + retry flush + tests) + 17-03 (4 tasks: migration + upsert fix + reconcile cmd + tests)
 
 ### Phase 18: Memory Optimization
 **Goal**: Semantic search returns relevant project memories, not task noise -- with automatic cleanup of low-value entries over time
@@ -78,7 +78,7 @@
 |-------|----------------|--------|-----------|
 | 15. Data Purge | 1/1 | Complete    | 2026-03-24 |
 | 16. Data Integrity | 2/2 | Complete    | 2026-03-25 |
-| 17. Task Manager Reliability | 0/TBD | Not started | - |
+| 17. Task Manager Reliability | 1/3 | In Progress|  |
 | 18. Memory Optimization | 0/TBD | Not started | - |
 | 19. Token Efficiency | 0/TBD | Not started | - |
 
