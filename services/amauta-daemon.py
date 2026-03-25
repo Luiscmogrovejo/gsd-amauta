@@ -138,6 +138,11 @@ DATA_DIR = os.environ.get(
 )
 PID_FILE = Path(__file__).resolve().parent / "amauta-daemon.pid"
 
+# ── Stale Task Watchdog & Retry Queue Flush ───────────────────────────────────
+STALE_CHECK_INTERVAL = 300  # 5 minutes
+STALE_THRESHOLD_HOURS = int(os.environ.get("GSD_STALE_HOURS", "48"))
+RETRY_FLUSH_INTERVAL = int(os.environ.get("GSD_RETRY_FLUSH_INTERVAL", "60"))
+
 # ── Authentication ─────────────────────────────────────────────────────────────
 DAEMON_AUTH_TOKEN = os.environ.get("AMAUTA_DAEMON_TOKEN", "")
 
@@ -214,12 +219,17 @@ class _Metrics:
     """Lightweight Prometheus-compatible metrics. No external dependencies."""
     def __init__(self):
         self._counters = {}
+        self._gauges = {}
         self._start_time = time.time()
-    
-    def inc(self, name, labels=None):
+
+    def inc(self, name, labels=None, count=1):
         key = (name, tuple(sorted((labels or {}).items())))
-        self._counters[key] = self._counters.get(key, 0) + 1
-    
+        self._counters[key] = self._counters.get(key, 0) + count
+
+    def set_gauge(self, name, value, labels=None):
+        key = (name, tuple(sorted((labels or {}).items())))
+        self._gauges[key] = value
+
     def expose(self):
         """Return Prometheus text format."""
         lines = [
@@ -235,6 +245,18 @@ class _Metrics:
                 lines.append(f"# HELP {name} Counter")
                 lines.append(f"# TYPE {name} counter")
                 names[name] = True
+            if label_tuple:
+                label_str = ",".join(f'{k}="{v}"' for k, v in label_tuple)
+                lines.append(f"{name}{{{label_str}}} {value}")
+            else:
+                lines.append(f"{name} {value}")
+        # Gauges
+        gauge_names = {}
+        for (name, label_tuple), value in sorted(self._gauges.items()):
+            if name not in gauge_names:
+                lines.append(f"# HELP {name} Gauge")
+                lines.append(f"# TYPE {name} gauge")
+                gauge_names[name] = True
             if label_tuple:
                 label_str = ",".join(f'{k}="{v}"' for k, v in label_tuple)
                 lines.append(f"{name}{{{label_str}}} {value}")
@@ -333,6 +355,140 @@ def _rlm_watchdog():
                 _start_rlm()
             else:
                 log.error("rlm_max_restarts_exceeded")
+
+
+# ── Stale Task Watchdog Thread ────────────────────────────────────────────────
+
+def _stale_task_watchdog():
+    """Background thread: auto-revert in-progress tasks with no RPETD activity > STALE_THRESHOLD_HOURS.
+
+    Checks every STALE_CHECK_INTERVAL seconds. Reads tasks.json directly (no daemon dependency).
+    Tasks with 'WATCHDOG_EXEMPT' in notes are skipped.
+    """
+    from datetime import datetime, timezone
+    while True:
+        try:
+            tasks_file = Path(DATA_DIR) / "tasks.json"
+            if tasks_file.exists():
+                data = json.loads(tasks_file.read_text())
+                items = data.get("items", [])
+                now = datetime.now(timezone.utc)
+                total_in_progress = 0
+                stale_count = 0
+                reverted_count = 0
+
+                for item in items:
+                    if item.get("status") != "in-progress":
+                        continue
+                    total_in_progress += 1
+
+                    # Check WATCHDOG_EXEMPT opt-out
+                    notes = item.get("notes", [])
+                    if isinstance(notes, list):
+                        exempt = any("WATCHDOG_EXEMPT" in str(n) for n in notes)
+                    elif isinstance(notes, str):
+                        exempt = "WATCHDOG_EXEMPT" in notes
+                    else:
+                        exempt = False
+                    if exempt:
+                        continue
+
+                    # Determine staleness: use latest RPETD timestamp or claimed_at
+                    latest_ts = None
+                    rpetd = item.get("rpetd", {})
+                    if isinstance(rpetd, dict):
+                        for phase_data in rpetd.values():
+                            ts_str = None
+                            if isinstance(phase_data, dict):
+                                ts_str = phase_data.get("timestamp") or phase_data.get("at")
+                            elif isinstance(phase_data, str):
+                                ts_str = phase_data
+                            if ts_str:
+                                try:
+                                    ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                                    if latest_ts is None or ts > latest_ts:
+                                        latest_ts = ts
+                                except (ValueError, TypeError):
+                                    pass
+
+                    # Fallback to claimed_at
+                    if latest_ts is None:
+                        claimed_at = item.get("claimed_at", "")
+                        if claimed_at:
+                            try:
+                                latest_ts = datetime.fromisoformat(claimed_at.replace("Z", "+00:00"))
+                            except (ValueError, TypeError):
+                                pass
+
+                    if latest_ts is None:
+                        continue
+
+                    stale_hours = (now - latest_ts).total_seconds() / 3600
+                    if stale_hours > STALE_THRESHOLD_HOURS:
+                        stale_count += 1
+                        task_id = item.get("id", "unknown")
+                        try:
+                            result = subprocess.run(
+                                [sys.executable, AMAUTA_PY, "status", task_id, "pending",
+                                 "--agent", "watchdog", "--force",
+                                 "--note", f"Auto-reverted by watchdog: no RPETD activity in >{STALE_THRESHOLD_HOURS}h"],
+                                capture_output=True, text=True, timeout=30,
+                                env={**os.environ, "AMAUTA_DATA_DIR": DATA_DIR}
+                            )
+                            if result.returncode == 0:
+                                reverted_count += 1
+                                log.info("watchdog_revert task_id=%s stale_hours=%d",
+                                         task_id, int(stale_hours))
+                            else:
+                                log.warning("watchdog_revert_failed task_id=%s rc=%d err=%s",
+                                            task_id, result.returncode, result.stderr.strip()[:200])
+                        except Exception as revert_err:
+                            log.warning("watchdog_revert_error task_id=%s: %s", task_id, revert_err)
+
+                log.info("watchdog_check total_in_progress=%d stale=%d reverted=%d",
+                         total_in_progress, stale_count, reverted_count)
+        except Exception as e:
+            log.error("watchdog_error: %s", e)
+        time.sleep(STALE_CHECK_INTERVAL)
+
+
+# ── Retry Queue Flusher Thread ────────────────────────────────────────────────
+
+def _retry_queue_flusher():
+    """Background thread: flush PG retry queue every RETRY_FLUSH_INTERVAL seconds.
+
+    Calls _pg_store.flush_retry_queue() to re-attempt failed task upserts.
+    Uses exponential backoff on consecutive failures (max 5 minutes).
+    Updates metrics counters for monitoring.
+    """
+    global _pg_store
+    consecutive_failures = 0
+    while True:
+        try:
+            if _pg_store:
+                succeeded, failed, remaining = _pg_store.flush_retry_queue()
+                if succeeded > 0 or failed > 0:
+                    log.info("retry_flush succeeded=%d failed=%d remaining=%d",
+                             succeeded, failed, remaining)
+                    _metrics.inc("retry_flush_succeeded_total", count=succeeded)
+                    _metrics.inc("retry_flush_failed_total", count=failed)
+                _metrics.set_gauge("retry_queue_size", remaining)
+                consecutive_failures = 0 if failed == 0 else consecutive_failures + 1
+            else:
+                # No PG store available -- check queue file size for metrics only
+                retry_path = Path(DATA_DIR) / "pg_retry_queue.json"
+                if retry_path.exists():
+                    try:
+                        queue = json.loads(retry_path.read_text())
+                        _metrics.set_gauge("retry_queue_size", len(queue) if isinstance(queue, list) else 0)
+                    except (json.JSONDecodeError, OSError):
+                        pass
+        except Exception as e:
+            consecutive_failures += 1
+            log.warning("retry_flush_error attempt=%d: %s", consecutive_failures, e)
+        # Exponential backoff on consecutive failures, max 5 minutes
+        sleep_time = min(RETRY_FLUSH_INTERVAL * (2 ** min(consecutive_failures, 3)), 300)
+        time.sleep(sleep_time)
 
 
 # ── Request Body Size Limit ────────────────────────────────────────────────────
@@ -1584,6 +1740,19 @@ def start_server(foreground=False):
             print(f"  RLM: not started (set GSD_RLM_ENABLED=false to disable)")
     else:
         print(f"  RLM: disabled (GSD_RLM_ENABLED=false)")
+
+    # ── Start stale task watchdog thread ──────────────────────────────────────
+    stale_watchdog_thread = threading.Thread(target=_stale_task_watchdog, daemon=True)
+    stale_watchdog_thread.start()
+    print(f"  Watchdog: started (check every {STALE_CHECK_INTERVAL}s, stale threshold {STALE_THRESHOLD_HOURS}h)")
+
+    # ── Start retry queue flusher thread ─────────────────────────────────────
+    if _pg_store:
+        retry_thread = threading.Thread(target=_retry_queue_flusher, daemon=True)
+        retry_thread.start()
+        print(f"  Retry flush: started (every {RETRY_FLUSH_INTERVAL}s)")
+    else:
+        print(f"  Retry flush: skipped (no PG store)")
 
     try:
         server.serve_forever()
