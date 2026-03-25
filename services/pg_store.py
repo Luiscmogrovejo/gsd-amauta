@@ -59,6 +59,12 @@ DEFAULT_EXCLUDE_SOURCES = ("task_event", "rpetd_phase")
 RECENCY_DECAY_PER_30D = float(os.environ.get("GSD_RECENCY_DECAY_PER_30D", "0.5"))
 MAX_RECENCY_PENALTY = 3.0  # Cap at 6 months of decay
 
+# MEM-02: Tiered retention — archive stale entries by source type
+RETENTION_DAYS = {
+    "task_event": 30,
+    "rpetd_phase": 90,
+}
+
 # ═══════════════════════════════════════════════════════
 # Tag synonym normalization (shared with sqlite_store.py)
 # ═══════════════════════════════════════════════════════
@@ -1381,6 +1387,67 @@ class PGStore:
                     "model": cfg["default_model"] if cfg else "none",
                     "dimensions": cfg["dimensions"] if cfg else 0,
                 }
+
+    # ═══════════════════════════════════════════════════════
+    # Memory Retention (MEM-02: Tiered archival)
+    # ═══════════════════════════════════════════════════════
+
+    def _ensure_archive_table(self):
+        """Create gsd_memory_archive table if it doesn't exist (lazy init)."""
+        with self._get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS gsd_memory_archive (
+                        id          VARCHAR(64) PRIMARY KEY,
+                        text        TEXT NOT NULL,
+                        agent_id    VARCHAR(64),
+                        source      VARCHAR(64),
+                        tags        JSONB DEFAULT '[]'::jsonb,
+                        metadata    JSONB DEFAULT '{}'::jsonb,
+                        project_id  VARCHAR(128),
+                        embedding   vector(1024),
+                        created_at  TIMESTAMPTZ,
+                        updated_at  TIMESTAMPTZ,
+                        archived_at TIMESTAMPTZ DEFAULT NOW()
+                    )
+                """)
+
+    def memory_retention_cleanup(self):
+        """Archive stale memory entries based on RETENTION_DAYS policy.
+
+        Moves entries to gsd_memory_archive (soft delete — no data lost).
+        Only archives sources defined in RETENTION_DAYS; high-value sources
+        (auto_learning, lesson-learned, best-practice) are never archived.
+
+        Returns dict: {"task_event_archived": N, "rpetd_phase_archived": M, "total": N+M}
+        """
+        self._ensure_archive_table()
+        results = {}
+        with self._get_conn() as conn:
+            with conn.cursor() as cur:
+                for source, days in RETENTION_DAYS.items():
+                    # Move matching entries to archive table
+                    cur.execute("""
+                        INSERT INTO gsd_memory_archive
+                            (id, text, agent_id, source, tags, metadata,
+                             project_id, embedding, created_at, updated_at)
+                        SELECT id, text, agent_id, source, tags, metadata,
+                               project_id, embedding, created_at, updated_at
+                        FROM gsd_memory
+                        WHERE source = %s
+                          AND created_at < NOW() - make_interval(days => %s)
+                        ON CONFLICT (id) DO NOTHING
+                    """, (source, days))
+                    moved = cur.rowcount
+                    # Remove from active table
+                    cur.execute("""
+                        DELETE FROM gsd_memory
+                        WHERE source = %s
+                          AND created_at < NOW() - make_interval(days => %s)
+                    """, (source, days))
+                    results[f"{source}_archived"] = moved
+        results["total"] = sum(results.values())
+        return results
 
     # ═══════════════════════════════════════════════════════
     # Audit Log Operations (Append-Only)
