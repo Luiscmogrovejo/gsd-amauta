@@ -2329,83 +2329,84 @@ def _dedup_check(items, title, agent):
 
 
 def cmd_add(args):
-    data  = load()
-    items = data["items"]
+    with _file_lock():
+        data  = load()
+        items = data["items"]
 
-    # ── Dedup guard: reject if a very similar task already exists ──
-    agent_hint = args.agent if hasattr(args, 'agent') and args.agent else None
-    dup_id = _dedup_check(items, args.title, agent_hint)
-    if dup_id:
-        print(c(f"DEDUP BLOCKED: similar task {dup_id} already exists for @{agent_hint or '?'}. "
-                 f"Add a note to {dup_id} instead of creating a duplicate.", YELLOW))
-        print(dim(f"  Use: amauta note {dup_id} --content \"your context here\""))
-        sys.exit(0)
+        # ── Dedup guard: reject if a very similar task already exists ──
+        agent_hint = args.agent if hasattr(args, 'agent') and args.agent else None
+        dup_id = _dedup_check(items, args.title, agent_hint)
+        if dup_id:
+            print(c(f"DEDUP BLOCKED: similar task {dup_id} already exists for @{agent_hint or '?'}. "
+                     f"Add a note to {dup_id} instead of creating a duplicate.", YELLOW))
+            print(dim(f"  Use: amauta note {dup_id} --content \"your context here\""))
+            sys.exit(0)
 
-    itype = args.type
-    nid   = _next_id(items, itype)
-    item  = _new_item(itype, args.title)
-    item["id"] = nid
+        itype = args.type
+        nid   = _next_id(items, itype)
+        item  = _new_item(itype, args.title)
+        item["id"] = nid
 
-    # Basic fields
-    if args.description:  item["description"]  = args.description
-    if args.details:      item["details"]       = args.details
-    if args.status:       item["status"]        = args.status
-    if args.priority:     item["priority"]      = args.priority
-    if args.agent:        item["assigned_to"]   = args.agent
-    if args.sprint:       item["sprint"]        = args.sprint
-    if args.due:          item["due_date"]      = args.due
-    if args.hours:        item["estimated_hours"] = args.hours
-    if args.importance:   item["importance"]    = args.importance
-    if args.urgency:      item["urgency"]       = args.urgency
-    if args.tags:         item["tags"]          = [t.strip() for t in args.tags.split(",")]
-    if args.deps:         item["dependencies"]  = [d.strip() for d in args.deps.split(",")]
+        # Basic fields
+        if args.description:  item["description"]  = args.description
+        if args.details:      item["details"]       = args.details
+        if args.status:       item["status"]        = args.status
+        if args.priority:     item["priority"]      = args.priority
+        if args.agent:        item["assigned_to"]   = args.agent
+        if args.sprint:       item["sprint"]        = args.sprint
+        if args.due:          item["due_date"]      = args.due
+        if args.hours:        item["estimated_hours"] = args.hours
+        if args.importance:   item["importance"]    = args.importance
+        if args.urgency:      item["urgency"]       = args.urgency
+        if args.tags:         item["tags"]          = [t.strip() for t in args.tags.split(",")]
+        if args.deps:         item["dependencies"]  = [d.strip() for d in args.deps.split(",")]
 
-    # Structured lists
-    if args.criteria:
-        item["success_criteria"] = [s.strip() for s in args.criteria.split("|")]
-    if args.deliverables:
-        item["deliverables"] = [s.strip() for s in args.deliverables.split("|")]
-    if args.checklist:
-        item["validation_checklist"] = [s.strip() for s in args.checklist.split("|")]
-    if args.test_strategy:
-        item["test_strategy"] = args.test_strategy
-    if args.refs:
-        refs = [r.strip() for r in args.refs.split("|") if r.strip()]
-        for r in refs:
-            item.setdefault("doc_refs", []).append(
-                {"path": r, "type": "code_file" if "/" in r else "workspace_file", "title": "", "note": ""}
-            )
+        # Structured lists
+        if args.criteria:
+            item["success_criteria"] = [s.strip() for s in args.criteria.split("|")]
+        if args.deliverables:
+            item["deliverables"] = [s.strip() for s in args.deliverables.split("|")]
+        if args.checklist:
+            item["validation_checklist"] = [s.strip() for s in args.checklist.split("|")]
+        if args.test_strategy:
+            item["test_strategy"] = args.test_strategy
+        if args.refs:
+            refs = [r.strip() for r in args.refs.split("|") if r.strip()]
+            for r in refs:
+                item.setdefault("doc_refs", []).append(
+                    {"path": r, "type": "code_file" if "/" in r else "workspace_file", "title": "", "note": ""}
+                )
 
-    # Parent linkage with hierarchy enforcement
-    if args.parent:
-        parent = _find(items, args.parent)
-        if not parent:
-            print(c(f"Parent {args.parent} not found.", RED)); sys.exit(1)
-        parent_type = parent.get("type", "task")
-        child_type  = item.get("type", "task")
-        allowed     = VALID_PARENT_TYPES.get(child_type, set())
-        if allowed is not None and parent_type not in allowed and not getattr(args, "force", False):
-            print(c(
-                f"Hierarchy error: a {child_type} cannot be a child of a {parent_type}. "
-                f"Allowed parents: {', '.join(sorted(allowed)) or 'none'}. "
-                f"Use --force to override.", RED))
-            sys.exit(1)
-        item["parent"] = args.parent
-        if nid not in parent.get("children", []):
-            parent.setdefault("children", []).append(nid)
+        # Parent linkage with hierarchy enforcement
+        if args.parent:
+            parent = _find(items, args.parent)
+            if not parent:
+                print(c(f"Parent {args.parent} not found.", RED)); sys.exit(1)
+            parent_type = parent.get("type", "task")
+            child_type  = item.get("type", "task")
+            allowed     = VALID_PARENT_TYPES.get(child_type, set())
+            if allowed is not None and parent_type not in allowed and not getattr(args, "force", False):
+                print(c(
+                    f"Hierarchy error: a {child_type} cannot be a child of a {parent_type}. "
+                    f"Allowed parents: {', '.join(sorted(allowed)) or 'none'}. "
+                    f"Use --force to override.", RED))
+                sys.exit(1)
+            item["parent"] = args.parent
+            if nid not in parent.get("children", []):
+                parent.setdefault("children", []).append(nid)
 
-    # Dep validation
-    for dep_id in item["dependencies"]:
-        if not _find(items, dep_id):
-            print(c(f"Dependency {dep_id} not found.", RED)); sys.exit(1)
+        # Dep validation
+        for dep_id in item["dependencies"]:
+            if not _find(items, dep_id):
+                print(c(f"Dependency {dep_id} not found.", RED)); sys.exit(1)
 
-    _augment_task_metadata(item)
+        _augment_task_metadata(item)
 
-    items.append(item)
-    save(data)
-    log.info("task_created id=%s type=%s title=%r", item["id"], item["type"], item["title"][:60])
-    print(c(f"Created {itype} {nid}: {args.title}", GREEN))
-    print(dim(f"  assigned=@{item['assigned_to']}  priority={item['priority']}  score={_score(item, items)}"))
+        items.append(item)
+        save(data)
+        log.info("task_created id=%s type=%s title=%r", item["id"], item["type"], item["title"][:60])
+        print(c(f"Created {itype} {nid}: {args.title}", GREEN))
+        print(dim(f"  assigned=@{item['assigned_to']}  priority={item['priority']}  score={_score(item, items)}"))
 
 
 def cmd_show(args):
@@ -2461,48 +2462,49 @@ def _print_tree(filtered: list, all_items: list, parent_id=None, indent=0):
 
 
 def cmd_update(args):
-    data  = load()
-    items = data["items"]
-    item  = _find(items, args.id)
-    if not item:
-        print(c(f"{args.id} not found.", RED)); sys.exit(1)
+    with _file_lock():
+        data  = load()
+        items = data["items"]
+        item  = _find(items, args.id)
+        if not item:
+            print(c(f"{args.id} not found.", RED)); sys.exit(1)
 
-    changed = []
-    simple_fields = [
-        ("title",        args.title),
-        ("description",  args.description),
-        ("details",      args.details),
-        ("status",       args.status),
-        ("priority",     args.priority),
-        ("assigned_to",  args.agent),
-        ("sprint",       args.sprint),
-        ("due_date",     args.due),
-        ("test_strategy",args.test_strategy),
-        ("validation_notes", args.validation_notes),
-        ("validated_by",     args.validated_by),
-    ]
-    for field, val in simple_fields:
-        if val is not None:
-            item[field] = val
-            changed.append(field)
-    if args.hours is not None:
-        item["estimated_hours"] = args.hours; changed.append("estimated_hours")
-    if args.importance is not None:
-        item["importance"] = args.importance; changed.append("importance")
-    if args.urgency is not None:
-        item["urgency"] = args.urgency; changed.append("urgency")
-    if args.tags is not None:
-        item["tags"] = [t.strip() for t in args.tags.split(",")]; changed.append("tags")
-    if args.criteria is not None:
-        item["success_criteria"] = [s.strip() for s in args.criteria.split("|")]; changed.append("success_criteria")
-    if args.deliverables is not None:
-        item["deliverables"] = [s.strip() for s in args.deliverables.split("|")]; changed.append("deliverables")
-    if args.checklist is not None:
-        item["validation_checklist"] = [s.strip() for s in args.checklist.split("|")]; changed.append("validation_checklist")
+        changed = []
+        simple_fields = [
+            ("title",        args.title),
+            ("description",  args.description),
+            ("details",      args.details),
+            ("status",       args.status),
+            ("priority",     args.priority),
+            ("assigned_to",  args.agent),
+            ("sprint",       args.sprint),
+            ("due_date",     args.due),
+            ("test_strategy",args.test_strategy),
+            ("validation_notes", args.validation_notes),
+            ("validated_by",     args.validated_by),
+        ]
+        for field, val in simple_fields:
+            if val is not None:
+                item[field] = val
+                changed.append(field)
+        if args.hours is not None:
+            item["estimated_hours"] = args.hours; changed.append("estimated_hours")
+        if args.importance is not None:
+            item["importance"] = args.importance; changed.append("importance")
+        if args.urgency is not None:
+            item["urgency"] = args.urgency; changed.append("urgency")
+        if args.tags is not None:
+            item["tags"] = [t.strip() for t in args.tags.split(",")]; changed.append("tags")
+        if args.criteria is not None:
+            item["success_criteria"] = [s.strip() for s in args.criteria.split("|")]; changed.append("success_criteria")
+        if args.deliverables is not None:
+            item["deliverables"] = [s.strip() for s in args.deliverables.split("|")]; changed.append("deliverables")
+        if args.checklist is not None:
+            item["validation_checklist"] = [s.strip() for s in args.checklist.split("|")]; changed.append("validation_checklist")
 
-    item["updated_at"] = _now()
-    save(data)
-    print(c(f"Updated {args.id}: {', '.join(changed)}", GREEN))
+        item["updated_at"] = _now()
+        save(data)
+        print(c(f"Updated {args.id}: {', '.join(changed)}", GREEN))
 
 
 def _needs_gitflow_gate(item: dict) -> bool:
@@ -3008,170 +3010,173 @@ def _has_test_evidence(t_phase: str) -> bool:
     return False
 
 def cmd_status(args):
-    data = load()
-    item = _find(data["items"], args.id)
-    if not item:
-        print(c(f"{args.id} not found.", RED)); sys.exit(1)
+    with _file_lock():
+        data = load()
+        item = _find(data["items"], args.id)
+        if not item:
+            print(c(f"{args.id} not found.", RED)); sys.exit(1)
 
-    # ── STATE MACHINE: reject invalid transitions ──
-    old = item["status"]
-    new = args.status
-    allowed = ALLOWED_TRANSITIONS.get(old, set())
-    if new not in allowed and not getattr(args, "force", False):
-        print(c(f"INVALID TRANSITION: {args.id} cannot go from '{old}' to '{new}'", RED))
-        print(dim(f"  Allowed from '{old}': {', '.join(sorted(allowed))}"))
-        print(dim("  Use --force to override state machine."))
-        sys.exit(1)
-    if new not in allowed and getattr(args, "force", False):
-        print(c(f"Warning: overriding state machine ({old} -> {new}) with --force", YELLOW))
+        # ── STATE MACHINE: reject invalid transitions ──
+        old = item["status"]
+        new = args.status
+        allowed = ALLOWED_TRANSITIONS.get(old, set())
+        if new not in allowed and not getattr(args, "force", False):
+            print(c(f"INVALID TRANSITION: {args.id} cannot go from '{old}' to '{new}'", RED))
+            print(dim(f"  Allowed from '{old}': {', '.join(sorted(allowed))}"))
+            print(dim("  Use --force to override state machine."))
+            sys.exit(1)
+        if new not in allowed and getattr(args, "force", False):
+            print(c(f"Warning: overriding state machine ({old} -> {new}) with --force", YELLOW))
 
-    # ── MANDATORY NOTE for failed/deferred transitions ──
-    if new in ("failed", "deferred") and not (args.note or "").strip():
-        print(c(f"BLOCKED: transitioning {args.id} to '{new}' requires --note with an explanation.", RED))
-        print(dim(f"  Example: amauta status {args.id} {new} --note 'reason for {new}' --agent <agent>"))
-        sys.exit(1)
-
-    # ── GITFLOW ENFORCEMENT: code tasks MUST go through validator to reach done ──
-    # Agents cannot shortcut `status done` for code tasks — they MUST submit to
-    # validation first, then the validator uses `validate --pass` after confirming
-    # the PR is merged and tests pass.
-    if args.status == "done" and _needs_gitflow_gate(item):
-        caller = (args.agent or "").lower()
-        if caller != "validator":
-            _append_note(item, f"GATE_BLOCKED: code task cannot be set to done directly. "
-                         f"Submit to validation first, validator will verify PR merge. "
-                         f"Caller: @{caller}", caller or "system")
-            item["updated_at"] = _now()
-            save(data)
-            print(c(f"{args.id}: BLOCKED — code tasks must go through validation, not direct done", RED))
-            print(dim("  Use: amauta status <id> validation  (then validator will review + merge PR)"))
+        # ── MANDATORY NOTE for failed/deferred transitions ──
+        if new in ("failed", "deferred") and not (args.note or "").strip():
+            print(c(f"BLOCKED: transitioning {args.id} to '{new}' requires --note with an explanation.", RED))
+            print(dim(f"  Example: amauta status {args.id} {new} --note 'reason for {new}' --agent <agent>"))
             sys.exit(1)
 
-    # Gate 3: test evidence applies to ALL tasks (VAL-3 spec)
-    if args.status == "validation":
-        phases = item.get("rpetd_phases", {}) or {}
-        t_phase = str(phases.get("T", ""))
-        missing = []
-        if not _has_test_evidence(t_phase):
-            missing.append("missing_test_evidence_T")
-        # Gates 1+4: branch + PR only for code tasks (gitflow gate)
-        if _needs_gitflow_gate(item):
-            e_phase = str(phases.get("E", ""))
-            if not _has_branch_evidence(e_phase):
-                missing.append("missing_branch_evidence_E")
-            if not _extract_pr_url(item):
-                if not (_is_infra_host_only(item) and _has_no_pr_needed_marker(item)):
-                    missing.append("missing_pr_url_D_or_notes")
+        # ── GITFLOW ENFORCEMENT: code tasks MUST go through validator to reach done ──
+        # Agents cannot shortcut `status done` for code tasks — they MUST submit to
+        # validation first, then the validator uses `validate --pass` after confirming
+        # the PR is merged and tests pass.
+        if args.status == "done" and _needs_gitflow_gate(item):
+            caller = (args.agent or "").lower()
+            if caller != "validator":
+                _append_note(item, f"GATE_BLOCKED: code task cannot be set to done directly. "
+                             f"Submit to validation first, validator will verify PR merge. "
+                             f"Caller: @{caller}", caller or "system")
+                item["updated_at"] = _now()
+                save(data)
+                print(c(f"{args.id}: BLOCKED — code tasks must go through validation, not direct done", RED))
+                print(dim("  Use: amauta status <id> validation  (then validator will review + merge PR)"))
+                sys.exit(1)
 
-        if missing:
-            gate_msg = "GATE_FAIL: " + ", ".join(missing)
-            _append_note(item, gate_msg + " | status unchanged", args.agent or "system")
-            item["updated_at"] = _now()
-            save(data)
-            print(c(f"{args.id}: validation blocked by gitflow gate", YELLOW))
-            print(dim(f"  {gate_msg}"))
-            print(dim("  Add missing RPETD evidence and retry status validation."))
-            sys.exit(1)
+        # Gate 3: test evidence applies to ALL tasks (VAL-3 spec)
+        if args.status == "validation":
+            phases = item.get("rpetd_phases", {}) or {}
+            t_phase = str(phases.get("T", ""))
+            missing = []
+            if not _has_test_evidence(t_phase):
+                missing.append("missing_test_evidence_T")
+            # Gates 1+4: branch + PR only for code tasks (gitflow gate)
+            if _needs_gitflow_gate(item):
+                e_phase = str(phases.get("E", ""))
+                if not _has_branch_evidence(e_phase):
+                    missing.append("missing_branch_evidence_E")
+                if not _extract_pr_url(item):
+                    if not (_is_infra_host_only(item) and _has_no_pr_needed_marker(item)):
+                        missing.append("missing_pr_url_D_or_notes")
 
-    # ── DEPENDENCY CHECK for done ──
-    items = data["items"]
-    if args.status == "done" and not _deps_met(item, items):
-        if not getattr(args, "force", False):
-            blocking = [d for d in item.get("dependencies", [])
-                       if (dep := _find(items, d)) is not None
-                       and dep.get("status") != "done"]
-            print(c(f"{args.id}: cannot set to done -- blocked by: {', '.join(blocking)}", RED))
-            print(dim("  Use --force to override."))
-            sys.exit(1)
+            if missing:
+                gate_msg = "GATE_FAIL: " + ", ".join(missing)
+                _append_note(item, gate_msg + " | status unchanged", args.agent or "system")
+                item["updated_at"] = _now()
+                save(data)
+                print(c(f"{args.id}: validation blocked by gitflow gate", YELLOW))
+                print(dim(f"  {gate_msg}"))
+                print(dim("  Add missing RPETD evidence and retry status validation."))
+                sys.exit(1)
 
-    old_status = item["status"]
-    item["status"] = args.status
-    item["updated_at"] = _now()
-    log.info("status_changed id=%s from=%s to=%s", args.id, old_status, args.status)
-    if args.note:
-        _append_note(item, args.note, args.agent or "system")
-    _mem_log_task_transition(item, old_status, args.status, args.agent or "system", args.note or "")
+        # ── DEPENDENCY CHECK for done ──
+        items = data["items"]
+        if args.status == "done" and not _deps_met(item, items):
+            if not getattr(args, "force", False):
+                blocking = [d for d in item.get("dependencies", [])
+                           if (dep := _find(items, d)) is not None
+                           and dep.get("status") != "done"]
+                print(c(f"{args.id}: cannot set to done -- blocked by: {', '.join(blocking)}", RED))
+                print(dim("  Use --force to override."))
+                sys.exit(1)
 
-    # ── Gitflow audit: log submission to validation ────────────────────────
-    if args.status == "validation" and _needs_gitflow_gate(item):
-        _pr = _extract_pr_url(item)
-        _phases = item.get("rpetd_phases", {}) or {}
-        _gitflow_log(
-            item.get("id", ""), args.agent or "system", "validation-submit",
-            branch_name=_extract_branch_name(str(_phases.get("E", ""))),
-            pr_url=_pr or None,
-            pr_number=_extract_pr_number(_pr) or None,
-            commit_sha=_extract_commit_sha(str(_phases.get("E", ""))),
-            notes=f"Submitted for validation by @{args.agent or 'system'}"
+        old_status = item["status"]
+        item["status"] = args.status
+        item["updated_at"] = _now()
+        log.info("status_changed id=%s from=%s to=%s", args.id, old_status, args.status)
+        if args.note:
+            _append_note(item, args.note, args.agent or "system")
+        _mem_log_task_transition(item, old_status, args.status, args.agent or "system", args.note or "")
+
+        # ── Gitflow audit: log submission to validation ────────────────────────
+        if args.status == "validation" and _needs_gitflow_gate(item):
+            _pr = _extract_pr_url(item)
+            _phases = item.get("rpetd_phases", {}) or {}
+            _gitflow_log(
+                item.get("id", ""), args.agent or "system", "validation-submit",
+                branch_name=_extract_branch_name(str(_phases.get("E", ""))),
+                pr_url=_pr or None,
+                pr_number=_extract_pr_number(_pr) or None,
+                commit_sha=_extract_commit_sha(str(_phases.get("E", ""))),
+                notes=f"Submitted for validation by @{args.agent or 'system'}"
+            )
+
+        save(data)
+
+        # ── Audit log: record status change ──
+        _audit_log_event(
+            task_id=args.id,
+            event_type="status_change",
+            agent_id=args.agent or "system",
+            status=args.status,
+            content=args.note or "",
+            metadata={
+                "old_status": old_status,
+                "new_status": args.status,
+                "forced": bool(getattr(args, "force", False)),
+            },
         )
 
-    save(data)
-
-    # ── Audit log: record status change ──
-    _audit_log_event(
-        task_id=args.id,
-        event_type="status_change",
-        agent_id=args.agent or "system",
-        status=args.status,
-        content=args.note or "",
-        metadata={
-            "old_status": old_status,
-            "new_status": args.status,
-            "forced": bool(getattr(args, "force", False)),
-        },
-    )
-
-    print(c(f"{args.id}: {old_status} → {args.status}", GREEN))
+        print(c(f"{args.id}: {old_status} → {args.status}", GREEN))
 
 
 def cmd_assign(args):
-    data = load()
-    item = _find(data["items"], args.id)
-    if not item:
-        print(c(f"{args.id} not found.", RED)); sys.exit(1)
-    old = item.get("assigned_to", "unassigned")
-    item["assigned_to"] = args.agent
-    item["agent"] = args.agent  # keep both fields in sync
-    item["updated_at"]  = _now()
-    _append_note(item, f"Reassigned from @{old} to @{args.agent}", "system")
-    _mem_log_event(
-        "system",
-        ["task", item.get("id", "").lower(), "event:assignment", f"to:{args.agent}"],
-        f"TASK EVENT: {item.get('id')} reassigned @{old}->@{args.agent}. title={item.get('title','')}",
-        source="task_event",
-        metadata={
-            "task_id": item.get("id"),
-            "event": "assignment",
-            "from": old,
-            "to": args.agent,
-        },
-    )
-    save(data)
-    print(c(f"{args.id} assigned to @{args.agent}", GREEN))
+    with _file_lock():
+        data = load()
+        item = _find(data["items"], args.id)
+        if not item:
+            print(c(f"{args.id} not found.", RED)); sys.exit(1)
+        old = item.get("assigned_to", "unassigned")
+        item["assigned_to"] = args.agent
+        item["agent"] = args.agent  # keep both fields in sync
+        item["updated_at"]  = _now()
+        _append_note(item, f"Reassigned from @{old} to @{args.agent}", "system")
+        _mem_log_event(
+            "system",
+            ["task", item.get("id", "").lower(), "event:assignment", f"to:{args.agent}"],
+            f"TASK EVENT: {item.get('id')} reassigned @{old}->@{args.agent}. title={item.get('title','')}",
+            source="task_event",
+            metadata={
+                "task_id": item.get("id"),
+                "event": "assignment",
+                "from": old,
+                "to": args.agent,
+            },
+        )
+        save(data)
+        print(c(f"{args.id} assigned to @{args.agent}", GREEN))
 
 
 def cmd_delete(args):
-    data  = load()
-    items = data["items"]
-    item  = _find(items, args.id)
-    if not item:
-        print(c(f"{args.id} not found.", RED)); sys.exit(1)
-    # Remove from parent's children list (list comprehension handles duplicates)
-    for i in items:
-        if "children" in i:
-            i["children"] = [c for c in i["children"] if c != item["id"]]
-    # Remove from other items' dependency lists (prevents silent unblocking)
-    for i in items:
-        if "dependencies" in i:
-            i["dependencies"] = [d for d in i["dependencies"] if d != item["id"]]
-    # Orphan-check: clear parent reference on children of the deleted item
-    for child_id in item.get("children", []):
-        child = _find(items, child_id)
-        if child:
-            child["parent"] = None
-    data["items"] = [i for i in items if i["id"] != item["id"]]
-    save(data)
-    print(c(f"Deleted {args.id}: {item['title']}", RED))
+    with _file_lock():
+        data  = load()
+        items = data["items"]
+        item  = _find(items, args.id)
+        if not item:
+            print(c(f"{args.id} not found.", RED)); sys.exit(1)
+        # Remove from parent's children list (list comprehension handles duplicates)
+        for i in items:
+            if "children" in i:
+                i["children"] = [c for c in i["children"] if c != item["id"]]
+        # Remove from other items' dependency lists (prevents silent unblocking)
+        for i in items:
+            if "dependencies" in i:
+                i["dependencies"] = [d for d in i["dependencies"] if d != item["id"]]
+        # Orphan-check: clear parent reference on children of the deleted item
+        for child_id in item.get("children", []):
+            child = _find(items, child_id)
+            if child:
+                child["parent"] = None
+        data["items"] = [i for i in items if i["id"] != item["id"]]
+        save(data)
+        print(c(f"Deleted {args.id}: {item['title']}", RED))
 
 
 # ── NEXT — agent's primary entry point ────────────────────────────────────────
@@ -3268,99 +3273,100 @@ def cmd_claim(args):
     Validates: item must be pending or failed (retry allowed).
     After claim, agent should begin RPETD and log phases via `amauta rpetd`.
     """
-    data  = load()
-    items = data["items"]
-    item  = _find(items, args.id)
-    if not item:
-        print(c(f"{args.id} not found.", RED)); sys.exit(1)
+    with _file_lock():
+        data  = load()
+        items = data["items"]
+        item  = _find(items, args.id)
+        if not item:
+            print(c(f"{args.id} not found.", RED)); sys.exit(1)
 
-    if item["status"] not in ("pending", "failed", "deferred"):
-        print(c(f"{args.id} is '{item['status']}' — only pending/failed/deferred can be claimed.", YELLOW))
-        if item["status"] == "in-progress" and item.get("claimed_by"):
-            print(dim(f"  Currently claimed by @{item['claimed_by']} at {_fmt_ts(item.get('claimed_at',''))}"))
-        sys.exit(1)
+        if item["status"] not in ("pending", "failed", "deferred"):
+            print(c(f"{args.id} is '{item['status']}' — only pending/failed/deferred can be claimed.", YELLOW))
+            if item["status"] == "in-progress" and item.get("claimed_by"):
+                print(dim(f"  Currently claimed by @{item['claimed_by']} at {_fmt_ts(item.get('claimed_at',''))}"))
+            sys.exit(1)
 
-    if not _deps_met(item, items):
-        blocking = [d for d in item.get("dependencies", []) if (dep := _find(items, d)) is not None and dep.get("status") != "done"]
-        print(c(f"{args.id} blocked by unmet deps: {', '.join(blocking)}", YELLOW))
-        sys.exit(1)
+        if not _deps_met(item, items):
+            blocking = [d for d in item.get("dependencies", []) if (dep := _find(items, d)) is not None and dep.get("status") != "done"]
+            print(c(f"{args.id} blocked by unmet deps: {', '.join(blocking)}", YELLOW))
+            sys.exit(1)
 
-    if item.get("status") == "pending" and _in_gate_cooldown(item):
-        age = _gate_fail_age_seconds(item) or 0
-        wait_s = max(0, (GATE_COOLDOWN_MINUTES * 60) - age)
-        print(c(f"{args.id} is cooling down after recent GATE_FAIL ({wait_s}s remaining).", YELLOW))
-        print(dim("  Avoid immediate retry loops; add missing evidence then retry later."))
-        sys.exit(1)
+        if item.get("status") == "pending" and _in_gate_cooldown(item):
+            age = _gate_fail_age_seconds(item) or 0
+            wait_s = max(0, (GATE_COOLDOWN_MINUTES * 60) - age)
+            print(c(f"{args.id} is cooling down after recent GATE_FAIL ({wait_s}s remaining).", YELLOW))
+            print(dim("  Avoid immediate retry loops; add missing evidence then retry later."))
+            sys.exit(1)
 
-    gaps = _task_hygiene_gaps(item)
-    if gaps:
-        _append_note(
-            item,
-            "TASK_HYGIENE_WARN before claim: " + ", ".join(gaps) +
-            ". Add richer context (details/test_strategy/success_criteria/doc_refs) for better autonomous execution.",
-            "system",
+        gaps = _task_hygiene_gaps(item)
+        if gaps:
+            _append_note(
+                item,
+                "TASK_HYGIENE_WARN before claim: " + ", ".join(gaps) +
+                ". Add richer context (details/test_strategy/success_criteria/doc_refs) for better autonomous execution.",
+                "system",
+            )
+
+        now = _now()
+        item["status"]     = "in-progress"
+        item["claimed_by"] = args.agent
+        item["assigned_to"] = args.agent  # keep both fields in sync
+        item["agent"] = args.agent        # keep both fields in sync
+        item["claimed_at"] = now
+        item["updated_at"] = now
+        _append_note(item, f"Claimed by @{args.agent}", args.agent)
+        _mem_log_event(
+            args.agent,
+            ["task", item.get("id", "").lower(), "event:claim", "status:in-progress"],
+            f"TASK EVENT: {item.get('id')} claimed by @{args.agent}. title={item.get('title','')}",
+            source="task_event",
+            metadata={
+                "task_id": item.get("id"),
+                "event": "claim",
+                "agent": args.agent,
+            },
         )
 
-    now = _now()
-    item["status"]     = "in-progress"
-    item["claimed_by"] = args.agent
-    item["assigned_to"] = args.agent  # keep both fields in sync
-    item["agent"] = args.agent        # keep both fields in sync
-    item["claimed_at"] = now
-    item["updated_at"] = now
-    _append_note(item, f"Claimed by @{args.agent}", args.agent)
-    _mem_log_event(
-        args.agent,
-        ["task", item.get("id", "").lower(), "event:claim", "status:in-progress"],
-        f"TASK EVENT: {item.get('id')} claimed by @{args.agent}. title={item.get('title','')}",
-        source="task_event",
-        metadata={
-            "task_id": item.get("id"),
-            "event": "claim",
-            "agent": args.agent,
-        },
-    )
+        # ── Layer 1: Claim-time context enrichment ─────────────────────────────
+        # Inject parent/sibling/PG/KB context into task notes AND print to stdout
+        # so the agent receives it immediately (not just written to notes).
+        # Best-effort, non-blocking.
+        enrichment_ctx = ""
+        try:
+            ctx = _enrich_task_context(item, items)
+            if ctx:
+                _append_note(item, ctx, "system-enrichment")
+                enrichment_ctx = ctx  # Keep for printing below
+        except Exception:
+            pass  # Enrichment must never block claims
 
-    # ── Layer 1: Claim-time context enrichment ─────────────────────────────
-    # Inject parent/sibling/PG/KB context into task notes AND print to stdout
-    # so the agent receives it immediately (not just written to notes).
-    # Best-effort, non-blocking.
-    enrichment_ctx = ""
-    try:
-        ctx = _enrich_task_context(item, items)
-        if ctx:
-            _append_note(item, ctx, "system-enrichment")
-            enrichment_ctx = ctx  # Keep for printing below
-    except Exception:
-        pass  # Enrichment must never block claims
+        save(data)
+        log.info("task_claimed id=%s agent=%s", args.id, args.agent)
 
-    save(data)
-    log.info("task_claimed id=%s agent=%s", args.id, args.agent)
+        # ── Audit log: record claim event ──
+        _audit_log_event(
+            task_id=args.id,
+            event_type="claim",
+            agent_id=args.agent,
+            metadata={"title": item.get("title", "")},
+        )
 
-    # ── Audit log: record claim event ──
-    _audit_log_event(
-        task_id=args.id,
-        event_type="claim",
-        agent_id=args.agent,
-        metadata={"title": item.get("title", "")},
-    )
+        print(c(f"CLAIMED: {args.id} → in-progress  @{args.agent}", GREEN))
+        print(dim(f"  Title: {item['title']}"))
+        if item.get("details"):
+            print(dim(f"  Details: {item['details'][:200]}"))
+        if item.get("success_criteria"):
+            print(dim(f"  Success criteria: {' | '.join(item['success_criteria'][:3])}"))
+        print(dim(f"\n  → Log work: amauta rpetd {args.id} --phase R --content \"...\""))
+        print(dim(f"  → Finish:   amauta status {args.id} validation --agent {args.agent} --note \"done\""))
 
-    print(c(f"CLAIMED: {args.id} → in-progress  @{args.agent}", GREEN))
-    print(dim(f"  Title: {item['title']}"))
-    if item.get("details"):
-        print(dim(f"  Details: {item['details'][:200]}"))
-    if item.get("success_criteria"):
-        print(dim(f"  Success criteria: {' | '.join(item['success_criteria'][:3])}"))
-    print(dim(f"\n  → Log work: amauta rpetd {args.id} --phase R --content \"...\""))
-    print(dim(f"  → Finish:   amauta status {args.id} validation --agent {args.agent} --note \"done\""))
-
-    # Print Layer 1 enrichment context so agent receives it at claim time
-    # (not just saved to notes where it would require a separate 'show' call)
-    if enrichment_ctx:
-        print()
-        print(c("  ── Layer 1 Context Enrichment ──", DIM))
-        for line in enrichment_ctx.strip().split("\n")[:30]:  # limit output length
-            print(f"  {dim(line)}")
+        # Print Layer 1 enrichment context so agent receives it at claim time
+        # (not just saved to notes where it would require a separate 'show' call)
+        if enrichment_ctx:
+            print()
+            print(c("  ── Layer 1 Context Enrichment ──", DIM))
+            for line in enrichment_ctx.strip().split("\n")[:30]:  # limit output length
+                print(f"  {dim(line)}")
 
 
 # ── RPETD — inline work log ────────────────────────────────────────────────────
@@ -3371,157 +3377,159 @@ def cmd_rpetd(args):
     Appends to existing content (doesn't overwrite) so multiple writes accumulate.
     Auto-marks rpetd_complete=True when all 5 phases have content.
     """
-    data  = load()
-    items = data["items"]
-    item  = _find(items, args.id)
-    if not item:
-        print(c(f"{args.id} not found.", RED)); sys.exit(1)
+    with _file_lock():
+        data  = load()
+        items = data["items"]
+        item  = _find(items, args.id)
+        if not item:
+            print(c(f"{args.id} not found.", RED)); sys.exit(1)
 
-    phase = args.phase.upper()
-    if phase not in PHASES:
-        print(c(f"Phase must be one of: {', '.join(PHASES)}", RED)); sys.exit(1)
+        phase = args.phase.upper()
+        if phase not in PHASES:
+            print(c(f"Phase must be one of: {', '.join(PHASES)}", RED)); sys.exit(1)
 
-    phases = item.setdefault("rpetd_phases", {ph: "" for ph in PHASES})
-    existing = phases.get(phase, "")
+        phases = item.setdefault("rpetd_phases", {ph: "" for ph in PHASES})
+        existing = phases.get(phase, "")
 
-    if existing and not args.append:
-        # Default: append with separator (RPETD-1 spec: \n---\n)
-        phases[phase] = existing + "\n---\n" + args.content
-    else:
-        phases[phase] = (existing + "\n" + args.content).strip() if existing else args.content
+        if existing and not args.append:
+            # Default: append with separator (RPETD-1 spec: \n---\n)
+            phases[phase] = existing + "\n---\n" + args.content
+        else:
+            phases[phase] = (existing + "\n" + args.content).strip() if existing else args.content
 
-    # ── Layer 2: RPETD Phase Enrichment via RLM + PostgreSQL ───────────────
-    # Each phase gets intelligent context injection:
-    #   R: RLM analyzes project architecture docs → suggests files/approach
-    #      + PG memory search for past experiences on this domain
-    #   P: RLM cross-checks plan against architecture constraints
-    #   E: RLM execution review (branch name, commit format, missing files) + PG past failures
-    #   T: RLM validates test output against success criteria
-    #   D: PG memory logs delivery for system learning
-    phase_supplement = ""
-    try:
-        phase_supplement = _rpetd_phase_enrich(phase, item, args.content)
+        # ── Layer 2: RPETD Phase Enrichment via RLM + PostgreSQL ───────────────
+        # Each phase gets intelligent context injection:
+        #   R: RLM analyzes project architecture docs → suggests files/approach
+        #      + PG memory search for past experiences on this domain
+        #   P: RLM cross-checks plan against architecture constraints
+        #   E: RLM execution review (branch name, commit format, missing files) + PG past failures
+        #   T: RLM validates test output against success criteria
+        #   D: PG memory logs delivery for system learning
+        phase_supplement = ""
+        try:
+            phase_supplement = _rpetd_phase_enrich(phase, item, args.content)
+            if phase_supplement:
+                phases[phase] = phases[phase] + "\n\n" + phase_supplement
+        except Exception:
+            pass  # Phase enrichment is best-effort, never blocks
+
+        # Auto-complete check
+        if all(phases.get(ph, "").strip() for ph in PHASES):
+            item["rpetd_complete"] = True
+
+        item["updated_at"] = _now()
+        _append_note(item, f"RPETD[{phase}] updated", args.agent or item.get("claimed_by", "system"))
+
+        # ── Gitflow audit log for code tasks ──────────────────────────────────
+        if _needs_gitflow_gate(item):
+            _agent = args.agent or item.get("claimed_by", "system")
+            _tid = item.get("id", "")
+            if phase == "E":
+                _branch = _extract_branch_name(args.content)
+                _sha = _extract_commit_sha(args.content)
+                if _branch:
+                    _gitflow_log(_tid, _agent, "branch-create", branch_name=_branch,
+                                 commit_sha=_sha or None, notes=f"E-phase branch evidence")
+            elif phase == "D":
+                _pr = _extract_pr_url(item)
+                if _pr:
+                    _gitflow_log(_tid, _agent, "pr-create", pr_url=_pr,
+                                 pr_number=_extract_pr_number(_pr) or None,
+                                 branch_name=_extract_branch_name(str(phases.get("E", ""))),
+                                 notes=f"D-phase PR delivery")
+
+        # ── Log phase to PG memory for system learning ─────────────────────────
+        _mem_log_event(
+            args.agent or item.get("claimed_by", "system"),
+            ["task", item.get("id", "").lower(), f"event:rpetd_{phase.lower()}", f"status:{item.get('status','')}"],
+            f"[rpetd_{phase.lower()}] {item.get('id')} status={item.get('status','')} by @{args.agent or item.get('claimed_by','?')} | {item.get('title','')} | {args.content[:200]}",
+            source="rpetd_phase",
+            metadata={"task_id": item.get("id"), "phase": phase, "agent": args.agent},
+        )
+
+        # If D-phase includes explicit learning, persist a dedicated learning record now
+        # so validation can prove learning landed in memory without requiring manual re-entry.
+        if phase == "D":
+            d_text = str(phases.get("D", "") or "")
+            if re.search(r"LEARNING\s*:|LESSON\s*:|what.worked:|what.failed:|reusable.pattern:", d_text, re.I):
+                owner = args.agent or item.get("claimed_by") or item.get("assigned_to") or "system"
+                task_id = item.get("id", "")
+                title = item.get("title", "")
+                learn_excerpt = d_text[:900]
+                _mem_log_event(
+                    owner,
+                    ["task", task_id.lower(), "event:learning", "rpetd-d", f"agent:{owner}"],
+                    f"LEARNING: {task_id} | {title}\n{learn_excerpt}",
+                    source="session-learning",
+                    metadata={"task_id": task_id, "phase": "D", "event": "learning_capture"},
+                )
+
+        save(data)
+        log.info("rpetd_phase id=%s phase=%s len=%d", args.id, phase, len(args.content))
+
+        # ── Audit log: record RPETD phase write ──
+        _audit_log_event(
+            task_id=args.id,
+            event_type="rpetd_phase",
+            agent_id=args.agent or item.get("claimed_by", "system"),
+            phase=phase,
+            content=args.content,
+            metadata={"title": item.get("title", ""), "rpetd_complete": item.get("rpetd_complete", False)},
+        )
+
+        complete_str = c(" ✓ RPETD COMPLETE", GREEN) if item.get("rpetd_complete", False) else ""
+        print(c(f"[{phase}] {PHASE_NAMES[phase]} logged on {args.id}{complete_str}", GREEN))
+        remaining = [ph for ph in PHASES if not phases.get(ph, "").strip()]
+        if remaining:
+            print(dim(f"  Remaining phases: {', '.join(remaining)}"))
         if phase_supplement:
-            phases[phase] = phases[phase] + "\n\n" + phase_supplement
-    except Exception:
-        pass  # Phase enrichment is best-effort, never blocks
-
-    # Auto-complete check
-    if all(phases.get(ph, "").strip() for ph in PHASES):
-        item["rpetd_complete"] = True
-
-    item["updated_at"] = _now()
-    _append_note(item, f"RPETD[{phase}] updated", args.agent or item.get("claimed_by", "system"))
-
-    # ── Gitflow audit log for code tasks ──────────────────────────────────
-    if _needs_gitflow_gate(item):
-        _agent = args.agent or item.get("claimed_by", "system")
-        _tid = item.get("id", "")
-        if phase == "E":
-            _branch = _extract_branch_name(args.content)
-            _sha = _extract_commit_sha(args.content)
-            if _branch:
-                _gitflow_log(_tid, _agent, "branch-create", branch_name=_branch,
-                             commit_sha=_sha or None, notes=f"E-phase branch evidence")
-        elif phase == "D":
-            _pr = _extract_pr_url(item)
-            if _pr:
-                _gitflow_log(_tid, _agent, "pr-create", pr_url=_pr,
-                             pr_number=_extract_pr_number(_pr) or None,
-                             branch_name=_extract_branch_name(str(phases.get("E", ""))),
-                             notes=f"D-phase PR delivery")
-
-    # ── Log phase to PG memory for system learning ─────────────────────────
-    _mem_log_event(
-        args.agent or item.get("claimed_by", "system"),
-        ["task", item.get("id", "").lower(), f"event:rpetd_{phase.lower()}", f"status:{item.get('status','')}"],
-        f"[rpetd_{phase.lower()}] {item.get('id')} status={item.get('status','')} by @{args.agent or item.get('claimed_by','?')} | {item.get('title','')} | {args.content[:200]}",
-        source="rpetd_phase",
-        metadata={"task_id": item.get("id"), "phase": phase, "agent": args.agent},
-    )
-
-    # If D-phase includes explicit learning, persist a dedicated learning record now
-    # so validation can prove learning landed in memory without requiring manual re-entry.
-    if phase == "D":
-        d_text = str(phases.get("D", "") or "")
-        if re.search(r"LEARNING\s*:|LESSON\s*:|what.worked:|what.failed:|reusable.pattern:", d_text, re.I):
-            owner = args.agent or item.get("claimed_by") or item.get("assigned_to") or "system"
-            task_id = item.get("id", "")
-            title = item.get("title", "")
-            learn_excerpt = d_text[:900]
-            _mem_log_event(
-                owner,
-                ["task", task_id.lower(), "event:learning", "rpetd-d", f"agent:{owner}"],
-                f"LEARNING: {task_id} | {title}\n{learn_excerpt}",
-                source="session-learning",
-                metadata={"task_id": task_id, "phase": "D", "event": "learning_capture"},
-            )
-
-    save(data)
-    log.info("rpetd_phase id=%s phase=%s len=%d", args.id, phase, len(args.content))
-
-    # ── Audit log: record RPETD phase write ──
-    _audit_log_event(
-        task_id=args.id,
-        event_type="rpetd_phase",
-        agent_id=args.agent or item.get("claimed_by", "system"),
-        phase=phase,
-        content=args.content,
-        metadata={"title": item.get("title", ""), "rpetd_complete": item.get("rpetd_complete", False)},
-    )
-
-    complete_str = c(" ✓ RPETD COMPLETE", GREEN) if item.get("rpetd_complete", False) else ""
-    print(c(f"[{phase}] {PHASE_NAMES[phase]} logged on {args.id}{complete_str}", GREEN))
-    remaining = [ph for ph in PHASES if not phases.get(ph, "").strip()]
-    if remaining:
-        print(dim(f"  Remaining phases: {', '.join(remaining)}"))
-    if phase_supplement:
-        lines = phase_supplement.split("\n")
-        print(c(f"  + RLM/Memory enrichment ({len(phase_supplement)} chars):", CYAN))
-        for line in lines[:4]:
-            print(dim(f"    {line}"))
-        if len(lines) > 4:
-            print(dim(f"    ... {len(lines)-4} more lines"))
+            lines = phase_supplement.split("\n")
+            print(c(f"  + RLM/Memory enrichment ({len(phase_supplement)} chars):", CYAN))
+            for line in lines[:4]:
+                print(dim(f"    {line}"))
+            if len(lines) > 4:
+                print(dim(f"    ... {len(lines)-4} more lines"))
 
 
 # ── NOTE — append a timestamped note with author ───────────────────────────────
 def cmd_note(args):
-    data = load()
-    item = _find(data["items"], args.id)
-    if not item:
-        print(c(f"{args.id} not found.", RED)); sys.exit(1)
-    _append_note(item, args.content, args.agent or "system")
+    with _file_lock():
+        data = load()
+        item = _find(data["items"], args.id)
+        if not item:
+            print(c(f"{args.id} not found.", RED)); sys.exit(1)
+        _append_note(item, args.content, args.agent or "system")
 
-    # Gitflow telemetry from free-form notes (best-effort).
-    # Validators/coders often paste merge evidence in notes.
-    if _needs_gitflow_gate(item):
-        note_text = args.content or ""
-        pr_pat = re.compile(r"https://github\.com/[^/\s]+/[^/\s]+/pull/(\d+)", re.I)
-        m = pr_pat.search(note_text)
-        pr_url = m.group(0) if m else (_extract_pr_url(item) or None)
-        pr_num = int(m.group(1)) if m else (_extract_pr_number(pr_url) if pr_url else None)
+        # Gitflow telemetry from free-form notes (best-effort).
+        # Validators/coders often paste merge evidence in notes.
+        if _needs_gitflow_gate(item):
+            note_text = args.content or ""
+            pr_pat = re.compile(r"https://github\.com/[^/\s]+/[^/\s]+/pull/(\d+)", re.I)
+            m = pr_pat.search(note_text)
+            pr_url = m.group(0) if m else (_extract_pr_url(item) or None)
+            pr_num = int(m.group(1)) if m else (_extract_pr_number(pr_url) if pr_url else None)
 
-        if m:
-            _gitflow_log(
-                item.get("id", ""), args.agent or "system", "pr-note",
-                pr_url=pr_url,
-                pr_number=pr_num,
-                notes="PR URL captured from task note",
-            )
+            if m:
+                _gitflow_log(
+                    item.get("id", ""), args.agent or "system", "pr-note",
+                    pr_url=pr_url,
+                    pr_number=pr_num,
+                    notes="PR URL captured from task note",
+                )
 
-        if re.search(r"\bmerged\b|gh\s+pr\s+merge|squash\s+merge|merge\s+commit", note_text, re.I) and \
-           not re.search(r"not\s+merged|merge\s+conflict|failed\s+to\s+merge", note_text, re.I):
-            _gitflow_log(
-                item.get("id", ""), args.agent or "system", "merge",
-                pr_url=pr_url,
-                pr_number=pr_num,
-                branch_name=_extract_branch_name(str((item.get("rpetd_phases", {}) or {}).get("E", ""))),
-                notes=note_text[:200],
-            )
+            if re.search(r"\bmerged\b|gh\s+pr\s+merge|squash\s+merge|merge\s+commit", note_text, re.I) and \
+               not re.search(r"not\s+merged|merge\s+conflict|failed\s+to\s+merge", note_text, re.I):
+                _gitflow_log(
+                    item.get("id", ""), args.agent or "system", "merge",
+                    pr_url=pr_url,
+                    pr_number=pr_num,
+                    branch_name=_extract_branch_name(str((item.get("rpetd_phases", {}) or {}).get("E", ""))),
+                    notes=note_text[:200],
+                )
 
-    item["updated_at"] = _now()
-    save(data)
-    print(c(f"Note added to {args.id}", GREEN))
+        item["updated_at"] = _now()
+        save(data)
+        print(c(f"Note added to {args.id}", GREEN))
 
 
 # ── ATOMIZE ────────────────────────────────────────────────────────────────────
@@ -3533,122 +3541,123 @@ def cmd_atomize(args):
     Usage: amauta atomize TK-XXXX --subtasks "do A\ndo B\ndo C" --agent coder
            amauta atomize TK-XXXX --subtasks-file /path/to/subtasks.txt --agent coder
     """
-    data = load()
-    parent = _find(data["items"], args.id)
-    if not parent:
-        print(c(f"{args.id} not found.", RED)); sys.exit(1)
-
-    # Gather subtask titles
-    subtask_titles: list[str] = []
-    if args.subtasks:
-        # Split on newlines or semicolons
-        raw = args.subtasks.replace("\\n", "\n")
-        subtask_titles = [s.strip() for s in re.split(r"[\n;]+", raw) if s.strip()]
-    elif args.subtasks_file:
-        import pathlib
-        lines = pathlib.Path(args.subtasks_file).read_text().splitlines()
-        subtask_titles = [l.strip() for l in lines if l.strip() and not l.startswith("#")]
-
-    if not subtask_titles:
-        print(c("No subtasks provided. Use --subtasks 'task A\ntask B' or --subtasks-file FILE", RED))
-        sys.exit(1)
-
-    agent = args.agent or parent.get("assigned_to") or parent.get("agent") or ""
-    priority = args.priority or parent.get("priority", "medium")
-    parent_tags = list(parent.get("tags") or [])
-    child_ids: list[str] = []
-
-    for title in subtask_titles:
-        # Build a minimal add-args namespace
-        class _FakeArgs:
-            pass
-        fa = _FakeArgs()
-        fa.type = "task"
-        fa.title = title
-        fa.description = f"Subtask of {args.id}: {parent.get('title', '')}"
-        fa.details = ""
-        fa.status = "pending"
-        fa.priority = priority
-        fa.agent = agent
-        fa.tags = ",".join(parent_tags) if parent_tags else ""
-        fa.sprint = None
-        fa.due = None
-        fa.hours = None
-        fa.importance = parent.get("importance") or 3
-        fa.urgency = parent.get("urgency") or 3
-        fa.criteria = None
-        fa.deliverables = None
-        fa.checklist = None
-        fa.test_strategy = None
-        fa.refs = None
-        fa.parent = args.id
-        fa.deps = None
-        # Temporarily suppress print output
-        import io, sys as _sys
-        _buf = io.StringIO()
-        _old_stdout = _sys.stdout
-        _sys.stdout = _buf
-        _exit_code = None
-        try:
-            cmd_add(fa)
-        except SystemExit as _e:
-            _exit_code = _e.code
-        finally:
-            _sys.stdout = _old_stdout
-        output = _buf.getvalue()
-        stripped_output = output.strip()
-
-        # Dedup from cmd_add can include an existing TK id; don't treat that as a newly created child.
-        if "DEDUP BLOCKED" in output:
-            print(c(f"  Subtask skipped (dedup): {title}", YELLOW))
-            if stripped_output:
-                print(stripped_output)
-            continue
-
-        # Extract only IDs from successful creation lines.
-        m = re.search(r'Created\s+\w+\s+(TK-\d+):', output)
-        if m:
-            child_ids.append(m.group(1))
-            print(c(f"  Created subtask: {m.group(1)} — {title}", GREEN))
-        else:
-            if stripped_output:
-                print(c(f"  Subtask warning: {title}", YELLOW))
-                print(stripped_output)
-            elif _exit_code not in (None, 0):
-                print(c(f"  Subtask failed (exit {_exit_code}): {title}", RED))
-
-    if child_ids:
-        # Reload latest data so we don't overwrite parent/children updates made by cmd_add()
+    with _file_lock():
         data = load()
         parent = _find(data["items"], args.id)
         if not parent:
-            print(c(f"{args.id} not found after subtask creation.", RED)); sys.exit(1)
+            print(c(f"{args.id} not found.", RED)); sys.exit(1)
 
-        # Mark parent as deferred with note and merge child linkage
-        parent["status"] = "deferred"
-        existing_children = list(parent.get("children") or [])
-        for cid in child_ids:
-            if cid not in existing_children:
-                existing_children.append(cid)
-        parent["children"] = existing_children
+        # Gather subtask titles
+        subtask_titles: list[str] = []
+        if args.subtasks:
+            # Split on newlines or semicolons
+            raw = args.subtasks.replace("\\n", "\n")
+            subtask_titles = [s.strip() for s in re.split(r"[\n;]+", raw) if s.strip()]
+        elif args.subtasks_file:
+            import pathlib
+            lines = pathlib.Path(args.subtasks_file).read_text().splitlines()
+            subtask_titles = [l.strip() for l in lines if l.strip() and not l.startswith("#")]
 
-        note_text = f"ATOMIZED: split into {len(child_ids)} subtasks: {', '.join(child_ids)}"
-        _append_note(parent, note_text, args.agent or "system")
-        parent["updated_at"] = _now()
-        save(data)
-        print(c(f"\n{args.id} → deferred. Created {len(child_ids)} subtasks: {', '.join(child_ids)}", GREEN))
-        # Write to memory so agents know about the atomization
-        _mem_log_event(
-            args.agent or "system",
-            ["atomize", "task-split", args.id.lower(), "event:atomized"],
-            f"ATOMIZED: {args.id} split into {len(child_ids)} subtasks: {', '.join(child_ids)}. "
-            f"Parent: {parent.get('title', '')}",
-            source="task_event",
-            metadata={"task_id": args.id, "child_ids": child_ids, "event": "atomized"},
-        )
-    else:
-        print(c("No subtasks were created successfully.", RED))
-        sys.exit(1)
+        if not subtask_titles:
+            print(c("No subtasks provided. Use --subtasks 'task A\ntask B' or --subtasks-file FILE", RED))
+            sys.exit(1)
+
+        agent = args.agent or parent.get("assigned_to") or parent.get("agent") or ""
+        priority = args.priority or parent.get("priority", "medium")
+        parent_tags = list(parent.get("tags") or [])
+        child_ids: list[str] = []
+
+        for title in subtask_titles:
+            # Build a minimal add-args namespace
+            class _FakeArgs:
+                pass
+            fa = _FakeArgs()
+            fa.type = "task"
+            fa.title = title
+            fa.description = f"Subtask of {args.id}: {parent.get('title', '')}"
+            fa.details = ""
+            fa.status = "pending"
+            fa.priority = priority
+            fa.agent = agent
+            fa.tags = ",".join(parent_tags) if parent_tags else ""
+            fa.sprint = None
+            fa.due = None
+            fa.hours = None
+            fa.importance = parent.get("importance") or 3
+            fa.urgency = parent.get("urgency") or 3
+            fa.criteria = None
+            fa.deliverables = None
+            fa.checklist = None
+            fa.test_strategy = None
+            fa.refs = None
+            fa.parent = args.id
+            fa.deps = None
+            # Temporarily suppress print output
+            import io, sys as _sys
+            _buf = io.StringIO()
+            _old_stdout = _sys.stdout
+            _sys.stdout = _buf
+            _exit_code = None
+            try:
+                cmd_add(fa)
+            except SystemExit as _e:
+                _exit_code = _e.code
+            finally:
+                _sys.stdout = _old_stdout
+            output = _buf.getvalue()
+            stripped_output = output.strip()
+
+            # Dedup from cmd_add can include an existing TK id; don't treat that as a newly created child.
+            if "DEDUP BLOCKED" in output:
+                print(c(f"  Subtask skipped (dedup): {title}", YELLOW))
+                if stripped_output:
+                    print(stripped_output)
+                continue
+
+            # Extract only IDs from successful creation lines.
+            m = re.search(r'Created\s+\w+\s+(TK-\d+):', output)
+            if m:
+                child_ids.append(m.group(1))
+                print(c(f"  Created subtask: {m.group(1)} — {title}", GREEN))
+            else:
+                if stripped_output:
+                    print(c(f"  Subtask warning: {title}", YELLOW))
+                    print(stripped_output)
+                elif _exit_code not in (None, 0):
+                    print(c(f"  Subtask failed (exit {_exit_code}): {title}", RED))
+
+        if child_ids:
+            # Reload latest data so we don't overwrite parent/children updates made by cmd_add()
+            data = load()
+            parent = _find(data["items"], args.id)
+            if not parent:
+                print(c(f"{args.id} not found after subtask creation.", RED)); sys.exit(1)
+
+            # Mark parent as deferred with note and merge child linkage
+            parent["status"] = "deferred"
+            existing_children = list(parent.get("children") or [])
+            for cid in child_ids:
+                if cid not in existing_children:
+                    existing_children.append(cid)
+            parent["children"] = existing_children
+
+            note_text = f"ATOMIZED: split into {len(child_ids)} subtasks: {', '.join(child_ids)}"
+            _append_note(parent, note_text, args.agent or "system")
+            parent["updated_at"] = _now()
+            save(data)
+            print(c(f"\n{args.id} → deferred. Created {len(child_ids)} subtasks: {', '.join(child_ids)}", GREEN))
+            # Write to memory so agents know about the atomization
+            _mem_log_event(
+                args.agent or "system",
+                ["atomize", "task-split", args.id.lower(), "event:atomized"],
+                f"ATOMIZED: {args.id} split into {len(child_ids)} subtasks: {', '.join(child_ids)}. "
+                f"Parent: {parent.get('title', '')}",
+                source="task_event",
+                metadata={"task_id": args.id, "child_ids": child_ids, "event": "atomized"},
+            )
+        else:
+            print(c("No subtasks were created successfully.", RED))
+            sys.exit(1)
 
 
 # ── VALIDATION GATES ──────────────────────────────────────────────────────────
@@ -3759,357 +3768,358 @@ def cmd_validate(args):
     Validator-only: mark done or failed with evidence.
     Checks rpetd_complete before passing (warns if not).
     """
-    data = load()
-    item = _find(data["items"], args.id)
-    if not item:
-        print(c(f"{args.id} not found.", RED)); sys.exit(1)
+    with _file_lock():
+        data = load()
+        item = _find(data["items"], args.id)
+        if not item:
+            print(c(f"{args.id} not found.", RED)); sys.exit(1)
 
-    if item["status"] not in ("validation", "in-progress"):
-        if args.force_reason:
-            print(c(f"Warning: {args.id} is '{item['status']}', expected 'validation' (--force-reason override)", YELLOW))
-        else:
-            print(c(f"BLOCKED: {args.id} is '{item['status']}' — must be 'in-progress' or 'validation' before validation.", RED))
-            print(dim("  Use --force-reason 'justification' to override status check."))
-            sys.exit(1)
-
-    # ── SELF-VALIDATION CHECK: claimed_by != validated_by ──
-    claimer = (item.get("claimed_by") or "").strip().lower()
-    validator_id = (args.validator or "validator").strip().lower()
-    force_reason = getattr(args, "force_reason", "") or ""
-    if claimer and validator_id and claimer == validator_id:
-        if force_reason:
-            print(c(f"Warning: self-validation for {args.id} (claimed by @{claimer}, validated by @{validator_id}). "
-                    f"Override reason: {force_reason}", YELLOW))
-        else:
-            print(c(f"SELF-VALIDATION BLOCKED: {args.id} was claimed by @{claimer}. "
-                    f"Cannot be validated by the same agent.", RED))
-            print(dim("  Use --force-reason 'justification' to override self-validation check."))
-            _append_note(item, f"SELF_VALIDATION_BLOCKED: claimed_by={claimer}, validator={validator_id}",
-                        validator_id)
-            item["updated_at"] = _now()
-            save(data)
-            sys.exit(1)
-
-    if args.pass_:
-        # ── RUN ALL VALIDATION GATES ─────────────────────────────────────────
-        gate_results = _validate_all_gates(item, test_exempt=getattr(args, "test_exempt", False))
-        failures = [g for g in gate_results if g["status"] == "FAIL"]
-
-        # JSON output mode — clean JSON without ANSI, then continue to normal processing
-        if getattr(args, "json_output", False):
-            result = {
-                "task_id": args.id,
-                "gates": gate_results,
-                "passed": len(failures) == 0,
-                "failed_count": len(failures),
-                "forced": bool(args.force_reason),
-            }
-            if len(failures) == 0 or args.force_reason:
-                result["status"] = "done"
+        if item["status"] not in ("validation", "in-progress"):
+            if args.force_reason:
+                print(c(f"Warning: {args.id} is '{item['status']}', expected 'validation' (--force-reason override)", YELLOW))
             else:
-                result["status"] = "blocked"
-            print(json.dumps(result))
-            if failures and not args.force_reason:
+                print(c(f"BLOCKED: {args.id} is '{item['status']}' — must be 'in-progress' or 'validation' before validation.", RED))
+                print(dim("  Use --force-reason 'justification' to override status check."))
                 sys.exit(1)
-            # Continue to normal pass processing (status update, etc.)
 
-        # Print structured gate results (text mode only)
-        _is_json = getattr(args, "json_output", False)
-        if not _is_json:
-            print(f"\n  {'─' * 50}")
-            print(f"  Validation Gates for {args.id}:")
-            print(f"  {'─' * 50}")
-            for g in gate_results:
-                if g["status"] == "PASS":
-                    icon = c("PASS", GREEN)
-                elif g["status"] == "SKIP":
-                    icon = c("SKIP", DIM)
-                else:
-                    icon = c("FAIL", RED)
-                print(f"  GATE[{g['gate']}]: {icon} -- {g['reason']}")
-            print(f"  {'─' * 50}")
-
-        if failures and not args.force_reason:
-            # Record each failure
-            for f in failures:
-                _append_note(item, f"GATE_FAIL: {f['gate']} -- {f['reason']}",
-                            args.validator or "validator")
-            item["updated_at"] = _now()
-            save(data)
-            if not _is_json:
-                print(c(f"\n  {args.id}: PASS blocked — {len(failures)} gate(s) failed", RED))
-                print(dim("  Fix the issues above or use --force-reason 'justification' to override."))
-            sys.exit(1)
-
-        if failures and args.force_reason and not _is_json:
-            print(c(f"\n  Warning: {len(failures)} gate(s) failed but --force-reason override applied: {args.force_reason}", YELLOW))
-
-        # ── DEPENDENCY CHECK: block done if deps are incomplete ──
-        if not _deps_met(item, data["items"]) and not args.force_reason:
-            blocking = [d for d in item.get("dependencies", [])
-                       if (dep := _find(data["items"], d)) is not None
-                       and dep.get("status") != "done"]
-            _append_note(item, f"DEP_BLOCK: cannot mark done, blocked by: {', '.join(blocking)}",
-                        args.validator or "validator")
-            item["updated_at"] = _now()
-            save(data)
-            if not _is_json:
-                print(c(f"\n  {args.id}: PASS blocked -- dependencies incomplete", RED))
-                for bid in blocking:
-                    bdep = _find(data["items"], bid)
-                    bstatus = bdep.get("status", "?") if bdep else "not found"
-                    print(dim(f"    {bid}: {bstatus}"))
-                print(dim("  Complete blocking tasks first or use --force-reason 'justification' to override."))
+        # ── SELF-VALIDATION CHECK: claimed_by != validated_by ──
+        claimer = (item.get("claimed_by") or "").strip().lower()
+        validator_id = (args.validator or "validator").strip().lower()
+        force_reason = getattr(args, "force_reason", "") or ""
+        if claimer and validator_id and claimer == validator_id:
+            if force_reason:
+                print(c(f"Warning: self-validation for {args.id} (claimed by @{claimer}, validated by @{validator_id}). "
+                        f"Override reason: {force_reason}", YELLOW))
             else:
-                dep_result = {
+                print(c(f"SELF-VALIDATION BLOCKED: {args.id} was claimed by @{claimer}. "
+                        f"Cannot be validated by the same agent.", RED))
+                print(dim("  Use --force-reason 'justification' to override self-validation check."))
+                _append_note(item, f"SELF_VALIDATION_BLOCKED: claimed_by={claimer}, validator={validator_id}",
+                            validator_id)
+                item["updated_at"] = _now()
+                save(data)
+                sys.exit(1)
+
+        if args.pass_:
+            # ── RUN ALL VALIDATION GATES ─────────────────────────────────────────
+            gate_results = _validate_all_gates(item, test_exempt=getattr(args, "test_exempt", False))
+            failures = [g for g in gate_results if g["status"] == "FAIL"]
+
+            # JSON output mode — clean JSON without ANSI, then continue to normal processing
+            if getattr(args, "json_output", False):
+                result = {
                     "task_id": args.id,
-                    "status": "dep_blocked",
-                    "blocking": blocking,
+                    "gates": gate_results,
+                    "passed": len(failures) == 0,
+                    "failed_count": len(failures),
+                    "forced": bool(args.force_reason),
                 }
-                print(json.dumps(dep_result))
-            sys.exit(1)
+                if len(failures) == 0 or args.force_reason:
+                    result["status"] = "done"
+                else:
+                    result["status"] = "blocked"
+                print(json.dumps(result))
+                if failures and not args.force_reason:
+                    sys.exit(1)
+                # Continue to normal pass processing (status update, etc.)
 
-        # ── LEARNING persistence check (existing behavior, non-blocking) ─────
-        _validator_id = args.validator or "validator"
-        if not _has_learning_persisted(item) and not args.force_reason:
-            _auto_write_learning(item, _validator_id)
-            # Note: this is a soft degradation, not a hard block
-            # The LEARNING_BLOCK gate above already verified the content exists
+            # Print structured gate results (text mode only)
+            _is_json = getattr(args, "json_output", False)
+            if not _is_json:
+                print(f"\n  {'─' * 50}")
+                print(f"  Validation Gates for {args.id}:")
+                print(f"  {'─' * 50}")
+                for g in gate_results:
+                    if g["status"] == "PASS":
+                        icon = c("PASS", GREEN)
+                    elif g["status"] == "SKIP":
+                        icon = c("SKIP", DIM)
+                    else:
+                        icon = c("FAIL", RED)
+                    print(f"  GATE[{g['gate']}]: {icon} -- {g['reason']}")
+                print(f"  {'─' * 50}")
 
-        item["status"]           = "done"
-        item["validated_by"]     = args.validator or "validator"
-        item["validation_notes"] = args.notes or "Validated OK"
-        _append_note(item, f"PASS: {item['validation_notes']}", item["validated_by"])
-        _mem_log_event(
-            item["validated_by"],
-            ["task", item.get("id", "").lower(), "event:validation_pass", "status:done", "success"],
-            f"VALIDATION PASS: {item.get('id')} by @{item['validated_by']}. notes={item.get('validation_notes','')[:240]}",
-            source="task_event",
-            metadata={
-                "task_id": item.get("id"),
-                "event": "validation_pass",
-                "status": "done",
-            },
-        )
-        # ── Gitflow audit: log validation-pass AND merge ───────────────────
-        if _needs_gitflow_gate(item):
-            _pr = _extract_pr_url(item)
-            _phases = item.get("rpetd_phases", {}) or {}
-            _branch = _extract_branch_name(str(_phases.get("E", "")))
-            _pr_num = _extract_pr_number(_pr) if _pr else 0
-            _gitflow_log(
-                item.get("id", ""), item["validated_by"], "validation-pass",
-                pr_url=_pr or None,
-                pr_number=_pr_num or None,
-                branch_name=_branch,
-                notes=f"PASS: {item.get('validation_notes', '')[:200]}"
-            )
-            # Log merge only when real merge evidence exists and no merge event logged yet.
-            if _pr and _has_merge_evidence(item, item.get("validation_notes", "")) and not _has_gitflow_action(item.get("id", ""), "merge"):
-                _gitflow_log(
-                    item.get("id", ""), item["validated_by"], "merge",
-                    pr_url=_pr,
-                    pr_number=_pr_num or None,
-                    branch_name=_branch,
-                    notes=f"Merged via validator PASS. PR: {_pr}"
-                )
+            if failures and not args.force_reason:
+                # Record each failure
+                for f in failures:
+                    _append_note(item, f"GATE_FAIL: {f['gate']} -- {f['reason']}",
+                                args.validator or "validator")
+                item["updated_at"] = _now()
+                save(data)
+                if not _is_json:
+                    print(c(f"\n  {args.id}: PASS blocked — {len(failures)} gate(s) failed", RED))
+                    print(dim("  Fix the issues above or use --force-reason 'justification' to override."))
+                sys.exit(1)
 
-        # ── Non-code: log validation-pass to gitflow_log as non-code-pass ──
-        # Non-code tasks don't have PRs but we still audit their completion
-        if not _needs_gitflow_gate(item):
-            _gitflow_log(
-                item.get("id", ""), item["validated_by"], "non-code-pass",
-                notes=f"Non-code PASS: {item.get('validation_notes', '')[:200]}"
-            )
+            if failures and args.force_reason and not _is_json:
+                print(c(f"\n  Warning: {len(failures)} gate(s) failed but --force-reason override applied: {args.force_reason}", YELLOW))
 
-        # ── Auto-promote validation passes to SKB ──────────────────────
-        # When a task passes validation with complete RPETD, promote a
-        # success pattern to agent_shared_knowledge so ALL agents learn.
-        # This fires for BOTH code and non-code tasks.
-        _phases_v = item.get("rpetd_phases", {}) or {}
-        _criteria_v = " | ".join(str(c) for c in (item.get("success_criteria") or [])[:3])
-        _agent_v = item.get("claimed_by") or item.get("assigned_to") or "system"
-        _title_v = item.get("title", "")[:80]
-        _lane_v = "code" if _needs_gitflow_gate(item) else "non-code"
-        # Extract web_search findings from all phases for SKB entry
-        _ws_in_phases = ""
-        for _ph_n in ("R", "P", "D"):
-            _ph_t = str(_phases_v.get(_ph_n, ""))
-            _ws_m = re.search(r'web.?search\s+findings?[:\s]+(.{20,300})', _ph_t, re.I | re.S)
-            if _ws_m:
-                _ws_in_phases = _ws_m.group(1).strip()[:200]
-                break
-        _skb_promote(
-            title=f"VALIDATED PATTERN: {_title_v}",
-            content=(
-                f"Task {item.get('id')} PASSED validation. Agent: {_agent_v}. Lane: {_lane_v}.\n"
-                f"Criteria met: {_criteria_v or 'completed'}\n"
-                f"Validator notes: {item.get('validation_notes','')[:200]}\n"
-                f"web_search findings: {_ws_in_phases or 'not recorded'}"
-            ),
-            category="workflow" if _lane_v == "code" else "process",
-            agent_id=item["validated_by"],
-            tags=["validated", "pattern", "success", f"agent:{_agent_v}", f"lane:{_lane_v}"],
-            importance=6,
-        )
-        # Persist web_search findings to memory separately if found
-        if _ws_in_phases:
-            _mem_log_event(
-                _agent_v,
-                ["web_search_result", item.get("id","").lower(), "phase:validation", f"agent:{_agent_v}"],
-                f"WEB_SEARCH FINDING [validation] {item.get('id','')} | {_title_v}\n{_ws_in_phases}",
-                source="web_search_result",
-                metadata={"task_id": item.get("id"), "phase": "validation", "event": "web_search_result"},
-            )
+            # ── DEPENDENCY CHECK: block done if deps are incomplete ──
+            if not _deps_met(item, data["items"]) and not args.force_reason:
+                blocking = [d for d in item.get("dependencies", [])
+                           if (dep := _find(data["items"], d)) is not None
+                           and dep.get("status") != "done"]
+                _append_note(item, f"DEP_BLOCK: cannot mark done, blocked by: {', '.join(blocking)}",
+                            args.validator or "validator")
+                item["updated_at"] = _now()
+                save(data)
+                if not _is_json:
+                    print(c(f"\n  {args.id}: PASS blocked -- dependencies incomplete", RED))
+                    for bid in blocking:
+                        bdep = _find(data["items"], bid)
+                        bstatus = bdep.get("status", "?") if bdep else "not found"
+                        print(dim(f"    {bid}: {bstatus}"))
+                    print(dim("  Complete blocking tasks first or use --force-reason 'justification' to override."))
+                else:
+                    dep_result = {
+                        "task_id": args.id,
+                        "status": "dep_blocked",
+                        "blocking": blocking,
+                    }
+                    print(json.dumps(dep_result))
+                sys.exit(1)
 
-        log.info("task_validated id=%s outcome=pass agent=%s", args.id, item["validated_by"])
-        print(c(f"VALIDATED ✓  {args.id} → DONE", GREEN))
+            # ── LEARNING persistence check (existing behavior, non-blocking) ─────
+            _validator_id = args.validator or "validator"
+            if not _has_learning_persisted(item) and not args.force_reason:
+                _auto_write_learning(item, _validator_id)
+                # Note: this is a soft degradation, not a hard block
+                # The LEARNING_BLOCK gate above already verified the content exists
 
-        # ── Auto-learning: record successful agent performance ──────────
-        _record_agent_performance(
-            agent_id=item.get("claimed_by", ""),
-            task_id=args.id,
-            outcome="pass",
-            task_type=item.get("type", "task"),
-            duration_minutes=_calc_duration_minutes(item),
-            learning_captured=(item.get("rpetd_phases") or {}).get("D", "")[:500],
-        )
-
-        # ── Audit log: record validation pass ──
-        _audit_log_event(
-            task_id=args.id,
-            event_type="validation",
-            agent_id=item["validated_by"],
-            status="force" if (failures and args.force_reason) else "pass",
-            gate_results=[dict(g) for g in gate_results],
-            content=item.get("validation_notes", ""),
-            metadata={
-                "forced": bool(failures and args.force_reason),
-                "force_reason": args.force_reason if (failures and args.force_reason) else "",
-                "test_exempt": getattr(args, "test_exempt", False),
-                "failed_gates": [g["gate"] for g in failures] if failures else [],
-                "self_validated": bool(claimer and validator_id and claimer == validator_id),
-            },
-        )
-    else:
-        # JSON output for --fail path
-        if getattr(args, "json_output", False):
-            print(json.dumps({"task_id": args.id, "status": "failed", "notes": args.notes or ""}))
-
-        fail_notes = (args.notes or "").lower()
-        non_code_gitflow_false_fail = (
-            ("gitflow" in fail_notes or "no pr url" in fail_notes or "pull request" in fail_notes)
-            and not _needs_gitflow_gate(item)
-            and bool(item.get("rpetd_complete"))
-        )
-
-        if non_code_gitflow_false_fail:
-            item["status"] = "done"
-            item["validated_by"] = args.validator or "validator"
-            item["validation_notes"] = (
-                "Policy correction: non-code task with complete RPETD does not require PR/gitflow evidence. "
-                "Marked done automatically to prevent false-fail loops."
-            )
+            item["status"]           = "done"
+            item["validated_by"]     = args.validator or "validator"
+            item["validation_notes"] = args.notes or "Validated OK"
             _append_note(item, f"PASS: {item['validation_notes']}", item["validated_by"])
             _mem_log_event(
                 item["validated_by"],
-                [
-                    "task",
-                    item.get("id", "").lower(),
-                    "event:validation_policy_correction",
-                    "status:done",
-                    "non-code",
-                    "autolearn",
-                ],
-                f"VALIDATION POLICY CORRECTION: {item.get('id')} auto-passed (non-code RPETD-complete task incorrectly failed for gitflow/PR).",
+                ["task", item.get("id", "").lower(), "event:validation_pass", "status:done", "success"],
+                f"VALIDATION PASS: {item.get('id')} by @{item['validated_by']}. notes={item.get('validation_notes','')[:240]}",
                 source="task_event",
                 metadata={
                     "task_id": item.get("id"),
-                    "event": "validation_policy_correction",
-                    "reason": "non_code_gitflow_false_fail",
+                    "event": "validation_pass",
                     "status": "done",
                 },
             )
-            print(c(f"POLICY-CORRECTED ✓  {args.id} → DONE (non-code task)", GREEN))
-            item["updated_at"] = _now()
-            save(data)
-            return
+            # ── Gitflow audit: log validation-pass AND merge ───────────────────
+            if _needs_gitflow_gate(item):
+                _pr = _extract_pr_url(item)
+                _phases = item.get("rpetd_phases", {}) or {}
+                _branch = _extract_branch_name(str(_phases.get("E", "")))
+                _pr_num = _extract_pr_number(_pr) if _pr else 0
+                _gitflow_log(
+                    item.get("id", ""), item["validated_by"], "validation-pass",
+                    pr_url=_pr or None,
+                    pr_number=_pr_num or None,
+                    branch_name=_branch,
+                    notes=f"PASS: {item.get('validation_notes', '')[:200]}"
+                )
+                # Log merge only when real merge evidence exists and no merge event logged yet.
+                if _pr and _has_merge_evidence(item, item.get("validation_notes", "")) and not _has_gitflow_action(item.get("id", ""), "merge"):
+                    _gitflow_log(
+                        item.get("id", ""), item["validated_by"], "merge",
+                        pr_url=_pr,
+                        pr_number=_pr_num or None,
+                        branch_name=_branch,
+                        notes=f"Merged via validator PASS. PR: {_pr}"
+                    )
 
-        # Validation fail returns task to pending queue (not failed).
-        # Keep failed for system-level incidents only.
-        item["status"]           = "pending"
-        item["validated_by"]     = args.validator or "validator"
-        item["validation_notes"] = args.notes or "Validation failed"
-        _append_note(item, f"FAIL: {item['validation_notes']}", item["validated_by"])
-        _mem_log_event(
-            item["validated_by"],
-            ["task", item.get("id", "").lower(), "event:validation_fail", "status:pending", "failure", "autolearn"],
-            f"VALIDATION FAIL: {item.get('id')} by @{item['validated_by']}. reason={item.get('validation_notes','')[:240]}",
-            source="task_event",
-            metadata={
-                "task_id": item.get("id"),
-                "event": "validation_fail",
-                "status": "pending",
-            },
-        )
-        # ── Gitflow audit: log validation fail ─────────────────────────────
-        if _needs_gitflow_gate(item):
-            _pr = _extract_pr_url(item)
-            _gitflow_log(
-                item.get("id", ""), item["validated_by"], "validation-fail",
-                pr_url=_pr or None,
-                pr_number=_extract_pr_number(_pr) or None,
-                notes=f"FAIL: {item.get('validation_notes', '')[:200]}"
+            # ── Non-code: log validation-pass to gitflow_log as non-code-pass ──
+            # Non-code tasks don't have PRs but we still audit their completion
+            if not _needs_gitflow_gate(item):
+                _gitflow_log(
+                    item.get("id", ""), item["validated_by"], "non-code-pass",
+                    notes=f"Non-code PASS: {item.get('validation_notes', '')[:200]}"
+                )
+
+            # ── Auto-promote validation passes to SKB ──────────────────────
+            # When a task passes validation with complete RPETD, promote a
+            # success pattern to agent_shared_knowledge so ALL agents learn.
+            # This fires for BOTH code and non-code tasks.
+            _phases_v = item.get("rpetd_phases", {}) or {}
+            _criteria_v = " | ".join(str(c) for c in (item.get("success_criteria") or [])[:3])
+            _agent_v = item.get("claimed_by") or item.get("assigned_to") or "system"
+            _title_v = item.get("title", "")[:80]
+            _lane_v = "code" if _needs_gitflow_gate(item) else "non-code"
+            # Extract web_search findings from all phases for SKB entry
+            _ws_in_phases = ""
+            for _ph_n in ("R", "P", "D"):
+                _ph_t = str(_phases_v.get(_ph_n, ""))
+                _ws_m = re.search(r'web.?search\s+findings?[:\s]+(.{20,300})', _ph_t, re.I | re.S)
+                if _ws_m:
+                    _ws_in_phases = _ws_m.group(1).strip()[:200]
+                    break
+            _skb_promote(
+                title=f"VALIDATED PATTERN: {_title_v}",
+                content=(
+                    f"Task {item.get('id')} PASSED validation. Agent: {_agent_v}. Lane: {_lane_v}.\n"
+                    f"Criteria met: {_criteria_v or 'completed'}\n"
+                    f"Validator notes: {item.get('validation_notes','')[:200]}\n"
+                    f"web_search findings: {_ws_in_phases or 'not recorded'}"
+                ),
+                category="workflow" if _lane_v == "code" else "process",
+                agent_id=item["validated_by"],
+                tags=["validated", "pattern", "success", f"agent:{_agent_v}", f"lane:{_lane_v}"],
+                importance=6,
             )
-        log.warning("task_validated id=%s outcome=fail gate=%s", args.id, _extract_failed_gate(args.notes or ""))
-        print(c(f"FAILED ✗  {args.id} → returned to queue", RED))
-        print(dim("  Agent must re-claim and redo failing phases."))
+            # Persist web_search findings to memory separately if found
+            if _ws_in_phases:
+                _mem_log_event(
+                    _agent_v,
+                    ["web_search_result", item.get("id","").lower(), "phase:validation", f"agent:{_agent_v}"],
+                    f"WEB_SEARCH FINDING [validation] {item.get('id','')} | {_title_v}\n{_ws_in_phases}",
+                    source="web_search_result",
+                    metadata={"task_id": item.get("id"), "phase": "validation", "event": "web_search_result"},
+                )
 
-        # ── Auto-learning: record failed agent performance ──────────
-        _record_agent_performance(
-            agent_id=item.get("claimed_by", ""),
-            task_id=args.id,
-            outcome="fail",
-            task_type=item.get("type", "task"),
-            gate_failed=_extract_failed_gate(args.notes or ""),
-            failure_reason=(args.notes or "")[:500],
-            duration_minutes=_calc_duration_minutes(item),
-        )
+            log.info("task_validated id=%s outcome=pass agent=%s", args.id, item["validated_by"])
+            print(c(f"VALIDATED ✓  {args.id} → DONE", GREEN))
 
-        # ── Audit log: record validation fail ──
-        _audit_log_event(
-            task_id=args.id,
-            event_type="validation",
-            agent_id=item["validated_by"],
-            status="fail",
-            content=item.get("validation_notes", ""),
-            metadata={
-                "gate_failed": _extract_failed_gate(args.notes or ""),
-                "failure_reason": (args.notes or "")[:500],
-                "self_validated": bool(claimer and validator_id and claimer == validator_id),
-            },
-        )
+            # ── Auto-learning: record successful agent performance ──────────
+            _record_agent_performance(
+                agent_id=item.get("claimed_by", ""),
+                task_id=args.id,
+                outcome="pass",
+                task_type=item.get("type", "task"),
+                duration_minutes=_calc_duration_minutes(item),
+                learning_captured=(item.get("rpetd_phases") or {}).get("D", "")[:500],
+            )
 
-        # ── Atomize on fail: if --subtasks provided, split into subtasks ──
-        if getattr(args, "subtasks", None):
-            item["updated_at"] = _now()
-            save(data)
-            # Build fake args for cmd_atomize
-            subtask_titles = args.subtasks.replace("|", "\n")
-            class _AtomizeArgs:
-                pass
-            aa = _AtomizeArgs()
-            aa.id = args.id
-            aa.subtasks = subtask_titles
-            aa.subtasks_file = None
-            aa.agent = item.get("assigned_to") or item.get("agent") or ""
-            aa.priority = item.get("priority", "medium")
-            print(dim(f"  Atomizing {args.id} into subtasks..."))
-            cmd_atomize(aa)
-            return
+            # ── Audit log: record validation pass ──
+            _audit_log_event(
+                task_id=args.id,
+                event_type="validation",
+                agent_id=item["validated_by"],
+                status="force" if (failures and args.force_reason) else "pass",
+                gate_results=[dict(g) for g in gate_results],
+                content=item.get("validation_notes", ""),
+                metadata={
+                    "forced": bool(failures and args.force_reason),
+                    "force_reason": args.force_reason if (failures and args.force_reason) else "",
+                    "test_exempt": getattr(args, "test_exempt", False),
+                    "failed_gates": [g["gate"] for g in failures] if failures else [],
+                    "self_validated": bool(claimer and validator_id and claimer == validator_id),
+                },
+            )
+        else:
+            # JSON output for --fail path
+            if getattr(args, "json_output", False):
+                print(json.dumps({"task_id": args.id, "status": "failed", "notes": args.notes or ""}))
 
-    item["updated_at"] = _now()
-    save(data)
+            fail_notes = (args.notes or "").lower()
+            non_code_gitflow_false_fail = (
+                ("gitflow" in fail_notes or "no pr url" in fail_notes or "pull request" in fail_notes)
+                and not _needs_gitflow_gate(item)
+                and bool(item.get("rpetd_complete"))
+            )
+
+            if non_code_gitflow_false_fail:
+                item["status"] = "done"
+                item["validated_by"] = args.validator or "validator"
+                item["validation_notes"] = (
+                    "Policy correction: non-code task with complete RPETD does not require PR/gitflow evidence. "
+                    "Marked done automatically to prevent false-fail loops."
+                )
+                _append_note(item, f"PASS: {item['validation_notes']}", item["validated_by"])
+                _mem_log_event(
+                    item["validated_by"],
+                    [
+                        "task",
+                        item.get("id", "").lower(),
+                        "event:validation_policy_correction",
+                        "status:done",
+                        "non-code",
+                        "autolearn",
+                    ],
+                    f"VALIDATION POLICY CORRECTION: {item.get('id')} auto-passed (non-code RPETD-complete task incorrectly failed for gitflow/PR).",
+                    source="task_event",
+                    metadata={
+                        "task_id": item.get("id"),
+                        "event": "validation_policy_correction",
+                        "reason": "non_code_gitflow_false_fail",
+                        "status": "done",
+                    },
+                )
+                print(c(f"POLICY-CORRECTED ✓  {args.id} → DONE (non-code task)", GREEN))
+                item["updated_at"] = _now()
+                save(data)
+                return
+
+            # Validation fail returns task to pending queue (not failed).
+            # Keep failed for system-level incidents only.
+            item["status"]           = "pending"
+            item["validated_by"]     = args.validator or "validator"
+            item["validation_notes"] = args.notes or "Validation failed"
+            _append_note(item, f"FAIL: {item['validation_notes']}", item["validated_by"])
+            _mem_log_event(
+                item["validated_by"],
+                ["task", item.get("id", "").lower(), "event:validation_fail", "status:pending", "failure", "autolearn"],
+                f"VALIDATION FAIL: {item.get('id')} by @{item['validated_by']}. reason={item.get('validation_notes','')[:240]}",
+                source="task_event",
+                metadata={
+                    "task_id": item.get("id"),
+                    "event": "validation_fail",
+                    "status": "pending",
+                },
+            )
+            # ── Gitflow audit: log validation fail ─────────────────────────────
+            if _needs_gitflow_gate(item):
+                _pr = _extract_pr_url(item)
+                _gitflow_log(
+                    item.get("id", ""), item["validated_by"], "validation-fail",
+                    pr_url=_pr or None,
+                    pr_number=_extract_pr_number(_pr) or None,
+                    notes=f"FAIL: {item.get('validation_notes', '')[:200]}"
+                )
+            log.warning("task_validated id=%s outcome=fail gate=%s", args.id, _extract_failed_gate(args.notes or ""))
+            print(c(f"FAILED ✗  {args.id} → returned to queue", RED))
+            print(dim("  Agent must re-claim and redo failing phases."))
+
+            # ── Auto-learning: record failed agent performance ──────────
+            _record_agent_performance(
+                agent_id=item.get("claimed_by", ""),
+                task_id=args.id,
+                outcome="fail",
+                task_type=item.get("type", "task"),
+                gate_failed=_extract_failed_gate(args.notes or ""),
+                failure_reason=(args.notes or "")[:500],
+                duration_minutes=_calc_duration_minutes(item),
+            )
+
+            # ── Audit log: record validation fail ──
+            _audit_log_event(
+                task_id=args.id,
+                event_type="validation",
+                agent_id=item["validated_by"],
+                status="fail",
+                content=item.get("validation_notes", ""),
+                metadata={
+                    "gate_failed": _extract_failed_gate(args.notes or ""),
+                    "failure_reason": (args.notes or "")[:500],
+                    "self_validated": bool(claimer and validator_id and claimer == validator_id),
+                },
+            )
+
+            # ── Atomize on fail: if --subtasks provided, split into subtasks ──
+            if getattr(args, "subtasks", None):
+                item["updated_at"] = _now()
+                save(data)
+                # Build fake args for cmd_atomize
+                subtask_titles = args.subtasks.replace("|", "\n")
+                class _AtomizeArgs:
+                    pass
+                aa = _AtomizeArgs()
+                aa.id = args.id
+                aa.subtasks = subtask_titles
+                aa.subtasks_file = None
+                aa.agent = item.get("assigned_to") or item.get("agent") or ""
+                aa.priority = item.get("priority", "medium")
+                print(dim(f"  Atomizing {args.id} into subtasks..."))
+                cmd_atomize(aa)
+                return
+
+        item["updated_at"] = _now()
+        save(data)
 
 
 # ── BOARD — kanban view ────────────────────────────────────────────────────────
@@ -4234,131 +4244,134 @@ def cmd_score(args):
 
 # ── REFS — attach/list file/url references ─────────────────────────────────────
 def cmd_refs(args):
-    data = load()
-    item = _find(data["items"], args.id)
-    if not item:
-        print(c(f"{args.id} not found.", RED)); sys.exit(1)
+    with _file_lock():
+        data = load()
+        item = _find(data["items"], args.id)
+        if not item:
+            print(c(f"{args.id} not found.", RED)); sys.exit(1)
 
-    item.setdefault("doc_refs", [])
+        item.setdefault("doc_refs", [])
 
-    if args.refs_cmd == "add":
-        ref = {
-            "path":  args.path,
-            "type":  args.type or "other",
-            "title": args.title or "",
-            "note":  args.note or "",
-        }
-        item["doc_refs"].append(ref)
-        item["updated_at"] = _now()
-        save(data)
-        print(c(f"Ref added to {args.id}: [{ref['type']}] {ref['path']}", GREEN))
-
-    elif args.refs_cmd == "list":
-        refs = item.get("doc_refs", [])
-        if not refs:
-            print(dim(f"No refs on {args.id}")); return
-        print(bold(f"\nRefs on {args.id} ({len(refs)}):"))
-        for r in refs:
-            title = f"  {dim(r['title'])}" if r.get("title") else ""
-            note  = f"  — {dim(r['note'])}" if r.get("note") else ""
-            print(f"  [{r.get('type','?')}] {r['path']}{title}{note}")
-
-    elif args.refs_cmd == "remove":
-        before = len(item["doc_refs"])
-        item["doc_refs"] = [r for r in item["doc_refs"] if r["path"] != args.path]
-        after = len(item["doc_refs"])
-        if before == after:
-            print(c(f"No ref found with path: {args.path}", YELLOW))
-        else:
+        if args.refs_cmd == "add":
+            ref = {
+                "path":  args.path,
+                "type":  args.type or "other",
+                "title": args.title or "",
+                "note":  args.note or "",
+            }
+            item["doc_refs"].append(ref)
             item["updated_at"] = _now()
             save(data)
-            print(c(f"Removed ref from {args.id}", GREEN))
+            print(c(f"Ref added to {args.id}: [{ref['type']}] {ref['path']}", GREEN))
+
+        elif args.refs_cmd == "list":
+            refs = item.get("doc_refs", [])
+            if not refs:
+                print(dim(f"No refs on {args.id}")); return
+            print(bold(f"\nRefs on {args.id} ({len(refs)}):"))
+            for r in refs:
+                title = f"  {dim(r['title'])}" if r.get("title") else ""
+                note  = f"  — {dim(r['note'])}" if r.get("note") else ""
+                print(f"  [{r.get('type','?')}] {r['path']}{title}{note}")
+
+        elif args.refs_cmd == "remove":
+            before = len(item["doc_refs"])
+            item["doc_refs"] = [r for r in item["doc_refs"] if r["path"] != args.path]
+            after = len(item["doc_refs"])
+            if before == after:
+                print(c(f"No ref found with path: {args.path}", YELLOW))
+            else:
+                item["updated_at"] = _now()
+                save(data)
+                print(c(f"Removed ref from {args.id}", GREEN))
 
 
 # ── RISKS — manage risks list ──────────────────────────────────────────────────
 def cmd_risk(args):
-    data = load()
-    item = _find(data["items"], args.id)
-    if not item:
-        print(c(f"{args.id} not found.", RED)); sys.exit(1)
+    with _file_lock():
+        data = load()
+        item = _find(data["items"], args.id)
+        if not item:
+            print(c(f"{args.id} not found.", RED)); sys.exit(1)
 
-    item.setdefault("risks", [])
+        item.setdefault("risks", [])
 
-    if args.risk_cmd == "add":
-        risk = {"risk": args.risk, "mitigation": args.mitigation or ""}
-        item["risks"].append(risk)
-        item["updated_at"] = _now()
-        save(data)
-        print(c(f"Risk added to {args.id}", GREEN))
+        if args.risk_cmd == "add":
+            risk = {"risk": args.risk, "mitigation": args.mitigation or ""}
+            item["risks"].append(risk)
+            item["updated_at"] = _now()
+            save(data)
+            print(c(f"Risk added to {args.id}", GREEN))
 
-    elif args.risk_cmd == "list":
-        risks = item.get("risks", [])
-        if not risks:
-            print(dim(f"No risks on {args.id}")); return
-        print(bold(f"\nRisks on {args.id}:"))
-        for i, r in enumerate(risks):
-            if isinstance(r, dict):
-                print(f"  {i+1}. ⚠ {r.get('risk','?')}")
-                if r.get("mitigation"):
-                    print(f"       → {r['mitigation']}")
-            else:
-                print(f"  {i+1}. ⚠ {r}")
+        elif args.risk_cmd == "list":
+            risks = item.get("risks", [])
+            if not risks:
+                print(dim(f"No risks on {args.id}")); return
+            print(bold(f"\nRisks on {args.id}:"))
+            for i, r in enumerate(risks):
+                if isinstance(r, dict):
+                    print(f"  {i+1}. ⚠ {r.get('risk','?')}")
+                    if r.get("mitigation"):
+                        print(f"       → {r['mitigation']}")
+                else:
+                    print(f"  {i+1}. ⚠ {r}")
 
 
 # ── SPRINT commands ────────────────────────────────────────────────────────────
 def cmd_sprint(args):
-    data = load()
-    data.setdefault("sprints", [])
+    with _file_lock():
+        data = load()
+        data.setdefault("sprints", [])
 
-    if args.sprint_cmd == "create":
-        existing = [s for s in data["sprints"] if s["name"] == args.name]
-        if existing:
-            print(c(f"Sprint '{args.name}' already exists.", YELLOW)); return
-        sprint = {
-            "name":       args.name,
-            "goal":       args.goal or "",
-            "start_date": args.start or "",
-            "end_date":   args.end or "",
-            "status":     "active",
-            "created_at": _now(),
-        }
-        data["sprints"].append(sprint)
-        save(data)
-        print(c(f"Sprint created: {args.name}", GREEN))
+        if args.sprint_cmd == "create":
+            existing = [s for s in data["sprints"] if s["name"] == args.name]
+            if existing:
+                print(c(f"Sprint '{args.name}' already exists.", YELLOW)); return
+            sprint = {
+                "name":       args.name,
+                "goal":       args.goal or "",
+                "start_date": args.start or "",
+                "end_date":   args.end or "",
+                "status":     "active",
+                "created_at": _now(),
+            }
+            data["sprints"].append(sprint)
+            save(data)
+            print(c(f"Sprint created: {args.name}", GREEN))
 
-    elif args.sprint_cmd == "list":
-        sprints = data.get("sprints", [])
-        if not sprints:
-            print(dim("No sprints.")); return
-        print(bold("\nSprints:"))
-        for s in sprints:
-            task_count = sum(1 for i in data["items"] if i.get("sprint") == s["name"])
-            done_count = sum(1 for i in data["items"] if i.get("sprint") == s["name"] and i.get("status") == "done")
-            status_col = GREEN if s["status"] == "closed" else YELLOW
-            print(f"  {c(s['status'].upper(), status_col)}  {bold(s['name'])}  "
-                  f"{done_count}/{task_count} done"
-                  + (f"  — {s['goal']}" if s.get("goal") else ""))
+        elif args.sprint_cmd == "list":
+            sprints = data.get("sprints", [])
+            if not sprints:
+                print(dim("No sprints.")); return
+            print(bold("\nSprints:"))
+            for s in sprints:
+                task_count = sum(1 for i in data["items"] if i.get("sprint") == s["name"])
+                done_count = sum(1 for i in data["items"] if i.get("sprint") == s["name"] and i.get("status") == "done")
+                status_col = GREEN if s["status"] == "closed" else YELLOW
+                print(f"  {c(s['status'].upper(), status_col)}  {bold(s['name'])}  "
+                      f"{done_count}/{task_count} done"
+                      + (f"  — {s['goal']}" if s.get("goal") else ""))
 
-    elif args.sprint_cmd == "close":
-        sprint = next((s for s in data["sprints"] if s["name"] == args.name), None)
-        if not sprint:
-            print(c(f"Sprint '{args.name}' not found.", RED)); return
-        sprint["status"] = "closed"
-        save(data)
-        print(c(f"Sprint closed: {args.name}", GREEN))
+        elif args.sprint_cmd == "close":
+            sprint = next((s for s in data["sprints"] if s["name"] == args.name), None)
+            if not sprint:
+                print(c(f"Sprint '{args.name}' not found.", RED)); return
+            sprint["status"] = "closed"
+            save(data)
+            print(c(f"Sprint closed: {args.name}", GREEN))
 
-    elif args.sprint_cmd == "stats":
-        name = args.name
-        items = [i for i in data["items"] if i.get("sprint") == name]
-        if not items:
-            print(dim(f"No tasks in sprint '{name}'")); return
-        by_status = {}
-        for i in items:
-            s = i.get("status","?")
-            by_status[s] = by_status.get(s, 0) + 1
-        print(bold(f"\nSprint: {name}  ({len(items)} tasks)"))
-        for s, n in sorted(by_status.items()):
-            print(f"  {_status_label(s):30s} {n}")
+        elif args.sprint_cmd == "stats":
+            name = args.name
+            items = [i for i in data["items"] if i.get("sprint") == name]
+            if not items:
+                print(dim(f"No tasks in sprint '{name}'")); return
+            by_status = {}
+            for i in items:
+                s = i.get("status","?")
+                by_status[s] = by_status.get(s, 0) + 1
+            print(bold(f"\nSprint: {name}  ({len(items)} tasks)"))
+            for s, n in sorted(by_status.items()):
+                print(f"  {_status_label(s):30s} {n}")
 
 
 # ── AGENT-TASKS (heartbeat compat) ────────────────────────────────────────────
@@ -4551,34 +4564,35 @@ def cmd_export(args):
         print(out)
 
 def cmd_import(args):
-    src = Path(args.file)
-    if not src.exists():
-        print(c(f"File not found: {args.file}", RED)); sys.exit(1)
-    try:
-        incoming = json.loads(src.read_text())
-    except json.JSONDecodeError as e:
-        print(c(f"Import file contains invalid JSON: {e}", RED)); sys.exit(1)
-    # Schema validation: imported data must have 'items' list
-    if not isinstance(incoming.get("items"), list):
-        print(c("Import file must contain an 'items' array.", RED)); sys.exit(1)
-    if args.replace:
-        # Ensure minimum schema
-        incoming.setdefault("metadata", {"created": _now(), "version": "2.0", "updated": _now()})
-        incoming.setdefault("sprints", [])
-        save(incoming)
-        print(c("Replaced all data.", YELLOW)); return
-    data = load()
-    existing_ids = {i["id"] for i in data["items"]}
-    added = 0
-    for item in incoming.get("items", []):
-        iid = item.get("id")
-        if not iid:
-            print(dim(f"  Skipping item without 'id': {str(item.get('title','?'))[:60]}"))
-            continue
-        if iid not in existing_ids:
-            data["items"].append(item); added += 1
-    save(data)
-    print(c(f"Merged: {added} new items added.", GREEN))
+    with _file_lock():
+        src = Path(args.file)
+        if not src.exists():
+            print(c(f"File not found: {args.file}", RED)); sys.exit(1)
+        try:
+            incoming = json.loads(src.read_text())
+        except json.JSONDecodeError as e:
+            print(c(f"Import file contains invalid JSON: {e}", RED)); sys.exit(1)
+        # Schema validation: imported data must have 'items' list
+        if not isinstance(incoming.get("items"), list):
+            print(c("Import file must contain an 'items' array.", RED)); sys.exit(1)
+        if args.replace:
+            # Ensure minimum schema
+            incoming.setdefault("metadata", {"created": _now(), "version": "2.0", "updated": _now()})
+            incoming.setdefault("sprints", [])
+            save(incoming)
+            print(c("Replaced all data.", YELLOW)); return
+        data = load()
+        existing_ids = {i["id"] for i in data["items"]}
+        added = 0
+        for item in incoming.get("items", []):
+            iid = item.get("id")
+            if not iid:
+                print(dim(f"  Skipping item without 'id': {str(item.get('title','?'))[:60]}"))
+                continue
+            if iid not in existing_ids:
+                data["items"].append(item); added += 1
+        save(data)
+        print(c(f"Merged: {added} new items added.", GREEN))
 
 
 # ── MIGRATE — upgrade old schema items ────────────────────────────────────────
@@ -4587,91 +4601,94 @@ def cmd_migrate(args):
     Idempotent upgrade: adds all v2 fields to items that are missing them.
     Safe to run multiple times.
     """
-    data  = load()
-    items = data["items"]
-    template = _new_item("task", "")
-    upgraded = 0
-    synced_assignments = 0
-    mismatched_assignments = 0
-    for item in items:
-        changed = False
-        for key, default in template.items():
-            if key not in item:
-                item[key] = default
-                changed = True
+    with _file_lock():
+        data  = load()
+        items = data["items"]
+        template = _new_item("task", "")
+        upgraded = 0
+        synced_assignments = 0
+        mismatched_assignments = 0
+        for item in items:
+            changed = False
+            for key, default in template.items():
+                if key not in item:
+                    item[key] = default
+                    changed = True
 
-        # Sync legacy assignment field safely:
-        # only fill assigned_to from legacy agent when assigned_to is missing/unassigned.
-        legacy_agent = (item.get("agent") or "").strip()
-        assigned_to = (item.get("assigned_to") or "").strip()
-        if legacy_agent and assigned_to in ("", "unassigned"):
-            item["assigned_to"] = legacy_agent
-            changed = True
-            synced_assignments += 1
-        elif legacy_agent and assigned_to and legacy_agent != assigned_to:
-            mismatched_assignments += 1
-
-        # Fix notes: add 'by' field if missing (skip string-format notes)
-        for note in item.get("notes", []):
-            if isinstance(note, dict) and "by" not in note:
-                note["by"] = "system"
+            # Sync legacy assignment field safely:
+            # only fill assigned_to from legacy agent when assigned_to is missing/unassigned.
+            legacy_agent = (item.get("agent") or "").strip()
+            assigned_to = (item.get("assigned_to") or "").strip()
+            if legacy_agent and assigned_to in ("", "unassigned"):
+                item["assigned_to"] = legacy_agent
                 changed = True
-        if changed:
-            item["updated_at"] = _now()
-            upgraded += 1
-    data.setdefault("sprints", [])
-    save(data)
-    print(c(f"Migration complete: {upgraded}/{len(items)} items upgraded to v2 schema.", GREEN))
-    print(dim(f"Assignment sync: filled {synced_assignments}, mismatched(existing) {mismatched_assignments}"))
+                synced_assignments += 1
+            elif legacy_agent and assigned_to and legacy_agent != assigned_to:
+                mismatched_assignments += 1
+
+            # Fix notes: add 'by' field if missing (skip string-format notes)
+            for note in item.get("notes", []):
+                if isinstance(note, dict) and "by" not in note:
+                    note["by"] = "system"
+                    changed = True
+            if changed:
+                item["updated_at"] = _now()
+                upgraded += 1
+        data.setdefault("sprints", [])
+        save(data)
+        print(c(f"Migration complete: {upgraded}/{len(items)} items upgraded to v2 schema.", GREEN))
+        print(dim(f"Assignment sync: filled {synced_assignments}, mismatched(existing) {mismatched_assignments}"))
 
 
 # ── LINK / UNLINK — dependency management ─────────────────────────────────────
 def cmd_link(args):
-    data  = load()
-    items = data["items"]
-    item  = _find(items, args.id)
-    dep   = _find(items, args.dep_id)
-    if not item:
-        print(c(f"{args.id} not found.", RED)); sys.exit(1)
-    if not dep:
-        print(c(f"{args.dep_id} not found.", RED)); sys.exit(1)
-    if args.dep_id == args.id:
-        print(c("Cannot depend on itself.", RED)); sys.exit(1)
-    # Cycle check
-    def _reaches(from_id: str, target_id: str, visited: set) -> bool:
-        if from_id in visited: return False
-        visited.add(from_id)
-        node = _find(items, from_id)
-        if not node: return False
-        for d in node.get("dependencies", []):
-            if d == target_id or _reaches(d, target_id, visited):
-                return True
-        return False
-    if _reaches(args.dep_id, args.id, set()):
-        print(c(f"Would create circular dependency: {args.id} → {args.dep_id}", RED)); sys.exit(1)
-    deps = item.setdefault("dependencies", [])
-    if args.dep_id not in deps:
-        deps.append(args.dep_id)
-        item["updated_at"] = _now()
-        save(data)
-        print(c(f"{args.id} now depends on {args.dep_id}", GREEN))
-    else:
-        print(dim(f"{args.id} already depends on {args.dep_id}"))
+    with _file_lock():
+        data  = load()
+        items = data["items"]
+        item  = _find(items, args.id)
+        dep   = _find(items, args.dep_id)
+        if not item:
+            print(c(f"{args.id} not found.", RED)); sys.exit(1)
+        if not dep:
+            print(c(f"{args.dep_id} not found.", RED)); sys.exit(1)
+        if args.dep_id == args.id:
+            print(c("Cannot depend on itself.", RED)); sys.exit(1)
+        # Cycle check
+        def _reaches(from_id: str, target_id: str, visited: set) -> bool:
+            if from_id in visited: return False
+            visited.add(from_id)
+            node = _find(items, from_id)
+            if not node: return False
+            for d in node.get("dependencies", []):
+                if d == target_id or _reaches(d, target_id, visited):
+                    return True
+            return False
+        if _reaches(args.dep_id, args.id, set()):
+            print(c(f"Would create circular dependency: {args.id} → {args.dep_id}", RED)); sys.exit(1)
+        deps = item.setdefault("dependencies", [])
+        if args.dep_id not in deps:
+            deps.append(args.dep_id)
+            item["updated_at"] = _now()
+            save(data)
+            print(c(f"{args.id} now depends on {args.dep_id}", GREEN))
+        else:
+            print(dim(f"{args.id} already depends on {args.dep_id}"))
 
 def cmd_unlink(args):
-    data  = load()
-    items = data["items"]
-    item  = _find(items, args.id)
-    if not item:
-        print(c(f"{args.id} not found.", RED)); sys.exit(1)
-    deps = item.get("dependencies", [])
-    if args.dep_id in deps:
-        deps.remove(args.dep_id)
-        item["updated_at"] = _now()
-        save(data)
-        print(c(f"Dependency removed: {args.id} no longer depends on {args.dep_id}", GREEN))
-    else:
-        print(dim(f"{args.id} does not depend on {args.dep_id}"))
+    with _file_lock():
+        data  = load()
+        items = data["items"]
+        item  = _find(items, args.id)
+        if not item:
+            print(c(f"{args.id} not found.", RED)); sys.exit(1)
+        deps = item.get("dependencies", [])
+        if args.dep_id in deps:
+            deps.remove(args.dep_id)
+            item["updated_at"] = _now()
+            save(data)
+            print(c(f"Dependency removed: {args.id} no longer depends on {args.dep_id}", GREEN))
+        else:
+            print(dim(f"{args.id} does not depend on {args.dep_id}"))
 
 
 # ── AUDIT — query and export immutable audit log ────────────────────────────────
