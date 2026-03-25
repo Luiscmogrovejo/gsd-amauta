@@ -4621,9 +4621,16 @@ def cmd_reconcile(args):
     json_ids = {i["id"] for i in items}
     pg_ids = set(pg_tasks.keys())
 
+    # FIX-05: Also load archived tasks to avoid false "extra in PG" reports
+    archive_data = _load_archive()
+    archive_ids = {i["id"] for i in archive_data.get("items", [])}
+
     # Find discrepancies
     missing_in_pg = json_ids - pg_ids
-    extra_in_pg = pg_ids - json_ids
+    extra_in_pg_raw = pg_ids - json_ids
+    # FIX-05: Separate "archived in JSON but still in PG" from truly extra PG entries
+    archived_still_in_pg = extra_in_pg_raw & archive_ids
+    extra_in_pg = extra_in_pg_raw - archive_ids  # Truly orphaned PG entries
 
     # Field-level comparison for tasks in both
     compare_fields = [
@@ -4681,6 +4688,8 @@ def cmd_reconcile(args):
     print(f"Reconcile: {len(json_ids)} JSON tasks, {len(pg_ids)} PG tasks")
     print(f"  Missing in PG: {len(missing_in_pg)}")
     print(f"  Extra in PG:   {len(extra_in_pg)}")
+    if archived_still_in_pg:
+        print(f"  Archived in JSON but still in PG: {len(archived_still_in_pg)}")
     print(f"  Field mismatches: {len(field_mismatches)}")
 
     if missing_in_pg:
@@ -4691,6 +4700,9 @@ def cmd_reconcile(args):
     if extra_in_pg:
         for tid in sorted(extra_in_pg)[:10]:
             print(f"    - {tid} (in PG but not in JSON)")
+    if archived_still_in_pg:
+        for tid in sorted(archived_still_in_pg)[:10]:
+            print(f"    A {tid} (archived in JSON, still in PG -- should be deleted)")
     if field_mismatches:
         for tid, field, jv, pv in field_mismatches[:20]:
             print(f"    ~ {tid}.{field}: JSON={jv[:40]} vs PG={pv[:40]}")
@@ -4712,7 +4724,19 @@ def cmd_reconcile(args):
                 store.task_upsert(item)
                 fixed += 1
         print(c(f"\nFixed: {fixed} tasks synced to PG", GREEN))
-    elif not missing_in_pg and not field_mismatches and not extra_in_pg:
+    if fix and archived_still_in_pg:
+        # FIX-05: Delete archived tasks that are still lingering in PG
+        if 'store' not in locals():
+            sys.path.insert(0, str(Path(__file__).parent / "services"))
+            from pg_store import PGStore
+            store = PGStore(dsn=db_url)
+        for tid in sorted(archived_still_in_pg):
+            try:
+                store.task_delete(tid)
+            except Exception:
+                pass  # Best-effort
+        print(c(f"  Deleted {len(archived_still_in_pg)} archived tasks from PG", GREEN))
+    elif not missing_in_pg and not field_mismatches and not extra_in_pg and not archived_still_in_pg:
         print(c("\n  JSON and PG are in sync.", GREEN))
     else:
         print(dim(f"\n  Run with --fix to sync JSON -> PG"))
