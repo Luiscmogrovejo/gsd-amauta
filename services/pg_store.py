@@ -1157,9 +1157,10 @@ class PGStore:
                     SELECT id, text, (1 - (embedding <=> %s::vector)) as similarity
                     FROM gsd_memory
                     WHERE embedding IS NOT NULL
+                      AND (project_id = %s OR (project_id IS NULL AND %s IS NULL))
                     ORDER BY embedding <=> %s::vector
                     LIMIT 1
-                """, (str(embedding), str(embedding)))
+                """, (str(embedding), project_id, project_id, str(embedding)))
                 row = cur.fetchone()
                 if row and float(row["similarity"]) >= dedup_threshold:
                     return {"dedup_skipped": True, "existing_id": row["id"],
