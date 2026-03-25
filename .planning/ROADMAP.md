@@ -8,7 +8,7 @@
 
 - [x] **Phase 20: Critical Bug Fixes** - Fix 6 high-impact bugs: daemon mirror, HTTP race, distill count, research parse, reconcile archive, enrichment isolation (completed 2026-03-25)
 - [x] **Phase 21: Minor Bug Fixes** - Fix 4 lower-severity bugs: Jaccard edge case, retention shutdown, archive genealogy, auto-learn dedup (completed 2026-03-25)
-- [ ] **Phase 22: Core System Tests** - Comprehensive test coverage for archive, reconcile, RLM, PG integration, distill, auto-learn
+- [x] **Phase 22: Core System Tests** - Comprehensive test coverage for archive, reconcile, RLM, PG integration, distill, auto-learn (completed 2026-03-25)
 - [ ] **Phase 23: Integration + E2E Tests** - Task manager stress tests, daemon integration, fallback paths, full lifecycle smoke test
 
 ## Phase Details
@@ -69,7 +69,7 @@
 |-------|----------------|--------|-----------|
 | 20. Critical Bug Fixes | 2/2 | Complete    | 2026-03-25 |
 | 21. Minor Bug Fixes | 1/1 | Complete    | 2026-03-25 |
-| 22. Core System Tests | 1/2 | In progress | - |
+| 22. Core System Tests | 2/2 | Complete    | 2026-03-25 |
 | 23. Integration + E2E Tests | 0/? | Not started | - |
 
 ---
