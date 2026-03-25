@@ -431,6 +431,11 @@ def _pg_conn():
         conn.close()
 
 def _mem_pg_add(agent_id: str, tags: list, text: str):
+    # DATA-05: Auto-set project_id from CWD basename
+    project_id = os.path.basename(os.getcwd())
+    # DATA-06: Force __test__ in test mode
+    if os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("GSD_TEST_MODE") == "1":
+        project_id = "__test__"
     with _pg_conn() as conn:
         conn.autocommit = True
         cur = conn.cursor()
@@ -439,8 +444,8 @@ def _mem_pg_add(agent_id: str, tags: list, text: str):
         task_id = (m.group(1).upper() if m else "")
         cur.execute(
             """
-            INSERT INTO amauta_memory (id, text, agent_id, source, tags, metadata, created_at, updated_at)
-            VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s)
+            INSERT INTO gsd_memory (id, text, agent_id, source, tags, metadata, project_id, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s, %s)
             """,
             (
                 str(uuid.uuid4()),
@@ -449,6 +454,7 @@ def _mem_pg_add(agent_id: str, tags: list, text: str):
                 "agent",
                 json.dumps(tags),
                 json.dumps({"via": "amauta memory add", "task_id": task_id}),
+                project_id,
                 now,
                 now,
             ),
@@ -457,7 +463,7 @@ def _mem_pg_add(agent_id: str, tags: list, text: str):
 
 def _mem_pg_search(query: str, agent_id: Optional[str], top_k: int) -> list:
     """
-    Search amauta_memory with source-aware scoring.
+    Search gsd_memory with source-aware scoring.
     - Boosts auto_learning + web_search_result + lesson-learned (high signal)
     - Returns source field so callers can show where results came from
     - High-signal sources get +3 score boost so they surface above raw task_events
@@ -508,7 +514,7 @@ def _mem_pg_search(query: str, agent_id: Optional[str], top_k: int) -> list:
             sql = f"""
                 SELECT created_at, agent_id, text, tags, source,
                        ({score_expr}) AS score
-                FROM amauta_memory
+                FROM gsd_memory
                 WHERE agent_id = %s AND ({where_clause})
                 ORDER BY score DESC, created_at DESC
                 LIMIT %s
@@ -518,7 +524,7 @@ def _mem_pg_search(query: str, agent_id: Optional[str], top_k: int) -> list:
             sql = f"""
                 SELECT created_at, agent_id, text, tags, source,
                        ({score_expr}) AS score
-                FROM amauta_memory
+                FROM gsd_memory
                 WHERE {where_clause}
                 ORDER BY score DESC, created_at DESC
                 LIMIT %s
@@ -635,10 +641,10 @@ def _research_chain_query(query: str, limit: int = 3) -> list:
 def _mem_pg_stats() -> tuple[int, list]:
     with _pg_conn() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) FROM amauta_memory")
+        cur.execute("SELECT COUNT(*) FROM gsd_memory")
         row = cur.fetchone()
         total = int(row[0]) if row else 0
-        cur.execute("SELECT COALESCE(agent_id, 'unknown') AS a, COUNT(*) AS n FROM amauta_memory GROUP BY a ORDER BY n DESC, a ASC")
+        cur.execute("SELECT COALESCE(agent_id, 'unknown') AS a, COUNT(*) AS n FROM gsd_memory GROUP BY a ORDER BY n DESC, a ASC")
         rows = cur.fetchall()
         cur.close()
     return total, rows
@@ -749,6 +755,11 @@ def _mem_log_event(agent_id: str, tags: list[str], text: str, *, source: str = "
     the same task writing learning multiple times.
     Never raises (telemetry must not break task operations).
     """
+    # DATA-05: Auto-set project_id from CWD basename
+    project_id = os.path.basename(os.getcwd())
+    # DATA-06: Force __test__ in test mode
+    if os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("GSD_TEST_MODE") == "1":
+        project_id = "__test__"
     clean_tags = [str(t).strip() for t in (tags or []) if str(t).strip()]
     row = {
         "ts": _now(),
@@ -768,7 +779,7 @@ def _mem_log_event(agent_id: str, tags: list[str], text: str, *, source: str = "
                         conn.autocommit = True
                         cur = conn.cursor()
                         cur.execute(
-                            "SELECT COUNT(*) FROM amauta_memory WHERE source=%s AND metadata->>'task_id'=%s",
+                            "SELECT COUNT(*) FROM gsd_memory WHERE source=%s AND metadata->>'task_id'=%s",
                             (source, task_id)
                         )
                         existing = cur.fetchone()
@@ -788,6 +799,7 @@ def _mem_log_event(agent_id: str, tags: list[str], text: str, *, source: str = "
                     "agent_id": agent_id or "system",
                     "tags": clean_tags,
                     "metadata": metadata or {},
+                    "project_id": project_id,
                 }).encode("utf-8")
                 req = urllib.request.Request(
                     url, data=body, method="POST",
@@ -807,8 +819,8 @@ def _mem_log_event(agent_id: str, tags: list[str], text: str, *, source: str = "
                     cur = conn.cursor()
                     cur.execute(
                         """
-                        INSERT INTO amauta_memory (id, text, agent_id, source, tags, metadata, created_at, updated_at)
-                        VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s)
+                        INSERT INTO gsd_memory (id, text, agent_id, source, tags, metadata, project_id, created_at, updated_at)
+                        VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s, %s)
                         """,
                         (
                             f"MEM-{uuid.uuid4().hex[:12]}",
@@ -817,6 +829,7 @@ def _mem_log_event(agent_id: str, tags: list[str], text: str, *, source: str = "
                             source,
                             json.dumps(clean_tags),
                             json.dumps(metadata or {}),
+                            project_id,
                             now,
                             now,
                         ),
@@ -1536,7 +1549,7 @@ def _print_item_full(item: dict, all_items: list):
 #     T: RLM criteria validation (or PG fallback if no criteria)
 #     D: RLM delivery quality check (PR completeness vs criteria) + PG delivery event write
 #        + auto-promotes successful delivery patterns to agent_shared_knowledge
-#   Layer 3: RLM client --enrich    — agent-initiated: amauta_memory + SKB injected into
+#   Layer 3: RLM client --enrich    — agent-initiated: gsd_memory + SKB injected into
 #            every RLM call via _fetch_pg_context() + _fetch_skb() in rlm_client.py
 #
 # agent_shared_knowledge (global curated KB, 84 entries):
@@ -1974,7 +1987,7 @@ def _rpetd_phase_enrich(phase: str, item: dict, agent_content: str) -> str:
                 if rlm_answer:
                     supplement_parts.append(f"[RLM] Delivery check:\n  {rlm_answer[:600]}")
 
-            # ── Write delivery event to amauta_memory ─────────────────────
+            # ── Write delivery event to gsd_memory ─────────────────────
             # Use "session-learning" source (score boost +3) so this delivery record
             # is retrievable in future memory searches for relevant patterns.
             # Previously used "task_event" (score=0) which made D-phase deliveries invisible.
@@ -2696,7 +2709,7 @@ def _has_learning_persisted(item: dict) -> bool:
             cur.execute(
                 """
                 SELECT COUNT(*)
-                FROM amauta_memory
+                FROM gsd_memory
                 WHERE source IN ('auto_learning', 'web_search_result', 'lesson-learned', 'session-learning', 'manual', 'rpetd_phase', 'agent')
                   AND (source <> 'rpetd_phase' OR lower(text) LIKE '%learning%')
                   AND (
@@ -2777,7 +2790,7 @@ def _has_learning_written(item: dict) -> bool:
                 conn.autocommit = True
                 cur = conn.cursor()
                 cur.execute(
-                    "SELECT COUNT(*) FROM amauta_memory WHERE source IN ('auto_learning','web_search_result') "
+                    "SELECT COUNT(*) FROM gsd_memory WHERE source IN ('auto_learning','web_search_result') "
                     "AND (metadata->>'task_id' = %s OR tags::text ILIKE %s)",
                     (task_id, f"%{task_id.lower()}%")
                 )
@@ -2817,7 +2830,7 @@ def _has_explicit_learning_written(item: dict) -> bool:
 def _auto_write_learning(item: dict, agent_id: str):
     """
     If the agent did not write a LEARNING: block, auto-generate one from all RPETD phases
-    and write it to amauta_memory so the knowledge is NEVER lost.
+    and write it to gsd_memory so the knowledge is NEVER lost.
     Captures: task outcome, web_search findings, failure patterns, reusable patterns.
     Also promotes to SKB if criteria present.
     Best-effort — never raises.
