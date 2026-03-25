@@ -142,6 +142,7 @@ PID_FILE = Path(__file__).resolve().parent / "amauta-daemon.pid"
 STALE_CHECK_INTERVAL = 300  # 5 minutes
 STALE_THRESHOLD_HOURS = int(os.environ.get("GSD_STALE_HOURS", "48"))
 RETRY_FLUSH_INTERVAL = int(os.environ.get("GSD_RETRY_FLUSH_INTERVAL", "60"))
+RETENTION_CHECK_INTERVAL = 86400  # 24 hours — retention cleanup runs daily
 
 # ── Authentication ─────────────────────────────────────────────────────────────
 DAEMON_AUTH_TOKEN = os.environ.get("AMAUTA_DAEMON_TOKEN", "")
@@ -489,6 +490,29 @@ def _retry_queue_flusher():
         # Exponential backoff on consecutive failures, max 5 minutes
         sleep_time = min(RETRY_FLUSH_INTERVAL * (2 ** min(consecutive_failures, 3)), 300)
         time.sleep(sleep_time)
+
+
+# ── Memory Retention Thread ──────────────────────────────────────────────────
+
+def _memory_retention_thread():
+    """Background thread: archive stale memory entries every RETENTION_CHECK_INTERVAL seconds.
+
+    Calls store.memory_retention_cleanup() to move old task_event (>30d) and
+    rpetd_phase (>90d) entries to gsd_memory_archive. Runs daily.
+    """
+    while True:
+        try:
+            store = _get_store()
+            if store and hasattr(store, 'memory_retention_cleanup'):
+                result = store.memory_retention_cleanup()
+                total = result.get("total", 0)
+                if total > 0:
+                    log.info("retention_cleanup archived=%d details=%s", total, result)
+                else:
+                    log.debug("retention_cleanup nothing_to_archive")
+        except Exception as e:
+            log.error("retention_cleanup_error: %s", e)
+        time.sleep(RETENTION_CHECK_INTERVAL)
 
 
 # ── Request Body Size Limit ────────────────────────────────────────────────────
@@ -1385,6 +1409,22 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": _safe_error(e)}, 500)
             return
 
+        # ─── Memory Retention Cleanup POST route (MEM-02) ────────
+        if path == "/api/memory/retention-cleanup":
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
+                return
+            if not hasattr(store, 'memory_retention_cleanup'):
+                self._send_json({"error": "Retention cleanup not supported by this store"}, 501)
+                return
+            try:
+                result = store.memory_retention_cleanup()
+                self._send_json(result)
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
         # ─── Audit Log POST route (PG or SQLite) ────────
         if path == "/api/audit/log":
             store = _get_store()
@@ -1736,6 +1776,20 @@ def start_server(foreground=False):
     else:
         print(f"  Backup: module not found")
 
+    # ── Run memory retention cleanup at startup (MEM-02) ─────────────────────
+    if _active_store and hasattr(_active_store, 'memory_retention_cleanup'):
+        try:
+            ret_result = _active_store.memory_retention_cleanup()
+            ret_total = ret_result.get("total", 0)
+            if ret_total > 0:
+                print(f"  Memory retention: archived {ret_total} entries ({ret_result})")
+            else:
+                print(f"  Memory retention: nothing to archive")
+        except Exception as e:
+            print(f"  Memory retention: failed ({e})")
+    else:
+        print(f"  Memory retention: no store available")
+
     # ── Start RLM service ────────────────────────────────────────────────────
     if _rlm_enabled:
         rlm_started = _start_rlm()
@@ -1761,6 +1815,11 @@ def start_server(foreground=False):
         print(f"  Retry flush: started (every {RETRY_FLUSH_INTERVAL}s)")
     else:
         print(f"  Retry flush: skipped (no PG store)")
+
+    # ── Start memory retention thread (MEM-02) ────────────────────────────────
+    retention_thread = threading.Thread(target=_memory_retention_thread, daemon=True)
+    retention_thread.start()
+    print(f"  Retention: started (check every {RETENTION_CHECK_INTERVAL}s)")
 
     try:
         server.serve_forever()
