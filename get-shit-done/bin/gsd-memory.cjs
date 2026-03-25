@@ -1367,7 +1367,7 @@ async function cmdDistill(args) {
     }
 
     mergedCount++;
-    removedCount += remove.length;
+    removedCount += remove.length + 1;  // +1 for the 'keep' entry also deleted (line 1360)
     console.log('');
   }
 
