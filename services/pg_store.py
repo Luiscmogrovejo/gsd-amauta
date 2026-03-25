@@ -1065,7 +1065,11 @@ class PGStore:
         """Store a memory entry with auto-generated embedding.
 
         Falls back to memory_store() without embedding if no API key is set.
-        Returns the new memory ID.
+        Returns the new memory ID, or a dedup dict if a near-duplicate exists.
+
+        DATA-04: Pre-store dedup — if cosine similarity >= threshold (default 0.95),
+        the insert is skipped and a dict is returned instead:
+        {"dedup_skipped": True, "existing_id": ..., "similarity": ...}
         """
         embedding = self.generate_embedding(text, input_type="document")
 
@@ -1073,7 +1077,25 @@ class PGStore:
             # No API key or embedding failed — store without embedding
             return self.memory_store(text, source, agent_id, tags, metadata, project_id)
 
+        # DATA-04: Pre-store dedup — skip insert if near-duplicate exists (cosine > threshold)
+        dedup_threshold = float(os.environ.get("GSD_DEDUP_THRESHOLD", "0.95"))
+
         with self._get_conn() as conn:
+            # Sub-block 1: dedup check
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT id, text, (1 - (embedding <=> %s::vector)) as similarity
+                    FROM gsd_memory
+                    WHERE embedding IS NOT NULL
+                    ORDER BY embedding <=> %s::vector
+                    LIMIT 1
+                """, (str(embedding), str(embedding)))
+                row = cur.fetchone()
+                if row and float(row["similarity"]) >= dedup_threshold:
+                    return {"dedup_skipped": True, "existing_id": row["id"],
+                            "similarity": round(float(row["similarity"]), 4)}
+
+            # Sub-block 2: insert (same conn, no nested _get_conn)
             with conn.cursor() as cur:
                 cur.execute("""
                     INSERT INTO gsd_memory (text, source, agent_id, tags, metadata, project_id, embedding)
