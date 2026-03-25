@@ -25,7 +25,7 @@ import sqlite3
 import threading
 import hashlib
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 # ═══════════════════════════════════════════════════════
@@ -43,6 +43,13 @@ SOURCE_SCORES = {
     "task_event": 0,
     "agent": 0,
 }
+
+# MEM-01: Default sources excluded from search (low signal, noise)
+DEFAULT_EXCLUDE_SOURCES = ("task_event", "rpetd_phase")
+
+# MEM-03: Recency decay — penalizes old entries so recent memories rank higher
+RECENCY_DECAY_PER_30D = float(os.environ.get("GSD_RECENCY_DECAY_PER_30D", "0.5"))
+MAX_RECENCY_PENALTY = 3.0  # Cap at 6 months of decay
 
 # ═══════════════════════════════════════════════════════
 # Tag synonym normalization (shared with pg_store.py)
@@ -313,8 +320,15 @@ class SQLiteStore:
         """Store memory (no embedding support in SQLite — falls through to plain store)."""
         return self.memory_store(text, source, agent_id, tags, metadata, project_id)
 
-    def memory_search(self, query, project_id=None, source=None, limit=20):
-        """Search memories using FTS5 with source-aware scoring."""
+    def memory_search(self, query, project_id=None, source=None, limit=20,
+                      exclude_sources=DEFAULT_EXCLUDE_SOURCES):
+        """Search memories using FTS5 with source-aware scoring.
+
+        Args:
+            exclude_sources: Tuple/list of source strings to exclude from results.
+                             Defaults to DEFAULT_EXCLUDE_SOURCES (task_event, rpetd_phase).
+                             Pass None to include all sources.
+        """
         with self._get_conn() as conn:
             # Try FTS5 first
             conditions = []
@@ -330,6 +344,12 @@ class SQLiteStore:
             if source:
                 conditions.append("m.source = ?")
                 params.append(source)
+
+            # MEM-01: Exclude low-signal sources by default
+            if exclude_sources:
+                placeholders = ", ".join(["?"] * len(exclude_sources))
+                conditions.append(f"m.source NOT IN ({placeholders})")
+                params.extend(exclude_sources)
 
             where_extra = (" AND " + " AND ".join(conditions)) if conditions else ""
 
@@ -370,13 +390,16 @@ class SQLiteStore:
             return self._score_memories(rows)
 
     def _score_memories(self, rows):
-        """Apply source-aware scoring to memory results.
+        """Apply source-aware scoring with recency decay to memory results.
 
         Returns dicts with the same keys/types as PGStore._score_memories():
           id, text, source, agent_id, tags (list), metadata (dict),
           project_id, created_at (str), updated_at (str), score (float),
           text_rank (float). No 'rowid' key.
+
+        Score = norm_rank * 10 + source_bonus - recency_penalty
         """
+        now = datetime.now(timezone.utc)
         scored = []
         for row in rows:
             d = dict(row)
@@ -387,7 +410,25 @@ class SQLiteStore:
             # FTS5 rank is negative (more negative = more relevant)
             # Normalize: use min(rank/10, 1) for the text component
             norm_rank = min(text_rank / 10.0, 1.0) if text_rank else 0
-            d["score"] = round(norm_rank * 10 + source_bonus, 2)
+            # MEM-03: Recency decay
+            recency_penalty = 0.0
+            created_at = d.get("created_at")
+            if RECENCY_DECAY_PER_30D > 0 and created_at is not None:
+                try:
+                    if isinstance(created_at, str):
+                        ca = datetime.fromisoformat(created_at)
+                    else:
+                        ca = created_at
+                    if ca.tzinfo is None:
+                        ca = ca.replace(tzinfo=timezone.utc)
+                    days_old = max((now - ca).days, 0)
+                    recency_penalty = min(
+                        RECENCY_DECAY_PER_30D * (days_old / 30.0),
+                        MAX_RECENCY_PENALTY,
+                    )
+                except (ValueError, TypeError, AttributeError):
+                    pass  # unparseable — no decay
+            d["score"] = round(norm_rank * 10 + source_bonus - recency_penalty, 2)
             d["text_rank"] = round(norm_rank, 4)
             # Parse JSON fields
             for key in ("tags", "metadata"):
@@ -528,9 +569,11 @@ class SQLiteStore:
             rows = conn.execute(sql, params + like_params + [limit]).fetchall()
             return self._score_memories(rows)
 
-    def memory_semantic_search(self, query, project_id=None, source=None, limit=20):
+    def memory_semantic_search(self, query, project_id=None, source=None, limit=20,
+                               exclude_sources=DEFAULT_EXCLUDE_SOURCES):
         """Semantic search not available in SQLite — falls back to FTS."""
-        return self.memory_search(query, project_id, source, limit), "text_fallback"
+        return self.memory_search(query, project_id, source, limit,
+                                  exclude_sources=exclude_sources), "text_fallback"
 
     def memory_embedding_stats(self):
         """No embeddings in SQLite mode."""
