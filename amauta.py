@@ -813,7 +813,12 @@ def _jaccard_similarity(text_a: str, text_b: str) -> float:
     words_a = set(re.findall(r'\w{3,}', text_a.lower()))
     words_b = set(re.findall(r'\w{3,}', text_b.lower()))
     if not words_a or not words_b:
-        return 0.0
+        # Fallback: character trigram similarity for short-word texts
+        tri_a = set(text_a.lower()[i:i+3] for i in range(len(text_a)-2)) if len(text_a) >= 3 else {text_a.lower()}
+        tri_b = set(text_b.lower()[i:i+3] for i in range(len(text_b)-2)) if len(text_b) >= 3 else {text_b.lower()}
+        if not tri_a or not tri_b:
+            return 0.0
+        return len(tri_a & tri_b) / len(tri_a | tri_b)
     intersection = words_a & words_b
     union = words_a | words_b
     return len(intersection) / len(union) if union else 0.0
