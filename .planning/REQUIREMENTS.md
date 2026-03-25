@@ -44,9 +44,9 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FIX-01 | Phase 20 | Pending |
-| FIX-02 | Phase 20 | Pending |
-| FIX-03 | Phase 20 | Pending |
+| FIX-01 | Phase 20 | Complete |
+| FIX-02 | Phase 20 | Complete |
+| FIX-03 | Phase 20 | Complete |
 | FIX-04 | Phase 20 | Complete |
 | FIX-05 | Phase 20 | Complete |
 | FIX-06 | Phase 20 | Complete |
