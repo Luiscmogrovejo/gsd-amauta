@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: milestone
-status: complete
-stopped_at: Phase 19 complete (19-01-PLAN.md). v2.3 milestone DONE.
-last_updated: "2026-03-25T04:14:20.000Z"
-last_activity: 2026-03-25 -- Plan 19-01 executed (4 tasks, enrichment dedup + Perplexity truncation + RPETD caps). Phase 19 COMPLETE. v2.3 COMPLETE.
+status: completed
+stopped_at: Completed 19.1-01-PLAN.md (gap closure). Phase 19.1 COMPLETE. v2.3 gap closure finished.
+last_updated: "2026-03-25T04:34:57Z"
+last_activity: 2026-03-25 -- Plan 19.1-01 executed (5 tasks, 19 tests, 5 min)
 progress:
   total_phases: 5
   completed_phases: 5
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-03-24)
 
 ## Current Position
 
-Phase: 19 of 19 (Token Efficiency) -- COMPLETE
-Plan: 1/1 done (19-01 Enrichment Dedup + Perplexity Truncation + RPETD Caps)
-Status: All 5 phases complete. v2.3 milestone finished.
-Last activity: 2026-03-25 -- Plan 19-01 executed (4 tasks, 15 tests, 5 min)
+Phase: 19.1 of 19.1 (Gap Closure) -- COMPLETE
+Plan: 1/1 done (19.1-01 v2.3 Tech Debt Gap Closure)
+Status: All 5 phases + gap closure complete. v2.3 milestone finished with 0 tech debt.
+Last activity: 2026-03-25 -- Plan 19.1-01 executed (5 tasks, 19 tests, 5 min)
 
 Progress: [██████████] 100%
 
@@ -57,8 +57,9 @@ Progress: [██████████] 100%
 | 17 -- Task Manager Reliability | 3/3 | ~22 min | ~7 min |
 | 18 -- Memory Optimization | 2/2 | ~29 min | ~14 min |
 | 19 -- Token Efficiency | 1/1 | ~5 min | ~5 min |
+| 19.1 -- Gap Closure | 1/1 | ~5 min | ~5 min |
 
-**Recent Trend:** Accelerating (~8 min/plan in v2.3 vs ~25 min in v2.2)
+**Recent Trend:** Accelerating (~7 min/plan in v2.3 vs ~25 min in v2.2)
 
 ## Accumulated Context
 
@@ -73,6 +74,7 @@ Recent decisions affecting current work:
 - Phase 19-01: Preamble regex bounded to {0,80} chars to prevent greedy overconsumption
 - Phase 19-01: RPETD cap is soft (warning only, no truncation) to avoid blocking agents
 - Phase 19-01: Enrichment dedup uses _last_enrichment_ts scanning notes in reverse
+- Phase 19.1-01: stripPreamble "to answer" pattern uses [^.:,] exclusion set (not [^.:]) to prevent comma-skipping
 
 ### Pending Todos
 
@@ -84,8 +86,8 @@ None -- all phases complete.
 
 ## Session Continuity
 
-Last session: 2026-03-25T04:14:20Z
-Stopped at: Completed 19-01-PLAN.md (token efficiency). Phase 19 COMPLETE. v2.3 COMPLETE.
+Last session: 2026-03-25T04:34:57Z
+Stopped at: Completed 19.1-01-PLAN.md (gap closure). Phase 19.1 COMPLETE. v2.3 gap closure finished.
 Resume file: None
 
 ## Previous Milestone: v2.2 -- Wiring & Hardening (COMPLETE)

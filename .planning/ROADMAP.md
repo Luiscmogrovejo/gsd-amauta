@@ -11,6 +11,7 @@
 - [x] **Phase 17: Task Manager Reliability** - Archival, file locking, stale watchdog, dual-write reconciliation (completed 2026-03-25)
 - [x] **Phase 18: Memory Optimization** - Source filtering, tiered retention, recency decay scoring (completed 2026-03-25)
 - [x] **Phase 19: Token Efficiency** - Enrichment dedup, research truncation, RPETD content caps (completed 2026-03-25)
+- [x] **Phase 19.1: Gap Closure** - 5 tech debt items: reconcile fields, dedup project_id, post-purge cleanup, SKB cleanup, preamble regex (completed 2026-03-25)
 
 ## Phase Details
 
@@ -81,6 +82,7 @@
 | 17. Task Manager Reliability | 3/3 | Complete    | 2026-03-25 |
 | 18. Memory Optimization | 2/2 | Complete    | 2026-03-25 |
 | 19. Token Efficiency | 1/1 | Complete    | 2026-03-25 |
+| 19.1. Gap Closure | 1/1 | Complete    | 2026-03-25 |
 
 ---
 *Milestone v2.3 started: 2026-03-24*
