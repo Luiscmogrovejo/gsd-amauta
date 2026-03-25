@@ -242,6 +242,10 @@ class PGStore:
                 conditions = []
                 params = []
 
+                # DATA-06: Exclude test entries from default search
+                if project_id != '__test__':
+                    conditions.append("(project_id IS NULL OR project_id != '__test__')")
+
                 if project_id:
                     conditions.append("project_id = %s")
                     params.append(project_id)
@@ -1129,6 +1133,10 @@ class PGStore:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 conditions = ["embedding IS NOT NULL"]
                 params = []
+
+                # DATA-06: Exclude test entries from default search
+                if project_id != '__test__':
+                    conditions.append("(project_id IS NULL OR project_id != '__test__')")
 
                 if project_id:
                     conditions.append("project_id = %s")

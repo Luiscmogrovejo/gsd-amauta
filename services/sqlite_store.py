@@ -320,6 +320,10 @@ class SQLiteStore:
             conditions = []
             params = []
 
+            # DATA-06: Exclude test entries from default search
+            if project_id != '__test__':
+                conditions.append("(m.project_id IS NULL OR m.project_id != '__test__')")
+
             if project_id:
                 conditions.append("m.project_id = ?")
                 params.append(project_id)
