@@ -1,809 +1,447 @@
 # GSD-Amauta
 
-**A Claude Code plugin that merges [GSD](https://github.com/get-shit-done/get-shit-done) (Get Shit Done) with [Amauta](https://github.com/robertamauta/amauta) multi-agent task management.**
+**Quality-enforced AI development for Claude Code.**
 
-PostgreSQL persistent memory · pgvector semantic search · RLM context engine · RPETD pipeline enforcement · External validation · Perplexity-first research · Auto-learning feedback loop · 20 agentic AI design patterns
-
-Everything degrades gracefully to vanilla GSD when infrastructure is unavailable.
+GSD-Amauta extends the [GSD](https://github.com/get-shit-done/get-shit-done) (Get Shit Done) framework with persistent PostgreSQL memory, pgvector semantic search, a BM25 code context engine, 11 specialist agents, a 5-phase RPETD pipeline with external validation gates, and a 5-step research chain. Everything degrades gracefully to vanilla GSD when infrastructure is unavailable.
 
 ```
-1464 tests (94%+ coverage) · 11 agents · 11 skills · 5 CLI tools · 3 services · 9 specs · 20 agentic AI patterns
+v2.4.0 -- 2000+ tests (408 Python + 1618 CJS) -- 11 agents -- 5 CLI tools -- 3 services -- 9 specs -- 20 AI patterns
 ```
 
 ---
 
-## Table of Contents
-
-1. [Overview](#1-overview)
-2. [System Architecture](#2-system-architecture)
-3. [End-to-End Request Flow](#3-end-to-end-request-flow)
-4. [RPETD Pipeline](#4-rpetd-pipeline)
-5. [Agent Architecture](#5-agent-architecture)
-6. [Memory System](#6-memory-system)
-7. [Semantic Search (pgvector)](#7-semantic-search-pgvector)
-8. [RLM Context Engine](#8-rlm-context-engine)
-9. [Research Chain](#9-research-chain)
-10. [Task Lifecycle](#10-task-lifecycle)
-11. [Validation Pipeline](#11-validation-pipeline)
-12. [Graceful Degradation](#12-graceful-degradation)
-13. [Installation](#13-installation)
-14. [Configuration](#14-configuration)
-15. [CLI Reference](#15-cli-reference)
-16. [Services](#16-services)
-17. [Testing](#17-testing)
-18. [Project Structure](#18-project-structure)
-19. [Agentic AI Patterns](#19-agentic-ai-patterns)
-20. [Troubleshooting](#20-troubleshooting)
-
----
-
-## 1. Overview
-
-GSD-Amauta turns Claude Code into a **managed software engineering pipeline**. When you start a project, a specialist operator agent decomposes work into tasks tracked in PostgreSQL. Each task is claimed by the right specialist executor (frontend, backend, infra, or general), forced through a five-step quality pipeline (Research → Plan → Execute → Test → Document), and validated by a separate external agent — no agent marks its own work done.
-
-All context, learnings, and decisions persist across sessions in PostgreSQL with vector embeddings for semantic retrieval. The RLM context engine means agents query relevant code chunks rather than having entire files dumped into prompts.
-
-**What it adds over vanilla GSD:**
+## What Amauta Adds Over GSD
 
 | Capability | Vanilla GSD | GSD-Amauta |
 |-----------|-------------|------------|
-| Task state | Files only | PostgreSQL + files |
-| Memory | STATE.md | PG memory + semantic search |
-| Context | Full file injection | RLM chunk retrieval |
-| Quality gate | Honour system | RPETD enforcement |
-| Validation | Self-marking | External agent required |
-| Research | WebFetch only | Memory → SKB → Context7 → Perplexity → WebFetch |
-| Learning | Manual | Auto-capture + cross-project transfer |
-| Agents | Generic | 11 specialists with file-pattern routing |
+| Task state | Markdown files, no locking | PostgreSQL + JSON with TOCTOU-safe concurrent access |
+| Memory | `STATE.md`, grows forever | PG memory + pgvector semantic search + distillation + tiered retention |
+| Code context | Full file injection into prompts | BM25-scored RLM chunk retrieval (10-50x context reduction) |
+| Quality gate | Honor system | 5-phase RPETD pipeline with structured evidence |
+| Validation | Self-marking (agents mark own work done) | External validation -- no agent validates its own work |
+| Research | WebFetch only | 5-step chain: Memory -> SKB -> Context7 -> Perplexity -> WebFetch |
+| Learning | Manual notes | Auto-capture from every task, cross-project transfer, SKB promotion |
+| Agents | Generic prompts | 11 specialists with file-pattern routing + performance tiebreaker |
+| Memory writes | Blind append, duplicates accumulate | Idempotent writes with Jaccard dedup + embedding similarity check |
+| Memory lifecycle | No cleanup | Distillation, recency decay, tiered retention, source filtering |
+| Token efficiency | No optimization | Enrichment dedup window, Perplexity cap, RPETD soft cap |
+| Project isolation | None | `__test__` routing, `project_id` scoping on all queries |
 
 ---
 
-## 2. System Architecture
+## System Architecture
 
-```
-╔══════════════════════════════════════════════════════════════════════╗
-║                        CLAUDE CODE SESSION                           ║
-║                                                                      ║
-║  /amauta:new-project   /amauta:execute-plan   /amauta:test-phase   ...      ║
-║        │                    │                    │                   ║
-║        ▼                    ▼                    ▼                   ║
-║  ┌──────────┐    ┌──────────────────┐    ┌─────────────────┐       ║
-║  │Workflows │    │Agent Definitions │    │ Slash Commands  │       ║
-║  │(33+ .md) │    │  (11 agents)     │    │  (34 total)     │       ║
-║  └────┬─────┘    └────────┬─────────┘    └────────┬────────┘       ║
-║       │                   │                        │                 ║
-║       └───────────────────┴────────────────────────┘                ║
-║                                │                                     ║
-║       ┌────────────────────────▼──────────────────────────┐        ║
-║       │              Node.js CLI Tools Layer               │        ║
-║       │                                                    │        ║
-║       │  gsd-amauta.cjs    gsd-memory.cjs   gsd-rlm.cjs  │        ║
-║       │  (task mgmt)       (PG memory +     (code-aware   │        ║
-║       │                     embeddings)      context)      │        ║
-║       │  gsd-research.cjs  gsd-tools.cjs                  │        ║
-║       │  (Perplexity)      (GSD core)                      │        ║
-║       └──────┬─────────────────┬──────────────────┬────────┘        ║
-║              │                 │                  │                  ║
-╚══════════════╪═════════════════╪══════════════════╪══════════════════╝
-               │                 │                  │
-               ▼                 ▼                  ▼
-   ┌─────────────────┐  ┌──────────────┐  ┌───────────────────┐
-   │  Amauta Daemon  │  │ RLM Service  │  │   External APIs   │
-   │  :18799 (HTTP)  │  │ :18798 (HTTP)│  │                   │
-   │                 │  │              │  │  Voyage AI        │
-   │  ┌───────────┐  │  │  Code-aware  │  │  (embeddings)     │
-   │  │ amauta.py │  │  │  chunking    │  │                   │
-   │  │ (3920 ln) │  │  │  TF-IDF rank │  │  Perplexity       │
-   │  └───────────┘  │  │  LRU cache   │  │  (research)       │
-   │  ┌───────────┐  │  └──────────────┘  │                   │
-   │  │ pg_store  │  │                    │  Context7 MCP     │
-   │  │   .py     │  │                    │  (docs)           │
-   │  └─────┬─────┘  │                    └───────────────────┘
-   └─────────┼────────┘
-             │
-             ▼
-   ┌──────────────────────┐
-   │   PostgreSQL 16      │
-   │   + pgvector 0.8     │
-   │   :5433 (Docker)     │
-   │                      │
-   │  gsd_memory          │  ← text + vector(1024) embeddings
-   │  gsd_shared_kb       │  ← validated cross-project knowledge
-   │  gsd_tasks           │  ← task state + RPETD work log
-   │  gsd_task_valid.     │  ← validation audit trail
-   │                      │
-    │  6 tables            │
-    │  27 indexes          │  incl. HNSW for cosine similarity
-    │  5 auto-triggers     │
-   └──────────────────────┘
+```mermaid
+graph TB
+    subgraph Claude["Claude Code Session"]
+        CMD["Slash Commands (34)"]
+        WF["Workflows (36 .md)"]
+        AG["Agent Definitions (11)"]
+
+        CMD --> CLI
+        WF --> CLI
+        AG --> CLI
+    end
+
+    subgraph CLI["Node.js CLI Layer"]
+        AMAUTA["amauta.cjs<br/>Task Management"]
+        MEM["gsd-memory.cjs<br/>PG Memory + Embeddings"]
+        RLM_CLI["gsd-rlm.cjs<br/>Code Context"]
+        RES["gsd-research.cjs<br/>Research Chain"]
+        TOOLS["gsd-tools.cjs<br/>GSD Core"]
+    end
+
+    subgraph Services["Background Services"]
+        DAEMON["Amauta Daemon<br/>:18799 HTTP"]
+        RLM_SVC["RLM Service<br/>:18798 HTTP"]
+    end
+
+    subgraph Storage["PostgreSQL 16 + pgvector"]
+        GM["gsd_memory<br/>text + vector(1024)"]
+        GS["gsd_shared_kb<br/>validated knowledge"]
+        GT["gsd_tasks<br/>task state + RPETD log"]
+        GV["gsd_task_validations<br/>audit trail"]
+        GA["gsd_audit_log<br/>immutable events"]
+        GP["gsd_agent_performance<br/>routing metrics"]
+    end
+
+    subgraph APIs["External APIs"]
+        VOY["Voyage AI<br/>Embeddings"]
+        PPX["Perplexity<br/>Research"]
+        C7["Context7 MCP<br/>Docs"]
+    end
+
+    AMAUTA --> DAEMON
+    MEM --> DAEMON
+    RLM_CLI --> RLM_SVC
+    RES --> PPX
+    RES --> C7
+    DAEMON --> Storage
+    DAEMON --> VOY
+    RLM_SVC -.->|"BM25 scoring<br/>LRU cache"| RLM_SVC
 ```
 
 ---
 
-## 3. End-to-End Request Flow
+## RPETD Pipeline
 
-How a single user request flows through the complete system:
+Every task is forced through five phases. Validation gates block progress at each stage.
 
+```mermaid
+flowchart LR
+    CLAIM["Task Claimed"] --> R
+
+    subgraph R["R -- Research"]
+        R1["Query PG memory (semantic)"]
+        R2["Query Shared KB"]
+        R3["Auto-invoke research chain<br/>if less than 2 local results"]
+    end
+
+    R --> P
+
+    subgraph P["P -- Plan"]
+        P1["Given / When / Then criteria"]
+        P2["Step-by-step approach"]
+        P3["Success criteria + deliverables"]
+    end
+
+    P --> E
+
+    subgraph E["E -- Execute"]
+        E1["Feature branch created"]
+        E2["Code committed"]
+        E3["GATE 1: branch evidence"]
+    end
+
+    E --> T
+
+    subgraph T["T -- Test"]
+        T1["Run test suite"]
+        T2["Capture raw output"]
+        T3["GATE 2: test evidence"]
+    end
+
+    T --> D
+
+    subgraph D["D -- Document"]
+        D1["LEARNING block written"]
+        D2["Auto-store to PG memory"]
+        D3["GATE 3: LEARNING keyword"]
+    end
+
+    D --> V["External Validation<br/>GATE 4: PR URL<br/>GATE 5: success criteria"]
+
+    V -->|PASS| DONE["Done + SKB promotion"]
+    V -->|FAIL| FIX["Sub-tasks created<br/>Re-route to executor"]
+    FIX --> CLAIM
+
+    style R fill:#e8f4fd,stroke:#1a73e8
+    style P fill:#fef7e0,stroke:#f9ab00
+    style E fill:#e6f4ea,stroke:#34a853
+    style T fill:#fce8e6,stroke:#ea4335
+    style D fill:#f3e8fd,stroke:#9334e6
 ```
-  USER: "Add dark mode to the settings page"
-        │
-        ▼
-  ┌─────────────────────────────────────────┐
-  │           gsd-operator                  │
-  │  Master orchestrator receives request   │
-  │                                         │
-  │  1. Query RLM for existing UI patterns  │
-  │  2. Search memory for past dark-mode    │
-  │     implementation lessons             │
-  │  3. Decompose into tasks               │
-  └──────────────────┬──────────────────────┘
-                     │
-         ┌───────────▼──────────┐
-         │  Create in Amauta   │
-         │                     │
-         │  EP-XXXX  Epic      │
-         │  └─ ST-XXXX Story   │
-         │     └─ TK-XXXX Task │
-         └───────────┬──────────┘
-                     │ HTTP POST /api/add
-                     ▼
-         ┌──────────────────────┐
-         │   Amauta Daemon      │  → amauta.py → tasks.json + PG
-         │   :18799             │
-         └───────────┬──────────┘
-                     │
-                     │  Route by file pattern:
-                     │  *.tsx, *.css → executor-frontend
-                     │  *.py, *.sql  → executor-backend
-                     │  Dockerfile   → executor-infra
-                     │  everything   → executor-general
-                     │
-                     ▼
-         ┌──────────────────────┐
-         │  gsd-executor-       │  Specialist executor claims task
-         │  frontend            │  Begins RPETD pipeline
-         └──────────────────────┘
-                     │
-          ┌──────────┴─────────────────────────────────────────────┐
-          │                   RPETD Pipeline                        │
-          │                                                         │
-          │  R: Research ──→ memory + SKB + Perplexity             │
-          │  P: Plan     ──→ Given/When/Then criteria               │
-          │  E: Execute  ──→ feature branch + commits              │
-          │  T: Test     ──→ run suite + capture output            │
-          │  D: Document ──→ LEARNING block + auto-store           │
-          │                                                         │
-          │  Each phase logged via:                                 │
-          │  gsd-amauta.cjs rpetd TK-XXXX --phase R/P/E/T/D       │
-          └──────────┬──────────────────────────────────────────────┘
-                     │
-                     ▼
-         ┌──────────────────────┐
-         │   gsd-validator      │  EXTERNAL validator (not executor)
-         │                      │
-         │  Checks:             │
-         │  ✓ Branch evidence   │  (E-phase gate)
-         │  ✓ Test output       │  (T-phase gate)
-         │  ✓ LEARNING block    │  (D-phase gate)
-         │  ✓ Success criteria  │  (from P-phase)
-         └──────────┬───────────┘
-                    │
-              PASS ─┤─ FAIL
-                    │         │
-                    ▼         ▼
-              ┌─────────┐  ┌────────────────────────┐
-              │  DONE   │  │ Sub-tasks created      │
-              │         │  │ Re-routed to executor  │
-              │ lessons │  │ Re-validated           │
-              │ → SKB   │  └────────────────────────┘
-              └─────────┘
-```
+
+Each phase is enriched with RLM code context (BM25-scored chunks), semantic memory recall (pgvector), and past failure/test strategy injection at E/T phases.
 
 ---
 
-## 4. RPETD Pipeline
+## Agent Architecture
 
-Every task is forced through five phases. Validation gates block progress:
+11 specialists, each with a defined role, tool set, and file-pattern routing:
 
+```mermaid
+graph TB
+    OP["gsd-operator<br/>Master Orchestrator<br/>P1 P2 P6 P8 P9 P14-P19"]
+
+    OP --> PL["gsd-planner<br/>Given/When/Then specs<br/>P6 P14"]
+    OP --> RS["gsd-researcher<br/>Memory + SKB + Perplexity<br/>P5 P10"]
+    OP --> CK["gsd-checker<br/>Pre/post quality<br/>P4 P17"]
+    OP --> VA["gsd-validator<br/>External validation<br/>P4 P13 P17"]
+    OP --> DB["gsd-debugger<br/>Root cause + bisect<br/>P5 P7 P20"]
+    OP --> RM["gsd-roadmapper<br/>ROADMAP.md + milestones"]
+
+    OP -->|"File-pattern routing"| ROUTE{{"*.tsx *.jsx *.css *.vue<br/>*.py *.sql *.go *.rs<br/>Dockerfile *.yml k8s/<br/>everything else"}}
+
+    ROUTE --> EF["executor-frontend"]
+    ROUTE --> EB["executor-backend"]
+    ROUTE --> EI["executor-infra"]
+    ROUTE --> EG["executor-general"]
+
+    EF & EB & EI & EG -->|"RPETD complete"| VA
+
+    style OP fill:#1a73e8,color:#fff
+    style VA fill:#ea4335,color:#fff
+    style ROUTE fill:#f9ab00,color:#000
 ```
-  TASK CLAIMED
-       │
-       ▼
-  ┌────────────────────────────────────────────────────────┐
-  │  R — RESEARCH                                          │
-  │                                                        │
-  │  Query chain:                                          │
-  │  gsd_memory (PG) ──→ gsd_shared_kb ──→ Context7      │
-  │                          │                             │
-  │                          └──→ Perplexity ──→ WebFetch  │
-  │                                                        │
-  │  Output: prior learnings, patterns, documentation     │
-  └────────────────────────┬───────────────────────────────┘
-                           │
-                           ▼
-  ┌────────────────────────────────────────────────────────┐
-  │  P — PLAN                                              │
-  │                                                        │
-  │  Given: <system state>                                 │
-  │  When:  <action taken>                                 │
-  │  Then:  <expected outcome>                             │
-  │                                                        │
-  │  Output: step-by-step plan, test strategy,            │
-  │          success criteria, deliverables               │
-  └────────────────────────┬───────────────────────────────┘
-                           │
-                           ▼
-  ┌────────────────────────────────────────────────────────┐
-  │  E — EXECUTE                                   GATE 1 │
-  │                                                        │
-  │  Branch required:                                      │
-  │    feat/TK-XXXX-description                           │
-  │    fix/BG-XXXX-description                            │
-  │    chore/description                                   │
-  │                                                        │
-  │  ▶ GATE: branch evidence must appear in E-phase log  │
-  │    (regex: feat/|fix/|chore/|branch|commit|push)      │
-  │                                                        │
-  │  Output: working code, committed to branch            │
-  └────────────────────────┬───────────────────────────────┘
-                           │
-                           ▼
-  ┌────────────────────────────────────────────────────────┐
-  │  T — TEST                                      GATE 2 │
-  │                                                        │
-  │  Run test suite, capture raw output                    │
-  │                                                        │
-  │  ▶ GATE: test evidence must match one of:            │
-  │    passed|failed|PASS|FAIL|✓|✗|ok|not ok             │
-  │    tests:|test:|suite:|assertions:|expect|assert      │
-  │    coverage|[0-9]+ passing|[0-9]+ failing            │
-  │                                                        │
-  │  Output: test results pasted verbatim into T-log     │
-  └────────────────────────┬───────────────────────────────┘
-                           │
-                           ▼
-  ┌────────────────────────────────────────────────────────┐
-  │  D — DOCUMENT                                  GATE 3 │
-  │                                                        │
-  │  LEARNING block format:                               │
-  │  ┌──────────────────────────────────────────────────┐ │
-  │  │ LEARNING: <key insight>                          │ │
-  │  │ Context: <when this applies>                     │ │
-  │  │ Impact: <why it matters>                         │ │
-  │  └──────────────────────────────────────────────────┘ │
-  │                                                        │
-  │  ▶ GATE: LEARNING: keyword must appear in D-phase log│
-  │                                                        │
-  │  Auto-actions:                                        │
-  │  • Store to gsd_memory (source=auto_learning, +3)    │
-  │  • Promote to gsd_shared_kb if validation passes     │
-  └────────────────────────┬───────────────────────────────┘
-                           │
-                           ▼
-  ┌────────────────────────────────────────────────────────┐
-  │  VALIDATION                                            │
-  │                                                        │
-  │  External gsd-validator checks ALL FOUR gates:        │
-  │    Gate 1: branch evidence in E-log?   ✓ / ✗         │
-  │    Gate 2: LEARNING in D-log (or any)? ✓ / ✗         │
-  │    Gate 3: test evidence in T-log?     ✓ / ✗         │
-  │    Gate 4: PR URL in D/E/notes?        ✓ / ✗         │
-  │    Success criteria met?               ✓ / ✗         │
-  │                                                        │
-  │  PASS ──→ status=done, learnings promoted to SKB     │
-  │  FAIL ──→ rejection_reason stored, sub-tasks created  │
-  │                                                        │
-  │  Override: --force (bypasses gate checks)             │
-  │  Tag: no-gitflow (skips branch gate only)             │
-  └────────────────────────────────────────────────────────┘
-```
+
+Executors have full tool access (Read, Write, Edit, Bash, Grep, Glob). Read-only agents (researcher, checker, validator) cannot modify files.
+
+Performance-based routing uses a tiebreaker: when multiple agents match a task's file patterns, the agent with the best historical success rate for that domain is selected.
 
 ---
 
-## 5. Agent Architecture
+## Memory System
 
-11 specialists, each with a defined role, tool set, and agentic AI patterns:
+PostgreSQL-backed persistent memory with pgvector semantic search, source-aware scoring, and automatic lifecycle management:
 
-```
-                    ┌────────────────────────────┐
-                    │        gsd-operator         │
-                    │   Master Orchestrator       │
-                    │                             │
-                    │  Patterns: P1 P2 P6 P8 P9  │
-                    │           P14 P15 P17-P19  │
-                    │                             │
-                    │  Tools: Bash Read Write     │
-                    │         Edit Task Glob Grep │
-                    └──────────────┬──────────────┘
-                                   │
-           ┌───────────────────────┼──────────────────────┐
-           │           │           │           │           │
-           ▼           ▼           ▼           ▼           ▼
-  ┌──────────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐
-  │ gsd-planner  │ │gsd-      │ │gsd-      │ │gsd-      │ │gsd-      │
-  │              │ │researcher│ │checker   │ │validator │ │debugger  │
-  │ Given/When/  │ │          │ │          │ │          │ │          │
-  │ Then plans   │ │ Memory   │ │ Pre/post │ │ External │ │ Root     │
-  │ scope, risks │ │ SKB      │ │ quality  │ │ validate │ │ cause    │
-  │              │ │ Perplx   │ │ checks   │ │ gates    │ │ bisect   │
-  │ P6 P14       │ │ WebFetch │ │          │ │          │ │          │
-  │              │ │          │ │ P4 P17   │ │ P4 P13   │ │ P5 P7    │
-  │              │ │ P5 P10   │ │          │ │ P17      │ │ P20      │
-  └──────────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘
+```mermaid
+graph TB
+    subgraph Write["Write Path"]
+        DPH["D-phase LEARNING block<br/>source=auto_learning +3"]
+        PPX["Perplexity result<br/>source=web_search_result +3"]
+        AGT["Agent gsd-memory store<br/>source=agent +0"]
+        LRN["gsd-memory learn<br/>source=auto_learning +3"]
+    end
 
-  ┌────────────────────────────────────────────────────────────────────┐
-  │                    gsd-roadmapper                                  │
-  │          ROADMAP.md · milestone planning · STATE.md               │
-  └────────────────────────────────────────────────────────────────────┘
+    DPH & PPX & AGT & LRN --> DEDUP{"Jaccard dedup > 0.7?<br/>Embedding similarity check"}
 
-                           │  File pattern routing
-                           ▼
-       ┌────────────┬──────────────┬────────────┬──────────────┐
-       │            │              │            │              │
-       ▼            ▼              ▼            ▼              │
-  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐         │
-  │executor │  │executor │  │executor │  │executor │         │
-  │frontend │  │backend  │  │infra    │  │general  │         │
-  │         │  │         │  │         │  │         │         │
-  │*.tsx    │  │*.py     │  │Docker   │  │anything │         │
-  │*.jsx    │  │*.sql    │  │*.yml    │  │else     │         │
-  │*.css    │  │*.go     │  │terraform│  │         │         │
-  │*.scss   │  │*.rs     │  │k8s/     │  │         │         │
-  │*.vue    │  │*.java   │  │CI/CD    │  │         │         │
-  │         │  │         │  │         │  │         │         │
-  │P3 P11   │  │P3 P11   │  │P3 P11   │  │P3 P11   │         │
-  └─────────┘  └─────────┘  └─────────┘  └─────────┘         │
-                                                               │
-  All executors: Read Write Edit Bash Grep Glob               │
-  Read-only (researcher, checker, validator): no Write/Edit   │
-  ─────────────────────────────────────────────────────────────┘
+    DEDUP -->|unique| PG["gsd_memory (PG)<br/>text + vector(1024)<br/>HNSW cosine index"]
+    DEDUP -->|duplicate| SKIP["Skip storage"]
+
+    PG --> EMBED["Auto-embed via Voyage AI<br/>voyage-code-3 (1024d)"]
+
+    PG -->|"validation passes"| SKB["gsd_shared_kb<br/>source=best-practice +4<br/>Cross-project knowledge"]
+
+    subgraph Lifecycle["Memory Lifecycle"]
+        DIST["Distillation<br/>Merge similar entries"]
+        RET["Tiered Retention<br/>High-value kept longer"]
+        DEC["Recency Decay<br/>Old entries scored lower"]
+    end
+
+    PG --> Lifecycle
+
+    subgraph Read["Read Path"]
+        SEM["Semantic search<br/>pgvector cosine similarity"]
+        TXT["Text search<br/>PG full-text + ILIKE"]
+        XP["Cross-project query<br/>Tag-filtered, all projects"]
+    end
+
+    PG --> Read
+
+    style Write fill:#e6f4ea,stroke:#34a853
+    style Lifecycle fill:#fef7e0,stroke:#f9ab00
+    style Read fill:#e8f4fd,stroke:#1a73e8
 ```
 
-**Pattern Legend** (from `references/agentic-patterns.md`):
+### Source Scoring
 
-| P# | Pattern | Primary Agents |
-|----|---------|----------------|
-| P1 | Prompt Chaining | operator |
-| P2 | Routing | operator |
-| P3 | Parallelization | executors |
-| P4 | Verification | checker, validator |
-| P5 | Tool Use | researcher, debugger |
-| P6 | Planning | planner, operator |
-| P7 | Reflection | debugger |
-| P8 | Resource-Aware Routing | operator |
-| P9 | Multi-Agent Orchestration | operator |
-| P10 | RAG | researcher |
-| P11 | Code Generation | executors |
-| P13 | Self-Monitoring | validator |
-| P14 | Goal Setting | planner, operator |
-| P15 | Exception Handling | operator |
-| P17 | Guardrails | checker, validator |
-| P18 | Human-in-the-Loop | operator |
-| P19 | Prioritization | operator |
-| P20 | Debugging | debugger |
-
----
-
-## 6. Memory System
-
-PostgreSQL-backed persistent memory with source-aware scoring across sessions and projects:
-
-```
-  ┌─────────────────────────────────────────────────────┐
-  │                   WRITE PATH                        │
-  │                                                     │
-  │  Agent completes work / captures insight            │
-  │         │                                           │
-  │         ├──→ RPETD D-phase LEARNING block           │
-  │         │         → source=auto_learning  score +3  │
-  │         │                                           │
-  │         ├──→ Perplexity search result               │
-  │         │         → source=web_search_result score +3│
-  │         │                                           │
-  │         ├──→ Manual gsd-memory.cjs store            │
-  │         │         → source=agent         score +0  │
-  │         │                                           │
-  │         └──→ gsd-memory.cjs learn                  │
-  │                   → source=auto_learning  score +3  │
-  └────────────────────┬────────────────────────────────┘
-                       │
-                       ▼
-  ┌─────────────────────────────────────────────────────┐
-  │                 gsd_memory (PG)                     │
-  │                                                     │
-  │  id          VARCHAR(64) PRIMARY KEY                │
-  │  text        TEXT                                   │
-  │  source      VARCHAR(64)   ← score source          │
-  │  agent_id    VARCHAR(64)                            │
-  │  tags        JSONB         ← tech tags, project    │
-  │  project_id  VARCHAR(128)                           │
-  │  embedding   vector(1024)  ← pgvector HNSW         │
-  │  created_at  TIMESTAMPTZ                            │
-  │                                                     │
-  │  Count > threshold?  → Auto-distill (Jaccard 0.7)  │
-  └────────────────────┬────────────────────────────────┘
-                       │
-               validation passes
-                       │
-                       ▼
-  ┌─────────────────────────────────────────────────────┐
-  │                 gsd_shared_kb (PG)                  │
-  │                                                     │
-  │  Promoted from gsd_memory on validation pass        │
-  │  source=best-practice   score +4                    │
-  │                                                     │
-  │  title, content, category, tags                     │
-  │  importance (1-10), source_task                     │
-  │  Categories: workflow, process, delivery,           │
-  │    pattern, policy, architecture, convention,       │
-  │    pitfall, tool-usage                              │
-  └────────────────────┬────────────────────────────────┘
-                       │
-                       │  At new-project init
-                       ▼
-  ┌─────────────────────────────────────────────────────┐
-  │            Cross-Project Transfer                   │
-  │                                                     │
-  │  gsd-memory.cjs cross-project "query"              │
-  │  --tags postgresql,react  (tech filter)            │
-  │                                                     │
-  │  Returns lessons from ALL past projects             │
-  │  matching the query and tech stack                  │
-  └─────────────────────────────────────────────────────┘
-```
-
-### Source Score Table
-
-| Source | Score Boost | Created By |
-|--------|:-----------:|-----------|
+| Source | Score Boost | Origin |
+|--------|:-----------:|--------|
 | `lesson-learned` | +4 | Developer explicit input |
 | `best-practice` | +4 | SKB promotion after validation |
 | `auto_learning` | +3 | D-phase LEARNING block |
 | `web_search_result` | +3 | Perplexity API response |
-| `session-learning` | +3 | Session observation capture |
+| `session-learning` | +3 | Session observation |
 | `distilled` | +2 | Merged/compacted entries |
 | `rpetd_phase` | +1 | Per-phase auto-capture |
 | `task_event` | +0 | Status transitions |
 | `agent` | +0 | General agent notes |
 
----
-
-## 7. Semantic Search (pgvector)
-
-1024-dimension vector embeddings stored alongside text, searched with HNSW cosine similarity:
-
-```
-  WRITE — gsd-memory.cjs store / learn
-       │
-       ▼
-  ┌────────────────────────────────────────────────────────┐
-  │  Provider Detection                                    │
-  │                                                        │
-  │  GSD_EMBEDDING_PROVIDER=voyage|openai (explicit)      │
-  │        │ not set                                       │
-  │        ▼                                               │
-  │  VOYAGE_API_KEY set?  ──yes──→ voyage-code-3          │
-  │        │ no                    (code-optimized, 1024d) │
-  │        ▼                                               │
-  │  OPENAI_API_KEY set?  ──yes──→ text-embedding-3-small │
-  │        │ no                    (general, 1024d)        │
-  │        ▼                                               │
-  │  Neither set  ──────────────→ skip embedding          │
-  └──────────────────────┬─────────────────────────────────┘
-                         │
-          embedding generated (input_type="document")
-                         │
-                         ▼
-  ┌────────────────────────────────────────────────────────┐
-  │   INSERT INTO gsd_memory                               │
-  │   (text, source, tags, embedding)                      │
-  │   VALUES (%s, %s, %s, %s::vector)                      │
-  └────────────────────────────────────────────────────────┘
-
-  ─────────────────────────────────────────────────────────
-
-  READ — gsd-memory.cjs semantic-search "query"
-       │
-       ▼
-  ┌────────────────────────────────────────────────────────┐
-  │  Generate query embedding (input_type="query")        │
-  │  Same provider detection as write path                │
-  └──────────────────────┬─────────────────────────────────┘
-                         │
-                         ▼
-  ┌────────────────────────────────────────────────────────┐
-  │  SELECT *, 1-(embedding<=>query_vec) AS similarity    │
-  │  FROM gsd_memory                                       │
-  │  WHERE embedding IS NOT NULL                           │
-  │  ORDER BY embedding <=> query_vec     ← HNSW index    │
-  │  LIMIT 20                                              │
-  │                                                        │
-  │  HNSW: m=16, ef_construction=128, cosine distance     │
-  └──────────────────────┬─────────────────────────────────┘
-                         │
-                         ▼
-  ┌────────────────────────────────────────────────────────┐
-  │  Score = similarity(0→1) × 10 + source_bonus(0→4)    │
-  │  Sort by score descending                             │
-  │  Return top results with semantic_similarity field    │
-  └────────────────────────────────────────────────────────┘
-
-  Fallback: if no embeddings stored or no API key
-  → uses PostgreSQL full-text search + ILIKE (still works)
-```
+Search score formula: `similarity(0-1) x 10 + source_bonus(0-4)`, sorted descending.
 
 ---
 
-## 8. RLM Context Engine
+## RLM Context Engine
 
-Based on MIT CSAIL arXiv:2512.24601v1. Agents retrieve relevant code chunks instead of having entire files injected into prompts. **No API keys required — pure local retrieval.**
+Based on MIT CSAIL (arXiv:2512.24601v1). Agents retrieve relevant code chunks instead of having entire files injected into prompts. No API keys required -- pure local retrieval.
 
+```mermaid
+flowchart LR
+    Q["Agent query:<br/>'How does auth middleware work?'"] --> RLM
+
+    subgraph RLM["RLM Service :18798"]
+        SCAN["1. SCAN<br/>Walk path, skip<br/>node_modules .git etc"]
+        CHUNK["2. CHUNK<br/>Language-aware splitting<br/>Python: class/function<br/>JS/TS: function/class/export<br/>SQL: statement boundaries<br/>Markdown: headings"]
+        CACHE["3. CACHE<br/>LRU keyed by<br/>(filepath, mtime)<br/>200 files"]
+        SCORE["4. SCORE<br/>BM25 ranking<br/>camelCase splitting<br/>length normalization"]
+        TOP["5. RETURN<br/>Top-K chunks<br/>file, lines, text, score"]
+
+        SCAN --> CHUNK --> CACHE --> SCORE --> TOP
+    end
+
+    TOP --> AGENT["Agent receives<br/>relevant chunks only<br/>10-50x context reduction"]
+
+    style RLM fill:#e8f4fd,stroke:#1a73e8
 ```
-  Agent query: "How does auth middleware work?"
-       │
-       ▼
-  ┌────────────────────────────────────────────────────────┐
-  │  gsd-rlm.cjs query "auth middleware" --path src/      │
-  │                                                        │
-  │  POST /query → RLM Service :18798                     │
-  └──────────────────────┬─────────────────────────────────┘
-                         │
-                         ▼
-  ┌────────────────────────────────────────────────────────┐
-  │                  RLM Service                           │
-  │                                                        │
-  │  1. SCAN  Walk target path, collect eligible files    │
-  │           Skip: node_modules, .git, __pycache__,      │
-  │                 dist, build, .next, coverage          │
-  │                                                        │
-  │  2. CHUNK  Language-aware code splitting              │
-  │                                                        │
-  │    Python  ─→ class/function/decorator boundaries     │
-  │    JS/TS   ─→ function/class/export boundaries        │
-  │    SQL     ─→ statement boundaries (;)                │
-  │    Markdown─→ heading boundaries (#, ##, ###)         │
-  │    Generic ─→ paragraph breaks + blank lines          │
-  │                                                        │
-  │    Max chunk: 8000 chars (RLM_MAX_CHUNK_CHARS)        │
-  │    Oversized chunks split at paragraph breaks         │
-  │                                                        │
-  │  3. CACHE  LRU cache keyed by (filepath, mtime)      │
-  │            Up to 200 files (RLM_CACHE_SIZE)           │
-  │            Stale entries auto-evicted on access       │
-  │                                                        │
-  │  4. SCORE  TF-IDF relevance against query terms       │
-  │                                                        │
-  │    term_freq   = count(term in chunk) / chunk_words   │
-  │    idf         = log(total_docs / docs_with_term)     │
-  │    tf_idf      = term_freq × idf                      │
-  │    chunk_score = Σ tf_idf across query terms          │
-  │                                                        │
-  │  5. RETURN  Top-K chunks (default: 10)               │
-  │             Each: file path, line range, text, score  │
-  └────────────────────────────────────────────────────────┘
-                         │
-                         ▼
-  ┌────────────────────────────────────────────────────────┐
-  │  Agent receives only relevant code chunks             │
-  │  Not: entire file contents                            │
-  │                                                        │
-  │  Typical context reduction: 10x–50x                  │
-  │  Enabled by default (config.json rlm_enabled: true)  │
-  │  Fallback: @ file references if service down         │
-  └────────────────────────────────────────────────────────┘
-```
+
+### RPETD Enrichment Layers
+
+| Layer | When | What |
+|-------|------|------|
+| Layer 1 | `claim` time | 2 RLM queries injected into task context |
+| Layer 2 | Each RPETD phase | Phase-specific RLM query via HTTP |
+| E/T enrichment | Execute + Test | Past failure patterns + test strategies from memory |
+
+Enrichment deduplication ensures the same chunk is never injected twice within a window.
 
 ---
 
-## 9. Research Chain
+## Research Chain
 
-Multi-provider research with deduplication and auto-storage:
+5-step cascade with deduplication and auto-storage. Each step only fires if previous steps returned insufficient results.
 
+```mermaid
+sequenceDiagram
+    participant A as Agent
+    participant M as PG Memory
+    participant S as Shared KB
+    participant C as Context7 MCP
+    participant P as Perplexity API
+    participant W as WebFetch
+
+    A->>M: 1. Semantic search (pgvector)
+    alt hit
+        M-->>A: Return (source-scored, recency-weighted)
+    else miss
+        A->>S: 2. Search validated knowledge
+        alt hit
+            S-->>A: Return (importance-ranked)
+        else miss
+            A->>C: 3. Library docs lookup
+            alt hit
+                C-->>A: Return (store to memory)
+            else miss
+                A->>P: 4. Perplexity sonar query
+                alt hit
+                    P-->>A: Return
+                    Note over A,M: Jaccard dedup > 0.7 check<br/>Store as web_search_result +3<br/>Auto-embed
+                else miss / no key
+                    A->>W: 5. Direct URL fetch (fallback)
+                    W-->>A: Return raw content
+                end
+            end
+        end
+    end
 ```
-  Query: "React server component caching patterns"
-         │
-         ▼
-  ┌────────────────────────────────────────────────────────┐
-  │  Step 1: PG Memory Search                             │
-  │                                                        │
-  │  gsd-memory.cjs semantic-search "..." (or text)      │
-  │  Source-aware scoring applied                         │
-  │                                                        │
-  │  Hit?  ──yes──→  RETURN results (highest score first) │
-  └──────────────────────┬─────────────────────────────────┘
-                         │ miss
-                         ▼
-  ┌────────────────────────────────────────────────────────┐
-  │  Step 2: Shared Knowledge Base                        │
-  │                                                        │
-  │  Search gsd_shared_kb (validated cross-project)      │
-  │  Category filter: architecture, pattern, tool-usage  │
-  │                                                        │
-  │  Hit?  ──yes──→  RETURN (importance-ranked)          │
-  └──────────────────────┬─────────────────────────────────┘
-                         │ miss
-                         ▼
-  ┌────────────────────────────────────────────────────────┐
-  │  Step 3: Context7 (MCP)                               │
-  │                                                        │
-  │  Agent invokes Context7 MCP tool directly             │
-  │  Library documentation, API references                │
-  │                                                        │
-  │  Hit?  ──yes──→  RETURN (store to memory as session) │
-  └──────────────────────┬─────────────────────────────────┘
-                         │ miss
-                         ▼
-  ┌────────────────────────────────────────────────────────┐
-  │  Step 4: Perplexity API                               │
-  │                                                        │
-  │  gsd-research.cjs perplexity "..."                   │
-  │  Model: sonar (PERPLEXITY_API_KEY required)          │
-  │                                                        │
-  │  On result:                                           │
-  │  • Dedup check: Jaccard similarity > 0.7?            │
-  │    If duplicate → skip storage                        │
-  │  • Store to gsd_memory (source=web_search_result +3) │
-  │  • Auto-embed if API key available                   │
-  │                                                        │
-  │  Hit?  ──yes──→  RETURN                              │
-  └──────────────────────┬─────────────────────────────────┘
-                         │ miss / no key
-                         ▼
-  ┌────────────────────────────────────────────────────────┐
-  │  Step 5: WebFetch (HTTP fallback)                     │
-  │                                                        │
-  │  Direct URL fetch (requires --url)                   │
-  │  gsd-research.cjs fetch --url https://...            │
-  └────────────────────────────────────────────────────────┘
-```
+
+Auto-invoked in the R-phase when fewer than 2 local results are found.
 
 ---
 
-## 10. Task Lifecycle
+## Task Manager
 
+State machine with hierarchy, priority scoring, and archival:
+
+```mermaid
+stateDiagram-v2
+    [*] --> pending: add task
+
+    pending --> in_progress: claim (agent assigned)
+
+    state in_progress {
+        [*] --> R_phase
+        R_phase --> P_phase
+        P_phase --> E_phase
+        E_phase --> T_phase
+        T_phase --> D_phase
+        D_phase --> [*]
+    }
+
+    in_progress --> validation: status validation
+    validation --> done: validate --pass
+    validation --> pending: validate --fail (sub-tasks created)
+    in_progress --> failed: unrecoverable
+    in_progress --> deferred: blocked / deprioritized
+
+    done --> archived: archive (30d+)
+
+    note right of validation
+        External validator only.
+        claimed_by != validated_by
+    end note
 ```
-  /amauta:new-project
-         │
-         ▼
-  ┌──────────────────────────────────────────────┐
-  │           Project Initialization             │
-  │                                              │
-  │  1. Cross-project search (past learnings)   │
-  │  2. Create Epic in Amauta                   │
-  │  3. One Story per ROADMAP.md phase          │
-  │  4. Tasks atomized from plan items          │
-  └──────────────────┬───────────────────────────┘
-                     │
-                     ▼
-  ┌──────────────────────────────────────────────┐
-  │                Task States                   │
-  │                                              │
-  │  pending ──claim──→ in-progress              │
-  │                           │                  │
-  │                     RPETD phases            │
-  │                           │                  │
-  │                    status validation         │
-  │                           │                  │
-  │                    ┌──────▼──────┐          │
-  │                    │ validation  │          │
-  │                    └──────┬──────┘          │
-  │                           │                  │
-  │              validate ────┤                  │
-  │              --pass/--fail│                  │
-  │                    ┌──────┴───────┐         │
-  │                   PASS          FAIL         │
-  │                    │              │           │
-  │                    ▼              ▼           │
-  │                  done         fix tasks      │
-  │                                → re-validate │
-  │                                              │
-  │  Additional: failed, deferred               │
-  └──────────────────────────────────────────────┘
 
-  Task hierarchy:
-    Epic (EP-XXXX)
-    └── Story (ST-XXXX)
-        ├── Task (TK-XXXX)
-        └── Bug  (BG-XXXX)
+**Task hierarchy:** Epic (EP-XXXX) -> Story (ST-XXXX) -> Task (TK-XXXX) / Bug (BG-XXXX)
 
-  Priority scoring:
-    score = importance×0.4 + urgency×0.3 + dep_pressure×0.3
+**Priority scoring:** `score = importance x 0.4 + urgency x 0.3 + dep_pressure x 0.3`
 
-  Routing: gsd-amauta.cjs next <agent-name>
-    Returns highest-priority pending task for that agent
-```
+**Routing:** `amauta next <agent-name>` returns the highest-priority pending task for that agent.
+
+**Concurrency:** TOCTOU-safe file access with retry flush, stale watchdog, and reconciliation between PG and JSON.
 
 ---
 
-## 11. Validation Pipeline
+## Validation Gates
 
-The external validation model — no agent validates its own work:
+5 gates checked by an external validator. No agent validates its own work.
 
+```mermaid
+flowchart TB
+    EX["Executor completes RPETD"] --> V["gsd-validator<br/>(different agent than executor)"]
+
+    V --> G1{"Gate 1<br/>Branch evidence<br/>in E-log?"}
+    V --> G2{"Gate 2<br/>Test output<br/>in T-log?"}
+    V --> G3{"Gate 3<br/>LEARNING block<br/>in D-log?"}
+    V --> G4{"Gate 4<br/>PR URL<br/>in notes?"}
+    V --> G5{"Gate 5<br/>Success criteria<br/>from P-phase met?"}
+
+    G1 & G2 & G3 & G4 & G5 -->|all pass| PASS["validate --pass<br/>status = done<br/>learning -> SKB"]
+    G1 & G2 & G3 & G4 & G5 -->|any fail| FAIL["validate --fail --notes reason<br/>rejection recorded<br/>sub-tasks created"]
+
+    FORCE["--force-reason 'justification'<br/>Bypasses gates with audit trail<br/>forced:true recorded"] -.-> PASS
+
+    style V fill:#ea4335,color:#fff
+    style FORCE fill:#fef7e0,stroke:#f9ab00
 ```
-  ┌──────────────────────────────────────────────────────────┐
-  │                   Executor completes work                │
-  │                                                          │
-  │  amauta status TK-XXXX validation                        │
-  └────────────────────────┬─────────────────────────────────┘
-                           │
-                           ▼
-  ┌──────────────────────────────────────────────────────────┐
-  │                   gsd-validator                          │
-  │              (DIFFERENT agent than executor)             │
-  │                                                          │
-  │  1. Read task details and all RPETD phases              │
-  │  2. Check Gate 1: branch evidence in E-log?             │
-  │  3. Check Gate 2: LEARNING block in D-log (or any)?    │
-  │  4. Check Gate 3: test output in T-log?                 │
-  │  5. Check Gate 4: PR URL in D/E/notes? (code tasks)   │
-  │  6. Verify success criteria from P-phase                │
-  │  7. Check dependencies are done                         │
-  └────────────────────────┬─────────────────────────────────┘
-                           │
-                 ┌─────────┴──────────┐
-                 │                    │
-                PASS                FAIL
-                 │                    │
-                 ▼                    ▼
-  ┌──────────────────────┐  ┌────────────────────────────┐
-  │  validate --pass     │  │  validate --fail           │
-  │                      │  │  --notes "reason"          │
-  │  • status → done     │  │                            │
-  │  • RPETD complete    │  │  • status back to pending  │
-  │  • D-phase learning  │  │  • rejection recorded in   │
-  │    → gsd_memory      │  │    gsd_task_validations    │
-  │  • SKB promotion     │  │  • fix sub-tasks created   │
-  │    (best-practice+4) │  │  • re-route to executor    │
-  └──────────────────────┘  └────────────────────────────┘
 
-  Audit trail: gsd_task_validations table
-    task_id, validator_id, status, evidence, reason, ts
-
-  Force override: --force (bypasses gate checks)
-  No-gitflow tag: skips branch evidence requirement
-```
+Self-validation blocked: `claimed_by` must differ from `validated_by`. All decisions recorded in `gsd_task_validations` with immutable audit trail.
 
 ---
 
-## 12. Graceful Degradation
+## Graceful Degradation
 
-Every feature has a fallback — set no environment variables for vanilla GSD behavior:
+Every feature has a fallback. Set no environment variables for vanilla GSD behavior.
 
-```
-  Feature              │ With infrastructure        │ Without
-  ─────────────────────┼────────────────────────────┼──────────────────────────
-  Task management      │ PostgreSQL + daemon         │ data/tasks.json
-  Memory search        │ PG full-text + pgvector     │ .planning/memory/*.md
-  Memory store         │ PG + auto-embedding         │ .planning/memory/YYYY-MM.md
-  Semantic search      │ pgvector HNSW cosine        │ text ILIKE fallback
-  Cross-project        │ PG cross-query, tag filter  │ file keyword grep
-  RLM context          │ HTTP service :18798         │ @ file references
-  Research             │ Perplexity → auto-store     │ memory + SKB only
-  Perplexity           │ live API call               │ skipped silently
-  SKB                  │ gsd_shared_kb PG table      │ not available
-  Validation gates     │ RPETD gate checks           │ not enforced
-  Embeddings           │ Voyage AI or OpenAI         │ text search only
-  Learning capture     │ PG auto_learning +3         │ STATE.md ## Learnings
-  ─────────────────────┼────────────────────────────┼──────────────────────────
-  Activation           │ Set env variables           │ Don't set anything
+```mermaid
+graph LR
+    subgraph Full["With Infrastructure"]
+        PG["PostgreSQL + daemon"]
+        VEC["pgvector HNSW cosine"]
+        RLMS["RLM HTTP :18798"]
+        PPX["Perplexity API"]
+        VOY["Voyage AI embeddings"]
+        RPETD["RPETD gate checks"]
+    end
+
+    subgraph Fallback["Without Infrastructure"]
+        JSON["data/tasks.json"]
+        ILIKE["text ILIKE search"]
+        AT["@ file references"]
+        LOCAL["memory + SKB only"]
+        TEXT["text search only"]
+        HONOR["not enforced"]
+    end
+
+    PG -->|"no PG_URL"| JSON
+    VEC -->|"no embeddings"| ILIKE
+    RLMS -->|"service down"| AT
+    PPX -->|"no API key"| LOCAL
+    VOY -->|"no API key"| TEXT
+    RPETD -->|"no daemon"| HONOR
+
+    style Full fill:#e6f4ea,stroke:#34a853
+    style Fallback fill:#fce8e6,stroke:#ea4335
 ```
 
 **Activation variables:**
-- `GSD_POSTGRES_URL` → PG memory, tasks, SKB, validation
-- `VOYAGE_API_KEY` → semantic search via Voyage AI voyage-code-3 (preferred)
-- `OPENAI_API_KEY` → semantic search via OpenAI text-embedding-3-small (alternative)
-- `PERPLEXITY_API_KEY` → Perplexity research chain step
-- `GSD_EMBEDDING_PROVIDER=voyage|openai` → force specific provider
+
+| Variable | Enables |
+|----------|---------|
+| `GSD_POSTGRES_URL` | PG memory, tasks, SKB, validation, audit |
+| `VOYAGE_API_KEY` | Semantic search via Voyage AI voyage-code-3 |
+| `OPENAI_API_KEY` | Semantic search via OpenAI text-embedding-3-small (alternative) |
+| `PERPLEXITY_API_KEY` | Perplexity research chain step |
 
 ---
 
-## 13. Installation
+## Installation
 
 ### Prerequisites
 
 - **Node.js** 18+
 - **Python** 3.9+ with pip
-- **Docker** (for PostgreSQL)
+- **Docker** (for PostgreSQL) -- optional, SQLite fallback available
 - **Claude Code** CLI
 
 ### Quick Start
@@ -813,18 +451,18 @@ Every feature has a fallback — set no environment variables for vanilla GSD be
 git clone https://github.com/robertamauta/gsd-amauta.git ~/.claude/gsd-amauta
 cd ~/.claude/gsd-amauta
 
-# Install — sets up PG, daemon, RLM, agents, workflows, commands
+# Install -- sets up PG, daemon, RLM, agents, workflows, commands
 npm install
 ```
 
 The installer (`bin/install.js`) handles:
-1. GSD agents, workflows, slash commands, hooks — installed to `~/.claude/`
-2. Docker PostgreSQL 16 + pgvector on port 5433
+1. GSD agents, workflows, slash commands, hooks -- installed to `~/.claude/`
+2. Docker PostgreSQL 16 + pgvector on port 5433 (or detects local PG, or falls back to SQLite)
 3. Python `psycopg2-binary` dependency
-4. Amauta HTTP daemon startup on port 18799
-5. RLM context service startup on port 18798
-6. Database migrations (001 schema, 002 HNSW index, 003 dimension fix, 004 FTS indexes, 005 agent performance)
-7. Codex and Gemini CLI config generation
+4. Amauta HTTP daemon on port 18799
+5. RLM context service on port 18798
+6. Database migrations (5 SQL files: schema, HNSW index, dimension fix, FTS indexes, agent performance)
+7. MCP server auto-registration
 
 ### Post-Install
 
@@ -838,45 +476,33 @@ export GSD_POSTGRES_URL="postgresql://amauta:gsd@127.0.0.1:5433/gsd_amauta"
 export PERPLEXITY_API_KEY="your-key-here"
 
 # Optional: Semantic search embeddings (choose one)
-export VOYAGE_API_KEY="your-key-here"     # Recommended — Anthropic partner
+export VOYAGE_API_KEY="your-key-here"     # Recommended
 # export OPENAI_API_KEY="your-key-here"   # Alternative
 ```
 
-### Verify Installation
+### Verify
 
 ```bash
-# Services
 curl http://127.0.0.1:18799/health | python3 -m json.tool
 curl http://127.0.0.1:18798/health | python3 -m json.tool
-docker ps --filter name=gsd-postgres
-
-# CLI tools
-node ~/.claude/gsd-amauta/get-shit-done/bin/amauta.cjs stats
-node ~/.claude/gsd-amauta/get-shit-done/bin/gsd-memory.cjs health
-node ~/.claude/gsd-amauta/get-shit-done/bin/gsd-rlm.cjs health
-node ~/.claude/gsd-amauta/get-shit-done/bin/gsd-research.cjs check-providers
-
-# Tests
-npm test                                          # 1376 tests expected
+npm test
 ```
 
 ---
 
-## 14. Configuration
-
-### Environment Variables
+## Configuration
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GSD_POSTGRES_URL` | `postgresql://amauta:gsd@127.0.0.1:5433/gsd_amauta` | PostgreSQL connection string |
+| `GSD_POSTGRES_URL` | `postgresql://amauta:gsd@127.0.0.1:5433/gsd_amauta` | PostgreSQL connection |
 | `GSD_AMAUTA_HOST` | `127.0.0.1` | Daemon bind host |
 | `GSD_AMAUTA_PORT` | `18799` | Daemon port |
 | `GSD_RLM_PORT` | `18798` | RLM service port |
 | `AMAUTA_DATA_DIR` | `<project>/data` | Task board JSON location |
 | `PERPLEXITY_API_KEY` | _(none)_ | Perplexity API key |
-| `PERPLEXITY_MODEL` | `sonar` | Perplexity model name |
-| `VOYAGE_API_KEY` | _(none)_ | Voyage AI key (recommended for embeddings) |
-| `OPENAI_API_KEY` | _(none)_ | OpenAI key (alternative for embeddings) |
+| `PERPLEXITY_MODEL` | `sonar` | Perplexity model |
+| `VOYAGE_API_KEY` | _(none)_ | Voyage AI embedding key |
+| `OPENAI_API_KEY` | _(none)_ | OpenAI embedding key (alternative) |
 | `GSD_EMBEDDING_PROVIDER` | _(auto)_ | Force `voyage` or `openai` |
 | `GSD_MEMORY_DISTILL_THRESHOLD` | `100` | Auto-distill trigger count |
 | `GSD_RESEARCH_DEDUP_THRESHOLD` | `0.7` | Jaccard dedup threshold |
@@ -884,95 +510,51 @@ npm test                                          # 1376 tests expected
 | `RLM_DEFAULT_TOP_K` | `10` | Default results per RLM query |
 | `RLM_CACHE_SIZE` | `200` | LRU cache capacity (files) |
 
-### Config File
-
-`.planning/config.json` or `get-shit-done/templates/config.json`:
-
-```json
-{
-  "amauta": {
-    "daemon_port": 18799,
-    "pg_enabled": true,
-    "daemon_enabled": true,
-    "rlm_enabled": true,
-    "rlm_fallback_to_full_files": true,
-    "research_chain": ["memory", "skb", "context7", "perplexity", "webfetch"]
-  }
-}
-```
-
 ---
 
-## 15. CLI Reference
+## CLI Reference
 
-### Task Management — `amauta` (gsd-amauta.cjs)
+### amauta (gsd-amauta.cjs) -- Task Management
 
 ```bash
-# Board and navigation
 amauta board                                     # Kanban board view
 amauta stats                                     # Project statistics
 amauta show TK-0001                              # Full task detail
 amauta next executor-backend                     # Next task for agent
-amauta list --status pending                     # Filter task list
-
-# Task creation
-amauta add epic "Project Name" --agent operator
-amauta add story "Phase 1" --parent EP-0001
-amauta add task "Implement auth" --parent ST-0001
-
-# Task lifecycle
-amauta claim TK-0001 --agent executor-backend
-amauta rpetd TK-0001 --phase R --content "Research findings..."
-amauta rpetd TK-0001 --phase E --content "Branch: feat/TK-0001..."
-amauta status TK-0001 validation
-amauta validate TK-0001 --pass --validator gsd-validator
-amauta validate TK-0001 --fail --notes "Missing test evidence"
-
-# Flags
-# --force    Bypass validation gate checks
-# --json     JSON output for scripting
+amauta add epic "Project Name" --agent operator  # Create epic
+amauta add task "Implement auth" --parent ST-001 # Create task
+amauta claim TK-0001 --agent executor-backend    # Claim task
+amauta rpetd TK-0001 --phase R --content "..."   # Log RPETD phase
+amauta status TK-0001 validation                 # Move to validation
+amauta validate TK-0001 --pass                   # External validation
+amauta validate TK-0001 --fail --notes "reason"  # Rejection
 ```
 
-### Memory — `gsd-memory.cjs`
+### gsd-memory.cjs -- Memory + Embeddings
 
 ```bash
-# Storage
-gsd-memory.cjs store "lesson text" --source lesson-learned
-gsd-memory.cjs learn "auto_learning entry"      # +3 boost shortcut
-gsd-memory.cjs count                            # Total stored
-gsd-memory.cjs list --limit 20                  # Recent entries
-gsd-memory.cjs delete mem-abc123                # Remove entry
-
-# Search
-gsd-memory.cjs search "connection pooling"      # Source-aware text search
-gsd-memory.cjs semantic-search "auth patterns"  # pgvector cosine similarity
-gsd-memory.cjs cross-project "patterns" --tags postgresql,react
-
-# Embeddings
-gsd-memory.cjs embedding-stats                  # Coverage + provider info
-gsd-memory.cjs backfill-embeddings              # Embed existing entries
-gsd-memory.cjs backfill-embeddings --batch-size 100
-
-# Maintenance
-gsd-memory.cjs distill --dry-run                # Preview dedup
-gsd-memory.cjs distill                          # Compact similar entries
-gsd-memory.cjs infer-tags .                     # Detect tech stack
-gsd-memory.cjs health                           # Service health
+gsd-memory.cjs store "lesson" --source lesson-learned  # Store entry
+gsd-memory.cjs learn "insight"                          # Auto-learning +3
+gsd-memory.cjs search "connection pooling"              # Text search
+gsd-memory.cjs semantic-search "auth patterns"          # pgvector cosine
+gsd-memory.cjs cross-project "patterns" --tags react    # Cross-project
+gsd-memory.cjs distill                                  # Compact similar
+gsd-memory.cjs backfill-embeddings                      # Embed existing
+gsd-memory.cjs health                                   # Service health
 ```
 
-### RLM Context — `gsd-rlm.cjs`
+### gsd-rlm.cjs -- Code Context
 
 ```bash
-gsd-rlm.cjs query "how auth works" --path src/  # Search + retrieve chunks
-gsd-rlm.cjs chunk src/auth.ts                    # Inspect chunking output
-gsd-rlm.cjs search "middleware" --path src/      # Search only
+gsd-rlm.cjs query "how auth works" --path src/  # BM25-scored chunks
+gsd-rlm.cjs chunk src/auth.ts                    # Inspect chunking
 gsd-rlm.cjs health                               # Service status
 ```
 
-### Research — `gsd-research.cjs`
+### gsd-research.cjs -- Research Chain
 
 ```bash
-gsd-research.cjs search "React patterns"         # Full chain (all providers)
+gsd-research.cjs search "React patterns"         # Full 5-step chain
 gsd-research.cjs perplexity "Next.js 15"         # Perplexity direct
 gsd-research.cjs fetch --url https://...         # WebFetch direct
 gsd-research.cjs check-providers                 # Provider status
@@ -980,235 +562,55 @@ gsd-research.cjs check-providers                 # Provider status
 
 ---
 
-## 16. Services
-
-Three background services, each localhost-only:
-
-| Service | Port | Purpose |
-|---------|------|---------|
-| PostgreSQL | 5433 | Task state, memory, SKB, validation audit |
-| Amauta Daemon | 18799 | HTTP wrapper around amauta.py + pg_store |
-| RLM Service | 18798 | Code-aware chunking + TF-IDF retrieval |
-
-```bash
-# Start all
-docker compose -f docker/docker-compose.yml up -d
-python3 services/amauta-daemon.py start
-python3 services/rlm-service.py start
-
-# Stop all
-python3 services/amauta-daemon.py stop
-python3 services/rlm-service.py stop
-docker compose -f docker/docker-compose.yml down
-
-# Status
-python3 services/amauta-daemon.py status
-python3 services/rlm-service.py status
-docker ps --filter name=gsd-postgres
-```
-
-### Daemon API Endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/health` | Daemon health + PG status |
-| GET | `/api/board` | Kanban board JSON |
-| GET | `/api/list` | Task list with filters |
-| GET | `/api/show` | Task details |
-| GET | `/api/stats` | Project statistics |
-| POST | `/api/add` | Create task/story/epic |
-| POST | `/api/claim` | Claim task for agent |
-| POST | `/api/rpetd` | Log RPETD phase |
-| POST | `/api/status` | Change task status |
-| POST | `/api/validate` | Pass/fail validation |
-| POST | `/api/memory/store` | Store memory entry |
-| POST | `/api/memory/search` | Text-based search |
-| POST | `/api/memory/semantic-search` | pgvector cosine search |
-| GET | `/api/memory/embedding-stats` | Embedding coverage |
-| POST | `/api/memory/backfill-embeddings` | Generate missing embeddings |
-
----
-
-## 17. Testing
-
-```bash
-npm test                                          # All 1464 tests
-
-# Individual suites
-node --test tests/agent-frontmatter.test.cjs     # Agent validation (10 tests)
-node --test tests/auto-learning.test.cjs         # Auto-learning feedback loop (38 tests)
-node --test tests/codex-config.test.cjs          # Codex config (33 tests)
-node --test tests/commands.test.cjs              # Command parsing (56 tests)
-node --test tests/comprehensive-e2e.test.cjs    # Comprehensive E2E (117 tests)
-node --test tests/core.test.cjs                  # Core library (72 tests)
-node --test tests/degradation.test.cjs           # Graceful degradation (15 tests)
-node --test tests/e2e-advanced.test.cjs          # Advanced E2E pipeline (67 tests)
-node --test tests/e2e-lifecycle.test.cjs         # E2E lifecycle w/daemon (23 tests)
-node --test tests/pipeline-offline.test.cjs      # RPETD offline pipeline (59 tests)
-node --test tests/python-units.test.cjs          # Python amauta.py units (101 tests)
-node --test tests/research-chain.test.cjs        # Research chain (15 tests)
-node --test tests/rlm-workflow-spec.test.cjs     # RLM + workflow + spec (73 tests)
-node --test tests/security-infrastructure.test.cjs # Security & infra audit (77 tests)
-node --test tests/validation-gates.test.cjs      # 4-gate validation (38 tests)
-```
-
-**1464 tests across 31 files**, covering:
-
-- **Python unit tests** (101): `_score()`, `_deps_met()`, `_dedup_check()`, `_extract_pr_url()`, `_has_branch_evidence()`, `_has_test_evidence()`, `_infer_lane()`, `_infer_domain_tags()`, `_normalize_tags()`, `_task_hygiene_gaps()`, and 20+ more Python functions tested in isolation
-- **E2E pipeline** (184): Full RPETD lifecycle, validation gates, memory pipeline, dependency chains, sprint management, atomization, cross-pipeline integration
-- **RLM + workflows + specs** (73): RLM service structure, 36 workflow files validated, 7+ spec compliance, SQL migration chain, PG store and daemon structure
-- **Validation gates** (38): All 4 gates (BRANCH_EVIDENCE, LEARNING_BLOCK, TEST_EVIDENCE, PR_URL) with pass/fail/skip/edge cases
-- **Auto-learning** (38): Performance tracking, enrichment injection, gate extraction, PG store methods, daemon routes
-- **Security & infrastructure** (88): RLM path traversal, body size limits, daemon auth, migration integrity, Docker config, backup security, Windows compat, .env completeness, connection pool safety, spec compliance, agent architecture, context passing, DSN credential sanitization, RLM phase enrichment, operator context pipeline, RLM performance optimization
-- **Research chain** (15): Agent/skill RESEARCH= variable verification, workflow research integration
-- **Agent frontmatter** (10): Anti-heredoc, skills, hooks, spawn consistency, 11-agent roster
-- **CLI commands** (56): All argument parsing, error paths, routing branches
-- **Degradation** (15): File fallback for every PG-backed operation
-- **Core library** (72): Config load, model resolution, phase finding, milestone parsing
-
----
-
-## 18. Project Structure
+## Project Structure
 
 ```
 gsd-amauta/
-├── amauta.py                         # Task manager CLI (4158 lines)
 ├── package.json
-├── README.md
-├── CHANGELOG.md                      # All changes from vanilla GSD
-├── MIGRATION.md                      # Upgrade guide from vanilla GSD
-├── SECURITY.md
-│
-├── docker/
-│   └── docker-compose.yml            # PostgreSQL 16 + pgvector :5433
-│
-├── migrations/
-│   ├── 001-init.sql                  # 5 tables, 20 indexes, 5 triggers
-│   ├── 002-embedding-index.sql       # HNSW index (idempotent)
-│   ├── 003-embedding-1024.sql        # Dim migration 1536→1024 (idempotent)
-│   ├── 004-fulltext-indexes.sql      # GIN FTS indexes + compound indexes
-│   └── 005-agent-performance.sql     # Agent performance tracking (auto-learning)
-│
+├── amauta.py                    # Task manager core (4158 lines)
+├── docker/docker-compose.yml    # PostgreSQL 16 + pgvector :5433
+├── migrations/                  # 5 SQL migrations
 ├── services/
-│   ├── amauta-daemon.py              # HTTP daemon :18799 (795 lines)
-│   ├── pg_store.py                   # PG pool + memory/SKB/task mirror/embedding/perf (1026 lines)
-│   └── rlm-service.py                # RLM context engine :18798 (808 lines)
-│
-├── agents/                           # 11 agent definitions
-│   ├── gsd-operator.md               # Master orchestrator
-│   ├── gsd-planner.md                # Planning specialist
-│   ├── gsd-researcher.md             # Research (memory/SKB/Perplexity)
-│   ├── gsd-executor-frontend.md      # *.tsx, *.jsx, *.css, *.vue
-│   ├── gsd-executor-backend.md       # *.py, *.sql, *.go, *.rs
-│   ├── gsd-executor-infra.md         # Docker, CI/CD, k8s
-│   ├── gsd-executor-general.md       # Everything else
-│   ├── gsd-checker.md                # Pre/post quality checks
-│   ├── gsd-validator.md              # External validation
-│   ├── gsd-debugger.md               # Root cause + bisect
-│   └── gsd-roadmapper.md             # ROADMAP.md + milestones
-│
+│   ├── amauta-daemon.py         # HTTP daemon :18799
+│   ├── pg_store.py              # PG pool + memory/SKB/tasks/embeddings
+│   └── rlm-service.py           # BM25 code context :18798
+├── agents/                      # 11 agent definitions (.md)
+├── skills/                      # 11 skill workflows (SKILL.md each)
 ├── get-shit-done/
-│   ├── bin/
-│   │   ├── amauta.cjs               # Thin wrapper → gsd-amauta.cjs
-│   │   ├── gsd-amauta.cjs            # Task management CLI (1278 lines)
-│   │   ├── gsd-memory.cjs            # Memory + embeddings CLI (1356 lines)
-│   │   ├── gsd-rlm.cjs               # RLM context CLI (630 lines)
-│   │   ├── gsd-research.cjs          # Research chain CLI (641 lines)
-│   │   ├── gsd-tools.cjs             # Original GSD CLI
-│   │   └── lib/
-│   │       ├── core.cjs              # Model profiles, config, phase utils
-│   │       └── init.cjs              # Session init, model resolution
-│   ├── workflows/                    # 36 workflow .md files
-│   ├── templates/                    # config.json, context.md
-│   └── references/
-│       └── model-profiles.md         # 11-agent model assignments
-│
-├── references/
-│   └── agentic-patterns.md           # 20 patterns × 11 agents matrix
-│
-├── skills/                           # 11 skill workflows (SKILL.md each)
-│   ├── gsd-operator-workflow/
-│   ├── gsd-executor-backend-workflow/
-│   └── ... (11 total, matching agents)
-│
-├── specs/                            # 9 formal pipeline specifications
-│   ├── 01-rpetd-pipeline.spec.md
-│   ├── 02-memory-pipeline.spec.md
-│   ├── 03-rlm-context-engine.spec.md
-│   ├── 04-research-chain.spec.md
-│   ├── 05-task-lifecycle.spec.md
-│   ├── 06-agent-architecture.spec.md
-│   ├── 07-auto-learning-feedback.spec.md
-│   ├── 08-validation-pipeline.spec.md
-│   └── 09-context-passing-architecture.spec.md
-│
-├── commands/gsd/                     # 33 slash commands
-│   ├── new-project.md
-│   ├── execute-plan.md
-│   ├── test-phase.md
-│   └── ...
-│
-├── tests/                            # 1376 tests (30 files)
-├── bin/
-│   └── install.js                    # Self-installer (2897 lines)
-└── scripts/
-    └── run-tests.cjs                 # Cross-platform test runner
+│   ├── bin/                     # 5 CLI tools (.cjs)
+│   ├── workflows/               # 36 workflow files
+│   └── references/              # Model profiles
+├── commands/gsd/                # 34 slash commands
+├── specs/                       # 9 formal specifications
+├── tests/                       # 67 test files (39 CJS + 28 Python)
+├── bin/install.js               # Self-installer (2897 lines)
+└── references/agentic-patterns.md  # 20 patterns x 11 agents matrix
 ```
 
 ---
 
-## 19. Agentic AI Patterns
+## Testing
 
-GSD-Amauta implements 20 agentic AI design patterns from `references/agentic-patterns.md`:
+```bash
+npm test                          # All CJS tests (1618 tests, 39 files)
+python3 -m pytest tests/ -q       # All Python tests (408 tests, 28 files)
+npm run test:coverage             # Coverage report (target: 70%+ lines)
+```
 
-```
-  Pattern                  │ Agents                    │ Implementation
-  ─────────────────────────┼───────────────────────────┼──────────────────────────
-  P1  Prompt Chaining      │ operator                  │ Sequential workflow steps
-  P2  Routing              │ operator                  │ File-pattern agent dispatch
-  P3  Parallelization      │ all executors             │ Concurrent task execution
-  P4  Verification         │ checker, validator        │ Pre/post quality gates
-  P5  Tool Use             │ researcher, debugger      │ WebFetch, Bash, MCP tools
-  P6  Planning             │ planner, operator         │ Given/When/Then specs
-  P7  Reflection           │ debugger                  │ Root cause analysis loop
-  P8  Resource-Aware       │ operator                  │ File-pattern routing
-  P9  Multi-Agent Orch.    │ operator                  │ Task tool spawning
-  P10 RAG                  │ researcher                │ Memory+SKB retrieval
-  P11 Code Generation      │ all executors             │ Spec-driven implementation
-  P12 Iterative Refinement │ executor+validator loop   │ Reject→fix→re-validate
-  P13 Self-Monitoring      │ validator                 │ Gate checks + audit trail
-  P14 Goal Setting         │ planner, operator         │ Success criteria capture
-  P15 Exception Handling   │ operator                  │ Failed task escalation
-  P16 Memory Management    │ memory system             │ PG + SKB + embeddings
-  P17 Guardrails           │ checker, validator        │ No self-validation rule
-  P18 Human-in-the-Loop    │ operator                  │ Approval gates
-  P19 Prioritization       │ operator                  │ Score-based task ordering
-  P20 Debugging            │ debugger                  │ Bisect + patch + verify
-```
+**2000+ tests** across 67 files covering: RPETD pipeline, validation gates, memory (PG + semantic + distill + retention), RLM (BM25 scoring, HTTP wiring, incremental indexing), research chain, task lifecycle (archive, TOCTOU, reconcile), agent architecture, security (path traversal, body limits, DSN sanitization), graceful degradation, and end-to-end integration.
 
 ---
 
-## 20. Troubleshooting
+## Contributing
 
-| Problem | Solution |
-|---------|----------|
-| Daemon won't start | `lsof -ti :18799 \| xargs kill -9` then `python3 services/amauta-daemon.py start` |
-| PG connection fails | `docker ps --filter name=gsd-postgres` — restart if not running |
-| Port 5433 in use | Edit `docker/docker-compose.yml` to use a different host port |
-| Memory empty | `gsd-memory.cjs health` — verify `pg_available: true` in output |
-| Validation blocked | Tag task `no-gitflow` or use `--force` flag |
-| RLM returns nothing | `gsd-rlm.cjs health` — verify files exist in the query path |
-| Semantic search slow | Run `gsd-memory.cjs backfill-embeddings` to populate vectors |
-| No embeddings | Set `VOYAGE_API_KEY` (or `OPENAI_API_KEY`), then `backfill-embeddings` |
-| Perplexity errors | Verify `PERPLEXITY_API_KEY` is set and valid |
-| E2E tests flaky | Re-run `npm test` — E2E shares PG state, second run stabilizes |
-| Agent not found | Verify agent .md exists in `~/.claude/agents/` after `npm install` |
-| Codex/Gemini config | Run `node bin/install.js --codex` or `--gemini` to regenerate |
+1. Fork and create a feature branch
+2. Run `npm test` and `python3 -m pytest tests/ -q` -- all must pass
+3. Follow RPETD: Research existing patterns, Plan changes, Execute on a branch, Test with evidence, Document with a LEARNING block
+4. Submit PR -- external validation required before merge
 
 ---
 
 ## License
 
-Based on [GSD (Get Shit Done)](https://github.com/get-shit-done/get-shit-done) by TÂCHES.
+MIT. Based on [GSD (Get Shit Done)](https://github.com/get-shit-done/get-shit-done) by TACHES.
 Amauta task management by [robertamauta](https://github.com/robertamauta/amauta).
-MIT License.
