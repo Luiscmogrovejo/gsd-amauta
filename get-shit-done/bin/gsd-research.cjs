@@ -487,11 +487,11 @@ function parseArgs(argv) {
 function stripPreamble(text) {
   if (!text) return text;
   const patterns = [
-    /^(?:here\s+(?:is|are)\s+(?:a\s+)?(?:comprehensive|detailed|brief|quick)?\s*(?:overview|summary|breakdown|look|analysis|guide|explanation)[^.]*[.:]\s*)/i,
-    /^(?:based\s+on\s+(?:my\s+)?(?:research|analysis|findings|the\s+(?:available\s+)?(?:information|data|sources))[^.]*[.:]\s*)/i,
-    /^(?:i\s+found\s+(?:that\s+)?(?:the\s+following|several|some|a\s+few)[^.]*[.:]\s*)/i,
-    /^(?:sure[,!.]?\s*(?:here\s+(?:is|are))?[^.]*[.:]\s*)/i,
-    /^(?:let\s+me\s+(?:provide|explain|break\s+down|summarize)[^.]*[.:]\s*)/i,
+    /^(?:here\s+(?:is|are)\s+(?:a\s+)?(?:comprehensive|detailed|brief|quick)?\s*(?:overview|summary|breakdown|look|analysis|guide|explanation)[^.:]{0,80}[.:]\s*)/i,
+    /^(?:based\s+on\s+(?:my\s+)?(?:research|analysis|findings|the\s+(?:available\s+)?(?:information|data|sources))[^.:,]{0,60}[.:,]\s*)/i,
+    /^(?:i\s+found\s+(?:that\s+)?(?:the\s+following|several|some|a\s+few)[^.:]{0,80}[.:]\s*)/i,
+    /^(?:sure[,!.]?\s*(?:here\s+(?:is|are))?[^.:]{0,60}[.:]\s*)/i,
+    /^(?:let\s+me\s+(?:provide|explain|break\s+down|summarize)[^.:]{0,80}[.:]\s*)/i,
     /^(?:certainly[,!.]?\s*)/i,
     /^(?:absolutely[,!.]?\s*)/i,
   ];
