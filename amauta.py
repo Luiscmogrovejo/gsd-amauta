@@ -50,6 +50,7 @@ try:
 except ImportError:
     fcntl = None  # Not available on Windows; file locking will be skipped
 import socket
+import threading
 import tempfile
 import uuid
 from datetime import datetime, timezone
@@ -211,6 +212,7 @@ STATUS_ICON = {
 DATA_DIR   = Path(os.environ.get("AMAUTA_DATA_DIR", Path.home() / ".amauta"))
 TASKS_FILE = DATA_DIR / "tasks.json"
 MEMORY_FILE = DATA_DIR / "memory.jsonl"
+ARCHIVE_FILE = DATA_DIR / "tasks-archive.json"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── Time ───────────────────────────────────────────────────────────────────────
@@ -227,21 +229,35 @@ def _fmt_ts(ts: str) -> str:
 
 # ── File locking ───────────────────────────────────────────────────────────────
 _LOCK_FILE = DATA_DIR / ".amauta.lock"
+_lock_held = threading.local()  # Thread-local reentrant flag for _file_lock
 
 class _file_lock:
-    """Exclusive file lock for concurrent-safe task mutations (add, update, etc.)."""
+    """Exclusive file lock for concurrent-safe task mutations (add, update, etc.).
+
+    Reentrant: if the lock is already held by the current thread (e.g., a cmd_*
+    function acquires the lock, then calls save() which also acquires the lock),
+    the nested acquisition is a no-op -- no deadlock.
+    """
     def __init__(self):
         self._fd = None
+        self._acquired = False  # Did THIS instance acquire the lock?
     def __enter__(self):
+        if getattr(_lock_held, 'held', False):
+            # Already held by this thread -- skip acquisition (reentrant)
+            return self
         self._fd = open(_LOCK_FILE, "w")
         if fcntl:
             fcntl.flock(self._fd, fcntl.LOCK_EX)
+        self._acquired = True
+        _lock_held.held = True
         return self
     def __exit__(self, *exc):
-        if self._fd:
-            if fcntl:
-                fcntl.flock(self._fd, fcntl.LOCK_UN)
-            self._fd.close()
+        if self._acquired:
+            _lock_held.held = False
+            if self._fd:
+                if fcntl:
+                    fcntl.flock(self._fd, fcntl.LOCK_UN)
+                self._fd.close()
 
 # ── Persistence ────────────────────────────────────────────────────────────────
 def load() -> dict:
@@ -314,6 +330,43 @@ def save(data: dict):
             except OSError:
                 pass
             raise
+
+# ── Archive persistence ───────────────────────────────────────────────────────
+def _load_archive() -> dict:
+    """Load the archive file, or return an empty archive structure."""
+    if ARCHIVE_FILE.exists():
+        try:
+            with open(ARCHIVE_FILE) as f:
+                return json.load(f)
+        except json.JSONDecodeError:
+            pass
+    return {
+        "items": [],
+        "metadata": {"created": _now(), "version": "2.0", "updated": _now(), "type": "archive"},
+    }
+
+
+def _save_archive(data: dict):
+    """Atomic write for archive file -- same pattern as save()."""
+    data["metadata"]["updated"] = _now()
+    tmp = tempfile.NamedTemporaryFile(
+        mode="w", dir=DATA_DIR, delete=False, suffix=".tmp"
+    )
+    try:
+        json.dump(data, tmp, indent=2)
+        tmp.flush()
+        os.fsync(tmp.fileno())
+        tmp.close()
+        os.replace(tmp.name, ARCHIVE_FILE)
+        log.debug("_save_archive: %d items written to %s", len(data.get("items", [])), ARCHIVE_FILE)
+    except Exception:
+        tmp.close()
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
+        raise
+
 
 # ── Lightweight shared memory store (compat layer) ───────────────────────────
 def _mem_load() -> list:
@@ -2359,7 +2412,14 @@ def cmd_show(args):
     data  = load()
     item  = _find(data["items"], args.id)
     if not item:
-        print(c(f"{args.id} not found.", RED)); sys.exit(1)
+        # Fallback: check archive if --archive flag or auto-fallback
+        if getattr(args, 'archive', False) or True:  # Always check archive as fallback
+            archive_data = _load_archive()
+            item = _find(archive_data["items"], args.id)
+            if item:
+                print(c(f"(found in archive)", DIM))
+        if not item:
+            print(c(f"{args.id} not found.", RED)); sys.exit(1)
     if args.json:
         print(json.dumps(item, indent=2))
     else:
@@ -4420,6 +4480,66 @@ def cmd_skb(args):
 
 
 # ── SKB (agent_shared_knowledge direct write) ──────────────────────────────────
+# ── ARCHIVE — move done tasks older than N days to archive ─────────────────────
+def cmd_archive(args):
+    """Move done tasks older than --days (default 7) to tasks-archive.json.
+
+    --dry-run: print what would be archived without modifying files.
+    --days 0: archive ALL done tasks regardless of age.
+    Idempotent: running twice moves nothing on the second run.
+    """
+    days = getattr(args, 'days', 7)
+    dry_run = getattr(args, 'dry_run', False)
+
+    with _file_lock():
+        data = load()
+        items = data["items"]
+        now_dt = datetime.now(timezone.utc)
+
+        # Find done tasks older than N days
+        to_archive = []
+        for item in items:
+            if item.get("status") != "done":
+                continue
+            updated = item.get("updated_at") or item.get("created_at") or ""
+            try:
+                item_dt = datetime.fromisoformat(updated.replace("Z", "+00:00"))
+            except (ValueError, AttributeError):
+                continue  # Skip items with unparseable timestamps
+            age_days = (now_dt - item_dt).total_seconds() / 86400
+            if age_days >= days:
+                to_archive.append(item)
+
+        if not to_archive:
+            print(dim("No done tasks older than {} day(s) to archive.".format(days)))
+            return
+
+        if dry_run:
+            print(bold(f"DRY RUN: would archive {len(to_archive)} tasks (done >{days}d):"))
+            for item in to_archive:
+                print(f"  {item['id']}: {item.get('title', '?')[:80]}  (updated: {_fmt_ts(item.get('updated_at', ''))})")
+            return
+
+        # Load archive, append items, save archive
+        archive_data = _load_archive()
+        archive_ids = {i["id"] for i in archive_data["items"]}
+        added = 0
+        for item in to_archive:
+            if item["id"] not in archive_ids:
+                archive_data["items"].append(item)
+                added += 1
+        _save_archive(archive_data)
+
+        # Remove archived items from active data
+        archived_ids = {i["id"] for i in to_archive}
+        data["items"] = [i for i in items if i["id"] not in archived_ids]
+        save(data)
+
+        log.info("archived %d tasks (done >%dd) to %s", len(to_archive), days, ARCHIVE_FILE)
+        print(c(f"Archived {len(to_archive)} tasks (done >{days}d) to tasks-archive.json", GREEN))
+        print(dim(f"  Active items remaining: {len(data['items'])}"))
+
+
 # ── EXPORT / IMPORT ────────────────────────────────────────────────────────────
 def cmd_export(args):
     data = load()
@@ -4685,6 +4805,7 @@ AGENT WORKFLOW (heartbeat cycle):
     sh = sub.add_parser("show", help="Full detail of one item")
     sh.add_argument("id")
     sh.add_argument("--json", action="store_true")
+    sh.add_argument("--archive", action="store_true", help="Also search archive for task")
 
     # ── list ──────────────────────────────────────────────────────────────────
     ls = sub.add_parser("list", aliases=["ls"], help="List items")
@@ -4885,6 +5006,13 @@ AGENT WORKFLOW (heartbeat cycle):
     # ── migrate ───────────────────────────────────────────────────────────────
     sub.add_parser("migrate", help="Upgrade existing tasks to v2 schema (idempotent)")
 
+    # ── archive ──────────────────────────────────────────────────────────────
+    ar = sub.add_parser("archive", help="Move done tasks older than N days to archive file")
+    ar.add_argument("--days", type=int, default=7,
+                    help="Archive done tasks older than N days (default 7, use 0 for all)")
+    ar.add_argument("--dry-run", dest="dry_run", action="store_true",
+                    help="Print what would be archived without modifying files")
+
     # ── audit ─────────────────────────────────────────────────────────────────
     au = sub.add_parser("audit", help="Query and export the immutable audit log")
     au_sub = au.add_subparsers(dest="audit_cmd", required=True)
@@ -4944,6 +5072,7 @@ def main():
         "export":      cmd_export,
         "import":      cmd_import,
         "migrate":     cmd_migrate,
+        "archive":     cmd_archive,
     }
 
     fn = dispatch.get(args.command)
