@@ -736,8 +736,11 @@ def _research_chain_query(query: str, limit: int = 3) -> list:
         return out
     except subprocess.TimeoutExpired:
         log.debug("research_chain timeout after 45s")
-    except Exception:
-        pass
+    except Exception as _rc_err:
+        sys.stderr.write(f"[RESEARCH_CHAIN] Parse error: {_rc_err}\n")
+        raw_out = locals().get('result')
+        if raw_out and hasattr(raw_out, 'stdout'):
+            sys.stderr.write(f"[RESEARCH_CHAIN] raw output: {raw_out.stdout[:200]}\n")
     return []
 
 def _mem_pg_stats() -> tuple[int, list]:
