@@ -1249,8 +1249,9 @@ async function cmdDistill(args) {
   const threshold = parseFloat(args.threshold || '0.7');
   const dryRun = !!args['dry-run'];
 
-  // Fetch all memories
-  const res = await tryDaemon('GET', '/api/memory/list?limit=1000');
+  // DATA-03: Never re-merge distilled entries — they are output of prior distill runs.
+  // Including them causes cascading mega-entries with nested [merged from distilled] markers.
+  const res = await tryDaemon('GET', '/api/memory/list?limit=1000&exclude_source=distilled');
   if (!res || res.status !== 200) {
     console.error('Error: Cannot fetch memories (daemon unavailable or error).');
     process.exit(1);
