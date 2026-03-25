@@ -91,6 +91,21 @@ const SOURCE_LABELS = {
 };
 
 // ═══════════════════════════════════════════════════════
+// DATA-05/DATA-06: Auto-detect project_id
+// ═══════════════════════════════════════════════════════
+
+/**
+ * DATA-05: Auto-detect project_id from CWD basename.
+ * DATA-06: Override with '__test__' in test mode.
+ */
+function autoProjectId(explicit) {
+  if (process.env.NODE_ENV === 'test' || process.env.GSD_TEST_MODE === '1') {
+    return '__test__';
+  }
+  return explicit || path.basename(process.cwd());
+}
+
+// ═══════════════════════════════════════════════════════
 // Tag Synonym Normalization (shared with Python stores)
 // ═══════════════════════════════════════════════════════
 
@@ -434,7 +449,7 @@ async function cmdStore(args) {
   const source = args.source || 'agent';
   const body = { text, source };
   if (args.agent) body.agent_id = args.agent;
-  if (args.project) body.project_id = args.project;
+  body.project_id = autoProjectId(args.project);
   if (args.tags) body.tags = normalizeTags(args.tags.split(',').map(t => t.trim()));
   if (args.metadata) {
     try { body.metadata = JSON.parse(args.metadata); } catch { /* ignore */ }
@@ -480,7 +495,7 @@ async function cmdLearn(args) {
     process.exit(1);
   }
 
-  const body = { text, source: 'auto_learning' };
+  const body = { text, source: 'auto_learning', project_id: autoProjectId(null) };
   if (args.agent) body.agent_id = args.agent;
 
   const res = await tryDaemon('POST', '/api/memory/store', body);
@@ -810,7 +825,7 @@ async function cmdAutoCapture(args) {
     agent_id: args.agent || 'unknown',
     reason: args.reason || 'context_compaction',
   };
-  if (args.project) body.project_id = args.project;
+  body.project_id = autoProjectId(args.project);
   if (args.tags) body.tags = normalizeTags(args.tags.split(',').map(t => t.trim()));
 
   const res = await tryDaemon('POST', '/api/memory/auto-capture', body);
