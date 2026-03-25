@@ -1203,7 +1203,8 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             # After amauta.py writes to tasks.json, mirror the affected task to gsd_tasks.
             # Only for commands that mutate tasks; read commands (show, list, search) skip this.
             _TASK_MUTATING_COMMANDS = {"add", "claim", "rpetd", "status", "validate",
-                                       "assign", "note", "update", "delete", "link", "unlink", "atomize"}
+                                       "assign", "note", "update", "delete", "link", "unlink", "atomize",
+                                       "archive", "reconcile"}
             _mirror_store = _get_store()
             if _mirror_store and rc == 0 and command in _TASK_MUTATING_COMMANDS:
                 try:
@@ -1215,6 +1216,16 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                         task_id = m.group(0) if m else ""
                     if command == "delete" and task_id:
                         _mirror_store.task_delete(task_id)
+                    elif command == "archive":
+                        # Archive moves tasks OUT of tasks.json -- delete them from PG mirror.
+                        # task_id may be empty for bulk archive; extract archived IDs from output.
+                        import re as _re
+                        _archived_ids = _re.findall(r"(TK|EP|ST|BG)-\d+", out)
+                        for _aid in _archived_ids:
+                            try:
+                                _mirror_store.task_delete(_aid)
+                            except Exception:
+                                pass  # Best-effort per-task deletion
                     elif task_id:
                         # Re-read the task from tasks.json via show --json to get current state
                         show_out, _, show_rc = self._run_amauta(["show", task_id, "--json"])
