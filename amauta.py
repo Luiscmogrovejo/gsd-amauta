@@ -1978,7 +1978,7 @@ def _rpetd_phase_enrich(phase: str, item: dict, agent_content: str) -> str:
 
             # ── PostgreSQL memory: semantic search for related experiences ──
             if _search_q:
-                results = _mem_semantic_search(f"{title} {desc[:200]}", top_k=5)
+                results = _mem_semantic_search(f"{title} {desc[:200]}", top_k=5, project_id=os.path.basename(os.getcwd()))
                 relevant = [r for r in results
                             if r.get("score", 0) >= 2
                             and "event:claim" not in str(r.get("tags", []))]
@@ -2066,7 +2066,7 @@ def _rpetd_phase_enrich(phase: str, item: dict, agent_content: str) -> str:
             # -- PostgreSQL memory: past execution patterns for similar tasks --
             if _search_q:
                 try:
-                    pattern_results = _mem_semantic_search(f"{title} implementation approach pattern", top_k=3)
+                    pattern_results = _mem_semantic_search(f"{title} implementation approach pattern", top_k=3, project_id=os.path.basename(os.getcwd()))
                     relevant_patterns = [r for r in pattern_results
                                          if r.get("score", 0) >= 2
                                          and r.get("source") in ("auto_learning", "session-learning",
@@ -2103,7 +2103,7 @@ def _rpetd_phase_enrich(phase: str, item: dict, agent_content: str) -> str:
             # PG memory: past test strategies for similar domains
             if _search_q:
                 try:
-                    t_results = _mem_semantic_search(f"{title} testing strategy validation evidence", top_k=5)
+                    t_results = _mem_semantic_search(f"{title} testing strategy validation evidence", top_k=5, project_id=os.path.basename(os.getcwd()))
                     t_relevant = [r for r in t_results
                                   if r.get("score", 0) >= 2
                                   and any(kw in r.get("text", "").lower()
@@ -2271,7 +2271,7 @@ def _enrich_task_context(item: dict, items: list) -> str:
         # ── PG memory: semantic search for related experiences ──────────
         search_q = f"{title} {desc[:200]}"
         if search_q.strip():
-            results = _mem_semantic_search(search_q, top_k=10)
+            results = _mem_semantic_search(search_q, top_k=10, project_id=os.path.basename(os.getcwd()))
 
             # Tier 1: All results with score >= 2 (general experience context)
             relevant = [r for r in results
