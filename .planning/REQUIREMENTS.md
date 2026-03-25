@@ -20,8 +20,8 @@
 - [x] **DATA-02**: Purge ~91 test artifact entries from agent_shared_knowledge (SKB) -- DONE: 111 purged, 5 remain
 - [ ] **DATA-03**: Fix distill function — exclude `source='distilled'` entries from distill input to prevent re-merging
 - [ ] **DATA-04**: Pre-store embedding dedup — cosine similarity >0.95 against existing entries = skip insert
-- [ ] **DATA-05**: Auto-set `project_id` from CWD basename on every memory write for project isolation
-- [ ] **DATA-06**: Route test/E2E memory writes to `project_id='__test__'` when `NODE_ENV=test` or `GSD_TEST_MODE=1`
+- [x] **DATA-05**: Auto-set `project_id` from CWD basename on every memory write for project isolation
+- [x] **DATA-06**: Route test/E2E memory writes to `project_id='__test__'` when `NODE_ENV=test` or `GSD_TEST_MODE=1`
 
 ### Memory Optimization (MEM)
 
@@ -63,8 +63,8 @@
 | DATA-02 | Phase 15 | Complete (2026-03-24) |
 | DATA-03 | Phase 16 | Pending |
 | DATA-04 | Phase 16 | Pending |
-| DATA-05 | Phase 16 | Pending |
-| DATA-06 | Phase 16 | Pending |
+| DATA-05 | Phase 16 | Complete |
+| DATA-06 | Phase 16 | Complete |
 | TASK-01 | Phase 17 | Pending |
 | TASK-02 | Phase 17 | Pending |
 | TASK-03 | Phase 17 | Pending |
