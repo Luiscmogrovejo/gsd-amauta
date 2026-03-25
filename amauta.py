@@ -4493,6 +4493,133 @@ def cmd_skb(args):
 
 
 # ── SKB (agent_shared_knowledge direct write) ──────────────────────────────────
+
+# ── RECONCILE — diff tasks.json vs PG gsd_tasks ──────────────────────────────
+def cmd_reconcile(args):
+    """Diff tasks.json vs PG gsd_tasks. JSON is always source of truth.
+    Default mode is dry-run (report only). Use --fix to sync JSON -> PG.
+    """
+    data = load()
+    items = data["items"]
+
+    db_url = _mem_db_url()
+    if not db_url:
+        print(c("ERROR: No PG connection available. Set GSD_POSTGRES_URL.", RED))
+        sys.exit(1)
+
+    try:
+        import psycopg2
+        import psycopg2.extras
+    except ImportError:
+        print(c("ERROR: psycopg2 not installed. Run: pip install psycopg2-binary", RED))
+        sys.exit(1)
+
+    try:
+        conn = psycopg2.connect(db_url)
+    except Exception as e:
+        print(c(f"ERROR: PG connection failed: {e}", RED))
+        sys.exit(1)
+
+    # Read all PG tasks
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT * FROM gsd_tasks")
+            pg_tasks = {row["id"]: dict(row) for row in cur.fetchall()}
+    except Exception as e:
+        print(c(f"ERROR: Failed to read gsd_tasks: {e}", RED))
+        conn.close()
+        sys.exit(1)
+
+    json_ids = {i["id"] for i in items}
+    pg_ids = set(pg_tasks.keys())
+
+    # Find discrepancies
+    missing_in_pg = json_ids - pg_ids
+    extra_in_pg = pg_ids - json_ids
+
+    # Field-level comparison for tasks in both
+    compare_fields = [
+        "title", "status", "priority", "assigned_to", "claimed_by",
+        "type", "description", "details", "phase", "plan",
+        "test_strategy", "outcome", "lesson",
+        "parent_id", "validation_notes", "validated_by",
+        "doc_refs", "risks", "validation_checklist",
+        "estimated_hours", "due_date", "sprint", "children",
+        "success_criteria", "deliverables", "dependencies",
+        "tags", "notes", "evidence",
+    ]
+
+    # Map JSON field names to PG field names where they differ
+    json_to_pg = {"parent": "parent_id"}
+
+    field_mismatches = []
+    for item in items:
+        if item["id"] not in pg_tasks:
+            continue
+        pg = pg_tasks[item["id"]]
+        for field in compare_fields:
+            json_field = field
+            # Reverse lookup: if PG field is parent_id, JSON field is parent
+            for jf, pf in json_to_pg.items():
+                if pf == field:
+                    json_field = jf
+                    break
+            json_val = item.get(json_field)
+            pg_val = pg.get(field)
+            # Normalize for comparison (JSONB comes back as Python dicts/lists from psycopg2)
+            if isinstance(json_val, (list, dict)):
+                json_val = json.dumps(json_val, sort_keys=True)
+            if isinstance(pg_val, (list, dict)):
+                pg_val = json.dumps(pg_val, sort_keys=True)
+            # Normalize None/empty
+            json_str = str(json_val) if json_val is not None else ""
+            pg_str = str(pg_val) if pg_val is not None else ""
+            if json_str != pg_str:
+                field_mismatches.append((item["id"], field, json_str, pg_str))
+
+    # Report
+    print(f"Reconcile: {len(json_ids)} JSON tasks, {len(pg_ids)} PG tasks")
+    print(f"  Missing in PG: {len(missing_in_pg)}")
+    print(f"  Extra in PG:   {len(extra_in_pg)}")
+    print(f"  Field mismatches: {len(field_mismatches)}")
+
+    if missing_in_pg:
+        for tid in sorted(missing_in_pg)[:20]:
+            print(f"    + {tid} (not in PG)")
+        if len(missing_in_pg) > 20:
+            print(f"    ... and {len(missing_in_pg) - 20} more")
+    if extra_in_pg:
+        for tid in sorted(extra_in_pg)[:10]:
+            print(f"    - {tid} (in PG but not in JSON)")
+    if field_mismatches:
+        for tid, field, jv, pv in field_mismatches[:20]:
+            print(f"    ~ {tid}.{field}: JSON={jv[:40]} vs PG={pv[:40]}")
+        if len(field_mismatches) > 20:
+            print(f"    ... and {len(field_mismatches) - 20} more")
+
+    # Fix mode
+    fix = getattr(args, "fix", False)
+    if fix and (missing_in_pg or field_mismatches):
+        # Use PGStore for proper upsert with retry support
+        sys.path.insert(0, str(Path(__file__).parent / "services"))
+        from pg_store import PGStore
+        store = PGStore(dsn=db_url)
+
+        fixed = 0
+        mismatched_ids = {m[0] for m in field_mismatches}
+        for item in items:
+            if item["id"] in missing_in_pg or item["id"] in mismatched_ids:
+                store.task_upsert(item)
+                fixed += 1
+        print(c(f"\nFixed: {fixed} tasks synced to PG", GREEN))
+    elif not missing_in_pg and not field_mismatches and not extra_in_pg:
+        print(c("\n  JSON and PG are in sync.", GREEN))
+    else:
+        print(dim(f"\n  Run with --fix to sync JSON -> PG"))
+
+    conn.close()
+
+
 # ── ARCHIVE — move done tasks older than N days to archive ─────────────────────
 def cmd_archive(args):
     """Move done tasks older than --days (default 7) to tasks-archive.json.
@@ -5023,6 +5150,11 @@ AGENT WORKFLOW (heartbeat cycle):
     # ── migrate ───────────────────────────────────────────────────────────────
     sub.add_parser("migrate", help="Upgrade existing tasks to v2 schema (idempotent)")
 
+    # ── reconcile ────────────────────────────────────────────────────────────
+    rc = sub.add_parser("reconcile", help="Diff tasks.json vs PG and fix mismatches")
+    rc.add_argument("--fix", action="store_true",
+                    help="Sync JSON -> PG (default is dry-run / report only)")
+
     # ── archive ──────────────────────────────────────────────────────────────
     ar = sub.add_parser("archive", help="Move done tasks older than N days to archive file")
     ar.add_argument("--days", type=int, default=7,
@@ -5090,6 +5222,7 @@ def main():
         "import":      cmd_import,
         "migrate":     cmd_migrate,
         "archive":     cmd_archive,
+        "reconcile":   cmd_reconcile,
     }
 
     fn = dispatch.get(args.command)
