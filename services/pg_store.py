@@ -23,7 +23,7 @@ import threading
 import urllib.request
 import urllib.error
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 try:
@@ -51,6 +51,13 @@ SOURCE_SCORES = {
     "task_event": 0,
     "agent": 0,
 }
+
+# MEM-01: Default sources excluded from search (low signal, noise)
+DEFAULT_EXCLUDE_SOURCES = ("task_event", "rpetd_phase")
+
+# MEM-03: Recency decay — penalizes old entries so recent memories rank higher
+RECENCY_DECAY_PER_30D = float(os.environ.get("GSD_RECENCY_DECAY_PER_30D", "0.5"))
+MAX_RECENCY_PENALTY = 3.0  # Cap at 6 months of decay
 
 # ═══════════════════════════════════════════════════════
 # Tag synonym normalization (shared with sqlite_store.py)
@@ -230,11 +237,17 @@ class PGStore:
                 ))
                 return cur.fetchone()[0]
 
-    def memory_search(self, query, project_id=None, source=None, limit=20):
+    def memory_search(self, query, project_id=None, source=None, limit=20,
+                      exclude_sources=DEFAULT_EXCLUDE_SOURCES):
         """Search memories with source-aware scoring.
 
-        Scoring: text relevance (ts_rank) + source bonus.
+        Scoring: text relevance (ts_rank) + source bonus - recency decay.
         Falls back to ILIKE if full-text search returns nothing.
+
+        Args:
+            exclude_sources: Tuple/list of source strings to exclude from results.
+                             Defaults to DEFAULT_EXCLUDE_SOURCES (task_event, rpetd_phase).
+                             Pass None to include all sources.
         """
         with self._get_conn() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -253,6 +266,12 @@ class PGStore:
                 if source:
                     conditions.append("source = %s")
                     params.append(source)
+
+                # MEM-01: Exclude low-signal sources by default
+                if exclude_sources:
+                    placeholders = ", ".join(["%s"] * len(exclude_sources))
+                    conditions.append(f"source NOT IN ({placeholders})")
+                    params.extend(exclude_sources)
 
                 where = " AND ".join(conditions) if conditions else "TRUE"
 
@@ -294,14 +313,37 @@ class PGStore:
                 return self._score_memories(results)
 
     def _score_memories(self, rows):
-        """Apply source-aware scoring to memory results."""
+        """Apply source-aware scoring with recency decay to memory results.
+
+        Score = text_rank * 10 + source_bonus - recency_penalty
+        Recency penalty = min(RECENCY_DECAY_PER_30D * (days_old / 30), MAX_RECENCY_PENALTY)
+        """
+        now = datetime.now(timezone.utc)
         scored = []
         for row in rows:
             d = dict(row)
             source_bonus = SOURCE_SCORES.get(d.get("source", "agent"), 0)
             text_rank = float(d.get("text_rank", 0))
-            # Composite score: text relevance (0-1 range) * 10 + source bonus
-            d["score"] = round(text_rank * 10 + source_bonus, 2)
+            # MEM-03: Recency decay
+            recency_penalty = 0.0
+            created_at = d.get("created_at")
+            if RECENCY_DECAY_PER_30D > 0 and created_at is not None:
+                try:
+                    if isinstance(created_at, str):
+                        ca = datetime.fromisoformat(created_at)
+                    else:
+                        ca = created_at
+                    if ca.tzinfo is None:
+                        ca = ca.replace(tzinfo=timezone.utc)
+                    days_old = max((now - ca).days, 0)
+                    recency_penalty = min(
+                        RECENCY_DECAY_PER_30D * (days_old / 30.0),
+                        MAX_RECENCY_PENALTY,
+                    )
+                except (ValueError, TypeError, AttributeError):
+                    pass  # unparseable — no decay
+            # Composite score: text relevance (0-1 range) * 10 + source bonus - recency decay
+            d["score"] = round(text_rank * 10 + source_bonus - recency_penalty, 2)
             # Convert Decimal text_rank to float for JSON serialization
             if "text_rank" in d and isinstance(d["text_rank"], Decimal):
                 d["text_rank"] = float(d["text_rank"])
@@ -1134,18 +1176,25 @@ class PGStore:
                 ))
                 return cur.fetchone()[0]
 
-    def memory_semantic_search(self, query, project_id=None, source=None, limit=20):
+    def memory_semantic_search(self, query, project_id=None, source=None, limit=20,
+                               exclude_sources=DEFAULT_EXCLUDE_SOURCES):
         """Search memories using cosine similarity on pgvector embeddings.
 
         Requires VOYAGE_API_KEY or OPENAI_API_KEY for query embedding generation.
         Returns (results, method) tuple — method is 'vector' or 'text_fallback'.
         Falls back to text-based memory_search() if embeddings unavailable.
+
+        Args:
+            exclude_sources: Tuple/list of source strings to exclude from results.
+                             Defaults to DEFAULT_EXCLUDE_SOURCES (task_event, rpetd_phase).
+                             Pass None to include all sources.
         """
         # Generate query embedding (input_type="query" improves Voyage retrieval)
         query_embedding = self.generate_embedding(query, input_type="query")
         if query_embedding is None:
             # No API key — fall back to text search
-            return self.memory_search(query, project_id, source, limit), "text_fallback"
+            return self.memory_search(query, project_id, source, limit,
+                                      exclude_sources=exclude_sources), "text_fallback"
 
         with self._get_conn() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -1163,6 +1212,12 @@ class PGStore:
                 if source:
                     conditions.append("source = %s")
                     params.append(source)
+
+                # MEM-01: Exclude low-signal sources by default
+                if exclude_sources:
+                    placeholders = ", ".join(["%s"] * len(exclude_sources))
+                    conditions.append(f"source NOT IN ({placeholders})")
+                    params.extend(exclude_sources)
 
                 where = " AND ".join(conditions)
 
@@ -1205,14 +1260,36 @@ class PGStore:
                 return scored, "vector"
 
     def _score_semantic_results(self, rows):
-        """Score semantic search results with source bonuses."""
+        """Score semantic search results with source bonuses and recency decay.
+
+        Score = similarity * 10 + source_bonus - recency_penalty
+        """
+        now = datetime.now(timezone.utc)
         scored = []
         for row in rows:
             d = dict(row)
             source_bonus = SOURCE_SCORES.get(d.get("source", "agent"), 0)
             similarity = float(d.get("semantic_similarity", 0))
-            # Composite: semantic similarity (0-1) * 10 + source bonus (0-4)
-            d["score"] = round(similarity * 10 + source_bonus, 2)
+            # MEM-03: Recency decay
+            recency_penalty = 0.0
+            created_at = d.get("created_at")
+            if RECENCY_DECAY_PER_30D > 0 and created_at is not None:
+                try:
+                    if isinstance(created_at, str):
+                        ca = datetime.fromisoformat(created_at)
+                    else:
+                        ca = created_at
+                    if ca.tzinfo is None:
+                        ca = ca.replace(tzinfo=timezone.utc)
+                    days_old = max((now - ca).days, 0)
+                    recency_penalty = min(
+                        RECENCY_DECAY_PER_30D * (days_old / 30.0),
+                        MAX_RECENCY_PENALTY,
+                    )
+                except (ValueError, TypeError, AttributeError):
+                    pass  # unparseable — no decay
+            # Composite: semantic similarity (0-1) * 10 + source bonus (0-4) - recency
+            d["score"] = round(similarity * 10 + source_bonus - recency_penalty, 2)
             d["semantic_similarity"] = round(similarity, 4)
             # Convert types that don't JSON-serialize
             for key in ("created_at", "updated_at"):
