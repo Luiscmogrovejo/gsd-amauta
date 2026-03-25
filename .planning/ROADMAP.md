@@ -10,7 +10,7 @@
 - [x] **Phase 16: Data Integrity** - Fix distillation bug, embedding dedup, project isolation for writes (completed 2026-03-25)
 - [x] **Phase 17: Task Manager Reliability** - Archival, file locking, stale watchdog, dual-write reconciliation (completed 2026-03-25)
 - [x] **Phase 18: Memory Optimization** - Source filtering, tiered retention, recency decay scoring (completed 2026-03-25)
-- [ ] **Phase 19: Token Efficiency** - Enrichment dedup, research truncation, RPETD content caps
+- [x] **Phase 19: Token Efficiency** - Enrichment dedup, research truncation, RPETD content caps (completed 2026-03-25)
 
 ## Phase Details
 
@@ -68,7 +68,7 @@
   1. When Layer 1 RLM/memory enrichment ran within the last 5 minutes, Layer 2 R-phase skips redundant queries and logs "Layer 1 cache hit -- skipping enrichment"
   2. Perplexity research chain output is capped at 1,500 chars with preamble/boilerplate stripped before injection into RPETD context
   3. RPETD phase writes exceeding 2,000 chars are truncated with a warning; `amauta rpetd` documentation shows optimal size guidance
-**Plans**: TBD
+**Plans**: 19-01 (4 tasks: enrichment dedup timestamp check, Perplexity truncation + preamble strip, RPETD soft cap warning, tests)
 
 ## Progress
 
@@ -79,8 +79,9 @@
 | 15. Data Purge | 1/1 | Complete    | 2026-03-24 |
 | 16. Data Integrity | 2/2 | Complete    | 2026-03-25 |
 | 17. Task Manager Reliability | 3/3 | Complete    | 2026-03-25 |
-| 18. Memory Optimization | 2/2 | Complete   | 2026-03-25 |
-| 19. Token Efficiency | 0/TBD | Not started | - |
+| 18. Memory Optimization | 2/2 | Complete    | 2026-03-25 |
+| 19. Token Efficiency | 1/1 | Complete    | 2026-03-25 |
 
 ---
 *Milestone v2.3 started: 2026-03-24*
+*Milestone v2.3 completed: 2026-03-25*

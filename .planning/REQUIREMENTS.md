@@ -31,9 +31,9 @@
 
 ### Token Efficiency (TOKEN)
 
-- [ ] **TOKEN-01**: Skip Layer 2 R-phase RLM/memory enrichment when Layer 1 ran within 5 minutes (dedup)
-- [ ] **TOKEN-02**: Research chain truncates Perplexity output to 1,500 chars with preamble stripping
-- [ ] **TOKEN-03**: RPETD phase content capped at 2,000 chars per phase write (guidance + soft enforcement)
+- [x] **TOKEN-01**: Skip Layer 2 R-phase RLM/memory enrichment when Layer 1 ran within 5 minutes (dedup)
+- [x] **TOKEN-02**: Research chain truncates Perplexity output to 1,500 chars with preamble stripping
+- [x] **TOKEN-03**: RPETD phase content capped at 2,000 chars per phase write (guidance + soft enforcement)
 
 ## Future Requirements (v2.4+)
 
@@ -74,9 +74,9 @@
 | MEM-01 | Phase 18 | Pending |
 | MEM-02 | Phase 18 | Complete |
 | MEM-03 | Phase 18 | Pending |
-| TOKEN-01 | Phase 19 | Pending |
-| TOKEN-02 | Phase 19 | Pending |
-| TOKEN-03 | Phase 19 | Pending |
+| TOKEN-01 | Phase 19 | Complete (2026-03-25) |
+| TOKEN-02 | Phase 19 | Complete (2026-03-25) |
+| TOKEN-03 | Phase 19 | Complete (2026-03-25) |
 
 **Coverage:**
 - v2.3 requirements: 18 total

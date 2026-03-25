@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: milestone
-status: completed
-stopped_at: Completed 18-02-PLAN.md (tiered retention). Phase 18 COMPLETE.
-last_updated: "2026-03-25T03:57:04.421Z"
-last_activity: 2026-03-25 -- Plan 18-02 complete (4 tasks, 12 tests, 3 commits)
+status: complete
+stopped_at: Phase 19 complete (19-01-PLAN.md). v2.3 milestone DONE.
+last_updated: "2026-03-25T04:14:20.000Z"
+last_activity: 2026-03-25 -- Plan 19-01 executed (4 tasks, enrichment dedup + Perplexity truncation + RPETD caps). Phase 19 COMPLETE. v2.3 COMPLETE.
 progress:
   total_phases: 5
-  completed_phases: 4
-  total_plans: 8
-  completed_plans: 8
-  percent: 97
+  completed_phases: 5
+  total_plans: 9
+  completed_plans: 9
+  percent: 100
 ---
 
 # GSD-Amauta -- Project State
@@ -21,23 +21,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-24)
 
 **Core value:** Every built system actually fires during task execution -- no dead code, no bypasses, agents are smarter with fewer tokens.
-**Current focus:** Milestone v2.3 -- Clean Foundations. Phase 18 COMPLETE (2/2 plans done).
+**Current focus:** Milestone v2.3 -- Clean Foundations. COMPLETE.
 
 ## Current Position
 
-Phase: 18 of 19 (Memory Optimization) -- COMPLETE
-Plan: 2/2 done (18-01 Source Filtering + Recency Decay, 18-02 Tiered Retention)
-Status: Phase 18 complete. Memory optimization shipped: source filtering, recency decay, tiered retention.
-Last activity: 2026-03-25 -- Plan 18-02 complete (4 tasks, 12 tests, 3 commits)
+Phase: 19 of 19 (Token Efficiency) -- COMPLETE
+Plan: 1/1 done (19-01 Enrichment Dedup + Perplexity Truncation + RPETD Caps)
+Status: All 5 phases complete. v2.3 milestone finished.
+Last activity: 2026-03-25 -- Plan 19-01 executed (4 tasks, 15 tests, 5 min)
 
-Progress: [██████████] 97%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity (from v2.2):**
-- Total plans completed: 9 (v2.2) + 6 (v2.3) = 15
-- Average duration: ~16 min per plan (improving)
-- Total execution time: ~5 hours
+- Total plans completed: 9 (v2.2) + 9 (v2.3) = 18
+- Average duration: ~12 min per plan
+- Total execution time: ~6 hours
 
 **By Phase (v2.2):**
 
@@ -55,8 +55,8 @@ Progress: [██████████] 97%
 | 15 -- Data Purge | 1 | ~6 min | ~6 min |
 | 16 -- Data Integrity | 2/2 | ~21 min | ~10 min |
 | 17 -- Task Manager Reliability | 3/3 | ~22 min | ~7 min |
-
 | 18 -- Memory Optimization | 2/2 | ~29 min | ~14 min |
+| 19 -- Token Efficiency | 1/1 | ~5 min | ~5 min |
 
 **Recent Trend:** Accelerating (~8 min/plan in v2.3 vs ~25 min in v2.2)
 
@@ -70,34 +70,22 @@ Recent decisions affecting current work:
 - v2.3 scope: Surgical fixes to task manager, memory quality, token efficiency (not rewrites)
 - Phase order: Data purge first (15-16) so subsequent phases work with clean data
 - All memory writes must route through daemon HTTP (established in v2.2, continues)
-- Phase 15: Extended purge patterns from plan's 14 to 26 patterns after SQL inspection revealed hidden test artifacts (TK-LEARN1, TK-ASSIGN1, etc.)
-- Phase 15: PG is on port 5432 (local user auth), not 5433 (Docker) as plan assumed
-- Phase 16-01: Dedup threshold 0.95 (configurable via GSD_DEDUP_THRESHOLD) -- conservative to avoid false positives
-- Phase 16-01: exclude_source at API layer (not hardcoded in distill) -- reusable for other callers
-- Phase 16-01: memory_store_with_embedding return type changed to int|dict (dedup dict on skip)
-- Phase 16-02: All 12 amauta_memory references replaced with gsd_memory (bulk rename including comments)
-- Phase 16-02: Test mode checks 3 env vars (NODE_ENV, GSD_TEST_MODE, PYTEST_CURRENT_TEST) for broad coverage
-- Phase 16-02: Default search uses (project_id IS NULL OR project_id != '__test__') to preserve NULL entries
+- Phase 19-01: Preamble regex bounded to {0,80} chars to prevent greedy overconsumption
+- Phase 19-01: RPETD cap is soft (warning only, no truncation) to avoid blocking agents
+- Phase 19-01: Enrichment dedup uses _last_enrichment_ts scanning notes in reverse
 
 ### Pending Todos
 
-None yet.
+None.
 
 ### Blockers/Concerns
 
-- ~~Deep audit found 87 orphaned tasks and ~1,800 test entries -- Phase 15 must handle this carefully~~ RESOLVED: 1,918 memory + 111 SKB test entries purged
-- ~~Distillation re-merging bug is actively degrading memory quality -- Phase 16 is urgent~~ RESOLVED: cmdDistill now excludes source='distilled' from input (Plan 16-01)
-- ~~7 fields dropped during dual-write -- silent data loss accumulating since v2.0~~ RESOLVED: Migration 007 + task_upsert update for all 7 fields + reconcile command (Plan 17-03)
-- ~~Phase 17 TOCTOU fix touches 17 cmd_* functions -- high-touch, must test thoroughly~~ RESOLVED: All 17 wrapped, 13 tests pass (Plan 17-01)
-- Phase 17-01: Reentrant lock via thread-local flag (_lock_held) -- save() keeps its own lock for standalone safety
-- Phase 17-01: Archive fallback always active in cmd_show (auto-checks archive when task not found in active set)
-- Phase 17-02: Watchdog reads tasks.json directly (not subprocess list) for efficiency
-- Phase 17-02: Retry flusher only starts when _pg_store is available; _Metrics extended with set_gauge()
+None -- all phases complete.
 
 ## Session Continuity
 
-Last session: 2026-03-25T03:57:04.418Z
-Stopped at: Completed 18-02-PLAN.md (tiered retention). Phase 18 COMPLETE.
+Last session: 2026-03-25T04:14:20Z
+Stopped at: Completed 19-01-PLAN.md (token efficiency). Phase 19 COMPLETE. v2.3 COMPLETE.
 Resume file: None
 
 ## Previous Milestone: v2.2 -- Wiring & Hardening (COMPLETE)
