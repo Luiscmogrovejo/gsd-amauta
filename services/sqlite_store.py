@@ -51,6 +51,12 @@ DEFAULT_EXCLUDE_SOURCES = ("task_event", "rpetd_phase")
 RECENCY_DECAY_PER_30D = float(os.environ.get("GSD_RECENCY_DECAY_PER_30D", "0.5"))
 MAX_RECENCY_PENALTY = 3.0  # Cap at 6 months of decay
 
+# MEM-02: Tiered retention — archive stale entries by source type
+RETENTION_DAYS = {
+    "task_event": 30,
+    "rpetd_phase": 90,
+}
+
 # ═══════════════════════════════════════════════════════
 # Tag synonym normalization (shared with pg_store.py)
 # ═══════════════════════════════════════════════════════
@@ -267,6 +273,20 @@ class SQLiteStore:
                     content     TEXT,
                     metadata    TEXT DEFAULT '{}',
                     created_at  TEXT DEFAULT (datetime('now'))
+                );
+
+                -- Memory archive (MEM-02: soft-delete for retention cleanup)
+                CREATE TABLE IF NOT EXISTS gsd_memory_archive (
+                    id          TEXT PRIMARY KEY,
+                    text        TEXT NOT NULL,
+                    agent_id    TEXT,
+                    source      TEXT,
+                    tags        TEXT DEFAULT '[]',
+                    metadata    TEXT DEFAULT '{}',
+                    project_id  TEXT,
+                    created_at  TEXT,
+                    updated_at  TEXT,
+                    archived_at TEXT DEFAULT (datetime('now'))
                 );
 
                 -- Indexes
@@ -594,6 +614,46 @@ class SQLiteStore:
             "error": "Embeddings not available in SQLite mode. Use PostgreSQL with pgvector.",
             "processed": 0,
         }
+
+    # ═══════════════════════════════════════════════════════
+    # Memory Retention (MEM-02: Tiered archival)
+    # ═══════════════════════════════════════════════════════
+
+    def memory_retention_cleanup(self):
+        """Archive stale memory entries based on RETENTION_DAYS policy.
+
+        Moves entries to gsd_memory_archive (soft delete -- no data lost).
+        Only archives sources defined in RETENTION_DAYS; high-value sources
+        (auto_learning, lesson-learned, best-practice) are never archived.
+
+        Returns dict: {"task_event_archived": N, "rpetd_phase_archived": M, "total": N+M}
+        """
+        results = {}
+        with self._get_conn() as conn:
+            for source, days in RETENTION_DAYS.items():
+                # Move matching entries to archive table
+                conn.execute("""
+                    INSERT OR IGNORE INTO gsd_memory_archive
+                        (id, text, agent_id, source, tags, metadata,
+                         project_id, created_at, updated_at)
+                    SELECT id, text, agent_id, source, tags, metadata,
+                           project_id, created_at, updated_at
+                    FROM gsd_memory
+                    WHERE source = ?
+                      AND created_at < datetime('now', ? || ' days')
+                """, (source, f"-{days}"))
+                moved = conn.execute("""
+                    SELECT changes()
+                """).fetchone()[0]
+                # Remove from active table
+                conn.execute("""
+                    DELETE FROM gsd_memory
+                    WHERE source = ?
+                      AND created_at < datetime('now', ? || ' days')
+                """, (source, f"-{days}"))
+                results[f"{source}_archived"] = moved
+        results["total"] = sum(results.values())
+        return results
 
     # ═══════════════════════════════════════════════════════
     # Shared Knowledge Base (SKB) Operations
