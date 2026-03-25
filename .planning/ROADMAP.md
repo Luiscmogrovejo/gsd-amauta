@@ -58,7 +58,7 @@
   1. Default `amauta search "topic"` results contain zero entries where `source IN ('task_event', 'rpetd_phase')` unless explicitly requested with `--include-noise`
   2. Entries with `source='task_event'` older than 30 days are archived (moved to cold storage or marked inactive); `source='rpetd_phase'` entries archived after 90 days
   3. Memory search scoring subtracts 0.5 points per 30 days since last access, making recent memories rank higher than stale ones with similar content
-**Plans**: TBD
+**Plans**: 18-01 (5 tasks: PG source filter, SQLite source filter, daemon+CLI wiring, recency decay, tests) + 18-02 (4 tasks: PG retention, SQLite retention, daemon thread, tests)
 
 ### Phase 19: Token Efficiency
 **Goal**: RPETD pipeline produces the same quality output with measurably fewer tokens per task cycle
@@ -79,7 +79,7 @@
 | 15. Data Purge | 1/1 | Complete    | 2026-03-24 |
 | 16. Data Integrity | 2/2 | Complete    | 2026-03-25 |
 | 17. Task Manager Reliability | 3/3 | Complete    | 2026-03-25 |
-| 18. Memory Optimization | 0/TBD | Not started | - |
+| 18. Memory Optimization | 1/2 | In Progress | - |
 | 19. Token Efficiency | 0/TBD | Not started | - |
 
 ---

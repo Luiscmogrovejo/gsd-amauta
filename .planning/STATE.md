@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: milestone
-status: Phase 17 COMPLETE -- All 3 plans done (17-01 archive+TOCTOU, 17-02 watchdog+retry, 17-03 field-sync+reconcile)
-stopped_at: Completed 17-03-PLAN.md (full field sync + reconcile command)
-last_updated: "2026-03-25T03:42:00.000Z"
-last_activity: 2026-03-25 -- Plan 17-03 complete (migration 007, full field upsert, reconcile cmd, 17 tests)
+status: in-progress
+stopped_at: Plan 18-01 complete (source filtering + recency decay). 18-02 tiered retention remaining.
+last_updated: "2026-03-25T05:00:00.000Z"
+last_activity: 2026-03-25 -- Plan 18-01 complete (5 tasks, 12 tests, 4 commits)
 progress:
   total_phases: 5
   completed_phases: 3
-  total_plans: 6
-  completed_plans: 6
-  percent: 100
+  total_plans: 8
+  completed_plans: 7
+  percent: 87
 ---
 
 # GSD-Amauta -- Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-24)
 
 **Core value:** Every built system actually fires during task execution -- no dead code, no bypasses, agents are smarter with fewer tokens.
-**Current focus:** Milestone v2.3 -- Clean Foundations. Phase 17 COMPLETE (3/3 plans done).
+**Current focus:** Milestone v2.3 -- Clean Foundations. Phase 18 planned (0/2 plans done).
 
 ## Current Position
 
-Phase: 17 of 19 (Task Manager Reliability) -- COMPLETE
-Plan: All 3 plans done (17-01, 17-02, 17-03)
-Status: Phase 17 complete. Archive, TOCTOU, watchdog, retry, field sync, reconcile all shipped.
-Last activity: 2026-03-25 -- Plan 17-03 complete (migration 007 + full field upsert + reconcile cmd, 17 tests)
+Phase: 18 of 19 (Memory Optimization) -- IN PROGRESS
+Plan: 1/2 done (18-01 Source Filtering + Recency Decay COMPLETE, 18-02 Tiered Retention pending)
+Status: 18-01 shipped. Default search now excludes noise sources; recency decay active.
+Last activity: 2026-03-25 -- Plan 18-01 complete (5 tasks, 12 tests, 4 commits)
 
-Progress: [██████████] 100%
+Progress: [████████░░] 87%
 
 ## Performance Metrics
 
@@ -55,6 +55,8 @@ Progress: [██████████] 100%
 | 15 -- Data Purge | 1 | ~6 min | ~6 min |
 | 16 -- Data Integrity | 2/2 | ~21 min | ~10 min |
 | 17 -- Task Manager Reliability | 3/3 | ~22 min | ~7 min |
+
+| 18 -- Memory Optimization | 1/2 | ~25 min | ~25 min |
 
 **Recent Trend:** Accelerating (~5 min/plan in v2.3 vs ~25 min in v2.2)
 
@@ -94,8 +96,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-25 03:42
-Stopped at: Completed 17-03-PLAN.md (full field sync + reconcile command). Phase 17 COMPLETE.
+Last session: 2026-03-25 05:00
+Stopped at: Completed 18-01-PLAN.md (source filtering + recency decay). 18-02 tiered retention next.
 Resume file: None
 
 ## Previous Milestone: v2.2 -- Wiring & Hardening (COMPLETE)
