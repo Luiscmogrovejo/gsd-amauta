@@ -4822,6 +4822,10 @@ def cmd_archive(args):
         # Remove archived items from active data
         archived_ids = {i["id"] for i in to_archive}
         data["items"] = [i for i in items if i["id"] not in archived_ids]
+        # Remove archived IDs from remaining parents' children arrays (FIX-09)
+        for i in data["items"]:
+            if "children" in i:
+                i["children"] = [c for c in i["children"] if c not in archived_ids]
         save(data)
 
         log.info("archived %d tasks (done >%dd) to %s", len(to_archive), days, ARCHIVE_FILE)
