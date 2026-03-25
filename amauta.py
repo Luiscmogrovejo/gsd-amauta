@@ -846,7 +846,7 @@ def _skb_promote(title: str, content: str, category: str, agent_id: str = "syste
                 combined_existing = f"{existing_title} {existing_content}"
                 if _jaccard_similarity(combined_new, combined_existing) > 0.7:
                     cur.close()
-                    return  # Near-duplicate found -- skip
+                    return False  # Near-duplicate found -- skip
             now = datetime.now(timezone.utc)
             entry_id = f"SKB-{uuid.uuid4().hex[:12]}"
             cur.execute("""
@@ -856,8 +856,9 @@ def _skb_promote(title: str, content: str, category: str, agent_id: str = "syste
             """, (entry_id, title, content, category, agent_id,
                   json.dumps(tags or []), importance, now, now))
             cur.close()
+            return True  # Written successfully
     except Exception:
-        pass
+        return False
 
 
 def _mem_log_event(agent_id: str, tags: list[str], text: str, *, source: str = "task_event", metadata: Optional[dict] = None):
@@ -3047,9 +3048,8 @@ def _auto_write_learning(item: dict, agent_id: str):
             source="auto_learning",
             metadata={"task_id": task_id, "event": "auto_learning", "lane": lane, "auto_writer": agent_id},
         )
-        # Promote to SKB — always, not just when criteria present
-        # This ensures every validated task contributes to global knowledge
-        _skb_promote(
+        # Promote to SKB -- dedup handled inside _skb_promote (FIX-10)
+        skb_wrote = _skb_promote(
             title=f"LESSON: {title[:80]}",
             content=learning_text,
             category="workflow" if lane == "code" else "process",
@@ -3057,6 +3057,8 @@ def _auto_write_learning(item: dict, agent_id: str):
             tags=["lesson", "learning", f"agent:{owner}", f"lane:{lane}", "auto_learning"],
             importance=5,
         )
+        if skb_wrote is False:
+            log.debug("SKB dedup hit: skipping promotion for %s", task_id)
         # Also write web_search findings separately for easy retrieval
         if ws_findings:
             _mem_log_event(
