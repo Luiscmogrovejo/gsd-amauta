@@ -1,89 +1,76 @@
-# Roadmap: GSD-Amauta v2.3 — Clean Foundations
+# Roadmap: GSD-Amauta v2.4 — Bulletproof
 
-**Milestone:** v2.3
-**Phases:** 5 (continuing from v2.2 Phase 14 -- starts at Phase 15)
-**Requirements:** 18
+**Milestone:** v2.4
+**Phases:** 4 (continuing from v2.3 Phase 19.1 -- starts at Phase 20)
+**Requirements:** 20
 
 ## Phases
 
-- [x] **Phase 15: Data Purge** - Delete ~1,900 synthetic/test entries from gsd_memory and SKB (completed 2026-03-24)
-- [x] **Phase 16: Data Integrity** - Fix distillation bug, embedding dedup, project isolation for writes (completed 2026-03-25)
-- [x] **Phase 17: Task Manager Reliability** - Archival, file locking, stale watchdog, dual-write reconciliation (completed 2026-03-25)
-- [x] **Phase 18: Memory Optimization** - Source filtering, tiered retention, recency decay scoring (completed 2026-03-25)
-- [x] **Phase 19: Token Efficiency** - Enrichment dedup, research truncation, RPETD content caps (completed 2026-03-25)
-- [x] **Phase 19.1: Gap Closure** - 5 tech debt items: reconcile fields, dedup project_id, post-purge cleanup, SKB cleanup, preamble regex (completed 2026-03-25)
+- [ ] **Phase 20: Critical Bug Fixes** - Fix 6 high-impact bugs: daemon mirror, HTTP race, distill count, research parse, reconcile archive, enrichment isolation
+- [ ] **Phase 21: Minor Bug Fixes** - Fix 4 lower-severity bugs: Jaccard edge case, retention shutdown, archive genealogy, auto-learn dedup
+- [ ] **Phase 22: Core System Tests** - Comprehensive test coverage for archive, reconcile, RLM, PG integration, distill, auto-learn
+- [ ] **Phase 23: Integration + E2E Tests** - Task manager stress tests, daemon integration, fallback paths, full lifecycle smoke test
 
 ## Phase Details
 
-### Phase 15: Data Purge
-**Goal**: Production memory and SKB contain only real project data -- zero test pollution
-**Depends on**: Nothing (first phase, prerequisite for all others)
-**Requirements**: DATA-01, DATA-02
+### Phase 20: Critical Bug Fixes
+**Goal**: Every daemon-mediated operation (archive, reconcile, enrichment, research, distill) produces correct results without silent failures or data corruption
+**Depends on**: Nothing (first phase -- fixes must land before tests validate them)
+**Requirements**: FIX-01, FIX-02, FIX-03, FIX-04, FIX-05, FIX-06
 **Success Criteria** (what must be TRUE):
-  1. `SELECT count(*) FROM gsd_memory WHERE content LIKE '%TK-0001%' OR content LIKE '%E2E-LIFECYCLE%' OR source='test_%'` returns 0
-  2. `SELECT count(*) FROM agent_shared_knowledge WHERE content LIKE '%test%synthetic%'` returns 0
-  3. Purge script is idempotent -- running it twice produces no errors and no further deletions
-  4. Production memory count drops from ~1,904 to ~100 real entries (verified by `amauta status`)
-**Plans**: 15-01 (4 tasks: backup, purge script, dry-run validation, execute + verify)
+  1. Running `amauta archive` followed by `amauta reconcile` with daemon active shows both commands synced to PG (daemon mirror list includes archive+reconcile)
+  2. Calling `_mem_log_event` with a slow daemon (>5s response) produces exactly one PG entry, not two
+  3. Running `amauta distill` on 5 memories reports `removedCount: 4` (not 5) -- the kept summary is excluded from the count
+  4. Triggering `_research_chain_query` with malformed JSON from Perplexity logs the parse error and returns graceful fallback instead of empty []
+  5. Running `amauta reconcile` detects tasks present in tasks-archive.json but missing from PG archive and reports them
+  6. Enrichment `_mem_semantic_search` during RPETD returns only memories matching the current project -- zero cross-project results
+**Plans**: 20-01 (daemon mirror + HTTP race + distill count), 20-02 (silent errors + reconcile archive + enrichment isolation)
 
-### Phase 16: Data Integrity
-**Goal**: Every memory write is deduplicated, project-isolated, and distillation never re-merges its own output
-**Depends on**: Phase 15 (clean data makes dedup and distillation meaningful)
-**Requirements**: DATA-03, DATA-04, DATA-05, DATA-06
+### Phase 21: Minor Bug Fixes
+**Goal**: Edge cases in text similarity, thread lifecycle, task genealogy, and learning dedup are eliminated
+**Depends on**: Nothing (independent of Phase 20 -- can run in parallel)
+**Requirements**: FIX-07, FIX-08, FIX-09, FIX-10
 **Success Criteria** (what must be TRUE):
-  1. Running `distill` on a database containing `source='distilled'` entries produces new summaries that exclude those entries from input
-  2. Storing a memory with cosine similarity >0.95 to an existing entry skips the insert and returns a dedup notice
-  3. Every memory write automatically includes `project_id` derived from the current working directory basename
-  4. When `NODE_ENV=test` or `GSD_TEST_MODE=1`, all memory writes route to `project_id='__test__'` regardless of CWD
-  5. Running the test suite produces zero entries in gsd_memory where `project_id != '__test__'`
-**Plans**: 16-01 (5 tasks: exclude_source param, distill fix, embedding dedup, daemon response, tests) + 16-02 (5 tasks: daemon project_id, amauta.py project_id, CJS project_id, search exclusion, tests)
+  1. `_jaccard_similarity("a b c", "a b d")` returns a valid similarity score (not NaN/error) even when all words are <3 characters
+  2. Stopping the daemon with `SIGTERM` during an active retention sweep completes the current batch and exits cleanly within 5 seconds (no orphan threads)
+  3. Archiving a child task removes its ID from `parent.children` array -- `amauta show PARENT-ID` no longer lists the archived child
+  4. When `_auto_write_learning` attempts to promote a learning that already exists in SKB (by Jaccard >0.7), it skips the write and logs "SKB dedup hit"
+**Plans**: TBD
 
-### Phase 17: Task Manager Reliability
-**Goal**: Task operations are atomic, stale tasks self-heal, and file/PG stay in sync with full field fidelity
-**Depends on**: Phase 15 (clean task data baseline)
-**Requirements**: TASK-01, TASK-02, TASK-03, TASK-04, TASK-05, TASK-06
+### Phase 22: Core System Tests
+**Goal**: Archive, reconcile, RLM, PG integration, distill, and auto-learn each have comprehensive test suites proving they work under normal and edge conditions
+**Depends on**: Phase 20, Phase 21 (tests validate the fixes)
+**Requirements**: TEST-01, TEST-02, TEST-03, TEST-04, TEST-05, TEST-06
 **Success Criteria** (what must be TRUE):
-  1. `amauta archive` moves done tasks older than 7 days to `.planning/tasks-archive.json` and `amauta list` no longer shows them
-  2. Two concurrent `amauta status TK-XXXX --status in-progress` calls on the same task never corrupt tasks.json (file lock serializes access)
-  3. A task left in-progress for >48h with no RPETD activity is automatically reverted to pending by the daemon watchdog
-  4. Dual-write retry queue entries are flushed every 60s by the daemon; `amauta reconcile` reports zero mismatches after flush
-  5. `amauta reconcile` diffs tasks.json vs PG and reports/fixes field-level mismatches including doc_refs, risks, validation_checklist, estimated_hours, due_date, sprint, children
-  6. All 7 previously-dropped fields survive a round-trip through dual-write (JSON -> PG -> JSON comparison matches)
-**Plans**: 17-01 (3 tasks: archive cmd + TOCTOU fix + tests) + 17-02 (3 tasks: stale watchdog + retry flush + tests) + 17-03 (4 tasks: migration + upsert fix + reconcile cmd + tests)
+  1. Archive test suite covers: dry-run (no mutations), age threshold filtering, daemon mirror sync, parent-child genealogy update, `show --archive` retrieval
+  2. Reconcile test suite covers: dry-run reporting, `--fix` sync, tasks-archive.json cross-reference, field-by-field comparison for all 37+ tracked fields
+  3. RLM test suite covers: HTTP transport round-trip, BM25 scoring with camelCase terms, Layer 1 + Layer 2 enrichment, dedup window skip
+  4. PG integration tests cover: semantic search with cosine threshold, memory store + embedding dedup (>0.95), retention sweep by source age, task_upsert with all 39 fields
+  5. Distill test suite covers: exclusion of already-distilled entries, correct removedCount, interaction with embedding dedup, idempotent re-runs
+  6. Auto-learn test suite covers: D-phase LEARNING extraction, full content storage (no truncation), SKB promotion dedup, web_search result capture
+**Plans**: TBD
 
-### Phase 18: Memory Optimization
-**Goal**: Semantic search returns relevant project memories, not task noise -- with automatic cleanup of low-value entries over time
-**Depends on**: Phase 16 (project isolation and dedup must be in place before retention policies run)
-**Requirements**: MEM-01, MEM-02, MEM-03
+### Phase 23: Integration + E2E Tests
+**Goal**: The complete system works end-to-end -- task manager under concurrency, daemon with all commands, graceful degradation, and a full lifecycle smoke test against live infrastructure
+**Depends on**: Phase 22 (unit/component tests must pass before integration)
+**Requirements**: TEST-07, TEST-08, TEST-09, TEST-10
 **Success Criteria** (what must be TRUE):
-  1. Default `amauta search "topic"` results contain zero entries where `source IN ('task_event', 'rpetd_phase')` unless explicitly requested with `--include-noise`
-  2. Entries with `source='task_event'` older than 30 days are archived (moved to cold storage or marked inactive); `source='rpetd_phase'` entries archived after 90 days
-  3. Memory search scoring subtracts 0.5 points per 30 days since last access, making recent memories rank higher than stale ones with similar content
-**Plans**: 18-01 (5 tasks: PG source filter, SQLite source filter, daemon+CLI wiring, recency decay, tests) + 18-02 (4 tasks: PG retention, SQLite retention, daemon thread, tests)
-
-### Phase 19: Token Efficiency
-**Goal**: RPETD pipeline produces the same quality output with measurably fewer tokens per task cycle
-**Depends on**: Phase 16 (project isolation prevents test noise from inflating context)
-**Requirements**: TOKEN-01, TOKEN-02, TOKEN-03
-**Success Criteria** (what must be TRUE):
-  1. When Layer 1 RLM/memory enrichment ran within the last 5 minutes, Layer 2 R-phase skips redundant queries and logs "Layer 1 cache hit -- skipping enrichment"
-  2. Perplexity research chain output is capped at 1,500 chars with preamble/boilerplate stripped before injection into RPETD context
-  3. RPETD phase writes exceeding 2,000 chars are truncated with a warning; `amauta rpetd` documentation shows optimal size guidance
-**Plans**: 19-01 (4 tasks: enrichment dedup timestamp check, Perplexity truncation + preamble strip, RPETD soft cap warning, tests)
+  1. Task manager tests verify: concurrent TOCTOU safety (parallel status updates), stale watchdog (>48h auto-revert), retry flush (queue drains on schedule), archive+reconcile flow (end-to-end)
+  2. Daemon integration tests verify: mirror sync for all mutating commands, `_resolve_project_id` from CWD, PG_SYNC_WARN propagation to agents, health endpoint returns all system stats
+  3. Fallback path tests verify: semantic search degrades to LIKE when pgvector unavailable, `_mem_log_event` falls back to file write on daemon timeout, RLM falls back to no-context on service error, research chain respects timeout without hanging
+  4. E2E smoke test completes a full task lifecycle (create -> claim -> R -> P -> E -> T -> D -> validate -> archive) against a live daemon with PG, and every intermediate state is verifiable
+**Plans**: TBD
 
 ## Progress
 
-**Execution Order:** 15 -> 16 -> 17 -> 18 -> 19
+**Execution Order:** 20 + 21 (parallel) -> 22 -> 23
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 15. Data Purge | 1/1 | Complete    | 2026-03-24 |
-| 16. Data Integrity | 2/2 | Complete    | 2026-03-25 |
-| 17. Task Manager Reliability | 3/3 | Complete    | 2026-03-25 |
-| 18. Memory Optimization | 2/2 | Complete    | 2026-03-25 |
-| 19. Token Efficiency | 1/1 | Complete    | 2026-03-25 |
-| 19.1. Gap Closure | 1/1 | Complete    | 2026-03-25 |
+| 20. Critical Bug Fixes | 2/2 | Complete | 2026-03-25 |
+| 21. Minor Bug Fixes | 0/? | Not started | - |
+| 22. Core System Tests | 0/? | Not started | - |
+| 23. Integration + E2E Tests | 0/? | Not started | - |
 
 ---
-*Milestone v2.3 started: 2026-03-24*
-*Milestone v2.3 completed: 2026-03-25*
+*Milestone v2.4 started: 2026-03-25*

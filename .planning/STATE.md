@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.3
-milestone_name: milestone
-status: completed
-stopped_at: Completed 19.1-01-PLAN.md (gap closure). Phase 19.1 COMPLETE. v2.3 gap closure finished.
-last_updated: "2026-03-25T04:34:57Z"
-last_activity: 2026-03-25 -- Plan 19.1-01 executed (5 tasks, 19 tests, 5 min)
+milestone: v2.4
+milestone_name: Bulletproof
+status: in_progress
+stopped_at: Phase 20 complete (2/2 plans, 6 requirements). Ready for Phase 21 or 22.
+last_updated: "2026-03-25T05:16:04.000Z"
+last_activity: 2026-03-25 -- Phase 20 complete (6 bug fixes shipped)
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 9
-  completed_plans: 9
-  percent: 100
+  total_phases: 4
+  completed_phases: 1
+  total_plans: 2
+  completed_plans: 2
+  percent: 25
 ---
 
 # GSD-Amauta -- Project State
@@ -20,46 +20,29 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-03-24)
 
-**Core value:** Every built system actually fires during task execution -- no dead code, no bypasses, agents are smarter with fewer tokens.
-**Current focus:** Milestone v2.3 -- Clean Foundations. COMPLETE.
+**Core value:** Every system works correctly under all conditions -- no silent failures, no data corruption, no untested paths.
+**Current focus:** Milestone v2.4 -- Bulletproof. 10 bug fixes + 10 test suites.
 
 ## Current Position
 
-Phase: 19.1 of 19.1 (Gap Closure) -- COMPLETE
-Plan: 1/1 done (19.1-01 v2.3 Tech Debt Gap Closure)
-Status: All 5 phases + gap closure complete. v2.3 milestone finished with 0 tech debt.
-Last activity: 2026-03-25 -- Plan 19.1-01 executed (5 tasks, 19 tests, 5 min)
+Phase: 20 of 23 (Critical Bug Fixes) -- COMPLETE
+Plan: 2/2 (20-01 + 20-02 both shipped)
+Status: Phase 20 complete. Ready for Phase 21 (minor bug fixes) or Phase 22 (core test suites).
+Last activity: 2026-03-25 -- Phase 20 complete (6 bug fixes shipped)
 
-Progress: [██████████] 100%
+Progress: [##........] 25%
 
 ## Performance Metrics
 
-**Velocity (from v2.2):**
-- Total plans completed: 9 (v2.2) + 9 (v2.3) = 18
-- Average duration: ~12 min per plan
-- Total execution time: ~6 hours
+**Velocity (from v2.3):**
+- Total plans completed: 10 (v2.3)
+- Average duration: ~7 min per plan
+- Total execution time: ~1.5 hours
 
-**By Phase (v2.2):**
+**By Phase:**
+- Phase 20: 2 plans, ~3-5 min each (parallel execution)
 
-| Phase | Plans | Total | Avg/Plan |
-|-------|-------|-------|----------|
-| 11 -- Context Engine | 2 | ~50 min | ~25 min |
-| 12 -- Semantic Memory | 3 | ~75 min | ~25 min |
-| 13 -- Validation | 2 | ~50 min | ~25 min |
-| 14 -- Integration | 2 | ~50 min | ~25 min |
-
-**By Phase (v2.3):**
-
-| Phase | Plans | Total | Avg/Plan |
-|-------|-------|-------|----------|
-| 15 -- Data Purge | 1 | ~6 min | ~6 min |
-| 16 -- Data Integrity | 2/2 | ~21 min | ~10 min |
-| 17 -- Task Manager Reliability | 3/3 | ~22 min | ~7 min |
-| 18 -- Memory Optimization | 2/2 | ~29 min | ~14 min |
-| 19 -- Token Efficiency | 1/1 | ~5 min | ~5 min |
-| 19.1 -- Gap Closure | 1/1 | ~5 min | ~5 min |
-
-**Recent Trend:** Accelerating (~7 min/plan in v2.3 vs ~25 min in v2.2)
+**Recent Trend:** v2.3 averaged ~7 min/plan. v2.4 fix phases running faster (~3-5 min) due to surgical scope.
 
 ## Accumulated Context
 
@@ -68,13 +51,9 @@ Progress: [██████████] 100%
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
-- v2.3 scope: Surgical fixes to task manager, memory quality, token efficiency (not rewrites)
-- Phase order: Data purge first (15-16) so subsequent phases work with clean data
-- All memory writes must route through daemon HTTP (established in v2.2, continues)
-- Phase 19-01: Preamble regex bounded to {0,80} chars to prevent greedy overconsumption
-- Phase 19-01: RPETD cap is soft (warning only, no truncation) to avoid blocking agents
-- Phase 19-01: Enrichment dedup uses _last_enrichment_ts scanning notes in reverse
-- Phase 19.1-01: stripPreamble "to answer" pattern uses [^.:,] exclusion set (not [^.:]) to prevent comma-skipping
+- v2.4 scope: Bug fixes first (20-21 parallel), then test suites (22-23 sequential)
+- Phases 20+21 are independent -- can run in either order or parallel
+- Phases 22-23 depend on 20+21 (tests validate the fixes)
 
 ### Pending Todos
 
@@ -82,14 +61,14 @@ None.
 
 ### Blockers/Concerns
 
-None -- all phases complete.
+None.
 
 ## Session Continuity
 
-Last session: 2026-03-25T04:34:57Z
-Stopped at: Completed 19.1-01-PLAN.md (gap closure). Phase 19.1 COMPLETE. v2.3 gap closure finished.
+Last session: 2026-03-25
+Stopped at: Phase 20 complete (2/2 plans, 6 requirements). Ready for Phase 21 or 22.
 Resume file: None
 
-## Previous Milestone: v2.2 -- Wiring & Hardening (COMPLETE)
+## Previous Milestone: v2.3 -- Clean Foundations (COMPLETE)
 
-All 4 phases done (11-14), 9 plans, 22 requirements satisfied, 112 new tests. Shipped 2026-03-24.
+6 phases (15-19.1), 10 plans, 18 requirements satisfied, 46 commits. Shipped 2026-03-25.

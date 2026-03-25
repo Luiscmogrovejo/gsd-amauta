@@ -1,88 +1,74 @@
-# Requirements: GSD-Amauta v2.3 — Clean Foundations
+# Requirements: GSD-Amauta v2.4 — Bulletproof
 
-**Defined:** 2026-03-24
-**Core Value:** Every built system actually fires during task execution — now with clean data, reliable task management, and efficient token usage.
+**Defined:** 2026-03-25
+**Core Value:** Every system works correctly under all conditions — no silent failures, no data corruption, no untested paths.
 
-## v2.3 Requirements
+## v2.4 Requirements
 
-### Task Manager Reliability (TASK)
+### Bug Fixes (FIX)
 
-- [ ] **TASK-01**: `amauta archive` moves done tasks >7 days to archive file, reducing working set by 52%
-- [ ] **TASK-02**: TOCTOU race fixed — all cmd_* functions acquire file lock before load(), not just before save()
-- [x] **TASK-03**: Stale task watchdog thread in daemon auto-reverts in-progress tasks >48h with no RPETD activity
-- [x] **TASK-04**: Dual-write retry queue flushed automatically every 60s by daemon watchdog thread
-- [ ] **TASK-05**: `amauta reconcile` command diffs tasks.json vs PG and reports/fixes mismatches
-- [ ] **TASK-06**: Dual-write mirrors all 7 currently-dropped fields (doc_refs, risks, validation_checklist, estimated_hours, due_date, sprint, children)
+- [x] **FIX-01**: Archive and reconcile commands added to daemon `_TASK_MUTATING_COMMANDS` — archived tasks synced to PG
+- [x] **FIX-02**: HTTP timeout race in `_mem_log_event` fixed — no double-write on slow daemon response
+- [x] **FIX-03**: Distill `removedCount` includes the "keep" entry (off-by-1 fix)
+- [x] **FIX-04**: `_research_chain_query` logs parse errors instead of silently returning []
+- [x] **FIX-05**: `cmd_reconcile` loads tasks-archive.json and cross-references against PG
+- [x] **FIX-06**: Enrichment `_mem_semantic_search` calls pass project_id (prevent cross-project pollution)
+- [ ] **FIX-07**: `_jaccard_similarity` handles texts with only <3-char words
+- [ ] **FIX-08**: Retention thread uses shutdown event for graceful stop
+- [ ] **FIX-09**: `cmd_archive` updates parent.children arrays to remove archived child IDs
+- [ ] **FIX-10**: `_auto_write_learning` dedup against SKB before promoting
 
-### Data Quality (DATA)
+### Test Coverage (TEST)
 
-- [x] **DATA-01**: Purge ~1,800 test/synthetic entries from gsd_memory (TK-0001, E2E-LIFECYCLE patterns) -- DONE: 1,918 purged, 218 remain
-- [x] **DATA-02**: Purge ~91 test artifact entries from agent_shared_knowledge (SKB) -- DONE: 111 purged, 5 remain
-- [ ] **DATA-03**: Fix distill function — exclude `source='distilled'` entries from distill input to prevent re-merging
-- [ ] **DATA-04**: Pre-store embedding dedup — cosine similarity >0.95 against existing entries = skip insert
-- [x] **DATA-05**: Auto-set `project_id` from CWD basename on every memory write for project isolation
-- [x] **DATA-06**: Route test/E2E memory writes to `project_id='__test__'` when `NODE_ENV=test` or `GSD_TEST_MODE=1`
-
-### Memory Optimization (MEM)
-
-- [ ] **MEM-01**: Default semantic search excludes `source IN ('task_event', 'rpetd_phase')` noise sources
-- [x] **MEM-02**: Tiered retention policy — archive task_event after 30 days, rpetd_phase after 90 days
-- [ ] **MEM-03**: Recency decay in scoring — subtract 0.5 points per 30 days since last access/creation
-
-### Token Efficiency (TOKEN)
-
-- [x] **TOKEN-01**: Skip Layer 2 R-phase RLM/memory enrichment when Layer 1 ran within 5 minutes (dedup)
-- [x] **TOKEN-02**: Research chain truncates Perplexity output to 1,500 chars with preamble stripping
-- [x] **TOKEN-03**: RPETD phase content capped at 2,000 chars per phase write (guidance + soft enforcement)
-
-## Future Requirements (v2.4+)
-
-- **SETUP-01**: One-command setup: `npx gsd-amauta init` configures everything
-- **DOCKER-01**: Docker auto-start: detect Docker, start PG container if no local PG
-- **HYBRID-01**: Voyage AI re-ranking for hybrid RLM scoring (semantic + TF-IDF)
-- **LAYER3-01**: Layer 3 agent-initiated context (rlm_client.py)
-- **BRIDGE-01**: Claude Code TaskCreate/TaskUpdate bridge
-- **SUMM-01**: LLM-based memory summarization (replace concatenation merging)
-- **SYN-01**: RLM synonym expansion for semantic code queries
+- [ ] **TEST-01**: Archive command — dry-run, age threshold, mirror sync, genealogy, show --archive
+- [ ] **TEST-02**: Reconcile command — dry-run, --fix sync, archive cross-ref, field comparison
+- [ ] **TEST-03**: RLM wiring — HTTP transport, BM25 scoring, Layer 1+2 enrichment, dedup window
+- [ ] **TEST-04**: PostgreSQL integration — semantic search, memory store+dedup, retention, task_upsert 39 fields
+- [ ] **TEST-05**: Distill — exclude distilled, correct count, dedup interaction, idempotency
+- [ ] **TEST-06**: Auto-learn — D-phase extraction, full content, SKB promotion dedup, web_search capture
+- [ ] **TEST-07**: Task manager — TOCTOU concurrent, stale watchdog, retry flush, archive+reconcile flow
+- [ ] **TEST-08**: Daemon integration — mirror sync all commands, _resolve_project_id, PG_SYNC_WARN, health
+- [ ] **TEST-09**: Fallback paths — semantic search fallback, _mem_log_event fallback, RLM fallback, research timeout
+- [ ] **TEST-10**: E2E smoke test — full lifecycle (create→claim→RPETD→validate→archive) against live daemon
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| Web UI dashboard | CLI-first tool, no web interface |
-| Multi-user collaboration | Single developer tool |
-| Cloud-hosted memory | Local-first philosophy |
-| LLM-based memory summarization | Too expensive for single-user; concatenation with dedup is sufficient for v2.3 |
-| Task manager rewrite | Surgical fixes, not rewrite; amauta.py stays monolithic for now |
+| One-command setup | Feature, not fix — v2.5 |
+| Docker auto-start | Feature — v2.5 |
+| Voyage AI re-ranking | Feature — v2.5 |
+| Layer 3 context | Feature — v2.5 |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DATA-01 | Phase 15 | Complete (2026-03-24) |
-| DATA-02 | Phase 15 | Complete (2026-03-24) |
-| DATA-03 | Phase 16 | Pending |
-| DATA-04 | Phase 16 | Pending |
-| DATA-05 | Phase 16 | Complete |
-| DATA-06 | Phase 16 | Complete |
-| TASK-01 | Phase 17 | Pending |
-| TASK-02 | Phase 17 | Pending |
-| TASK-03 | Phase 17 | Complete |
-| TASK-04 | Phase 17 | Complete |
-| TASK-05 | Phase 17 | Pending |
-| TASK-06 | Phase 17 | Pending |
-| MEM-01 | Phase 18 | Pending |
-| MEM-02 | Phase 18 | Complete |
-| MEM-03 | Phase 18 | Pending |
-| TOKEN-01 | Phase 19 | Complete (2026-03-25) |
-| TOKEN-02 | Phase 19 | Complete (2026-03-25) |
-| TOKEN-03 | Phase 19 | Complete (2026-03-25) |
+| FIX-01 | Phase 20 | Pending |
+| FIX-02 | Phase 20 | Pending |
+| FIX-03 | Phase 20 | Pending |
+| FIX-04 | Phase 20 | Complete |
+| FIX-05 | Phase 20 | Complete |
+| FIX-06 | Phase 20 | Complete |
+| FIX-07 | Phase 21 | Pending |
+| FIX-08 | Phase 21 | Pending |
+| FIX-09 | Phase 21 | Pending |
+| FIX-10 | Phase 21 | Pending |
+| TEST-01 | Phase 22 | Pending |
+| TEST-02 | Phase 22 | Pending |
+| TEST-03 | Phase 22 | Pending |
+| TEST-04 | Phase 22 | Pending |
+| TEST-05 | Phase 22 | Pending |
+| TEST-06 | Phase 22 | Pending |
+| TEST-07 | Phase 23 | Pending |
+| TEST-08 | Phase 23 | Pending |
+| TEST-09 | Phase 23 | Pending |
+| TEST-10 | Phase 23 | Pending |
 
 **Coverage:**
-- v2.3 requirements: 18 total
-- Mapped to phases: 18/18
+- v2.4 requirements: 20 total
+- Mapped to phases: 20/20
 - Unmapped: 0
 
 ---
-*Requirements defined: 2026-03-24*
-*Last updated: 2026-03-24 after deep research*
+*Requirements defined: 2026-03-25*
