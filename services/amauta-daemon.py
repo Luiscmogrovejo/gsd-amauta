@@ -1065,6 +1065,15 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                         metadata=body.get("metadata"),
                         project_id=body.get("project_id"),
                     )
+                    # DATA-04: Handle dedup response from pre-store similarity check
+                    if isinstance(mem_id, dict) and mem_id.get("dedup_skipped"):
+                        self._send_json({
+                            "stored": False,
+                            "dedup_skipped": True,
+                            "existing_id": mem_id["existing_id"],
+                            "similarity": mem_id["similarity"],
+                        })
+                        return
                 else:
                     mem_id = store.memory_store(
                         text=text,
