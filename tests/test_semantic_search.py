@@ -151,7 +151,7 @@ class TestMemLogEventDaemonRoute(unittest.TestCase):
         # Direct SQL INSERT should have been called
         mock_cursor.execute.assert_called()
         sql_call = str(mock_cursor.execute.call_args)
-        self.assertIn("INSERT INTO amauta_memory", sql_call)
+        self.assertIn("INSERT INTO gsd_memory", sql_call)
 
 
 class TestAutoWriteLearningNoTruncation(unittest.TestCase):
