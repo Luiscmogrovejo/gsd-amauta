@@ -9,7 +9,7 @@
 - [x] **Phase 20: Critical Bug Fixes** - Fix 6 high-impact bugs: daemon mirror, HTTP race, distill count, research parse, reconcile archive, enrichment isolation (completed 2026-03-25)
 - [x] **Phase 21: Minor Bug Fixes** - Fix 4 lower-severity bugs: Jaccard edge case, retention shutdown, archive genealogy, auto-learn dedup (completed 2026-03-25)
 - [x] **Phase 22: Core System Tests** - Comprehensive test coverage for archive, reconcile, RLM, PG integration, distill, auto-learn (completed 2026-03-25)
-- [ ] **Phase 23: Integration + E2E Tests** - Task manager stress tests, daemon integration, fallback paths, full lifecycle smoke test
+- [x] **Phase 23: Integration + E2E Tests** - Task manager stress tests, daemon integration, fallback paths, full lifecycle smoke test (completed 2026-03-25)
 
 ## Phase Details
 
@@ -59,7 +59,7 @@
   2. Daemon integration tests verify: mirror sync for all mutating commands, `_resolve_project_id` from CWD, PG_SYNC_WARN propagation to agents, health endpoint returns all system stats
   3. Fallback path tests verify: semantic search degrades to LIKE when pgvector unavailable, `_mem_log_event` falls back to file write on daemon timeout, RLM falls back to no-context on service error, research chain respects timeout without hanging
   4. E2E smoke test completes a full task lifecycle (create -> claim -> R -> P -> E -> T -> D -> validate -> archive) against a live daemon with PG, and every intermediate state is verifiable
-**Plans**: TBD
+**Plans**: 23-01 (task manager + daemon integration + fallback paths + E2E smoke)
 
 ## Progress
 
@@ -70,7 +70,8 @@
 | 20. Critical Bug Fixes | 2/2 | Complete    | 2026-03-25 |
 | 21. Minor Bug Fixes | 1/1 | Complete    | 2026-03-25 |
 | 22. Core System Tests | 2/2 | Complete    | 2026-03-25 |
-| 23. Integration + E2E Tests | 0/? | Not started | - |
+| 23. Integration + E2E Tests | 1/1 | Complete    | 2026-03-25 |
 
 ---
 *Milestone v2.4 started: 2026-03-25*
+*Milestone v2.4 completed: 2026-03-25*

@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.4
 milestone_name: milestone
-status: in_progress
-stopped_at: Phase 22 complete (2/2 plans). Ready for Phase 23 planning.
-last_updated: "2026-03-25T15:35:47.000Z"
-last_activity: 2026-03-25 -- Plan 22-02 executed (PG integration + distill + auto-learn test suites)
+status: completed
+stopped_at: "v2.4 COMPLETE. 4 phases, 6 plans, 20 requirements, 408 tests."
+last_updated: "2026-03-25T16:20:00.000Z"
+last_activity: 2026-03-25 -- Plan 23-01 executed (49 integration/E2E tests, 408 total, 0 failures)
 progress:
   total_phases: 4
-  completed_phases: 3
-  total_plans: 5
-  completed_plans: 5
-  percent: 75
+  completed_phases: 4
+  total_plans: 6
+  completed_plans: 6
+  percent: 100
 ---
 
 # GSD-Amauta -- Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-24)
 
 **Core value:** Every system works correctly under all conditions -- no silent failures, no data corruption, no untested paths.
-**Current focus:** Milestone v2.4 -- Bulletproof. 10 bug fixes + 10 test suites.
+**Current focus:** Milestone v2.4 -- Bulletproof. COMPLETE.
 
 ## Current Position
 
-Phase: 22 of 23 (Core System Tests) -- COMPLETE
-Plan: 2/2 (22-01 complete, 22-02 complete)
-Status: Phase 22 complete. 68 tests (34 from 22-01 + 34 from 22-02) across 6 files. All pass, 0 regressions.
-Last activity: 2026-03-25 -- Plan 22-02 executed (PG integration + distill + auto-learn test suites)
+Phase: 23 of 23 (Integration + E2E Tests) -- COMPLETE
+Plan: 1/1 (23-01 complete)
+Status: v2.4 milestone COMPLETE. All 4 phases done, all 20 requirements satisfied. 408 Python tests, 0 failures.
+Last activity: 2026-03-25 -- Plan 23-01 executed (task manager + daemon integration + fallback paths + E2E lifecycle)
 
-Progress: [#######...] 75%
+Progress: [##########] 100%
 
 ## Performance Metrics
 
@@ -39,12 +39,13 @@ Progress: [#######...] 75%
 - Average duration: ~7 min per plan
 - Total execution time: ~1.5 hours
 
-**By Phase:**
+**v2.4 By Phase:**
 - Phase 20: 2 plans, ~3-5 min each (parallel execution)
 - Phase 21: 1 plan, ~8 min (sequential, 4 fixes + edge-case refinement)
 - Phase 22: 2/2 plans, ~9 min avg (22-01: 12 min, 22-02: 6 min)
+- Phase 23: 1/1 plan, ~12 min (49 tests across 4 suites)
 
-**Recent Trend:** v2.3 averaged ~7 min/plan. v2.4 fix phases ~3-8 min (surgical scope), test plans ~6-12 min (broader scope).
+**v2.4 Summary:** 6 plans, ~45 min total, 10 bug fixes + 10 test suites (408 tests)
 
 ## Accumulated Context
 
@@ -62,6 +63,10 @@ Recent decisions affecting current work:
 - All 5 RPETD phases call _rlm_query; only R-phase calls _mem_semantic_search for related experiences
 - PGStore._get_conn mock: use @contextmanager wrapper, not MagicMock return_value (generator yield pattern)
 - Retention rowcount accessed once per RETENTION_DAYS source (after INSERT, not after DELETE)
+- Daemon tests: read source as string + regex extraction (avoids module import side effects)
+- E2E tests: _e2e_tempdir() context manager for isolated real file I/O
+- PGStore retry queue uses AMAUTA_DATA_DIR env var for path (not instance attribute)
+- _mem_log_event error recovery: mock backends not function itself (function designed to never raise)
 
 ### Pending Todos
 
@@ -74,7 +79,7 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-25
-Stopped at: Phase 22 complete (2/2 plans). Ready for Phase 23 planning.
+Stopped at: v2.4 COMPLETE. 4 phases, 6 plans, 20 requirements, 408 tests.
 Resume file: None
 
 ## Previous Milestone: v2.3 -- Clean Foundations (COMPLETE)
