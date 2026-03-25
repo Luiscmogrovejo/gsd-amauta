@@ -7,7 +7,7 @@
 ## Phases
 
 - [x] **Phase 20: Critical Bug Fixes** - Fix 6 high-impact bugs: daemon mirror, HTTP race, distill count, research parse, reconcile archive, enrichment isolation (completed 2026-03-25)
-- [ ] **Phase 21: Minor Bug Fixes** - Fix 4 lower-severity bugs: Jaccard edge case, retention shutdown, archive genealogy, auto-learn dedup
+- [x] **Phase 21: Minor Bug Fixes** - Fix 4 lower-severity bugs: Jaccard edge case, retention shutdown, archive genealogy, auto-learn dedup (completed 2026-03-25)
 - [ ] **Phase 22: Core System Tests** - Comprehensive test coverage for archive, reconcile, RLM, PG integration, distill, auto-learn
 - [ ] **Phase 23: Integration + E2E Tests** - Task manager stress tests, daemon integration, fallback paths, full lifecycle smoke test
 
@@ -48,7 +48,7 @@
   4. PG integration tests cover: semantic search with cosine threshold, memory store + embedding dedup (>0.95), retention sweep by source age, task_upsert with all 39 fields
   5. Distill test suite covers: exclusion of already-distilled entries, correct removedCount, interaction with embedding dedup, idempotent re-runs
   6. Auto-learn test suite covers: D-phase LEARNING extraction, full content storage (no truncation), SKB promotion dedup, web_search result capture
-**Plans**: TBD
+**Plans**: 22-01 (archive + reconcile + RLM tests), 22-02 (PG integration + distill + auto-learn tests)
 
 ### Phase 23: Integration + E2E Tests
 **Goal**: The complete system works end-to-end -- task manager under concurrency, daemon with all commands, graceful degradation, and a full lifecycle smoke test against live infrastructure
@@ -69,7 +69,7 @@
 |-------|----------------|--------|-----------|
 | 20. Critical Bug Fixes | 2/2 | Complete    | 2026-03-25 |
 | 21. Minor Bug Fixes | 1/1 | Complete    | 2026-03-25 |
-| 22. Core System Tests | 0/? | Not started | - |
+| 22. Core System Tests | 1/2 | In progress | - |
 | 23. Integration + E2E Tests | 0/? | Not started | - |
 
 ---

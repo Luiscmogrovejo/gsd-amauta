@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.4
 milestone_name: milestone
-status: in-progress
-stopped_at: Phase 21 complete (1/1 plans, 4 requirements). Ready for Phase 22 (core test suites).
-last_updated: "2026-03-25"
-last_activity: 2026-03-25 -- Phase 21 complete (4 minor bug fixes shipped)
+status: in_progress
+stopped_at: Plan 22-01 complete (34 tests). 22-02 ready for execution.
+last_updated: "2026-03-25T14:00:00.000Z"
+last_activity: 2026-03-25 -- Plan 22-01 complete (test_archive 11 + test_reconcile 11 + test_rlm_wiring 12 = 34 tests)
 progress:
   total_phases: 4
   completed_phases: 2
-  total_plans: 3
-  completed_plans: 3
-  percent: 50
+  total_plans: 5
+  completed_plans: 4
+  percent: 75
 ---
 
 # GSD-Amauta -- Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-03-24)
 
 ## Current Position
 
-Phase: 21 of 23 (Minor Bug Fixes) -- COMPLETE
-Plan: 1/1 (21-01 shipped)
-Status: Phase 21 complete. All 10 bug fixes shipped (Phase 20 + 21). Ready for Phase 22 (core test suites).
-Last activity: 2026-03-25 -- Phase 21 complete (4 minor bug fixes shipped)
+Phase: 22 of 23 (Core System Tests) -- IN PROGRESS
+Plan: 1/2 (22-01 complete, 22-02 planned)
+Status: Plan 22-01 complete. 34 tests (11+11+12) across 3 files. 346 total tests, 0 regressions.
+Last activity: 2026-03-25 -- Plan 22-01 executed (archive + reconcile + RLM wiring test suites)
 
-Progress: [#####.....] 50%
+Progress: [#######...] 75%
 
 ## Performance Metrics
 
@@ -42,8 +42,9 @@ Progress: [#####.....] 50%
 **By Phase:**
 - Phase 20: 2 plans, ~3-5 min each (parallel execution)
 - Phase 21: 1 plan, ~8 min (sequential, 4 fixes + edge-case refinement)
+- Phase 22: 1/2 plans, ~12 min (22-01: 34 tests in 3 files)
 
-**Recent Trend:** v2.3 averaged ~7 min/plan. v2.4 fix phases running faster (~3-8 min) due to surgical scope.
+**Recent Trend:** v2.3 averaged ~7 min/plan. v2.4 fix phases running faster (~3-8 min) due to surgical scope. Test plans ~12 min due to broader scope.
 
 ## Accumulated Context
 
@@ -57,6 +58,8 @@ Recent decisions affecting current work:
 - Phases 22-23 depend on 20+21 (tests validate the fixes)
 - _skb_promote returns True/False (backward-compatible -- all callers verified)
 - Trigram fallback requires min 3 chars per text for meaningful comparison
+- psycopg2.extras must be pre-imported before patching (submodule not auto-loaded)
+- All 5 RPETD phases call _rlm_query; only R-phase calls _mem_semantic_search for related experiences
 
 ### Pending Todos
 
@@ -69,8 +72,8 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-25
-Stopped at: Phase 21 complete (1/1 plans, 4 requirements). Ready for Phase 22 (core test suites).
-Resume file: None
+Stopped at: Plan 22-01 complete (34 tests, 3 files, 3 commits). Plan 22-02 ready for execution.
+Resume file: .planning/phases/22-core-system-tests/22-02-PLAN.md
 
 ## Previous Milestone: v2.3 -- Clean Foundations (COMPLETE)
 
