@@ -144,6 +144,17 @@ PRIORITIES= ["low", "medium", "high", "critical"]
 PHASES    = ["R", "P", "E", "T", "D"]
 PHASE_NAMES = {"R": "Research", "P": "Plan", "E": "Execute", "T": "Test", "D": "Document"}
 
+ENRICHMENT_DEDUP_WINDOW = 300  # seconds (5 min) -- skip Layer 2 R-phase if Layer 1 ran within this window
+
+RPETD_SOFT_CAP = 2000  # chars -- warn (don't block) when phase content exceeds this
+RPETD_PHASE_GUIDANCE = {
+    "R": 500,   # key findings only, not raw output
+    "P": 300,   # approach + key files
+    "E": 500,   # what changed, commit refs
+    "T": 300,   # pass/fail summary, NOT full output
+    "D": 400,   # delivery summary + LEARNING
+}
+
 PREFIX = {"epic": "EP", "story": "ST", "task": "TK", "bug": "BG"}
 
 PRIORITY_SCORE = {"low": 1, "medium": 2, "high": 3, "critical": 5}
@@ -1241,6 +1252,14 @@ def _append_note(item: dict, text: str, by: str = "system"):
     item.setdefault("notes", []).append({"ts": _now(), "by": by, "text": text})
 
 
+def _last_enrichment_ts(item: dict) -> str:
+    """Return ISO timestamp of most recent system-enrichment note, or empty string."""
+    for note in reversed(item.get("notes") or []):
+        if isinstance(note, dict) and note.get("by") == "system-enrichment":
+            return note.get("ts", "")
+    return ""
+
+
 def _normalize_tags(tags: list) -> list:
     out = []
     seen = set()
@@ -1905,6 +1924,23 @@ def _rpetd_phase_enrich(phase: str, item: dict, agent_content: str) -> str:
         _search_q = " ".join(_title_words[:4])
 
         if phase == "R":
+            # ── Dedup: skip if Layer 1 enrichment ran recently ──
+            enrichment_ts = _last_enrichment_ts(item)
+            if enrichment_ts:
+                try:
+                    enrich_dt = datetime.fromisoformat(enrichment_ts.replace("Z", "+00:00"))
+                    now_dt = datetime.now(timezone.utc)
+                    age_seconds = (now_dt - enrich_dt).total_seconds()
+                    if age_seconds < ENRICHMENT_DEDUP_WINDOW:
+                        supplement_parts.append(
+                            f"[Layer 1 cache hit -- skipping enrichment] "
+                            f"Claim-time context injected {int(age_seconds)}s ago "
+                            f"(within {ENRICHMENT_DEDUP_WINDOW}s window)"
+                        )
+                        return "\n\n".join(supplement_parts)
+                except Exception:
+                    pass  # Parse error -> proceed with normal enrichment
+
             # ── RLM code context (queries project CWD; uses KB doc if available) ──
             doc_path = _pick_domain_doc(title, desc)
             rlm_answer = _rlm_query(
