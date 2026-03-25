@@ -1,15 +1,17 @@
 ---
 gsd_state_version: 1.0
 milestone: v2.3
-milestone_name: Clean Foundations
-status: phase_complete
-last_updated: "2026-03-24T23:03:11.000Z"
+milestone_name: milestone
+status: ready-to-execute
+stopped_at: Phase 16 plan 16-01 complete, ready for 16-02
+last_updated: "2026-03-25T00:00:00.000Z"
+last_activity: 2026-03-25 -- Plan 16-01 complete (DATA-03, DATA-04), ready for 16-02
 progress:
   total_phases: 5
   completed_phases: 1
-  total_plans: 1
-  completed_plans: 1
-  percent: 20
+  total_plans: 3
+  completed_plans: 2
+  percent: 40
 ---
 
 # GSD-Amauta -- Project State
@@ -19,23 +21,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-24)
 
 **Core value:** Every built system actually fires during task execution -- no dead code, no bypasses, agents are smarter with fewer tokens.
-**Current focus:** Milestone v2.3 -- Clean Foundations. Phase 15 complete, ready for Phase 16.
+**Current focus:** Milestone v2.3 -- Clean Foundations. Phase 16 in progress (16-01 done, 16-02 next).
 
 ## Current Position
 
-Phase: 16 of 19 (Data Integrity) -- next phase of v2.3
-Plan: Phase 16 not yet planned
-Status: Phase 15 complete, ready to plan Phase 16
-Last activity: 2026-03-24 -- Phase 15-01 executed (DATA-01, DATA-02 satisfied)
+Phase: 16 of 19 (Data Integrity) -- in progress
+Plan: 16-01 complete, 16-02 next (project_id + test isolation, 5 tasks)
+Status: Plan 16-01 shipped (distill fix + dedup), ready for 16-02
+Last activity: 2026-03-25 -- Plan 16-01 complete (5 tasks, 5 commits, 9 new tests)
 
-Progress: [##........] 20%
+Progress: [####......] 40%
 
 ## Performance Metrics
 
 **Velocity (from v2.2):**
-- Total plans completed: 9 (v2.2)
-- Average duration: ~25 min per plan
-- Total execution time: ~4 hours (single day)
+- Total plans completed: 9 (v2.2) + 2 (v2.3) = 11
+- Average duration: ~20 min per plan (improving)
+- Total execution time: ~4.4 hours
 
 **By Phase (v2.2):**
 
@@ -46,7 +48,14 @@ Progress: [##........] 20%
 | 13 -- Validation | 2 | ~50 min | ~25 min |
 | 14 -- Integration | 2 | ~50 min | ~25 min |
 
-**Recent Trend:** Stable (~25 min/plan, v2.3 plan 15-01 completed in 6 min)
+**By Phase (v2.3):**
+
+| Phase | Plans | Total | Avg/Plan |
+|-------|-------|-------|----------|
+| 15 -- Data Purge | 1 | ~6 min | ~6 min |
+| 16 -- Data Integrity | 1/2 | ~15 min | ~15 min |
+
+**Recent Trend:** Accelerating (~15 min/plan in v2.3 vs ~25 min in v2.2)
 
 ## Accumulated Context
 
@@ -60,6 +69,9 @@ Recent decisions affecting current work:
 - All memory writes must route through daemon HTTP (established in v2.2, continues)
 - Phase 15: Extended purge patterns from plan's 14 to 26 patterns after SQL inspection revealed hidden test artifacts (TK-LEARN1, TK-ASSIGN1, etc.)
 - Phase 15: PG is on port 5432 (local user auth), not 5433 (Docker) as plan assumed
+- Phase 16-01: Dedup threshold 0.95 (configurable via GSD_DEDUP_THRESHOLD) -- conservative to avoid false positives
+- Phase 16-01: exclude_source at API layer (not hardcoded in distill) -- reusable for other callers
+- Phase 16-01: memory_store_with_embedding return type changed to int|dict (dedup dict on skip)
 
 ### Pending Todos
 
@@ -68,14 +80,14 @@ None yet.
 ### Blockers/Concerns
 
 - ~~Deep audit found 87 orphaned tasks and ~1,800 test entries -- Phase 15 must handle this carefully~~ RESOLVED: 1,918 memory + 111 SKB test entries purged
-- Distillation re-merging bug is actively degrading memory quality -- Phase 16 is urgent
+- ~~Distillation re-merging bug is actively degrading memory quality -- Phase 16 is urgent~~ RESOLVED: cmdDistill now excludes source='distilled' from input (Plan 16-01)
 - 7 fields dropped during dual-write -- silent data loss accumulating since v2.0
 
 ## Session Continuity
 
-Last session: 2026-03-24 23:03
-Stopped at: Completed 15-01-PLAN.md (Phase 15 complete)
-Resume file: None
+Last session: 2026-03-25 00:00
+Stopped at: Plan 16-01 complete, ready for 16-02
+Resume file: .planning/phases/16-data-integrity/16-02-PLAN.md
 
 ## Previous Milestone: v2.2 -- Wiring & Hardening (COMPLETE)
 

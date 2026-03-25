@@ -6,7 +6,7 @@
 
 ## Phases
 
-- [ ] **Phase 15: Data Purge** - Delete ~1,900 synthetic/test entries from gsd_memory and SKB
+- [x] **Phase 15: Data Purge** - Delete ~1,900 synthetic/test entries from gsd_memory and SKB (completed 2026-03-24)
 - [ ] **Phase 16: Data Integrity** - Fix distillation bug, embedding dedup, project isolation for writes
 - [ ] **Phase 17: Task Manager Reliability** - Archival, file locking, stale watchdog, dual-write reconciliation
 - [ ] **Phase 18: Memory Optimization** - Source filtering, tiered retention, recency decay scoring
@@ -35,7 +35,7 @@
   3. Every memory write automatically includes `project_id` derived from the current working directory basename
   4. When `NODE_ENV=test` or `GSD_TEST_MODE=1`, all memory writes route to `project_id='__test__'` regardless of CWD
   5. Running the test suite produces zero entries in gsd_memory where `project_id != '__test__'`
-**Plans**: TBD
+**Plans**: 16-01 (5 tasks: exclude_source param, distill fix, embedding dedup, daemon response, tests) + 16-02 (5 tasks: daemon project_id, amauta.py project_id, CJS project_id, search exclusion, tests)
 
 ### Phase 17: Task Manager Reliability
 **Goal**: Task operations are atomic, stale tasks self-heal, and file/PG stay in sync with full field fidelity
@@ -76,8 +76,8 @@
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 15. Data Purge | 1/1 | Complete | 2026-03-24 |
-| 16. Data Integrity | 0/TBD | Not started | - |
+| 15. Data Purge | 1/1 | Complete    | 2026-03-24 |
+| 16. Data Integrity | 1/2 | In Progress | 16-01: 2026-03-25 |
 | 17. Task Manager Reliability | 0/TBD | Not started | - |
 | 18. Memory Optimization | 0/TBD | Not started | - |
 | 19. Token Efficiency | 0/TBD | Not started | - |
