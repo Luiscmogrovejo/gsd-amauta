@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
 milestone: v2.4
-milestone_name: Bulletproof
-status: in_progress
-stopped_at: Phase 20 complete (2/2 plans, 6 requirements). Ready for Phase 21 or 22.
-last_updated: "2026-03-25T05:16:04.000Z"
-last_activity: 2026-03-25 -- Phase 20 complete (6 bug fixes shipped)
+milestone_name: milestone
+status: in-progress
+stopped_at: Phase 21 complete (1/1 plans, 4 requirements). Ready for Phase 22 (core test suites).
+last_updated: "2026-03-25"
+last_activity: 2026-03-25 -- Phase 21 complete (4 minor bug fixes shipped)
 progress:
   total_phases: 4
-  completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
-  percent: 25
+  completed_phases: 2
+  total_plans: 3
+  completed_plans: 3
+  percent: 50
 ---
 
 # GSD-Amauta -- Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-03-24)
 
 ## Current Position
 
-Phase: 20 of 23 (Critical Bug Fixes) -- COMPLETE
-Plan: 2/2 (20-01 + 20-02 both shipped)
-Status: Phase 20 complete. Ready for Phase 21 (minor bug fixes) or Phase 22 (core test suites).
-Last activity: 2026-03-25 -- Phase 20 complete (6 bug fixes shipped)
+Phase: 21 of 23 (Minor Bug Fixes) -- COMPLETE
+Plan: 1/1 (21-01 shipped)
+Status: Phase 21 complete. All 10 bug fixes shipped (Phase 20 + 21). Ready for Phase 22 (core test suites).
+Last activity: 2026-03-25 -- Phase 21 complete (4 minor bug fixes shipped)
 
-Progress: [##........] 25%
+Progress: [#####.....] 50%
 
 ## Performance Metrics
 
@@ -41,8 +41,9 @@ Progress: [##........] 25%
 
 **By Phase:**
 - Phase 20: 2 plans, ~3-5 min each (parallel execution)
+- Phase 21: 1 plan, ~8 min (sequential, 4 fixes + edge-case refinement)
 
-**Recent Trend:** v2.3 averaged ~7 min/plan. v2.4 fix phases running faster (~3-5 min) due to surgical scope.
+**Recent Trend:** v2.3 averaged ~7 min/plan. v2.4 fix phases running faster (~3-8 min) due to surgical scope.
 
 ## Accumulated Context
 
@@ -54,6 +55,8 @@ Recent decisions affecting current work:
 - v2.4 scope: Bug fixes first (20-21 parallel), then test suites (22-23 sequential)
 - Phases 20+21 are independent -- can run in either order or parallel
 - Phases 22-23 depend on 20+21 (tests validate the fixes)
+- _skb_promote returns True/False (backward-compatible -- all callers verified)
+- Trigram fallback requires min 3 chars per text for meaningful comparison
 
 ### Pending Todos
 
@@ -66,7 +69,7 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-25
-Stopped at: Phase 20 complete (2/2 plans, 6 requirements). Ready for Phase 21 or 22.
+Stopped at: Phase 21 complete (1/1 plans, 4 requirements). Ready for Phase 22 (core test suites).
 Resume file: None
 
 ## Previous Milestone: v2.3 -- Clean Foundations (COMPLETE)

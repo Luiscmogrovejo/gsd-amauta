@@ -6,7 +6,7 @@
 
 ## Phases
 
-- [ ] **Phase 20: Critical Bug Fixes** - Fix 6 high-impact bugs: daemon mirror, HTTP race, distill count, research parse, reconcile archive, enrichment isolation
+- [x] **Phase 20: Critical Bug Fixes** - Fix 6 high-impact bugs: daemon mirror, HTTP race, distill count, research parse, reconcile archive, enrichment isolation (completed 2026-03-25)
 - [ ] **Phase 21: Minor Bug Fixes** - Fix 4 lower-severity bugs: Jaccard edge case, retention shutdown, archive genealogy, auto-learn dedup
 - [ ] **Phase 22: Core System Tests** - Comprehensive test coverage for archive, reconcile, RLM, PG integration, distill, auto-learn
 - [ ] **Phase 23: Integration + E2E Tests** - Task manager stress tests, daemon integration, fallback paths, full lifecycle smoke test
@@ -35,7 +35,7 @@
   2. Stopping the daemon with `SIGTERM` during an active retention sweep completes the current batch and exits cleanly within 5 seconds (no orphan threads)
   3. Archiving a child task removes its ID from `parent.children` array -- `amauta show PARENT-ID` no longer lists the archived child
   4. When `_auto_write_learning` attempts to promote a learning that already exists in SKB (by Jaccard >0.7), it skips the write and logs "SKB dedup hit"
-**Plans**: TBD
+**Plans**: 21-01 (Jaccard + Retention + Archive Genealogy + Auto-learn Dedup)
 
 ### Phase 22: Core System Tests
 **Goal**: Archive, reconcile, RLM, PG integration, distill, and auto-learn each have comprehensive test suites proving they work under normal and edge conditions
@@ -67,8 +67,8 @@
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 20. Critical Bug Fixes | 2/2 | Complete | 2026-03-25 |
-| 21. Minor Bug Fixes | 0/? | Not started | - |
+| 20. Critical Bug Fixes | 2/2 | Complete    | 2026-03-25 |
+| 21. Minor Bug Fixes | 1/1 | Complete    | 2026-03-25 |
 | 22. Core System Tests | 0/? | Not started | - |
 | 23. Integration + E2E Tests | 0/? | Not started | - |
 
