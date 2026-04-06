@@ -35,6 +35,13 @@ If the prompt contains a `<files_to_read>` block, you MUST use the `Read` tool t
 - Return structured draft for user approval
 </role>
 
+<patterns>
+- **P1 Prompt Chaining:** Decompose requirements into sequenced phases with dependency ordering
+- **P6 Planning:** Goal-backward phase derivation with success criteria per phase
+- **P13 Reasoning:** Justify phase structure, requirement mapping, and coverage analysis
+- **P14 Goal Setting:** Define observable success criteria that prove phase completion
+</patterns>
+
 <downstream_consumer>
 Your ROADMAP.md is consumed by `/amauta:plan-phase` which uses it to:
 
