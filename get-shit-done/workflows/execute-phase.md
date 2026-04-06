@@ -482,7 +482,9 @@ node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" commit "docs(phase-${PARENT
 ```
 </step>
 
-<step name="verify_phase_goal">
+<step name="verify_phase_goal" required="true">
+**MANDATORY — DO NOT SKIP.** External validation is a core RPETD principle: no agent marks its own work done. This step MUST run after every phase execution, regardless of time pressure, auto-advance flags, or orchestrator context. Skipping this step violates the quality pipeline.
+
 Verify phase achieved its GOAL, not just completed tasks.
 
 ```
@@ -668,6 +670,23 @@ Re-run `/amauta:execute-phase {phase}` → discover_plans finds completed SUMMAR
 
 STATE.md tracks: last completed plan, current wave, pending checkpoints.
 </resumption>
+
+<validation_enforcement>
+## MANDATORY: External Validation Gate
+
+**The `verify_phase_goal` step is NON-NEGOTIABLE.** It must run after every phase execution completes. This is a hard architectural constraint, not a suggestion.
+
+**Why:** The entire RPETD quality pipeline is built on the principle that NO agent validates its own work. If the orchestrator skips the validator, the quality gate collapses and bugs ship undetected.
+
+**Rules:**
+1. The orchestrator MUST spawn `gsd-validator` after all waves complete — even if all plans reported success
+2. The orchestrator MUST NOT mark a phase as complete until the validator returns `status: passed`
+3. If the validator finds gaps, the orchestrator MUST present them and route to gap closure
+4. Time pressure, context limits, or auto-advance flags do NOT exempt the validation step
+5. If the orchestrator runs out of context before validation, it MUST note "VALIDATION PENDING" in STATE.md so the next session runs it
+
+**Enforcement:** Any phase marked complete without a VERIFICATION.md file in its directory is considered UNVALIDATED and should be flagged on next `/amauta:progress` check.
+</validation_enforcement>
 
 <amauta_integration>
 ## Amauta RPETD Integration
