@@ -1341,7 +1341,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             qs = _parse_qs(_urlparse(self.path).query)
             cache_key = qs.get("key", [None])[0]
             if not cache_key:
-                self._send_json({"error": "missing key param"}, status=400)
+                self._send_json({"error": "missing key param"}, 400)
                 return
             # Try Redis first
             if _redis_client and _check_redis_health():
@@ -1352,7 +1352,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                         return
                 except Exception:
                     pass
-            self._send_json({"hit": False}, status=404)
+            self._send_json({"hit": False}, 404)
             return
 
         self._send_json({"error": f"Unknown GET route: {path}"}, 404)
@@ -1379,6 +1379,28 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
         path = self.path.rstrip("/")
         body = self._read_body()
         if body is None:
+            return
+
+        # ─── Research Cache POST route (TOK-06: Store Perplexity response in Redis) ─
+        if path == "/api/research-cache":
+            if not _redis_client or not _check_redis_health():
+                self._send_json({"stored": False, "reason": "redis_unavailable"})
+                return
+            try:
+                cache_key = body.get("key")
+                data = body.get("data")
+                ttl = body.get("ttl", REDIS_PERPLEXITY_TTL)
+                if not cache_key or data is None:
+                    self._send_json({"error": "missing key or data"}, 400)
+                    return
+                _redis_client.setex(
+                    f"{REDIS_PERPLEXITY_PREFIX}{cache_key}",
+                    int(ttl),
+                    json.dumps(data),
+                )
+                self._send_json({"stored": True, "key": cache_key, "ttl": ttl})
+            except Exception as e:
+                self._send_json({"stored": False, "reason": str(e)})
             return
 
         # Generic command executor — limited to safe read/query operations
