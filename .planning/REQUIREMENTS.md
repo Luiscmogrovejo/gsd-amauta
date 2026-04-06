@@ -1,74 +1,161 @@
-# Requirements: GSD-Amauta v2.4 — Bulletproof
+# Requirements: GSD-Amauta Self-Audit & Upgrade
 
-**Defined:** 2026-03-25
-**Core Value:** Every system works correctly under all conditions — no silent failures, no data corruption, no untested paths.
+**Defined:** 2026-04-06
+**Core Value:** Every subsystem audited against reference papers, gaps fixed, token usage reduced while quality improves.
 
-## v2.4 Requirements
+## v1 Requirements
 
-### Bug Fixes (FIX)
+### Infrastructure & Configuration (INF)
 
-- [x] **FIX-01**: Archive and reconcile commands added to daemon `_TASK_MUTATING_COMMANDS` — archived tasks synced to PG
-- [x] **FIX-02**: HTTP timeout race in `_mem_log_event` fixed — no double-write on slow daemon response
-- [x] **FIX-03**: Distill `removedCount` includes the "keep" entry (off-by-1 fix)
-- [x] **FIX-04**: `_research_chain_query` logs parse errors instead of silently returning []
-- [x] **FIX-05**: `cmd_reconcile` loads tasks-archive.json and cross-references against PG
-- [x] **FIX-06**: Enrichment `_mem_semantic_search` calls pass project_id (prevent cross-project pollution)
-- [x] **FIX-07**: `_jaccard_similarity` handles texts with only <3-char words
-- [x] **FIX-08**: Retention thread uses shutdown event for graceful stop
-- [x] **FIX-09**: `cmd_archive` updates parent.children arrays to remove archived child IDs
-- [x] **FIX-10**: `_auto_write_learning` dedup against SKB before promoting
+- [x] **INF-01**: RLM service starts reliably without 3-restart failures
+- [x] **INF-02**: PERPLEXITY_MODEL env var set to appropriate model with auto-selection logic
+- [x] **INF-03**: Perplexity API call sets `max_tokens: 1000` to prevent paying for truncated output
+- [x] **INF-04**: All API keys validated on daemon startup with clear error messages
+- [x] **INF-05**: Redis service added to docker-compose with optional graceful degradation
 
-### Test Coverage (TEST)
+### BM25 & RLM Engine (RLM)
 
-- [x] **TEST-01**: Archive command — dry-run, age threshold, mirror sync, genealogy, show --archive
-- [x] **TEST-02**: Reconcile command — dry-run, --fix sync, archive cross-ref, field comparison
-- [x] **TEST-03**: RLM wiring — HTTP transport, BM25 scoring, Layer 1+2 enrichment, dedup window
-- [x] **TEST-04**: PostgreSQL integration — semantic search, memory store+dedup, retention, task_upsert 40 fields
-- [x] **TEST-05**: Distill — exclude distilled, correct count, dedup interaction, idempotency
-- [x] **TEST-06**: Auto-learn — D-phase extraction, full content, SKB promotion dedup, web_search capture
-- [ ] **TEST-07**: Task manager — TOCTOU concurrent, stale watchdog, retry flush, archive+reconcile flow
-- [ ] **TEST-08**: Daemon integration — mirror sync all commands, _resolve_project_id, PG_SYNC_WARN, health
-- [ ] **TEST-09**: Fallback paths — semantic search fallback, _mem_log_event fallback, RLM fallback, research timeout
-- [ ] **TEST-10**: E2E smoke test — full lifecycle (create→claim→RPETD→validate→archive) against live daemon
+- [x] **RLM-01**: Fix substring-based TF counting that overcounts short terms inside longer words
+- [ ] **RLM-02**: Remove query-length normalization that changes BM25 ranking semantics
+- [ ] **RLM-03**: Reduce position decay from 10% to 5% (or configurable) to stop penalizing bottom-of-file code
+- [ ] **RLM-04**: Audit BM25 parameters k1=1.5, b=0.75 — lower b to 0.6 for code chunk length variance
+- [ ] **RLM-05**: Reduce default chunk size from 8000 to 4000 chars for more focused retrieval
+- [x] **RLM-06**: Fix label boost saturation bypass edge case
+- [x] **RLM-07**: Wire hybrid BM25 + Voyage reranking pipeline (voyage-rerank-2.5 is implemented but never called)
+- [x] **RLM-08**: Audit LRU cache hit rates and eviction policy effectiveness
+- [x] **RLM-09**: Add --fresh flag for cache bypass during debugging
+
+### Memory & Embeddings (MEM)
+
+- [x] **MEM-01**: Fix distillation re-merging bug — exclude `source='distilled'` from distill input
+- [ ] **MEM-02**: Replace concatenation merging with LLM-based summarization for distillation
+- [ ] **MEM-03**: Audit Voyage AI integration — verify `input_type="query"` vs `"document"` usage
+- [x] **MEM-04**: Add in-memory query embedding cache with 1-hour TTL (no cache exists today)
+- [ ] **MEM-05**: Verify cosine dedup threshold 0.95 for pre-store and 0.85 for distillation grouping
+- [ ] **MEM-06**: Audit source scoring formula: `similarity * 10 + source_bonus`
+- [ ] **MEM-07**: Verify recency decay (-0.5/30d, cap -3.0) is applied correctly in all search paths
+- [ ] **MEM-08**: Implement tiered retention: permanent (lesson-learned, best-practice), long (auto_learning), medium (web_search 180d), short (rpetd_phase 90d), ephemeral (task_event 30d)
+- [ ] **MEM-09**: Audit autolearning pipeline — D-phase LEARNING extraction, SKB promotion, content integrity
+- [x] **MEM-10**: Verify HNSW index configuration is optimal for <10K rows (ef_construction, m parameters)
+
+### Token Efficiency (TOK)
+
+- [x] **TOK-01**: Add Perplexity response cache with 6-hour TTL and --no-cache bypass
+- [ ] **TOK-02**: Implement phase-specific enrichment reduction (R=full, P=SKB-only, E=RLM-only, T/D=none)
+- [ ] **TOK-03**: Audit enrichment dedup window (300s) — verify effectiveness and edge cases
+- [ ] **TOK-04**: Add sonar/sonar-pro auto-selection based on query complexity
+- [x] **TOK-05**: Strip Perplexity citation markers from responses before storage
+- [x] **TOK-06**: Implement Redis as L2 cache for embeddings, responses, and RLM chunks
+- [ ] **TOK-07**: Measure baseline token usage per task lifecycle before/after optimizations
+
+### Multi-Agent & RPETD (AGT)
+
+- [ ] **AGT-01**: Audit all 11 agent definitions for role clarity, tool access, and pattern coverage
+- [x] **AGT-02**: Audit file-pattern routing accuracy — false positive/negative rate
+- [x] **AGT-03**: Audit performance routing — pass rate tracking, 70% fallback threshold
+- [ ] **AGT-04**: Audit RPETD pipeline — phase transitions, gate enforcement, evidence quality
+- [ ] **AGT-05**: Audit external validation — self-validation block, --force-reason audit trail
+- [ ] **AGT-06**: Add exception handling/recovery pipeline for failed tasks (weak pattern P15)
+- [ ] **AGT-07**: Add agent capability index for smarter routing (weak pattern — inter-agent communication)
+
+### Task Manager (TSK)
+
+- [ ] **TSK-01**: Audit task lifecycle — TOCTOU safety, dual-write consistency, retry flush
+- [ ] **TSK-02**: Audit priority scoring formula edge cases
+- [ ] **TSK-03**: Audit archive/reconcile — daemon mirror list gap, parent.children genealogy
+- [ ] **TSK-04**: Audit stale watchdog — 48h threshold appropriateness, test-exempt behavior
+- [ ] **TSK-05**: Verify PG sync across all 39 fields (migration 007)
+
+### Research Chain (RSC)
+
+- [ ] **RSC-01**: Audit 5-step chain cascade logic — when each step fires, threshold tuning
+- [ ] **RSC-02**: Audit R-phase auto-invocation trigger (<2 local results threshold)
+- [ ] **RSC-03**: Audit Perplexity preamble stripping completeness
+- [ ] **RSC-04**: Add Perplexity rate limiter to prevent API abuse
+- [ ] **RSC-05**: Audit research dedup — Jaccard 0.7 threshold, false positive rate
+
+## v2 Requirements (Deferred)
+
+### Advanced Upgrades
+
+- **ADV-01**: Layer 3 agent-initiated RLM context (rlm_client.py)
+- **ADV-02**: Multi-agent debate for high-stakes architectural decisions
+- **ADV-03**: RLM synonym expansion for semantic code queries
+- **ADV-04**: BM25+ delta variant for better short-document scoring
+- **ADV-05**: Code-aware stopwords list for BM25 tokenization
+- **ADV-06**: Dimensional validation scoring for memory quality
+- **ADV-07**: npx gsd-amauta init one-command setup
+- **ADV-08**: Docker auto-start for PG container
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| One-command setup | Feature, not fix — v2.5 |
-| Docker auto-start | Feature — v2.5 |
-| Voyage AI re-ranking | Feature — v2.5 |
-| Layer 3 context | Feature — v2.5 |
+| Web UI for audit results | CLI-first tool, visual dashboards add complexity |
+| Rewriting core Python/JS split | Architectural decision is settled, works well |
+| Adding new agent types | Optimize existing 11 agents, not expand |
+| Switching from PostgreSQL | pgvector is the right choice, confirmed by research |
+| Changing embedding provider | voyage-code-3 at 1024-dim confirmed optimal by benchmarks |
+| Cloud deployment | Local-first tool, homelab infrastructure |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FIX-01 | Phase 20 | Complete |
-| FIX-02 | Phase 20 | Complete |
-| FIX-03 | Phase 20 | Complete |
-| FIX-04 | Phase 20 | Complete |
-| FIX-05 | Phase 20 | Complete |
-| FIX-06 | Phase 20 | Complete |
-| FIX-07 | Phase 21 | Complete |
-| FIX-08 | Phase 21 | Complete |
-| FIX-09 | Phase 21 | Complete |
-| FIX-10 | Phase 21 | Complete |
-| TEST-01 | Phase 22 | Complete |
-| TEST-02 | Phase 22 | Complete |
-| TEST-03 | Phase 22 | Complete |
-| TEST-04 | Phase 22 | Complete |
-| TEST-05 | Phase 22 | Complete |
-| TEST-06 | Phase 22 | Complete |
-| TEST-07 | Phase 23 | Pending |
-| TEST-08 | Phase 23 | Pending |
-| TEST-09 | Phase 23 | Pending |
-| TEST-10 | Phase 23 | Pending |
+| INF-01 | Phase 1 | Complete |
+| INF-02 | Phase 1 | Complete |
+| INF-03 | Phase 1 | Complete |
+| INF-04 | Phase 1 | Complete |
+| INF-05 | Phase 5 | Complete |
+| RLM-01 | Phase 3 | Complete |
+| RLM-02 | Phase 3 | Pending |
+| RLM-03 | Phase 3 | Pending |
+| RLM-04 | Phase 3 | Pending |
+| RLM-05 | Phase 3 | Pending |
+| RLM-06 | Phase 3 | Complete |
+| RLM-07 | Phase 4 | Complete |
+| RLM-08 | Phase 3 | Complete |
+| RLM-09 | Phase 3 | Complete |
+| MEM-01 | Phase 2 | Complete |
+| MEM-02 | Phase 2 | Pending |
+| MEM-03 | Phase 2 | Pending |
+| MEM-04 | Phase 4 | Complete |
+| MEM-05 | Phase 2 | Pending |
+| MEM-06 | Phase 2 | Pending |
+| MEM-07 | Phase 2 | Pending |
+| MEM-08 | Phase 2 | Pending |
+| MEM-09 | Phase 2 | Pending |
+| MEM-10 | Phase 2 | Complete |
+| TOK-01 | Phase 4 | Complete |
+| TOK-02 | Phase 4 | Pending |
+| TOK-03 | Phase 4 | Pending |
+| TOK-04 | Phase 4 | Pending |
+| TOK-05 | Phase 4 | Complete |
+| TOK-06 | Phase 5 | Complete |
+| TOK-07 | Phase 8 | Pending |
+| AGT-01 | Phase 6 | Pending |
+| AGT-02 | Phase 6 | Complete |
+| AGT-03 | Phase 6 | Complete |
+| AGT-04 | Phase 6 | Pending |
+| AGT-05 | Phase 6 | Pending |
+| AGT-06 | Phase 6 | Pending |
+| AGT-07 | Phase 6 | Pending |
+| TSK-01 | Phase 7 | Pending |
+| TSK-02 | Phase 7 | Pending |
+| TSK-03 | Phase 7 | Pending |
+| TSK-04 | Phase 7 | Pending |
+| TSK-05 | Phase 7 | Pending |
+| RSC-01 | Phase 7 | Pending |
+| RSC-02 | Phase 7 | Pending |
+| RSC-03 | Phase 7 | Pending |
+| RSC-04 | Phase 7 | Pending |
+| RSC-05 | Phase 7 | Pending |
 
 **Coverage:**
-- v2.4 requirements: 20 total
-- Mapped to phases: 20/20
+- v1 requirements: 49 total
+- Mapped to phases: 49
 - Unmapped: 0
 
 ---
-*Requirements defined: 2026-03-25*
+*Requirements defined: 2026-04-06*
+*Last updated: 2026-04-06 after research-informed definition*

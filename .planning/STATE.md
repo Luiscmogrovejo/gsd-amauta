@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v2.5
 milestone_name: milestone
-status: executing
-stopped_at: Plan 07-02 complete. Phase 07 plans 01-02 done. dep_pressure cache key fixed, cmd_next tie-breaking by created_at, cascade requires >=2 results (GSD_RESEARCH_MIN_RESULTS), _search_q guard, 14/14 tests pass.
-last_updated: "2026-04-06T00:00:00.000Z"
-last_activity: "2026-04-06 -- Plan 07-02: dep_pressure content hash, created_at tie-break, GSD_RESEARCH_MIN_RESULTS cascade threshold, _search_q guard, 14 guard tests (SCORE-01/CASCADE-01/GUARD-01)"
+status: completed
+stopped_at: Plan 06-02 complete. Routing extracted to gsd-tools route-executor, infra regex tightened, pass_rate normalized, PERF_ROUTING_OVERRIDE audit trail added, 27 tests pass.
+last_updated: "2026-04-06T15:42:13.933Z"
+last_activity: "2026-04-06 -- Plan 07-01: archive/reconcile routing, GSD_STALE_INTERVAL, 17 guard tests"
 progress:
   total_phases: 7
-  completed_phases: 7
-  total_plans: 18
+  completed_phases: 4
+  total_plans: 22
   completed_plans: 18
   percent: 100
 ---
@@ -97,6 +97,7 @@ Progress: [##########] 100%
 
 - TOK-06: Redis L2 embedding cache wraps Phase 4 L1 dict in generate_embedding(); bridge module amauta_daemon_redis.py (get/set_redis_client) solves circular import; key gsd:emb:{sha256_16hex}, 3600s TTL, JSON float list; L1 promotion on L2 hit; silent except-pass degradation; daemon injects client at startup via try/ImportError guard
 - TOK-06 (Perplexity cache): /api/research-cache GET/POST in daemon (REDIS_PERPLEXITY_PREFIX="gsd:ppx:", REDIS_PERPLEXITY_TTL=21600); _checkDaemonCache/_writeDaemonCache in gsd-research.cjs (stdlib http only, 2s timeout, resolves null/false on error); providerPerplexity: cacheKey hoisted before noCache guard, daemon Redis L1 check first then file L2; POST handler placed before command_map in do_POST (direct redis, not amauta.py CLI)
+- [Phase 06]: routeExecutor: path-prefix anchoring for infra eliminates false positives (src/config.ts, src/deploy-utils.ts, .github/ISSUE_TEMPLATE.md) — Broad substring match on docker/ci/deploy/infra was flagging any file path containing those substrings as infra — path-prefix anchoring restricts to known infra file patterns only
 
 ### Pending Todos
 
@@ -110,8 +111,8 @@ None. Phase 1 blockers resolved:
 
 ## Session Continuity
 
-Last session: 2026-04-06
-Stopped at: Plan 06-01 complete. Phase 06 plan 01 done. Ready for Plan 06-02 (routing accuracy audit + routing helper extraction).
+Last session: 2026-04-06T15:42:06.582Z
+Stopped at: Plan 06-02 complete. Routing extracted to gsd-tools route-executor, infra regex tightened, pass_rate normalized, PERF_ROUTING_OVERRIDE audit trail added, 27 tests pass.
 Resume file: None
 
 ## Previous Milestone: v2.4 -- Bulletproof (COMPLETE)

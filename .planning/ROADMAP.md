@@ -13,33 +13,13 @@
 
 | # | Deliverable | Requirement |
 |---|-------------|-------------|
-| 1 | Fix RLM service restart failures — diagnose why 3 restarts failed | INF-01 |
-| 2 | Set PERPLEXITY_MODEL with auto-selection (sonar vs sonar-pro) | INF-02 |
-| 3 | Add `max_tokens: 1000` to Perplexity API call | INF-03 |
-| 4 | Add API key validation on daemon startup | INF-04 |
-
-**Success criteria:**
-- [x] RLM service starts and stays running (Plan 01-01 DONE: orphan kill + port-free check + counter reset)
-- [x] Perplexity calls use max_tokens to prevent overpay (Plan 01-02 DONE: 4096->1000)
-- [x] PERPLEXITY_MODEL=auto with sonar/sonar-pro complexity selection (Plan 01-02 DONE)
-- [x] Daemon reports API key status on startup (Plan 01-01 DONE: startup banner + health endpoint api_keys)
-
----
-
-## Phase 2: Memory & Embeddings Deep Audit
-
-**Goal:** Fix critical memory bugs, audit every scoring/dedup/retention path, ensure the brain works correctly.
-**Requirements:** MEM-01 through MEM-10
-**Dependencies:** Phase 1 (needs working services)
-
-| # | Deliverable | Requirement |
+| 1 | Fix RLM service restart failures — diagnose why 3 restarts failed | Complete    | 2026-04-06 | 2 | Set PERPLEXITY_MODEL with auto-selection (sonar vs sonar-pro) | Complete    | 2026-04-06 | 3 | Add `max_tokens: 1000` to Perplexity API call | Complete    | 2026-04-06 | 4 | Add API key validation on daemon startup | Complete    | 2026-04-06 | # | Deliverable | Requirement |
 |---|-------------|-------------|
 | 1 | Fix distillation re-merging bug (exclude source='distilled') | MEM-01 |
 | 2 | Replace concatenation merge with LLM summarization | MEM-02 |
 | 3 | Audit Voyage AI input_type usage (query vs document) | MEM-03 |
 | 4 | Verify cosine dedup thresholds (0.95 pre-store, 0.85 distill) | MEM-05 |
-| 5 | Audit source scoring formula correctness | MEM-06 |
-| 6 | Verify recency decay in all search paths | MEM-07 |
+| 5 | Audit source scoring formula correctness | Complete    | 2026-04-06 | 6 | Verify recency decay in all search paths | MEM-07 |
 | 7 | Implement tiered retention policies | MEM-08 |
 | 8 | Audit autolearning pipeline end-to-end | MEM-09 |
 | 9 | Verify HNSW index config (ef_construction, m) | MEM-10 |
