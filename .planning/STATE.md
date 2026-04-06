@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v2.5
 milestone_name: milestone
 status: completed
-stopped_at: Plan 02-04 complete. MEM-03/MEM-04/MEM-10 signed off.
-last_updated: "2026-04-06T18:25:00.000Z"
-last_activity: 2026-04-06 -- Plan 03-01 complete: 4 BM25 correctness fixes (RLM-01..04)
+stopped_at: Plan 02-01 SUMMARY created. MEM-01 fix + MEM-05/MEM-06/MEM-09 guard tests complete.
+last_updated: "2026-04-06T19:00:00.000Z"
+last_activity: 2026-04-06 -- Plan 02-01: distill-status MEM-01 fix, 10 new guard tests, MEM-05/MEM-06 audit docs
 progress:
   total_phases: 8
   completed_phases: 6
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-04-06)
 Phase: 2 and 3 of 8 (both planned, executing in parallel)
 Plan: 2/7 complete (02-04 done, 03-01 done; 3 remaining in Phase 2, 2 remaining in Phase 3)
 Status: Plan 03-01 complete. RLM-01..04 fixed. Phase 2: 4 plans, 2 waves, 12 tasks, 10 requirements (MEM-01..10). Phase 3: 3 plans, 3 waves, 8 tasks, 8 requirements (RLM-01..06, RLM-08, RLM-09).
-Last activity: 2026-04-06 -- Plan 03-01: 4 BM25 correctness fixes (RLM-01 substring TF, RLM-02 query normalization, RLM-03 position decay, RLM-04 b parameter)
+Last activity: 2026-04-06 -- Plan 02-01 SUMMARY: distill-status MEM-01 fix (memory_count exclude_source), MEM-09 source audit guard tests (4 tests), MEM-05/MEM-06 documentation, 10 new tests total across 2 new test files
 
 Progress: [#.........] 12%
 
@@ -75,6 +75,9 @@ Progress: [#.........] 12%
 - Query-length normalization removed from BM25 -- standard Robertson-Sparck Jones 1994 sums per-term scores without dividing by term count
 - Position decay reduced to 5% (was 10%) and exposed via RLM_POSITION_DECAY env var
 - BM25_B set to 0.6 (was 0.75) -- code-optimized per literature (b=0.5-0.6 for high-variance-length corpora)
+- MEM-01 distill-status bug FIXED: memory_count() now accepts exclude_source param; distill-status excludes source='distilled' from threshold count
+- MEM-09 autolearning source: ALREADY CORRECT in v2.4 -- all 6 learning event paths have explicit source=; guard tests added
+- MEM-05/MEM-06: dedup 0.95 cosine + Jaccard 0.7 distillation confirmed correct; dual scoring paths documented as intentional
 
 ### Pending Todos
 
