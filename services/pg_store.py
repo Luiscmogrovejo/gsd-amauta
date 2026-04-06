@@ -16,10 +16,12 @@ Source-aware scoring (from Amauta spec):
   rpetd_phase +1, task_event +0, agent +0
 """
 
+import hashlib
 import json
 import os
 import re
 import threading
+import time
 import urllib.request
 import urllib.error
 from contextlib import contextmanager
@@ -124,6 +126,17 @@ def normalize_tags(tags):
             normalized.append(canonical)
             seen.add(canonical)
     return normalized
+
+
+# MEM-04: Query embedding cache -- avoids redundant Voyage API calls for repeated searches
+_QUERY_EMBED_CACHE: dict = {}   # { cache_key: (embedding_list, timestamp) }
+_QUERY_EMBED_TTL = 3600         # 1 hour in seconds
+_QUERY_EMBED_MAX = 500          # Max cached entries before eviction
+
+
+def _clear_query_embed_cache():
+    """Clear the query embedding cache. Exposed for test isolation."""
+    _QUERY_EMBED_CACHE.clear()
 
 
 class PGStore:
@@ -1099,8 +1112,20 @@ class PGStore:
         max_chars = cfg.get("max_chars", 32000)
         truncated = text[:max_chars] if len(text) > max_chars else text
 
-        # Build payload
+        # use_model must be resolved before cache key computation
         use_model = model or cfg["default_model"]
+
+        # MEM-04: Check query embedding cache (query-only -- document embeddings are write-path)
+        cache_key = None
+        if input_type == "query":
+            cache_key = hashlib.sha256(
+                f"{truncated}:{input_type}:{use_model}".encode()
+            ).hexdigest()[:16]
+            cached = _QUERY_EMBED_CACHE.get(cache_key)
+            if cached and (time.time() - cached[1]) < _QUERY_EMBED_TTL:
+                return cached[0]
+
+        # Build payload
         payload_dict = {
             "input": [truncated],  # Both OpenAI and Voyage accept list format
             "model": use_model,
@@ -1132,7 +1157,19 @@ class PGStore:
         try:
             with urllib.request.urlopen(req, timeout=30) as resp:
                 result = json.loads(resp.read().decode("utf-8"))
-                return result["data"][0]["embedding"]
+                embedding = result["data"][0]["embedding"]
+                # MEM-04: Cache query embeddings
+                if cache_key and embedding:
+                    _QUERY_EMBED_CACHE[cache_key] = (embedding, time.time())
+                    # Evict oldest entries if cache exceeds max size
+                    if len(_QUERY_EMBED_CACHE) > _QUERY_EMBED_MAX:
+                        sorted_keys = sorted(
+                            _QUERY_EMBED_CACHE.keys(),
+                            key=lambda k: _QUERY_EMBED_CACHE[k][1],
+                        )
+                        for k in sorted_keys[:100]:
+                            del _QUERY_EMBED_CACHE[k]
+                return embedding
         except Exception:
             return None
 
