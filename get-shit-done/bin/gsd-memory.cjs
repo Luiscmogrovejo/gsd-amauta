@@ -46,7 +46,7 @@
  */
 
 const http = require('http');
-const https = require('https');
+// https module removed — Claude CLI used for distillation, curl for API fallback
 const path = require('path');
 const fs = require('fs');
 
@@ -1324,78 +1324,58 @@ function llmSummarize(entries, model) {
 }
 
 /**
- * Claude API summarization — calls Anthropic Messages API via https.request.
- * No external dependencies. Returns summary text or null on error.
+ * Claude CLI summarization — uses `claude --print` available in Claude Code sessions.
+ * No API key needed — uses the active Claude Code authentication.
+ * Falls back to Anthropic HTTP API if ANTHROPIC_API_KEY is set and CLI unavailable.
  * @param {Array} entries - Memory entries to summarize
- * @param {string} model - Claude model ID (e.g. 'claude-sonnet-4-5-20250514')
- * @returns {Promise<string|null>}
+ * @param {string} model - Claude model shortname: 'sonnet' or 'haiku'
+ * @returns {string|null}
  */
 function claudeSummarize(entries, model) {
-  return new Promise((resolve) => {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) { resolve(null); return; }
+  const combinedText = entries.map((e, i) =>
+    `[Entry ${i + 1} | source: ${e.source || 'unknown'}]:\n${(e.text || '').slice(0, 800)}`
+  ).join('\n\n');
 
-    const combinedText = entries.map((e, i) =>
-      `[Entry ${i + 1} | source: ${e.source || 'unknown'}]:\n${(e.text || '').slice(0, 800)}`
-    ).join('\n\n');
+  const prompt = `You are a knowledge distillation assistant. Summarize these ${entries.length} related memory entries into ONE coherent entry that preserves all key facts, decisions, and lessons learned. Output ONLY the summary, no preamble.\n\n${combinedText}`;
 
-    const prompt = `You are a knowledge distillation assistant. Summarize these ${entries.length} related memory entries into ONE coherent entry that preserves all key facts, decisions, and lessons learned. Output ONLY the summary, no preamble.\n\n${combinedText}`;
+  // Try claude CLI first (available in Claude Code sessions, no API key needed)
+  try {
+    const result = execSync(
+      `claude --print --model ${model} --max-tokens 500`,
+      { input: prompt, timeout: 60000, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
+    );
+    const summary = (result || '').trim();
+    if (summary.length >= 20) return summary.slice(0, 4000);
+    process.stderr.write(`[distill] Claude CLI (${model}) returned short output (${summary.length} chars)\n`);
+  } catch (cliErr) {
+    process.stderr.write(`[distill] Claude CLI (${model}) unavailable: ${cliErr.message.split('\n')[0]}\n`);
+  }
 
-    const body = JSON.stringify({
-      model: model,
-      max_tokens: 500,
-      messages: [{ role: 'user', content: prompt }],
-    });
-
-    const options = {
-      hostname: 'api.anthropic.com',
-      path: '/v1/messages',
-      method: 'POST',
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-        'content-length': Buffer.byteLength(body),
-      },
-      timeout: 30000,
-    };
-
-    const req = https.request(options, (res) => {
-      let data = '';
-      res.on('data', (chunk) => { data += chunk; });
-      res.on('end', () => {
-        try {
-          const parsed = JSON.parse(data);
-          if (parsed.content && parsed.content[0] && parsed.content[0].text) {
-            const summary = parsed.content[0].text.trim();
-            if (summary.length < 20) { resolve(null); return; }
-            resolve(summary.slice(0, 4000));
-          } else {
-            const errMsg = parsed.error ? parsed.error.message : 'unexpected response format';
-            process.stderr.write(`[distill] Claude (${model}) failed: ${errMsg}\n`);
-            resolve(null);
-          }
-        } catch (parseErr) {
-          process.stderr.write(`[distill] Claude (${model}) parse error: ${parseErr.message}\n`);
-          resolve(null);
-        }
+  // Fall back to Anthropic HTTP API if key is available
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (apiKey) {
+    try {
+      const modelId = model === 'sonnet' ? 'claude-sonnet-4-5-20250514'
+        : model === 'haiku' ? 'claude-haiku-4-5-20251001' : model;
+      const body = JSON.stringify({
+        model: modelId, max_tokens: 500,
+        messages: [{ role: 'user', content: prompt }],
       });
-    });
+      const curlCmd = `curl -s --max-time 30 -X POST https://api.anthropic.com/v1/messages ` +
+        `-H "x-api-key: ${apiKey}" -H "anthropic-version: 2023-06-01" -H "content-type: application/json" ` +
+        `-d ${JSON.stringify(body)}`;
+      const apiResult = execSync(curlCmd, { timeout: 35000, encoding: 'utf8' });
+      const parsed = JSON.parse(apiResult);
+      if (parsed.content && parsed.content[0] && parsed.content[0].text) {
+        const summary = parsed.content[0].text.trim();
+        if (summary.length >= 20) return summary.slice(0, 4000);
+      }
+    } catch (apiErr) {
+      process.stderr.write(`[distill] Claude API (${model}) fallback failed: ${apiErr.message.split('\n')[0]}\n`);
+    }
+  }
 
-    req.on('error', (err) => {
-      process.stderr.write(`[distill] Claude (${model}) request error: ${err.message}\n`);
-      resolve(null);
-    });
-
-    req.on('timeout', () => {
-      req.destroy();
-      process.stderr.write(`[distill] Claude (${model}) timed out after 30s\n`);
-      resolve(null);
-    });
-
-    req.write(body);
-    req.end();
-  });
+  return null;
 }
 
 async function cmdDistill(args) {
@@ -1448,25 +1428,16 @@ async function cmdDistill(args) {
   const useLlm = !!args['use-llm'];
   let ollamaModel = null;
   let ollamaAvailable = false;
-  const claudeAvailable = useLlm && !!process.env.ANTHROPIC_API_KEY;
+  // Claude CLI is always available in Claude Code sessions (no API key needed)
+  const claudeAvailable = useLlm;
 
   if (useLlm) {
-    if (claudeAvailable) {
-      console.log('  Using Claude API provider chain (Sonnet > Haiku > Ollama > concatenation)');
-    }
-    if (!claudeAvailable || true) {
-      // Always check Ollama as a fallback even if Claude is available
-      if (isOllamaAvailable()) {
-        ollamaModel = selectOllamaModel();
-        if (ollamaModel) {
-          ollamaAvailable = true;
-          if (!claudeAvailable) {
-            console.log(`  Using Ollama LLM summarization with model: ${ollamaModel}`);
-          }
-        }
-      }
-      if (!claudeAvailable && !ollamaAvailable) {
-        process.stderr.write('[distill] --use-llm requested but no Claude API key and no Ollama available. Falling back to concatenation.\n');
+    console.log('  Using Claude Code provider chain (Sonnet > Haiku > Ollama > concatenation)');
+    // Always check Ollama as a fallback
+    if (isOllamaAvailable()) {
+      ollamaModel = selectOllamaModel();
+      if (ollamaModel) {
+        ollamaAvailable = true;
       }
     }
   }
@@ -1503,13 +1474,13 @@ async function cmdDistill(args) {
 
       if (claudeAvailable) {
         // Try Claude Sonnet first
-        const sonnetResult = await claudeSummarize(group, 'claude-sonnet-4-5-20250514');
+        const sonnetResult = claudeSummarize(group, 'sonnet');
         if (sonnetResult) {
           mergedText = sonnetResult;
           distillStrategy = 'claude-sonnet';
         } else {
           // Try Claude Haiku as fallback
-          const haikuResult = await claudeSummarize(group, 'claude-haiku-4-5-20251001');
+          const haikuResult = claudeSummarize(group, 'haiku');
           if (haikuResult) {
             mergedText = haikuResult;
             distillStrategy = 'claude-haiku';

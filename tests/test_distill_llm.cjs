@@ -199,10 +199,10 @@ describe('distill LLM flag and code structure (02-03)', () => {
     );
   });
 
-  test('fallback message present when no Claude API key and no Ollama available', () => {
+  test('Claude Code provider chain message present', () => {
     assert.ok(
-      SOURCE.includes('no Claude API key and no Ollama available. Falling back to concatenation'),
-      'Should have a fallback message when neither Claude nor Ollama is available'
+      SOURCE.includes('Claude Code provider chain'),
+      'Should mention Claude Code provider chain in output'
     );
   });
 
@@ -331,44 +331,39 @@ describe('Claude API provider chain code structure', () => {
     );
   });
 
-  test('claudeSummarize uses Anthropic Messages API endpoint', () => {
+  test('claudeSummarize uses claude CLI with --print flag', () => {
     assert.ok(
-      SOURCE.includes("hostname: 'api.anthropic.com'") &&
-      SOURCE.includes("path: '/v1/messages'"),
-      'claudeSummarize should call api.anthropic.com/v1/messages'
+      SOURCE.includes('claude --print --model') ,
+      'claudeSummarize should use claude CLI with --print flag'
     );
   });
 
-  test('claudeSummarize sends required Anthropic headers', () => {
+  test('claudeSummarize has HTTP API fallback for ANTHROPIC_API_KEY', () => {
     assert.ok(
-      SOURCE.includes("'x-api-key': apiKey") &&
-      SOURCE.includes("'anthropic-version': '2023-06-01'") &&
-      SOURCE.includes("'content-type': 'application/json'"),
-      'claudeSummarize should include x-api-key, anthropic-version, and content-type headers'
+      SOURCE.includes('api.anthropic.com/v1/messages'),
+      'claudeSummarize should fall back to Anthropic HTTP API when CLI unavailable'
     );
   });
 
-  test('claudeSummarize returns null when ANTHROPIC_API_KEY is not set', () => {
+  test('claudeSummarize has timeout for CLI call', () => {
     assert.ok(
-      SOURCE.includes("if (!apiKey) { resolve(null); return; }"),
-      'claudeSummarize should early-return null when API key is missing'
+      SOURCE.includes('timeout: 60000'),
+      'claudeSummarize should use a 60s timeout for CLI call'
     );
   });
 
-  test('claudeSummarize uses 30s timeout', () => {
-    // Count timeout: 30000 occurrences — should be in both llmSummarize and claudeSummarize
-    const timeouts = SOURCE.match(/timeout: 30000/g) || [];
+  test('claudeSummarize returns null on failure', () => {
     assert.ok(
-      timeouts.length >= 2,
-      `Should have timeout: 30000 in both llmSummarize and claudeSummarize (found ${timeouts.length})`
+      SOURCE.includes('return null'),
+      'claudeSummarize should return null when both CLI and API fail'
     );
   });
 
   test('distill loop tries Claude Sonnet before Haiku', () => {
-    const sonnetIdx = SOURCE.indexOf("'claude-sonnet-4-5-20250514'");
-    const haikuIdx = SOURCE.indexOf("'claude-haiku-4-5-20251001'");
-    assert.ok(sonnetIdx > -1, 'Should reference claude-sonnet-4-5-20250514 model');
-    assert.ok(haikuIdx > -1, 'Should reference claude-haiku-4-5-20251001 model');
+    const sonnetIdx = SOURCE.indexOf("claudeSummarize(group, 'sonnet')");
+    const haikuIdx = SOURCE.indexOf("claudeSummarize(group, 'haiku')");
+    assert.ok(sonnetIdx > -1, 'Should call claudeSummarize with sonnet model');
+    assert.ok(haikuIdx > -1, 'Should call claudeSummarize with haiku model');
     assert.ok(sonnetIdx < haikuIdx, 'Sonnet should be tried before Haiku in the provider chain');
   });
 

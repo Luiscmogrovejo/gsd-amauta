@@ -5,7 +5,7 @@
  * and integration with memory storage.
  */
 
-const { test, describe } = require('node:test');
+const { test, describe, before } = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
@@ -158,6 +158,98 @@ describe('Research chain: CLI structure', () => {
     const content = fs.readFileSync(RESEARCH_CLI, 'utf-8');
     assert.ok(content.includes('web_search_result'),
       'should tag Perplexity results as web_search_result for +3 score boost');
+  });
+});
+
+// ═══════════════════════════════════════════════════════
+// Cascade logic: Context7 is additive-only
+// ═══════════════════════════════════════════════════════
+
+describe('Research chain: cascade logic', () => {
+  test('Context7 is in ADDITIVE_PROVIDERS set (never stops cascade)', () => {
+    const content = fs.readFileSync(RESEARCH_CLI, 'utf-8');
+    assert.ok(content.includes("ADDITIVE_PROVIDERS"),
+      'should define ADDITIVE_PROVIDERS set');
+    assert.ok(content.includes("'context7'"),
+      'ADDITIVE_PROVIDERS should include context7');
+    assert.ok(content.includes("!ADDITIVE_PROVIDERS.has(name)"),
+      'cascade break condition should check ADDITIVE_PROVIDERS');
+  });
+
+  test('cascade break requires non-additive provider', () => {
+    const content = fs.readFileSync(RESEARCH_CLI, 'utf-8');
+    // The break condition should check ADDITIVE_PROVIDERS before breaking
+    assert.ok(
+      content.includes('!ADDITIVE_PROVIDERS.has(name)'),
+      'cascade break should check !ADDITIVE_PROVIDERS.has(name)'
+    );
+    // The if-break statement that gates the cascade must include ADDITIVE_PROVIDERS
+    // Look for the cascade break pattern: "if (!args.all ... ADDITIVE_PROVIDERS ... break"
+    const cascadeSection = content.slice(
+      content.indexOf('ADDITIVE_PROVIDERS = new Set'),
+      content.indexOf('if (args.json)')
+    );
+    assert.ok(cascadeSection.includes('ADDITIVE_PROVIDERS.has(name)'),
+      'cascade section should reference ADDITIVE_PROVIDERS.has(name)');
+    assert.ok(cascadeSection.includes('break'),
+      'cascade section should have break statement');
+  });
+});
+
+// ═══════════════════════════════════════════════════════
+// Preamble stripping: compound preambles
+// ═══════════════════════════════════════════════════════
+
+describe('Research chain: preamble stripping', () => {
+  // Extract stripPreamble from the source and evaluate it for direct testing
+  let stripPreamble;
+  before(() => {
+    const content = fs.readFileSync(RESEARCH_CLI, 'utf-8');
+    // Extract the function body
+    const fnMatch = content.match(/function stripPreamble\(text\)\s*\{([\s\S]*?)\n\}/);
+    assert.ok(fnMatch, 'should find stripPreamble function');
+    // Create a callable version
+    stripPreamble = new Function('text', fnMatch[1]);
+  });
+
+  test('strips single preamble: "Certainly! "', () => {
+    const result = stripPreamble('Certainly! The answer is 42.');
+    assert.strictEqual(result, 'The answer is 42.');
+  });
+
+  test('strips single preamble: "Here is a comprehensive overview:"', () => {
+    const result = stripPreamble('Here is a comprehensive overview: pgvector uses HNSW.');
+    assert.strictEqual(result, 'pgvector uses HNSW.');
+  });
+
+  test('strips compound preamble: "Certainly! Here is a comprehensive overview:"', () => {
+    const result = stripPreamble('Certainly! Here is a comprehensive overview: pgvector uses HNSW.');
+    assert.strictEqual(result, 'pgvector uses HNSW.');
+  });
+
+  test('strips compound preamble: "Absolutely! Based on my research,"', () => {
+    const result = stripPreamble('Absolutely! Based on my research, the best approach is X.');
+    assert.strictEqual(result, 'the best approach is X.');
+  });
+
+  test('strips compound preamble: "Sure! Let me provide a breakdown."', () => {
+    const result = stripPreamble('Sure! Let me provide a breakdown. Step 1 is...');
+    assert.strictEqual(result, 'Step 1 is...');
+  });
+
+  test('preserves text without preamble', () => {
+    const result = stripPreamble('pgvector supports HNSW indexes for fast nearest-neighbor search.');
+    assert.strictEqual(result, 'pgvector supports HNSW indexes for fast nearest-neighbor search.');
+  });
+
+  test('handles null/empty input', () => {
+    assert.strictEqual(stripPreamble(null), null);
+    assert.strictEqual(stripPreamble(''), '');
+  });
+
+  test('loop terminates (no infinite loop on non-matching text)', () => {
+    const result = stripPreamble('Normal technical content here without any preamble patterns.');
+    assert.strictEqual(result, 'Normal technical content here without any preamble patterns.');
   });
 });
 

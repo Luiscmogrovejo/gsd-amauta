@@ -534,10 +534,18 @@ function stripPreamble(text) {
     /^(?:(?:great|good)\s+question[.!,]\s*)/i,
   ];
   let result = text;
-  for (const pattern of patterns) {
-    result = result.replace(pattern, '');
-  }
-  return result.trim();
+  // Loop until stable — handles compound preambles like
+  // "Certainly! Here is a comprehensive overview:" where a later pattern
+  // (certainly) strips a prefix, exposing a match for an earlier pattern (here is).
+  let prev;
+  do {
+    prev = result;
+    for (const pattern of patterns) {
+      result = result.replace(pattern, '');
+    }
+    result = result.trim();
+  } while (result !== prev);
+  return result;
 }
 
 // ═══════════════════════════════════════════════════════
@@ -628,14 +636,19 @@ async function cmdSearch(args) {
     if (result) allResults.push(result);
   } else {
     // Run the chain
+    // Context7 is additive (library metadata) — never stops the cascade.
+    // Only memory, skb, perplexity, or webfetch can be terminal stops.
+    const ADDITIVE_PROVIDERS = new Set(['context7']);
     for (const name of PROVIDER_ORDER) {
       const providerFn = PROVIDERS[name];
       const result = await providerFn(query, limit, args.url);
 
       if (result) {
         allResults.push(result);
-        // Stop at first provider with actual results (not just notes)
-        if (!args.all && result.count > 0 && !result.error) {
+        // Stop at first provider with actual results (not just notes),
+        // unless the provider is additive-only (e.g., Context7 gives
+        // supplemental library metadata, not research answers).
+        if (!args.all && result.count > 0 && !result.error && !ADDITIVE_PROVIDERS.has(name)) {
           break;
         }
       }
