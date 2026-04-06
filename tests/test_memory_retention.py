@@ -299,5 +299,83 @@ class TestRetentionReturnDict(unittest.TestCase):
             os.unlink(empty_path)
 
 
+class TestRetentionWebSearchResult(unittest.TestCase):
+    """web_search_result entries: archived after 180 days, kept if <= 180 days."""
+
+    def setUp(self):
+        self.db_fd, self.db_path = tempfile.mkstemp(suffix=".db")
+        self.store = SQLiteStore(db_path=self.db_path)
+        now = datetime.now(timezone.utc)
+        # 181 days old -- should be archived
+        self.old_id = _insert_with_date(
+            self.store, "old web search result about pytest patterns",
+            "web_search_result", (now - timedelta(days=181)).isoformat(),
+            entry_id="mem-ret-old-wsr")
+        # 10 days old -- should NOT be archived
+        self.recent_id = _insert_with_date(
+            self.store, "recent web search result about docker",
+            "web_search_result", (now - timedelta(days=10)).isoformat(),
+            entry_id="mem-ret-recent-wsr")
+
+    def tearDown(self):
+        self.store.close()
+        os.close(self.db_fd)
+        os.unlink(self.db_path)
+
+    def test_retention_archives_web_search_result_after_180_days(self):
+        """web_search_result >180 days old is moved to archive."""
+        result = self.store.memory_retention_cleanup()
+        self.assertEqual(result["web_search_result_archived"], 1)
+        # Verify old entry removed from active table
+        with self.store._get_conn() as conn:
+            row = conn.execute(
+                "SELECT id FROM gsd_memory WHERE id = ?", (self.old_id,)
+            ).fetchone()
+            self.assertIsNone(row, "Old web_search_result should be removed from gsd_memory")
+        # Verify old entry is in archive table
+        with self.store._get_conn() as conn:
+            row = conn.execute(
+                "SELECT id FROM gsd_memory_archive WHERE id = ?", (self.old_id,)
+            ).fetchone()
+            self.assertIsNotNone(row, "Old web_search_result should be in gsd_memory_archive")
+
+    def test_recent_web_search_result_not_archived(self):
+        """web_search_result <=180 days old is NOT archived."""
+        self.store.memory_retention_cleanup()
+        with self.store._get_conn() as conn:
+            row = conn.execute(
+                "SELECT id FROM gsd_memory WHERE id = ?", (self.recent_id,)
+            ).fetchone()
+            self.assertIsNotNone(row, "Recent web_search_result should remain in gsd_memory")
+
+
+class TestRetentionDistilledPermanent(unittest.TestCase):
+    """distilled entries are NEVER archived regardless of age (permanent by design)."""
+
+    def setUp(self):
+        self.db_fd, self.db_path = tempfile.mkstemp(suffix=".db")
+        self.store = SQLiteStore(db_path=self.db_path)
+        now = datetime.now(timezone.utc)
+        # 365 days old -- should NEVER be archived
+        self.distilled_id = _insert_with_date(
+            self.store, "distilled knowledge about system design",
+            "distilled", (now - timedelta(days=365)).isoformat(),
+            entry_id="mem-ret-distilled")
+
+    def tearDown(self):
+        self.store.close()
+        os.close(self.db_fd)
+        os.unlink(self.db_path)
+
+    def test_retention_preserves_distilled_entries_forever(self):
+        """distilled entries are NEVER archived regardless of age."""
+        self.store.memory_retention_cleanup()
+        with self.store._get_conn() as conn:
+            row = conn.execute(
+                "SELECT id FROM gsd_memory WHERE id = ?", (self.distilled_id,)
+            ).fetchone()
+            self.assertIsNotNone(row, "distilled entries must NEVER be archived")
+
+
 if __name__ == "__main__":
     unittest.main()
