@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
 milestone: v2.5
-milestone_name: Smarter Brain
-status: active
-stopped_at: Phase 1 complete. 01-01 (RLM reliability+API keys) + 01-02 (Perplexity) both done. Phase 2 ready.
-last_updated: "2026-04-06T00:00:00.000Z"
-last_activity: 2026-04-06 -- Plan 01-01 complete (RLM port cleanup, API key validation, 13 tests)
+milestone_name: milestone
+status: completed
+stopped_at: Plan 02-04 complete. MEM-03/MEM-04/MEM-10 signed off.
+last_updated: "2026-04-06T00:15:00.000Z"
+last_activity: 2026-04-06 -- Plan 02-04 complete (Voyage AI audit + HNSW sign-off)
 progress:
   total_phases: 8
-  completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
-  percent: 12
+  completed_phases: 6
+  total_plans: 17
+  completed_plans: 11
+  percent: 15
 ---
 
 # GSD-Amauta -- Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-06)
 
 ## Current Position
 
-Phase: 1 of 8 (complete)
-Plan: 2/2 complete
-Status: Both Phase 1 plans complete. Plan 01-01 (RLM reliability, 4 tasks, 13 tests). Plan 01-02 (Perplexity, 4 tasks, 11 tests).
-Last activity: 2026-04-06 -- Plan 01-01 complete (RLM port cleanup + API key validation)
+Phase: 2 and 3 of 8 (both planned, executing in parallel)
+Plan: 1/7 complete (02-04 done; 3 remaining in Phase 2, 3 in Phase 3)
+Status: Plan 02-04 complete. MEM-03/MEM-04/MEM-10 signed off. Phase 2: 4 plans, 2 waves, 12 tasks, 10 requirements (MEM-01..10). Phase 3: 3 plans, 3 waves, 8 tasks, 8 requirements (RLM-01..06, RLM-08, RLM-09).
+Last activity: 2026-04-06 -- Plan 02-04: Voyage AI audit + HNSW sign-off (MEM-03, MEM-04, MEM-10)
 
 Progress: [#.........] 12%
 
@@ -68,6 +68,9 @@ Progress: [#.........] 12%
 - Research-backed improvements only -- every change cites a source
 - Redis optional with graceful degradation -- same pattern as PG/file fallback
 - Phases 2 and 3 can run in parallel after Phase 1
+- MEM-04 embedding cache deferred to Phase 4: bundled with amauta.py write-path unification to avoid partial solutions across Python + Node.js
+- MEM-03/MEM-10 CORRECT: no code changes needed, audit comments only
+- Two-write-path gap (amauta.py direct SQL vs daemon HTTP) documented for Phase 4
 
 ### Pending Todos
 
@@ -82,7 +85,7 @@ None. Phase 1 blockers resolved:
 ## Session Continuity
 
 Last session: 2026-04-06
-Stopped at: Phase 1 complete (2/2 plans). Resume at Phase 2.
+Stopped at: Phases 2 and 3 planned. Ready for parallel execution.
 Resume file: None
 
 ## Previous Milestone: v2.4 -- Bulletproof (COMPLETE)
