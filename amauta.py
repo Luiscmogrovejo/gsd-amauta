@@ -4283,21 +4283,52 @@ def cmd_validate(args):
                 save(data)
                 return
 
-            # Validation fail returns task to pending queue (not failed).
-            # Keep failed for system-level incidents only.
-            item["status"]           = "pending"
+            # ── FAILURE CLASSIFICATION (AGT-06) ──────────────────────────────
+            # Increment failure counter
+            item["failure_count"] = item.get("failure_count", 0) + 1
+
+            # Classify the failure using gate results + notes
+            _gate_results = _validate_all_gates(item, test_exempt=getattr(args, "test_exempt", False))
+            error_class = _classify_failure(item, _gate_results, args.notes or "")
+            recovery = RECOVERY_ACTIONS.get(error_class, RECOVERY_ACTIONS["GATE_FAIL"])
+
             item["validated_by"]     = args.validator or "validator"
             item["validation_notes"] = args.notes or "Validation failed"
+
+            # Log classification to task notes
             _append_note(item, f"FAIL: {item['validation_notes']}", item["validated_by"])
+            _append_note(item, f"FAILURE_CLASSIFIED: {error_class} (attempt #{item['failure_count']}). "
+                        f"Recovery: {recovery['action']} -- {recovery['description']}",
+                        args.validator or "validator")
+
+            # Auto-escalation: after MAX_FAILURES_BEFORE_ESCALATION, override status to escalated
+            if error_class == "SYSTEMIC" or item["failure_count"] >= MAX_FAILURES_BEFORE_ESCALATION:
+                item["status"] = "escalated"
+                _append_note(item, f"AUTO_ESCALATED: {item['failure_count']} failures. "
+                            f"Requires operator investigation. Last error class: {error_class}",
+                            args.validator or "validator")
+                print(c(f"\n  {args.id}: AUTO-ESCALATED after {item['failure_count']} failures (class: {error_class})", RED))
+                print(dim(f"  Recovery recommendation: {recovery['description']}"))
+            else:
+                # Validation fail returns task to pending queue (not failed).
+                # Keep failed for system-level incidents only.
+                item["status"] = "pending"
+                print(c(f"FAILED ✗  {args.id}: FAILED (class: {error_class}, attempt #{item['failure_count']})", RED))
+                print(dim(f"  Recovery: {recovery['action']} -- {recovery['description']}"))
+                print(dim("  Agent must re-claim and redo failing phases."))
+
             _mem_log_event(
                 item["validated_by"],
-                ["task", item.get("id", "").lower(), "event:validation_fail", "status:pending", "failure", "autolearn"],
+                ["task", item.get("id", "").lower(), "event:validation_fail", f"status:{item['status']}", "failure", "autolearn"],
                 f"VALIDATION FAIL: {item.get('id')} by @{item['validated_by']}. reason={item.get('validation_notes','')[:240]}",
                 source="task_event",
                 metadata={
                     "task_id": item.get("id"),
                     "event": "validation_fail",
-                    "status": "pending",
+                    "status": item["status"],
+                    "error_class": error_class,
+                    "failure_count": item.get("failure_count", 0),
+                    "recovery_action": recovery["action"],
                 },
             )
             # ── Gitflow audit: log validation fail ─────────────────────────────
@@ -4309,9 +4340,8 @@ def cmd_validate(args):
                     pr_number=_extract_pr_number(_pr) or None,
                     notes=f"FAIL: {item.get('validation_notes', '')[:200]}"
                 )
-            log.warning("task_validated id=%s outcome=fail gate=%s", args.id, _extract_failed_gate(args.notes or ""))
-            print(c(f"FAILED ✗  {args.id} → returned to queue", RED))
-            print(dim("  Agent must re-claim and redo failing phases."))
+            log.warning("task_validated id=%s outcome=fail gate=%s error_class=%s failure_count=%d",
+                       args.id, _extract_failed_gate(args.notes or ""), error_class, item.get("failure_count", 0))
 
             # ── Auto-learning: record failed agent performance ──────────
             _record_agent_performance(
@@ -4335,6 +4365,9 @@ def cmd_validate(args):
                     "gate_failed": _extract_failed_gate(args.notes or ""),
                     "failure_reason": (args.notes or "")[:500],
                     "self_validated": bool(claimer and validator_id and claimer == validator_id),
+                    "error_class": error_class,
+                    "failure_count": item.get("failure_count", 0),
+                    "recovery_action": recovery["action"],
                 },
             )
 
