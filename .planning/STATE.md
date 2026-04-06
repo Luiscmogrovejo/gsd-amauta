@@ -85,6 +85,7 @@ Progress: [##........] 24%
 - MEM-02: LLM summarization added to distill via --use-llm flag; isOllamaAvailable/selectOllamaModel/llmSummarize helpers; distill_strategy+distill_model metadata provenance; main() gated on require.main for testability
 - RLM-08: ChunkCache hit/miss counters added (_hit_count, _miss_count, hit_rate property); /cache/stats endpoint extended with all 3 fields; counters reset on clear()
 - RLM-09: ChunkCache.clear_file() evicts entries by filepath only; fresh=body.get('fresh',False) in _handle_query and _handle_search with bypass loop; --fresh CLI flag in parseArgs + all 4 body paths; fresh bypasses cache for single query, result re-enters cache normally
+- MEM-04: query embedding cache in pg_store.py; module-level dict with sha256 key (text:input_type:model)[:16], 1h TTL, 500-entry max, batch eviction of oldest 100; query-only (document embeddings bypass cache); process-local for Phase 4 (Redis in Phase 5 for cross-invocation)
 - TOK-05: Perplexity citation markers ([1],[12],[999]) stripped from answer text before both memory store and return path; cleanAnswer = answer.replace(/\[\d+\]/g,'').replace(/\s{2,}/g,' ').trim(); res.data.citations metadata untouched
 - TOK-03 AUDIT: ENRICHMENT_DEDUP_WINDOW=300 confirmed correct; 3 edge cases documented as inline comments in amauta.py (>5min expiry, R-phase-only scope, reversed() safe non-bug)
 
