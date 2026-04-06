@@ -139,6 +139,43 @@ def _clear_query_embed_cache():
     _QUERY_EMBED_CACHE.clear()
 
 
+# INF-05/TOK-06: Redis L2 embedding cache (cross-invocation persistence)
+_REDIS_EMBED_TTL = 3600  # 1 hour, matches L1 dict TTL
+_REDIS_EMBED_PREFIX = "gsd:emb:"
+
+
+def _redis_embed_get(cache_key):
+    """Try to get embedding from Redis L2 cache. Returns list[float] or None."""
+    try:
+        # Lazy import -- daemon may or may not have redis
+        from amauta_daemon_redis import get_redis_client
+        client = get_redis_client()
+        if not client:
+            return None
+        raw = client.get(f"{_REDIS_EMBED_PREFIX}{cache_key}")
+        if raw:
+            return json.loads(raw)
+    except Exception:
+        pass
+    return None
+
+
+def _redis_embed_set(cache_key, embedding):
+    """Write embedding to Redis L2 cache. Silent on failure."""
+    try:
+        from amauta_daemon_redis import get_redis_client
+        client = get_redis_client()
+        if not client:
+            return
+        client.setex(
+            f"{_REDIS_EMBED_PREFIX}{cache_key}",
+            _REDIS_EMBED_TTL,
+            json.dumps(embedding),
+        )
+    except Exception:
+        pass
+
+
 class PGStore:
     """Thread-safe PostgreSQL store with connection pooling and reconnect."""
 
@@ -1124,6 +1161,12 @@ class PGStore:
             cached = _QUERY_EMBED_CACHE.get(cache_key)
             if cached and (time.time() - cached[1]) < _QUERY_EMBED_TTL:
                 return cached[0]
+            # TOK-06: Check Redis L2 cache (cross-invocation)
+            redis_hit = _redis_embed_get(cache_key)
+            if redis_hit:
+                # Promote to L1 for fast subsequent access
+                _QUERY_EMBED_CACHE[cache_key] = (redis_hit, time.time())
+                return redis_hit
 
         # Build payload
         payload_dict = {
@@ -1161,6 +1204,8 @@ class PGStore:
                 # MEM-04: Cache query embeddings
                 if cache_key and embedding:
                     _QUERY_EMBED_CACHE[cache_key] = (embedding, time.time())
+                    # TOK-06: Also write to Redis L2
+                    _redis_embed_set(cache_key, embedding)
                     # Evict oldest entries if cache exceeds max size
                     if len(_QUERY_EMBED_CACHE) > _QUERY_EMBED_MAX:
                         sorted_keys = sorted(

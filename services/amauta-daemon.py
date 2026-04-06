@@ -459,6 +459,9 @@ REDIS_URL = os.environ.get("GSD_REDIS_URL", "redis://127.0.0.1:6379/0")
 REDIS_MAX_RESTARTS = 3
 _redis_restart_count = 0
 _redis_enabled = os.environ.get("GSD_REDIS_ENABLED", "true").lower() != "false"
+# TOK-06: Redis-backed Perplexity response cache constants
+REDIS_PERPLEXITY_TTL = 21600  # 6 hours, matches file cache TTL
+REDIS_PERPLEXITY_PREFIX = "gsd:ppx:"
 
 
 def _start_redis():
@@ -1332,6 +1335,26 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": _safe_error(e)}, 500)
             return
 
+        # ─── Research Cache GET route (TOK-06: Redis-backed Perplexity cache) ──
+        if path == "/api/research-cache" or path.startswith("/api/research-cache?"):
+            from urllib.parse import urlparse as _urlparse, parse_qs as _parse_qs
+            qs = _parse_qs(_urlparse(self.path).query)
+            cache_key = qs.get("key", [None])[0]
+            if not cache_key:
+                self._send_json({"error": "missing key param"}, status=400)
+                return
+            # Try Redis first
+            if _redis_client and _check_redis_health():
+                try:
+                    raw = _redis_client.get(f"{REDIS_PERPLEXITY_PREFIX}{cache_key}")
+                    if raw:
+                        self._send_json({"hit": True, "data": json.loads(raw)})
+                        return
+                except Exception:
+                    pass
+            self._send_json({"hit": False}, status=404)
+            return
+
         self._send_json({"error": f"Unknown GET route: {path}"}, 404)
 
     # ─── POST routes ─────────────────────────────────
@@ -2080,6 +2103,12 @@ def start_server(foreground=False):
             print(
                 f"  Redis: connected ({REDIS_URL.split('@')[-1] if '@' in REDIS_URL else REDIS_URL})"
             )
+            # Inject Redis client into bridge module for pg_store access
+            try:
+                from amauta_daemon_redis import set_redis_client
+                set_redis_client(_redis_client)
+            except ImportError:
+                pass
             redis_watchdog_thread = threading.Thread(target=_redis_watchdog, daemon=True)
             redis_watchdog_thread.start()
         else:
