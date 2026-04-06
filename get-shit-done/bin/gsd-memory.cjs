@@ -1264,6 +1264,64 @@ async function maybeAutoDistill() {
   } catch { /* silent */ }
 }
 
+// ── LLM Distill Helpers (02-03) ─────────────────────────────────────────────
+
+function isOllamaAvailable() {
+  try {
+    const { execSync } = require('child_process');
+    execSync('which ollama', { stdio: 'pipe' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function selectOllamaModel() {
+  try {
+    const { execSync } = require('child_process');
+    const output = execSync('ollama list', { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
+    if (output.includes('qwen3:8b')) return 'qwen3:8b';
+    if (output.includes('llama3.2:3b')) return 'llama3.2:3b';
+    // Fallback: first available model
+    const lines = output.trim().split('\n').slice(1);
+    if (lines.length > 0) {
+      const firstModel = lines[0].split(/\s+/)[0];
+      if (firstModel) return firstModel;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function llmSummarize(entries, model) {
+  const { execSync } = require('child_process');
+  const combinedText = entries.map((e, i) =>
+    `[Entry ${i + 1} | source: ${e.source || 'unknown'}]:\n${(e.text || '').slice(0, 800)}`
+  ).join('\n\n');
+
+  const prompt = `You are a knowledge distillation assistant. Summarize these ${entries.length} related memory entries into ONE coherent entry that preserves all key facts, decisions, and lessons learned. Output ONLY the summary, no preamble.\n\n${combinedText}`;
+
+  try {
+    const result = execSync(
+      `ollama run ${model}`,
+      {
+        input: prompt,
+        encoding: 'utf-8',
+        timeout: 30000,
+        maxBuffer: 1024 * 1024,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      }
+    );
+    const summary = result.trim();
+    if (summary.length < 20) return null; // Too short, likely error
+    return summary.slice(0, 4000);
+  } catch (err) {
+    process.stderr.write(`[distill] LLM summarization failed: ${err.message || err}\n`);
+    return null;
+  }
+}
+
 async function cmdDistill(args) {
   const threshold = parseFloat(args.threshold || '0.7');
   const dryRun = !!args['dry-run'];
@@ -1680,6 +1738,7 @@ function printUsage() {
   --offset <n>         Pagination offset
   --threshold <0-1>    Similarity threshold for distill (default: 0.7)
   --dry-run            Preview distill without changes
+  --use-llm            Use Ollama LLM for summarization instead of concatenation
   --json               Raw JSON output
   --content <text>     SKB entry content (required for skb-add)
   --task <id>          Source task ID for SKB entries
