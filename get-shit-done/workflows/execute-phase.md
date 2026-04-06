@@ -654,6 +654,13 @@ Orchestrator: ~10-15% context. Subagents: fresh 200k each. No polling (Task bloc
 - **Dependency chain breaks:** Wave 1 fails → Wave 2 dependents likely fail → user chooses attempt or skip
 - **All agents in wave fail:** Systemic issue → stop, report for investigation
 - **Checkpoint unresolvable:** "Skip this plan?" or "Abort phase execution?" → record partial progress in STATE.md
+- **Recovery classification (AGT-06):** When a task is validated as failed, it is automatically classified:
+  - TRANSIENT: retry the task (same agent) — environmental/timing issue
+  - GATE_FAIL: return to executor to fix specific RPETD gate failures (most common)
+  - CAPABILITY_MISMATCH: reroute to executor-general or a different specialist
+  - SYSTEMIC: auto-escalated after 3 failures — requires operator investigation
+  Check task notes for `FAILURE_CLASSIFIED:` and `AUTO_ESCALATED:` entries.
+  After 3 failures, the task status becomes `escalated` (not `pending`).
 </failure_handling>
 
 <resumption>
