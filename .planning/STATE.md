@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v2.5
 milestone_name: milestone
 status: completed
-stopped_at: Plan 06-03 complete. R_PHASE_SUBSTANCE+P_PHASE_SUBSTANCE gates (>=50 chars), T threshold raised, phase-order warning, force_reason persisted, 16 new tests pass, 38+114+72 existing tests still pass.
-last_updated: "2026-04-06T16:05:00.000Z"
-last_activity: "2026-04-06 -- Plan 06-03: R/P substance gates, T threshold >=50, phase-order warning, force_reason->notes+metadata, 16/16 tests"
+stopped_at: Plan 06-05 complete. agent-capabilities.json created (11 agents), routeExecutor wired to JSON index (AGT-07), 21 index tests + 27 routing tests pass.
+last_updated: "2026-04-06T17:18:00.000Z"
+last_activity: "2026-04-06 -- Plan 06-05: agent-capabilities.json + routeExecutor wire-up, 21/21 index tests, 27/27 routing tests"
 progress:
   total_phases: 7
   completed_phases: 4
@@ -27,8 +27,8 @@ See: .planning/PROJECT.md (updated 2026-04-06)
 
 Phase: 7 of 7
 Plan: 1/1 complete for Phase 07 (07-01 done)
-Status: Phase 07 complete. Plan 07-01 complete: archive/reconcile added to _EXEC_ALLOWLIST+command_map+special handlers (HIGH severity dead-code fix), STALE_CHECK_INTERVAL now reads GSD_STALE_INTERVAL env var, 17/17 guard tests pass (ROUTE/WATCHDOG/PGSYNC/ARCHIVE suites). All 7 phases complete.
-Last activity: 2026-04-06 -- Plan 07-01: archive/reconcile routing, GSD_STALE_INTERVAL, 17 guard tests
+Status: Phase 07 complete. Plan 06-05 complete: agent-capabilities.json (11 agents), routeExecutor wired to JSON index (AGT-07), 21 index + 27 routing tests pass. All 7 phases complete.
+Last activity: 2026-04-06 -- Plan 06-05: agent-capabilities.json + routeExecutor wire-up, AGT-07 complete
 
 Progress: [##########] 100%
 
@@ -101,6 +101,7 @@ Progress: [##########] 100%
 - [Plan 06-03]: R_PHASE_SUBSTANCE gate (>=50 chars) and P_PHASE_SUBSTANCE gate (>=50 chars) added to _validate_all_gates() after Gate 0; non-code T threshold raised from >20 to >=50; substance gates emit SKIP (not FAIL) for empty phases, deferring to RPETD_COMPLETE
 - [Plan 06-03]: Phase-order warning in cmd_rpetd() is soft (YELLOW print, no sys.exit) -- intentional design for async parallel agent workflows; PHASE_ORDER = ["R","P","E","T","D"] defined in function scope
 - [Plan 06-03]: force_reason persisted to two audit surfaces: _append_note (FORCE_OVERRIDE: text in task notes) and _mem_log_event metadata (force_reason + forced boolean) -- AGT-05 fix; validation-gates.test.cjs setupTask defaults updated to meet new 50-char gates
+- [Plan 06-05]: agent-capabilities.json is single source of truth for routeExecutor routing (AGT-07). getCapabilityIndex() lazy singleton loads JSON once. Glob-to-regex converts 4 pattern types: *.ext (extension), prefix* (prefix-anchor), dir/* (directory), exact (path-anchor). All 27 06-02 routing tests still pass after wire-up.
 
 ### Pending Todos
 
