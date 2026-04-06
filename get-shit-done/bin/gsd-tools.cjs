@@ -144,6 +144,26 @@ const frontmatter = require('./lib/frontmatter.cjs');
 
 // ─── Routing Helper ───────────────────────────────────────────────────────────
 
+// Routing data flow (AGT-07):
+//   agent-capabilities.json (source of truth)
+//     -> routeExecutor() reads file_patterns per agent
+//     -> execute-phase.md calls `gsd-tools.cjs route-executor`
+//     -> execute-plan.md documents the same routing
+
+// Agent capability index -- loaded once for routing
+let _capabilityIndex = null;
+function getCapabilityIndex() {
+  if (!_capabilityIndex) {
+    try {
+      const capPath = path.join(__dirname, '..', 'agent-capabilities.json');
+      _capabilityIndex = JSON.parse(fs.readFileSync(capPath, 'utf-8'));
+    } catch (e) {
+      _capabilityIndex = { agents: [] };
+    }
+  }
+  return _capabilityIndex;
+}
+
 /**
  * route-executor: Determine which executor agent should handle a set of files.
  *
@@ -151,36 +171,56 @@ const frontmatter = require('./lib/frontmatter.cjs');
  * Output: one of: executor-frontend, executor-backend, executor-infra, executor-general
  *
  * Priority order: frontend > infra > backend > general
- * This matches the original routing semantics but with tightened patterns.
+ * File patterns are read from agent-capabilities.json (AGT-07 single source of truth).
+ * Routing behavior is identical to the previous hardcoded implementation.
  *
- * Infra regex tightened vs the old inline grep: only matches known infra file
- * patterns (Dockerfile, docker-compose, .github/workflows/, terraform/, k8s/,
- * nginx.conf) — NOT any path merely containing "config", "deploy", "ci", "infra"
- * as substrings. This eliminates false positives like src/config.ts and
+ * Infra patterns are path-prefix anchored: only known infra file patterns
+ * (Dockerfile*, docker-compose*, .github/workflows/*, terraform/*, k8s/*,
+ * nginx.conf) match — NOT any path merely containing "config", "deploy", "ci",
+ * "infra" as substrings. This eliminates false positives like src/config.ts and
  * src/deploy-utils.ts being routed to executor-infra.
  */
 function routeExecutor(filesStr) {
   const files = (filesStr || '').split(',').map(f => f.trim()).filter(Boolean);
   if (!files.length) return 'executor-general';
 
+  const caps = getCapabilityIndex();
   const joined = files.join('\n');
 
-  // Frontend: React/Vue/Svelte components and stylesheets
-  if (/\.(tsx|jsx|css|scss|sass|less|html|vue|svelte)$/im.test(joined)) {
-    return 'executor-frontend';
-  }
+  // Priority order: frontend > infra > backend > general
+  // This order ensures .tsx routes to frontend (not backend via .ts)
+  const routingOrder = ['gsd-executor-frontend', 'gsd-executor-infra', 'gsd-executor-backend'];
 
-  // Infra: Docker, CI/CD, K8s, Terraform — tightened to avoid false positives.
-  // Only match: Dockerfile*, docker-compose*, .github/workflows/*, terraform/*,
-  // k8s/*, nginx.conf. NOT: any path containing "config", "deploy", "ci", "infra"
-  // as substrings (those were the false positives in the old grep pattern).
-  if (/(?:^|\/)(?:Dockerfile|docker-compose|\.github\/workflows\/|terraform\/|k8s\/|nginx\.conf)/im.test(joined)) {
-    return 'executor-infra';
-  }
+  for (const agentId of routingOrder) {
+    const agent = caps.agents.find(a => a.id === agentId);
+    if (!agent || !agent.file_patterns.length) continue;
 
-  // Backend: Code files (Python, JS, TS, Go, Rust, Java, SQL, CJS, MJS)
-  if (/\.(py|js|cjs|mjs|ts|go|rs|java|sql)$/im.test(joined)) {
-    return 'executor-backend';
+    for (const pattern of agent.file_patterns) {
+      // Convert glob-style pattern to regex
+      // *.tsx -> /\.tsx$/i, Dockerfile* -> /(?:^|\/)Dockerfile/i, .github/workflows/* -> /\.github\/workflows\//i
+      let regex;
+      if (pattern.startsWith('*.')) {
+        // Extension match: *.tsx -> match files ending in .tsx
+        const ext = pattern.slice(1).replace('.', '\\.');
+        regex = new RegExp(`${ext}$`, 'im');
+      } else if (pattern.endsWith('/*')) {
+        // Directory match: terraform/* -> match paths containing terraform/
+        const dir = pattern.slice(0, -2).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        regex = new RegExp(`(?:^|\\/)${dir}\\/`, 'im');
+      } else if (pattern.endsWith('*')) {
+        // Prefix match: Dockerfile* -> match filenames starting with Dockerfile
+        const prefix = pattern.slice(0, -1).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        regex = new RegExp(`(?:^|\\/)${prefix}`, 'im');
+      } else {
+        // Exact match: nginx.conf
+        const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        regex = new RegExp(`(?:^|\\/)${escaped}$`, 'im');
+      }
+
+      if (regex.test(joined)) {
+        return agentId.replace('gsd-', '');
+      }
+    }
   }
 
   return 'executor-general';
