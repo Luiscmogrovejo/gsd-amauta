@@ -59,6 +59,24 @@ DEFAULT_EXCLUDE_SOURCES = ("task_event", "rpetd_phase")
 RECENCY_DECAY_PER_30D = float(os.environ.get("GSD_RECENCY_DECAY_PER_30D", "0.5"))
 MAX_RECENCY_PENALTY = 3.0  # Cap at 6 months of decay
 
+# MEM-05: Dedup thresholds (audited 2026-04-06)
+# - Pre-store cosine dedup: 0.95 (env: GSD_DEDUP_THRESHOLD) -- near-identical detection
+#   Threshold 0.95 is correct per industry benchmarks; values >0.98 miss paraphrases,
+#   values <0.90 over-deduplicate semantically distinct entries.
+# - Distillation grouping: Jaccard 0.7 (in gsd-memory.cjs, threshold || '0.7') -- topic-level grouping
+# - Cosine 0.85 for distill grouping deferred to MEM-02 (LLM summarization plan)
+#
+# MEM-06: Scoring formula (audited 2026-04-06)
+# - pg_store.py (daemon path): score = ts_rank * 10 + source_bonus - recency_penalty
+#   ts_rank is PostgreSQL full-text search relevance (0.0-1.0 float)
+# - amauta.py (direct path): score = SUM(per-term LIKE matches) + source_bonus - recency_penalty
+#   LIKE count is integer (number of terms matched)
+# - source_bonus values (SOURCE_SCORES dict above) are IDENTICAL across both paths
+# - recency_penalty formula is IDENTICAL: min(decay_per_30d * days/30, MAX_RECENCY_PENALTY)
+# - Difference in base score method (ts_rank vs LIKE count) is intentional:
+#   daemon path uses full PG text search; direct path is a lightweight fallback
+# - Both paths apply recency decay -- no gap. (Plan 02-02 scope: MEM-07 semantic gap)
+#
 # MEM-02/MEM-08: Tiered retention -- archive stale entries by source type
 # Permanent: lesson-learned, best-practice, distilled (not in dict = never archived)
 # Long: auto_learning, session-learning (not in dict = never archived, decay handles ranking)
