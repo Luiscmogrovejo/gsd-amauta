@@ -1463,7 +1463,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
         _EXEC_ALLOWLIST = {
             "show", "list", "board", "search", "score", "next", "health",
             "note", "rpetd", "validate", "status", "claim", "add", "assign",
-            "link", "unlink", "update",
+            "link", "unlink", "update", "archive", "reconcile",
         }
         if path == "/api/exec":
             args = body.get("args", [])
@@ -1498,6 +1498,8 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             "/api/atomize": "atomize",
             "/api/update": "update",
             "/api/delete": "delete",
+            "/api/archive": "archive",
+            "/api/reconcile": "reconcile",
         }
 
         if path in command_map:
@@ -1531,6 +1533,18 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     args.append("--pass")
                 elif body.get("pass_result") is False:
                     args.append("--fail")
+
+            # Special handling for archive command — no task ID, optional --days
+            if command == "archive":
+                args = ["archive"]
+                if body.get("days"):
+                    args.extend(["--days", str(body["days"])])
+
+            # Special handling for reconcile command — no task ID, optional --fix
+            if command == "reconcile":
+                args = ["reconcile"]
+                if body.get("fix") is True:
+                    args.append("--fix")
 
             out, err, rc = self._run_amauta(args)
 
