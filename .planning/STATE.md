@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.5
 milestone_name: milestone
 status: executing
-stopped_at: Plan 06-01 complete. Phase 06 plan 01 done. Checker/validator boundary demarcated, executor-general fallback risk documented, roadmapper patterns added, 20/20 audit tests pass.
+stopped_at: Plan 07-01 complete. Phase 07 plan 01 done. archive/reconcile routing fixed, STALE_CHECK_INTERVAL env-configurable, 17/17 guard tests pass.
 last_updated: "2026-04-06T00:00:00.000Z"
-last_activity: "2026-04-06 -- Plan 06-01: BOUNDARY blocks in checker+validator, routing_note in executor-general, patterns block in roadmapper, 20-assertion test suite 20/20 pass"
+last_activity: "2026-04-06 -- Plan 07-01: archive/reconcile added to command_map+_EXEC_ALLOWLIST, GSD_STALE_INTERVAL env var, 17 guard tests (ROUTE/WATCHDOG/PGSYNC/ARCHIVE suites)"
 progress:
   total_phases: 7
-  completed_phases: 6
-  total_plans: 16
-  completed_plans: 16
-  percent: 30
+  completed_phases: 7
+  total_plans: 17
+  completed_plans: 17
+  percent: 100
 ---
 
 # GSD-Amauta -- Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-06)
 
 ## Current Position
 
-Phase: 6 of 8
-Plan: 1/5 complete for Phase 06 (06-01 done)
-Status: Phase 06 in progress. Plan 06-01 complete: AGT-01 gaps G1-G5 addressed -- BOUNDARY blocks in checker+validator, routing_note in executor-general, patterns block in roadmapper, 20/20 audit tests pass.
-Last activity: 2026-04-06 -- Plan 06-01: BOUNDARY blocks in checker+validator, routing_note in executor-general, patterns block in roadmapper, 20-assertion test suite 20/20 pass
+Phase: 7 of 7
+Plan: 1/1 complete for Phase 07 (07-01 done)
+Status: Phase 07 complete. Plan 07-01 complete: archive/reconcile added to _EXEC_ALLOWLIST+command_map+special handlers (HIGH severity dead-code fix), STALE_CHECK_INTERVAL now reads GSD_STALE_INTERVAL env var, 17/17 guard tests pass (ROUTE/WATCHDOG/PGSYNC/ARCHIVE suites). All 7 phases complete.
+Last activity: 2026-04-06 -- Plan 07-01: archive/reconcile routing, GSD_STALE_INTERVAL, 17 guard tests
 
-Progress: [###.......] 30%
+Progress: [##########] 100%
 
 ## Research Completed
 
