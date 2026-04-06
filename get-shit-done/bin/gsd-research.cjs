@@ -316,12 +316,15 @@ async function providerPerplexity(query, limit) {
     const answer = res.data.choices?.[0]?.message?.content || '';
     const citations = res.data.citations || [];
 
-    if (!answer) return null;
+    // TOK-05: Strip citation markers -- actual URLs are in res.data.citations metadata
+    const cleanAnswer = answer.replace(/\[\d+\]/g, '').replace(/\s{2,}/g, ' ').trim();
+
+    if (!cleanAnswer) return null;
 
     // TK-0047: Auto-store Perplexity results to PG memory
     // TK-0048: Dedup check before storing — skip if >70% similar to existing entry
     try {
-      const cappedAnswer = answer.slice(0, 2000);
+      const cappedAnswer = cleanAnswer.slice(0, 2000);
       const isDup = await isDuplicateMemory(cappedAnswer);
       if (!isDup) {
         await daemonRequest('POST', '/api/memory/store', {
@@ -344,7 +347,7 @@ async function providerPerplexity(query, limit) {
       provider: 'perplexity',
       count: 1,
       results: [{
-        text: stripPreamble(answer).slice(0, PERPLEXITY_OUTPUT_CAP),
+        text: stripPreamble(cleanAnswer).slice(0, PERPLEXITY_OUTPUT_CAP),
         citations,
         model: res.data.model || selectedModel,
       }],
