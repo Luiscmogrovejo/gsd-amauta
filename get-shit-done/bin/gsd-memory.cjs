@@ -1839,8 +1839,6 @@ async function main() {
   }
 }
 
-main();
-
 // ── Test exports (02-03) ─────────────────────────────────────────────────────
 // Exported for unit testing only. Not part of the public CLI API.
 if (require.main !== module) {
@@ -1849,4 +1847,6 @@ if (require.main !== module) {
     _test_selectOllamaModel: selectOllamaModel,
     _test_llmSummarize: llmSummarize,
   };
+} else {
+  main();
 }
