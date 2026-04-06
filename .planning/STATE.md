@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v2.5
 milestone_name: milestone
 status: in-progress
-stopped_at: Plan 04-02 complete. TOK-01 Perplexity cache done (6h TTL, atomic write, --no-cache bypass). Ready for Plan 04-05 (reranking).
-last_updated: "2026-04-06T19:00:00.000Z"
-last_activity: "2026-04-06 -- Plan 04-02: Perplexity temp-file cache with 6h TTL + --no-cache bypass; 12/12 tests pass"
+stopped_at: Plan 04-05 complete. RLM-07 rerank wiring done (_get_pgstore_rerank helper + len>=3 guard + graceful degradation). Phase 04 all 5 plans complete.
+last_updated: "2026-04-06T19:30:00.000Z"
+last_activity: "2026-04-06 -- Plan 04-05: Voyage rerank-2.5 wired into _mem_semantic_search with len>=3 guard; 14/14 tests pass"
 progress:
   total_phases: 8
   completed_phases: 6
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-04-06)
 ## Current Position
 
 Phase: 4 of 8
-Plan: 2/5 complete for Phase 04 (04-01, 04-02 done; 04-03 done earlier; 04-04 done; 04-05 pending)
-Status: Plan 04-02 complete. Perplexity response cache with 6h TTL + --no-cache bypass. Phase 2 (MEM-01..10) and Phase 3 (RLM-01..06, RLM-08, RLM-09) both fully complete.
-Last activity: 2026-04-06 -- Plan 04-02: Perplexity temp-file cache with 6h TTL + --no-cache bypass; 12/12 tests pass
+Plan: 5/5 complete for Phase 04 (04-01, 04-02, 04-03, 04-04, 04-05 all done)
+Status: Phase 04 complete. All 5 plans finished. RLM-07 rerank wiring, MEM-04 embedding cache, TOK-01..05 token efficiency all done. Phase 2 (MEM-01..10) and Phase 3 (RLM-01..06, RLM-08, RLM-09) both fully complete.
+Last activity: 2026-04-06 -- Plan 04-05: Voyage rerank-2.5 wired into _mem_semantic_search with len>=3 guard; 14/14 tests pass
 
 Progress: [###.......] 30%
 
@@ -92,6 +92,7 @@ Progress: [###.......] 30%
 - TOK-04: selectPerplexityModel already complete from Phase 1 Plan 01-02; regression confirmed (11/11 tests pass)
 - Pre-change audit for enrichment removal is mandatory: test_rlm_enrichment.py and security-infrastructure.test.cjs had stale T/D-phase RLM call assertions that required updating
 - TOK-01: Perplexity temp-file response cache at ~/.amauta/perplexity-cache.json; 6h TTL; SHA-256(query:model)[:16] key; atomic tmp+rename write; _noCache function property flag for --no-cache bypass; cache read before API, cache write always after API; two gsd-research.cjs copies exist (repo vs installed) -- tests use repo copy
+- RLM-07: Voyage rerank-2.5 wired into _mem_semantic_search() via _get_pgstore_rerank() lazy import helper; guarded by len(out) >= 3; rerank_score metadata added to reranked entries; except Exception: pass for silent graceful degradation to original pgvector ordering
 
 ### Pending Todos
 
