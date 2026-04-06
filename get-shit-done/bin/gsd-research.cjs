@@ -268,7 +268,7 @@ async function providerPerplexity(query, limit) {
           },
         ],
         temperature: 0.2,     // Low temperature for deterministic code outputs
-        max_tokens: 4096,     // Longer context for code snippets and detailed answers
+        max_tokens: 1000,     // Capped: PERPLEXITY_OUTPUT_CAP is 1500 chars (~375 tokens); 1000 gives buffer
       },
       {
         Authorization: `Bearer ${PERPLEXITY_API_KEY}`,
