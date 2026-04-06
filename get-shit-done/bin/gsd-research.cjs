@@ -225,6 +225,36 @@ function selectPerplexityModel(query) {
 }
 
 // ═══════════════════════════════════════════════════════
+// Perplexity Rate Limit Retry (RSC-04)
+// ═══════════════════════════════════════════════════════
+
+const PERPLEXITY_MAX_RETRIES = 3;
+const PERPLEXITY_BASE_DELAY_MS = 1000;
+
+/**
+ * Wrap Perplexity httpsRequest with exponential backoff on HTTP 429.
+ * Retries: 1s, 2s, 4s (3 retries max), then returns the final 429 response.
+ */
+async function perplexityWithRetry(requestBody, headers) {
+  let lastRes = null;
+  for (let attempt = 0; attempt <= PERPLEXITY_MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      const delay = PERPLEXITY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+      process.stderr.write(`  [RATE LIMIT] Perplexity 429 — retry ${attempt}/${PERPLEXITY_MAX_RETRIES} in ${delay}ms\n`);
+      await new Promise(r => setTimeout(r, delay));
+    }
+    lastRes = await httpsRequest(
+      'api.perplexity.ai',
+      '/chat/completions',
+      requestBody,
+      headers,
+    );
+    if (lastRes.status !== 429) return lastRes;
+  }
+  return lastRes; // Return the final 429 response after all retries exhausted
+}
+
+// ═══════════════════════════════════════════════════════
 // HTTP Helpers
 // ═══════════════════════════════════════════════════════
 
@@ -432,9 +462,7 @@ async function providerPerplexity(query, limit) {
   }
 
   try {
-    const res = await httpsRequest(
-      'api.perplexity.ai',
-      '/chat/completions',
+    const res = await perplexityWithRetry(
       {
         model: selectedModel,
         messages: [
@@ -596,13 +624,16 @@ async function providerWebFetch(query, _limit, url) {
 // Research Result Dedup (TK-0048)
 // ═══════════════════════════════════════════════════════
 
+// RSC-05: Preserve 2-char technical abbreviations in Jaccard dedup
+const TECH_SHORT_WORDS = new Set(['ai', 'db', 'js', 'go', 'ui', 'ux', 'ci', 'cd', 'ml', 'pg', 'k8', 'io']);
+
 /**
  * Simple word-overlap similarity (Jaccard-like). Returns 0-1.
  * Matches textSimilarity() in gsd-memory.cjs for consistency.
  */
 function textSimilarity(a, b) {
-  const wordsA = new Set(a.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 2));
-  const wordsB = new Set(b.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 2));
+  const wordsA = new Set(a.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 2 || TECH_SHORT_WORDS.has(w)));
+  const wordsB = new Set(b.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 2 || TECH_SHORT_WORDS.has(w)));
   if (wordsA.size === 0 || wordsB.size === 0) return 0;
   let intersection = 0;
   for (const w of wordsA) {
@@ -635,6 +666,9 @@ async function isDuplicateMemory(text) {
 
     for (const existing of res.data.results) {
       const sim = textSimilarity(text, existing.text || '');
+      if (sim >= 0.3) {
+        process.stderr.write(`  [DEDUP] similarity=${sim.toFixed(2)} threshold=${DEDUP_THRESHOLD} dup=${sim >= DEDUP_THRESHOLD}\n`);
+      }
       if (sim >= DEDUP_THRESHOLD) {
         return true; // Duplicate found
       }
@@ -701,6 +735,10 @@ function stripPreamble(text) {
     /^(?:the\s+following\s+(?:is|provides|summarizes|outlines)\s+[^.:]{0,120}[.:]\s*)/i,
     /^(?:to\s+(?:answer|address|respond\s+to)\s+(?:your|this|the)\s+(?:question|query|request)[^.:,]{0,100}[.:,]\s*)/i,
     /^(?:(?:great|good)\s+question[.!,]\s*)/i,
+    // v2.5 Phase 7: additional Perplexity preamble patterns
+    /^(?:of\s+course[,!.]?\s*)/i,
+    /^(?:i'?d\s+be\s+happy\s+to\s+(?:help|explain|provide|assist)[^.:,]{0,100}[.:,]\s*)/i,
+    /^(?:as\s+an?\s+(?:AI|artificial\s+intelligence)\s+(?:assistant|model|language\s+model)[^.:,]{0,100}[.:,]\s*)/i,
   ];
   let result = text;
   // Loop until stable — handles compound preambles like
