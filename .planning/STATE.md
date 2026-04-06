@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v2.5
 milestone_name: milestone
 status: in_progress
-stopped_at: Plan 05-02 complete. Phase 05 plan 02 done. Redis L2 embedding cache + bridge module.
-last_updated: "2026-04-06T00:00:00.000Z"
-last_activity: "2026-04-06 -- Plan 05-02: amauta_daemon_redis.py bridge module, _redis_embed_get/set in pg_store.py, two-tier L1->L2->API lookup in generate_embedding(), daemon injects client at startup; 13/13 new tests + 12/12 Phase 4 regression pass"
+stopped_at: Plan 05-03 complete. Phase 05 plans 01+02+03 done. Redis Perplexity cache via daemon proxy.
+last_updated: "2026-04-06T00:18:00.000Z"
+last_activity: "2026-04-06 -- Plan 05-03: /api/research-cache GET/POST in daemon (gsd:ppx: prefix, 21600s TTL, redis_unavailable fallback); _checkDaemonCache/_writeDaemonCache in gsd-research.cjs (stdlib-only); providerPerplexity cache order: Redis L1 -> file L2 -> API; 13/13 tests pass, 25/25 total with 04-02 regression"
 progress:
   total_phases: 7
   completed_phases: 5
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-04-06)
 ## Current Position
 
 Phase: 5 of 8
-Plan: 2/? started for Phase 05 (05-01 and 05-02 done)
-Status: Phase 05 in progress. Plan 05-02 complete: amauta_daemon_redis.py bridge module, Redis L2 embedding cache in pg_store.py (two-tier L1->L2->API lookup, L1 promotion on L2 hit, silent degradation), daemon injects client via bridge at startup.
-Last activity: 2026-04-06 -- Plan 05-02: amauta_daemon_redis.py bridge module, _redis_embed_get/set in pg_store.py, two-tier L1->L2->API lookup in generate_embedding(), daemon injects client at startup; 13/13 new tests + 12/12 Phase 4 regression pass
+Plan: 3/? started for Phase 05 (05-01, 05-02, and 05-03 done)
+Status: Phase 05 in progress. Plan 05-03 complete: /api/research-cache GET/POST endpoints in daemon (gsd:ppx: prefix, 21600s TTL, redis_unavailable fallback), _checkDaemonCache/_writeDaemonCache added to gsd-research.cjs (stdlib-only), providerPerplexity now checks Redis L1 before file L2 before calling Perplexity API.
+Last activity: 2026-04-06 -- Plan 05-03: /api/research-cache GET/POST in daemon, _checkDaemonCache/_writeDaemonCache in gsd-research.cjs, L1->L2->API cache hierarchy; 13/13 tests pass
 
 Progress: [###.......] 30%
 
@@ -96,6 +96,7 @@ Progress: [###.......] 30%
 - INF-05: Redis added to docker-compose (redis:7-alpine, allkeys-lru, no persistence), redis-py>=5.0 in requirements.txt, _HAS_REDIS import guard mirrors _HAS_PG_MODULE pattern; daemon has 5 Redis management functions (_start_redis, _auto_start_redis_container, _stop_redis, _check_redis_health, _redis_watchdog) mirroring RLM pattern; health endpoint exposes redis_managed/running/url/restarts; infra_detect._detect_redis + redis_available on all 4 return paths; _auto_start_docker_postgresql also starts gsd-redis
 
 - TOK-06: Redis L2 embedding cache wraps Phase 4 L1 dict in generate_embedding(); bridge module amauta_daemon_redis.py (get/set_redis_client) solves circular import; key gsd:emb:{sha256_16hex}, 3600s TTL, JSON float list; L1 promotion on L2 hit; silent except-pass degradation; daemon injects client at startup via try/ImportError guard
+- TOK-06 (Perplexity cache): /api/research-cache GET/POST in daemon (REDIS_PERPLEXITY_PREFIX="gsd:ppx:", REDIS_PERPLEXITY_TTL=21600); _checkDaemonCache/_writeDaemonCache in gsd-research.cjs (stdlib http only, 2s timeout, resolves null/false on error); providerPerplexity: cacheKey hoisted before noCache guard, daemon Redis L1 check first then file L2; POST handler placed before command_map in do_POST (direct redis, not amauta.py CLI)
 
 ### Pending Todos
 
