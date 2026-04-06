@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.5
 milestone_name: milestone
-status: in-progress
-stopped_at: Plan 04-05 complete. RLM-07 rerank wiring done (_get_pgstore_rerank helper + len>=3 guard + graceful degradation). Phase 04 all 5 plans complete.
-last_updated: "2026-04-06T19:30:00.000Z"
-last_activity: "2026-04-06 -- Plan 04-05: Voyage rerank-2.5 wired into _mem_semantic_search with len>=3 guard; 14/14 tests pass"
+status: in_progress
+stopped_at: Plan 05-01 complete. Phase 05 plan 01 done. Redis infra + daemon service management + infra_detect extension.
+last_updated: "2026-04-06T00:00:00.000Z"
+last_activity: "2026-04-06 -- Plan 05-01: Redis service in docker-compose, redis-py dep, _HAS_REDIS guard, _start/_stop/_check_health/_watchdog/_auto_start_redis_container in daemon, redis_available in infra_detect; 21/21 tests pass"
 progress:
-  total_phases: 8
-  completed_phases: 6
-  total_plans: 15
-  completed_plans: 17
-  percent: 30
+  total_phases: 7
+  completed_phases: 5
+  total_plans: 14
+  completed_plans: 14
+  percent: 33
 ---
 
 # GSD-Amauta -- Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-06)
 
 ## Current Position
 
-Phase: 4 of 8
-Plan: 5/5 complete for Phase 04 (04-01, 04-02, 04-03, 04-04, 04-05 all done)
-Status: Phase 04 complete. All 5 plans finished. RLM-07 rerank wiring, MEM-04 embedding cache, TOK-01..05 token efficiency all done. Phase 2 (MEM-01..10) and Phase 3 (RLM-01..06, RLM-08, RLM-09) both fully complete.
-Last activity: 2026-04-06 -- Plan 04-05: Voyage rerank-2.5 wired into _mem_semantic_search with len>=3 guard; 14/14 tests pass
+Phase: 5 of 8
+Plan: 1/? started for Phase 05 (05-01 done)
+Status: Phase 05 started. Plan 05-01 complete: Redis infra (docker-compose, requirements, env vars), daemon Redis service management (5 functions + health endpoint + startup banner + shutdown), infra_detect extended with _detect_redis and redis_available on all return paths.
+Last activity: 2026-04-06 -- Plan 05-01: Redis service in docker-compose, redis-py dep, _HAS_REDIS guard, _start/_stop/_check_health/_watchdog/_auto_start_redis_container in daemon, redis_available in infra_detect; 21/21 tests pass
 
 Progress: [###.......] 30%
 
@@ -93,6 +93,7 @@ Progress: [###.......] 30%
 - Pre-change audit for enrichment removal is mandatory: test_rlm_enrichment.py and security-infrastructure.test.cjs had stale T/D-phase RLM call assertions that required updating
 - TOK-01: Perplexity temp-file response cache at ~/.amauta/perplexity-cache.json; 6h TTL; SHA-256(query:model)[:16] key; atomic tmp+rename write; _noCache function property flag for --no-cache bypass; cache read before API, cache write always after API; two gsd-research.cjs copies exist (repo vs installed) -- tests use repo copy
 - RLM-07: Voyage rerank-2.5 wired into _mem_semantic_search() via _get_pgstore_rerank() lazy import helper; guarded by len(out) >= 3; rerank_score metadata added to reranked entries; except Exception: pass for silent graceful degradation to original pgvector ordering
+- INF-05: Redis added to docker-compose (redis:7-alpine, allkeys-lru, no persistence), redis-py>=5.0 in requirements.txt, _HAS_REDIS import guard mirrors _HAS_PG_MODULE pattern; daemon has 5 Redis management functions (_start_redis, _auto_start_redis_container, _stop_redis, _check_redis_health, _redis_watchdog) mirroring RLM pattern; health endpoint exposes redis_managed/running/url/restarts; infra_detect._detect_redis + redis_available on all 4 return paths; _auto_start_docker_postgresql also starts gsd-redis
 
 ### Pending Todos
 
