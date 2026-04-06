@@ -24,6 +24,7 @@
  *   --max-chars N      Max chunk size in chars (default: 4000)
  *   --json             Output raw JSON
  *   --compact          Show only file:line references (no text)
+ *   --fresh            Bypass cache, re-chunk all files (for debugging)
  *
  * Environment:
  *   GSD_RLM_PORT       Service port (default: 18798)
@@ -187,7 +188,7 @@ function parseArgs(argv) {
   while (i < argv.length) {
     if (argv[i].startsWith('--')) {
       const key = argv[i].slice(2);
-      if (key === 'json' || key === 'compact') {
+      if (key === 'json' || key === 'compact' || key === 'fresh') {
         result.flags[key] = true;
         i++;
       } else if (key === 'paths') {
@@ -296,6 +297,7 @@ async function cmdQuery(args, flags) {
       directory: path.resolve(flags.dir),
       top_k: topK,
       max_chars: maxChars,
+      fresh: !!flags.fresh,
     };
     if (flags.extensions) {
       body.extensions = flags.extensions.split(',').map(e => e.startsWith('.') ? e : `.${e}`);
@@ -322,6 +324,7 @@ async function cmdQuery(args, flags) {
       paths: [path.resolve(flags.path)],
       top_k: topK,
       max_chars: maxChars,
+      fresh: !!flags.fresh,
     };
 
     let data;
@@ -345,6 +348,7 @@ async function cmdQuery(args, flags) {
       paths: flags.paths.map(p => path.resolve(p)),
       top_k: topK,
       max_chars: maxChars,
+      fresh: !!flags.fresh,
     };
 
     let data;
@@ -401,6 +405,7 @@ async function cmdSearch(args, flags) {
     query,
     paths: flags.paths.map(p => path.resolve(p)),
     top_k: topK,
+    fresh: !!flags.fresh,
   };
 
   let data;

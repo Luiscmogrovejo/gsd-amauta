@@ -173,6 +173,13 @@ class ChunkCache:
         self._hit_count = 0
         self._miss_count = 0
 
+    def clear_file(self, filepath):
+        """Remove all cache entries for a specific filepath."""
+        keys_to_remove = [k for k in self._cache if k[0] == filepath]
+        for key in keys_to_remove:
+            chunks = self._cache.pop(key)
+            self._current_bytes -= sum(len(c.get("text", "")) for c in chunks) * 2
+
     @property
     def size(self):
         return len(self._cache)
@@ -868,6 +875,7 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
         paths = body.get("paths", [])
         top_k = body.get("top_k", DEFAULT_TOP_K)
         max_chars = body.get("max_chars", MAX_CHUNK_CHARS)
+        fresh = body.get("fresh", False)
 
         if not query:
             self._send_json({"error": "query required"}, 400)
@@ -877,6 +885,10 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
             return
 
         t0 = time.time()
+        if fresh:
+            for p in paths:
+                CHUNK_CACHE.clear_file(os.path.expanduser(p))
+            log.debug("rlm_fresh_bypass_search cleared=%d paths", len(paths))
         all_chunks = []
         for p in paths:
             if not _is_safe_path(p):
@@ -916,6 +928,7 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
         max_chars = body.get("max_chars", MAX_CHUNK_CHARS)
         extensions = body.get("extensions")
         max_files = body.get("max_files", 500)
+        fresh = body.get("fresh", False)
 
         if not query:
             self._send_json({"error": "query required"}, 400)
@@ -945,6 +958,11 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
         # Incremental indexing: only re-chunk changed files
         existing_set = set(files)
         MTIME_INDEX.prune(existing_set)
+
+        if fresh:
+            for f in files:
+                CHUNK_CACHE.clear_file(f)
+            log.debug("rlm_fresh_bypass cleared=%d files", len(files))
 
         all_chunks = []
         changed_count = 0
