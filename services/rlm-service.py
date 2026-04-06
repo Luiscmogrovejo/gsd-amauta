@@ -87,6 +87,7 @@ MAX_CHUNK_CHARS = int(os.environ.get("RLM_MAX_CHUNK_CHARS", "8000"))
 DEFAULT_TOP_K = int(os.environ.get("RLM_DEFAULT_TOP_K", "10"))
 CACHE_MAX_SIZE = int(os.environ.get("RLM_CACHE_SIZE", "200"))
 CACHE_MAX_BYTES = int(os.environ.get("RLM_CACHE_MAX_MB", "512")) * 1024 * 1024  # 512MB default
+POSITION_DECAY = float(os.environ.get("RLM_POSITION_DECAY", "0.05"))
 PID_FILE = Path(__file__).resolve().parent / "rlm-service.pid"
 
 # File extensions we know how to chunk
@@ -674,10 +675,10 @@ def _compute_score(chunk, query_terms, doc_freq, n_docs, total_lines=1,
 
         score += term_score
 
-    # Position penalty: later chunks in a file score lower (-0.1 per depth).
+    # Position penalty: later chunks in a file score lower (configurable via RLM_POSITION_DECAY).
     tl = max(1, total_lines)
     depth_ratio = min(1.0, chunk.get("start_line", 0) / tl)
-    score = score * (1 - 0.1 * depth_ratio)
+    score = score * (1 - POSITION_DECAY * depth_ratio)
 
     return score
 

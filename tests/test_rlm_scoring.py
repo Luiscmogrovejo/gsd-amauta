@@ -212,6 +212,15 @@ class TestBM25Scoring(unittest.TestCase):
         self.assertEqual(results[0]["label"], "fullHandler",
                          "Chunk matching all query terms should rank first (no query-length normalization)")
 
+    def test_position_decay_reduced(self):
+        """RLM-03: position decay should be 5% (not 10%) -- bottom-of-file penalty is halved."""
+        rlm_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "services", "rlm-service.py")
+        spec = importlib.util.spec_from_file_location("rlm_check", rlm_path)
+        rlm = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(rlm)
+        self.assertAlmostEqual(rlm.POSITION_DECAY, 0.05, places=2,
+                               msg="POSITION_DECAY should default to 0.05 (5%)")
+
 
 if __name__ == "__main__":
     unittest.main()
