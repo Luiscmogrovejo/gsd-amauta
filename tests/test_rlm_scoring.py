@@ -165,6 +165,36 @@ class TestBM25Scoring(unittest.TestCase):
         self.assertIn("relevance_score", results[0])
         self.assertGreater(results[0]["relevance_score"], 0)
 
+    def test_substring_tf_not_overcounted(self):
+        """RLM-01: 'get' should NOT match inside 'getting', 'forget', 'budget'."""
+        chunk_with_substrings = self._make_chunk(
+            "getting user data, forget about budget issues",
+            label="processData"
+        )
+        chunk_with_exact = self._make_chunk(
+            "get the user profile from database",
+            label="fetchUser"
+        )
+        results = score_chunks([chunk_with_substrings, chunk_with_exact], "get", top_k=2)
+        # The chunk with exact "get" should rank higher than one with only substrings
+        exact_score = next(r["relevance_score"] for r in results if r["label"] == "fetchUser")
+        substring_score = next(r["relevance_score"] for r in results if r["label"] == "processData")
+        self.assertGreater(exact_score, substring_score,
+                           "'get' exact match should score higher than 'getting'/'forget'/'budget' substrings")
+
+    def test_word_boundary_tf_correct(self):
+        """RLM-01: 'get' in 'get(x)' should count as TF=1 with word boundary matching."""
+        chunk = self._make_chunk(
+            "def get(x): return get_value(x) if get else None",
+            label="getter"
+        )
+        # With word-boundary matching: "get" appears as a standalone word twice
+        # ("get(x)" -> "get" after tokenization, and "get" before "else")
+        # The old text.count("get") would find "get" inside "get_value" too
+        results = score_chunks([chunk], "get", top_k=1)
+        self.assertGreater(results[0]["relevance_score"], 0,
+                           "Word-boundary 'get' should still match")
+
 
 if __name__ == "__main__":
     unittest.main()

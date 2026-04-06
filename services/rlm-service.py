@@ -572,6 +572,7 @@ def score_chunks(chunks, query, top_k=None):
     # Pre-tokenize all chunks once (avoids O(n*m) retokenization)
     n_docs = len(chunks)
     chunk_token_sets = [_tokenize(c["text"]) for c in chunks]
+    chunk_token_lists = [_tokenize_list(c["text"]) for c in chunks]
 
     # BM25: compute document frequency per query term
     doc_freq = {}
@@ -589,7 +590,7 @@ def score_chunks(chunks, query, top_k=None):
     scored = []
     for i, chunk in enumerate(chunks):
         score = _compute_score(chunk, terms, doc_freq, n_docs, max_end_line,
-                               avgdl, doc_lengths[i])
+                               avgdl, doc_lengths[i], chunk_token_lists[i])
         scored.append((score, chunk))
 
     # Sort by score descending, then by start_line ascending for stability
@@ -625,13 +626,19 @@ def _tokenize(text):
     return set(re.findall(r"\b[a-zA-Z]\w{2,}\b", text.lower()))
 
 
+def _tokenize_list(text):
+    """Extract lowercase word tokens as a list (preserves duplicates for TF counting)."""
+    text = _split_identifiers(text)
+    return re.findall(r"\b[a-zA-Z]\w{2,}\b", text.lower())
+
+
 # BM25 parameters
 BM25_K1 = 1.5   # Term frequency saturation — higher = more weight to repeated terms
 BM25_B = 0.75   # Length normalization — 0 = no normalization, 1 = full normalization
 
 
 def _compute_score(chunk, query_terms, doc_freq, n_docs, total_lines=1,
-                   avgdl=1.0, doc_len=1):
+                   avgdl=1.0, doc_len=1, chunk_token_list=None):
     """
     Compute relevance score for a chunk using BM25.
     BM25 adds term frequency saturation and document length normalization
@@ -644,8 +651,8 @@ def _compute_score(chunk, query_terms, doc_freq, n_docs, total_lines=1,
     score = 0.0
 
     for term in query_terms:
-        # Term frequency in this chunk's text
-        tf = text.count(term)
+        # Term frequency in this chunk's text (word-boundary aware via token list)
+        tf = chunk_token_list.count(term) if chunk_token_list else text.count(term)
         if tf == 0 and term not in label_tokens:
             continue
 
