@@ -67,7 +67,7 @@ grep -n "type=\"checkpoint" .planning/phases/XX-name/{phase}-{plan}-PLAN.md
 | Verify-only | B (segmented) | Segments between checkpoints. After none/human-verify → SUBAGENT. After decision/human-action → MAIN |
 | Decision | C (main) | Execute entirely in main context |
 
-**Pattern A:** init_agent_tracking → route executor by plan file patterns (same routing as execute-phase: frontend/backend/infra/general) → spawn Task(subagent_type="{routed_executor}", model=executor_model) with prompt:
+**Pattern A:** init_agent_tracking → route executor via shared helper: `node gsd-tools.cjs route-executor "$PLAN_FILES"` (single source of truth — see gsd-tools.cjs routeExecutor function) → spawn Task(subagent_type="{routed_executor}", model=executor_model) with prompt:
 
 Before spawning, extract from plan file:
 - `{plan_objective}` — the plan's `<objective>` text (first sentence, 3-8 words)

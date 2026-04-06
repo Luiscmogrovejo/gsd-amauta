@@ -178,10 +178,10 @@ fi
    Pass paths only — executors read files themselves with their fresh 200k context.
    This keeps orchestrator context lean (~10-15%).
 
-    **Route to specialist executor** based on the plan's file patterns:
-    - `.tsx/.jsx/.css/.html/.vue/.svelte` → `gsd-executor-frontend`
-    - `.py/.js/.ts/.go/.rs/.java/.sql` → `gsd-executor-backend`
-    - `Dockerfile/docker/ci/deploy/terraform` → `gsd-executor-infra`
+    **Route to specialist executor** via `gsd-tools.cjs route-executor` (single source of truth):
+    - `.tsx/.jsx/.css/.scss/.html/.vue/.svelte` → `gsd-executor-frontend`
+    - `Dockerfile/docker-compose/.github/workflows/terraform/k8s/nginx.conf` → `gsd-executor-infra`
+    - `.py/.js/.cjs/.mjs/.ts/.go/.rs/.java/.sql` → `gsd-executor-backend`
     - Everything else → `gsd-executor-general`
     - Performance data: If primary executor has <70% pass rate (5+ tasks), falls back to executor-general
 
