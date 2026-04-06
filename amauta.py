@@ -655,6 +655,20 @@ def _mem_pg_search(query: str, agent_id: Optional[str], top_k: int,
     out.sort(key=lambda x: x["score"], reverse=True)
     return out
 
+
+def _get_pgstore_rerank():
+    """Lazy import PGStore.rerank to avoid circular imports."""
+    try:
+        import sys as _sys
+        _svc_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "services")
+        if _svc_dir not in _sys.path:
+            _sys.path.insert(0, _svc_dir)
+        from pg_store import PGStore
+        return PGStore.rerank
+    except Exception:
+        return None
+
+
 def _mem_semantic_search(query: str, top_k: int = 5, include_noise: bool = False, project_id: str = None) -> list:
     """
     Semantic memory search via daemon HTTP endpoint (pgvector cosine similarity).
@@ -697,6 +711,26 @@ def _mem_semantic_search(query: str, top_k: int = 5, include_noise: bool = False
                     "source": r.get("source", "unknown"),
                     "score": score,
                 })
+            # RLM-07: Rerank pgvector results via Voyage cross-encoder for precision
+            if len(out) >= 3:
+                try:
+                    rerank_fn = _get_pgstore_rerank()
+                    if rerank_fn:
+                        doc_texts = [r["text"] for r in out]
+                        rerank_results = rerank_fn(query, doc_texts, top_k=top_k)
+                        if rerank_results:
+                            # Apply rerank ordering: rerank_results is [{index, relevance_score}, ...]
+                            reranked = []
+                            for rr in rerank_results:
+                                idx = rr.get("index", 0)
+                                if 0 <= idx < len(out):
+                                    entry = out[idx].copy()
+                                    entry["rerank_score"] = rr.get("relevance_score", 0)
+                                    reranked.append(entry)
+                            if reranked:
+                                return reranked[:top_k]
+                except Exception:
+                    pass  # Graceful degradation: return original pgvector ordering
             return out
     except Exception:
         # Fallback to LIKE-based search
