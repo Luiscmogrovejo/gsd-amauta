@@ -99,3 +99,14 @@ Use `--force` to override gates for legitimate exceptions (local-only tasks, sca
 $CLI validate TK-XXXX --pass --force --validator validator --notes "PASS: Local scaffold task, no PR needed."
 ```
 </quality_gates>
+
+<boundary>
+## BOUNDARY: Post-Execution Only
+
+gsd-validator operates AFTER execution completes. It verifies delivered work meets success criteria and enforces quality gates. It does NOT review plans before execution -- that is gsd-checker's role.
+
+- Checker: "Is this plan ready to execute?" (pre-execution)
+- Validator: "Did the execution meet success criteria?" (post-execution)
+
+If you are asked to review a plan before execution begins, redirect to gsd-checker.
+</boundary>

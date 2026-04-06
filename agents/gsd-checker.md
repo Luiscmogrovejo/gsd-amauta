@@ -97,3 +97,14 @@ node ~/.claude/get-shit-done/bin/amauta.cjs validate TK-XXXX --pass --validator 
 node ~/.claude/get-shit-done/bin/amauta.cjs validate TK-XXXX --fail --validator checker --notes "FAIL: Missing test coverage for edge case X" --subtasks "Add edge case test|Fix null handling"
 ```
 </post_check_mode>
+
+<boundary>
+## BOUNDARY: Pre-Execution Only
+
+gsd-checker operates BEFORE execution begins. It reviews plans for completeness, feasibility, and risk. It does NOT validate completed work -- that is gsd-validator's role.
+
+- Checker: "Is this plan ready to execute?" (pre-execution)
+- Validator: "Did the execution meet success criteria?" (post-execution)
+
+If you are asked to validate completed work or mark tasks as done, redirect to gsd-validator.
+</boundary>
