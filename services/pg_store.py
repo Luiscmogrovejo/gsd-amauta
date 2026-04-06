@@ -1168,6 +1168,7 @@ class PGStore:
         the insert is skipped and a dict is returned instead:
         {"dedup_skipped": True, "existing_id": ..., "similarity": ...}
         """
+        # MEM-03 AUDIT (2026-04-06): input_type="document" correct for storage path
         embedding = self.generate_embedding(text, input_type="document")
 
         if embedding is None:
@@ -1223,6 +1224,7 @@ class PGStore:
                              Defaults to DEFAULT_EXCLUDE_SOURCES (task_event, rpetd_phase).
                              Pass None to include all sources.
         """
+        # MEM-03 AUDIT (2026-04-06): input_type="query" correct for search path
         # Generate query embedding (input_type="query" improves Voyage retrieval)
         query_embedding = self.generate_embedding(query, input_type="query")
         if query_embedding is None:
@@ -1364,6 +1366,7 @@ class PGStore:
         succeeded = 0
         failed = 0
         for row in rows:
+            # MEM-03 AUDIT (2026-04-06): input_type="document" correct for backfill path
             embedding = self.generate_embedding(row["text"], input_type="document")
             if embedding:
                 try:
@@ -1443,11 +1446,12 @@ class PGStore:
     def memory_retention_cleanup(self):
         """Archive stale memory entries based on RETENTION_DAYS policy.
 
-        Moves entries to gsd_memory_archive (soft delete — no data lost).
-        Only archives sources defined in RETENTION_DAYS; high-value sources
-        (auto_learning, lesson-learned, best-practice) are never archived.
+        Moves entries to gsd_memory_archive (soft delete -- no data lost).
+        Tiers: task_event (30d), rpetd_phase (90d), web_search_result (180d).
+        High-value sources (auto_learning, lesson-learned, best-practice, distilled)
+        are never archived.
 
-        Returns dict: {"task_event_archived": N, "rpetd_phase_archived": M, "total": N+M}
+        Returns dict: {"task_event_archived": N, "rpetd_phase_archived": M, "web_search_result_archived": P, "total": N+M+P}
         """
         self._ensure_archive_table()
         results = {}
