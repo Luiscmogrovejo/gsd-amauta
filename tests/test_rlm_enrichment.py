@@ -70,20 +70,22 @@ class TestRpetdPhaseEnrichGateFree(unittest.TestCase):
     @patch("amauta._mem_pg_available", return_value=False)
     @patch("amauta._skb_search", return_value=[])
     def test_t_phase_calls_rlm_without_docpath(self, mock_skb, mock_pg, mock_rlm, mock_doc):
-        """T-phase should call _rlm_query even when _pick_domain_doc returns empty."""
+        """T-phase enrichment is disabled (TOK-02). Returns empty string, no RLM call."""
         result = amauta._rpetd_phase_enrich("T", self._make_item(), "all 5 tests pass")
-        mock_rlm.assert_called_once()
-        self.assertIn("[RLM]", result)
+        # TOK-02: T-phase early return -- no RLM call, no enrichment output
+        mock_rlm.assert_not_called()
+        self.assertEqual(result, "")
 
     @patch("amauta._pick_domain_doc", return_value="")
     @patch("amauta._rlm_query", return_value="amauta.py:100-120 delivery")
     @patch("amauta._mem_pg_available", return_value=False)
     @patch("amauta._skb_search", return_value=[])
     def test_d_phase_calls_rlm_without_docpath(self, mock_skb, mock_pg, mock_rlm, mock_doc):
-        """D-phase should call _rlm_query even when _pick_domain_doc returns empty."""
+        """D-phase RLM delivery check removed (TOK-02). Memory writes still fire via _mem_pg_available."""
         result = amauta._rpetd_phase_enrich("D", self._make_item(), "delivery: PR merged, all criteria met")
-        mock_rlm.assert_called_once()
-        self.assertIn("[RLM]", result)
+        # TOK-02: D-phase RLM call removed -- enrichment output is empty string
+        mock_rlm.assert_not_called()
+        self.assertEqual(result, "")
 
     @patch("amauta._pick_domain_doc", return_value="")
     @patch("amauta._rlm_query", return_value="")

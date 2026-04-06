@@ -720,26 +720,30 @@ describe('RLM Phase Enrichment (E/T/D phases)', () => {
     assert.ok(ePhase.includes('_rlm_query'), 'E-phase must call _rlm_query');
   });
 
-  test('T-phase calls _pick_domain_doc and _rlm_query without doc_path gate', () => {
+  test('T-phase is disabled (TOK-02): no _pick_domain_doc, no _rlm_query, no doc_path gate', () => {
     const source = fs.readFileSync(path.join(ROOT, 'amauta.py'), 'utf-8');
     const tPhase = source.substring(
       source.indexOf('elif phase == "T"'),
       source.indexOf('elif phase == "D"')
     );
-    assert.ok(tPhase.includes('_pick_domain_doc'), 'T-phase must call _pick_domain_doc');
-    // Phase 11 removed if doc_path: gates — RLM is called unconditionally
-    assert.ok(!tPhase.includes('if doc_path:'), 'T-phase must NOT gate RLM call with if doc_path: (removed in Phase 11)');
+    // TOK-02: T-phase enrichment disabled -- no RLM or doc lookups at all
+    assert.ok(!tPhase.includes('_pick_domain_doc'), 'T-phase must NOT call _pick_domain_doc (TOK-02 disabled)');
+    assert.ok(!tPhase.includes('_rlm_query'), 'T-phase must NOT call _rlm_query (TOK-02 disabled)');
+    assert.ok(!tPhase.includes('if doc_path:'), 'T-phase must NOT gate RLM call with if doc_path:');
+    assert.ok(tPhase.includes('TOK-02'), 'T-phase must have TOK-02 comment explaining the disable');
   });
 
-  test('D-phase calls _pick_domain_doc and _rlm_query without doc_path gate', () => {
+  test('D-phase RLM removed (TOK-02): no _pick_domain_doc, no _rlm_query, no doc_path gate', () => {
     const source = fs.readFileSync(path.join(ROOT, 'amauta.py'), 'utf-8');
     const dPhase = source.substring(
       source.indexOf('elif phase == "D"'),
       source.indexOf('# ── Write delivery event')
     );
-    assert.ok(dPhase.includes('_pick_domain_doc'), 'D-phase must call _pick_domain_doc');
-    // Phase 11 removed if doc_path: gates — RLM is called unconditionally
-    assert.ok(!dPhase.includes('if doc_path:'), 'D-phase must NOT gate RLM call with if doc_path: (removed in Phase 11)');
+    // TOK-02: D-phase RLM delivery check removed -- only write operations remain
+    assert.ok(!dPhase.includes('_pick_domain_doc'), 'D-phase must NOT call _pick_domain_doc (TOK-02 removed)');
+    assert.ok(!dPhase.includes('_rlm_query'), 'D-phase must NOT call _rlm_query (TOK-02 removed)');
+    assert.ok(!dPhase.includes('if doc_path:'), 'D-phase must NOT gate RLM call with if doc_path:');
+    assert.ok(dPhase.includes('TOK-02'), 'D-phase must have TOK-02 comment explaining the removal');
   });
 
   test('R-phase and P-phase still call _rlm_query with doc_path', () => {

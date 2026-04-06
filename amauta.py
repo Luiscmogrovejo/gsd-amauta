@@ -1947,7 +1947,14 @@ def _rpetd_phase_enrich(phase: str, item: dict, agent_content: str) -> str:
     """
     Enrich an RPETD phase with RLM analysis + PostgreSQL memory.
     Returns supplement string to append, or empty string.
-    Best-effort — never raises, never blocks.
+    Best-effort -- never raises, never blocks.
+
+    Phase enrichment map (TOK-02, audited 2026-04-06):
+      R = RLM + memory + SKB + research chain (full, unchanged)
+      P = RLM plan review + SKB workflow guides (unchanged)
+      E = RLM execution analysis + failure-pattern PG search (semantic search removed)
+      T = None (agent has full E-phase context)
+      D = Memory/SKB writes only (RLM delivery check removed)
     """
     try:
         task_id = item.get("id", "")
@@ -2083,79 +2090,18 @@ def _rpetd_phase_enrich(phase: str, item: dict, agent_content: str) -> str:
                         mem_lines.append(f"  - {r['text'][:200].replace(chr(10), ' ')}")
                     supplement_parts.append("\n".join(mem_lines))
 
-            # -- PostgreSQL memory: past execution patterns for similar tasks --
-            if _search_q:
-                try:
-                    pattern_results = _mem_semantic_search(f"{title} implementation approach pattern", top_k=3, project_id=os.path.basename(os.getcwd()))
-                    relevant_patterns = [r for r in pattern_results
-                                         if r.get("score", 0) >= 2
-                                         and r.get("source") in ("auto_learning", "session-learning",
-                                                                   "lesson-learned", "best-practice")]
-                    if relevant_patterns:
-                        pat_lines = ["[PG] Past execution patterns (reuse these approaches):"]
-                        for r in relevant_patterns[:3]:
-                            pat_lines.append(f"  - [{r.get('source','')}] {r['text'][:250].replace(chr(10), ' ')}")
-                        supplement_parts.append("\n".join(pat_lines))
-                except Exception:
-                    pass
+            # TOK-02: E-phase past execution patterns search removed -- saved ~750 chars/task.
+            # Failure-pattern LIKE search above is kept (targeted, high-value).
 
         elif phase == "T":
-            # ── RLM criteria validation ────────────────────────────────────
-            if agent_content:
-                doc_path = _pick_domain_doc(title, desc)
-                if criteria_str:
-                    rlm_prompt = (
-                        f"Task: '{title}'. Success criteria: {criteria_str}. "
-                        f"Test output: {agent_content[:800]}. "
-                        f"Does the test output demonstrate that ALL success criteria are met? List any gaps."
-                    )
-                else:
-                    rlm_prompt = (
-                        f"Task: '{title}'. Description: {desc[:300]}. "
-                        f"Test output: {agent_content[:800]}. "
-                        f"Analyze the test output: (1) Do the tests actually pass? "
-                        f"(2) Is there adequate coverage for the described task? "
-                        f"(3) Are there any red flags, skipped tests, or missing assertions? List any gaps."
-                    )
-                rlm_answer = _rlm_query(rlm_prompt, doc_path=doc_path, task_id=task_id)
-                if rlm_answer:
-                    supplement_parts.append(f"[RLM] Test review:\n  {rlm_answer[:600]}")
-            # PG memory: past test strategies for similar domains
-            if _search_q:
-                try:
-                    t_results = _mem_semantic_search(f"{title} testing strategy validation evidence", top_k=5, project_id=os.path.basename(os.getcwd()))
-                    t_relevant = [r for r in t_results
-                                  if r.get("score", 0) >= 2
-                                  and any(kw in r.get("text", "").lower()
-                                          for kw in ("test", "validat", "assert", "coverage", "pass",
-                                                     "playwright", "pytest", "evidence", "criteria"))]
-                    if t_relevant:
-                        t_lines = ["[PG] Past test strategies (adapt these for current task):"]
-                        for r in t_relevant[:3]:
-                            t_lines.append(f"  - [{r.get('source','')}] {r['text'][:250].replace(chr(10), ' ')}")
-                        supplement_parts.append("\n".join(t_lines))
-                except Exception:
-                    pass
+            # TOK-02: T-phase enrichment disabled -- agent has full execution context
+            # from E-phase. RLM criteria validation and PG test strategy searches
+            # added ~1,350 chars of noise per task without improving test quality.
+            pass
 
         elif phase == "D":
-            # ── RLM delivery quality check ─────────────────────────────────
-            if agent_content and len(agent_content.strip()) > 20:
-                phases_so_far = item.get("rpetd_phases", {}) or {}
-                t_phase = str(phases_so_far.get("T", ""))[:300]
-                doc_path = _pick_domain_doc(title, desc)
-                rlm_answer = _rlm_query(
-                    f"Task '{title}'. Success criteria: {criteria_str or 'not specified'}. "
-                    f"Test evidence: {t_phase}. "
-                    f"Delivery description: {agent_content[:600]}. "
-                    f"Check: (1) Does the PR/deliverable description reference the task ID? "
-                    f"(2) Does it match what the success criteria required? "
-                    f"(3) Is the PR URL present? "
-                    f"(4) Any red flags that would cause validator to reject this?",
-                    doc_path=doc_path,
-                    task_id=task_id,
-                )
-                if rlm_answer:
-                    supplement_parts.append(f"[RLM] Delivery check:\n  {rlm_answer[:600]}")
+            # TOK-02: D-phase RLM delivery check removed -- saved ~600 chars/task.
+            # All write operations below are preserved (these are persistence, not enrichment).
 
             # ── Write delivery event to gsd_memory ─────────────────────
             # Use "session-learning" source (score boost +3) so this delivery record
