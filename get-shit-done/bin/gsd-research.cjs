@@ -24,6 +24,7 @@
  *   --json                 Raw JSON output
  *   --url <url>            URL for webfetch provider
  *   --model <model>        Perplexity model (default: sonar)
+ *   --no-cache             Skip Perplexity cache reads (still writes)
  *
  * Environment:
  *   PERPLEXITY_API_KEY     Required for Perplexity provider
@@ -35,6 +36,8 @@ const http = require('http');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
+const os = require('os');
 
 // ── Load .env file (project root or /srv/amauta, skipped in test mode) ──
 (function loadDotenv() {
@@ -70,6 +73,59 @@ const PERPLEXITY_MODEL = process.env.PERPLEXITY_MODEL || 'sonar-pro';  // sonar-
 
 const PROVIDER_ORDER = ['memory', 'skb', 'context7', 'perplexity', 'webfetch'];
 const PERPLEXITY_OUTPUT_CAP = 1500; // chars -- cap Perplexity output to prevent 4K token injection
+
+// TOK-01: Perplexity response cache (temp-file, cross-invocation persistence)
+const PERPLEXITY_CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours in ms
+const PERPLEXITY_CACHE_DIR = path.join(os.homedir(), '.amauta');
+const PERPLEXITY_CACHE_FILE = path.join(PERPLEXITY_CACHE_DIR, 'perplexity-cache.json');
+
+/**
+ * Load Perplexity cache from disk, pruning expired entries.
+ * Returns Map of { cacheKey: { result, storedAt } }.
+ */
+function _loadPerplexityCache() {
+  try {
+    if (!fs.existsSync(PERPLEXITY_CACHE_FILE)) return new Map();
+    const raw = JSON.parse(fs.readFileSync(PERPLEXITY_CACHE_FILE, 'utf-8'));
+    const now = Date.now();
+    const entries = new Map();
+    for (const [key, val] of Object.entries(raw)) {
+      if (val.storedAt && (now - val.storedAt) < PERPLEXITY_CACHE_TTL) {
+        entries.set(key, val);
+      }
+    }
+    return entries;
+  } catch {
+    return new Map();
+  }
+}
+
+/**
+ * Save Perplexity cache to disk with atomic write (tmp + rename).
+ */
+function _savePerplexityCache(cache) {
+  try {
+    if (!fs.existsSync(PERPLEXITY_CACHE_DIR)) {
+      fs.mkdirSync(PERPLEXITY_CACHE_DIR, { recursive: true });
+    }
+    const obj = {};
+    for (const [key, val] of cache.entries()) {
+      obj[key] = val;
+    }
+    const tmpFile = PERPLEXITY_CACHE_FILE + '.tmp';
+    fs.writeFileSync(tmpFile, JSON.stringify(obj, null, 2));
+    fs.renameSync(tmpFile, PERPLEXITY_CACHE_FILE);
+  } catch {
+    // Silent fail -- cache write is best-effort
+  }
+}
+
+/**
+ * Generate cache key from query and model.
+ */
+function _perplexityCacheKey(query, model) {
+  return crypto.createHash('sha256').update(query + ':' + model).digest('hex').slice(0, 16);
+}
 
 // ═══════════════════════════════════════════════════════
 // Model Auto-Selection
@@ -285,6 +341,17 @@ async function providerPerplexity(query, limit) {
 
   const selectedModel = PERPLEXITY_MODEL === 'auto' ? selectPerplexityModel(query) : PERPLEXITY_MODEL;
 
+  // TOK-01: Check cache (skip if --no-cache flag is set)
+  const noCache = providerPerplexity._noCache || false;
+  if (!noCache) {
+    const cacheKey = _perplexityCacheKey(query, selectedModel);
+    const cache = _loadPerplexityCache();
+    const cached = cache.get(cacheKey);
+    if (cached && cached.result) {
+      return { ...cached.result, cached: true };
+    }
+  }
+
   try {
     const res = await httpsRequest(
       'api.perplexity.ai',
@@ -343,7 +410,7 @@ async function providerPerplexity(query, limit) {
       // Silent fail — storing to memory is best-effort
     }
 
-    return {
+    const returnValue = {
       provider: 'perplexity',
       count: 1,
       results: [{
@@ -352,6 +419,18 @@ async function providerPerplexity(query, limit) {
         model: res.data.model || selectedModel,
       }],
     };
+
+    // TOK-01: Write to cache (always, even with --no-cache)
+    try {
+      const cacheKey = _perplexityCacheKey(query, selectedModel);
+      const cache = _loadPerplexityCache();
+      cache.set(cacheKey, { result: returnValue, storedAt: Date.now() });
+      _savePerplexityCache(cache);
+    } catch {
+      // Silent fail -- cache write is best-effort
+    }
+
+    return returnValue;
   } catch (err) {
     return { provider: 'perplexity', count: 0, results: [], error: err.message };
   }
@@ -496,7 +575,7 @@ function parseArgs(argv) {
   let i = 0;
   while (i < argv.length) {
     const arg = argv[i];
-    if (arg === '--json' || arg === '--all') {
+    if (arg === '--json' || arg === '--all' || arg === '--no-cache') {
       args[arg.slice(2)] = true;
     } else if (arg.startsWith('--')) {
       const key = arg.slice(2);
@@ -627,6 +706,11 @@ async function cmdSearch(args) {
 
   const limit = parseInt(args.limit || '5', 10);
   const allResults = [];
+
+  // TOK-01: Wire --no-cache flag to Perplexity provider
+  if (args['no-cache']) {
+    providerPerplexity._noCache = true;
+  }
 
   // If specific provider requested, use only that one
   if (args.provider) {
@@ -781,6 +865,7 @@ function printUsage() {
   --url <url>            URL for webfetch provider
   --model <model>        Perplexity model (default: sonar)
   --json                 Raw JSON output
+  --no-cache             Skip Perplexity cache reads (still writes to cache)
 
 \x1b[1mEnvironment:\x1b[0m
   PERPLEXITY_API_KEY     Required for Perplexity provider
