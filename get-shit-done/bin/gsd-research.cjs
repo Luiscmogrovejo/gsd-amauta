@@ -254,7 +254,15 @@ function daemonRequest(method, urlPath, body = null, timeoutMs = 15000) {
       });
     });
 
-    req.on('error', (err) => reject(err));
+    req.on('error', (err) => {
+      // INF-05: Data flow alert -- clear error on daemon failure
+      if (err.code === 'ECONNREFUSED') {
+        process.stderr.write(`\n  [DATA FLOW ERROR] Amauta daemon is not running on ${DAEMON_HOST}:${DAEMON_PORT}\n`);
+        process.stderr.write(`  Fix: Run: python3 services/amauta-daemon.py\n`);
+        process.stderr.write(`  This affects: memory search, Redis cache, task management\n\n`);
+      }
+      reject(err);
+    });
     req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
     if (payload) req.write(payload);
     req.end();
@@ -447,6 +455,12 @@ async function providerPerplexity(query, limit) {
     );
 
     if (res.status !== 200) {
+      // INF-05: Data flow alert -- specific Perplexity API error
+      if (res.status === 401) {
+        process.stderr.write(`\n  [DATA FLOW ERROR] Perplexity API: authentication failed (check PERPLEXITY_API_KEY)\n\n`);
+      } else if (res.status === 429) {
+        process.stderr.write(`\n  [DATA FLOW ERROR] Perplexity API: rate limited (too many requests)\n\n`);
+      }
       return { provider: 'perplexity', count: 0, results: [], error: `API error: ${res.status}` };
     }
 

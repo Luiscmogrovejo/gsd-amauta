@@ -280,6 +280,11 @@ async function cmdQuery(args, flags) {
 
   // Helper: gracefully degrade to file references on mid-execution service failure
   const rlmFallback = (err) => {
+    // INF-05: Data flow alert -- clear error on RLM failure
+    if (err && err.code === 'ECONNREFUSED') {
+      process.stderr.write(`\n  [DATA FLOW ERROR] RLM service is not running on port ${PORT}\n`);
+      process.stderr.write(`  Fix: Start the daemon (it manages RLM) or run: python3 services/rlm-service.py run\n\n`);
+    }
     const reason = err && err.code === 'ECONNREFUSED' ? 'service stopped mid-request' : (err && err.message) || 'unknown error';
     if (shouldFallbackToFiles()) {
       const suggestions = fallbackSuggestReferences(flags, query);
