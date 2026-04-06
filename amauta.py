@@ -1506,7 +1506,7 @@ def _score(item: dict, all_items: list) -> float:
     dep_pressure = number of OTHER items that depend on this one (capped at 5).
     """
     global _dep_pressure_cache, _dep_pressure_cache_key
-    cache_key = (len(all_items), id(all_items))
+    cache_key = (len(all_items), hash(tuple((i.get("id",""), i.get("status",""), len(i.get("dependencies",[]))) for i in all_items)))
     if cache_key != _dep_pressure_cache_key:
         _dep_pressure_cache = {}
         for x in all_items:
