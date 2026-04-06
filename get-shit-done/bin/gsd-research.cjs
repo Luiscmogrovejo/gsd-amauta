@@ -120,6 +120,70 @@ function _savePerplexityCache(cache) {
   }
 }
 
+// TOK-06: Redis L2 cache via daemon proxy (/api/research-cache)
+/**
+ * Check daemon Redis cache for a Perplexity response.
+ * Returns cached result object on hit, null on miss or error.
+ */
+function _checkDaemonCache(cacheKey) {
+  return new Promise((resolve) => {
+    try {
+      const urlPath = `/api/research-cache?key=${encodeURIComponent(cacheKey)}`;
+      const req = http.get({
+        hostname: DAEMON_HOST,
+        port: DAEMON_PORT,
+        path: urlPath,
+        timeout: 2000,
+      }, (res) => {
+        let data = '';
+        res.on('data', (d) => { data += d; });
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.hit && parsed.data) {
+              resolve(parsed.data);
+            } else {
+              resolve(null);
+            }
+          } catch { resolve(null); }
+        });
+      });
+      req.on('error', () => resolve(null));
+      req.on('timeout', () => { req.destroy(); resolve(null); });
+    } catch { resolve(null); }
+  });
+}
+
+/**
+ * Write a Perplexity response to daemon Redis cache (/api/research-cache POST).
+ * Resolves true on success, false on error or daemon unavailable.
+ */
+function _writeDaemonCache(cacheKey, data) {
+  return new Promise((resolve) => {
+    try {
+      const payload = JSON.stringify({ key: cacheKey, data });
+      const req = http.request({
+        hostname: DAEMON_HOST,
+        port: DAEMON_PORT,
+        path: '/api/research-cache',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(payload),
+        },
+        timeout: 2000,
+      }, (res) => {
+        res.resume();
+        res.on('end', () => resolve(true));
+      });
+      req.on('error', () => resolve(false));
+      req.on('timeout', () => { req.destroy(); resolve(false); });
+      req.write(payload);
+      req.end();
+    } catch { resolve(false); }
+  });
+}
+
 /**
  * Generate cache key from query and model.
  */
@@ -343,8 +407,14 @@ async function providerPerplexity(query, limit) {
 
   // TOK-01: Check cache (skip if --no-cache flag is set)
   const noCache = providerPerplexity._noCache || false;
+  const cacheKey = _perplexityCacheKey(query, selectedModel);
   if (!noCache) {
-    const cacheKey = _perplexityCacheKey(query, selectedModel);
+    // TOK-06: Check daemon Redis cache first (cross-invocation, survives process restart)
+    const daemonHit = await _checkDaemonCache(cacheKey);
+    if (daemonHit) {
+      process.stderr.write(`  [cache:redis] hit for ${query.slice(0, 40)}...\n`);
+      return daemonHit;
+    }
     const cache = _loadPerplexityCache();
     const cached = cache.get(cacheKey);
     if (cached && cached.result) {
@@ -420,15 +490,17 @@ async function providerPerplexity(query, limit) {
       }],
     };
 
-    // TOK-01: Write to cache (always, even with --no-cache)
+    // TOK-01: Write to file cache (always, even with --no-cache)
     try {
-      const cacheKey = _perplexityCacheKey(query, selectedModel);
       const cache = _loadPerplexityCache();
       cache.set(cacheKey, { result: returnValue, storedAt: Date.now() });
       _savePerplexityCache(cache);
     } catch {
       // Silent fail -- cache write is best-effort
     }
+
+    // TOK-06: Also write to daemon Redis cache (cross-invocation persistence)
+    await _writeDaemonCache(cacheKey, returnValue);
 
     return returnValue;
   } catch (err) {
