@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v2.5
 milestone_name: milestone
 status: completed
-stopped_at: Plan 03-02 SUMMARY created. RLM-05 chunk size 4000 + RLM-06 label boost 1.5x/3xIDF cap complete.
-last_updated: "2026-04-06T20:12:00.000Z"
-last_activity: 2026-04-06 -- Plan 03-02: MAX_CHUNK_CHARS 8000->4000; label boost 2.0->1.5 with 3.0*idf cap; 22/22 scoring tests pass
+stopped_at: Plan 02-03 SUMMARY created. MEM-02 LLM distillation --use-llm flag + 26 tests complete.
+last_updated: "2026-04-06T20:50:00.000Z"
+last_activity: 2026-04-06 -- Plan 02-03: isOllamaAvailable/selectOllamaModel/llmSummarize helpers; --use-llm flag in cmdDistill; distill_strategy+distill_model provenance metadata; main() gated on require.main; 26/26 tests pass
 progress:
   total_phases: 8
   completed_phases: 6
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-04-06)
 ## Current Position
 
 Phase: 2 and 3 of 8 (both planned, executing in parallel)
-Plan: 4/7 complete (02-04, 02-01, 02-02, 03-02 done; 2 remaining in Phase 2, 1 remaining in Phase 3)
-Status: Plan 03-02 complete. RLM-05 chunk size + RLM-06 label boost cap done. Phase 2: 4 plans, 2 waves, 12 tasks, 10 requirements (MEM-01..10). Phase 3: 3 plans, 3 waves, 8 tasks, 8 requirements (RLM-01..06, RLM-08, RLM-09).
-Last activity: 2026-04-06 -- Plan 03-02: MAX_CHUNK_CHARS 8000->4000 + label boost 2.0->1.5 capped at 3.0*idf; 22/22 scoring tests pass
+Plan: 5/7 complete (02-04, 02-01, 02-02, 02-03, 03-02 done; 1 remaining in Phase 2, 1 remaining in Phase 3)
+Status: Plan 02-03 complete. MEM-02 LLM distillation done. Phase 2: 4 plans, 2 waves, 12 tasks, 10 requirements (MEM-01..10). Phase 3: 3 plans, 3 waves, 8 tasks, 8 requirements (RLM-01..06, RLM-08, RLM-09).
+Last activity: 2026-04-06 -- Plan 02-03: Ollama LLM summarization path added to distill; --use-llm opt-in flag; 26 tests pass
 
 Progress: [#.........] 12%
 
@@ -82,6 +82,7 @@ Progress: [#.........] 12%
 - MEM-07: recency decay confirmed present (amauta.py + both stores); guard tests prevent future regression; constants verified consistent: DECAY_PER_30D=0.5, MAX_PENALTY=3.0
 - RLM-05: MAX_CHUNK_CHARS default reduced 8000->4000 in rlm-service.py + CLI; 8000-char chunks spanned multiple unrelated functions
 - RLM-06: Label boost changed from unbounded 2.0x to 1.5x capped at 3.0*idf; prevents short-label chunks from outranking content-rich chunks; test_label_boost_preserved still passes
+- MEM-02: LLM summarization added to distill via --use-llm flag; isOllamaAvailable/selectOllamaModel/llmSummarize helpers; distill_strategy+distill_model metadata provenance; main() gated on require.main for testability
 
 ### Pending Todos
 
@@ -96,7 +97,7 @@ None. Phase 1 blockers resolved:
 ## Session Continuity
 
 Last session: 2026-04-06
-Stopped at: Plan 03-02 complete. RLM-05 + RLM-06 done. Ready for 02-03 (parallel) or 03-03.
+Stopped at: Plan 02-03 complete. MEM-02 done. Ready for 03-03 (final remaining Phase 3 plan).
 Resume file: None
 
 ## Previous Milestone: v2.4 -- Bulletproof (COMPLETE)
