@@ -1395,10 +1395,13 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             if not query:
                 self._send_json({"error": "query is required"}, 400)
                 return
+            # DATA-05/DATA-06: Use same project_id resolution as store to ensure
+            # consistent routing (test mode forces __test__, CWD fallback otherwise)
+            project_id = self._resolve_project_id(body)
             try:
                 kwargs = dict(
                     query=query,
-                    project_id=body.get("project_id"),
+                    project_id=project_id,
                     source=body.get("source"),
                     limit=body.get("limit", 20),
                 )
@@ -1436,10 +1439,12 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             if not query:
                 self._send_json({"error": "query is required"}, 400)
                 return
+            # DATA-05/DATA-06: Use same project_id resolution as store
+            project_id = self._resolve_project_id(body)
             try:
                 kwargs = dict(
                     query=query,
-                    project_id=body.get("project_id"),
+                    project_id=project_id,
                     source=body.get("source"),
                     limit=body.get("limit", 20),
                 )
