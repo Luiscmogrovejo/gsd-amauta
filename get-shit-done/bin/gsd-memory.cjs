@@ -1368,6 +1368,25 @@ async function cmdDistill(args) {
     return;
   }
 
+  // Determine LLM availability for this distill run (02-03)
+  const useLlm = !!args['use-llm'];
+  let llmModel = null;
+  let llmAvailable = false;
+
+  if (useLlm) {
+    if (!isOllamaAvailable()) {
+      process.stderr.write('[distill] --use-llm requested but ollama not found. Falling back to concatenation.\n');
+    } else {
+      llmModel = selectOllamaModel();
+      if (!llmModel) {
+        process.stderr.write('[distill] --use-llm requested but no models available. Falling back to concatenation.\n');
+      } else {
+        llmAvailable = true;
+        console.log(`  Using LLM summarization with model: ${llmModel}`);
+      }
+    }
+  }
+
   // Report
   let mergedCount = 0;
   let removedCount = 0;
@@ -1387,11 +1406,31 @@ async function cmdDistill(args) {
     }
 
     if (!dryRun) {
-      // Store merged entry with distilled source
-      const mergedText = keep.text + '\n---\n' +
-        remove.map(r => `[merged from ${r.source}]: ${(r.text || '').slice(0, 200)}`).join('\n');
+      // Determine merge text and strategy (LLM or concatenation)
+      let mergedText;
+      let distillStrategy;
+
+      if (llmAvailable) {
+        const llmResult = llmSummarize(group, llmModel);
+        if (llmResult) {
+          mergedText = llmResult;
+          distillStrategy = 'llm';
+        } else {
+          // LLM failed for this group, fall back to concatenation
+          mergedText = keep.text + '\n---\n' +
+            remove.map(r => `[merged from ${r.source}]: ${(r.text || '').slice(0, 200)}`).join('\n');
+          mergedText = mergedText.slice(0, 4000);
+          distillStrategy = 'concatenation';
+        }
+      } else {
+        mergedText = keep.text + '\n---\n' +
+          remove.map(r => `[merged from ${r.source}]: ${(r.text || '').slice(0, 200)}`).join('\n');
+        mergedText = mergedText.slice(0, 4000);
+        distillStrategy = 'concatenation';
+      }
+
       const mergeBody = {
-        text: mergedText.slice(0, 4000),
+        text: mergedText,
         source: 'distilled',
         agent_id: keep.agent_id || '',
         // Send metadata as object — the daemon/pg_store.py handles JSON.stringify internally.
@@ -1400,8 +1439,13 @@ async function cmdDistill(args) {
           merged_from: group.map(e => e.id),
           original_count: group.length,
           distilled_at: new Date().toISOString(),
+          distill_strategy: distillStrategy,
+          distill_model: distillStrategy === 'llm' ? llmModel : null,
         },
       };
+
+      console.log(`    Strategy: ${distillStrategy}${distillStrategy === 'llm' ? ` (${llmModel})` : ''}`);
+
       const storeRes = await tryDaemon('POST', '/api/memory/store', mergeBody);
 
       // Only delete originals if the merged entry was stored successfully
@@ -1410,7 +1454,7 @@ async function cmdDistill(args) {
         // Delete ONLY the duplicate entries, NOT the 'keep' entry (which is merged into the new one)
         for (const entry of remove) {
           if (entry.id) {
-            await tryDaemon('POST', '/api/memory/delete', { id: entry.id }).catch(e => 
+            await tryDaemon('POST', '/api/memory/delete', { id: entry.id }).catch(e =>
               process.stderr.write(`[distill] delete entry ${entry.id} failed: ${e.message || e}\n`));
           }
         }
@@ -1425,7 +1469,7 @@ async function cmdDistill(args) {
     }
 
     mergedCount++;
-    removedCount += remove.length + 1;  // +1 for the 'keep' entry also deleted (line 1360)
+    removedCount += remove.length + 1;  // +1 for the 'keep' entry also deleted
     console.log('');
   }
 
@@ -1796,3 +1840,13 @@ async function main() {
 }
 
 main();
+
+// ── Test exports (02-03) ─────────────────────────────────────────────────────
+// Exported for unit testing only. Not part of the public CLI API.
+if (require.main !== module) {
+  module.exports = {
+    _test_isOllamaAvailable: isOllamaAvailable,
+    _test_selectOllamaModel: selectOllamaModel,
+    _test_llmSummarize: llmSummarize,
+  };
+}
