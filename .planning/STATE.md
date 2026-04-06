@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v2.5
 milestone_name: milestone
 status: in_progress
-stopped_at: Plan 05-03 complete. Phase 05 plans 01+02+03 done. Redis Perplexity cache via daemon proxy.
-last_updated: "2026-04-06T00:18:00.000Z"
-last_activity: "2026-04-06 -- Plan 05-03: /api/research-cache GET/POST in daemon (gsd:ppx: prefix, 21600s TTL, redis_unavailable fallback); _checkDaemonCache/_writeDaemonCache in gsd-research.cjs (stdlib-only); providerPerplexity cache order: Redis L1 -> file L2 -> API; 13/13 tests pass, 25/25 total with 04-02 regression"
+stopped_at: Plan 05-04 complete. Phase 05 plans 01+02+03+04 done. Data flow alerts + health dashboard + graceful degradation tests.
+last_updated: "2026-04-06T00:00:00.000Z"
+last_activity: "2026-04-06 -- Plan 05-04: /health extended with pipeline_status/service_errors/cache_metrics; startup Service Status banner with [OK]/[!!]/[XX] icons; DATA FLOW ERROR alerts in gsd-rlm.cjs (ECONNREFUSED) and gsd-research.cjs (daemon + Perplexity 401/429); 32/32 tests pass (17 alert tests + 15 degradation tests)"
 progress:
   total_phases: 7
   completed_phases: 5
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-04-06)
 ## Current Position
 
 Phase: 5 of 8
-Plan: 3/? started for Phase 05 (05-01, 05-02, and 05-03 done)
-Status: Phase 05 in progress. Plan 05-03 complete: /api/research-cache GET/POST endpoints in daemon (gsd:ppx: prefix, 21600s TTL, redis_unavailable fallback), _checkDaemonCache/_writeDaemonCache added to gsd-research.cjs (stdlib-only), providerPerplexity now checks Redis L1 before file L2 before calling Perplexity API.
-Last activity: 2026-04-06 -- Plan 05-03: /api/research-cache GET/POST in daemon, _checkDaemonCache/_writeDaemonCache in gsd-research.cjs, L1->L2->API cache hierarchy; 13/13 tests pass
+Plan: 4/4 complete for Phase 05 (05-01 through 05-04 done)
+Status: Phase 05 in progress. Plan 05-04 complete: /health extended with pipeline_status/service_errors/cache_metrics; startup Service Status banner; DATA FLOW ERROR alerts in gsd-rlm.cjs and gsd-research.cjs; 32/32 tests pass (17 alert tests + 15 degradation tests).
+Last activity: 2026-04-06 -- Plan 05-04: pipeline_status+service_errors+cache_metrics in /health, startup service inventory banner, DATA FLOW ERROR in CLI tools, 32/32 tests pass
 
 Progress: [###.......] 30%
 
