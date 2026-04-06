@@ -116,18 +116,27 @@ if [ "$AMAUTA_OK" = "1" ]; then
     echo "[ROUTING] Plan ${plan}: files='${PLAN_FILES}' -> ${EXECUTOR}"
 
     # Performance tiebreaker: if chosen executor has low pass rate, consider fallback
+    # NOTE (AGT-03 audit): Fallback is always executor-general.
+    # If executor-general also has <70% pass rate, the primary executor is used (no further fallback).
+    # This is by design -- a double-fallback chain risks infinite routing loops.
     if [ "$AMAUTA_OK" = "1" ]; then
       PERF_JSON=$(curl -s --max-time 2 "http://127.0.0.1:18799/api/agent-performance?agent_id=${EXECUTOR}" 2>/dev/null || echo '{}')
-      PASS_RATE=$(echo "$PERF_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('pass_rate',100))" 2>/dev/null || echo "100")
+      # Normalize pass_rate: daemon may return 0.0-1.0 float or 0-100 integer.
+      # Heuristic: values > 1 are already percentages; values <= 1 are ratios (multiply by 100).
+      PASS_RATE=$(echo "$PERF_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); pr=d.get('pass_rate',100); print(int(pr) if pr > 1 else int(pr*100))" 2>/dev/null || echo "100")
       TOTAL_TASKS=$(echo "$PERF_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('total_tasks',0))" 2>/dev/null || echo "0")
 
       if [ "$TOTAL_TASKS" -ge 5 ] 2>/dev/null && [ "$PASS_RATE" -lt 70 ] 2>/dev/null; then
         # Check if executor-general has better track record
         ALT_JSON=$(curl -s --max-time 2 "http://127.0.0.1:18799/api/agent-performance?agent_id=executor-general" 2>/dev/null || echo '{}')
-        ALT_RATE=$(echo "$ALT_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('pass_rate',0))" 2>/dev/null || echo "0")
+        ALT_RATE=$(echo "$ALT_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); pr=d.get('pass_rate',0); print(int(pr) if pr > 1 else int(pr*100))" 2>/dev/null || echo "0")
         if [ "$ALT_RATE" -gt 85 ] 2>/dev/null; then
           echo "[PERF_ROUTING] ${EXECUTOR} pass rate ${PASS_RATE}% (${TOTAL_TASKS} tasks) < 70%. Routing to executor-general (${ALT_RATE}% pass rate) instead."
           EXECUTOR="executor-general"
+          # Persist routing override decision to task notes for audit trail
+          if [ -n "$TASK_ID" ] && [ "$AMAUTA_OK" = "1" ]; then
+            $AMAUTA_CLI note "$TASK_ID" --text "PERF_ROUTING_OVERRIDE: ${EXECUTOR} replaced primary executor (pass_rate=${PASS_RATE}%, total=${TOTAL_TASKS}). Fallback pass_rate=${ALT_RATE}%." --agent operator 2>/dev/null || true
+          fi
         fi
       fi
     fi
