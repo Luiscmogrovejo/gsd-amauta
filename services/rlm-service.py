@@ -674,10 +674,6 @@ def _compute_score(chunk, query_terms, doc_freq, n_docs, total_lines=1,
 
         score += term_score
 
-    # Normalize by query term count
-    if len(query_terms) > 0:
-        score /= len(query_terms)
-
     # Position penalty: later chunks in a file score lower (-0.1 per depth).
     tl = max(1, total_lines)
     depth_ratio = min(1.0, chunk.get("start_line", 0) / tl)

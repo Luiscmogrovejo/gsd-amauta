@@ -195,6 +195,23 @@ class TestBM25Scoring(unittest.TestCase):
         self.assertGreater(results[0]["relevance_score"], 0,
                            "Word-boundary 'get' should still match")
 
+    def test_multi_term_query_ranks_better_coverage(self):
+        """RLM-02: chunk matching all query terms should rank above one matching only one term."""
+        full_match = self._make_chunk(
+            "user authentication profile database handler",
+            label="fullHandler"
+        )
+        partial_match = self._make_chunk(
+            "user user user user user repeated many times",
+            label="partialHandler"
+        )
+        filler = self._make_chunk("unrelated code about widgets", label="filler")
+        results = score_chunks([partial_match, full_match, filler],
+                               "user authentication profile database", top_k=3)
+        # Full coverage should beat repeated single-term match
+        self.assertEqual(results[0]["label"], "fullHandler",
+                         "Chunk matching all query terms should rank first (no query-length normalization)")
+
 
 if __name__ == "__main__":
     unittest.main()
