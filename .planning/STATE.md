@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.5
 milestone_name: milestone
 status: completed
-stopped_at: Plan 07-03 complete. Exponential backoff on Perplexity 429 (1s/2s/4s, 3 retries), 3 new preamble patterns (13 total), TECH_SHORT_WORDS 2-char tech abbreviation whitelist, [DEDUP] similarity logging, 18/18 guard tests pass.
-last_updated: "2026-04-06T17:20:00.000Z"
-last_activity: "2026-04-06 -- Plan 07-03: perplexityWithRetry backoff, 3 preamble patterns, TECH_SHORT_WORDS, dedup logging, 18/18 tests"
+stopped_at: Plan 08-01 complete. Token measurement test suite (18/18 pass) + TOKEN-MEASUREMENT.md audit report -- 39.4% Layer 2 enrichment reduction confirmed (6,850->4,150 chars, ~675 tokens/lifecycle).
+last_updated: "2026-04-06T18:20:00.000Z"
+last_activity: "2026-04-06 -- Plan 08-01: 18-test token measurement suite, TOKEN-MEASUREMENT.md audit report, TOK-07 PASS"
 progress:
-  total_phases: 7
+  total_phases: 8
   completed_phases: 7
-  total_plans: 22
-  completed_plans: 19
+  total_plans: 23
+  completed_plans: 23
   percent: 100
 ---
 
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-04-06)
 
 ## Current Position
 
-Phase: 7 of 7
-Plan: 3/3 complete for Phase 07 (07-01, 07-02, 07-03 done)
-Status: Phase 07 complete. Plan 07-03 complete: perplexityWithRetry exponential backoff (429, 3 retries), 3 preamble patterns (13 total), TECH_SHORT_WORDS whitelist, [DEDUP] similarity logging, 18/18 tests pass. All 7 phases complete.
+Phase: 8 of 8
+Plan: 1/3 complete for Phase 08 (08-01 done, 08-02 and 08-03 pending)
+Status: Phase 08 in progress. Plan 08-01 complete: 18-test token measurement suite (static analysis of amauta.py/services/*.py), TOKEN-MEASUREMENT.md audit report with before/after tables, TOK-07 verdict PASS (39.4% Layer 2 enrichment reduction, 6,850->4,150 chars, ~675 tokens/lifecycle).
 Last activity: 2026-04-06 -- Plan 07-03: perplexityWithRetry, preamble patterns, TECH_SHORT_WORDS, dedup logging, 18/18 tests
 
 Progress: [##########] 100%
@@ -104,6 +104,7 @@ Progress: [##########] 100%
 - [Plan 06-04]: ERROR_CLASSES tuple + _classify_failure() + RECOVERY_ACTIONS routing table + MAX_FAILURES_BEFORE_ESCALATION=3 added to amauta.py (AGT-06). failure_count tracked per task; FAILURE_CLASSIFIED/AUTO_ESCALATED notes appended in cmd_validate fail path; item["status"]="escalated" after 3 failures; "escalated" added to STATUSES and ALLOWED_TRANSITIONS; execute-phase.md failure_handling updated with AGT-06 reference; 20/20 tests pass.
 - [Plan 06-05]: agent-capabilities.json is single source of truth for routeExecutor routing (AGT-07). getCapabilityIndex() lazy singleton loads JSON once. Glob-to-regex converts 4 pattern types: *.ext (extension), prefix* (prefix-anchor), dir/* (directory), exact (path-anchor). All 27 06-02 routing tests still pass after wire-up.
 - [Plan 07-03]: perplexityWithRetry wraps httpsRequest (not httpRequest) -- signature is (hostname, urlPath, body, headers). Inserted before HTTP Helpers section. Old 429 DATA FLOW ERROR handler retained as final fallback after retry exhaustion. TECH_SHORT_WORDS uses 'k8' (not 'k8s') since 'k8s' is 3 chars and already passes the length > 2 filter. Dedup logging gate at sim >= 0.3 eliminates noise while capturing meaningful similarity comparisons.
+- [Plan 08-01]: Token measurement tests are pure static analysis (string matching on source files, no mocking). Pre-audit baseline: R=2250, P=900, E=1750, T=1350, D=600 (6850 total). Post-audit: T=0, D=0, E=1000, R=2250, P=900 (4150 total). 39.4% Layer 2 reduction, 24.0% total lifecycle (11250->8550). TOK-07 PASS.
 
 ### Pending Todos
 
