@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v2.5
 milestone_name: milestone
 status: completed
-stopped_at: Plan 02-03 SUMMARY created. MEM-02 LLM distillation --use-llm flag + 26 tests complete.
-last_updated: "2026-04-06T20:50:00.000Z"
-last_activity: 2026-04-06 -- Plan 02-03: isOllamaAvailable/selectOllamaModel/llmSummarize helpers; --use-llm flag in cmdDistill; distill_strategy+distill_model provenance metadata; main() gated on require.main; 26/26 tests pass
+stopped_at: Plan 03-03 SUMMARY created. RLM-08+RLM-09 cache observability + --fresh flag complete. Phase 03 fully done.
+last_updated: "2026-04-06T21:25:00.000Z"
+last_activity: 2026-04-06 -- Plan 03-03: ChunkCache hit/miss counters + hit_rate property; /cache/stats extended; clear_file() method; fresh param in _handle_query/_handle_search; --fresh CLI flag in parseArgs + all 4 body paths; 25/25 tests pass
 progress:
   total_phases: 8
   completed_phases: 6
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-06)
 ## Current Position
 
 Phase: 2 and 3 of 8 (both planned, executing in parallel)
-Plan: 5/7 complete (02-04, 02-01, 02-02, 02-03, 03-02 done; 1 remaining in Phase 2, 1 remaining in Phase 3)
-Status: Plan 02-03 complete. MEM-02 LLM distillation done. Phase 2: 4 plans, 2 waves, 12 tasks, 10 requirements (MEM-01..10). Phase 3: 3 plans, 3 waves, 8 tasks, 8 requirements (RLM-01..06, RLM-08, RLM-09).
-Last activity: 2026-04-06 -- Plan 02-03: Ollama LLM summarization path added to distill; --use-llm opt-in flag; 26 tests pass
+Plan: 7/7 complete (02-04, 02-01, 02-02, 02-03, 03-01, 03-02, 03-03 done; Phase 2 and Phase 3 both complete)
+Status: Plan 03-03 complete. RLM cache observability + fresh flag done. Phase 2 (MEM-01..10) and Phase 3 (RLM-01..06, RLM-08, RLM-09) both fully complete.
+Last activity: 2026-04-06 -- Plan 03-03: ChunkCache hit/miss counters + /cache/stats + --fresh cache bypass; 25/25 tests pass
 
-Progress: [#.........] 12%
+Progress: [##........] 24%
 
 ## Research Completed
 
@@ -83,6 +83,8 @@ Progress: [#.........] 12%
 - RLM-05: MAX_CHUNK_CHARS default reduced 8000->4000 in rlm-service.py + CLI; 8000-char chunks spanned multiple unrelated functions
 - RLM-06: Label boost changed from unbounded 2.0x to 1.5x capped at 3.0*idf; prevents short-label chunks from outranking content-rich chunks; test_label_boost_preserved still passes
 - MEM-02: LLM summarization added to distill via --use-llm flag; isOllamaAvailable/selectOllamaModel/llmSummarize helpers; distill_strategy+distill_model metadata provenance; main() gated on require.main for testability
+- RLM-08: ChunkCache hit/miss counters added (_hit_count, _miss_count, hit_rate property); /cache/stats endpoint extended with all 3 fields; counters reset on clear()
+- RLM-09: ChunkCache.clear_file() evicts entries by filepath only; fresh=body.get('fresh',False) in _handle_query and _handle_search with bypass loop; --fresh CLI flag in parseArgs + all 4 body paths; fresh bypasses cache for single query, result re-enters cache normally
 
 ### Pending Todos
 
@@ -97,7 +99,7 @@ None. Phase 1 blockers resolved:
 ## Session Continuity
 
 Last session: 2026-04-06
-Stopped at: Plan 02-03 complete. MEM-02 done. Ready for 03-03 (final remaining Phase 3 plan).
+Stopped at: Plan 03-03 complete. Phase 02 + Phase 03 both done. Ready for Phase 04 (embedding cache).
 Resume file: None
 
 ## Previous Milestone: v2.4 -- Bulletproof (COMPLETE)
