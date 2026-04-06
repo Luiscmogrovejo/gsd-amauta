@@ -86,6 +86,15 @@ try:
 except ImportError:
     detect_infrastructure = None  # type: ignore
 
+# Redis client (optional — graceful degradation)
+_HAS_REDIS = False
+_redis_client = None
+try:
+    import redis as redis_module
+    _HAS_REDIS = True
+except ImportError:
+    pass
+
 # PostgreSQL store (optional — graceful degradation)
 _pg_store = None
 _HAS_PG_MODULE = False
@@ -443,6 +452,135 @@ def _rlm_watchdog():
                 _start_rlm()
             else:
                 log.error("rlm_max_restarts_exceeded reason=%s", reason)
+
+
+# ── Redis Service Management ──────────────────────────────────────────────────
+REDIS_URL = os.environ.get("GSD_REDIS_URL", "redis://127.0.0.1:6379/0")
+REDIS_MAX_RESTARTS = 3
+_redis_restart_count = 0
+_redis_enabled = os.environ.get("GSD_REDIS_ENABLED", "true").lower() != "false"
+
+
+def _start_redis():
+    """Connect to Redis (auto-start via docker if needed). Returns True if connected."""
+    global _redis_client, _redis_restart_count
+    if not _redis_enabled or not _HAS_REDIS:
+        if not _HAS_REDIS:
+            log.info("redis_no_module pip install redis>=5.0 to enable")
+        else:
+            log.info("redis_disabled")
+        return False
+    try:
+        _redis_client = redis_module.from_url(
+            REDIS_URL, decode_responses=False, socket_timeout=2, socket_connect_timeout=2
+        )
+        _redis_client.ping()
+        _redis_restart_count = 0
+        log.info(
+            "redis_connected url=%s",
+            REDIS_URL.split("@")[-1] if "@" in REDIS_URL else REDIS_URL,
+        )
+        return True
+    except Exception as e:
+        log.warning("redis_connect_failed error=%s", str(e))
+        _redis_client = None
+        # Try auto-starting redis container
+        return _auto_start_redis_container()
+
+
+def _auto_start_redis_container():
+    """Try to start gsd-redis Docker container."""
+    global _redis_client, _redis_restart_count
+    try:
+        import subprocess as _sp
+
+        # Check if container exists (running or stopped)
+        result = _sp.run(
+            ["docker", "ps", "-a", "--filter", "name=gsd-redis", "--format", "{{.Status}}"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.stdout.strip():
+            _sp.run(["docker", "start", "gsd-redis"], capture_output=True, text=True, timeout=15)
+        else:
+            # Use docker compose to create container
+            compose_file = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), "..", "docker", "docker-compose.yml"
+            )
+            if os.path.isfile(compose_file):
+                for cmd in [
+                    ["docker", "compose", "-f", compose_file, "up", "-d", "redis"],
+                    ["docker-compose", "-f", compose_file, "up", "-d", "redis"],
+                ]:
+                    try:
+                        r = _sp.run(cmd, capture_output=True, text=True, timeout=30)
+                        if r.returncode == 0:
+                            break
+                    except FileNotFoundError:
+                        continue
+
+        # Wait for Redis to come up (up to 5s)
+        for _ in range(10):
+            time.sleep(0.5)
+            try:
+                _redis_client = redis_module.from_url(
+                    REDIS_URL, decode_responses=False, socket_timeout=2, socket_connect_timeout=2
+                )
+                _redis_client.ping()
+                _redis_restart_count = 0
+                log.info(
+                    "redis_auto_started url=%s",
+                    REDIS_URL.split("@")[-1] if "@" in REDIS_URL else REDIS_URL,
+                )
+                return True
+            except Exception:
+                pass
+        log.warning("redis_auto_start_failed")
+        _redis_client = None
+        return False
+    except Exception as e:
+        log.warning("redis_auto_start_error error=%s", str(e))
+        _redis_client = None
+        return False
+
+
+def _stop_redis():
+    """Close Redis connection (does not stop container)."""
+    global _redis_client
+    if _redis_client:
+        try:
+            _redis_client.close()
+        except Exception:
+            pass
+        _redis_client = None
+
+
+def _check_redis_health():
+    """Check if Redis is still responding. Returns True if healthy."""
+    if not _redis_client:
+        return False
+    try:
+        return bool(_redis_client.ping())
+    except Exception:
+        return False
+
+
+def _redis_watchdog():
+    """Background thread: periodically check Redis health and reconnect if needed."""
+    global _redis_restart_count
+    while True:
+        time.sleep(30)
+        if not _redis_enabled or not _HAS_REDIS:
+            continue
+        if not _check_redis_health():
+            if _redis_restart_count < REDIS_MAX_RESTARTS:
+                _redis_restart_count += 1
+                log.warning(
+                    "redis_reconnect attempt=%d/%d", _redis_restart_count, REDIS_MAX_RESTARTS
+                )
+                _stop_redis()
+                _start_redis()
+            else:
+                log.error("redis_max_restarts_exceeded")
 
 
 # ── Stale Task Watchdog Thread ────────────────────────────────────────────────
@@ -876,6 +1014,12 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 "rlm_running": _check_rlm_health() if _rlm_enabled else False,
                 "rlm_port": RLM_PORT if _rlm_enabled else None,
                 "rlm_restarts": _rlm_restart_count,
+                "redis_managed": _redis_enabled and _HAS_REDIS,
+                "redis_running": _check_redis_health(),
+                "redis_url": (
+                    REDIS_URL.split("@")[-1] if "@" in REDIS_URL else REDIS_URL
+                ) if (_redis_enabled and _HAS_REDIS) else None,
+                "redis_restarts": _redis_restart_count,
                 "api_keys": {
                     k.lower(): {"set": v.get("set", False), "status": v.get("status", "unknown")}
                     for k, v in _validate_api_keys().items()
@@ -1744,6 +1888,7 @@ def start_server(foreground=False):
         _shutdown_event.set()  # Wake sleeping threads for graceful exit
         log.info("daemon_shutdown")
         print("\nShutting down daemon...")
+        _stop_redis()
         _stop_rlm()
         for s in (_pg_store, _sqlite_store):
             if s:
@@ -1928,6 +2073,22 @@ def start_server(foreground=False):
     else:
         print(f"  RLM: disabled (GSD_RLM_ENABLED=false)")
 
+    # ── Start Redis service ───────────────────────────────────────────────────
+    if _redis_enabled and _HAS_REDIS:
+        redis_started = _start_redis()
+        if redis_started:
+            print(
+                f"  Redis: connected ({REDIS_URL.split('@')[-1] if '@' in REDIS_URL else REDIS_URL})"
+            )
+            redis_watchdog_thread = threading.Thread(target=_redis_watchdog, daemon=True)
+            redis_watchdog_thread.start()
+        else:
+            print(f"  Redis: not available (cache falls back to in-memory/file)")
+    elif not _HAS_REDIS:
+        print(f"  Redis: disabled (pip install redis>=5.0 to enable)")
+    else:
+        print(f"  Redis: disabled (GSD_REDIS_ENABLED=false)")
+
     # ── Start stale task watchdog thread ──────────────────────────────────────
     stale_watchdog_thread = threading.Thread(target=_stale_task_watchdog, daemon=True)
     stale_watchdog_thread.start()
@@ -1951,6 +2112,7 @@ def start_server(foreground=False):
     except KeyboardInterrupt:
         pass
     finally:
+        _stop_redis()
         _stop_rlm()
         for s in (_pg_store, _sqlite_store):
             if s:
