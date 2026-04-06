@@ -262,5 +262,55 @@ class TestBM25Scoring(unittest.TestCase):
                              "Content-rich chunk should be in top 2 despite lacking label match")
 
 
+class TestChunkCache(unittest.TestCase):
+    """Tests for ChunkCache hit/miss counters (RLM-08)."""
+
+    def test_cache_hit_miss_counters(self):
+        """Hit and miss counters should increment correctly."""
+        cache = _rlm.ChunkCache(max_size=10)
+        # Miss: key not in cache
+        result = cache.get("/test/file.py", 1000.0)
+        self.assertIsNone(result)
+        self.assertEqual(cache.miss_count, 1)
+        self.assertEqual(cache.hit_count, 0)
+
+        # Put then hit
+        cache.put("/test/file.py", 1000.0, [{"text": "chunk1"}])
+        result = cache.get("/test/file.py", 1000.0)
+        self.assertIsNotNone(result)
+        self.assertEqual(cache.hit_count, 1)
+        self.assertEqual(cache.miss_count, 1)
+
+        # Hit rate
+        self.assertAlmostEqual(cache.hit_rate, 0.5, places=2)
+
+    def test_cache_clear_resets_counters(self):
+        """Clearing cache should reset hit/miss counters."""
+        cache = _rlm.ChunkCache(max_size=10)
+        cache.put("/test/file.py", 1000.0, [{"text": "chunk1"}])
+        cache.get("/test/file.py", 1000.0)  # hit
+        cache.get("/test/missing.py", 2000.0)  # miss
+        self.assertGreater(cache.hit_count, 0)
+        self.assertGreater(cache.miss_count, 0)
+
+        cache.clear()
+        self.assertEqual(cache.hit_count, 0)
+        self.assertEqual(cache.miss_count, 0)
+        self.assertAlmostEqual(cache.hit_rate, 0.0, places=2)
+
+    def test_clear_file_removes_specific_entries(self):
+        """RLM-09: clear_file should remove only entries for the specified filepath."""
+        cache = _rlm.ChunkCache(max_size=10)
+        cache.put("/test/a.py", 1000.0, [{"text": "chunk_a"}])
+        cache.put("/test/b.py", 2000.0, [{"text": "chunk_b"}])
+
+        # Clear only a.py
+        cache.clear_file("/test/a.py")
+
+        self.assertIsNone(cache.get("/test/a.py", 1000.0))
+        self.assertIsNotNone(cache.get("/test/b.py", 2000.0))
+        self.assertEqual(cache.size, 1)
+
+
 if __name__ == "__main__":
     unittest.main()

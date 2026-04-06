@@ -136,12 +136,16 @@ class ChunkCache:
         self._cache = OrderedDict()
         self._max_size = max_size
         self._current_bytes = 0
+        self._hit_count = 0
+        self._miss_count = 0
 
     def get(self, filepath, mtime):
         key = (filepath, mtime)
         if key in self._cache:
             self._cache.move_to_end(key)
+            self._hit_count += 1
             return self._cache[key]
+        self._miss_count += 1
         return None
 
     def put(self, filepath, mtime, chunks):
@@ -166,10 +170,25 @@ class ChunkCache:
     def clear(self):
         self._cache.clear()
         self._current_bytes = 0
+        self._hit_count = 0
+        self._miss_count = 0
 
     @property
     def size(self):
         return len(self._cache)
+
+    @property
+    def hit_count(self):
+        return self._hit_count
+
+    @property
+    def miss_count(self):
+        return self._miss_count
+
+    @property
+    def hit_rate(self):
+        total = self._hit_count + self._miss_count
+        return round(self._hit_count / total, 3) if total > 0 else 0.0
 
 
 CHUNK_CACHE = ChunkCache(max_size=CACHE_MAX_SIZE)
@@ -776,6 +795,9 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
                 "chunk_cache_size": CHUNK_CACHE.size,
                 "chunk_cache_max": CACHE_MAX_SIZE,
                 "mtime_index_size": MTIME_INDEX.size,
+                "hit_count": CHUNK_CACHE.hit_count,
+                "miss_count": CHUNK_CACHE.miss_count,
+                "hit_rate": CHUNK_CACHE.hit_rate,
             })
             return
 
