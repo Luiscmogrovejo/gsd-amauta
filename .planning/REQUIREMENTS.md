@@ -46,7 +46,7 @@
 - [x] **TOK-04**: Add sonar/sonar-pro auto-selection based on query complexity
 - [x] **TOK-05**: Strip Perplexity citation markers from responses before storage
 - [x] **TOK-06**: Implement Redis as L2 cache for embeddings, responses, and RLM chunks
-- [ ] **TOK-07**: Measure baseline token usage per task lifecycle before/after optimizations
+- [x] **TOK-07**: Measure baseline token usage per task lifecycle before/after optimizations
 
 ### Multi-Agent & RPETD (AGT)
 
@@ -132,7 +132,7 @@
 | TOK-04 | Phase 4 | Complete |
 | TOK-05 | Phase 4 | Complete |
 | TOK-06 | Phase 5 | Complete |
-| TOK-07 | Phase 8 | Pending |
+| TOK-07 | Phase 8 | Complete |
 | AGT-01 | Phase 6 | Complete |
 | AGT-02 | Phase 6 | Complete |
 | AGT-03 | Phase 6 | Complete |
@@ -152,9 +152,10 @@
 | RSC-05 | Phase 7 | Complete |
 
 **Coverage:**
-- v1 requirements: 49 total
-- Mapped to phases: 49
+- v1 requirements: 48 total (INF:5, RLM:9, MEM:10, TOK:7, AGT:7, TSK:5, RSC:5)
+- Mapped to phases: 48
 - Unmapped: 0
+- All complete: 48/48 [x]
 
 ---
 *Requirements defined: 2026-04-06*
