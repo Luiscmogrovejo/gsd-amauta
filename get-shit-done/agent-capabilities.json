@@ -1,0 +1,96 @@
+{
+  "$schema": "agent-capabilities-schema",
+  "version": "1.0",
+  "description": "Structured capability declarations for all GSD agents. Used by routing logic and operator awareness.",
+  "agents": [
+    {
+      "id": "gsd-operator",
+      "lane": "non-code",
+      "file_patterns": [],
+      "task_types": ["orchestration", "routing", "coordination"],
+      "tools": ["Bash", "Read", "Write", "Edit", "Task", "Glob", "Grep"],
+      "patterns": ["P1", "P2", "P3", "P6", "P8", "P9", "P14", "P15", "P17", "P18", "P19"]
+    },
+    {
+      "id": "gsd-planner",
+      "lane": "non-code",
+      "file_patterns": [],
+      "task_types": ["planning", "decomposition", "estimation"],
+      "tools": ["Read", "Write", "Edit", "Bash", "Task", "Glob", "Grep"],
+      "patterns": ["P1", "P6", "P13", "P14"]
+    },
+    {
+      "id": "gsd-researcher",
+      "lane": "non-code",
+      "file_patterns": [],
+      "task_types": ["research", "analysis", "investigation"],
+      "tools": ["Read", "Bash", "Glob", "Grep"],
+      "patterns": ["P4", "P7", "P13", "P20"]
+    },
+    {
+      "id": "gsd-roadmapper",
+      "lane": "non-code",
+      "file_patterns": [],
+      "task_types": ["planning", "roadmapping", "requirements"],
+      "tools": ["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
+      "patterns": ["P1", "P6", "P13", "P14"]
+    },
+    {
+      "id": "gsd-executor-frontend",
+      "lane": "code",
+      "file_patterns": ["*.tsx", "*.jsx", "*.css", "*.scss", "*.sass", "*.less", "*.html", "*.vue", "*.svelte"],
+      "task_types": ["execution", "implementation", "testing"],
+      "tools": ["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
+      "patterns": ["P4", "P7", "P11", "P12"]
+    },
+    {
+      "id": "gsd-executor-backend",
+      "lane": "code",
+      "file_patterns": ["*.py", "*.js", "*.cjs", "*.mjs", "*.ts", "*.go", "*.rs", "*.java", "*.sql"],
+      "task_types": ["execution", "implementation", "testing"],
+      "tools": ["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
+      "patterns": ["P4", "P7", "P11", "P12"]
+    },
+    {
+      "id": "gsd-executor-infra",
+      "lane": "code",
+      "file_patterns": ["Dockerfile*", "docker-compose*", ".github/workflows/*", "terraform/*", "k8s/*", "nginx.conf"],
+      "task_types": ["execution", "implementation", "deployment"],
+      "tools": ["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
+      "patterns": ["P4", "P7", "P11", "P12"]
+    },
+    {
+      "id": "gsd-executor-general",
+      "lane": "code",
+      "file_patterns": [],
+      "task_types": ["execution", "implementation", "configuration", "documentation"],
+      "tools": ["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
+      "patterns": ["P4", "P7", "P11", "P12"],
+      "notes": "Fallback executor for tasks that do not match any specialist file patterns. Also receives performance-rerouted tasks when specialist pass rate < 70%."
+    },
+    {
+      "id": "gsd-checker",
+      "lane": "non-code",
+      "file_patterns": [],
+      "task_types": ["pre-check", "plan-review", "verification"],
+      "tools": ["Read", "Bash", "Grep", "Glob"],
+      "patterns": ["P5", "P10", "P16"]
+    },
+    {
+      "id": "gsd-validator",
+      "lane": "non-code",
+      "file_patterns": [],
+      "task_types": ["validation", "post-check", "quality-gate"],
+      "tools": ["Read", "Bash", "Grep", "Glob"],
+      "patterns": ["P5", "P10", "P16", "P17"]
+    },
+    {
+      "id": "gsd-debugger",
+      "lane": "code",
+      "file_patterns": [],
+      "task_types": ["debugging", "diagnosis", "fix"],
+      "tools": ["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
+      "patterns": ["P4", "P7", "P11", "P13", "P15"]
+    }
+  ]
+}
