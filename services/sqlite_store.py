@@ -51,10 +51,16 @@ DEFAULT_EXCLUDE_SOURCES = ("task_event", "rpetd_phase")
 RECENCY_DECAY_PER_30D = float(os.environ.get("GSD_RECENCY_DECAY_PER_30D", "0.5"))
 MAX_RECENCY_PENALTY = 3.0  # Cap at 6 months of decay
 
-# MEM-02: Tiered retention — archive stale entries by source type
+# MEM-02/MEM-08: Tiered retention -- archive stale entries by source type
+# Permanent: lesson-learned, best-practice, distilled (not in dict = never archived)
+# Long: auto_learning, session-learning (not in dict = never archived, decay handles ranking)
+# Medium: web_search_result (180 days)
+# Short: rpetd_phase (90 days)
+# Ephemeral: task_event (30 days)
 RETENTION_DAYS = {
     "task_event": 30,
     "rpetd_phase": 90,
+    "web_search_result": 180,
 }
 
 # ═══════════════════════════════════════════════════════
@@ -506,16 +512,36 @@ class SQLiteStore:
                 results.append(d)
             return results
 
-    def memory_count(self, project_id=None):
-        """Count total memories."""
+    def memory_count(self, project_id=None, exclude_source=None):
+        """Count total memories, optionally excluding entries by source.
+
+        Args:
+            project_id: Optional project filter.
+            exclude_source: String or list of source values to exclude from the count.
+                            Used by distill-status to exclude source='distilled' entries
+                            so the threshold trigger fires on non-distilled content only.
+        """
+        # MEM-01: normalize exclude_source to list
+        if exclude_source is not None and isinstance(exclude_source, str):
+            exclude_source = [exclude_source]
+
         with self._get_conn() as conn:
+            conditions = []
+            params = []
+
             if project_id:
-                row = conn.execute(
-                    "SELECT COUNT(*) FROM gsd_memory WHERE project_id = ?",
-                    (project_id,),
-                ).fetchone()
-            else:
-                row = conn.execute("SELECT COUNT(*) FROM gsd_memory").fetchone()
+                conditions.append("project_id = ?")
+                params.append(project_id)
+
+            if exclude_source:
+                placeholders = ", ".join(["?"] * len(exclude_source))
+                conditions.append(f"source NOT IN ({placeholders})")
+                params.extend(exclude_source)
+
+            where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+            row = conn.execute(
+                f"SELECT COUNT(*) FROM gsd_memory {where_clause}", params
+            ).fetchone()
             return row[0]
 
     def memory_delete(self, mem_id):
@@ -623,10 +649,11 @@ class SQLiteStore:
         """Archive stale memory entries based on RETENTION_DAYS policy.
 
         Moves entries to gsd_memory_archive (soft delete -- no data lost).
-        Only archives sources defined in RETENTION_DAYS; high-value sources
-        (auto_learning, lesson-learned, best-practice) are never archived.
+        Tiers: task_event (30d), rpetd_phase (90d), web_search_result (180d).
+        High-value sources (auto_learning, lesson-learned, best-practice, distilled)
+        are never archived.
 
-        Returns dict: {"task_event_archived": N, "rpetd_phase_archived": M, "total": N+M}
+        Returns dict: {"task_event_archived": N, "rpetd_phase_archived": M, "web_search_result_archived": P, "total": N+M+P}
         """
         results = {}
         with self._get_conn() as conn:
