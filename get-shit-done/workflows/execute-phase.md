@@ -109,15 +109,11 @@ if [ "$AMAUTA_OK" = "1" ]; then
     # Route to executor by file patterns
     PLAN_FILES=$(echo "$PLAN_INDEX_JSON" | python3 -c "import sys,json; plans=json.load(sys.stdin)['plans']; [print(','.join(p.get('files_modified',[]))) for p in plans if p['id']=='${plan}']" 2>/dev/null || echo "")
 
-    # Determine executor: frontend if .tsx/.css/.html, infra if Dockerfile/docker/ci, backend otherwise
-    EXECUTOR="executor-general"
-    if echo "$PLAN_FILES" | grep -qiE '\.(tsx|jsx|css|scss|html|vue|svelte)'; then
-      EXECUTOR="executor-frontend"
-    elif echo "$PLAN_FILES" | grep -qiE '(docker|ci|deploy|infra|nginx|terraform)'; then
-      EXECUTOR="executor-infra"
-    elif echo "$PLAN_FILES" | grep -qiE '\.(py|js|ts|go|rs|java|sql)'; then
-      EXECUTOR="executor-backend"
-    fi
+    # Route to executor using shared helper (single source of truth)
+    # gsd-tools.cjs routeExecutor: tightened infra regex eliminates false positives
+    # (e.g., src/config.ts -> backend NOT infra; .github/ISSUE_TEMPLATE.md -> general NOT infra)
+    EXECUTOR=$(node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" route-executor "$PLAN_FILES" 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('executor','executor-general'))" 2>/dev/null || echo "executor-general")
+    echo "[ROUTING] Plan ${plan}: files='${PLAN_FILES}' -> ${EXECUTOR}"
 
     # Performance tiebreaker: if chosen executor has low pass rate, consider fallback
     if [ "$AMAUTA_OK" = "1" ]; then
