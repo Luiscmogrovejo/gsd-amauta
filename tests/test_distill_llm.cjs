@@ -176,8 +176,8 @@ describe('distill LLM flag and code structure (02-03)', () => {
 
   test('distill metadata includes distill_model field', () => {
     assert.ok(
-      SOURCE.includes('distill_model:') && SOURCE.includes("distillStrategy === 'llm'"),
-      'mergeBody.metadata should include distill_model with LLM-conditional value'
+      SOURCE.includes('distill_model:') && SOURCE.includes("distillStrategy === 'claude-sonnet'"),
+      'mergeBody.metadata should include distill_model with provider-conditional value'
     );
   });
 
@@ -199,11 +199,10 @@ describe('distill LLM flag and code structure (02-03)', () => {
     );
   });
 
-  test('fallback messages for no-ollama and no-models cases are both present', () => {
-    const fallbackMsgs = SOURCE.match(/Falling back to concatenation/g) || [];
+  test('fallback message present when no Claude API key and no Ollama available', () => {
     assert.ok(
-      fallbackMsgs.length >= 2,
-      `Should have >= 2 "Falling back to concatenation" messages (found ${fallbackMsgs.length})`
+      SOURCE.includes('no Claude API key and no Ollama available. Falling back to concatenation'),
+      'Should have a fallback message when neither Claude nor Ollama is available'
     );
   });
 
@@ -218,8 +217,9 @@ describe('distill LLM flag and code structure (02-03)', () => {
     assert.ok(
       SOURCE.includes('_test_isOllamaAvailable') &&
       SOURCE.includes('_test_selectOllamaModel') &&
-      SOURCE.includes('_test_llmSummarize'),
-      'Should export test helpers via _test_ prefix'
+      SOURCE.includes('_test_llmSummarize') &&
+      SOURCE.includes('_test_claudeSummarize'),
+      'Should export test helpers via _test_ prefix (including claudeSummarize)'
     );
     assert.ok(
       SOURCE.includes('require.main !== module'),
@@ -318,5 +318,78 @@ describe('llmSummarize runtime (02-03)', () => {
     const result = helpers.llmSummarize([{ text: 'memory entry', source: 'auto_learning' }], 'qwen3:8b');
     assert.ok(result !== null, 'Should return non-null for long valid output');
     assert.ok(result.length <= 4000, `Should truncate to 4000 chars (got ${result.length})`);
+  });
+});
+
+// ── Claude API provider chain tests ──────────────────────────────────────────
+
+describe('Claude API provider chain code structure', () => {
+  test('claudeSummarize function is defined', () => {
+    assert.ok(
+      SOURCE.includes('function claudeSummarize(entries, model)'),
+      'Should define claudeSummarize(entries, model)'
+    );
+  });
+
+  test('claudeSummarize uses Anthropic Messages API endpoint', () => {
+    assert.ok(
+      SOURCE.includes("hostname: 'api.anthropic.com'") &&
+      SOURCE.includes("path: '/v1/messages'"),
+      'claudeSummarize should call api.anthropic.com/v1/messages'
+    );
+  });
+
+  test('claudeSummarize sends required Anthropic headers', () => {
+    assert.ok(
+      SOURCE.includes("'x-api-key': apiKey") &&
+      SOURCE.includes("'anthropic-version': '2023-06-01'") &&
+      SOURCE.includes("'content-type': 'application/json'"),
+      'claudeSummarize should include x-api-key, anthropic-version, and content-type headers'
+    );
+  });
+
+  test('claudeSummarize returns null when ANTHROPIC_API_KEY is not set', () => {
+    assert.ok(
+      SOURCE.includes("if (!apiKey) { resolve(null); return; }"),
+      'claudeSummarize should early-return null when API key is missing'
+    );
+  });
+
+  test('claudeSummarize uses 30s timeout', () => {
+    // Count timeout: 30000 occurrences — should be in both llmSummarize and claudeSummarize
+    const timeouts = SOURCE.match(/timeout: 30000/g) || [];
+    assert.ok(
+      timeouts.length >= 2,
+      `Should have timeout: 30000 in both llmSummarize and claudeSummarize (found ${timeouts.length})`
+    );
+  });
+
+  test('distill loop tries Claude Sonnet before Haiku', () => {
+    const sonnetIdx = SOURCE.indexOf("'claude-sonnet-4-5-20250514'");
+    const haikuIdx = SOURCE.indexOf("'claude-haiku-4-5-20251001'");
+    assert.ok(sonnetIdx > -1, 'Should reference claude-sonnet-4-5-20250514 model');
+    assert.ok(haikuIdx > -1, 'Should reference claude-haiku-4-5-20251001 model');
+    assert.ok(sonnetIdx < haikuIdx, 'Sonnet should be tried before Haiku in the provider chain');
+  });
+
+  test('distill_strategy metadata tracks provider: claude-sonnet, claude-haiku, ollama, or concatenation', () => {
+    assert.ok(SOURCE.includes("distillStrategy = 'claude-sonnet'"), 'Should set claude-sonnet strategy');
+    assert.ok(SOURCE.includes("distillStrategy = 'claude-haiku'"), 'Should set claude-haiku strategy');
+    assert.ok(SOURCE.includes("distillStrategy = 'ollama'"), 'Should set ollama strategy');
+    assert.ok(SOURCE.includes("distillStrategy = 'concatenation'"), 'Should set concatenation strategy');
+  });
+
+  test('_test_claudeSummarize is exported for testing', () => {
+    assert.ok(
+      SOURCE.includes('_test_claudeSummarize: claudeSummarize'),
+      'Should export claudeSummarize via _test_ prefix'
+    );
+  });
+
+  test('help text mentions Claude provider chain', () => {
+    assert.ok(
+      SOURCE.includes('Claude Sonnet > Haiku > Ollama'),
+      'Help text should mention Claude > Ollama provider chain'
+    );
   });
 });

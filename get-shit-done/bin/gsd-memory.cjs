@@ -46,6 +46,7 @@
  */
 
 const http = require('http');
+const https = require('https');
 const path = require('path');
 const fs = require('fs');
 
@@ -1322,6 +1323,81 @@ function llmSummarize(entries, model) {
   }
 }
 
+/**
+ * Claude API summarization — calls Anthropic Messages API via https.request.
+ * No external dependencies. Returns summary text or null on error.
+ * @param {Array} entries - Memory entries to summarize
+ * @param {string} model - Claude model ID (e.g. 'claude-sonnet-4-5-20250514')
+ * @returns {Promise<string|null>}
+ */
+function claudeSummarize(entries, model) {
+  return new Promise((resolve) => {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) { resolve(null); return; }
+
+    const combinedText = entries.map((e, i) =>
+      `[Entry ${i + 1} | source: ${e.source || 'unknown'}]:\n${(e.text || '').slice(0, 800)}`
+    ).join('\n\n');
+
+    const prompt = `You are a knowledge distillation assistant. Summarize these ${entries.length} related memory entries into ONE coherent entry that preserves all key facts, decisions, and lessons learned. Output ONLY the summary, no preamble.\n\n${combinedText}`;
+
+    const body = JSON.stringify({
+      model: model,
+      max_tokens: 500,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    const options = {
+      hostname: 'api.anthropic.com',
+      path: '/v1/messages',
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+        'content-length': Buffer.byteLength(body),
+      },
+      timeout: 30000,
+    };
+
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.content && parsed.content[0] && parsed.content[0].text) {
+            const summary = parsed.content[0].text.trim();
+            if (summary.length < 20) { resolve(null); return; }
+            resolve(summary.slice(0, 4000));
+          } else {
+            const errMsg = parsed.error ? parsed.error.message : 'unexpected response format';
+            process.stderr.write(`[distill] Claude (${model}) failed: ${errMsg}\n`);
+            resolve(null);
+          }
+        } catch (parseErr) {
+          process.stderr.write(`[distill] Claude (${model}) parse error: ${parseErr.message}\n`);
+          resolve(null);
+        }
+      });
+    });
+
+    req.on('error', (err) => {
+      process.stderr.write(`[distill] Claude (${model}) request error: ${err.message}\n`);
+      resolve(null);
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      process.stderr.write(`[distill] Claude (${model}) timed out after 30s\n`);
+      resolve(null);
+    });
+
+    req.write(body);
+    req.end();
+  });
+}
+
 async function cmdDistill(args) {
   const threshold = parseFloat(args.threshold || '0.7');
   const dryRun = !!args['dry-run'];
@@ -1368,21 +1444,29 @@ async function cmdDistill(args) {
     return;
   }
 
-  // Determine LLM availability for this distill run (02-03)
+  // Determine LLM availability for this distill run (02-03, updated: Claude > Ollama chain)
   const useLlm = !!args['use-llm'];
-  let llmModel = null;
-  let llmAvailable = false;
+  let ollamaModel = null;
+  let ollamaAvailable = false;
+  const claudeAvailable = useLlm && !!process.env.ANTHROPIC_API_KEY;
 
   if (useLlm) {
-    if (!isOllamaAvailable()) {
-      process.stderr.write('[distill] --use-llm requested but ollama not found. Falling back to concatenation.\n');
-    } else {
-      llmModel = selectOllamaModel();
-      if (!llmModel) {
-        process.stderr.write('[distill] --use-llm requested but no models available. Falling back to concatenation.\n');
-      } else {
-        llmAvailable = true;
-        console.log(`  Using LLM summarization with model: ${llmModel}`);
+    if (claudeAvailable) {
+      console.log('  Using Claude API provider chain (Sonnet > Haiku > Ollama > concatenation)');
+    }
+    if (!claudeAvailable || true) {
+      // Always check Ollama as a fallback even if Claude is available
+      if (isOllamaAvailable()) {
+        ollamaModel = selectOllamaModel();
+        if (ollamaModel) {
+          ollamaAvailable = true;
+          if (!claudeAvailable) {
+            console.log(`  Using Ollama LLM summarization with model: ${ollamaModel}`);
+          }
+        }
+      }
+      if (!claudeAvailable && !ollamaAvailable) {
+        process.stderr.write('[distill] --use-llm requested but no Claude API key and no Ollama available. Falling back to concatenation.\n');
       }
     }
   }
@@ -1406,26 +1490,55 @@ async function cmdDistill(args) {
     }
 
     if (!dryRun) {
-      // Determine merge text and strategy (LLM or concatenation)
+      // Determine merge text and strategy: Claude Sonnet > Claude Haiku > Ollama > concatenation
       let mergedText;
       let distillStrategy;
 
-      if (llmAvailable) {
-        const llmResult = llmSummarize(group, llmModel);
-        if (llmResult) {
-          mergedText = llmResult;
-          distillStrategy = 'llm';
+      // Helper for concatenation fallback
+      const concatFallback = () => {
+        const text = keep.text + '\n---\n' +
+          remove.map(r => `[merged from ${r.source}]: ${(r.text || '').slice(0, 200)}`).join('\n');
+        return text.slice(0, 4000);
+      };
+
+      if (claudeAvailable) {
+        // Try Claude Sonnet first
+        const sonnetResult = await claudeSummarize(group, 'claude-sonnet-4-5-20250514');
+        if (sonnetResult) {
+          mergedText = sonnetResult;
+          distillStrategy = 'claude-sonnet';
         } else {
-          // LLM failed for this group, fall back to concatenation
-          mergedText = keep.text + '\n---\n' +
-            remove.map(r => `[merged from ${r.source}]: ${(r.text || '').slice(0, 200)}`).join('\n');
-          mergedText = mergedText.slice(0, 4000);
+          // Try Claude Haiku as fallback
+          const haikuResult = await claudeSummarize(group, 'claude-haiku-4-5-20251001');
+          if (haikuResult) {
+            mergedText = haikuResult;
+            distillStrategy = 'claude-haiku';
+          } else if (ollamaAvailable) {
+            // Fall back to Ollama
+            const ollamaResult = llmSummarize(group, ollamaModel);
+            if (ollamaResult) {
+              mergedText = ollamaResult;
+              distillStrategy = 'ollama';
+            } else {
+              mergedText = concatFallback();
+              distillStrategy = 'concatenation';
+            }
+          } else {
+            mergedText = concatFallback();
+            distillStrategy = 'concatenation';
+          }
+        }
+      } else if (ollamaAvailable) {
+        const ollamaResult = llmSummarize(group, ollamaModel);
+        if (ollamaResult) {
+          mergedText = ollamaResult;
+          distillStrategy = 'ollama';
+        } else {
+          mergedText = concatFallback();
           distillStrategy = 'concatenation';
         }
       } else {
-        mergedText = keep.text + '\n---\n' +
-          remove.map(r => `[merged from ${r.source}]: ${(r.text || '').slice(0, 200)}`).join('\n');
-        mergedText = mergedText.slice(0, 4000);
+        mergedText = concatFallback();
         distillStrategy = 'concatenation';
       }
 
@@ -1440,11 +1553,14 @@ async function cmdDistill(args) {
           original_count: group.length,
           distilled_at: new Date().toISOString(),
           distill_strategy: distillStrategy,
-          distill_model: distillStrategy === 'llm' ? llmModel : null,
+          distill_model: distillStrategy === 'claude-sonnet' ? 'claude-sonnet-4-5-20250514'
+            : distillStrategy === 'claude-haiku' ? 'claude-haiku-4-5-20251001'
+            : distillStrategy === 'ollama' ? ollamaModel
+            : null,
         },
       };
 
-      console.log(`    Strategy: ${distillStrategy}${distillStrategy === 'llm' ? ` (${llmModel})` : ''}`);
+      console.log(`    Strategy: ${distillStrategy}${distillStrategy !== 'concatenation' ? ` (${mergeBody.metadata.distill_model})` : ''}`);
 
       const storeRes = await tryDaemon('POST', '/api/memory/store', mergeBody);
 
@@ -1782,7 +1898,7 @@ function printUsage() {
   --offset <n>         Pagination offset
   --threshold <0-1>    Similarity threshold for distill (default: 0.7)
   --dry-run            Preview distill without changes
-  --use-llm            Use Ollama LLM for summarization instead of concatenation
+  --use-llm            Use LLM summarization (Claude Sonnet > Haiku > Ollama > concat)
   --json               Raw JSON output
   --content <text>     SKB entry content (required for skb-add)
   --task <id>          Source task ID for SKB entries
@@ -1846,6 +1962,7 @@ if (require.main !== module) {
     _test_isOllamaAvailable: isOllamaAvailable,
     _test_selectOllamaModel: selectOllamaModel,
     _test_llmSummarize: llmSummarize,
+    _test_claudeSummarize: claudeSummarize,
   };
 } else {
   main();
