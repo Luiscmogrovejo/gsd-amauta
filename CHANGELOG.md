@@ -4,6 +4,105 @@ All changes from vanilla GSD to GSD-Amauta.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.5.0] — 2026-04-06 — "Smarter Brain"
+
+8 phases, 49 requirements, ~479 new tests. Total test count: ~2479 (61 CJS + 31 Python files).
+
+### Added
+
+#### Infrastructure & Reliability (Phase 1)
+- `_kill_port_holder()` and `_port_is_free()` in RLM service -- fixes zombie process leak (orphaned PID, stderr suppressed, counter never resets)
+- API key validation on daemon startup with `/health` exposure
+- Startup service inventory banner with `[OK]`/`[!!]`/`[XX]` markers per service
+
+#### Memory & Embeddings (Phase 2)
+- `distill-status` excludes `source='distilled'` entries from threshold count
+- LLM distillation via Claude CLI (`claude --print --model sonnet/haiku`) > Ollama > concatenation fallback
+- `web_search_result` gets 180-day retention tier
+- Recency decay guard tests for all code paths
+
+#### RLM Engine Improvements (Phase 3, MIT Paper Audit)
+- BM25 TF: word-boundary tokenization replaces substring `.count()` for accurate term frequency
+- Query-length normalization removed (standard BM25 does not normalize)
+- `RLM_POSITION_DECAY` env var for configurable position decay (default 5%, was 10%)
+- BM25 `b` parameter tuned 0.75 -> 0.6 for code chunk length variance
+- Default chunk size 8000 -> 4000 chars (`RLM_MAX_CHUNK_CHARS`)
+- Label boost reduced 2.0 -> 1.5x with 3.0*idf cap
+- Cache hit/miss counters + `/cache/stats` endpoint
+- `--fresh` flag for cache bypass on RLM queries
+
+#### Token Efficiency & Caching (Phase 4)
+- Perplexity citation markers stripped (`[1]`, `[2]`, etc.)
+- Perplexity response cache: 6h TTL temp-file + `--no-cache` bypass
+- Query embedding cache: 1h TTL, 500 max, query-only (SHA-256 keys)
+- Phase-specific enrichment reduction: T=none, D=writes-only, E=RLM-only (~1950 chars/lifecycle saved)
+- `PGStore.rerank()` wired into semantic search (voyage-rerank-2.5, guard len>=3)
+
+#### Redis Caching Layer (Phase 5)
+- Redis 7-alpine added to `docker/docker-compose.yml` (ephemeral cache, no persistence)
+- Daemon manages Redis lifecycle (watchdog, auto-start, health) -- mirrors RLM pattern
+- `GSD_REDIS_URL` and `GSD_REDIS_ENABLED` env vars
+- Redis L2 embedding cache (`gsd:emb:` prefix, 3600s TTL) wraps Phase 4 L1 dict cache
+- Perplexity cache via `/api/research-cache` daemon endpoint (file cache fallback)
+- `/health` reports `pipeline_status` (healthy/degraded/critical), `service_errors[]`, `cache_metrics{}`
+- `[DATA FLOW ERROR]` alerts in `gsd-rlm.cjs` and `gsd-research.cjs`
+- Bridge module `services/amauta_daemon_redis.py` solves circular import
+
+#### Multi-Agent & RPETD Audit (Phase 6)
+- 11 agent definitions audited -- checker/validator boundary blocks added
+- Routing extracted to shared `gsd-tools.cjs routeExecutor()` (was copy-pasted in 2 files)
+- `get-shit-done/agent-capabilities.json` -- single source of truth for 11 agents
+- Infra regex tightened (path-anchored, eliminates false positives)
+- `pass_rate` normalization handles both 0-1 and 0-100 formats
+- R/P substance gates >=50 chars, T threshold raised to >=50
+- Phase-order soft warning in `cmd_rpetd`
+- `force_reason` persisted to task notes + validation metadata
+- Error classification: TRANSIENT / GATE_FAIL / CAPABILITY_MISMATCH / SYSTEMIC
+- Recovery routing table + auto-escalation at 3 failures
+- Mandatory external validation enforced in execute-phase workflow
+
+#### Task Manager & Research Chain Audit (Phase 7)
+- `archive` and `reconcile` added to daemon `command_map` + `EXEC_ALLOWLIST` (was dead code)
+- `GSD_STALE_INTERVAL` env var for configurable watchdog check interval (default 300s)
+- `dep_pressure` cache key: content hash replaces `id()` (was rebuilding every call)
+- `cmd_next` tie-breaking by `created_at`
+- Research cascade requires >=2 results before stopping (`GSD_RESEARCH_MIN_RESULTS`, was >0)
+- Empty `_search_q` guard prevents unconditional research chain invocation
+- 3 new preamble patterns ("Of course", "I'd be happy", "As an AI")
+- Perplexity 429 exponential backoff (1s, 2s, 4s, max 3 retries)
+- `TECH_SHORT_WORDS` whitelist preserves 2-char terms (ai, db, js, go, etc.)
+- Dedup similarity logging for threshold tuning
+
+#### Integration Testing & Baseline Measurement (Phase 8)
+- Token measurement: 39.4% Layer 2 enrichment reduction confirmed
+- 24 regression benchmark tests
+- Consolidated `AUDIT-SUMMARY.md`
+
+### Changed
+- Perplexity `max_tokens` reduced 4096 -> 1000 (was paying 10x actual usage)
+- `PERPLEXITY_MODEL=auto` with sonar/sonar-pro complexity routing via `selectPerplexityModel()`
+- Voyage AI `input_type` asymmetric encoding audited correct
+- HNSW `m=16 / ef_construction=128` confirmed optimal for <10K rows
+- Context7 marked as additive provider (no longer blocks Perplexity cascade)
+- Preamble stripping loops until stable (handles compound preambles)
+- Daemon search `project_id` routing fix
+- Claude CLI distillation used automatically in Claude Code sessions (no API key needed)
+
+### Fixed
+- RLM zombie process (orphaned PID, stderr suppressed, counter never resets)
+- Enrichment dedup window (300s) audited correct
+- Daemon `archive`/`reconcile` were dead code (not in command_map)
+- `dep_pressure` used Python `id()` as cache key (rebuilt every call)
+- Research cascade stopped at >0 results (should be >=2)
+- Unconditional research chain invocation when `_search_q` was empty
+
+### Metrics
+- **Test count:** ~2479 total (was ~2000 pre-audit)
+- **Token reduction:** 39.4% Layer 2 enrichment, 24% total lifecycle, 75.6% Perplexity per-call
+- **New infrastructure:** Redis L2 cache, agent capability index, error recovery pipeline, mandatory validation
+
+---
+
 ## [Unreleased] — GSD-Amauta Fork
 
 ### Added
@@ -123,5 +222,5 @@ The following vanilla GSD agents are superseded by the new 11-agent roster:
 2. **Task management via daemon** — Tasks are managed through HTTP daemon, not directly via files.
 3. **RPETD enforcement** — Validation gates require branch evidence (E-phase), test evidence (T-phase), and LEARNING block (D-phase). Use `--force` to bypass.
 4. **Memory system** — STATE.md is supplemented (not replaced) by PG memory. Both coexist.
-5. **Port usage** — Three localhost ports used: 5433 (PG), 18798 (RLM), 18799 (daemon).
+5. **Port usage** — Four localhost ports used: 5433 (PG), 6379 (Redis, optional), 18798 (RLM), 18799 (daemon).
 6. **RLM enabled by default** — `config.json` ships with `rlm_enabled: true`. Agents use RLM for context retrieval instead of full file injection.

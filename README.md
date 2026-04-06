@@ -2,10 +2,10 @@
 
 **Quality-enforced AI development for Claude Code.**
 
-GSD-Amauta extends the [GSD](https://github.com/get-shit-done/get-shit-done) framework with persistent PostgreSQL memory, pgvector semantic search, a BM25 code context engine, 11 specialist agents, a 5-phase RPETD pipeline with external validation gates, and a 5-step research chain. Everything degrades gracefully to vanilla GSD when infrastructure is unavailable.
+GSD-Amauta extends the [GSD](https://github.com/get-shit-done/get-shit-done) framework with persistent PostgreSQL memory, pgvector semantic search, a BM25 code context engine, 11 specialist agents, a 5-phase RPETD pipeline with external validation gates, a 5-step research chain, and a Redis L2 caching layer. Everything degrades gracefully to vanilla GSD when infrastructure is unavailable.
 
 ```
-v2.4.0 -- 2000+ tests (408 Python + ~1618 CJS) -- 11 agents -- 5 CLI tools -- 3 services -- 9 specs -- 20 AI patterns
+v2.5.0 "Smarter Brain" -- ~2479 tests (31 Python + 61 CJS files) -- 11 agents -- 5 CLI tools -- 4 services -- 9 specs -- 20 AI patterns
 ```
 
 ---
@@ -24,7 +24,9 @@ v2.4.0 -- 2000+ tests (408 Python + ~1618 CJS) -- 11 agents -- 5 CLI tools -- 3 
 | Agents | Generic prompts | 11 specialists with file-pattern routing + performance tiebreaker |
 | Memory writes | Blind append, duplicates accumulate | Idempotent writes with Jaccard dedup + embedding similarity check |
 | Memory lifecycle | No cleanup | Distillation, recency decay, tiered retention, source filtering |
-| Token efficiency | No optimization | Enrichment dedup window, Perplexity cap, RPETD soft cap |
+| Token efficiency | No optimization | Enrichment dedup window, Perplexity cap, RPETD soft cap, phase-specific reduction |
+| Caching | None | Redis L2 embedding cache, Perplexity response cache, RLM hit/miss stats |
+| Error recovery | None | Error classification (4 types), recovery routing table, auto-escalation |
 | Project isolation | None | `__test__` routing, `project_id` scoping on all queries |
 
 ---
@@ -54,6 +56,7 @@ graph TB
     subgraph Services["Background Services"]
         DAEMON["Amauta Daemon<br/>:18799 HTTP"]
         RLM_SVC["RLM Service<br/>:18798 HTTP"]
+        REDIS["Redis 7<br/>L2 Cache"]
     end
 
     subgraph Storage["PostgreSQL 16 + pgvector"]
@@ -78,7 +81,9 @@ graph TB
     RES --> C7
     DAEMON --> Storage
     DAEMON --> VOY
+    DAEMON --> REDIS
     RLM_SVC -.->|"BM25 scoring<br/>LRU cache"| RLM_SVC
+    REDIS -.->|"L2 embedding cache<br/>3600s TTL"| DAEMON
 ```
 
 ---
@@ -142,16 +147,18 @@ flowchart LR
     style D fill:#f3e8fd,stroke:#9334e6
 ```
 
-### Enrichment per Phase
+### Enrichment per Phase (v2.5 Phase-Specific Reduction)
 
-| Phase | RLM Layer | Memory Enrichment | Soft Cap |
-|-------|-----------|-------------------|----------|
-| Claim | Layer 1: 2 code-context queries injected into task | -- | -- |
-| R | Layer 2: phase-specific RLM query via HTTP | Semantic search (pgvector) + Shared KB | ~500 chars |
-| P | Layer 2 | -- | ~300 chars |
-| E | Layer 2 | Past failure patterns from memory | ~500 chars |
-| T | Layer 2 | Test strategies from memory | ~300 chars |
-| D | -- | -- | ~400 chars |
+| Phase | RLM Layer | Memory Enrichment | Soft Cap | v2.5 Change |
+|-------|-----------|-------------------|----------|-------------|
+| Claim | Layer 1: 2 code-context queries injected into task | -- | -- | -- |
+| R | Layer 2: phase-specific RLM query via HTTP | Semantic search (pgvector) + Shared KB | ~500 chars | -- |
+| P | Layer 2 | -- | ~300 chars | -- |
+| E | RLM-only (Layer 2) | Past failure patterns from memory | ~500 chars | Memory enrichment removed |
+| T | None | -- | ~300 chars | All enrichment removed |
+| D | Writes-only | -- | ~400 chars | Read enrichment removed |
+
+Phase-specific reduction saves ~1950 chars per full RPETD lifecycle (39.4% Layer 2 reduction, 24% total lifecycle reduction).
 
 Enrichment deduplication ensures the same chunk is never injected twice within a 300-second window (`ENRICHMENT_DEDUP_WINDOW`).
 
@@ -296,6 +303,7 @@ Older memories are scored lower: -0.5 per 30 days since last update, capped at -
 |----------------|:------------:|-----------|
 | `task_event` | 30 days | High volume, low reuse value |
 | `rpetd_phase` | 90 days | Useful for recent project context |
+| `web_search_result` | 180 days | Moderate reuse, may become stale |
 | `lesson-learned`, `best-practice` | Never | High-value validated knowledge |
 | All others | Default lifecycle | Standard retention |
 
@@ -333,9 +341,11 @@ The RLM service uses BM25 (Best Matching 25) instead of raw TF-IDF for more accu
 | Parameter | Value | Purpose |
 |-----------|:-----:|---------|
 | k1 | 1.5 | Term frequency saturation |
-| b | 0.75 | Document length normalization weight |
-| Label boost | 2x | Function/class name matches ranked higher |
-| Position penalty | -10% | Per-position decay for later chunks in a file |
+| b | 0.6 | Document length normalization weight (tuned from 0.75 for code chunk variance) |
+| Label boost | 1.5x | Function/class name matches ranked higher (capped at 3.0*idf) |
+| Position penalty | -5% | Per-position decay for later chunks (configurable via `RLM_POSITION_DECAY`) |
+| Default chunk size | 4000 chars | Max chars per chunk (was 8000, configurable via `RLM_MAX_CHUNK_CHARS`) |
+| TF tokenization | word-boundary | Accurate term frequency (replaces substring `.count()`) |
 
 ### camelCase / snake_case Splitting
 
@@ -350,10 +360,11 @@ This allows a query for "user profile" to match a function named `getUserProfile
 | Layer | When | What |
 |-------|------|------|
 | Layer 1 | `claim` time | 2 RLM queries injected into task context |
-| Layer 2 | Each RPETD phase | Phase-specific RLM query via HTTP |
-| E/T enrichment | Execute + Test | Past failure patterns + test strategies from memory |
+| Layer 2 | R, P, E phases | Phase-specific RLM query via HTTP (T/D phases skip Layer 2 in v2.5) |
+| E enrichment | Execute only | Past failure patterns from memory (RLM-only) |
+| Cache | All layers | Redis L2 embedding cache (3600s TTL) wraps in-memory L1 dict |
 
-Enrichment deduplication ensures the same chunk is never injected twice within a 300-second window.
+Enrichment deduplication ensures the same chunk is never injected twice within a 300-second window. RLM cache hit/miss counters available at `/cache/stats`.
 
 ---
 
@@ -397,9 +408,11 @@ sequenceDiagram
 
 ### Perplexity Output Cap
 
-Perplexity responses are capped at 1500 characters after preamble stripping (`stripPreamble` removes boilerplate like "Based on the search results..."). This prevents large API responses from consuming excessive context tokens.
+Perplexity responses are capped at 1500 characters after preamble stripping (`stripPreamble` removes boilerplate like "Based on the search results...", "Of course", "I'd be happy", "As an AI"). Preamble stripping loops until stable to handle compound preambles. Citation markers (`[1]`, `[2]`, etc.) are stripped from responses. This prevents large API responses from consuming excessive context tokens (75.6% per-call reduction from v2.4).
 
-Auto-invoked in the R-phase when fewer than 2 local results are found.
+Responses are cached in temp-files with 6h TTL (`--no-cache` to bypass). `PERPLEXITY_MODEL=auto` routes queries to sonar or sonar-pro based on complexity via `selectPerplexityModel()`. Max tokens reduced from 4096 to 1000. 429 errors use exponential backoff (1s, 2s, 4s, max 3 retries).
+
+Auto-invoked in the R-phase when fewer than 2 local results are found (`GSD_RESEARCH_MIN_RESULTS`).
 
 ---
 
@@ -501,10 +514,15 @@ flowchart TB
 
 | Feature | Description |
 |---------|-------------|
-| `--force-reason` | Replaces the old `--force` flag. Requires a written justification string, which is recorded in the audit trail with `forced:true`. |
+| `--force-reason` | Replaces the old `--force` flag. Requires a written justification string, persisted to task notes + validation metadata with `forced:true`. |
 | `--test-exempt` | Marks tasks that legitimately lack test evidence (documentation, config). Exempt tasks skip Gate 2. |
 | Self-validation block | `claimed_by` must differ from `validated_by`. An agent cannot validate work it executed. |
 | Mandatory `--notes` | Failed and deferred validations require `--notes` explaining the reason. |
+| R/P substance gates | R and P phase content must be >= 50 chars. T phase threshold raised to >= 50 chars. |
+| Phase-order warning | Soft warning when phases are logged out of R -> P -> E -> T -> D order. |
+| Error classification | Failures classified as TRANSIENT, GATE_FAIL, CAPABILITY_MISMATCH, or SYSTEMIC. |
+| Recovery routing | Automatic re-routing table + auto-escalation at 3 consecutive failures. |
+| Mandatory external validation | Enforced in execute-phase workflow -- no self-validation path. |
 | Audit trail | All validation decisions stored in `gsd_task_validations` with immutable records in `gsd_audit_log`. |
 
 ---
@@ -550,12 +568,15 @@ All paths include full content storage (no truncation, fixed in v2.2) and Jaccar
 
 ## Token Efficiency
 
-Three mechanisms prevent excessive context consumption:
+Six mechanisms prevent excessive context consumption:
 
 | Mechanism | Implementation | Impact |
 |-----------|---------------|--------|
 | Enrichment dedup window | 300-second window (`ENRICHMENT_DEDUP_WINDOW`). If Layer 1 RLM ran at claim, Layer 2 R-phase skips if within window. | Prevents duplicate chunk injection |
-| Perplexity output cap | 1500-character limit (`PERPLEXITY_OUTPUT_CAP`). Preamble stripped before capping. | Prevents 4K+ token injection from API responses |
+| Phase-specific reduction | T=no enrichment, D=writes-only, E=RLM-only. Configurable per phase. | ~1950 chars/lifecycle saved (39.4% Layer 2 reduction) |
+| Perplexity output cap | 1500-character limit (`PERPLEXITY_OUTPUT_CAP`). Preamble stripped, citations stripped before capping. | 75.6% per-call reduction |
+| Perplexity response cache | 6h TTL temp-file cache. `--no-cache` bypass. `max_tokens` capped at 1000. | Eliminates redundant API calls |
+| Redis L2 embedding cache | `gsd:emb:` prefix, 3600s TTL. SHA-256 query keys, 500 max L1 dict. | Reduces Voyage AI calls |
 | RPETD soft cap | 2000-character overall cap with phase-specific guidance. Warns agents (does not block). | Guides agents toward concise phase content |
 
 ### RPETD Phase Guidance
@@ -619,6 +640,7 @@ graph LR
         PPX["Perplexity API"]
         VOY["Voyage AI embeddings"]
         RPETD["RPETD gate checks"]
+        RDS["Redis L2 cache"]
     end
 
     subgraph Fallback["Without Infrastructure"]
@@ -628,6 +650,7 @@ graph LR
         LOCAL["memory + SKB only"]
         TEXT["text search only"]
         HONOR["not enforced"]
+        L1["In-memory L1 + file cache"]
     end
 
     PG -->|"no PG_URL"| JSON
@@ -636,6 +659,7 @@ graph LR
     PPX -->|"no API key"| LOCAL
     VOY -->|"no API key"| TEXT
     RPETD -->|"no daemon"| HONOR
+    RDS -->|"no Redis"| L1
 
     style Full fill:#e6f4ea,stroke:#34a853
     style Fallback fill:#fce8e6,stroke:#ea4335
@@ -669,10 +693,10 @@ npm install
 
 1. Installs 11 agents, 34 slash commands, 11 skills, 3 hooks to `~/.claude/`
 2. Detects infrastructure: local PostgreSQL -> Docker PG -> SQLite fallback
-3. Starts Amauta daemon (`:18799`) + RLM service (`:18798`)
+3. Starts Amauta daemon (`:18799`) + RLM service (`:18798`) + Redis (`:6379`, optional)
 4. Runs database migrations (7 SQL files)
 5. Registers MCP server in Claude Code settings
-6. Copies Python backend (amauta.py, daemon, pg_store, rlm-service)
+6. Copies Python backend (amauta.py, daemon, Redis bridge, pg_store, rlm-service)
 
 ### Prerequisites
 
@@ -714,18 +738,23 @@ python3 -m pytest tests/ -q                                     # Tests
 | `GSD_RLM_PORT` | `18798` | RLM service port |
 | `AMAUTA_DATA_DIR` | `<project>/data` | Task board JSON location |
 | `PERPLEXITY_API_KEY` | _(none)_ | Perplexity API key for research chain |
-| `PERPLEXITY_MODEL` | `sonar` | Perplexity model name |
+| `PERPLEXITY_MODEL` | `auto` | Perplexity model: `auto` (routes sonar/sonar-pro by complexity), `sonar`, `sonar-pro` |
 | `VOYAGE_API_KEY` | _(none)_ | Voyage AI embedding key |
 | `OPENAI_API_KEY` | _(none)_ | OpenAI embedding key (alternative provider) |
 | `GSD_EMBEDDING_PROVIDER` | _(auto)_ | Force `voyage` or `openai` |
+| `GSD_REDIS_URL` | _(none)_ | Redis connection URL for L2 cache (e.g., `redis://127.0.0.1:6379/0`) |
+| `GSD_REDIS_ENABLED` | `true` | Set `false` to disable Redis even if URL is set |
+| `GSD_STALE_INTERVAL` | `300` | Watchdog check interval in seconds (5 min) |
+| `GSD_RESEARCH_MIN_RESULTS` | `2` | Cascade stops only when provider returns >= this many results |
 | `GSD_MEMORY_DISTILL_THRESHOLD` | `100` | Auto-distill trigger when entry count exceeds this |
 | `GSD_RESEARCH_DEDUP_THRESHOLD` | `0.7` | Jaccard dedup threshold for research results |
 | `GSD_DEDUP_THRESHOLD` | `0.95` | Pre-store embedding cosine similarity threshold |
 | `GSD_RECENCY_DECAY_PER_30D` | `0.5` | Score penalty per 30 days of age (capped at -3.0) |
 | `GSD_TEST_MODE` | _(none)_ | Set to `1` to route to `__test__` project isolation |
-| `RLM_MAX_CHUNK_CHARS` | `8000` | Max RLM chunk size in characters |
+| `RLM_MAX_CHUNK_CHARS` | `4000` | Max RLM chunk size in characters |
 | `RLM_DEFAULT_TOP_K` | `10` | Default results per RLM query |
 | `RLM_CACHE_SIZE` | `200` | LRU cache capacity (files) |
+| `RLM_POSITION_DECAY` | `0.05` | Per-position decay for later chunks (5%) |
 
 ### Project Isolation
 
@@ -742,13 +771,15 @@ amauta status
 ```
 
 Reports:
-- **Daemon:** running/stopped, host:port, uptime
-- **RLM service:** running/stopped, host:port, indexed files count
+- **Daemon:** running/stopped, host:port, uptime, `pipeline_status` (healthy/degraded/critical)
+- **RLM service:** running/stopped, host:port, indexed files count, cache hit/miss stats
+- **Redis:** connected/disconnected, cache metrics (hits, misses, keys)
 - **PostgreSQL:** connected/disconnected, version, table sizes
 - **Embedding coverage:** percentage of memory entries with embeddings, active provider
 - **SKB count:** number of validated shared knowledge entries
 - **Agent performance:** per-agent pass rates and task counts
 - **Task counts:** by status (pending, in_progress, validation, done, failed, deferred)
+- **Service errors:** `service_errors[]` array for degraded/critical services
 
 ---
 
@@ -826,8 +857,9 @@ gsd-memory health                                   # Service health + embedding
 ```bash
 gsd-rlm query "how auth works" --path src/          # BM25-scored chunks from path
 gsd-rlm query "database models" --dir . --top-k 5   # Top-5 results from project
+gsd-rlm query "auth" --fresh                         # Bypass cache for fresh results
 gsd-rlm chunk src/auth.ts                            # Inspect chunking for a file
-gsd-rlm health                                       # Service status + indexed file count
+gsd-rlm health                                       # Service status + indexed file count + cache stats
 ```
 
 ### gsd-research.cjs -- Research Chain
@@ -835,6 +867,7 @@ gsd-rlm health                                       # Service status + indexed 
 ```bash
 gsd-research search "React patterns"                # Full 5-step chain
 gsd-research perplexity "Next.js 15 changes"        # Perplexity direct query
+gsd-research perplexity "query" --no-cache           # Bypass 6h response cache
 gsd-research fetch --url https://docs.example.com   # WebFetch direct
 gsd-research check-providers                        # Provider availability status
 ```
@@ -844,12 +877,12 @@ gsd-research check-providers                        # Provider availability stat
 ## Testing
 
 ```bash
-npm test                          # All CJS tests (~1618 tests, 42 files)
-python3 -m pytest tests/ -q       # All Python tests (408 tests, 28 files)
+npm test                          # All CJS tests (61 test files)
+python3 -m pytest tests/ -q       # All Python tests (31 test files)
 npm run test:coverage             # Coverage report (target: 70%+ lines)
 ```
 
-**2000+ tests** across 70 files covering: RPETD pipeline, validation gates (including `--force-reason`, `--test-exempt`, self-validation block), memory (PG + semantic + distill + retention + dedup + decay + source filtering), RLM (BM25 scoring, camelCase splitting, HTTP wiring, incremental indexing), research chain (Perplexity cap, auto-store), task lifecycle (archive, TOCTOU, reconcile, watchdog, retry flush), token efficiency (enrichment dedup, RPETD soft cap), agent architecture, security (path traversal, body limits, DSN sanitization), graceful degradation, health dashboard, and end-to-end integration.
+**~2479 tests** across 92 files covering: RPETD pipeline, validation gates (including `--force-reason`, `--test-exempt`, self-validation block, substance gates, phase-order warnings), memory (PG + semantic + distill + retention + dedup + decay + source filtering + recency guard), RLM (BM25 scoring, word-boundary TF, camelCase splitting, HTTP wiring, incremental indexing, cache stats), research chain (Perplexity cap, auto-store, cascade min-results, 429 backoff, preamble stripping), task lifecycle (archive, TOCTOU, reconcile, watchdog, retry flush, dep_pressure caching), token efficiency (enrichment dedup, phase-specific reduction, RPETD soft cap, Perplexity cache), Redis L2 caching, agent architecture (capability index, routing extraction), multi-agent validation (error classification, recovery routing, auto-escalation), security (path traversal, body limits, DSN sanitization), graceful degradation, health dashboard (pipeline status, service errors), and end-to-end integration with 24 regression benchmarks.
 
 ---
 
@@ -859,21 +892,23 @@ npm run test:coverage             # Coverage report (target: 70%+ lines)
 gsd-amauta/
 ├── package.json
 ├── amauta.py                    # Task manager core (~5000 lines)
-├── docker/docker-compose.yml    # PostgreSQL 16 + pgvector :5433
+├── docker/docker-compose.yml    # PostgreSQL 16 + pgvector :5433, Redis 7 :6379
 ├── migrations/                  # 7 SQL migrations (001-007 + DOWN files)
 ├── services/
-│   ├── amauta-daemon.py         # HTTP daemon :18799 (dual-write, watchdog, retention)
-│   ├── pg_store.py              # PG pool + memory/SKB/tasks/embeddings/dedup
-│   └── rlm-service.py           # BM25 code context :18798
+│   ├── amauta-daemon.py         # HTTP daemon :18799 (dual-write, watchdog, retention, Redis)
+│   ├── amauta_daemon_redis.py   # Redis bridge module (solves circular import)
+│   ├── pg_store.py              # PG pool + memory/SKB/tasks/embeddings/dedup/rerank
+│   └── rlm-service.py           # BM25 code context :18798 (cache stats, position decay)
 ├── agents/                      # 11 agent definitions (.md)
 ├── skills/                      # 11 skill workflows (SKILL.md each)
 ├── get-shit-done/
 │   ├── bin/                     # 5 CLI tools (.cjs)
+│   ├── agent-capabilities.json  # Single source of truth for 11 agents
 │   ├── workflows/               # 36 workflow files
 │   └── references/              # Model profiles
 ├── commands/gsd/                # 34 slash commands
 ├── specs/                       # 9 formal specifications
-├── tests/                       # 70 test files (42 CJS + 28 Python)
+├── tests/                       # 92 test files (61 CJS + 31 Python)
 ├── bin/install.js               # Self-installer
 ├── references/agentic-patterns.md  # 20 patterns x 11 agents matrix
 └── data/
@@ -885,20 +920,24 @@ gsd-amauta/
 
 ## Current Known Gaps / Roadmap
 
-### v2.4 (Bulletproof) -- In Progress
+### v2.4 (Bulletproof) -- Done
 
-- Fix archive/reconcile not in daemon mirror list
-- Fix HTTP timeout race in `_mem_log_event` (double-write on slow daemon)
-- Fix distill metrics count off-by-1
-- Fix Jaccard edge case for words < 3 chars
-- Fix retention thread graceful shutdown
-- End-to-end smoke test: full task lifecycle against live daemon
+All v2.4 items completed and shipped.
 
-### v2.5+ (Deferred)
+### v2.5 (Smarter Brain) -- Done
+
+8 phases, 49 requirements, ~479 new tests. Key results:
+- 39.4% Layer 2 enrichment reduction, 24% total lifecycle, 75.6% Perplexity per-call
+- Redis L2 caching layer with graceful fallback
+- BM25 MIT paper audit: word-boundary TF, tuned b/position-decay/label-boost
+- Agent capability index, error classification, recovery routing
+- Voyage AI reranking wired into semantic search (voyage-rerank-2.5)
+- LLM distillation via Claude CLI (no API key needed in Claude Code sessions)
+
+### v2.6+ (Deferred)
 
 - One-command setup: `npx gsd-amauta init`
 - Docker auto-start: detect Docker, start PG container if no local PG
-- Voyage AI re-ranking for hybrid RLM scoring (semantic + BM25)
 - Layer 3 agent-initiated context (`rlm_client.py`)
 - LLM-based memory summarization (replace concatenation merging)
 - RLM synonym expansion for semantic code queries
