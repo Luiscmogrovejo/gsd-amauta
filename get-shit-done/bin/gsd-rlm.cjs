@@ -21,7 +21,7 @@
  *
  * Options:
  *   --top-k N          Number of results (default: 10)
- *   --max-chars N      Max chunk size in chars (default: 8000)
+ *   --max-chars N      Max chunk size in chars (default: 4000)
  *   --json             Output raw JSON
  *   --compact          Show only file:line references (no text)
  *
@@ -273,7 +273,7 @@ async function cmdQuery(args, flags) {
   if (!query) die('Usage: gsd-rlm query <question> --dir <dir> | --path <file>');
 
   const topK = parseInt(flags['top-k'] || flags.topk || '10', 10);
-  const maxChars = parseInt(flags['max-chars'] || '8000', 10);
+  const maxChars = parseInt(flags['max-chars'] || '4000', 10);
   const jsonMode = flags.json;
   const compact = flags.compact;
 
@@ -370,7 +370,7 @@ async function cmdChunk(filepath, flags) {
   if (!filepath) die('Usage: gsd-rlm chunk <filepath>');
 
   const resolved = path.resolve(filepath);
-  const maxChars = parseInt(flags['max-chars'] || '8000', 10);
+  const maxChars = parseInt(flags['max-chars'] || '4000', 10);
 
   let data;
   try {

@@ -230,6 +230,16 @@ class TestBM25Scoring(unittest.TestCase):
         self.assertAlmostEqual(rlm.BM25_B, 0.6, places=2,
                                msg="BM25_B should be 0.6 for code-optimized length normalization")
 
+    def test_default_chunk_size_4000(self):
+        """RLM-05: default max chunk size should be 4000 chars (not 8000)."""
+        import importlib
+        rlm_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "services", "rlm-service.py")
+        spec = importlib.util.spec_from_file_location("rlm_check_chunk", rlm_path)
+        rlm = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(rlm)
+        self.assertEqual(rlm.MAX_CHUNK_CHARS, 4000,
+                         "MAX_CHUNK_CHARS should default to 4000 for focused retrieval")
+
 
 if __name__ == "__main__":
     unittest.main()

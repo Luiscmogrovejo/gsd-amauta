@@ -83,7 +83,7 @@ log = logging.getLogger("amauta.rlm")
 
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("GSD_RLM_PORT", "18798"))
-MAX_CHUNK_CHARS = int(os.environ.get("RLM_MAX_CHUNK_CHARS", "8000"))
+MAX_CHUNK_CHARS = int(os.environ.get("RLM_MAX_CHUNK_CHARS", "4000"))
 DEFAULT_TOP_K = int(os.environ.get("RLM_DEFAULT_TOP_K", "10"))
 CACHE_MAX_SIZE = int(os.environ.get("RLM_CACHE_SIZE", "200"))
 CACHE_MAX_BYTES = int(os.environ.get("RLM_CACHE_MAX_MB", "512")) * 1024 * 1024  # 512MB default
