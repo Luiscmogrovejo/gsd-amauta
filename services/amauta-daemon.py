@@ -1035,6 +1035,61 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 health["pg_health"] = _pg_store.health()
             elif _sqlite_store:
                 health["sqlite_health"] = _sqlite_store.health()
+
+            # INF-05: Pipeline status and data flow health
+            service_errors = []
+            # Check PG
+            if _pg_store is None and _sqlite_store is None:
+                service_errors.append("PostgreSQL: no database connection -- memory and task storage unavailable")
+            # Check Redis
+            if _redis_enabled and _HAS_REDIS and not _check_redis_health():
+                service_errors.append("Redis: cache unreachable -- falling back to in-memory/file cache (slower)")
+            # Check RLM
+            if _rlm_enabled and not _check_rlm_health():
+                service_errors.append("RLM: context engine not responding -- code search unavailable")
+            # Check Voyage API key
+            api_status = _validate_api_keys()
+            if not api_status.get("VOYAGE_API_KEY", {}).get("set"):
+                service_errors.append("Voyage API: key not set -- embeddings and semantic search disabled")
+            # Check Perplexity API key
+            if not api_status.get("PERPLEXITY_API_KEY", {}).get("set"):
+                service_errors.append("Perplexity API: key not set -- web research disabled")
+
+            # Compute pipeline status
+            critical_down = _pg_store is None and _sqlite_store is None
+            degraded = len(service_errors) > 0
+            pipeline_status = "critical" if critical_down else ("degraded" if degraded else "healthy")
+
+            health["pipeline_status"] = pipeline_status
+            health["service_errors"] = service_errors
+
+            # TOK-06: Cache hit/miss metrics
+            cache_metrics = {}
+            # Redis embedding cache stats
+            if _redis_client and _check_redis_health():
+                try:
+                    info = _redis_client.info(section="stats")
+                    cache_metrics["redis_keyspace_hits"] = info.get("keyspace_hits", 0)
+                    cache_metrics["redis_keyspace_misses"] = info.get("keyspace_misses", 0)
+                    total = cache_metrics["redis_keyspace_hits"] + cache_metrics["redis_keyspace_misses"]
+                    cache_metrics["redis_hit_rate"] = round(cache_metrics["redis_keyspace_hits"] / total, 3) if total > 0 else 0.0
+                except Exception:
+                    cache_metrics["redis_stats"] = "unavailable"
+            # RLM chunk cache stats (fetch from RLM /cache/stats)
+            if _rlm_enabled and _check_rlm_health():
+                try:
+                    import urllib.request
+                    req = urllib.request.urlopen(f"http://127.0.0.1:{RLM_PORT}/cache/stats", timeout=2)
+                    if req.status == 200:
+                        rlm_stats = json.loads(req.read().decode())
+                        cache_metrics["rlm_cache_entries"] = rlm_stats.get("entries", 0)
+                        cache_metrics["rlm_cache_hits"] = rlm_stats.get("hits", 0)
+                        cache_metrics["rlm_cache_misses"] = rlm_stats.get("misses", 0)
+                        cache_metrics["rlm_cache_hit_rate"] = rlm_stats.get("hit_rate", 0.0)
+                except Exception:
+                    cache_metrics["rlm_cache"] = "unavailable"
+            health["cache_metrics"] = cache_metrics
+
             self._send_json(health)
             return
 
@@ -2157,6 +2212,54 @@ def start_server(foreground=False):
     retention_thread = threading.Thread(target=_memory_retention_thread, daemon=True)
     retention_thread.start()
     print(f"  Retention: started (check every {RETENTION_CHECK_INTERVAL}s)")
+
+    # -- Startup Service Inventory (data flow alert) ---------------------------
+    print(f"\n  --- Service Status ---")
+    _svc_status = []
+    # PG
+    if _pg_store:
+        print(f"  [OK]  PostgreSQL: connected")
+    elif _sqlite_store:
+        print(f"  [!!]  PostgreSQL: unavailable (using SQLite fallback)")
+        _svc_status.append("PG down")
+    else:
+        print(f"  [XX]  PostgreSQL: no connection (memory/task storage disabled)")
+        _svc_status.append("PG critical")
+    # Redis
+    if _redis_enabled and _HAS_REDIS and _check_redis_health():
+        print(f"  [OK]  Redis: connected (L2 cache active)")
+    elif _redis_enabled and _HAS_REDIS:
+        print(f"  [!!]  Redis: unavailable (falling back to in-memory/file cache)")
+        _svc_status.append("Redis down")
+    elif not _HAS_REDIS:
+        print(f"  [--]  Redis: not installed (pip install redis>=5.0)")
+    else:
+        print(f"  [--]  Redis: disabled")
+    # RLM
+    if _rlm_enabled and _check_rlm_health():
+        print(f"  [OK]  RLM: running (port {RLM_PORT})")
+    elif _rlm_enabled:
+        print(f"  [XX]  RLM: not responding (code search unavailable)")
+        _svc_status.append("RLM down")
+    else:
+        print(f"  [--]  RLM: disabled")
+    # API Keys
+    _ak = _validate_api_keys()
+    if _ak.get("VOYAGE_API_KEY", {}).get("set"):
+        print(f"  [OK]  Voyage API: key set")
+    else:
+        print(f"  [!!]  Voyage API: key missing (embeddings disabled)")
+        _svc_status.append("Voyage missing")
+    if _ak.get("PERPLEXITY_API_KEY", {}).get("set"):
+        print(f"  [OK]  Perplexity API: key set")
+    else:
+        print(f"  [!!]  Perplexity API: key missing (web research disabled)")
+        _svc_status.append("Perplexity missing")
+    # Summary
+    if not _svc_status:
+        print(f"  --- Pipeline: HEALTHY ---\n")
+    else:
+        print(f"  --- Pipeline: DEGRADED ({', '.join(_svc_status)}) ---\n")
 
     try:
         server.serve_forever()
