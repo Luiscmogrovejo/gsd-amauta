@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.5
 milestone_name: milestone
-status: in_progress
-stopped_at: Plan 05-04 complete. Phase 05 plans 01+02+03+04 done. Data flow alerts + health dashboard + graceful degradation tests.
+status: executing
+stopped_at: Plan 06-01 complete. Phase 06 plan 01 done. Checker/validator boundary demarcated, executor-general fallback risk documented, roadmapper patterns added, 20/20 audit tests pass.
 last_updated: "2026-04-06T00:00:00.000Z"
-last_activity: "2026-04-06 -- Plan 05-04: /health extended with pipeline_status/service_errors/cache_metrics; startup Service Status banner with [OK]/[!!]/[XX] icons; DATA FLOW ERROR alerts in gsd-rlm.cjs (ECONNREFUSED) and gsd-research.cjs (daemon + Perplexity 401/429); 32/32 tests pass (17 alert tests + 15 degradation tests)"
+last_activity: "2026-04-06 -- Plan 06-01: BOUNDARY blocks in checker+validator, routing_note in executor-general, patterns block in roadmapper, 20-assertion test suite 20/20 pass"
 progress:
   total_phases: 7
-  completed_phases: 5
-  total_plans: 14
-  completed_plans: 14
-  percent: 33
+  completed_phases: 6
+  total_plans: 16
+  completed_plans: 16
+  percent: 30
 ---
 
 # GSD-Amauta -- Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-06)
 
 ## Current Position
 
-Phase: 5 of 8
-Plan: 4/4 complete for Phase 05 (05-01 through 05-04 done)
-Status: Phase 05 in progress. Plan 05-04 complete: /health extended with pipeline_status/service_errors/cache_metrics; startup Service Status banner; DATA FLOW ERROR alerts in gsd-rlm.cjs and gsd-research.cjs; 32/32 tests pass (17 alert tests + 15 degradation tests).
-Last activity: 2026-04-06 -- Plan 05-04: pipeline_status+service_errors+cache_metrics in /health, startup service inventory banner, DATA FLOW ERROR in CLI tools, 32/32 tests pass
+Phase: 6 of 8
+Plan: 1/5 complete for Phase 06 (06-01 done)
+Status: Phase 06 in progress. Plan 06-01 complete: AGT-01 gaps G1-G5 addressed -- BOUNDARY blocks in checker+validator, routing_note in executor-general, patterns block in roadmapper, 20/20 audit tests pass.
+Last activity: 2026-04-06 -- Plan 06-01: BOUNDARY blocks in checker+validator, routing_note in executor-general, patterns block in roadmapper, 20-assertion test suite 20/20 pass
 
 Progress: [###.......] 30%
 
@@ -111,7 +111,7 @@ None. Phase 1 blockers resolved:
 ## Session Continuity
 
 Last session: 2026-04-06
-Stopped at: Plan 04-02 complete. Phase 04 plans 01-04 done. Ready for Plan 04-05 (reranking wire-up).
+Stopped at: Plan 06-01 complete. Phase 06 plan 01 done. Ready for Plan 06-02 (routing accuracy audit + routing helper extraction).
 Resume file: None
 
 ## Previous Milestone: v2.4 -- Bulletproof (COMPLETE)
