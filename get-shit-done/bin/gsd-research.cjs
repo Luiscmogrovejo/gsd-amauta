@@ -73,6 +73,7 @@ const PERPLEXITY_MODEL = process.env.PERPLEXITY_MODEL || 'sonar-pro';  // sonar-
 
 const PROVIDER_ORDER = ['memory', 'skb', 'context7', 'perplexity', 'webfetch'];
 const PERPLEXITY_OUTPUT_CAP = 1500; // chars -- cap Perplexity output to prevent 4K token injection
+const RESEARCH_MIN_RESULTS = parseInt(process.env.GSD_RESEARCH_MIN_RESULTS || '2', 10); // cascade stops only when provider returns >= this many results
 
 // TOK-01: Perplexity response cache (temp-file, cross-invocation persistence)
 const PERPLEXITY_CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours in ms
@@ -821,7 +822,7 @@ async function cmdSearch(args) {
         // Stop at first provider with actual results (not just notes),
         // unless the provider is additive-only (e.g., Context7 gives
         // supplemental library metadata, not research answers).
-        if (!args.all && result.count > 0 && !result.error && !ADDITIVE_PROVIDERS.has(name)) {
+        if (!args.all && !result.error && !ADDITIVE_PROVIDERS.has(name) && (result.count >= RESEARCH_MIN_RESULTS || name === 'perplexity')) {
           break;
         }
       }
