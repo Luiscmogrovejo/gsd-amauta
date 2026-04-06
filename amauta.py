@@ -144,6 +144,18 @@ PRIORITIES= ["low", "medium", "high", "critical"]
 PHASES    = ["R", "P", "E", "T", "D"]
 PHASE_NAMES = {"R": "Research", "P": "Plan", "E": "Execute", "T": "Test", "D": "Document"}
 
+# ── TOK-03 AUDIT: Enrichment dedup window ──────────────────────────────────
+# The 300s (5 min) window matches typical agent claim-to-R-phase-write timing.
+# Edge cases (audited 2026-04-06):
+#   1. If agent takes >5min between claim and R-phase write, window expires
+#      and enrichment fires again. This is intended -- 5 min is the "same
+#      session" heuristic. Increasing to 600s risks stale context.
+#   2. Dedup only applies to R-phase. P/E/T/D phases are unaffected. This is
+#      correct -- only R-phase has claim-time (Layer 1) overlap risk.
+#   3. _last_enrichment_ts() uses reversed() on notes list, assuming the last
+#      note is chronologically newest. Under concurrent writes this could
+#      return an older timestamp, causing a false cache miss (extra enrichment
+#      call, not a correctness bug -- safe to leave as-is).
 ENRICHMENT_DEDUP_WINDOW = 300  # seconds (5 min) -- skip Layer 2 R-phase if Layer 1 ran within this window
 
 RPETD_SOFT_CAP = 2000  # chars -- warn (don't block) when phase content exceeds this
