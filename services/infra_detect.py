@@ -47,6 +47,7 @@ def detect_infrastructure(auto_start=True):
             result["connection_url"] = explicit_url
             result["features"] = ["memory", "tasks", "skb", "validation", "embeddings", "fts"]
             result["message"] = f"Using configured PostgreSQL: {_mask_url(explicit_url)}"
+            result["redis_available"] = _detect_redis()
             return result
 
     # Priority 2: Check for local PostgreSQL (Homebrew, system, etc.)
@@ -59,6 +60,7 @@ def detect_infrastructure(auto_start=True):
         if _check_pgvector(local_pg):
             result["features"].append("embeddings")
         result["message"] = f"Using local PostgreSQL: {_mask_url(local_pg)}"
+        result["redis_available"] = _detect_redis()
         return result
 
     # Priority 3: Check for Docker PostgreSQL (already running)
@@ -68,6 +70,7 @@ def detect_infrastructure(auto_start=True):
         result["connection_url"] = docker_pg
         result["features"] = ["memory", "tasks", "skb", "validation", "embeddings", "fts"]
         result["message"] = f"Using Docker PostgreSQL: {_mask_url(docker_pg)}"
+        result["redis_available"] = _detect_redis()
         return result
 
     # Priority 3b: Try auto-starting Docker PostgreSQL
@@ -78,6 +81,7 @@ def detect_infrastructure(auto_start=True):
             result["connection_url"] = auto_pg
             result["features"] = ["memory", "tasks", "skb", "validation", "embeddings", "fts"]
             result["message"] = f"Auto-started Docker PostgreSQL: {_mask_url(auto_pg)}"
+            result["redis_available"] = _detect_redis()
             return result
 
     # Priority 4: SQLite fallback
@@ -86,6 +90,7 @@ def detect_infrastructure(auto_start=True):
     result["connection_url"] = f"sqlite:///{sqlite_path}"
     result["features"] = ["memory", "tasks", "skb", "validation", "fts"]
     result["message"] = f"Using SQLite fallback: {sqlite_path}"
+    result["redis_available"] = _detect_redis()
     return result
 
 
@@ -157,6 +162,11 @@ def _auto_start_docker_postgresql():
             subprocess.run(
                 ["docker", "start", "gsd-postgres"],
                 capture_output=True, text=True, timeout=30,
+            )
+            # Also start Redis container if it exists
+            subprocess.run(
+                ["docker", "start", "gsd-redis"],
+                capture_output=True, text=True, timeout=15,
             )
         else:
             # Container doesn't exist -- use docker compose
@@ -264,6 +274,21 @@ def _get_sqlite_path():
 def _mask_url(url):
     """Mask password in URL for display."""
     return re.sub(r"://([^:]+):([^@]+)@", r"://\1:***@", url)
+
+
+def _detect_redis():
+    """Check if Redis is accessible on the default URL."""
+    try:
+        import redis as _redis_mod
+        r = _redis_mod.from_url(
+            os.environ.get("GSD_REDIS_URL", "redis://127.0.0.1:6379/0"),
+            socket_timeout=2, socket_connect_timeout=2,
+        )
+        r.ping()
+        r.close()
+        return True
+    except Exception:
+        return False
 
 
 if __name__ == "__main__":
