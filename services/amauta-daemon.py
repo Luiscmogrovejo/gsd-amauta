@@ -148,7 +148,7 @@ DATA_DIR = os.environ.get(
 PID_FILE = Path(__file__).resolve().parent / "amauta-daemon.pid"
 
 # ── Stale Task Watchdog & Retry Queue Flush ───────────────────────────────────
-STALE_CHECK_INTERVAL = 300  # 5 minutes
+STALE_CHECK_INTERVAL = int(os.environ.get("GSD_STALE_INTERVAL", "300"))  # 5 minutes
 STALE_THRESHOLD_HOURS = int(os.environ.get("GSD_STALE_HOURS", "48"))
 RETRY_FLUSH_INTERVAL = int(os.environ.get("GSD_RETRY_FLUSH_INTERVAL", "60"))
 RETENTION_CHECK_INTERVAL = 86400  # 24 hours — retention cleanup runs daily
