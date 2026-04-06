@@ -1,72 +1,73 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.4
-milestone_name: milestone
-status: completed
-stopped_at: "v2.4 COMPLETE. 4 phases, 6 plans, 20 requirements, 408 tests."
-last_updated: "2026-03-25T16:20:00.000Z"
-last_activity: 2026-03-25 -- Plan 23-01 executed (49 integration/E2E tests, 408 total, 0 failures)
+milestone: v2.5
+milestone_name: Smarter Brain
+status: active
+stopped_at: Phase 1 complete. 01-01 (RLM reliability+API keys) + 01-02 (Perplexity) both done. Phase 2 ready.
+last_updated: "2026-04-06T00:00:00.000Z"
+last_activity: 2026-04-06 -- Plan 01-01 complete (RLM port cleanup, API key validation, 13 tests)
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 6
-  completed_plans: 6
-  percent: 100
+  total_phases: 8
+  completed_phases: 1
+  total_plans: 2
+  completed_plans: 2
+  percent: 12
 ---
 
 # GSD-Amauta -- Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-24)
+See: .planning/PROJECT.md (updated 2026-04-06)
 
-**Core value:** Every system works correctly under all conditions -- no silent failures, no data corruption, no untested paths.
-**Current focus:** Milestone v2.4 -- Bulletproof. COMPLETE.
+**Core value:** Every subsystem audited against reference papers, gaps fixed, token usage reduced while quality improves.
+**Current focus:** Milestone v2.5 -- Smarter Brain. INITIALIZED.
 
 ## Current Position
 
-Phase: 23 of 23 (Integration + E2E Tests) -- COMPLETE
-Plan: 1/1 (23-01 complete)
-Status: v2.4 milestone COMPLETE. All 4 phases done, all 20 requirements satisfied. 408 Python tests, 0 failures.
-Last activity: 2026-03-25 -- Plan 23-01 executed (task manager + daemon integration + fallback paths + E2E lifecycle)
+Phase: 1 of 8 (complete)
+Plan: 2/2 complete
+Status: Both Phase 1 plans complete. Plan 01-01 (RLM reliability, 4 tasks, 13 tests). Plan 01-02 (Perplexity, 4 tasks, 11 tests).
+Last activity: 2026-04-06 -- Plan 01-01 complete (RLM port cleanup + API key validation)
 
-Progress: [##########] 100%
+Progress: [#.........] 12%
 
-## Performance Metrics
+## Research Completed
 
-**Velocity (from v2.3):**
-- Total plans completed: 10 (v2.3)
-- Average duration: ~7 min per plan
-- Total execution time: ~1.5 hours
+3 research documents in .planning/research/:
+- RLM-REPL-RESEARCH.md -- MIT paper audit, 10 BM25 gaps, 3 P1 bugs
+- AGENTIC-PATTERNS-MEMORY.md -- 21 patterns audited, 4 weak gaps, distillation CRITICAL bug
+- TOKEN-EFFICIENCY-CACHING.md -- No embedding cache, reranker never wired, Perplexity overpay
 
-**v2.4 By Phase:**
-- Phase 20: 2 plans, ~3-5 min each (parallel execution)
-- Phase 21: 1 plan, ~8 min (sequential, 4 fixes + edge-case refinement)
-- Phase 22: 2/2 plans, ~9 min avg (22-01: 12 min, 22-02: 6 min)
-- Phase 23: 1/1 plan, ~12 min (49 tests across 4 suites)
+## Infrastructure Status (at project init)
 
-**v2.4 Summary:** 6 plans, ~45 min total, 10 bug fixes + 10 test suites (408 tests)
+- Daemon: Running on :18799, PG available
+- RLM: FIXED -- orphan kill + port-free check + restart counter reset via Plan 01-01
+- Voyage API key: SET (46 chars)
+- Perplexity API key: SET (53 chars)
+- PERPLEXITY_MODEL: FIXED -- defaults to 'auto' (query-complexity selection) via Plan 01-02
+- OpenAI API key: NOT SET (not needed, Voyage is primary)
+
+## Codebase Map
+
+7 documents in .planning/codebase/ (2,337 lines total):
+- ARCHITECTURE.md (434 lines)
+- STRUCTURE.md (483 lines)
+- TESTING.md (421 lines)
+- CONCERNS.md (347 lines, 29 concerns)
+- INTEGRATIONS.md (281 lines)
+- CONVENTIONS.md (195 lines)
+- STACK.md (176 lines)
 
 ## Accumulated Context
 
 ### Decisions
 
-Decisions are logged in PROJECT.md Key Decisions table.
-Recent decisions affecting current work:
-
-- v2.4 scope: Bug fixes first (20-21 parallel), then test suites (22-23 sequential)
-- Phases 20+21 are independent -- can run in either order or parallel
-- Phases 22-23 depend on 20+21 (tests validate the fixes)
-- _skb_promote returns True/False (backward-compatible -- all callers verified)
-- Trigram fallback requires min 3 chars per text for meaningful comparison
-- psycopg2.extras must be pre-imported before patching (submodule not auto-loaded)
-- All 5 RPETD phases call _rlm_query; only R-phase calls _mem_semantic_search for related experiences
-- PGStore._get_conn mock: use @contextmanager wrapper, not MagicMock return_value (generator yield pattern)
-- Retention rowcount accessed once per RETENTION_DAYS source (after INSERT, not after DELETE)
-- Daemon tests: read source as string + regex extraction (avoids module import side effects)
-- E2E tests: _e2e_tempdir() context manager for isolated real file I/O
-- PGStore retry queue uses AMAUTA_DATA_DIR env var for path (not instance attribute)
-- _mem_log_event error recovery: mock backends not function itself (function designed to never raise)
+- Fresh audit project (not new milestone) -- clean slate for unbiased assessment
+- All subsystems equal priority -- no shortcuts
+- Research-backed improvements only -- every change cites a source
+- Redis optional with graceful degradation -- same pattern as PG/file fallback
+- Phases 2 and 3 can run in parallel after Phase 1
 
 ### Pending Todos
 
@@ -74,14 +75,17 @@ None.
 
 ### Blockers/Concerns
 
-None.
+None. Phase 1 blockers resolved:
+- RLM service restart failure chain fixed (Plan 01-01)
+- PERPLEXITY_MODEL auto-selection added (Plan 01-02)
 
 ## Session Continuity
 
-Last session: 2026-03-25
-Stopped at: v2.4 COMPLETE. 4 phases, 6 plans, 20 requirements, 408 tests.
+Last session: 2026-04-06
+Stopped at: Phase 1 complete (2/2 plans). Resume at Phase 2.
 Resume file: None
 
-## Previous Milestone: v2.3 -- Clean Foundations (COMPLETE)
+## Previous Milestone: v2.4 -- Bulletproof (COMPLETE)
 
-6 phases (15-19.1), 10 plans, 18 requirements satisfied, 46 commits. Shipped 2026-03-25.
+Archived to .planning/milestones/v2.4-archive/
+4 phases, 6 plans, 20 requirements, 408 tests.

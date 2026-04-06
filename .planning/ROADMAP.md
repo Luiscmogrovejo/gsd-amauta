@@ -19,10 +19,10 @@
 | 4 | Add API key validation on daemon startup | INF-04 |
 
 **Success criteria:**
-- [ ] RLM service starts and stays running
+- [x] RLM service starts and stays running (Plan 01-01 DONE: orphan kill + port-free check + counter reset)
 - [x] Perplexity calls use max_tokens to prevent overpay (Plan 01-02 DONE: 4096->1000)
 - [x] PERPLEXITY_MODEL=auto with sonar/sonar-pro complexity selection (Plan 01-02 DONE)
-- [ ] Daemon reports API key status on startup
+- [x] Daemon reports API key status on startup (Plan 01-01 DONE: startup banner + health endpoint api_keys)
 
 ---
 
