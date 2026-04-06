@@ -3347,7 +3347,7 @@ def cmd_next(args):
                 print(dim(f"No pending tasks for @{agent}. Queue clear."))
         return
 
-    best = sorted(candidates, key=lambda i: _score(i, all_items), reverse=True)[0]
+    best = sorted(candidates, key=lambda i: (-_score(i, all_items), i.get("created_at", "")))[0]
 
     if args.json:
         sc = _score(best, all_items)
