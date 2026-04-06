@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.5
 milestone_name: milestone
 status: in-progress
-stopped_at: Plan 04-04 complete. TOK-02 phase enrichment reduction done (T=none, D=writes-only, E=RLM+failure-only); TOK-04 sign-off confirmed. Ready for Plan 04-02 (Perplexity cache) and Plan 04-05 (reranking).
-last_updated: "2026-04-06T18:25:00.000Z"
-last_activity: "2026-04-06 -- Plan 04-04: T/D/E phase enrichment trimmed (~1950 chars/task saved); 17 new tests in 04-04-phase-enrichment.test.cjs; stale T/D RLM assertions updated; 88+11+17+11 tests all pass"
+stopped_at: Plan 04-02 complete. TOK-01 Perplexity cache done (6h TTL, atomic write, --no-cache bypass). Ready for Plan 04-05 (reranking).
+last_updated: "2026-04-06T19:00:00.000Z"
+last_activity: "2026-04-06 -- Plan 04-02: Perplexity temp-file cache with 6h TTL + --no-cache bypass; 12/12 tests pass"
 progress:
   total_phases: 8
   completed_phases: 6
   total_plans: 15
-  completed_plans: 16
-  percent: 28
+  completed_plans: 17
+  percent: 30
 ---
 
 # GSD-Amauta -- Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-06)
 ## Current Position
 
 Phase: 4 of 8
-Plan: 1/5 complete for Phase 04 (04-01 done; 04-02..04-05 pending)
-Status: Plan 04-01 complete. Perplexity citation stripping (cleanAnswer regex) + TOK-03 dedup window audit. Phase 2 (MEM-01..10) and Phase 3 (RLM-01..06, RLM-08, RLM-09) both fully complete.
-Last activity: 2026-04-06 -- Plan 04-01: Perplexity citation stripping (cleanAnswer) + TOK-03 dedup window audit + 10/10 tests pass
+Plan: 2/5 complete for Phase 04 (04-01, 04-02 done; 04-03 done earlier; 04-04 done; 04-05 pending)
+Status: Plan 04-02 complete. Perplexity response cache with 6h TTL + --no-cache bypass. Phase 2 (MEM-01..10) and Phase 3 (RLM-01..06, RLM-08, RLM-09) both fully complete.
+Last activity: 2026-04-06 -- Plan 04-02: Perplexity temp-file cache with 6h TTL + --no-cache bypass; 12/12 tests pass
 
-Progress: [##........] 24%
+Progress: [###.......] 30%
 
 ## Research Completed
 
@@ -91,6 +91,7 @@ Progress: [##........] 24%
 - TOK-02: _rpetd_phase_enrich phase map -- T=pass (disabled, ~1350 chars/task saved), D=writes-only (RLM removed, ~600 chars/task saved), E=RLM+failure-LIKE-only (semantic search removed, ~750 chars/task saved); all D-phase writes preserved (_mem_log_event, WEB_SEARCH FINDING, _skb_promote)
 - TOK-04: selectPerplexityModel already complete from Phase 1 Plan 01-02; regression confirmed (11/11 tests pass)
 - Pre-change audit for enrichment removal is mandatory: test_rlm_enrichment.py and security-infrastructure.test.cjs had stale T/D-phase RLM call assertions that required updating
+- TOK-01: Perplexity temp-file response cache at ~/.amauta/perplexity-cache.json; 6h TTL; SHA-256(query:model)[:16] key; atomic tmp+rename write; _noCache function property flag for --no-cache bypass; cache read before API, cache write always after API; two gsd-research.cjs copies exist (repo vs installed) -- tests use repo copy
 
 ### Pending Todos
 
@@ -105,7 +106,7 @@ None. Phase 1 blockers resolved:
 ## Session Continuity
 
 Last session: 2026-04-06
-Stopped at: Plan 04-01 complete. Phase 04 underway (1/5 plans done). Next: Plan 04-02.
+Stopped at: Plan 04-02 complete. Phase 04 plans 01-04 done. Ready for Plan 04-05 (reranking wire-up).
 Resume file: None
 
 ## Previous Milestone: v2.4 -- Bulletproof (COMPLETE)
