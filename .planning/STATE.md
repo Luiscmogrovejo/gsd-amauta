@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.5
 milestone_name: milestone
 status: completed
-stopped_at: Plan 08-01 complete. Token measurement test suite (18/18 pass) + TOKEN-MEASUREMENT.md audit report -- 39.4% Layer 2 enrichment reduction confirmed (6,850->4,150 chars, ~675 tokens/lifecycle).
-last_updated: "2026-04-06T18:20:00.000Z"
-last_activity: "2026-04-06 -- Plan 08-01: 18-test token measurement suite, TOKEN-MEASUREMENT.md audit report, TOK-07 PASS"
+stopped_at: Plan 08-02 complete. 24-test structural regression suite (24/24 pass), REQUIREMENTS.md traceability table fixed (24 stale Pending -> Complete), full Python (430/437) and JS static suites documented with 7 pre-existing stale failures identified.
+last_updated: "2026-04-06T18:45:00.000Z"
+last_activity: "2026-04-06 -- Plan 08-02: regression benchmarks 24/24, REQUIREMENTS.md sync, test baseline documented"
 progress:
   total_phases: 8
   completed_phases: 7
-  total_plans: 23
-  completed_plans: 23
+  total_plans: 24
+  completed_plans: 24
   percent: 100
 ---
 
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-04-06)
 ## Current Position
 
 Phase: 8 of 8
-Plan: 1/3 complete for Phase 08 (08-01 done, 08-02 and 08-03 pending)
-Status: Phase 08 in progress. Plan 08-01 complete: 18-test token measurement suite (static analysis of amauta.py/services/*.py), TOKEN-MEASUREMENT.md audit report with before/after tables, TOK-07 verdict PASS (39.4% Layer 2 enrichment reduction, 6,850->4,150 chars, ~675 tokens/lifecycle).
-Last activity: 2026-04-06 -- Plan 07-03: perplexityWithRetry, preamble patterns, TECH_SHORT_WORDS, dedup logging, 18/18 tests
+Plan: 2/3 complete for Phase 08 (08-01, 08-02 done; 08-03 pending)
+Status: Phase 08 in progress. Plan 08-02 complete: 24-test structural regression suite (static analysis, no daemon/PG/Redis required, 24/24 pass), REQUIREMENTS.md traceability table synchronized (24 stale Pending -> Complete), Python baseline documented (430/437, 7 pre-existing stale failures), JS static suites all pass.
+Last activity: 2026-04-06 -- Plan 08-02: regression benchmarks 24/24, REQUIREMENTS.md sync, test baseline documented
 
 Progress: [##########] 100%
 
@@ -105,6 +105,7 @@ Progress: [##########] 100%
 - [Plan 06-05]: agent-capabilities.json is single source of truth for routeExecutor routing (AGT-07). getCapabilityIndex() lazy singleton loads JSON once. Glob-to-regex converts 4 pattern types: *.ext (extension), prefix* (prefix-anchor), dir/* (directory), exact (path-anchor). All 27 06-02 routing tests still pass after wire-up.
 - [Plan 07-03]: perplexityWithRetry wraps httpsRequest (not httpRequest) -- signature is (hostname, urlPath, body, headers). Inserted before HTTP Helpers section. Old 429 DATA FLOW ERROR handler retained as final fallback after retry exhaustion. TECH_SHORT_WORDS uses 'k8' (not 'k8s') since 'k8s' is 3 chars and already passes the length > 2 filter. Dedup logging gate at sim >= 0.3 eliminates noise while capturing meaningful similarity comparisons.
 - [Plan 08-01]: Token measurement tests are pure static analysis (string matching on source files, no mocking). Pre-audit baseline: R=2250, P=900, E=1750, T=1350, D=600 (6850 total). Post-audit: T=0, D=0, E=1000, R=2250, P=900 (4150 total). 39.4% Layer 2 reduction, 24.0% total lifecycle (11250->8550). TOK-07 PASS.
+- [Plan 08-02]: Regression suite is static file analysis (grep for constants/functions) -- no daemon/PG/Redis, fast CI-safe execution; docstring slice must be 700 chars to reach T-phase line in _rpetd_phase_enrich; agent-capabilities.json is {agents:[...11]} not flat array; 7 Python test failures are pre-existing staleness from TOK-02 (E/T enrichment removal), Plan 06-03 (5->7 gates), and MEM-08 (RETENTION_DAYS 2->3 entries).
 
 ### Pending Todos
 
