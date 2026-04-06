@@ -1006,7 +1006,11 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": "No database available"}, 503)
                 return
             try:
-                total = store.memory_count()
+                # MEM-01: exclude source='distilled' from total so threshold fires
+                # on non-distilled content only. Previously source='distilled' entries
+                # were counted, causing threshold to trigger late (distilled entries
+                # are already processed and should not inflate the count).
+                total = store.memory_count(exclude_source="distilled")
                 source_counts = store.memory_count_by_source()
                 threshold = int(os.environ.get("GSD_MEMORY_DISTILL_THRESHOLD", "500"))
                 self._send_json({

@@ -59,10 +59,16 @@ DEFAULT_EXCLUDE_SOURCES = ("task_event", "rpetd_phase")
 RECENCY_DECAY_PER_30D = float(os.environ.get("GSD_RECENCY_DECAY_PER_30D", "0.5"))
 MAX_RECENCY_PENALTY = 3.0  # Cap at 6 months of decay
 
-# MEM-02: Tiered retention — archive stale entries by source type
+# MEM-02/MEM-08: Tiered retention -- archive stale entries by source type
+# Permanent: lesson-learned, best-practice, distilled (not in dict = never archived)
+# Long: auto_learning, session-learning (not in dict = never archived, decay handles ranking)
+# Medium: web_search_result (180 days)
+# Short: rpetd_phase (90 days)
+# Ephemeral: task_event (30 days)
 RETENTION_DAYS = {
     "task_event": 30,
     "rpetd_phase": 90,
+    "web_search_result": 180,
 }
 
 # ═══════════════════════════════════════════════════════
@@ -405,14 +411,35 @@ class PGStore:
                             r[key] = r[key].isoformat()
                 return [dict(r) for r in results]
 
-    def memory_count(self, project_id=None):
-        """Count total memories."""
+    def memory_count(self, project_id=None, exclude_source=None):
+        """Count total memories, optionally excluding entries by source.
+
+        Args:
+            project_id: Optional project filter.
+            exclude_source: String or list of source values to exclude from the count.
+                            Used by distill-status to exclude source='distilled' entries
+                            so the threshold trigger fires on non-distilled content only.
+        """
+        # MEM-01: normalize exclude_source to list
+        if exclude_source is not None and isinstance(exclude_source, str):
+            exclude_source = [exclude_source]
+
         with self._get_conn() as conn:
             with conn.cursor() as cur:
+                conditions = []
+                params = []
+
                 if project_id:
-                    cur.execute("SELECT COUNT(*) FROM gsd_memory WHERE project_id = %s", (project_id,))
-                else:
-                    cur.execute("SELECT COUNT(*) FROM gsd_memory")
+                    conditions.append("project_id = %s")
+                    params.append(project_id)
+
+                if exclude_source:
+                    placeholders = ", ".join(["%s"] * len(exclude_source))
+                    conditions.append(f"source NOT IN ({placeholders})")
+                    params.extend(exclude_source)
+
+                where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+                cur.execute(f"SELECT COUNT(*) FROM gsd_memory {where_clause}", params)
                 return cur.fetchone()[0]
 
     def memory_delete(self, mem_id):
