@@ -124,7 +124,7 @@ VALID_PARENT_TYPES = {
     "bug":   {"task", "story", "epic"},
     "epic":  set(),               # epics have no valid parent (top-level only)
 }
-STATUSES  = ["pending", "in-progress", "validation", "done", "failed", "deferred"]
+STATUSES  = ["pending", "in-progress", "validation", "done", "failed", "deferred", "escalated"]
 
 # ── State Machine ─────────────────────────────────────────────────────────────
 # Allowed transitions: current_status -> {set of valid next statuses}
@@ -138,6 +138,7 @@ ALLOWED_TRANSITIONS = {
     "done":         {"pending"},           # reopen only
     "failed":       {"pending", "in-progress", "deferred"},
     "deferred":     {"pending", "in-progress"},
+    "escalated":    {"pending", "in-progress"},  # operator must manually re-route
 }
 
 PRIORITIES= ["low", "medium", "high", "critical"]
@@ -3903,6 +3904,89 @@ def _validate_all_gates(item: dict, *, test_exempt: bool = False) -> list:
         results.append({"gate": "PR_URL", "status": "SKIP", "reason": "Non-code task exempt"})
 
     return results
+
+
+# ── ERROR CLASSIFICATION (AGT-06) ────────────────────────────────────────────
+# Four error classes with distinct recovery actions:
+#   TRANSIENT          — Environmental/timing issue. Action: retry with backoff.
+#   GATE_FAIL          — RPETD gate not satisfied. Action: return to executor for gate fix.
+#   CAPABILITY_MISMATCH — Agent lacks skills for task domain. Action: route to different executor.
+#   SYSTEMIC           — Repeated failures or infrastructure breakdown. Action: escalate to operator.
+
+ERROR_CLASSES = ("TRANSIENT", "GATE_FAIL", "CAPABILITY_MISMATCH", "SYSTEMIC")
+MAX_FAILURES_BEFORE_ESCALATION = 3
+
+
+def _classify_failure(item: dict, gate_results: list, notes: str = "") -> str:
+    """Classify a task failure into one of 4 error classes.
+
+    Args:
+        item: The task dict
+        gate_results: List of gate result dicts from _validate_all_gates (may be empty for non-gate failures)
+        notes: Validator notes describing the failure
+
+    Returns:
+        One of: TRANSIENT, GATE_FAIL, CAPABILITY_MISMATCH, SYSTEMIC
+    """
+    failure_count = item.get("failure_count", 0)
+    notes_lower = (notes or "").lower()
+
+    # Check for systemic failure first (repeated failures)
+    if failure_count >= MAX_FAILURES_BEFORE_ESCALATION:
+        return "SYSTEMIC"
+
+    # Check for gate failures (most common)
+    if gate_results:
+        failures = [g for g in gate_results if g.get("status") == "FAIL"]
+        if failures:
+            return "GATE_FAIL"
+
+    # Check for capability mismatch indicators in notes
+    capability_keywords = [
+        "outside my capability", "cannot handle", "domain mismatch",
+        "wrong agent", "re-route", "specialist needed",
+        "not qualified", "unfamiliar with"
+    ]
+    if any(kw in notes_lower for kw in capability_keywords):
+        return "CAPABILITY_MISMATCH"
+
+    # Check for transient failure indicators
+    transient_keywords = [
+        "timeout", "connection refused", "econnreset", "network error",
+        "rate limit", "429", "503", "service unavailable",
+        "temporary", "retry", "intermittent", "flaky"
+    ]
+    if any(kw in notes_lower for kw in transient_keywords):
+        return "TRANSIENT"
+
+    # Default: if we have gate results with failures, it's a gate fail
+    # Otherwise, treat as capability mismatch (validator couldn't verify work quality)
+    return "GATE_FAIL" if gate_results else "CAPABILITY_MISMATCH"
+
+
+# Recovery routing table: maps error class to recommended recovery action
+RECOVERY_ACTIONS = {
+    "TRANSIENT": {
+        "action": "retry",
+        "description": "Re-claim and retry the task. Transient issues often resolve on retry.",
+        "target_agent": None,  # Same agent retries
+    },
+    "GATE_FAIL": {
+        "action": "fix_gates",
+        "description": "Return to executor to fix specific gate failures (RPETD content, tests, learning).",
+        "target_agent": None,  # Same agent fixes
+    },
+    "CAPABILITY_MISMATCH": {
+        "action": "reroute",
+        "description": "Route to a different executor agent with better domain match.",
+        "target_agent": "executor-general",  # Default reroute target
+    },
+    "SYSTEMIC": {
+        "action": "escalate",
+        "description": "Escalate to operator for investigation. Multiple failures indicate a deeper issue.",
+        "target_agent": "operator",
+    },
+}
 
 
 # ── VALIDATE ───────────────────────────────────────────────────────────────────
