@@ -635,7 +635,7 @@ def _tokenize_list(text):
 
 # BM25 parameters
 BM25_K1 = 1.5   # Term frequency saturation — higher = more weight to repeated terms
-BM25_B = 0.75   # Length normalization — 0 = no normalization, 1 = full normalization
+BM25_B = 0.6    # Length normalization — reduced from 0.75 for code (less penalty on large classes)
 
 
 def _compute_score(chunk, query_terms, doc_freq, n_docs, total_lines=1,

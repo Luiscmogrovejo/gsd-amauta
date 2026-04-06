@@ -221,6 +221,15 @@ class TestBM25Scoring(unittest.TestCase):
         self.assertAlmostEqual(rlm.POSITION_DECAY, 0.05, places=2,
                                msg="POSITION_DECAY should default to 0.05 (5%)")
 
+    def test_bm25_b_parameter_code_optimized(self):
+        """RLM-04: BM25 b parameter should be 0.6 (code-optimized, not 0.75 prose default)."""
+        rlm_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "services", "rlm-service.py")
+        spec = importlib.util.spec_from_file_location("rlm_check_b", rlm_path)
+        rlm = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(rlm)
+        self.assertAlmostEqual(rlm.BM25_B, 0.6, places=2,
+                               msg="BM25_B should be 0.6 for code-optimized length normalization")
+
 
 if __name__ == "__main__":
     unittest.main()
