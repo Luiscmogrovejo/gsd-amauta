@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.5
 milestone_name: milestone
 status: in-progress
-stopped_at: Plan 04-03 complete. Phase 04 in progress. MEM-04 query embedding cache done; 12/12 tests pass.
-last_updated: "2026-04-06T00:00:00.000Z"
-last_activity: "2026-04-06 -- Plan 04-03: in-memory query embedding cache (1h TTL, 500 max, LRU eviction) in pg_store.py; 12/12 tests pass"
+stopped_at: Plan 04-04 complete. TOK-02 phase enrichment reduction done (T=none, D=writes-only, E=RLM+failure-only); TOK-04 sign-off confirmed. Ready for Plan 04-02 (Perplexity cache) and Plan 04-05 (reranking).
+last_updated: "2026-04-06T18:25:00.000Z"
+last_activity: "2026-04-06 -- Plan 04-04: T/D/E phase enrichment trimmed (~1950 chars/task saved); 17 new tests in 04-04-phase-enrichment.test.cjs; stale T/D RLM assertions updated; 88+11+17+11 tests all pass"
 progress:
   total_phases: 8
   completed_phases: 6
   total_plans: 15
-  completed_plans: 15
-  percent: 27
+  completed_plans: 16
+  percent: 28
 ---
 
 # GSD-Amauta -- Project State
@@ -88,6 +88,9 @@ Progress: [##........] 24%
 - MEM-04: query embedding cache in pg_store.py; module-level dict with sha256 key (text:input_type:model)[:16], 1h TTL, 500-entry max, batch eviction of oldest 100; query-only (document embeddings bypass cache); process-local for Phase 4 (Redis in Phase 5 for cross-invocation)
 - TOK-05: Perplexity citation markers ([1],[12],[999]) stripped from answer text before both memory store and return path; cleanAnswer = answer.replace(/\[\d+\]/g,'').replace(/\s{2,}/g,' ').trim(); res.data.citations metadata untouched
 - TOK-03 AUDIT: ENRICHMENT_DEDUP_WINDOW=300 confirmed correct; 3 edge cases documented as inline comments in amauta.py (>5min expiry, R-phase-only scope, reversed() safe non-bug)
+- TOK-02: _rpetd_phase_enrich phase map -- T=pass (disabled, ~1350 chars/task saved), D=writes-only (RLM removed, ~600 chars/task saved), E=RLM+failure-LIKE-only (semantic search removed, ~750 chars/task saved); all D-phase writes preserved (_mem_log_event, WEB_SEARCH FINDING, _skb_promote)
+- TOK-04: selectPerplexityModel already complete from Phase 1 Plan 01-02; regression confirmed (11/11 tests pass)
+- Pre-change audit for enrichment removal is mandatory: test_rlm_enrichment.py and security-infrastructure.test.cjs had stale T/D-phase RLM call assertions that required updating
 
 ### Pending Todos
 
