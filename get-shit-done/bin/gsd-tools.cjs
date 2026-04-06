@@ -29,6 +29,8 @@
  *   phase-plan-index <phase>           Index plans with waves and status
  *   websearch <query>                  Search web via Brave API (if configured)
  *     [--limit N] [--freshness day|week|month]
+ *   route-executor <files>             Determine executor agent for comma-separated file list
+ *                                      Output: {"executor": "executor-backend"} etc.
  *
  * Phase Operations:
  *   phase next-decimal <phase>         Calculate next decimal phase number
@@ -139,6 +141,50 @@ const milestone = require('./lib/milestone.cjs');
 const commands = require('./lib/commands.cjs');
 const init = require('./lib/init.cjs');
 const frontmatter = require('./lib/frontmatter.cjs');
+
+// ─── Routing Helper ───────────────────────────────────────────────────────────
+
+/**
+ * route-executor: Determine which executor agent should handle a set of files.
+ *
+ * Input: comma-separated file paths (from plan files_modified)
+ * Output: one of: executor-frontend, executor-backend, executor-infra, executor-general
+ *
+ * Priority order: frontend > infra > backend > general
+ * This matches the original routing semantics but with tightened patterns.
+ *
+ * Infra regex tightened vs the old inline grep: only matches known infra file
+ * patterns (Dockerfile, docker-compose, .github/workflows/, terraform/, k8s/,
+ * nginx.conf) — NOT any path merely containing "config", "deploy", "ci", "infra"
+ * as substrings. This eliminates false positives like src/config.ts and
+ * src/deploy-utils.ts being routed to executor-infra.
+ */
+function routeExecutor(filesStr) {
+  const files = (filesStr || '').split(',').map(f => f.trim()).filter(Boolean);
+  if (!files.length) return 'executor-general';
+
+  const joined = files.join('\n');
+
+  // Frontend: React/Vue/Svelte components and stylesheets
+  if (/\.(tsx|jsx|css|scss|sass|less|html|vue|svelte)$/im.test(joined)) {
+    return 'executor-frontend';
+  }
+
+  // Infra: Docker, CI/CD, K8s, Terraform — tightened to avoid false positives.
+  // Only match: Dockerfile*, docker-compose*, .github/workflows/*, terraform/*,
+  // k8s/*, nginx.conf. NOT: any path containing "config", "deploy", "ci", "infra"
+  // as substrings (those were the false positives in the old grep pattern).
+  if (/(?:^|\/)(?:Dockerfile|docker-compose|\.github\/workflows\/|terraform\/|k8s\/|nginx\.conf)/im.test(joined)) {
+    return 'executor-infra';
+  }
+
+  // Backend: Code files (Python, JS, TS, Go, Rust, Java, SQL, CJS, MJS)
+  if (/\.(py|js|cjs|mjs|ts|go|rs|java|sql)$/im.test(joined)) {
+    return 'executor-backend';
+  }
+
+  return 'executor-general';
+}
 
 // ─── CLI Router ───────────────────────────────────────────────────────────────
 
@@ -581,6 +627,15 @@ async function main() {
         limit: limitIdx !== -1 ? parseInt(args[limitIdx + 1], 10) : 10,
         freshness: freshnessIdx !== -1 ? args[freshnessIdx + 1] : null,
       }, raw);
+      break;
+    }
+
+    case 'route-executor': {
+      // Determine which executor agent should handle a set of files.
+      // Input: comma-separated file paths (args[1])
+      // Output: JSON {"executor": "executor-backend"} etc.
+      const executor = routeExecutor(args[1]);
+      process.stdout.write(JSON.stringify({ executor }) + '\n');
       break;
     }
 
