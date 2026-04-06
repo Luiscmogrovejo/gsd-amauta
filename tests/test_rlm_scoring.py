@@ -240,6 +240,27 @@ class TestBM25Scoring(unittest.TestCase):
         self.assertEqual(rlm.MAX_CHUNK_CHARS, 4000,
                          "MAX_CHUNK_CHARS should default to 4000 for focused retrieval")
 
+    def test_label_boost_does_not_dominate(self):
+        """RLM-06: label match should boost but NOT dominate over content-rich chunks."""
+        # Chunk with matching label but minimal content
+        label_only = self._make_chunk(
+            "stub function with no real content here",
+            label="userAuth"
+        )
+        # Chunk with rich content but non-matching label
+        content_rich = self._make_chunk(
+            "user authentication handler validates credentials checks password "
+            "verifies auth tokens refreshes sessions manages user login flow "
+            "auth middleware processes user requests handles auth errors",
+            label="middleware"
+        )
+        filler = self._make_chunk("unrelated widget factory code", label="widgets")
+        results = score_chunks([label_only, content_rich, filler], "user auth", top_k=3)
+        # Content-rich chunk should rank at least as well as label-only chunk
+        content_idx = next(i for i, r in enumerate(results) if r["label"] == "middleware")
+        self.assertLessEqual(content_idx, 1,
+                             "Content-rich chunk should be in top 2 despite lacking label match")
+
 
 if __name__ == "__main__":
     unittest.main()

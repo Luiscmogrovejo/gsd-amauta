@@ -669,9 +669,12 @@ def _compute_score(chunk, query_terms, doc_freq, n_docs, total_lines=1,
 
         term_score = tf_score * idf
 
-        # Label boost: 2x if term appears in the chunk label (function/class name)
+        # Label boost: 1.5x if term appears in the chunk label (function/class name)
+        # Capped to prevent label matches from dominating over content-rich chunks
         if term in label_tokens:
-            term_score *= 2.0
+            boosted = term_score * 1.5
+            max_label_contribution = 3.0 * idf  # Cap: label boost cannot exceed 3x IDF
+            term_score = min(boosted, max_label_contribution)
 
         score += term_score
 
