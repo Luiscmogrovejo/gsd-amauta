@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.5
 milestone_name: milestone
 status: completed
-stopped_at: Plan 06-05 complete. agent-capabilities.json created (11 agents), routeExecutor wired to JSON index (AGT-07), 21 index tests + 27 routing tests pass.
-last_updated: "2026-04-06T17:18:00.000Z"
-last_activity: "2026-04-06 -- Plan 06-05: agent-capabilities.json + routeExecutor wire-up, 21/21 index tests, 27/27 routing tests"
+stopped_at: Plan 07-03 complete. Exponential backoff on Perplexity 429 (1s/2s/4s, 3 retries), 3 new preamble patterns (13 total), TECH_SHORT_WORDS 2-char tech abbreviation whitelist, [DEDUP] similarity logging, 18/18 guard tests pass.
+last_updated: "2026-04-06T17:20:00.000Z"
+last_activity: "2026-04-06 -- Plan 07-03: perplexityWithRetry backoff, 3 preamble patterns, TECH_SHORT_WORDS, dedup logging, 18/18 tests"
 progress:
   total_phases: 7
-  completed_phases: 4
+  completed_phases: 7
   total_plans: 22
-  completed_plans: 18
+  completed_plans: 19
   percent: 100
 ---
 
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-04-06)
 ## Current Position
 
 Phase: 7 of 7
-Plan: 1/1 complete for Phase 07 (07-01 done)
-Status: Phase 07 complete. Plan 06-05 complete: agent-capabilities.json (11 agents), routeExecutor wired to JSON index (AGT-07), 21 index + 27 routing tests pass. All 7 phases complete.
-Last activity: 2026-04-06 -- Plan 06-05: agent-capabilities.json + routeExecutor wire-up, AGT-07 complete
+Plan: 3/3 complete for Phase 07 (07-01, 07-02, 07-03 done)
+Status: Phase 07 complete. Plan 07-03 complete: perplexityWithRetry exponential backoff (429, 3 retries), 3 preamble patterns (13 total), TECH_SHORT_WORDS whitelist, [DEDUP] similarity logging, 18/18 tests pass. All 7 phases complete.
+Last activity: 2026-04-06 -- Plan 07-03: perplexityWithRetry, preamble patterns, TECH_SHORT_WORDS, dedup logging, 18/18 tests
 
 Progress: [##########] 100%
 
@@ -102,6 +102,7 @@ Progress: [##########] 100%
 - [Plan 06-03]: Phase-order warning in cmd_rpetd() is soft (YELLOW print, no sys.exit) -- intentional design for async parallel agent workflows; PHASE_ORDER = ["R","P","E","T","D"] defined in function scope
 - [Plan 06-03]: force_reason persisted to two audit surfaces: _append_note (FORCE_OVERRIDE: text in task notes) and _mem_log_event metadata (force_reason + forced boolean) -- AGT-05 fix; validation-gates.test.cjs setupTask defaults updated to meet new 50-char gates
 - [Plan 06-05]: agent-capabilities.json is single source of truth for routeExecutor routing (AGT-07). getCapabilityIndex() lazy singleton loads JSON once. Glob-to-regex converts 4 pattern types: *.ext (extension), prefix* (prefix-anchor), dir/* (directory), exact (path-anchor). All 27 06-02 routing tests still pass after wire-up.
+- [Plan 07-03]: perplexityWithRetry wraps httpsRequest (not httpRequest) -- signature is (hostname, urlPath, body, headers). Inserted before HTTP Helpers section. Old 429 DATA FLOW ERROR handler retained as final fallback after retry exhaustion. TECH_SHORT_WORDS uses 'k8' (not 'k8s') since 'k8s' is 3 chars and already passes the length > 2 filter. Dedup logging gate at sim >= 0.3 eliminates noise while capturing meaningful similarity comparisons.
 
 ### Pending Todos
 
