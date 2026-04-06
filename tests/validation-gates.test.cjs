@@ -245,8 +245,8 @@ describe('Validation gates (CLI offline mode)', () => {
     const tasksFile = path.join(dataDir, 'tasks.json');
 
     const phases = {
-      R: overrides.R || 'Research findings: looked at existing code.',
-      P: overrides.P || 'Plan: will implement feature on feat/test-branch.',
+      R: overrides.R || 'Research findings: reviewed existing code patterns and architecture docs to understand the approach.',
+      P: overrides.P || 'Plan: will implement the feature on feat/test-branch following existing service patterns.',
       E: overrides.E !== undefined ? overrides.E : 'Execute: implemented on feat/test-branch. Files changed: src/main.js',
       T: overrides.T !== undefined ? overrides.T : '$ node --test\n5 tests passed, 0 failed\nexit 0',
       D: overrides.D !== undefined ? overrides.D : 'LEARNING: always test edge cases thoroughly before merging to main because untested code causes regressions that are expensive to debug in production environments. https://github.com/org/repo/pull/42',

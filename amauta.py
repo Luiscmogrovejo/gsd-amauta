@@ -3527,6 +3527,19 @@ def cmd_rpetd(args):
         if all(phases.get(ph, "").strip() for ph in PHASES):
             item["rpetd_complete"] = True
 
+        # NOTE (AGT-04 audit): Phase order is intentionally NOT enforced as a hard block.
+        # Async workflows (e.g., parallel agent execution) may legitimately write phases
+        # out of order. The warning helps catch accidental skips without blocking valid workflows.
+        # Phase-order warning (soft, not blocking) -- AGT-04 audit
+        PHASE_ORDER = ["R", "P", "E", "T", "D"]
+        current_idx = PHASE_ORDER.index(phase) if phase in PHASE_ORDER else -1
+        if current_idx > 0:
+            prior_phases = PHASE_ORDER[:current_idx]
+            empty_priors = [ph for ph in prior_phases if not (phases.get(ph, "") or "").strip()]
+            if empty_priors:
+                print(c(f"Warning: Writing {phase}-phase but earlier phases are empty: {', '.join(empty_priors)}. "
+                        f"Expected order: R -> P -> E -> T -> D (not enforced, but may indicate a skip)", YELLOW))
+
         item["updated_at"] = _now()
         _append_note(item, f"RPETD[{phase}] updated", args.agent or item.get("claimed_by", "system"))
 
@@ -3789,6 +3802,26 @@ def _validate_all_gates(item: dict, *, test_exempt: bool = False) -> list:
     else:
         results.append({"gate": "RPETD_COMPLETE", "status": "PASS", "reason": "All 5 phases have content"})
 
+    # Gate 0a: R_PHASE_SUBSTANCE -- R-phase must have meaningful research content
+    r_phase = str(phases.get("R", "") or "")
+    if r_phase.strip() and len(r_phase.strip()) >= 50:
+        results.append({"gate": "R_PHASE_SUBSTANCE", "status": "PASS", "reason": "R-phase has substantive content"})
+    elif r_phase.strip():
+        results.append({"gate": "R_PHASE_SUBSTANCE", "status": "FAIL",
+                        "reason": f"R-phase too brief ({len(r_phase.strip())} chars). Provide at least 50 chars of research context (>=50 chars)"})
+    else:
+        results.append({"gate": "R_PHASE_SUBSTANCE", "status": "SKIP", "reason": "R-phase empty (caught by RPETD_COMPLETE)"})
+
+    # Gate 0b: P_PHASE_SUBSTANCE -- P-phase must have meaningful planning content
+    p_phase = str(phases.get("P", "") or "")
+    if p_phase.strip() and len(p_phase.strip()) >= 50:
+        results.append({"gate": "P_PHASE_SUBSTANCE", "status": "PASS", "reason": "P-phase has substantive content"})
+    elif p_phase.strip():
+        results.append({"gate": "P_PHASE_SUBSTANCE", "status": "FAIL",
+                        "reason": f"P-phase too brief ({len(p_phase.strip())} chars). Provide at least 50 chars of planning approach (>=50 chars)"})
+    else:
+        results.append({"gate": "P_PHASE_SUBSTANCE", "status": "SKIP", "reason": "P-phase empty (caught by RPETD_COMPLETE)"})
+
     # Gate 1: BRANCH_EVIDENCE (code tasks only)
     if is_code:
         e_phase = str(phases.get("E", "") or "")
@@ -3815,11 +3848,11 @@ def _validate_all_gates(item: dict, *, test_exempt: bool = False) -> list:
                             "reason": "T-phase has no test output evidence. Expected: exit codes, test counts, shell prompts, pass/fail verdicts"})
     else:
         # Non-code: T-phase must have content but relaxed pattern matching
-        if t_phase.strip() and len(t_phase.strip()) > 20:
+        if t_phase.strip() and len(t_phase.strip()) >= 50:
             results.append({"gate": "TEST_EVIDENCE", "status": "PASS", "reason": "Verification content present"})
         elif t_phase.strip():
             results.append({"gate": "TEST_EVIDENCE", "status": "FAIL",
-                            "reason": f"T-phase too brief ({len(t_phase.strip())} chars). Provide substantive verification evidence (>20 chars)"})
+                            "reason": f"T-phase too brief ({len(t_phase.strip())} chars). Provide substantive verification evidence (>=50 chars)"})
         else:
             results.append({"gate": "TEST_EVIDENCE", "status": "FAIL", "reason": "T-phase is empty"})
 
@@ -3900,6 +3933,9 @@ def cmd_validate(args):
             if force_reason:
                 print(c(f"Warning: self-validation for {args.id} (claimed by @{claimer}, validated by @{validator_id}). "
                         f"Override reason: {force_reason}", YELLOW))
+                # Persist force_reason to task notes for audit trail -- AGT-05 fix
+                _append_note(item, f"FORCE_OVERRIDE: self-validation override. Reason: {force_reason}",
+                            validator_id)
             else:
                 print(c(f"SELF-VALIDATION BLOCKED: {args.id} was claimed by @{claimer}. "
                         f"Cannot be validated by the same agent.", RED))
@@ -3964,6 +4000,12 @@ def cmd_validate(args):
             if failures and args.force_reason and not _is_json:
                 print(c(f"\n  Warning: {len(failures)} gate(s) failed but --force-reason override applied: {args.force_reason}", YELLOW))
 
+            if failures and args.force_reason:
+                # Persist force_reason to task notes for audit trail -- AGT-05 fix
+                _append_note(item, f"FORCE_OVERRIDE: {len(failures)} gate(s) overridden. Reason: {args.force_reason}. "
+                            f"Failed gates: {', '.join(f['gate'] for f in failures)}",
+                            args.validator or "validator")
+
             # ── DEPENDENCY CHECK: block done if deps are incomplete ──
             if not _deps_met(item, data["items"]) and not args.force_reason:
                 blocking = [d for d in item.get("dependencies", [])
@@ -4009,6 +4051,8 @@ def cmd_validate(args):
                     "task_id": item.get("id"),
                     "event": "validation_pass",
                     "status": "done",
+                    "force_reason": force_reason if force_reason else None,
+                    "forced": bool(force_reason),
                 },
             )
             # ── Gitflow audit: log validation-pass AND merge ───────────────────
