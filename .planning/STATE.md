@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.5
 milestone_name: milestone
 status: completed
-stopped_at: Plan 02-01 SUMMARY created. MEM-01 fix + MEM-05/MEM-06/MEM-09 guard tests complete.
-last_updated: "2026-04-06T19:00:00.000Z"
-last_activity: 2026-04-06 -- Plan 02-01: distill-status MEM-01 fix, 10 new guard tests, MEM-05/MEM-06 audit docs
+stopped_at: Plan 02-02 SUMMARY created. MEM-07 guard tests + MEM-08 web_search_result:180 tier complete.
+last_updated: "2026-04-06T19:35:00.000Z"
+last_activity: 2026-04-06 -- Plan 02-02: web_search_result:180 added to RETENTION_DAYS in both stores; 21 retention+decay tests pass
 progress:
   total_phases: 8
   completed_phases: 6
   total_plans: 17
-  completed_plans: 12
-  percent: 17
+  completed_plans: 13
+  percent: 18
 ---
 
 # GSD-Amauta -- Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-04-06)
 ## Current Position
 
 Phase: 2 and 3 of 8 (both planned, executing in parallel)
-Plan: 2/7 complete (02-04 done, 03-01 done; 3 remaining in Phase 2, 2 remaining in Phase 3)
-Status: Plan 03-01 complete. RLM-01..04 fixed. Phase 2: 4 plans, 2 waves, 12 tasks, 10 requirements (MEM-01..10). Phase 3: 3 plans, 3 waves, 8 tasks, 8 requirements (RLM-01..06, RLM-08, RLM-09).
-Last activity: 2026-04-06 -- Plan 02-01 SUMMARY: distill-status MEM-01 fix (memory_count exclude_source), MEM-09 source audit guard tests (4 tests), MEM-05/MEM-06 documentation, 10 new tests total across 2 new test files
+Plan: 3/7 complete (02-04, 02-01, 02-02 done; 2 remaining in Phase 2, 2 remaining in Phase 3)
+Status: Plan 02-02 complete. MEM-07 guard tests + MEM-08 web_search_result:180 tier done. Phase 2: 4 plans, 2 waves, 12 tasks, 10 requirements (MEM-01..10). Phase 3: 3 plans, 3 waves, 8 tasks, 8 requirements (RLM-01..06, RLM-08, RLM-09).
+Last activity: 2026-04-06 -- Plan 02-02: web_search_result:180 retention tier added to pg_store+sqlite_store; 6 recency decay guard tests + 3 new retention tests (15 total); 21/21 tests pass
 
 Progress: [#.........] 12%
 
@@ -78,6 +78,8 @@ Progress: [#.........] 12%
 - MEM-01 distill-status bug FIXED: memory_count() now accepts exclude_source param; distill-status excludes source='distilled' from threshold count
 - MEM-09 autolearning source: ALREADY CORRECT in v2.4 -- all 6 learning event paths have explicit source=; guard tests added
 - MEM-05/MEM-06: dedup 0.95 cosine + Jaccard 0.7 distillation confirmed correct; dual scoring paths documented as intentional
+- MEM-08: web_search_result:180 added to RETENTION_DAYS in both stores; sqlite_store also updated (not just pg_store) since tests use SQLiteStore
+- MEM-07: recency decay confirmed present (amauta.py + both stores); guard tests prevent future regression; constants verified consistent: DECAY_PER_30D=0.5, MAX_PENALTY=3.0
 
 ### Pending Todos
 
@@ -92,7 +94,7 @@ None. Phase 1 blockers resolved:
 ## Session Continuity
 
 Last session: 2026-04-06
-Stopped at: Plan 03-01 complete. RLM-01..04 fixed. Ready for 03-02 or remaining Phase 2 plans.
+Stopped at: Plan 02-02 complete. MEM-07 + MEM-08 done. Ready for 02-03 or 03-02 (parallel).
 Resume file: None
 
 ## Previous Milestone: v2.4 -- Bulletproof (COMPLETE)
