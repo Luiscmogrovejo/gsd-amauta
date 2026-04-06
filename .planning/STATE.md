@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.5
 milestone_name: milestone
 status: executing
-stopped_at: Plan 07-01 complete. Phase 07 plan 01 done. archive/reconcile routing fixed, STALE_CHECK_INTERVAL env-configurable, 17/17 guard tests pass.
+stopped_at: Plan 07-02 complete. Phase 07 plans 01-02 done. dep_pressure cache key fixed, cmd_next tie-breaking by created_at, cascade requires >=2 results (GSD_RESEARCH_MIN_RESULTS), _search_q guard, 14/14 tests pass.
 last_updated: "2026-04-06T00:00:00.000Z"
-last_activity: "2026-04-06 -- Plan 07-01: archive/reconcile added to command_map+_EXEC_ALLOWLIST, GSD_STALE_INTERVAL env var, 17 guard tests (ROUTE/WATCHDOG/PGSYNC/ARCHIVE suites)"
+last_activity: "2026-04-06 -- Plan 07-02: dep_pressure content hash, created_at tie-break, GSD_RESEARCH_MIN_RESULTS cascade threshold, _search_q guard, 14 guard tests (SCORE-01/CASCADE-01/GUARD-01)"
 progress:
   total_phases: 7
   completed_phases: 7
-  total_plans: 17
-  completed_plans: 17
+  total_plans: 18
+  completed_plans: 18
   percent: 100
 ---
 
