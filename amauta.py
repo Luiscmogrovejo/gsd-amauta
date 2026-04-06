@@ -2051,8 +2051,9 @@ def _rpetd_phase_enrich(phase: str, item: dict, agent_content: str) -> str:
 
             # ── Research chain: auto-invoke when local memory is insufficient ──
             # Only fires when semantic search found <2 results (unfamiliar domain)
+            # Guard: skip if _search_q is empty (stopword-only titles produce no usable query)
             mem_result_count = len(locals().get('relevant', []))
-            if mem_result_count < 2:
+            if _search_q and mem_result_count < 2:
                 research_q = f"{title} {desc[:200]}"
                 research_results = _research_chain_query(research_q, limit=3)
                 if research_results:
