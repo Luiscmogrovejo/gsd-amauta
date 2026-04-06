@@ -72,6 +72,38 @@ const PROVIDER_ORDER = ['memory', 'skb', 'context7', 'perplexity', 'webfetch'];
 const PERPLEXITY_OUTPUT_CAP = 1500; // chars -- cap Perplexity output to prevent 4K token injection
 
 // ═══════════════════════════════════════════════════════
+// Model Auto-Selection
+// ═══════════════════════════════════════════════════════
+
+/**
+ * selectPerplexityModel — select Perplexity model based on query complexity.
+ * Only called when PERPLEXITY_MODEL === 'auto'.
+ * @param {string} query
+ * @returns {'sonar' | 'sonar-pro'}
+ */
+function selectPerplexityModel(query) {
+  const complexPatterns = [
+    /best.?practice/i,
+    /compar/i,
+    /architect/i,
+    /how (to|do|does|should)/i,
+    /pattern/i,
+    /trade.?off/i,
+    /design/i,
+    /implement/i,
+    /optimi[sz]/i,
+    /debug/i,
+  ];
+
+  const isComplex = complexPatterns.some(p => p.test(query));
+
+  if (isComplex || query.length >= 80) {
+    return 'sonar-pro';
+  }
+  return 'sonar';
+}
+
+// ═══════════════════════════════════════════════════════
 // HTTP Helpers
 // ═══════════════════════════════════════════════════════
 
@@ -251,12 +283,14 @@ async function providerContext7(query, _limit) {
 async function providerPerplexity(query, limit) {
   if (!PERPLEXITY_API_KEY) return null;
 
+  const selectedModel = PERPLEXITY_MODEL === 'auto' ? selectPerplexityModel(query) : PERPLEXITY_MODEL;
+
   try {
     const res = await httpsRequest(
       'api.perplexity.ai',
       '/chat/completions',
       {
-        model: PERPLEXITY_MODEL,
+        model: selectedModel,
         messages: [
           {
             role: 'system',
@@ -293,11 +327,11 @@ async function providerPerplexity(query, limit) {
         await daemonRequest('POST', '/api/memory/store', {
           text: cappedAnswer,
           source: 'web_search_result',
-          tags: ['perplexity', PERPLEXITY_MODEL],
+          tags: ['perplexity', selectedModel],
           metadata: {
             query,
             citations,
-            model: res.data.model || PERPLEXITY_MODEL,
+            model: res.data.model || selectedModel,
             citation_count: citations.length,
           },
         });
@@ -312,7 +346,7 @@ async function providerPerplexity(query, limit) {
       results: [{
         text: stripPreamble(answer).slice(0, PERPLEXITY_OUTPUT_CAP),
         citations,
-        model: res.data.model || PERPLEXITY_MODEL,
+        model: res.data.model || selectedModel,
       }],
     };
   } catch (err) {
