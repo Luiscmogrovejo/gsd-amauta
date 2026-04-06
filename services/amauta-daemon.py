@@ -277,6 +277,77 @@ _rlm_restart_count = 0
 _rlm_enabled = os.environ.get("GSD_RLM_ENABLED", "true").lower() != "false"
 
 
+def _kill_port_holder(port):
+    """Kill any process holding the given port. Returns True if port was freed."""
+    import subprocess as _sp
+    try:
+        result = _sp.run(
+            ["lsof", "-ti", f":{port}"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            pids = result.stdout.strip().split("\n")
+            for pid_str in pids:
+                pid = int(pid_str.strip())
+                if pid == os.getpid():
+                    continue  # Never kill ourselves
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                    time.sleep(0.5)
+                    try:
+                        os.kill(pid, 0)  # Check if still alive
+                        os.kill(pid, signal.SIGKILL)
+                        time.sleep(0.3)
+                    except ProcessLookupError:
+                        pass
+                    log.info("rlm_port_freed pid=%d port=%d", pid, port)
+                except ProcessLookupError:
+                    pass
+                except PermissionError:
+                    log.warning("rlm_port_kill_permission pid=%d", pid)
+            return True
+    except Exception as e:
+        log.warning("rlm_port_check_failed error=%s", str(e))
+    return False
+
+
+def _port_is_free(port):
+    """Check if port is available for binding."""
+    import socket as _socket
+    with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as s:
+        try:
+            s.bind(('127.0.0.1', port))
+            return True
+        except OSError:
+            return False
+
+
+def _validate_api_keys():
+    """Validate API keys at startup. Returns status dict for health/logging."""
+    keys_config = {
+        "VOYAGE_API_KEY": {"min_len": 40, "max_len": 60},
+        "PERPLEXITY_API_KEY": {"min_len": 40, "max_len": 70},
+    }
+    config_vars = {
+        "PERPLEXITY_MODEL": os.environ.get("PERPLEXITY_MODEL", "NOT SET"),
+    }
+    results = {}
+    for name, bounds in keys_config.items():
+        val = os.environ.get(name, "")
+        if not val:
+            results[name] = {"set": False, "status": "missing"}
+        else:
+            length = len(val)
+            if bounds["min_len"] <= length <= bounds["max_len"]:
+                status = "ok"
+            else:
+                status = "suspicious_length"
+            results[name] = {"set": True, "status": status, "length": length}
+    for name, val in config_vars.items():
+        results[name] = {"set": val != "NOT SET", "value": val}
+    return results
+
+
 def _start_rlm():
     """Start RLM service as a subprocess."""
     global _rlm_process, _rlm_restart_count
@@ -287,14 +358,25 @@ def _start_rlm():
         log.warning("rlm_not_found path=%s", RLM_SERVICE_PY)
         return False
 
+    # Pre-flight: ensure port is free, kill orphans if needed
+    if not _port_is_free(RLM_PORT):
+        log.warning("rlm_port_occupied port=%d", RLM_PORT)
+        _kill_port_holder(RLM_PORT)
+        time.sleep(0.5)
+        if not _port_is_free(RLM_PORT):
+            log.error("rlm_port_still_occupied port=%d", RLM_PORT)
+            return False
+
     try:
         env = os.environ.copy()
         env["GSD_RLM_PORT"] = str(RLM_PORT)
+        rlm_log_path = os.path.join(DATA_DIR, "rlm-service.log")
+        rlm_log_file = open(rlm_log_path, "a")
         _rlm_process = subprocess.Popen(
             [sys.executable, RLM_SERVICE_PY, "run"],
             env=env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=rlm_log_file,
+            stderr=rlm_log_file,
             start_new_session=True,
         )
         # Wait for health check
@@ -305,6 +387,7 @@ def _start_rlm():
                 req = urllib.request.urlopen(f"http://127.0.0.1:{RLM_PORT}/health", timeout=1)
                 if req.status == 200:
                     log.info("rlm_started pid=%d port=%d", _rlm_process.pid, RLM_PORT)
+                    _rlm_restart_count = 0  # Reset on successful start
                     return True
             except Exception:
                 pass
@@ -346,17 +429,20 @@ def _rlm_watchdog():
     """Background thread: periodically check RLM health and restart if needed."""
     global _rlm_restart_count
     while True:
-        time.sleep(30)  # Check every 30 seconds
+        time.sleep(30)
         if not _rlm_enabled or _rlm_process is None:
             continue
-        if _rlm_process.poll() is not None or not _check_rlm_health():
+        process_dead = _rlm_process.poll() is not None
+        health_failed = not process_dead and not _check_rlm_health()
+        if process_dead or health_failed:
+            reason = "process_exited" if process_dead else "health_check_failed"
             if _rlm_restart_count < RLM_MAX_RESTARTS:
                 _rlm_restart_count += 1
-                log.warning("rlm_restart attempt=%d/%d", _rlm_restart_count, RLM_MAX_RESTARTS)
+                log.warning("rlm_restart attempt=%d/%d reason=%s", _rlm_restart_count, RLM_MAX_RESTARTS, reason)
                 _stop_rlm()
                 _start_rlm()
             else:
-                log.error("rlm_max_restarts_exceeded")
+                log.error("rlm_max_restarts_exceeded reason=%s", reason)
 
 
 # ── Stale Task Watchdog Thread ────────────────────────────────────────────────
@@ -790,6 +876,11 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 "rlm_running": _check_rlm_health() if _rlm_enabled else False,
                 "rlm_port": RLM_PORT if _rlm_enabled else None,
                 "rlm_restarts": _rlm_restart_count,
+                "api_keys": {
+                    k.lower(): {"set": v.get("set", False), "status": v.get("status", "unknown")}
+                    for k, v in _validate_api_keys().items()
+                    if "length" in v or not v.get("set")
+                },
                 "oidc_enabled": _oidc.is_enabled() if _oidc else False,
                 "oidc_issuer": _oidc.issuer if _oidc and _oidc.is_enabled() else None,
             }
@@ -1803,6 +1894,17 @@ def start_server(foreground=False):
             print(f"  Memory retention: failed ({e})")
     else:
         print(f"  Memory retention: no store available")
+
+    # ── API Key Validation ────────────────────────────────────────────────────
+    _api_key_status = _validate_api_keys()
+    print(f"  API Keys:")
+    for key_name, info in _api_key_status.items():
+        if "length" in info:
+            print(f"    {key_name}: SET ({info['length']} chars) [{info['status']}]")
+        elif "value" in info:
+            print(f"    {key_name}: {info['value']}")
+        else:
+            print(f"    {key_name}: NOT SET [{info['status']}]")
 
     # ── Start RLM service ────────────────────────────────────────────────────
     if _rlm_enabled:
