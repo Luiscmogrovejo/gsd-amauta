@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.5
 milestone_name: milestone
-status: completed
-stopped_at: Plan 03-03 SUMMARY created. RLM-08+RLM-09 cache observability + --fresh flag complete. Phase 03 fully done.
-last_updated: "2026-04-06T21:25:00.000Z"
-last_activity: 2026-04-06 -- Plan 03-03: ChunkCache hit/miss counters + hit_rate property; /cache/stats extended; clear_file() method; fresh param in _handle_query/_handle_search; --fresh CLI flag in parseArgs + all 4 body paths; 25/25 tests pass
+status: in-progress
+stopped_at: Plan 04-03 complete. Phase 04 in progress. MEM-04 query embedding cache done; 12/12 tests pass.
+last_updated: "2026-04-06T00:00:00.000Z"
+last_activity: "2026-04-06 -- Plan 04-03: in-memory query embedding cache (1h TTL, 500 max, LRU eviction) in pg_store.py; 12/12 tests pass"
 progress:
   total_phases: 8
   completed_phases: 6
-  total_plans: 17
-  completed_plans: 13
-  percent: 18
+  total_plans: 15
+  completed_plans: 15
+  percent: 27
 ---
 
 # GSD-Amauta -- Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-06)
 
 ## Current Position
 
-Phase: 2 and 3 of 8 (both planned, executing in parallel)
-Plan: 7/7 complete (02-04, 02-01, 02-02, 02-03, 03-01, 03-02, 03-03 done; Phase 2 and Phase 3 both complete)
-Status: Plan 03-03 complete. RLM cache observability + fresh flag done. Phase 2 (MEM-01..10) and Phase 3 (RLM-01..06, RLM-08, RLM-09) both fully complete.
-Last activity: 2026-04-06 -- Plan 03-03: ChunkCache hit/miss counters + /cache/stats + --fresh cache bypass; 25/25 tests pass
+Phase: 4 of 8
+Plan: 1/5 complete for Phase 04 (04-01 done; 04-02..04-05 pending)
+Status: Plan 04-01 complete. Perplexity citation stripping (cleanAnswer regex) + TOK-03 dedup window audit. Phase 2 (MEM-01..10) and Phase 3 (RLM-01..06, RLM-08, RLM-09) both fully complete.
+Last activity: 2026-04-06 -- Plan 04-01: Perplexity citation stripping (cleanAnswer) + TOK-03 dedup window audit + 10/10 tests pass
 
 Progress: [##........] 24%
 
@@ -85,6 +85,8 @@ Progress: [##........] 24%
 - MEM-02: LLM summarization added to distill via --use-llm flag; isOllamaAvailable/selectOllamaModel/llmSummarize helpers; distill_strategy+distill_model metadata provenance; main() gated on require.main for testability
 - RLM-08: ChunkCache hit/miss counters added (_hit_count, _miss_count, hit_rate property); /cache/stats endpoint extended with all 3 fields; counters reset on clear()
 - RLM-09: ChunkCache.clear_file() evicts entries by filepath only; fresh=body.get('fresh',False) in _handle_query and _handle_search with bypass loop; --fresh CLI flag in parseArgs + all 4 body paths; fresh bypasses cache for single query, result re-enters cache normally
+- TOK-05: Perplexity citation markers ([1],[12],[999]) stripped from answer text before both memory store and return path; cleanAnswer = answer.replace(/\[\d+\]/g,'').replace(/\s{2,}/g,' ').trim(); res.data.citations metadata untouched
+- TOK-03 AUDIT: ENRICHMENT_DEDUP_WINDOW=300 confirmed correct; 3 edge cases documented as inline comments in amauta.py (>5min expiry, R-phase-only scope, reversed() safe non-bug)
 
 ### Pending Todos
 
@@ -99,7 +101,7 @@ None. Phase 1 blockers resolved:
 ## Session Continuity
 
 Last session: 2026-04-06
-Stopped at: Plan 03-03 complete. Phase 02 + Phase 03 both done. Ready for Phase 04 (embedding cache).
+Stopped at: Plan 04-01 complete. Phase 04 underway (1/5 plans done). Next: Plan 04-02.
 Resume file: None
 
 ## Previous Milestone: v2.4 -- Bulletproof (COMPLETE)
