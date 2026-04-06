@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v2.5
 milestone_name: milestone
 status: completed
-stopped_at: Plan 06-02 complete. Routing extracted to gsd-tools route-executor, infra regex tightened, pass_rate normalized, PERF_ROUTING_OVERRIDE audit trail added, 27 tests pass.
-last_updated: "2026-04-06T15:42:13.933Z"
-last_activity: "2026-04-06 -- Plan 07-01: archive/reconcile routing, GSD_STALE_INTERVAL, 17 guard tests"
+stopped_at: Plan 06-03 complete. R_PHASE_SUBSTANCE+P_PHASE_SUBSTANCE gates (>=50 chars), T threshold raised, phase-order warning, force_reason persisted, 16 new tests pass, 38+114+72 existing tests still pass.
+last_updated: "2026-04-06T16:05:00.000Z"
+last_activity: "2026-04-06 -- Plan 06-03: R/P substance gates, T threshold >=50, phase-order warning, force_reason->notes+metadata, 16/16 tests"
 progress:
   total_phases: 7
   completed_phases: 4
@@ -98,6 +98,9 @@ Progress: [##########] 100%
 - TOK-06: Redis L2 embedding cache wraps Phase 4 L1 dict in generate_embedding(); bridge module amauta_daemon_redis.py (get/set_redis_client) solves circular import; key gsd:emb:{sha256_16hex}, 3600s TTL, JSON float list; L1 promotion on L2 hit; silent except-pass degradation; daemon injects client at startup via try/ImportError guard
 - TOK-06 (Perplexity cache): /api/research-cache GET/POST in daemon (REDIS_PERPLEXITY_PREFIX="gsd:ppx:", REDIS_PERPLEXITY_TTL=21600); _checkDaemonCache/_writeDaemonCache in gsd-research.cjs (stdlib http only, 2s timeout, resolves null/false on error); providerPerplexity: cacheKey hoisted before noCache guard, daemon Redis L1 check first then file L2; POST handler placed before command_map in do_POST (direct redis, not amauta.py CLI)
 - [Phase 06]: routeExecutor: path-prefix anchoring for infra eliminates false positives (src/config.ts, src/deploy-utils.ts, .github/ISSUE_TEMPLATE.md) — Broad substring match on docker/ci/deploy/infra was flagging any file path containing those substrings as infra — path-prefix anchoring restricts to known infra file patterns only
+- [Plan 06-03]: R_PHASE_SUBSTANCE gate (>=50 chars) and P_PHASE_SUBSTANCE gate (>=50 chars) added to _validate_all_gates() after Gate 0; non-code T threshold raised from >20 to >=50; substance gates emit SKIP (not FAIL) for empty phases, deferring to RPETD_COMPLETE
+- [Plan 06-03]: Phase-order warning in cmd_rpetd() is soft (YELLOW print, no sys.exit) -- intentional design for async parallel agent workflows; PHASE_ORDER = ["R","P","E","T","D"] defined in function scope
+- [Plan 06-03]: force_reason persisted to two audit surfaces: _append_note (FORCE_OVERRIDE: text in task notes) and _mem_log_event metadata (force_reason + forced boolean) -- AGT-05 fix; validation-gates.test.cjs setupTask defaults updated to meet new 50-char gates
 
 ### Pending Todos
 
