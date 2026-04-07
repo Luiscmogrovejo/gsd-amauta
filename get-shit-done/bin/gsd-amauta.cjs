@@ -66,10 +66,49 @@ const fs = require('fs');
 
 const HOST = process.env.GSD_AMAUTA_HOST || '127.0.0.1';
 const PORT = parseInt(process.env.GSD_AMAUTA_PORT || '18799', 10);
-const PLUGIN_ROOT = path.resolve(__dirname, '..', '..');
+
+// PLUGIN_ROOT resolution:
+// - In source repo (~/Code/gsd-amauta/get-shit-done/bin/), `../..` = repo root (has amauta.py + services/) ✓
+// - When installed (~/.claude/get-shit-done/bin/), `../..` = ~/.claude (no amauta.py). Fall back to known
+//   source-repo locations so the CLI's `python3 amauta.py` fallback path remains valid even after install.
+function _resolvePluginRoot() {
+  const candidates = [
+    path.resolve(__dirname, '..', '..'),                     // source repo layout
+    path.resolve(__dirname, '..'),                           // installed layout (~/.claude/get-shit-done)
+  ];
+  // Prefer the one that actually contains amauta.py
+  for (const c of candidates) {
+    if (fs.existsSync(path.join(c, 'amauta.py'))) return c;
+  }
+  // Final fallback chain — common dev/install locations
+  const home = process.env.HOME || require('os').homedir();
+  const fallbacks = [
+    path.join(home, 'Code', 'gsd-amauta'),
+    path.join(home, 'gsd-amauta'),
+    path.join(home, '.claude', 'get-shit-done'),
+  ];
+  for (const c of fallbacks) {
+    if (fs.existsSync(path.join(c, 'amauta.py'))) return c;
+  }
+  // Give up — return the original (broken) path so existing error messages still mention it
+  return candidates[0];
+}
+const PLUGIN_ROOT = _resolvePluginRoot();
 const AMAUTA_PY = process.env.GSD_AMAUTA_PY || path.join(PLUGIN_ROOT, 'amauta.py');
 const DATA_DIR = process.env.AMAUTA_DATA_DIR || path.join(PLUGIN_ROOT, 'data');
-const DAEMON_SCRIPT = path.join(PLUGIN_ROOT, 'services', 'amauta-daemon.py');
+// Daemon script may live in the source repo even when this CLI is installed; check there first.
+const DAEMON_SCRIPT = (function() {
+  const local = path.join(PLUGIN_ROOT, 'services', 'amauta-daemon.py');
+  if (fs.existsSync(local)) return local;
+  const home = process.env.HOME || require('os').homedir();
+  for (const c of [
+    path.join(home, 'Code', 'gsd-amauta', 'services', 'amauta-daemon.py'),
+    path.join(home, 'gsd-amauta', 'services', 'amauta-daemon.py'),
+  ]) {
+    if (fs.existsSync(c)) return c;
+  }
+  return local;
+})();
 
 // ═══════════════════════════════════════════════════════
 // HTTP Client

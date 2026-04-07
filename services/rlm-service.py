@@ -1017,11 +1017,36 @@ def start_server(foreground=False):
     PID_FILE.write_text(str(os.getpid()))
 
     def shutdown_handler(signum, frame):
-        log.info("rlm_shutdown")
-        print("\nShutting down RLM service...")
-        server.shutdown()
-        PID_FILE.unlink(missing_ok=True)
-        sys.exit(0)
+        # Two bugs to avoid here:
+        #
+        # 1. Python 3.14 raises RuntimeError("reentrant call inside
+        #    <_io.BufferedWriter name='<stderr>'>") if a signal handler invokes
+        #    log.info() / print() while another thread is mid-write to stderr.
+        #    Bypass the buffered writers by writing directly to fd 2.
+        #
+        # 2. server.shutdown() blocks waiting for serve_forever() to finish, but
+        #    serve_forever() runs on the main thread which is currently inside
+        #    this signal handler. Calling shutdown() inline deadlocks the process
+        #    until the daemon watchdog eventually kills it. Spawn a worker thread
+        #    so the signal handler can return, the main thread can resume the
+        #    request loop, and the worker drives the orderly shutdown.
+        try:
+            os.write(2, b"\nShutting down RLM service...\n")
+        except Exception:
+            pass
+        import threading
+
+        def _drain_and_exit():
+            try:
+                server.shutdown()
+            finally:
+                PID_FILE.unlink(missing_ok=True)
+                try:
+                    log.info("rlm_shutdown signum=%d", signum)
+                except Exception:
+                    pass
+
+        threading.Thread(target=_drain_and_exit, daemon=True).start()
 
     signal.signal(signal.SIGTERM, shutdown_handler)
     signal.signal(signal.SIGINT, shutdown_handler)
