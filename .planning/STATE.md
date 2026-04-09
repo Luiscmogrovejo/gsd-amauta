@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: Sight Beyond Sight
 status: planning
-stopped_at: Plan 09-08 executed — complex-integration.test.cjs 7 failures fixed (makeTask R/P defaults >=50 chars + amauta_memory→gsd_memory)
-last_updated: "2026-04-09T20:30:00.000Z"
-last_activity: "2026-04-09 -- Plan 09-08: complex-integration 87/87 green — makeTask R/P >=50 chars, amauta_memory→gsd_memory, 7 tests fixed (1eee7e4); Plan 09-09: perplexity-config fnStart 800→1500, auto-learning proximity 500→2500, e2e-lifecycle store rate-limit retry+skip (31680cc)"
+stopped_at: Plan 09-07 executed — e2e-advanced.test.cjs 3 failures fixed (createReadyTask defaults + 4 per-test R/P/T overrides >=50 chars)
+last_updated: "2026-04-09T21:00:00.000Z"
+last_activity: "2026-04-09 -- Plan 09-07: e2e-advanced 73/73 green — createReadyTask R/P defaults >=50 chars, 4 per-test overrides updated, 3 tests fixed (b64b93a)"
 progress:
   total_phases: 7
   completed_phases: 0
@@ -18,7 +18,7 @@ current_phase:
   status: in-progress
   depends_on: []
   requirements_count: 6
-next_action: "Execute plans 09-06, 09-07 (comprehensive-e2e, e2e-advanced GAP fixes) then close Phase 9"
+next_action: "Execute plan 09-06 (comprehensive-e2e GAP fix) then close Phase 9"
 previous_milestone:
   version: v2.5
   name: Smarter Brain
@@ -40,9 +40,9 @@ See: .planning/PROJECT.md (updated 2026-04-09)
 ## Current Position
 
 Phase: 9 — Tech-Debt Sweep (in-progress)
-Plan: 09-08 DONE (GAP: complex-integration 87/87 green — makeTask R/P >=50 chars, amauta_memory→gsd_memory). Plans 09-06, 09-07 pending.
-Status: Plans 09-01 through 09-05 executed (TECH-01..06). Plans 09-08 and 09-09 executed (GAP). Plans 09-06, 09-07 (comprehensive-e2e, e2e-advanced) pending before Phase 9 close.
-Last activity: 2026-04-09 -- Plan 09-08: complex-integration 87/87 green (1eee7e4)
+Plan: 09-07 DONE (GAP: e2e-advanced 73/73 green — createReadyTask R/P defaults >=50 chars, 4 per-test overrides updated). Plan 09-06 pending.
+Status: Plans 09-01 through 09-05 executed (TECH-01..06). Plans 09-07, 09-08, 09-09 executed (GAP). Plan 09-06 (comprehensive-e2e) pending before Phase 9 close.
+Last activity: 2026-04-09 -- Plan 09-07: e2e-advanced 73/73 green, 3 substance gate failures fixed (b64b93a)
 
 Progress: [##........] 11%
 
