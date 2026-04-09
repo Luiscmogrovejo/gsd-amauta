@@ -1000,7 +1000,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
 
-        path = self.path.rstrip("/")
+        path = self.path.split("?")[0].rstrip("/")
 
         if path == "/health":
             health = {
