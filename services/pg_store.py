@@ -94,6 +94,12 @@ RETENTION_DAYS = {
 # ═══════════════════════════════════════════════════════
 # Tag synonym normalization (shared with sqlite_store.py)
 # ═══════════════════════════════════════════════════════
+#
+# Phase 10 LEARN-04: Tag governance rules are now loaded from
+# get-shit-done/config/tag-rules.json (shared with gsd-memory.cjs Node.js path).
+# The hardcoded TAG_SYNONYMS dict below is kept as a fallback when the JSON
+# config cannot be found (defense in depth — daemon must never crash on a
+# missing config file).
 
 TAG_SYNONYMS = {
     "postgres": "postgresql",
@@ -111,21 +117,206 @@ TAG_SYNONYMS = {
     "tf": "terraform",
     "docker-compose": "docker",
     "compose": "docker",
+    # Phase 10 additions (mirror tag-rules.json)
+    "db": "database",
+    "ci": "ci-cd",
+    "cd": "ci-cd",
+    "auth": "authentication",
+    "oidc": "openid-connect",
+    "sso": "single-sign-on",
+    "fe": "frontend",
+    "be": "backend",
+    "e2e": "end-to-end",
+    "perf": "performance",
+    "mem": "memory",
 }
 
 
-def normalize_tags(tags):
-    """Normalize tag variations to canonical forms."""
-    if not tags:
-        return tags
-    normalized = []
+# --- Phase 10 LEARN-04: Tag governance rules loaded from config/tag-rules.json ---
+_TAG_RULES_CACHE = None
+_TAG_RULES_WARNED = False
+
+
+def load_tag_rules():
+    """Load tag governance rules from get-shit-done/config/tag-rules.json.
+
+    Tries (in order):
+      1. Repo-local: ../get-shit-done/config/tag-rules.json relative to this file
+      2. ~/.claude/get-shit-done/config/tag-rules.json (installed location)
+
+    Falls back to hardcoded defaults if the file is missing. Cached after
+    first successful load so subsequent calls are zero-cost.
+
+    Returns:
+        dict with keys: banned, synonyms, vocabulary, tiers
+    """
+    global _TAG_RULES_CACHE, _TAG_RULES_WARNED
+    if _TAG_RULES_CACHE is not None:
+        return _TAG_RULES_CACHE
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(here, "..", "get-shit-done", "config", "tag-rules.json"),
+        os.path.join(
+            os.environ.get("HOME", ""),
+            ".claude",
+            "get-shit-done",
+            "config",
+            "tag-rules.json",
+        ),
+    ]
+    for p in candidates:
+        try:
+            if os.path.exists(p):
+                with open(p, "r") as f:
+                    _TAG_RULES_CACHE = json.load(f)
+                return _TAG_RULES_CACHE
+        except Exception:
+            continue
+
+    if not _TAG_RULES_WARNED:
+        import sys
+        print(
+            "[pg_store] tag-rules.json not found; using hardcoded defaults",
+            file=sys.stderr,
+        )
+        _TAG_RULES_WARNED = True
+    _TAG_RULES_CACHE = {
+        "banned": ["best-practice", "general", "lesson", "insight"],
+        "synonyms": dict(TAG_SYNONYMS),
+        "vocabulary": {},
+        "tiers": {
+            "domain": [
+                "postgresql", "mysql", "sqlite", "redis", "kubernetes",
+                "docker", "react", "vue", "nodejs", "python", "go", "rust",
+            ],
+            "technique": [
+                "connection-pool", "memoization", "idempotency", "pagination",
+                "rate-limit", "query-optimization", "n-plus-1",
+                "cache-invalidation", "graceful-shutdown",
+            ],
+            "scope": [
+                "backend", "frontend", "database", "api", "testing",
+                "infrastructure", "security", "performance", "authentication",
+                "caching", "deployment", "monitoring",
+            ],
+            "meta": [
+                "pattern", "pitfall", "convention", "architecture",
+                "policy", "workflow", "process", "delivery", "tool-usage",
+            ],
+        },
+    }
+    return _TAG_RULES_CACHE
+
+
+def _tag_tier(tag, rules):
+    """Return 0..3 — lower = more specific (kept first during auto-trim).
+
+    Tier ranking:
+        0 = domain (postgresql, react, nodejs, ...)
+        1 = technique (connection-pool, memoization, ...)
+        2 = scope (backend, frontend, testing, ...)
+        3 = meta (pattern, pitfall, convention, ...)
+    Unknown tags default to 2 (scope).
+    """
+    tiers = rules.get("tiers", {}) or {}
+    if tag in (tiers.get("domain") or []):
+        return 0
+    if tag in (tiers.get("technique") or []):
+        return 1
+    if tag in (tiers.get("scope") or []):
+        return 2
+    if tag in (tiers.get("meta") or []):
+        return 3
+    return 2  # unknown tags default to "scope" tier
+
+
+def normalize_tags(input_tags):
+    """Phase 10 LEARN-04: Normalize, strip banned, enforce cap of 5 by tier.
+
+    Defense-in-depth tag governance — matches gsd-memory.cjs normalizeTags()
+    semantics exactly. The operator's parse-learning path bypasses the Node
+    CLI, so this daemon-side function must validate independently.
+
+    Args:
+        input_tags: list[str] or comma-separated str (or None/falsy).
+
+    Returns:
+        dict: {
+            "tags": list[str],           # normalized, stripped, trimmed
+            "warnings": list[str],       # non-fatal notes (banned stripped, trimmed)
+            "error": str | None,         # set ONLY when all tags are banned
+        }
+    """
+    rules = load_tag_rules()
+    warnings = []
+
+    # Accept list, comma-separated string, or None/empty
+    if isinstance(input_tags, str):
+        tags = [t.strip() for t in input_tags.split(",") if t.strip()]
+    elif isinstance(input_tags, list):
+        tags = [str(t).strip() for t in input_tags if str(t).strip()]
+    else:
+        tags = []
+
+    # Lowercase + dedupe + synonym normalization
+    synonyms = rules.get("synonyms", {}) or {}
     seen = set()
-    for tag in tags:
-        canonical = TAG_SYNONYMS.get(tag.lower().strip(), tag.lower().strip())
-        if canonical not in seen:
-            normalized.append(canonical)
-            seen.add(canonical)
-    return normalized
+    normalized = []
+    for t in tags:
+        tl = t.lower()
+        tl = synonyms.get(tl, tl)
+        if tl not in seen:
+            seen.add(tl)
+            normalized.append(tl)
+    tags = normalized
+
+    # Strip banned tags
+    banned_set = set(rules.get("banned", []) or [])
+    stripped = [t for t in tags if t in banned_set]
+    tags = [t for t in tags if t not in banned_set]
+    if stripped:
+        warnings.append("Stripped banned tags: " + ", ".join(stripped))
+
+    # Reject if nothing useful remains (cross-runtime parity with Node error msg)
+    if not tags:
+        vocab_flat = []
+        for domain_tags in (rules.get("vocabulary", {}) or {}).values():
+            if isinstance(domain_tags, list):
+                vocab_flat.extend(domain_tags[:2])
+        suggest = (
+            ", ".join(vocab_flat[:4])
+            if vocab_flat
+            else "postgresql, connection-pool"
+        )
+        reason = ", ".join(stripped) if stripped else "empty"
+        return {
+            "tags": [],
+            "warnings": warnings,
+            "error": (
+                f"Rejected: all tags are generic ({reason}). "
+                f"Add specific tags like '{suggest}'. "
+                "See learning-format.md."
+            ),
+        }
+
+    # Auto-trim to 5 most specific by tier ranking (domain > technique > scope > meta)
+    if len(tags) > 5:
+        before = len(tags)
+        tags = sorted(tags, key=lambda t: _tag_tier(t, rules))[:5]
+        warnings.append(f"Trimmed {before}->5 tags, kept: [{', '.join(tags)}]")
+
+    return {"tags": tags, "warnings": warnings, "error": None}
+
+
+def normalize_tags_list(input_tags):
+    """Backward-compat shim — returns just the normalized tag list.
+
+    Silently drops banned tags and trim warnings. Used by internal paths that
+    don't want to surface validation errors (e.g. cross-project search filters).
+    """
+    result = normalize_tags(input_tags)
+    return result.get("tags", [])
 
 
 # MEM-04: Query embedding cache -- avoids redundant Voyage API calls for repeated searches
