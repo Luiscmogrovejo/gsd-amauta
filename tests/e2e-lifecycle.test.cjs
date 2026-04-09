@@ -34,7 +34,7 @@ function run(cliPath, args) {
         AMAUTA_DATA_DIR: path.join(__dirname, '..', 'data'),
         GSD_MEMORY_DISTILL_THRESHOLD: '999999',  // Disable auto-distill in tests
       },
-      timeout: 15000,
+      timeout: 30000,   // was 15000 — claim can take 15-20s on busy daemon
     });
     return { success: true, output: result.trim() };
   } catch (err) {
