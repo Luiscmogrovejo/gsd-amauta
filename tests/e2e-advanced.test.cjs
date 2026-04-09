@@ -402,7 +402,8 @@ describe('Validation Gates — Advanced E2E', () => {
         claimed_at: new Date().toISOString(),
         tags: overrides.tags || ['lane:code'],
         rpetd_phases: overrides.phases || {
-          R: 'R: researched', P: 'P: planned',
+          R: 'R: Researched existing implementation patterns and reviewed architecture docs for edge cases and constraints.',
+          P: 'P: Planned implementation with Given/When/Then criteria. Risk assessed, dependencies mapped, rollback defined.',
           E: 'E: git checkout -b feat/TK-0001. Code done.',
           T: 'T: npm test\n10 tests passed\nexit 0',
           D: 'D: https://github.com/org/repo/pull/1 merged to main. LEARNING: Always handle edge cases because unhandled exceptions in production cause cascading failures that impact downstream services and degrade user experience significantly.'
@@ -444,7 +445,8 @@ describe('Validation Gates — Advanced E2E', () => {
     const tk = createReadyTask(d, {
       status: 'validation',
       phases: {
-        R: 'R: done', P: 'P: done',
+        R: 'R: Researched existing implementation patterns and reviewed architecture docs for edge cases and constraints.',
+        P: 'P: Planned implementation with Given/When/Then criteria. Risk assessed, dependencies mapped, rollback defined.',
         E: 'E: feat/TK-0001. https://github.com/org/repo/pull/1 merged.',
         T: 'T: 5 tests passed exit 0',
         D: 'D: done'  // No LEARNING!
@@ -461,7 +463,9 @@ describe('Validation Gates — Advanced E2E', () => {
       agent: 'gsd-researcher',
       tags: ['lane:non-code', 'non-code', 'no-gitflow'],
       phases: {
-        R: 'R: done', P: 'P: done', E: 'E: research complete',
+        R: 'R: Researched topic across three academic papers and two industry reports for comprehensive coverage.',
+        P: 'P: Planned research approach with structured comparison matrix and validation against known benchmarks.',
+        E: 'E: research complete',
         T: 'T: verified findings against three sources and documentation thoroughly',
         D: 'D: LEARNING: Research methodology improved by cross-referencing multiple documentation sources because single-source research misses conflicting information and produces incomplete recommendations that fail in practice.'
       }
@@ -483,7 +487,8 @@ describe('Validation Gates — Advanced E2E', () => {
     const tk = createReadyTask(d, {
       status: 'in-progress',
       phases: {
-        R: 'R: done', P: 'P: done',
+        R: 'R: Researched existing implementation patterns and reviewed architecture docs for edge cases and constraints.',
+        P: 'P: Planned implementation with Given/When/Then criteria. Risk assessed, dependencies mapped, rollback defined.',
         E: 'E: coded stuff',  // No branch reference!
         T: 'T: tests passed exit 0',
         D: 'D: done. LEARNING: test.'
@@ -500,8 +505,10 @@ describe('Validation Gates — Advanced E2E', () => {
       status: 'validation',
       tags: ['lane:infra', 'no-gitflow'],
       phases: {
-        R: 'R: done', P: 'P: done', E: 'E: configured Docker compose and networking',
-        T: 'T: docker compose up exit 0, all services healthy',
+        R: 'R: Reviewed Docker networking docs and checked existing compose configs for subnet and DNS patterns.',
+        P: 'P: Planned compose update with explicit subnet configuration. Rollback: revert to previous compose file.',
+        E: 'E: configured Docker compose and networking',
+        T: 'T: docker compose up exit 0. All services healthy. DNS resolution verified between all containers.',
         D: 'D: LEARNING: Docker networking requires explicit subnet configuration for service discovery because default bridge networks do not support DNS resolution between containers in multi-service deployments.'
       }
     });
