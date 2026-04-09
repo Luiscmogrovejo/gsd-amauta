@@ -226,6 +226,89 @@ function normalizeTagsList(input) {
 }
 
 // ═══════════════════════════════════════════════════════
+// Phase 10 LEARN-02: Structured LEARNING block parsing
+// ═══════════════════════════════════════════════════════
+
+const CATEGORY_SET = new Set([
+  'workflow', 'process', 'delivery', 'pattern', 'policy',
+  'architecture', 'convention', 'pitfall', 'tool-usage',
+]);
+const MAX_WHAT = 120;
+const MAX_WHY  = 200;
+const MAX_WHEN = 80;
+
+/**
+ * Parse a single LEARNING block into {what, why, when, category, tags, raw}.
+ * Returns null on unrecoverable failure (caller falls back to free-text).
+ */
+function parseLearningBlock(block) {
+  if (!block || typeof block !== 'string') return null;
+  const raw = block.trim();
+  // Grab the "LEARNING: ..." first line as the default WHAT
+  const firstLineMatch = raw.match(/^LEARNING:\s*(.+?)(?:\n|$)/);
+  const headerWhat = firstLineMatch ? firstLineMatch[1].trim() : null;
+
+  // Pull indented field lines (case-insensitive field names, multiline)
+  function pick(name) {
+    const re = new RegExp(`^\\s*${name}:\\s*(.+?)\\s*$`, 'mi');
+    const m = raw.match(re);
+    return m ? m[1].trim() : null;
+  }
+
+  const what     = pick('WHAT') || headerWhat;
+  const why      = pick('WHY');
+  const whenStr  = pick('WHEN');
+  const category = (pick('CATEGORY') || '').toLowerCase();
+  const tagsStr  = pick('TAGS');
+
+  if (!what) return null;
+
+  return {
+    what,
+    why: why || null,
+    when: whenStr || null,
+    category: CATEGORY_SET.has(category) ? category : 'pattern',
+    category_defaulted: !CATEGORY_SET.has(category),
+    tags: tagsStr ? tagsStr.split(',').map(s => s.trim()).filter(Boolean) : [],
+    raw,
+  };
+}
+
+/**
+ * Split a D-phase content string into individual LEARNING blocks.
+ * Uses \nLEARNING: (newline-prefixed) to avoid mid-sentence splits per RISK-5.
+ * Returns an array of block strings each starting with "LEARNING:".
+ */
+function splitLearningBlocks(text) {
+  if (!text) return [];
+  const prefixed = text.startsWith('LEARNING:') ? '\n' + text : text;
+  const parts = prefixed.split(/\nLEARNING:/);
+  const out = [];
+  for (let i = 1; i < parts.length; i++) {
+    out.push('LEARNING:' + parts[i]);
+  }
+  return out;
+}
+
+/**
+ * Enforce length caps. Returns {error} or null on success.
+ * Cap violations are recoverable — callers may either reject outright
+ * or truncate and keep going (see cmdParseLearning for the latter).
+ */
+function validateLengthCaps(parsed) {
+  if (parsed.what && parsed.what.length > MAX_WHAT) {
+    return { error: `Rejected: WHAT is ${parsed.what.length} chars (max ${MAX_WHAT}). Trim to the executable instruction only.` };
+  }
+  if (parsed.why && parsed.why.length > MAX_WHY) {
+    return { error: `Rejected: WHY is ${parsed.why.length} chars (max ${MAX_WHY}). Keep to one sentence of context.` };
+  }
+  if (parsed.when && parsed.when.length > MAX_WHEN) {
+    return { error: `Rejected: WHEN is ${parsed.when.length} chars (max ${MAX_WHEN}). Keep to the conditional trigger only.` };
+  }
+  return null;
+}
+
+// ═══════════════════════════════════════════════════════
 // HTTP Client (matches gsd-rlm.cjs / gsd-amauta.cjs pattern)
 // ═══════════════════════════════════════════════════════
 
@@ -591,6 +674,73 @@ async function cmdStore(args) {
 
   // TK-0054: Check if auto-distill is needed
   await maybeAutoDistill();
+}
+
+// ═══════════════════════════════════════════════════════
+// Phase 10 LEARN-02: parse-learning subcommand
+// ═══════════════════════════════════════════════════════
+
+async function cmdParseLearning(args) {
+  // Kill switch — disable structured parsing entirely
+  if (process.env.GSD_D_STRUCTURED === 'false') {
+    console.warn('Structured learning disabled (GSD_D_STRUCTURED=false), storing as free-text');
+    const raw = (args._positional || []).join(' ') || '';
+    console.log(JSON.stringify({
+      disabled: true,
+      raw,
+      blocks: [{ what: raw.slice(0, MAX_WHAT), tags: [], raw }],
+    }));
+    return 0;
+  }
+
+  const raw = (args._positional || []).join(' ');
+  if (!raw) {
+    console.error('Usage: gsd-memory parse-learning "<text block containing LEARNING: ...>"');
+    return 1;
+  }
+
+  const blocks = splitLearningBlocks(raw);
+  if (blocks.length === 0) {
+    // Free-text fallback — no LEARNING: marker found
+    console.log(JSON.stringify({
+      parsed: false,
+      reason: 'no LEARNING: marker',
+      blocks: [{ what: raw.slice(0, MAX_WHAT), tags: [], raw }],
+    }));
+    return 0;
+  }
+
+  const out = { parsed: true, blocks: [], warnings: [] };
+  for (const b of blocks) {
+    const p = parseLearningBlock(b);
+    if (!p) {
+      out.warnings.push(`Parse failure for block: ${b.slice(0, 40)}... — falling back to free-text`);
+      out.blocks.push({ what: b.slice(0, MAX_WHAT), tags: [], raw: b, parse_failed: true });
+      continue;
+    }
+    const capErr = validateLengthCaps(p);
+    if (capErr) {
+      out.warnings.push(capErr.error);
+      // Truncate and keep, don't drop the learning
+      if (p.what) p.what = p.what.slice(0, MAX_WHAT);
+      if (p.why)  p.why  = p.why.slice(0, MAX_WHY);
+      if (p.when) p.when = p.when.slice(0, MAX_WHEN);
+      p.truncated = true;
+    }
+    const norm = normalizeTags(p.tags);
+    if (norm.error) {
+      out.warnings.push(norm.error);
+      p.tags = [];
+      p.tag_error = norm.error;
+    } else {
+      p.tags = norm.tags;
+      if (norm.warnings.length) out.warnings.push(...norm.warnings);
+    }
+    out.blocks.push(p);
+  }
+
+  console.log(JSON.stringify(out));
+  return 0;
 }
 
 async function cmdLearn(args) {
@@ -1998,6 +2148,7 @@ async function main() {
     'search': cmdSearch,
     'store': cmdStore,
     'learn': cmdLearn,
+    'parse-learning': cmdParseLearning,
     'list': cmdList,
     'count': cmdCount,
     'distill': cmdDistill,
@@ -2043,6 +2194,14 @@ if (require.main !== module) {
     normalizeTags,
     normalizeTagsList,
     tagTier,
+    // Phase 10 LEARN-02: structured learning parser
+    parseLearningBlock,
+    splitLearningBlocks,
+    validateLengthCaps,
+    CATEGORY_SET,
+    MAX_WHAT,
+    MAX_WHY,
+    MAX_WHEN,
   };
 } else {
   main();
