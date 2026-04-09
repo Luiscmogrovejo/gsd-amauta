@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: milestone
 status: in-progress
-stopped_at: Phase 10 Plan 10-02 complete — migration 008 applied_count column shipped + applied to dev DB (LEARN-05)
-last_updated: "2026-04-09T21:40:00.000Z"
-last_activity: "2026-04-09 -- Plan 10-02: migrations/008-applied-count.sql + DOWN (6307d93 + 72ff620), applied to dev DB + idempotency verified"
+stopped_at: Phase 10 Plan 10-03 + 10-04 complete — Node.js CLI (parse-learning, learn --structured, normalizeTags) + Python daemon (pg_store + API) parity (LEARN-02, LEARN-03, LEARN-04, LEARN-05)
+last_updated: "2026-04-09T22:30:00.000Z"
+last_activity: "2026-04-09 -- Plan 10-03: gsd-memory.cjs loadTagRules + parseLearningBlock + cmdLearn --structured hybrid CLI + cmdDistill guard (b5e06de + 1eac6ab + 31088df). Plan 10-04: pg_store.py + amauta-daemon.py parity (ec22631 + ab713bc + 05ebb2f + 90e4aa5)"
 progress:
   total_phases: 7
   completed_phases: 1
   total_plans: 18
-  completed_plans: 11
-  percent: 16
+  completed_plans: 13
+  percent: 18
 ---
 
 # GSD-Amauta -- Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-09)
 
 ## Current Position
 
-Phase: 10 — D-Phase Structured Learning + CLI Dedup (in progress, Wave 1)
-Plan: 10-02 DONE (migration 008 applied_count column + DOWN file; commits 6307d93 + 72ff620; applied to dev DB 127.0.0.1:5432/gsd_amauta; idempotency verified via re-run NOTICE). 10-01 DONE (tag-rules.json + learning-format.md + cli-variables.md; 6f10983 + b6faa13 + d03dd89).
-Status: Phase 9 complete. Phase 10 Wave 1 complete (10-01 + 10-02 shipped). Next: Wave 2 — 10-03 (gsd-memory.cjs parse-learning + learn --structured) and 10-04 (pg_store.py + daemon API increment-applied endpoint, depends on 10-02 schema).
-Last activity: 2026-04-09 -- Plan 10-02: migrations/008-applied-count.sql + DOWN (6307d93 + 72ff620), applied to dev DB + idempotency verified
+Phase: 10 — D-Phase Structured Learning + CLI Dedup (in progress, Wave 2 COMPLETE)
+Plan: 10-03 DONE (gsd-memory.cjs — loadTagRules + normalizeTags refactor (b5e06de), parseLearningBlock + parse-learning subcommand (1eac6ab), cmdLearn --structured hybrid CLI + BOOLEAN_FLAGS tokenizer + cmdDistill guard (31088df); runtime-tested: length cap rejection, banned-tag rejection, kill switch fall-through all verified). 10-04 DONE (pg_store.py + amauta-daemon.py — load_tag_rules + normalize_tags refactor (ec22631), memory_store defense-in-depth + kill switch + search tags/category filters (ab713bc), memory_increment_applied + memory_skb_candidates with FOR UPDATE row lock (05ebb2f), POST /api/memory/:id/increment-applied + GET /api/memory/skb-candidates + /api/memory/search tags/category wire-through (90e4aa5)). 10-02 DONE (migration 008 applied_count column + DOWN file; 6307d93 + 72ff620). 10-01 DONE (tag-rules.json + learning-format.md + cli-variables.md; 6f10983 + b6faa13 + d03dd89).
+Status: Phase 9 complete. Phase 10 Wave 1 complete (10-01 + 10-02). Phase 10 Wave 2 COMPLETE (10-03 Node.js CLI + 10-04 Python daemon parity — both layers now read tag-rules.json and enforce the same structured metadata contract). Next: Wave 3 — 10-05 (SKB commands), 10-06 (operator + citation scanner), 10-07 (cli-variables dedup across agents + workflows), 10-08 (LEARNING template across agents).
+Last activity: 2026-04-09 -- Plan 10-03: gsd-memory.cjs learn --structured hybrid CLI shipped (31088df); Node.js + Python layers both read tag-rules.json with parity
 
-Progress: [##........] 16%
+Progress: [##........] 18%
 
 ## v2.6 Phase Map
 
@@ -87,11 +87,18 @@ v2.5 codebase docs in .planning/codebase/ (2,337 lines). v2.6 research in .plann
 - **No new runtimes, no new schema**: v2.6 is 90% prompt engineering, 10% CLI flags (~425 LOC); zero `ALTER TABLE`, zero new runtime deps, pytest-bdd/fast-check/Hypothesis are opt-in per-project dev deps. **One exception (locked):** migration 008 adds `applied_count INTEGER NOT NULL DEFAULT 0` to `gsd_memory` (LEARN-05 echo-chamber defense). No other ALTER TABLE permitted in v2.6.
 - **Phase 12 unblocks Phase 14**: `_inherit_parent_spec` helper (Phase 12) is used by planner when emitting child tasks (Phase 14).
 - **Migration 008 idempotency pattern** (Plan 10-02): BEGIN/COMMIT wrapper + `ADD COLUMN IF NOT EXISTS` + `CREATE INDEX IF NOT EXISTS` + COMMENT ON COLUMN. Partial index (`WHERE applied_count > 0`) minimizes maintenance cost because new learnings start at 0 — only cited entries get indexed. Re-run produces NOTICE skip messages but no error, safe for `init-db.sh` loops.
+- **FOR UPDATE row lock on metadata jsonb read-modify-write** (Plan 10-04): When concurrent mutations to a jsonb field need dedup that can't be expressed as a UNIQUE constraint (e.g., dedup key lives inside a nested array), SELECT ... FOR UPDATE inside a transaction is the least-invasive serialization mechanism. Advisory locks require namespacing; separate tables require a migration + join. FOR UPDATE scopes the lock to the exact row for the exact transaction duration.
+- **Idempotent HTTP mutations return 200, not 409** (Plan 10-04): Repeat citation endpoints (`/api/memory/:id/increment-applied`) return 200 + `{action: False, already_done: True}` on dedup hit. 409 would force callers to treat conflict-as-success, which is fragile. 200-with-flag lets callers treat idempotence as the expected case — the operator's APPLIED_LEARNING scanner runs on every D-phase and will re-hit the same keys legitimately.
+- **Defense-in-depth tag validation at the daemon** (Plan 10-04): The Python daemon's `pg_store.memory_store()` runs `normalize_tags()` even though the Node.js CLI already does so, because the operator's post-D-phase `parse-learning` path bypasses the CLI. Cross-runtime parity — Python reads the same `tag-rules.json` that Node.js does and produces identical normalization output.
+- **BOOLEAN_FLAGS set in gsd-memory.cjs parseArgs** (Plan 10-03): The argv tokenizer previously used a heuristic (`!argv[i + 1].startsWith('--')`) to decide whether a flag consumed the next token. That breaks `learn --structured "LEARNING: ..."` because the block text would be bound to `args.structured` and `_positional` would be empty. Fix is to declare boolean flags in a module-level Set and check it first in parseArgs. Future boolean flags (dry-run, use-llm, include-noise already included preemptively) go in the same set.
+- **Structured CLI as a flag, not a subcommand** (Plan 10-03): `learn --structured` is a hybrid command — named-flag branch OR text-block branch, selected by input presence. Adding a new `learn-structured` subcommand would split the intent across two dispatch entries and force agents to remember two commands for the same goal. The flag-based variant preserves backward compat and keeps the command hierarchy flat. Future Phase 10 commands (SKB entries in 10-05) should consider the same pattern.
+- **Kill switch fall-through semantics** (Plan 10-03): `GSD_D_STRUCTURED=false` with `learn --structured --what "x"` must still land the memory — the legacy free-text path rebuilds the text body from `--what`/`--why`/`--when` joined with ` — ` when no positional was supplied. Falling through to a usage error would surprise agents that set the env var for experimentation and lose learnings. Env var off = feature disabled, not command disabled.
 
 ### Pending Todos
 
 - Close Phase 9 after validator confirms npm test + pytest both pass with 0 failures
-- Execute remaining Phase 10 plans: 10-03 (gsd-memory.cjs core — parse-learning + learn --structured), 10-04 (pg_store.py + daemon API — increment-applied + skb-candidates endpoints, depends on 10-02 schema), 10-05 (gsd-memory.cjs SKB commands), 10-06 (operator + APPLIED_LEARNING citation scanner), 10-07 (cli-variables dedup across agents + workflows), 10-08 (LEARNING block template across agents), 10-09 (tests + README)
+- Execute remaining Phase 10 plans: 10-03 (gsd-memory.cjs core — parse-learning + learn --structured, Node.js parallel agent), 10-05 (gsd-memory.cjs SKB commands), 10-06 (operator + APPLIED_LEARNING citation scanner), 10-07 (cli-variables dedup across agents + workflows), 10-08 (LEARNING block template across agents), 10-09 (tests + README)
+- Restart amauta-daemon at PID 99724 to pick up new /api/memory/skb-candidates + /api/memory/:id/increment-applied routes (operator action, not executor task)
 
 ### Blockers/Concerns
 
@@ -101,9 +108,9 @@ None. Part A blockers resolved pre-roadmap:
 
 ## Session Continuity
 
-Last session: 2026-04-09T21:40:00.000Z
-Stopped at: Phase 10 Plan 10-02 complete — migration 008 applied_count column + DOWN shipped, applied to dev DB (LEARN-05)
-Resume file: .planning/milestones/v2.1-phases/10-d-phase-structured-learning/10-03-PLAN.md
+Last session: 2026-04-09T22:15:00.000Z
+Stopped at: Phase 10 Plan 10-04 complete — pg_store.py + amauta-daemon.py parity for LEARN-02/03/04/05 (defense-in-depth tag validation, GSD_D_STRUCTURED kill switch, memory_increment_applied with FOR UPDATE, memory_skb_candidates, POST /api/memory/:id/increment-applied, GET /api/memory/skb-candidates, /api/memory/search tags+category wire-through)
+Resume file: .planning/milestones/v2.1-phases/10-d-phase-structured-learning/10-05-PLAN.md
 
 ## Previous Milestone: v2.5 -- Smarter Brain (COMPLETE)
 
