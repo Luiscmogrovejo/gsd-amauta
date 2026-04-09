@@ -792,6 +792,169 @@ class PGStore:
         except Exception:
             return {"tags": {}, "unique_tags": 0}
 
+    def memory_increment_applied(self, mem_id, task_id, phase=None, reason=None):
+        """Phase 10 LEARN-05: Increment applied_count for a memory entry.
+
+        Deduped by (mem_id, task_id) — citations from the same task are
+        idempotent. Citation history is appended to metadata.citations as a
+        list of {task_id, phase, cited_at, reason} dicts. metadata.first_cited_at
+        and metadata.last_cited_at are also maintained.
+
+        SELECT ... FOR UPDATE acquires a row lock for the duration of the
+        transaction, guarding against lost-update races when multiple agents
+        cite the same mem_id concurrently from different task_ids. Without
+        the lock, two read-modify-write cycles on metadata.citations would
+        clobber each other (only one citation kept, applied_count off by one).
+
+        Args:
+            mem_id: Memory entry ID (UUID or bigint depending on schema).
+            task_id: Citing task ID (e.g. 'TK-0774'). Required for dedup.
+            phase: Optional RPETD phase label ('R', 'P', 'E', 'T', 'D').
+            reason: Optional free-text reason / quoted snippet.
+
+        Returns:
+            dict with:
+              {"incremented": bool, "already_cited": bool, "applied_count": int}
+            On memory-not-found:
+              {"incremented": False, "error": "memory not found", "applied_count": 0}
+        """
+        from datetime import datetime, timezone
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor() as cur:
+                    # Phase 10 LEARN-05 — row lock prevents lost updates under
+                    # concurrent citations from different tasks.
+                    cur.execute(
+                        "SELECT metadata, applied_count FROM gsd_memory "
+                        "WHERE id = %s FOR UPDATE",
+                        (mem_id,),
+                    )
+                    row = cur.fetchone()
+                    if not row:
+                        return {
+                            "incremented": False,
+                            "error": "memory not found",
+                            "applied_count": 0,
+                        }
+
+                    current_metadata, current_count = row
+                    current_metadata = dict(current_metadata or {})
+                    citations = list(current_metadata.get("citations") or [])
+
+                    # Dedup by (mem_id, task_id) — idempotent per-task
+                    already_cited = any(
+                        c.get("task_id") == task_id for c in citations
+                    )
+                    if already_cited:
+                        return {
+                            "incremented": False,
+                            "already_cited": True,
+                            "applied_count": current_count,
+                        }
+
+                    now_iso = datetime.now(timezone.utc).isoformat()
+                    new_citation = {
+                        "task_id": task_id,
+                        "phase": phase,
+                        "cited_at": now_iso,
+                        "reason": reason,
+                    }
+                    citations.append(new_citation)
+                    current_metadata["citations"] = citations
+                    current_metadata["last_cited_at"] = now_iso
+                    if "first_cited_at" not in current_metadata:
+                        current_metadata["first_cited_at"] = now_iso
+
+                    cur.execute(
+                        """UPDATE gsd_memory
+                           SET metadata = %s::jsonb,
+                               applied_count = applied_count + 1
+                           WHERE id = %s
+                           RETURNING applied_count""",
+                        (json.dumps(current_metadata), mem_id),
+                    )
+                    new_count = cur.fetchone()[0]
+                    return {
+                        "incremented": True,
+                        "already_cited": False,
+                        "applied_count": new_count,
+                    }
+        except ValueError:
+            raise
+        except Exception as e:
+            return {
+                "incremented": False,
+                "error": self._sanitize_error(e),
+                "applied_count": 0,
+            }
+
+    def memory_skb_candidates(self, rising_min=5, needs_review_min=10, limit=100):
+        """Phase 10 LEARN-05: Return SKB promotion candidates.
+
+        Two buckets based on applied_count:
+          - rising: rising_min <= applied_count < needs_review_min
+          - needs_review: applied_count >= needs_review_min (MUST be manually
+                          reviewed before promotion — high citation count may
+                          indicate echo-chamber reinforcement)
+
+        Excludes entries already promoted (metadata.promoted_to_skb = 'true').
+
+        Args:
+            rising_min: Lower bound of the rising bucket (default 5).
+            needs_review_min: Lower bound of the needs_review bucket (default 10).
+            limit: Max results.
+
+        Returns:
+            list of dicts with:
+              {id, what, text_preview, applied_count, category, tags,
+               needs_review (bool), rising (bool), first_cited_at, last_cited_at,
+               source, created_at}
+        """
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """SELECT id, text, tags, metadata, applied_count,
+                                  source, created_at
+                           FROM gsd_memory
+                           WHERE applied_count >= %s
+                             AND (metadata->>'promoted_to_skb' IS NULL
+                                  OR metadata->>'promoted_to_skb' != 'true')
+                           ORDER BY applied_count DESC, created_at DESC
+                           LIMIT %s""",
+                        (rising_min, limit),
+                    )
+                    rows = cur.fetchall()
+        except Exception:
+            return []
+
+        out = []
+        for row in rows:
+            mid, text, tags, metadata, applied_count, source, created_at = row
+            metadata = metadata or {}
+            what = metadata.get("what")
+            if what:
+                preview = what
+            elif text:
+                preview = (text[:80] + "...") if len(text) > 80 else text
+            else:
+                preview = ""
+            out.append({
+                "id": mid,
+                "what": what,
+                "text_preview": preview,
+                "applied_count": applied_count,
+                "category": metadata.get("category"),
+                "tags": tags or [],
+                "needs_review": applied_count >= needs_review_min,
+                "rising": rising_min <= applied_count < needs_review_min,
+                "first_cited_at": metadata.get("first_cited_at"),
+                "last_cited_at": metadata.get("last_cited_at"),
+                "source": source,
+                "created_at": created_at.isoformat() if created_at else None,
+            })
+        return out
+
     def memory_cross_project_search(self, query, tags=None, exclude_project=None,
                                     limit=20, category=None):
         """Search memories across ALL projects, optionally filtered by technology tags.
