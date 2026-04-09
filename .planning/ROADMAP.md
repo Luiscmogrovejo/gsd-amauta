@@ -136,7 +136,7 @@
 - [x] 10-05: gsd-memory.cjs SKB commands — `skb candidates`, `skb-promote --reviewed`, `skb-remove`, `increment-applied`, search `--tags`/`--category` + structured card display (LEARN-03, LEARN-05) — wave 2 — DONE 2026-04-09 (7f515ca + 41139b7 + 6ee63ee + 1fac128); also added do_PATCH + do_DELETE daemon HTTP verbs + GET/PATCH /api/memory/mem- + GET/DELETE /api/skb/skb- routes + pg_store memory_get_by_id/memory_patch_metadata/skb_get_by_id/skb_delete
 - [x] 10-06: gsd-operator.md + gsd-validator.md — structured LEARNING detection + APPLIED_LEARNING citation scanner + Gate 2 dual-format acceptance (LEARN-02, LEARN-05, LEARN-06) — wave 3 — DONE 2026-04-09 (2264177 gsd-memory-learn-blocks.sh helper + dca5ada operator D-phase structured storage + 0d9d997 operator APPLIED_LEARNING scanner + 8ec1284 validator Gate 2 dual-format)
 - [x] 10-07: CLI variables dedup — cli-variables.md Read across 11 agents + 6 workflows (LEARN-07) — wave 3 — **SEPARATE COMMIT 1 of 2** — DONE 2026-04-09 (923510e refs(LEARN-07) dedup across 11 agents + 6 workflows)
-- [ ] 10-08: LEARNING block template across 11 agents with per-agent examples (LEARN-06) — wave 3 — **SEPARATE COMMIT 2 of 2**
+- [x] 10-08: LEARNING block template across 11 agents with per-agent examples (LEARN-06) — wave 3 — **SEPARATE COMMIT 2 of 2** — DONE 2026-04-09 (01d05f8 refs(LEARN-06) structured LEARNING block template across 11 agents)
 - [ ] 10-09: Tests (unit + integration + regression) + README documentation (LEARN-01..LEARN-07) — wave 4
 
 ---

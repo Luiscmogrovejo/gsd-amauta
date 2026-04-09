@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: milestone
 status: in-progress
-stopped_at: Phase 10 Plan 10-07 complete — cli-variables.md runtime Read dedup across 11 agent files + 6 workflow files (LEARN-07). Single atomic commit 923510e per CONTEXT.md two-commit constraint (commit 1 of 2 with Plan 10-08).
-last_updated: "2026-04-09T23:30:00.000Z"
-last_activity: "2026-04-09 -- Plan 10-07: cli-variables.md runtime Read dedup across 11 agents + 6 workflows (923510e single atomic refs(LEARN-07) commit)"
+stopped_at: Phase 10 Plan 10-08 complete — LEARNING block template across 11 agents (LEARN-06). Single atomic commit 01d05f8 per CONTEXT.md two-commit constraint (commit 2 of 2 with Plan 10-07).
+last_updated: "2026-04-09T23:50:00.000Z"
+last_activity: "2026-04-09 -- Plan 10-08: structured LEARNING block template across 11 agents (01d05f8 single atomic refs(LEARN-06) commit)"
 progress:
   total_phases: 7
   completed_phases: 1
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-09)
 
 ## Current Position
 
-Phase: 10 — D-Phase Structured Learning + CLI Dedup (in progress, Wave 3 in progress)
-Plan: 10-07 DONE (cli-variables.md runtime Read dedup across 11 agent files + 6 workflow files — All 11 agents (gsd-checker, gsd-debugger, gsd-executor-{backend,frontend,general,infra}, gsd-operator, gsd-planner, gsd-researcher, gsd-roadmapper, gsd-validator) gained a `## Tool Paths (Phase 10 LEARN-07 — runtime Read dedup)` section pointing at `/Users/luismogrovejo/.claude/get-shit-done/references/cli-variables.md` with commented 7-var fallback block (CLI/RLM/MEM/RESEARCH/TOOLS/LEARNING_FORMAT/TAG_RULES). All 6 workflow files (execute-phase, execute-plan, new-project, resume-project, test-phase, help) gained the same top-of-file reference block. Single atomic commit 923510e per CONTEXT.md two-commit constraint with Plan 10-08. Budgets respected: gsd-operator 370/370, gsd-roadmapper 685/685 (grandfathered), all 9 other agents <=200. 10-06 sections preserved verbatim (operator <d_phase_structured_learning>, <applied_learning_citation_scan>, validator Gate 2 dual-format). Verification: 11 agents + 6 workflows reference cli-variables.md, 0 orphan inline `^CLI="node` declarations, all files have Phase 10 LEARN-07 marker + TOOLS fallback line.) 10-06 DONE (gsd-operator.md structured LEARNING detection + gsd-memory-learn-blocks.sh helper + APPLIED_LEARNING citation scanner + gsd-validator.md Gate 2 dual-format) 10-05 DONE (gsd-memory.cjs SKB workflow + search filters — cmdIncrementApplied (7f515ca), cmdSkbCandidates + cmdSkb nested dispatcher (41139b7), cmdSkbPromote + cmdSkbRemove + new do_PATCH/do_DELETE HTTP verbs + GET /api/memory/mem- + GET /api/skb/skb- + PATCH /api/memory/mem- + DELETE /api/skb/skb- routes + pg_store memory_get_by_id + memory_patch_metadata + skb_get_by_id + skb_delete (6ee63ee), cmdSearch --tags/--category + renderMemoryResult structured card (1fac128)). 10-04 DONE (pg_store.py + amauta-daemon.py — load_tag_rules + normalize_tags refactor (ec22631), memory_store defense-in-depth + kill switch + search tags/category filters (ab713bc), memory_increment_applied + memory_skb_candidates with FOR UPDATE row lock (05ebb2f), POST /api/memory/:id/increment-applied + GET /api/memory/skb-candidates + /api/memory/search tags/category wire-through (90e4aa5)). 10-03 DONE (gsd-memory.cjs — loadTagRules + normalizeTags refactor (b5e06de), parseLearningBlock + parse-learning subcommand (1eac6ab), cmdLearn --structured hybrid CLI + BOOLEAN_FLAGS tokenizer + cmdDistill guard (31088df)). 10-02 DONE (migration 008 applied_count column + DOWN file; 6307d93 + 72ff620). 10-01 DONE (tag-rules.json + learning-format.md + cli-variables.md; 6f10983 + b6faa13 + d03dd89).
-Status: Phase 9 complete. Phase 10 Wave 1 complete (10-01 + 10-02). Phase 10 Wave 2 COMPLETE (10-03 + 10-04 + 10-05). Phase 10 Wave 3 IN PROGRESS: 10-06 DONE, 10-07 DONE (LEARN-07 complete — commit 1 of 2). Next: 10-08 (LEARNING block template across agents — commit 2 of 2), 10-09 (tests + README).
-Last activity: 2026-04-09 -- Plan 10-07: cli-variables.md runtime Read dedup across 11 agents + 6 workflows (923510e single atomic refs(LEARN-07) commit)
+Phase: 10 — D-Phase Structured Learning + CLI Dedup (in progress, Wave 4 next)
+Plan: 10-08 DONE (structured LEARNING block template across 11 agents — All 11 agents gained `D-phase: Structured LEARNING Output (Phase 10 LEARN-06)` section with 6-field WHAT/WHY/WHEN/CATEGORY/TAGS template + domain-specific example per agent + rules + learning-format.md reference + kill switch + agents-are-producers/operator-is-storer annotation. Single atomic commit 01d05f8 per CONTEXT.md two-commit constraint (commit 2 of 2 with Plan 10-07). Budgets: operator 396/400, roadmapper 679/685 (anti_patterns compressed), planner 200/200 (constraints compressed), all other 8 agents <=200. 10-06 + 10-07 sections preserved verbatim.) 10-07 DONE (cli-variables.md runtime Read dedup across 11 agents + 6 workflows, 923510e, commit 1 of 2). 10-06 DONE (operator D-phase handler + validator Gate 2 dual-format). 10-05 DONE (gsd-memory.cjs SKB workflow + search filters). 10-04 DONE (pg_store.py defense-in-depth + daemon routes). 10-03 DONE (gsd-memory.cjs structured learn + parse-learning). 10-02 DONE (migration 008 applied_count). 10-01 DONE (tag-rules.json + learning-format.md + cli-variables.md).
+Status: Phase 9 complete. Phase 10 Waves 1-3 COMPLETE (10-01 through 10-08). Next: 10-09 (tests + README).
+Last activity: 2026-04-09 -- Plan 10-08: structured LEARNING block template across 11 agents (01d05f8 single atomic refs(LEARN-06) commit)
 
 Progress: [##........] 23%
 
@@ -107,7 +107,7 @@ v2.5 codebase docs in .planning/codebase/ (2,337 lines). v2.6 research in .plann
 ### Pending Todos
 
 - Close Phase 9 after validator confirms npm test + pytest both pass with 0 failures
-- Execute remaining Phase 10 plans: 10-08 (LEARNING block template across agents — commit 2 of 2 per CONTEXT.md two-commit constraint), 10-09 (tests + README)
+- Execute remaining Phase 10 plans: 10-09 (tests + README)
 - Restart amauta-daemon to pick up new /api/memory/skb-candidates + /api/memory/:id/increment-applied + GET/PATCH /api/memory/mem- + GET/DELETE /api/skb/skb- routes + do_PATCH + do_DELETE verb handlers (operator action, not executor task)
 - Sync repo copy of `get-shit-done/bin/` binaries into user-install `~/.claude/get-shit-done/bin/` so `parse-learning` and `increment-applied` subcommands are reachable from agents using the default MEM path (Plan 10-06 helper defaults to user-install; repo callers must pass `MEM="node <repo-path>"` explicitly)
 
@@ -119,9 +119,9 @@ None. Part A blockers resolved pre-roadmap:
 
 ## Session Continuity
 
-Last session: 2026-04-09T23:30:00.000Z
-Stopped at: Phase 10 Plan 10-07 complete — cli-variables.md runtime Read dedup across 11 agents + 6 workflows (923510e). LEARN-07 complete. Commit 1 of 2 per CONTEXT.md two-commit constraint. 10-08 LEARNING block template (commit 2) is next.
-Resume file: .planning/milestones/v2.1-phases/10-d-phase-structured-learning/10-08-PLAN.md
+Last session: 2026-04-09T23:50:00.000Z
+Stopped at: Phase 10 Plan 10-08 complete — structured LEARNING block template across 11 agents (01d05f8). LEARN-06 complete. Commit 2 of 2 per CONTEXT.md two-commit constraint. Both LEARN-07 and LEARN-06 committed separately. 10-09 (tests + README) is next.
+Resume file: .planning/milestones/v2.1-phases/10-d-phase-structured-learning/10-09-PLAN.md
 
 ## Previous Milestone: v2.5 -- Smarter Brain (COMPLETE)
 
