@@ -309,6 +309,83 @@ Older memories are scored lower: -0.5 per 30 days since last update, capped at -
 
 Archived entries move to `gsd_memory_archive` and no longer appear in search results.
 
+### Structured Learnings (Phase 10 -- v2.6)
+
+Phase 10 ships the WHAT/WHY/WHEN/TAGS structured learning format as a human-review and SKB-promotion layer. It is NOT a retrieval optimizer -- free-text + embeddings still win recall. The format exists so reviewers can decide in under 10 seconds whether a learning deserves promotion.
+
+**Learning Format.** Every D-phase LEARNING block follows:
+
+```
+LEARNING: <action-oriented instruction, <=120 chars>
+  WHAT: <same as LEARNING: line, <=120 chars>
+  WHY: <reason it matters, <=200 chars>
+  WHEN: <conditional trigger, <=80 chars>
+  CATEGORY: <workflow|process|delivery|pattern|policy|architecture|convention|pitfall|tool-usage>
+  TAGS: <up to 5 comma-separated tags from the curated vocabulary>
+```
+
+Full template + examples: `get-shit-done/references/learning-format.md`.
+
+**Categories.** 9 fixed categories: `workflow`, `process`, `delivery`, `pattern` (default), `policy`, `architecture`, `convention`, `pitfall`, `tool-usage`.
+
+**Tag Governance.** Tag rules live in `get-shit-done/config/tag-rules.json`. Read by BOTH `gsd-memory.cjs` (Node) and `pg_store.py` (Python) at runtime.
+
+- **Banned tags** (auto-stripped): `best-practice`, `general`, `lesson`, `insight`. A learning with only banned tags is rejected with a guidance message.
+- **Synonyms** are normalized: `db` -> `database`, `k8s` -> `kubernetes`, `pg` -> `postgresql`, `ts` -> `typescript`, `py` -> `python`, etc.
+- **Tag cap:** Maximum 5 tags per learning. Over-limit tags are auto-trimmed by tier ranking: `domain > technique > scope > meta`. Never rejected for count.
+- **Vocabulary** covers 12 seed domains: database, api, testing, infrastructure, security, frontend, backend, performance, authentication, caching, deployment, monitoring.
+
+**CLI Commands:**
+
+```bash
+# Store a structured learning (named flags)
+gsd-memory learn --structured \
+  --what "Use connection pooling with min=2, max=10 for PG in Node.js" \
+  --why "Prevents connection exhaustion under concurrent agent load" \
+  --when "Working with PG connection pools in Node.js services" \
+  --category pattern \
+  --tags "postgresql,connection-pool,nodejs,backend"
+
+# Store a structured learning (text block -- agent D-phase pattern)
+gsd-memory learn --structured "LEARNING: ...
+  WHAT: ...
+  ..."
+
+# Parse a structured block without storing (operator helper)
+gsd-memory parse-learning "LEARNING: ..."
+
+# Search with tag and category filters (GIN index, <50ms)
+gsd-memory search --tags postgresql,connection-pool --category pattern "pooling"
+
+# Increment applied_count when a learning is cited (dedup by (mem_id, task_id))
+gsd-memory increment-applied mem-abc123def456 --task TK-0001 --phase E --reason "applied in audit worker"
+
+# View SKB promotion candidates (rising tier 5-10, needs_review >10)
+gsd-memory skb candidates
+
+# Promote a reviewed candidate to SKB
+gsd-memory skb-promote mem-abc123def456 --reviewed --reason "cited 12 times, validated pattern"
+
+# Demote (revert promotion)
+gsd-memory skb-remove skb-xyz789
+```
+
+**APPLIED_LEARNING Citations.** When any agent applies a prior learning during RPETD, it cites it in any phase (R, P, E, T, or D):
+
+```
+APPLIED_LEARNING: mem-abc123def456 -- used connection pooling pattern in audit worker
+```
+
+The operator (`agents/gsd-operator.md`) scans ALL phases after task close and calls `increment-applied` for each citation. Dedup by `(mem_id, task_id)` ensures a learning cited in multiple phases of the same task increments the count ONCE.
+
+**Echo-Chamber Defense.** Learnings with `applied_count > 10` require manual review before SKB promotion. Candidates surface via `gsd-memory skb candidates` with a `needs_review: true` flag. Rising candidates (5-10 citations) appear in a separate tier. Promotion is explicit: `gsd-memory skb-promote mem-<id> --reviewed --reason "<why>"`.
+
+**Kill Switch.** Set `GSD_D_STRUCTURED=false` in the environment to disable structured learning entirely. The CLI and daemon fall back to free-text storage and log `Structured learning disabled (GSD_D_STRUCTURED=false), storing as free-text`. No silent degradation.
+
+**Shared CLI Variables (LEARN-07).** The previously duplicated `CLI=/RLM=/MEM=/RESEARCH=` variable declarations across 11 agents + 6 workflow files now live in a single reference file: `get-shit-done/references/cli-variables.md`. Agents Read this file at runtime (NOT `@` include -- that syntax doesn't work in agent .md files) and paste the shell block. Each agent file has a one-line fallback comment per variable for graceful degradation.
+
+**Backward Compatibility.** Legacy `gsd-memory learn "free text"` (without `--structured`) continues to work unchanged. Pre-Phase 10 learnings remain searchable -- search output falls back to the one-line format when `metadata.what` is absent. The validator's Gate 2 check accepts BOTH formats: `LEARNING:` one-liner OR the structured block.
+
 ---
 
 ## RLM Context Engine
