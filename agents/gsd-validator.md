@@ -80,7 +80,40 @@ Gate numbering here matches the SKILL.md gate numbering for consistency.
 E-phase must include a git branch name (feat/*, fix/*, etc.) or evidence of branch work.
 
 ### Gate 2: LEARNING Block (all tasks)
-At least one phase (preferably D) must contain a `LEARNING:` statement for future memory.
+
+At least one phase (preferably D) must contain a `LEARNING:` statement for future memory. **Gate 2 passes if EITHER format is present** (backward compatibility with pre-Phase 10 tasks):
+
+1. **Legacy one-liner format:**
+   ```
+   LEARNING: <instruction>
+   ```
+   Detected by: `grep -q "^LEARNING:" <d_phase_content>`
+
+2. **Structured block format (Phase 10):**
+   ```
+   LEARNING: <instruction>
+     WHAT: <instruction>
+     WHY: <reason>
+     WHEN: <trigger>
+     CATEGORY: <category>
+     TAGS: <tag1,tag2,tag3>
+   ```
+   Detected by: `grep -q "^LEARNING:" <d_phase_content> && grep -q "^  WHAT:" <d_phase_content>`
+
+**Validator bash check:**
+```bash
+if printf '%s' "$D_PHASE_CONTENT" | grep -q "^LEARNING:"; then
+  if printf '%s' "$D_PHASE_CONTENT" | grep -q "^  WHAT:"; then
+    echo "Gate 2: PASS (structured block)"
+  else
+    echo "Gate 2: PASS (legacy one-liner)"
+  fi
+else
+  echo "Gate 2: FAIL — no LEARNING: line in D-phase content"
+fi
+```
+
+**Failure guidance:** If Gate 2 fails, point the executor to `get-shit-done/references/learning-format.md` for the WHAT/WHY/WHEN/TAGS template.
 
 ### Gate 3: Test Evidence (code tasks only)
 T-phase must include actual command output (shell prompt `$`, exit codes, test results).
