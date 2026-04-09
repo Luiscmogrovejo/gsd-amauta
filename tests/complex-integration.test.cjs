@@ -79,7 +79,8 @@ function makeTask(d, overrides = {}) {
       claimed_at: overrides.claimed_at || new Date().toISOString(),
       tags: overrides.tags || ['lane:code'],
       rpetd_phases: overrides.phases || {
-        R: 'R: done', P: 'P: done',
+        R: 'R: Researched existing implementation patterns and reviewed architecture docs for edge cases and constraints.',
+        P: 'P: Planned implementation with Given/When/Then criteria. Risk assessed, dependencies mapped, rollback defined.',
         E: 'E: git checkout -b feat/TK-0001. feat/TK-0001 branch.',
         T: 'T: npm test\n10 tests passed\nexit 0',
         D: 'D: https://github.com/org/repo/pull/1 merged. LEARNING: Always run the full test suite before marking a task as done. Edge cases around validation gates, branch naming conventions, and PR URL extraction must be verified with real data, not just build passes.'
@@ -231,7 +232,7 @@ print(sig)
   test('1.12 validate pass flow writes to both memory and SKB', () => {
     const content = fs.readFileSync(PY, 'utf-8');
     const autoWriteFn = content.substring(content.indexOf('def _auto_write_learning'));
-    assert.ok(autoWriteFn.includes('_mem_pg_add') || autoWriteFn.includes('_mem_log_event') || autoWriteFn.includes('amauta_memory'), 
+    assert.ok(autoWriteFn.includes('_mem_pg_add') || autoWriteFn.includes('_mem_log_event') || autoWriteFn.includes('gsd_memory'),
       'Auto-write should write to PG memory');
     assert.ok(autoWriteFn.includes('_skb_promote'), 'Auto-write should promote to SKB');
   });
@@ -657,11 +658,11 @@ describe('Spec Compliance — 9 specs tested against code', () => {
     assert.ok(body.includes('args.phase') || body.includes('phase'), 'rpetd should use phase argument');
   });
 
-  test('6.4 SPEC-02 Memory: amauta_memory view is primary write target', () => {
+  test('6.4 SPEC-02 Memory: gsd_memory table is primary write target', () => {
     const content = fs.readFileSync(PY, 'utf-8');
-    assert.ok(content.includes('amauta_memory'), 'Should write to amauta_memory');
+    assert.ok(content.includes('gsd_memory'), 'Should write to gsd_memory table');
     const migration = fs.readFileSync(path.join(MIGRATIONS_DIR, '001-init.sql'), 'utf-8');
-    assert.ok(migration.includes('amauta_memory'), 'amauta_memory view should exist in migrations');
+    assert.ok(migration.includes('gsd_memory'), 'gsd_memory table should exist in migrations');
   });
 
   test('6.5 SPEC-02 Memory: pgvector embedding column exists', () => {
@@ -765,7 +766,13 @@ describe('Validation Pipeline — advanced E2E', () => {
   test('7.2 gate 1 BRANCH_EVIDENCE enforced on status→validation', () => withTmp(d => {
     makeTask(d, {
       status: 'in-progress',
-      phases: { R: 'R: done', P: 'P: done', E: 'E: coded without branch ref', T: 'T: tests pass exit 0', D: 'D: done' }
+      phases: {
+        R: 'R: Researched existing implementation patterns and reviewed architecture docs for edge cases and constraints.',
+        P: 'P: Planned implementation with Given/When/Then criteria. Risk assessed, dependencies mapped, rollback defined.',
+        E: 'E: coded without branch ref',
+        T: 'T: tests pass exit 0',
+        D: 'D: done'
+      }
     });
     const r = py(['status', 'TK-0001', 'validation'], d);
     const combined = r.out + r.err;
@@ -777,7 +784,8 @@ describe('Validation Pipeline — advanced E2E', () => {
     makeTask(d, {
       status: 'in-progress',
       phases: {
-        R: 'R: done', P: 'P: done',
+        R: 'R: Researched existing implementation patterns and reviewed architecture docs for edge cases and constraints.',
+        P: 'P: Planned implementation with Given/When/Then criteria. Risk assessed, dependencies mapped, rollback defined.',
         E: 'E: feat/TK-0001. Code done.',
         T: 'T: attempted to run tests but failed',  // No success signal
         D: 'D: done'
@@ -812,10 +820,10 @@ describe('Validation Pipeline — advanced E2E', () => {
       agent: 'gsd-researcher',
       tags: ['lane:non-code', 'no-gitflow'],
       phases: {
-        R: 'R: Researched 15 academic papers',
-        P: 'P: Created research plan',
-        E: 'E: Analyzed all papers and synthesized findings',
-        T: 'T: Verified findings against industry reports',
+        R: 'R: Researched 15 academic papers on transformer architectures and domain-specific fine-tuning approaches.',
+        P: 'P: Created structured research plan with comparison matrix across model architectures and training strategies.',
+        E: 'E: Analyzed all papers and synthesized findings into comparative report with benchmark data.',
+        T: 'T: Verified findings against three independent industry reports and two benchmark datasets for accuracy.',
         D: 'D: Research report complete. LEARNING: The field is moving toward transformer-based models for all NLP tasks. Fine-tuning on domain-specific corpora yields 15-20% accuracy improvements over zero-shot prompting across multiple benchmarks.'
       }
     });
@@ -828,10 +836,10 @@ describe('Validation Pipeline — advanced E2E', () => {
       status: 'validation',
       tags: ['lane:infra', 'no-gitflow', 'infra'],
       phases: {
-        R: 'R: Checked nginx config docs',
-        P: 'P: Plan: update nginx.conf and reload',
+        R: 'R: Checked nginx config docs and reviewed existing upstream block patterns for compatibility issues.',
+        P: 'P: Plan: update nginx.conf with new upstream block, validate with nginx -t, then graceful reload.',
         E: 'E: Updated /etc/nginx/nginx.conf. PR_URL: no-pr-needed (host-only change)',
-        T: 'T: nginx -t exit 0. Service reload successful.',
+        T: 'T: nginx -t exit 0. Service reload successful. Upstream DNS resolution verified for all backends.',
         D: 'D: LEARNING: Always test nginx config with nginx -t before reloading the service. A syntax error in the config file will cause a full outage if you reload without testing first. Also verify upstream blocks resolve correctly.'
       }
     });
