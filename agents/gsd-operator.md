@@ -339,3 +339,18 @@ fi
 ```
 </d_phase_structured_learning>
 
+<applied_learning_citation_scan>
+### Post-Task: APPLIED_LEARNING Citation Scan (Phase 10 LEARN-05)
+
+After all RPETD phases are logged, scan the full task content for `APPLIED_LEARNING: mem-XXXX — reason` citations. Each match increments `applied_count` (deduped daemon-side by (mem_id, task_id) — repeat calls return `already_cited: true` which is 200 OK, not an error). Daemon-unreachable silently no-ops; citations are a best-effort signal.
+
+```bash
+TASK_CONTENT="$($CLI show "$TASK_ID" --json 2>/dev/null)"
+printf '%s' "$TASK_CONTENT" | grep -oE 'APPLIED_LEARNING: mem-[a-f0-9]{12}[^"}]*' | while IFS= read -r line; do
+  MEM_ID=$(printf '%s' "$line" | grep -oE 'mem-[a-f0-9]{12}')
+  REASON=$(printf '%s' "$line" | sed -E 's/^APPLIED_LEARNING: mem-[a-f0-9]{12}[[:space:]]*[—-][[:space:]]*//')
+  [ -n "$MEM_ID" ] && $MEM increment-applied "$MEM_ID" --task "$TASK_ID" --reason "$REASON" 2>/dev/null || true
+done
+```
+</applied_learning_citation_scan>
+
