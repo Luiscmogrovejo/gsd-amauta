@@ -59,8 +59,8 @@
 | 2 | Fix mock StopIteration (fixture exhaustion) in `tests/test_enrichment_memory.py` (3 tests) | TECH-02 |
 | 3 | Fix `tests/test_gates.py::test_exactly_5_gates_returned` gate-count assertion drift | TECH-03 |
 | 4 | Fix `tests/test_pg_integration.py::TestRetentionMovesOldEntries` retention cleanup flake | TECH-04 | DONE (09-04) |
-| 5 | Fix 15s timeout flakes in `tests/e2e-lifecycle.test.cjs` claim/RPETD R-P-E-T phases (daemon-busy race) | TECH-05 |
-| 6 | Fix `tests/gsd-amauta.test.cjs::12. task status after validate` (status stuck at "pending") | TECH-06 |
+| 5 | Fix 15s timeout flakes in `tests/e2e-lifecycle.test.cjs` claim/RPETD R-P-E-T phases (daemon-busy race) | TECH-05 | DONE (09-05) |
+| 6 | Fix `tests/gsd-amauta.test.cjs::12. task status after validate` (status stuck at "pending") | TECH-06 | DONE (09-05) |
 
 **Success Criteria (what must be TRUE for users):**
 1. `pytest` runs to completion with 0 failures on a clean checkout.
@@ -82,8 +82,8 @@
 - [x] 09-02: TECH-02 — Sync E/T-phase enrichment tests to TOK-02 behavior (commit e64c6fe)
 - [x] 09-03: TECH-03 — Fix gate count assertion (5→7)
 - [x] 09-04: TECH-04 — Fix retention mock (PropertyMock [5,3]→[5,3,2])
-- [ ] 09-05: TECH-05 — Fix e2e-lifecycle 15s timeout flakes
-- [ ] 09-06: TECH-06 — Fix gsd-amauta.test.cjs validate/status chain
+- [x] 09-05: TECH-05 — Fix e2e-lifecycle 15s timeout flakes (b371477)
+- [x] 09-06: TECH-06 — Fix gsd-amauta.test.cjs validate/status chain (2f8ab46, bundled in 09-05)
 
 ---
 
