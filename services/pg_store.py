@@ -489,9 +489,47 @@ class PGStore:
                      metadata=None, project_id=None):
         """Store a memory entry.
 
+        Phase 10 LEARN-02/04: metadata dict may contain structured fields:
+            {
+              "what": "...",
+              "why": "...",
+              "when": "...",
+              "category": "pattern",
+              "structured": True,
+              "structured_version": "1.0"
+            }
+
+        Tag validation (LEARN-04) runs here as defense in depth — the operator's
+        parse-learning path bypasses the gsd-memory.cjs CLI so the daemon MUST
+        also strip banned tags and auto-trim to 5. If all provided tags are
+        banned, this raises ValueError and the insert is aborted.
+
+        Kill switch: if env var GSD_D_STRUCTURED=false, structured metadata is
+        flattened to plain {} before insert (operator stores the LEARNING body
+        as free-text in the `text` column).
+
         Returns the new memory ID.
         """
-        tags = normalize_tags(tags) if tags else []
+        import sys
+
+        # Phase 10 LEARN-02 kill switch — disables structured metadata path
+        if os.environ.get("GSD_D_STRUCTURED") == "false":
+            if metadata and metadata.get("structured"):
+                print(
+                    "[pg_store] Structured learning disabled "
+                    "(GSD_D_STRUCTURED=false), storing as free-text",
+                    file=sys.stderr,
+                )
+                metadata = None
+
+        # Phase 10 LEARN-04 defense-in-depth tag governance
+        tag_result = normalize_tags(tags or [])
+        if tag_result.get("error"):
+            raise ValueError(tag_result["error"])
+        tags = tag_result.get("tags", [])
+        for w in tag_result.get("warnings", []):
+            print(f"[pg_store] {w}", file=sys.stderr)
+
         with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
@@ -509,7 +547,8 @@ class PGStore:
                 return cur.fetchone()[0]
 
     def memory_search(self, query, project_id=None, source=None, limit=20,
-                      exclude_sources=DEFAULT_EXCLUDE_SOURCES):
+                      exclude_sources=DEFAULT_EXCLUDE_SOURCES,
+                      tags=None, category=None):
         """Search memories with source-aware scoring.
 
         Scoring: text relevance (ts_rank) + source bonus - recency decay.
@@ -519,6 +558,11 @@ class PGStore:
             exclude_sources: Tuple/list of source strings to exclude from results.
                              Defaults to DEFAULT_EXCLUDE_SOURCES (task_event, rpetd_phase).
                              Pass None to include all sources.
+            tags: Phase 10 LEARN-03 — optional list of tags to filter by. Uses
+                  the GIN-indexed `tags ?| %s::text[]` operator so the filter is
+                  <50ms even on large gsd_memory tables.
+            category: Phase 10 LEARN-03 — optional metadata->>'category' filter
+                      (e.g. 'pattern', 'workflow'). Stored in metadata jsonb.
         """
         with self._get_conn() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -543,6 +587,18 @@ class PGStore:
                     placeholders = ", ".join(["%s"] * len(exclude_sources))
                     conditions.append(f"source NOT IN ({placeholders})")
                     params.extend(exclude_sources)
+
+                # Phase 10 LEARN-03 — tags filter via GIN ?| jsonb operator
+                if tags:
+                    filter_tags = normalize_tags_list(tags)
+                    if filter_tags:
+                        conditions.append("tags ?| %s::text[]")
+                        params.append(filter_tags)
+
+                # Phase 10 LEARN-03 — category filter via metadata->>'category'
+                if category:
+                    conditions.append("metadata->>'category' = %s")
+                    params.append(str(category).lower())
 
                 where = " AND ".join(conditions) if conditions else "TRUE"
 
@@ -736,7 +792,8 @@ class PGStore:
         except Exception:
             return {"tags": {}, "unique_tags": 0}
 
-    def memory_cross_project_search(self, query, tags=None, exclude_project=None, limit=20):
+    def memory_cross_project_search(self, query, tags=None, exclude_project=None,
+                                    limit=20, category=None):
         """Search memories across ALL projects, optionally filtered by technology tags.
 
         Used during new-project initialization to find learnings from similar past projects.
@@ -746,11 +803,14 @@ class PGStore:
             tags: List of technology tags to filter by (e.g. ['react', 'postgresql']).
             exclude_project: Project ID to exclude from results (current project).
             limit: Max results.
+            category: Phase 10 LEARN-03 — filter by metadata->>'category' (e.g. 'pattern').
 
         Returns list of scored memory dicts.
         """
+        # Phase 10: use silent normalize_tags_list — filter tags should not raise
+        # on "all banned" (the caller may be searching with generic tags).
         if tags and len(tags) > 0:
-            tags = normalize_tags(tags)
+            tags = normalize_tags_list(tags)
         with self._get_conn() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 conditions = []
@@ -760,11 +820,16 @@ class PGStore:
                     conditions.append("(project_id IS NULL OR project_id != %s)")
                     params.append(exclude_project)
 
-                # Filter by technology tags using jsonb containment
+                # Filter by technology tags using jsonb containment (GIN-indexed)
                 if tags and len(tags) > 0:
                     # Match entries where tags array overlaps with requested tags
                     conditions.append("tags ?| %s")
                     params.append(tags)
+
+                # Phase 10 LEARN-03 — category filter on metadata->>'category'
+                if category:
+                    conditions.append("metadata->>'category' = %s")
+                    params.append(str(category).lower())
 
                 # Boost high-value sources: lesson-learned, best-practice, auto_learning
                 conditions.append(
@@ -1458,12 +1523,37 @@ class PGStore:
         DATA-04: Pre-store dedup — if cosine similarity >= threshold (default 0.95),
         the insert is skipped and a dict is returned instead:
         {"dedup_skipped": True, "existing_id": ..., "similarity": ...}
+
+        Phase 10 LEARN-02/04: honors GSD_D_STRUCTURED=false kill switch and runs
+        defense-in-depth tag validation (raises ValueError if all tags are banned).
         """
+        import sys
+
+        # Phase 10 LEARN-02 kill switch — mirrors memory_store() semantics
+        if os.environ.get("GSD_D_STRUCTURED") == "false":
+            if metadata and metadata.get("structured"):
+                print(
+                    "[pg_store] Structured learning disabled "
+                    "(GSD_D_STRUCTURED=false), storing as free-text",
+                    file=sys.stderr,
+                )
+                metadata = None
+
+        # Phase 10 LEARN-04 defense-in-depth tag governance
+        tag_result = normalize_tags(tags or [])
+        if tag_result.get("error"):
+            raise ValueError(tag_result["error"])
+        tags = tag_result.get("tags", [])
+        for w in tag_result.get("warnings", []):
+            print(f"[pg_store] {w}", file=sys.stderr)
+
         # MEM-03 AUDIT (2026-04-06): input_type="document" correct for storage path
         embedding = self.generate_embedding(text, input_type="document")
 
         if embedding is None:
-            # No API key or embedding failed — store without embedding
+            # No API key or embedding failed — store without embedding.
+            # Pass pre-normalized tags through so memory_store doesn't re-run
+            # validation (it will no-op since tags are already clean).
             return self.memory_store(text, source, agent_id, tags, metadata, project_id)
 
         # DATA-04: Pre-store dedup — skip insert if near-duplicate exists (cosine > threshold)
