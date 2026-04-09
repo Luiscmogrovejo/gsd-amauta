@@ -130,6 +130,32 @@ fi
 
 **Failure guidance:** If Gate 2 fails, point the executor to `get-shit-done/references/learning-format.md` for the WHAT/WHY/WHEN/TAGS template.
 
+### D-phase: Structured LEARNING Output (Phase 10 LEARN-06)
+
+Emit a structured WHAT/WHY/WHEN/TAGS block at the end of D-phase content. The operator parses and stores it (you do NOT call `learn --structured` yourself -- agents are producers, the operator is the storer).
+
+**Format** (emit as the tail of your D-phase `--content`):
+```
+LEARNING: <action-oriented instruction, <=120 chars>
+  WHAT: <same as LEARNING: line, <=120 chars>
+  WHY: <reason it matters, <=200 chars>
+  WHEN: <conditional trigger, <=80 chars>
+  CATEGORY: <workflow|process|delivery|pattern|policy|architecture|convention|pitfall|tool-usage>
+  TAGS: <up to 5 comma-separated>
+```
+
+**Example for this agent:**
+```
+LEARNING: Gate 2 accepts both legacy and structured LEARNING formats via OR check
+  WHAT: Gate 2 accepts both legacy and structured LEARNING formats via OR check
+  WHY: Pre-Phase 10 tasks use one-liner format; post-Phase 10 use structured block — both valid
+  WHEN: Validating D-phase content during external validation (Gate 2)
+  CATEGORY: pattern
+  TAGS: validator, gate-2, d-phase, backward-compatibility
+```
+
+**Rules:** WHAT is an EXECUTABLE instruction. Reference prior work with `APPLIED_LEARNING: mem-XXXX -- <reason>` in any phase. For full template + 4 category examples, Read `/Users/luismogrovejo/.claude/get-shit-done/references/learning-format.md` at runtime. Multiple LEARNING blocks per task allowed. Kill switch `GSD_D_STRUCTURED=false` falls back to legacy one-liner.
+
 ### Gate 3: Test Evidence (code tasks only)
 T-phase must include actual command output (shell prompt `$`, exit codes, test results).
 "All tests pass" without terminal output = auto-fail.

@@ -128,6 +128,32 @@ $MEM store --source lesson-learned --text "BUG: [symptom]. ROOT CAUSE: [cause]. 
 # Log documentation phase
 $CLI rpetd TK-XXXX --phase D --content "LEARNING: [pattern extracted and stored in memory]"
 ```
+
+### D-phase: Structured LEARNING Output (Phase 10 LEARN-06)
+
+Emit a structured WHAT/WHY/WHEN/TAGS block at the end of D-phase content. The operator parses and stores it (you do NOT call `learn --structured` yourself -- agents are producers, the operator is the storer).
+
+**Format** (emit as the tail of your D-phase `--content`):
+```
+LEARNING: <action-oriented instruction, <=120 chars>
+  WHAT: <same as LEARNING: line, <=120 chars>
+  WHY: <reason it matters, <=200 chars>
+  WHEN: <conditional trigger, <=80 chars>
+  CATEGORY: <workflow|process|delivery|pattern|policy|architecture|convention|pitfall|tool-usage>
+  TAGS: <up to 5 comma-separated>
+```
+
+**Example for this agent:**
+```
+LEARNING: Check daemon logs at /tmp/amauta-daemon.log before assuming DB failure
+  WHAT: Check daemon logs at /tmp/amauta-daemon.log before assuming DB failure
+  WHY: 80% of "DB errors" are actually daemon HTTP timeouts — log reveals root cause
+  WHEN: Debugging "memory/task not found" errors in agent output
+  CATEGORY: pitfall
+  TAGS: daemon, debugging, amauta, pitfall
+```
+
+**Rules:** WHAT is an EXECUTABLE instruction. Reference prior work with `APPLIED_LEARNING: mem-XXXX -- <reason>` in any phase. For full template + 4 category examples, Read `/Users/luismogrovejo/.claude/get-shit-done/references/learning-format.md` at runtime. Multiple LEARNING blocks per task allowed. Kill switch `GSD_D_STRUCTURED=false` falls back to legacy one-liner.
 </debug_protocol>
 
 <session_management>

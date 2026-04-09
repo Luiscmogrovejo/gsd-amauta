@@ -116,6 +116,32 @@ $CLI rpetd TK-XXXX --phase D --content "D: [summary]. LEARNING: [reusable insigh
 $MEM learn "{key_infra_insight}" 2>/dev/null || true
 ```
 
+### D-phase: Structured LEARNING Output (Phase 10 LEARN-06)
+
+Emit a structured WHAT/WHY/WHEN/TAGS block at the end of D-phase content. The operator parses and stores it (you do NOT call `learn --structured` yourself -- agents are producers, the operator is the storer).
+
+**Format** (emit as the tail of your D-phase `--content`):
+```
+LEARNING: <action-oriented instruction, <=120 chars>
+  WHAT: <same as LEARNING: line, <=120 chars>
+  WHY: <reason it matters, <=200 chars>
+  WHEN: <conditional trigger, <=80 chars>
+  CATEGORY: <workflow|process|delivery|pattern|policy|architecture|convention|pitfall|tool-usage>
+  TAGS: <up to 5 comma-separated>
+```
+
+**Example for this agent:**
+```
+LEARNING: Bind daemon ports to 127.0.0.1 only, never 0.0.0.0 on dev machines
+  WHAT: Bind daemon ports to 127.0.0.1 only, never 0.0.0.0 on dev machines
+  WHY: 0.0.0.0 exposes unauthenticated daemon to local network — credential leak risk
+  WHEN: Configuring HTTP listeners for local daemons and services
+  CATEGORY: policy
+  TAGS: security, daemon, networking, infrastructure
+```
+
+**Rules:** WHAT is an EXECUTABLE instruction. Reference prior work with `APPLIED_LEARNING: mem-XXXX -- <reason>` in any phase. For full template + 4 category examples, Read `/Users/luismogrovejo/.claude/get-shit-done/references/learning-format.md` at runtime. Multiple LEARNING blocks per task allowed. Kill switch `GSD_D_STRUCTURED=false` falls back to legacy one-liner.
+
 Then return to the operator. Do NOT call validate on your own work.
 
 **ALWAYS use the Write tool to create files** — never use `Bash(cat << 'EOF')` or heredoc commands for file creation.

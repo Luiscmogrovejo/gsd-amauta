@@ -133,8 +133,33 @@ $CLI rpetd TK-XXXX --phase T --content "T: [plan review — acceptance criteria 
 $CLI rpetd TK-XXXX --phase D --content "D: [plan summary]. LEARNING: [key planning insight for future reference]" 2>/dev/null || true
 $MEM learn "{key_planning_insight}" 2>/dev/null || true
 ```
-</planning_protocol>
 
+### D-phase: Structured LEARNING Output (Phase 10 LEARN-06)
+
+Emit a structured WHAT/WHY/WHEN/TAGS block at the end of D-phase content. The operator parses and stores it (you do NOT call `learn --structured` yourself -- agents are producers, the operator is the storer).
+
+**Format** (emit as the tail of your D-phase `--content`):
+```
+LEARNING: <action-oriented instruction, <=120 chars>
+  WHAT: <same as LEARNING: line, <=120 chars>
+  WHY: <reason it matters, <=200 chars>
+  WHEN: <conditional trigger, <=80 chars>
+  CATEGORY: <workflow|process|delivery|pattern|policy|architecture|convention|pitfall|tool-usage>
+  TAGS: <up to 5 comma-separated>
+```
+
+**Example for this agent:**
+```
+LEARNING: Split planning waves on dependency cuts, not file-count parity
+  WHAT: Split planning waves on dependency cuts, not file-count parity
+  WHY: Linear waves lose parallelism; DAG depth is the true minimum phase duration
+  WHEN: Planning phases with 5+ tasks and shared-file concerns
+  CATEGORY: process
+  TAGS: planning, dependency-graph, parallelism
+```
+
+**Rules:** WHAT is an EXECUTABLE instruction. Reference prior work with `APPLIED_LEARNING: mem-XXXX -- <reason>` in any phase. For full template + 4 category examples, Read `/Users/luismogrovejo/.claude/get-shit-done/references/learning-format.md` at runtime. Multiple LEARNING blocks per task allowed. Kill switch `GSD_D_STRUCTURED=false` falls back to legacy one-liner.
+</planning_protocol>
 <output_format>
 ## Plan Output
 
@@ -168,10 +193,8 @@ After creating tasks in Amauta, summarize the plan:
 <constraints>
 ## Constraints
 - **DO NOT CHANGE boundary**: Never modify files outside the plan scope
-- **Maximum task size**: A single task should be completable in one RPETD cycle (< 1 hour of executor work)
-- **Dependency correctness**: No circular dependencies. Verify with `$CLI board`
-- **No orphan tasks**: Every task must have a parent (story or epic)
-- **Agent appropriateness**: Don't assign frontend work to executor-backend, etc.
-- **Duplication check**: Before adding tasks, search existing board for similar work
-- **File creation**: **ALWAYS use the Write tool to create files** — never use `Bash(cat << 'EOF')` or heredoc commands for file creation.
+- **Max task size**: Completable in one RPETD cycle (< 1 hour). No circular deps — verify with `$CLI board`
+- **No orphan tasks**: Every task must have a parent (story or epic). Assign agents by domain
+- **Duplication check**: Search existing board before adding tasks
+- **File creation**: **ALWAYS use the Write tool** — never `Bash(cat << 'EOF')` or heredoc for file creation
 </constraints>

@@ -170,6 +170,32 @@ Route tasks to specialist agents based on domain and file patterns:
 - Store to memory: `gsd-memory.cjs learn "<key insight>"`
 - Log: `amauta.cjs rpetd <id> --phase D --content "D: ... LEARNING: ..."`
 
+### D-phase: Structured LEARNING Output (Phase 10 LEARN-06)
+
+Emit a structured WHAT/WHY/WHEN/TAGS block at the end of D-phase content. The operator parses and stores it (you do NOT call `learn --structured` yourself -- agents are producers, the operator is the storer).
+
+**Format** (emit as the tail of your D-phase `--content`):
+```
+LEARNING: <action-oriented instruction, <=120 chars>
+  WHAT: <same as LEARNING: line, <=120 chars>
+  WHY: <reason it matters, <=200 chars>
+  WHEN: <conditional trigger, <=80 chars>
+  CATEGORY: <workflow|process|delivery|pattern|policy|architecture|convention|pitfall|tool-usage>
+  TAGS: <up to 5 comma-separated>
+```
+
+**Example for this agent:**
+```
+LEARNING: Split on `\nLEARNING:` (newline-prefixed) to parse multi-learning D-phase content
+  WHAT: Split on `\nLEARNING:` (newline-prefixed) to parse multi-learning D-phase content
+  WHY: Mid-sentence occurrences of the word LEARNING inside WHAT fields break naive split
+  WHEN: Parsing multi-learning D-phase content in operator post-hook
+  CATEGORY: pitfall
+  TAGS: parser, operator, d-phase, pitfall
+```
+
+**Rules:** WHAT is an EXECUTABLE instruction. Reference prior work with `APPLIED_LEARNING: mem-XXXX -- <reason>` in any phase. For full template + 4 category examples, Read `/Users/luismogrovejo/.claude/get-shit-done/references/learning-format.md` at runtime. Multiple LEARNING blocks per task allowed. Kill switch `GSD_D_STRUCTURED=false` falls back to legacy one-liner.
+
 ### Validation Gate
 After RPETD is complete, the **validator** (not the executor) validates:
 ```bash

@@ -57,6 +57,32 @@ $CLI rpetd TK-XXXX --phase T --content "T: [findings verified — contradictions
 $CLI rpetd TK-XXXX --phase D --content "D: [research summary]. LEARNING: [key finding for future agents]" 2>/dev/null || true
 $MEM learn "{key_finding}" 2>/dev/null || true
 ```
+
+### D-phase: Structured LEARNING Output (Phase 10 LEARN-06)
+
+Emit a structured WHAT/WHY/WHEN/TAGS block at the end of D-phase content. The operator parses and stores it (you do NOT call `learn --structured` yourself -- agents are producers, the operator is the storer).
+
+**Format** (emit as the tail of your D-phase `--content`):
+```
+LEARNING: <action-oriented instruction, <=120 chars>
+  WHAT: <same as LEARNING: line, <=120 chars>
+  WHY: <reason it matters, <=200 chars>
+  WHEN: <conditional trigger, <=80 chars>
+  CATEGORY: <workflow|process|delivery|pattern|policy|architecture|convention|pitfall|tool-usage>
+  TAGS: <up to 5 comma-separated>
+```
+
+**Example for this agent:**
+```
+LEARNING: Gate creative research variants behind task type, not a global flag
+  WHAT: Gate creative research variants behind task type, not a global flag
+  WHY: Implementation tasks get higher rollback rates from novel suggestions; research tasks benefit
+  WHEN: Integrating Perplexity variant queries into the R-phase cascade
+  CATEGORY: policy
+  TAGS: research, perplexity, task-gating, pitfall
+```
+
+**Rules:** WHAT is an EXECUTABLE instruction. Reference prior work with `APPLIED_LEARNING: mem-XXXX -- <reason>` in any phase. For full template + 4 category examples, Read `/Users/luismogrovejo/.claude/get-shit-done/references/learning-format.md` at runtime. Multiple LEARNING blocks per task allowed. Kill switch `GSD_D_STRUCTURED=false` falls back to legacy one-liner.
 </task_integration>
 
 <research_modes>

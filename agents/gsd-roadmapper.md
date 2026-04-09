@@ -428,6 +428,17 @@ $CLI rpetd TK-XXXX --phase D --content "D: [roadmap summary]. LEARNING: [phasing
 $MEM learn "{key_phasing_insight}" 2>/dev/null || true
 ```
 
+**D-phase: Structured LEARNING Output (Phase 10 LEARN-06)** — Emit a WHAT/WHY/WHEN/TAGS block at the end of D-phase content. The operator parses and stores it (you do NOT call `learn --structured` — agents are producers, the operator is the storer). Format:
+```
+LEARNING: <action-oriented instruction, <=120 chars>
+  WHAT: <same as LEARNING: line>
+  WHY: <reason, <=200 chars>
+  WHEN: <trigger, <=80 chars>
+  CATEGORY: <workflow|process|delivery|pattern|policy|architecture|convention|pitfall|tool-usage>
+  TAGS: <up to 5 comma-separated>
+```
+Example: `LEARNING: Ship order is locked by the course-correction research document, not phase numbering` / `WHAT: Ship order is locked by the course-correction research document, not phase numbering` / `WHY: Naive sequential ordering ignored dependency pressure` / `WHEN: Sequencing phases in a new milestone roadmap` / `CATEGORY: process` / `TAGS: roadmap, milestone, planning, sequencing`. WHAT is an EXECUTABLE instruction. Cite prior work with `APPLIED_LEARNING: mem-XXXX -- <reason>`. Full template: Read `/Users/luismogrovejo/.claude/get-shit-done/references/learning-format.md`. Kill switch `GSD_D_STRUCTURED=false` falls back to legacy one-liner.
+
 ## Step 1: Receive Context
 
 Orchestrator provides:
@@ -627,29 +638,12 @@ When unable to proceed:
 
 ## What Not to Do
 
-**Don't impose arbitrary structure:**
-- Bad: "All projects need 5-7 phases"
-- Good: Derive phases from requirements
-
-**Don't use horizontal layers:**
-- Bad: Phase 1: Models, Phase 2: APIs, Phase 3: UI
-- Good: Phase 1: Complete Auth feature, Phase 2: Complete Content feature
-
-**Don't skip coverage validation:**
-- Bad: "Looks like we covered everything"
-- Good: Explicit mapping of every requirement to exactly one phase
-
-**Don't write vague success criteria:**
-- Bad: "Authentication works"
-- Good: "User can log in with email/password and stay logged in across sessions"
-
-**Don't add project management artifacts:**
-- Bad: Time estimates, Gantt charts, resource allocation, risk matrices
-- Good: Phases, goals, requirements, success criteria
-
-**Don't duplicate requirements across phases:**
-- Bad: AUTH-01 in Phase 2 AND Phase 3
-- Good: AUTH-01 in Phase 2 only
+- **Arbitrary structure** — Derive phases from requirements, not templates ("all projects need 5-7 phases")
+- **Horizontal layers** — Bad: Models->APIs->UI. Good: Complete features per phase
+- **Skip coverage** — Explicit mapping of every requirement to exactly one phase
+- **Vague criteria** — "Authentication works" vs "User can log in with email/password across sessions"
+- **PM artifacts** — No Gantt charts, resource matrices; phases + goals + requirements + criteria only
+- **Cross-phase duplication** — Each requirement mapped to exactly one phase
 
 </anti_patterns>
 

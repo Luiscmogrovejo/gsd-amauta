@@ -110,6 +110,32 @@ node ~/.claude/get-shit-done/bin/amauta.cjs validate TK-XXXX --pass --validator 
 # If fails
 node ~/.claude/get-shit-done/bin/amauta.cjs validate TK-XXXX --fail --validator checker --notes "FAIL: Missing test coverage for edge case X" --subtasks "Add edge case test|Fix null handling"
 ```
+
+### D-phase: Structured LEARNING Output (Phase 10 LEARN-06)
+
+Emit a structured WHAT/WHY/WHEN/TAGS block at the end of D-phase content. The operator parses and stores it (you do NOT call `learn --structured` yourself -- agents are producers, the operator is the storer).
+
+**Format** (emit as the tail of your D-phase `--content`):
+```
+LEARNING: <action-oriented instruction, <=120 chars>
+  WHAT: <same as LEARNING: line, <=120 chars>
+  WHY: <reason it matters, <=200 chars>
+  WHEN: <conditional trigger, <=80 chars>
+  CATEGORY: <workflow|process|delivery|pattern|policy|architecture|convention|pitfall|tool-usage>
+  TAGS: <up to 5 comma-separated>
+```
+
+**Example for this agent:**
+```
+LEARNING: Run `npm test -- --testPathPattern <file>` when validating touched test suites
+  WHAT: Run `npm test -- --testPathPattern <file>` when validating touched test suites
+  WHY: Full suite takes 90s; targeted runs finish in 5s and isolate regressions
+  WHEN: T-phase validation of a single-file test suite change
+  CATEGORY: tool-usage
+  TAGS: jest, test-isolation, ci-cd, testing
+```
+
+**Rules:** WHAT is an EXECUTABLE instruction. Reference prior work with `APPLIED_LEARNING: mem-XXXX -- <reason>` in any phase. For full template + 4 category examples, Read `/Users/luismogrovejo/.claude/get-shit-done/references/learning-format.md` at runtime. Multiple LEARNING blocks per task allowed. Kill switch `GSD_D_STRUCTURED=false` falls back to legacy one-liner.
 </post_check_mode>
 
 <boundary>

@@ -119,6 +119,32 @@ $CLI rpetd TK-XXXX --phase D --content "D: [summary]. LEARNING: [reusable insigh
 $MEM learn "{key_insight}" 2>/dev/null || true
 ```
 
+### D-phase: Structured LEARNING Output (Phase 10 LEARN-06)
+
+Emit a structured WHAT/WHY/WHEN/TAGS block at the end of D-phase content. The operator parses and stores it (you do NOT call `learn --structured` yourself -- agents are producers, the operator is the storer).
+
+**Format** (emit as the tail of your D-phase `--content`):
+```
+LEARNING: <action-oriented instruction, <=120 chars>
+  WHAT: <same as LEARNING: line, <=120 chars>
+  WHY: <reason it matters, <=200 chars>
+  WHEN: <conditional trigger, <=80 chars>
+  CATEGORY: <workflow|process|delivery|pattern|policy|architecture|convention|pitfall|tool-usage>
+  TAGS: <up to 5 comma-separated>
+```
+
+**Example for this agent:**
+```
+LEARNING: Use absolute paths in all file operations within agents and workflows
+  WHAT: Use absolute paths in all file operations within agents and workflows
+  WHY: Agent cwd resets between bash calls — relative paths break unpredictably
+  WHEN: Writing shell commands or tool invocations in agent instructions
+  CATEGORY: convention
+  TAGS: shell, agents, workflow, pitfall
+```
+
+**Rules:** WHAT is an EXECUTABLE instruction. Reference prior work with `APPLIED_LEARNING: mem-XXXX -- <reason>` in any phase. For full template + 4 category examples, Read `/Users/luismogrovejo/.claude/get-shit-done/references/learning-format.md` at runtime. Multiple LEARNING blocks per task allowed. Kill switch `GSD_D_STRUCTURED=false` falls back to legacy one-liner.
+
 Then return to the operator. Do NOT call validate on your own work.
 
 **ALWAYS use the Write tool to create files** — never use `Bash(cat << 'EOF')` or heredoc commands for file creation.
