@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: milestone
 status: in-progress
-stopped_at: Phase 10 Plan 10-03 + 10-04 complete — Node.js CLI (parse-learning, learn --structured, normalizeTags) + Python daemon (pg_store + API) parity (LEARN-02, LEARN-03, LEARN-04, LEARN-05)
-last_updated: "2026-04-09T22:30:00.000Z"
-last_activity: "2026-04-09 -- Plan 10-03: gsd-memory.cjs loadTagRules + parseLearningBlock + cmdLearn --structured hybrid CLI + cmdDistill guard (b5e06de + 1eac6ab + 31088df). Plan 10-04: pg_store.py + amauta-daemon.py parity (ec22631 + ab713bc + 05ebb2f + 90e4aa5)"
+stopped_at: Phase 10 Plan 10-05 complete — gsd-memory.cjs SKB workflow CLI (increment-applied, skb-candidates, skb-promote --reviewed, skb-remove) + search --tags/--category filters + structured-card display, backed by do_PATCH/do_DELETE daemon verbs + GET/PATCH /api/memory/mem- + GET/DELETE /api/skb/skb- routes + pg_store single-entry fetch + merge-patch (LEARN-03, LEARN-05)
+last_updated: "2026-04-09T23:15:00.000Z"
+last_activity: "2026-04-09 -- Plan 10-05: gsd-memory.cjs SKB commands (7f515ca increment-applied, 41139b7 skb-candidates, 6ee63ee skb-promote/skb-remove + PATCH/DELETE daemon verbs + pg_store methods, 1fac128 search --tags/--category + renderMemoryResult)"
 progress:
   total_phases: 7
   completed_phases: 1
   total_plans: 18
-  completed_plans: 13
-  percent: 18
+  completed_plans: 14
+  percent: 20
 ---
 
 # GSD-Amauta -- Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-09)
 ## Current Position
 
 Phase: 10 — D-Phase Structured Learning + CLI Dedup (in progress, Wave 2 COMPLETE)
-Plan: 10-03 DONE (gsd-memory.cjs — loadTagRules + normalizeTags refactor (b5e06de), parseLearningBlock + parse-learning subcommand (1eac6ab), cmdLearn --structured hybrid CLI + BOOLEAN_FLAGS tokenizer + cmdDistill guard (31088df); runtime-tested: length cap rejection, banned-tag rejection, kill switch fall-through all verified). 10-04 DONE (pg_store.py + amauta-daemon.py — load_tag_rules + normalize_tags refactor (ec22631), memory_store defense-in-depth + kill switch + search tags/category filters (ab713bc), memory_increment_applied + memory_skb_candidates with FOR UPDATE row lock (05ebb2f), POST /api/memory/:id/increment-applied + GET /api/memory/skb-candidates + /api/memory/search tags/category wire-through (90e4aa5)). 10-02 DONE (migration 008 applied_count column + DOWN file; 6307d93 + 72ff620). 10-01 DONE (tag-rules.json + learning-format.md + cli-variables.md; 6f10983 + b6faa13 + d03dd89).
-Status: Phase 9 complete. Phase 10 Wave 1 complete (10-01 + 10-02). Phase 10 Wave 2 COMPLETE (10-03 Node.js CLI + 10-04 Python daemon parity — both layers now read tag-rules.json and enforce the same structured metadata contract). Next: Wave 3 — 10-05 (SKB commands), 10-06 (operator + citation scanner), 10-07 (cli-variables dedup across agents + workflows), 10-08 (LEARNING template across agents).
-Last activity: 2026-04-09 -- Plan 10-03: gsd-memory.cjs learn --structured hybrid CLI shipped (31088df); Node.js + Python layers both read tag-rules.json with parity
+Plan: 10-05 DONE (gsd-memory.cjs SKB workflow + search filters — cmdIncrementApplied (7f515ca), cmdSkbCandidates + cmdSkb nested dispatcher (41139b7), cmdSkbPromote + cmdSkbRemove + new do_PATCH/do_DELETE HTTP verbs + GET /api/memory/mem- + GET /api/skb/skb- + PATCH /api/memory/mem- + DELETE /api/skb/skb- routes + pg_store memory_get_by_id + memory_patch_metadata + skb_get_by_id + skb_delete (6ee63ee), cmdSearch --tags/--category + renderMemoryResult structured card (1fac128); runtime-tested: usage prints, reject paths, reviewed gate, module loads, python syntax ok, 38 cjs tests + 31 pytest tests all pass). 10-04 DONE (pg_store.py + amauta-daemon.py — load_tag_rules + normalize_tags refactor (ec22631), memory_store defense-in-depth + kill switch + search tags/category filters (ab713bc), memory_increment_applied + memory_skb_candidates with FOR UPDATE row lock (05ebb2f), POST /api/memory/:id/increment-applied + GET /api/memory/skb-candidates + /api/memory/search tags/category wire-through (90e4aa5)). 10-03 DONE (gsd-memory.cjs — loadTagRules + normalizeTags refactor (b5e06de), parseLearningBlock + parse-learning subcommand (1eac6ab), cmdLearn --structured hybrid CLI + BOOLEAN_FLAGS tokenizer + cmdDistill guard (31088df)). 10-02 DONE (migration 008 applied_count column + DOWN file; 6307d93 + 72ff620). 10-01 DONE (tag-rules.json + learning-format.md + cli-variables.md; 6f10983 + b6faa13 + d03dd89).
+Status: Phase 9 complete. Phase 10 Wave 1 complete (10-01 + 10-02). Phase 10 Wave 2 COMPLETE (10-03 Node.js CLI structured learning + 10-04 Python daemon parity + 10-05 Node.js CLI SKB workflow — all three layers shipped; LEARN-02, LEARN-03, LEARN-04, LEARN-05 complete across Node.js + Python). Next: Wave 3 — 10-06 (operator + citation scanner), 10-07 (cli-variables dedup across agents + workflows), 10-08 (LEARNING template across agents), 10-09 (tests + README).
+Last activity: 2026-04-09 -- Plan 10-05: gsd-memory.cjs SKB commands + search filters + structured card shipped (7f515ca + 41139b7 + 6ee63ee + 1fac128); daemon gained do_PATCH + do_DELETE HTTP verbs
 
-Progress: [##........] 18%
+Progress: [##........] 20%
 
 ## v2.6 Phase Map
 
@@ -93,12 +93,17 @@ v2.5 codebase docs in .planning/codebase/ (2,337 lines). v2.6 research in .plann
 - **BOOLEAN_FLAGS set in gsd-memory.cjs parseArgs** (Plan 10-03): The argv tokenizer previously used a heuristic (`!argv[i + 1].startsWith('--')`) to decide whether a flag consumed the next token. That breaks `learn --structured "LEARNING: ..."` because the block text would be bound to `args.structured` and `_positional` would be empty. Fix is to declare boolean flags in a module-level Set and check it first in parseArgs. Future boolean flags (dry-run, use-llm, include-noise already included preemptively) go in the same set.
 - **Structured CLI as a flag, not a subcommand** (Plan 10-03): `learn --structured` is a hybrid command — named-flag branch OR text-block branch, selected by input presence. Adding a new `learn-structured` subcommand would split the intent across two dispatch entries and force agents to remember two commands for the same goal. The flag-based variant preserves backward compat and keeps the command hierarchy flat. Future Phase 10 commands (SKB entries in 10-05) should consider the same pattern.
 - **Kill switch fall-through semantics** (Plan 10-03): `GSD_D_STRUCTURED=false` with `learn --structured --what "x"` must still land the memory — the legacy free-text path rebuilds the text body from `--what`/`--why`/`--when` joined with ` — ` when no positional was supplied. Falling through to a usage error would surprise agents that set the env var for experimentation and lose learnings. Env var off = feature disabled, not command disabled.
+- **HTTP verb expansion pattern on the daemon** (Plan 10-05): When a new verb is needed (PATCH, DELETE), add a `do_VERB` method with the same auth/OIDC/rate-limit prologue as `do_GET`/`do_POST` by copying the pattern verbatim, then route by path prefix inside. The new verbs inherit the full security envelope automatically. First landed PATCH /api/memory/mem-XXXX + DELETE /api/skb/skb-XXXX; future plans needing PUT or additional DELETE routes follow the same pattern.
+- **ID-prefix route matching** (Plan 10-05): Single-entry REST routes like `/api/memory/mem-XXXX` use `path.startswith('/api/memory/mem-')` to disambiguate from static sibling routes like `/api/memory/list`, `/api/memory/count`, `/api/memory/skb-candidates`. Clearer than a regex dispatcher and fails closed on empty IDs. Requires the id format to have a stable prefix (`mem-`, `skb-`, `tk-`) which the existing migrations guarantee.
+- **Two-layer boolean flag safety** (Plan 10-05): `--reviewed` on `skb-promote` is added to `BOOLEAN_FLAGS` (tokenizer-level) AND explicitly checked in the handler with `if (!args.reviewed)` (handler-level). The set prevents token swallowing; the check enforces the gate regardless of how the CLI was invoked. Future risky operations (bulk-delete, tag-rewrite) should follow the same two-layer pattern.
+- **source_task column as promotion link** (Plan 10-05): The `gsd_shared_kb` schema has no dedicated `source_mem_id` column. Rather than adding a migration (out of scope for a Wave 2 plan), skb-promote stores the link as `source_task = 'promoted_from:mem-XXXX'` in the existing free-text column and skb-remove parses the prefix to recover the source mem_id for demotion. Future plan 10-06 (or a later tech-debt sweep) can formalize this with a proper column.
+- **Nested subcommand dispatcher alongside hyphenated commands** (Plan 10-05): `gsd-memory skb candidates` (space) and `gsd-memory skb-candidates` (hyphen) both route to the same handler via a new `cmdSkb` switch dispatcher. Registering both forms preserves existing hyphenated callers AND supports the friendlier space-separated form. Legacy `skb-search`/`skb-add`/`skb-list` commands continue to work as before; they are also routed through `cmdSkb` for consistency.
 
 ### Pending Todos
 
 - Close Phase 9 after validator confirms npm test + pytest both pass with 0 failures
-- Execute remaining Phase 10 plans: 10-05 (gsd-memory.cjs SKB commands — reuses normalizeTagsList + parseLearningBlock exports from 10-03), 10-06 (operator + APPLIED_LEARNING citation scanner), 10-07 (cli-variables dedup across agents + workflows), 10-08 (LEARNING block template across agents), 10-09 (tests + README)
-- Restart amauta-daemon at PID 99724 to pick up new /api/memory/skb-candidates + /api/memory/:id/increment-applied routes (operator action, not executor task)
+- Execute remaining Phase 10 plans: 10-06 (operator + APPLIED_LEARNING citation scanner), 10-07 (cli-variables dedup across agents + workflows), 10-08 (LEARNING block template across agents), 10-09 (tests + README)
+- Restart amauta-daemon to pick up new /api/memory/skb-candidates + /api/memory/:id/increment-applied + GET/PATCH /api/memory/mem- + GET/DELETE /api/skb/skb- routes + do_PATCH + do_DELETE verb handlers (operator action, not executor task)
 
 ### Blockers/Concerns
 
@@ -108,9 +113,9 @@ None. Part A blockers resolved pre-roadmap:
 
 ## Session Continuity
 
-Last session: 2026-04-09T22:30:00.000Z
-Stopped at: Phase 10 Plan 10-03 complete — gsd-memory.cjs parse-learning subcommand + learn --structured hybrid CLI + normalizeTags reading tag-rules.json + cmdDistill guard (LEARN-02, LEARN-04). Node.js + Python layers at parity (both read tag-rules.json, both enforce structured metadata contract, both honor GSD_D_STRUCTURED kill switch).
-Resume file: .planning/milestones/v2.1-phases/10-d-phase-structured-learning/10-05-PLAN.md
+Last session: 2026-04-09T23:15:00.000Z
+Stopped at: Phase 10 Plan 10-05 complete — gsd-memory.cjs full SKB workflow (increment-applied, skb-candidates, skb-promote --reviewed, skb-remove) + search --tags/--category filters + structured-card result display. Daemon gained new do_PATCH + do_DELETE HTTP verbs with GET /api/memory/mem- + GET /api/skb/skb- + PATCH /api/memory/mem- + DELETE /api/skb/skb- routes. pg_store gained memory_get_by_id + memory_patch_metadata + skb_get_by_id + skb_delete. LEARN-03 + LEARN-05 complete across all three layers. 38 cjs tests + 31 pytest memory tests still pass. Phase 10 Wave 2 fully shipped.
+Resume file: .planning/milestones/v2.1-phases/10-d-phase-structured-learning/10-06-PLAN.md
 
 ## Previous Milestone: v2.5 -- Smarter Brain (COMPLETE)
 
