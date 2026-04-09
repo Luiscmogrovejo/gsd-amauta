@@ -405,17 +405,17 @@ Approve roadmap or provide feedback for revision.
 
 ## Step 0: Task Tracking Setup
 
-If this roadmapping work has an associated Amauta task ID (TK-XXXX), claim it first to load Layer 1 enrichment (prior roadmap patterns, SKB policies, dependency context).
-
+If this roadmapping work has an associated Amauta task ID (TK-XXXX), claim it first to load Layer 1 enrichment (prior roadmap patterns, SKB policies, dependency context). **Tool Paths (Phase 10 LEARN-07):** Read `/Users/luismogrovejo/.claude/get-shit-done/references/cli-variables.md` to load `$CLI`/`$RLM`/`$MEM`/`$RESEARCH`/`$TOOLS`/`$LEARNING_FORMAT`/`$TAG_RULES`. Fallback if Read fails:
 ```bash
-CLI="node ~/.claude/get-shit-done/bin/amauta.cjs"
-RLM="node ~/.claude/get-shit-done/bin/gsd-rlm.cjs"
-MEM="node ~/.claude/get-shit-done/bin/gsd-memory.cjs"
-RESEARCH="node ~/.claude/get-shit-done/bin/gsd-research.cjs"
-
-# Claim and read back enrichment (skip gracefully if no task assigned)
-$CLI claim TK-XXXX --agent roadmapper 2>/dev/null || true
-$CLI show TK-XXXX 2>/dev/null || true
+# Fallback (if Read of cli-variables.md fails — uncomment to activate)
+# CLI="node /Users/luismogrovejo/.claude/get-shit-done/bin/amauta.cjs"        # fallback: task CLI
+# RLM="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-rlm.cjs"        # fallback: codebase search
+# MEM="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-memory.cjs"     # fallback: memory/learnings
+# RESEARCH="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-research.cjs"  # fallback: research chain
+# TOOLS="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-tools.cjs"    # fallback: tools/audit
+# LEARNING_FORMAT="/Users/luismogrovejo/.claude/get-shit-done/references/learning-format.md"  # fallback: D-phase template
+# TAG_RULES="/Users/luismogrovejo/.claude/get-shit-done/config/tag-rules.json"                # fallback: tag governance
+$CLI claim TK-XXXX --agent roadmapper 2>/dev/null || true; $CLI show TK-XXXX 2>/dev/null || true
 ```
 
 Log RPETD phases as you complete each step:

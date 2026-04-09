@@ -2,6 +2,25 @@
 Initialize a new project through unified flow: questioning, research (optional), requirements, roadmap. This is the most leveraged moment in any project — deep questioning here means better plans, better execution, better outcomes. One workflow takes you from idea to ready-for-planning.
 </purpose>
 
+## Tool Paths (Phase 10 LEARN-07 — runtime Read dedup)
+
+At the start of any bash invocation in this workflow, Read the shared CLI variable file and paste the shell block into your bash session:
+
+1. Use the Read tool: `/Users/luismogrovejo/.claude/get-shit-done/references/cli-variables.md`
+2. Copy the "Shell Variable Block" section into the current bash session
+3. If the Read fails, fall back to these hardcoded paths (one-line per variable):
+
+```bash
+# Fallback (if Read of cli-variables.md fails — uncomment to activate)
+# CLI="node /Users/luismogrovejo/.claude/get-shit-done/bin/amauta.cjs"        # fallback: task CLI
+# RLM="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-rlm.cjs"        # fallback: codebase search
+# MEM="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-memory.cjs"     # fallback: memory/learnings
+# RESEARCH="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-research.cjs"  # fallback: research chain
+# TOOLS="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-tools.cjs"    # fallback: tools/audit
+# LEARNING_FORMAT="/Users/luismogrovejo/.claude/get-shit-done/references/learning-format.md"  # fallback: D-phase template
+# TAG_RULES="/Users/luismogrovejo/.claude/get-shit-done/config/tag-rules.json"                # fallback: tag governance
+```
+
 <required_reading>
 Read all files referenced by the invoking prompt's execution_context before starting.
 </required_reading>

@@ -2,6 +2,26 @@
 Display the complete GSD command reference. Output ONLY the reference content. Do NOT add project-specific analysis, git status, next-step suggestions, or any commentary beyond the reference.
 </purpose>
 
+## Tool Paths (Phase 10 LEARN-07 — runtime Read dedup)
+
+At the start of any bash invocation in this workflow, Read the shared CLI variable file and paste the shell block into your bash session:
+
+1. Use the Read tool: `/Users/luismogrovejo/.claude/get-shit-done/references/cli-variables.md`
+2. Copy the "Shell Variable Block" section into the current bash session
+3. If the Read fails, fall back to these hardcoded paths (one-line per variable):
+
+```bash
+# Fallback (if Read of cli-variables.md fails)
+# CLI="node /Users/luismogrovejo/.claude/get-shit-done/bin/amauta.cjs"        # fallback: task CLI
+# RLM="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-rlm.cjs"        # fallback: codebase search
+# MEM="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-memory.cjs"     # fallback: memory/learnings
+# RESEARCH="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-research.cjs"  # fallback: research chain
+# TOOLS="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-tools.cjs"    # fallback: tools/audit
+# LEARNING_FORMAT="/Users/luismogrovejo/.claude/get-shit-done/references/learning-format.md"  # fallback: D-phase template
+# TAG_RULES="/Users/luismogrovejo/.claude/get-shit-done/config/tag-rules.json"                # fallback: tag governance
+TOOLS="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-tools.cjs"
+```
+
 <reference>
 # GSD-Amauta Command Reference
 
@@ -384,7 +404,8 @@ Epic (EP-XXXX)
 ### amauta Commands  (Amauta v1)
 
 ```bash
-CLI="node ~/.claude/get-shit-done/bin/amauta.cjs"
+# $CLI resolved via cli-variables.md Read at invocation start (Phase 10 LEARN-07)
+# Fallback: CLI="node /Users/luismogrovejo/.claude/get-shit-done/bin/amauta.cjs"
 
 # Board & stats
 $CLI board                              # Kanban view of all tasks
@@ -425,7 +446,8 @@ $CLI score TK-0001                      # Priority score breakdown
 ### gsd-memory.cjs Commands
 
 ```bash
-MEM="node ~/.claude/get-shit-done/bin/gsd-memory.cjs"
+# $MEM resolved via cli-variables.md Read at invocation start (Phase 10 LEARN-07)
+# Fallback: MEM="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-memory.cjs"
 
 $MEM store --source lesson-learned --text "Always run migrations before deploy"
 $MEM store --source best-practice --text "Use connection pooling for PG"
@@ -443,7 +465,8 @@ $MEM cross-project "react patterns" --tags react,typescript
 ### gsd-rlm.cjs Commands (Code Context)
 
 ```bash
-RLM="node ~/.claude/get-shit-done/bin/gsd-rlm.cjs"
+# $RLM resolved via cli-variables.md Read at invocation start (Phase 10 LEARN-07)
+# Fallback: RLM="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-rlm.cjs"
 
 $RLM query "how does auth work" --dir src/ --top-k 5
 $RLM query "database schema" --path migrations/001.sql

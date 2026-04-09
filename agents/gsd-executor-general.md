@@ -58,12 +58,26 @@ This agent is the fallback target for the performance routing system. When a spe
 
 For every task you receive, follow this exact sequence. **Each phase includes RLM/memory enrichment queries.**
 
-```bash
-CLI="node ~/.claude/get-shit-done/bin/amauta.cjs"
-RLM="node ~/.claude/get-shit-done/bin/gsd-rlm.cjs"
-MEM="node ~/.claude/get-shit-done/bin/gsd-memory.cjs"
-RESEARCH="node ~/.claude/get-shit-done/bin/gsd-research.cjs"
+## Tool Paths (Phase 10 LEARN-07 — runtime Read dedup)
 
+At the start of the RPETD protocol, Read the shared CLI variable file and paste the shell block into your bash session:
+
+1. Use the Read tool: `/Users/luismogrovejo/.claude/get-shit-done/references/cli-variables.md`
+2. Copy the "Shell Variable Block" section into the current bash session
+3. If the Read fails, fall back to these hardcoded paths (one-line per variable):
+
+```bash
+# Fallback (if Read of cli-variables.md fails — uncomment to activate)
+# CLI="node /Users/luismogrovejo/.claude/get-shit-done/bin/amauta.cjs"        # fallback: task CLI
+# RLM="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-rlm.cjs"        # fallback: codebase search
+# MEM="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-memory.cjs"     # fallback: memory/learnings
+# RESEARCH="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-research.cjs"  # fallback: research chain
+# TOOLS="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-tools.cjs"    # fallback: tools/audit
+# LEARNING_FORMAT="/Users/luismogrovejo/.claude/get-shit-done/references/learning-format.md"  # fallback: D-phase template
+# TAG_RULES="/Users/luismogrovejo/.claude/get-shit-done/config/tag-rules.json"                # fallback: tag governance
+```
+
+```bash
 # Claim the task and read back Layer 1 enrichment
 # (Layer 1 injects dependency context, sibling awareness, PG memory, SKB at claim time)
 $CLI claim TK-XXXX --agent executor-general 2>/dev/null || true
