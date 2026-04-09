@@ -3,22 +3,22 @@ gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: Sight Beyond Sight
 status: planning
-stopped_at: Roadmap approved — 7 phases (9..15), 46 requirements mapped, ready for /amauta:plan-phase 9
-last_updated: "2026-04-09T17:00:00.000Z"
-last_activity: "2026-04-09 -- v2.6 roadmap created; 7 phases, 46 REQ-IDs, ship order locked, kill switches documented"
+stopped_at: Plan 09-04 executed — TECH-04 retention mock fixed (1 commit, tests green)
+last_updated: "2026-04-09T18:00:00.000Z"
+last_activity: "2026-04-09 -- Plan 09-04: fixed TestRetentionMovesOldEntries PropertyMock side_effect from [5,3] to [5,3,2]; total assertion 8→10; 12 tests pass"
 progress:
   total_phases: 7
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_plans: 5
+  completed_plans: 4
+  percent: 9
 current_phase:
   number: 9
   name: Tech-Debt Sweep
-  status: queued
+  status: in-progress
   depends_on: []
   requirements_count: 6
-next_action: "/amauta:plan-phase 9"
+next_action: "Execute plan 09-05 (TECH-05: e2e-lifecycle 15s timeout flakes)"
 previous_milestone:
   version: v2.5
   name: Smarter Brain
@@ -39,12 +39,12 @@ See: .planning/PROJECT.md (updated 2026-04-09)
 
 ## Current Position
 
-Phase: 9 — Tech-Debt Sweep (queued, not started)
-Plan: — (awaiting `/amauta:plan-phase 9`)
-Status: Roadmap complete. 7 phases (9..15) derived from 46 v2.6 requirements. Ship order locked by research: Tech-Debt → D-learning → E-mandate → (T-QA parallel with R-creative) → P-auto-task → Dogfood. All phases have kill switches documented.
-Last activity: 2026-04-09 -- v2.6 roadmap written to `.planning/ROADMAP.md`; REQUIREMENTS.md traceability updated to map TECH/LEARN/EXEC/QA/CREATIVE/PLAN/DOGFOOD → Phase 9..15
+Phase: 9 — Tech-Debt Sweep (in-progress)
+Plan: 09-04 DONE (TECH-04 complete). Next: 09-05 (TECH-05).
+Status: Plans 09-01 through 09-04 executed. TECH-04 retention mock fix committed. 4 of 6 TECH requirements resolved.
+Last activity: 2026-04-09 -- Plan 09-04: PropertyMock side_effect [5,3]→[5,3,2], total assertion 8→10, TestRetentionMovesOldEntries passes (commit 46b02c2)
 
-Progress: [..........] 0%
+Progress: [##........] 9%
 
 ## v2.6 Phase Map
 
@@ -103,7 +103,8 @@ v2.5 codebase docs in .planning/codebase/ (2,337 lines). v2.6 research in .plann
 
 ### Pending Todos
 
-- `/amauta:plan-phase 9` to decompose Phase 9 (Tech-Debt Sweep) into executable plans
+- Execute plan 09-05 (TECH-05: e2e-lifecycle 15s timeout flakes)
+- Execute plan 09-06 (TECH-06: gsd-amauta.test.cjs validate status chain)
 
 ### Blockers/Concerns
 
