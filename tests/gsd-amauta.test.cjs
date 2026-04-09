@@ -30,7 +30,7 @@ function run(args, { expectFail = false } = {}) {
         ...process.env,
         AMAUTA_DATA_DIR: path.join(__dirname, '..', 'data'),
       },
-      timeout: 15000,
+      timeout: 30000,   // was 15000 — claim/validate can take 15-20s on busy daemon
     });
     return { success: true, output: result.trim() };
   } catch (err) {
@@ -105,8 +105,8 @@ function runOrSkip(t, args, opts) {
       combined.includes('ETIMEDOUT') ||                     // daemon hung
       combined.includes('socket hang up') ||                // daemon killed mid-response
       combined.includes('not found') ||                     // task not in daemon's state (race)
-      r.code === null ||                                    // killed by timeout signal
-      (r.error || '').length === 0                          // non-zero exit with no stderr = daemon subprocess issue
+      r.code === null                                       // killed by timeout signal
+      // REMOVED: (r.error || '').length === 0 — too broad, masks gate failures where output goes to stdout
     );
     if (isDaemonIssue) {
       daemonOk = false;
