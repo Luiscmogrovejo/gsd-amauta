@@ -945,6 +945,63 @@ async function cmdLearn(args) {
   return await cmdStore(args);
 }
 
+// ═══════════════════════════════════════════════════════
+// Phase 10 LEARN-05: increment-applied subcommand
+// ═══════════════════════════════════════════════════════
+//
+// Forwards an APPLIED_LEARNING citation to the daemon. The daemon dedups by
+// (mem_id, task_id) so repeat calls from the same task are idempotent — this
+// is a requirement for the operator's post-D-phase scanner, which may run
+// multiple times per task. There is no file-mode fallback: applied_count is
+// a PG-backed column (migration 008) and cannot degrade gracefully.
+async function cmdIncrementApplied(args) {
+  const memId = (args._positional || [])[0];
+  if (!memId || !memId.startsWith('mem-')) {
+    console.error('Usage: gsd-memory increment-applied <mem-XXXX> --task <TK-XXXX> [--phase R|P|E|T|D] [--reason <text>]');
+    process.exit(1);
+  }
+  const taskId = args.task;
+  if (!taskId) {
+    console.error('Rejected: --task <TK-XXXX> is required for increment-applied');
+    process.exit(1);
+  }
+  const phase = args.phase || null;
+  const reason = args.reason || null;
+
+  const body = { task_id: taskId, phase, reason };
+  let res;
+  try {
+    res = await httpRequest('POST', `/api/memory/${encodeURIComponent(memId)}/increment-applied`, body);
+  } catch (e) {
+    console.error(`increment-applied failed: ${e.message || e}`);
+    console.error('  increment-applied requires the daemon to be running (no file-mode fallback)');
+    process.exit(1);
+  }
+
+  if (res.status === 404) {
+    console.error(`Not found: ${memId}`);
+    process.exit(1);
+  }
+  if (res.status !== 200) {
+    console.error(`Error (${res.status}):`, (res.data && res.data.error) || 'unknown');
+    process.exit(1);
+  }
+
+  const d = res.data || {};
+  if (args.json) {
+    console.log(JSON.stringify(d, null, 2));
+    return;
+  }
+  if (d.already_cited) {
+    console.log(`Already cited: ${memId} by ${taskId} (count unchanged: ${d.applied_count})`);
+  } else if (d.incremented) {
+    console.log(`Incremented: ${memId} applied_count -> ${d.applied_count}`);
+  } else {
+    console.error(`Error: ${d.error || 'unknown response shape'}`);
+    process.exit(1);
+  }
+}
+
 async function cmdList(args) {
   const params = new URLSearchParams();
   if (args.project) params.set('project_id', args.project);
@@ -2321,6 +2378,7 @@ async function main() {
     'store': cmdStore,
     'learn': cmdLearn,
     'parse-learning': cmdParseLearning,
+    'increment-applied': cmdIncrementApplied,
     'list': cmdList,
     'count': cmdCount,
     'distill': cmdDistill,
