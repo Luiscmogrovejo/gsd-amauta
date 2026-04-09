@@ -501,6 +501,18 @@ async function tryDaemon(method, urlPath, body = null) {
 // Argument Parsing
 // ═══════════════════════════════════════════════════════
 
+// Phase 10 LEARN-02: flags that are ALWAYS booleans — the tokenizer must
+// never consume the next argv entry as their value. Without this, a command
+// like `learn --structured "LEARNING: ..."` would assign the text block to
+// `args.structured` and leave `_positional` empty.
+const BOOLEAN_FLAGS = new Set([
+  'json',
+  'structured',
+  'dry-run',
+  'use-llm',
+  'include-noise',
+]);
+
 function parseArgs(argv) {
   const args = { _positional: [] };
   let i = 0;
@@ -510,7 +522,9 @@ function parseArgs(argv) {
       args.json = true;
     } else if (arg.startsWith('--')) {
       const key = arg.slice(2);
-      if (i + 1 < argv.length && !argv[i + 1].startsWith('--')) {
+      if (BOOLEAN_FLAGS.has(key)) {
+        args[key] = true;
+      } else if (i + 1 < argv.length && !argv[i + 1].startsWith('--')) {
         args[key] = argv[++i];
       } else {
         args[key] = true;
@@ -650,6 +664,12 @@ async function cmdStore(args) {
   if (!res) {
     // File-based fallback
     process.stderr.write(FILE_MODE_WARN);
+    // Phase 10 LEARN-02: structured metadata is lost in file mode — keep
+    // the block text intact but warn so agents know to re-store once the
+    // daemon is reachable.
+    if (body.metadata && typeof body.metadata === 'object' && body.metadata.structured) {
+      console.warn('[warn] File-mode fallback: structured metadata dropped, saved as flat text');
+    }
     const id = fileStore(text, source);
     if (args.json) {
       console.log(JSON.stringify({ id, stored: true, mode: 'file' }, null, 2));
@@ -744,45 +764,185 @@ async function cmdParseLearning(args) {
 }
 
 async function cmdLearn(args) {
-  // Shortcut: store with auto_learning source
-  // In file mode, use fileLearn for STATE.md integration
-  const text = args._positional.join(' ');
-  if (!text) {
-    console.error('Usage: amauta-memory learn <text>');
-    process.exit(1);
+  // Phase 10 LEARN-02: `learn --structured` hybrid path. Keep the legacy
+  // free-text path for backward compatibility with pre-Phase 10 callers.
+  const isStructured = !!args.structured;
+  const textFromPositional = (args._positional || []).join(' ');
+
+  // Kill switch — force free-text path even if --structured is set
+  if (isStructured && process.env.GSD_D_STRUCTURED === 'false') {
+    console.warn('Structured learning disabled (GSD_D_STRUCTURED=false), storing as free-text');
+    // fall through to free-text path below
   }
+  const structuredActive = isStructured && process.env.GSD_D_STRUCTURED !== 'false';
 
-  const body = { text, source: 'auto_learning', project_id: autoProjectId(null) };
-  if (args.agent) body.agent_id = args.agent;
-
-  const res = await tryDaemon('POST', '/api/memory/store', body);
-
-  if (!res) {
-    process.stderr.write(FILE_MODE_WARN);
-    const id = fileLearn(text);
-    if (args.json) {
-      console.log(JSON.stringify({ id, stored: true, mode: 'file' }, null, 2));
-    } else {
-      console.log(`\x1b[92mStored\x1b[0m ${id} (source: auto_learning, file mode → STATE.md)`);
+  if (!structuredActive) {
+    // ── Legacy free-text path — unchanged from pre-Phase 10 behavior ──
+    // When the kill switch fires on a --structured call, reuse --what (or the
+    // concatenated named fields) as the flat text body so the call still
+    // lands a memory rather than aborting with a usage error.
+    let text = textFromPositional;
+    if (!text && isStructured) {
+      const parts = [args.what, args.why, args.when].filter(Boolean);
+      text = parts.join(' — ');
     }
-    // TK-0054: Still check auto-distill even in file mode (counts file entries)
+    if (!text) {
+      console.error('Usage: amauta-memory learn <text>  OR  learn --structured --what "..." [--why "..."] [--tags "..."]');
+      process.exit(1);
+    }
+
+    const body = { text, source: 'auto_learning', project_id: autoProjectId(null) };
+    if (args.agent) body.agent_id = args.agent;
+
+    const res = await tryDaemon('POST', '/api/memory/store', body);
+
+    if (!res) {
+      process.stderr.write(FILE_MODE_WARN);
+      const id = fileLearn(text);
+      if (args.json) {
+        console.log(JSON.stringify({ id, stored: true, mode: 'file' }, null, 2));
+      } else {
+        console.log(`\x1b[92mStored\x1b[0m ${id} (source: auto_learning, file mode → STATE.md)`);
+      }
+      // TK-0054: Still check auto-distill even in file mode (counts file entries)
+      await maybeAutoDistill();
+      return;
+    }
+
+    if (res.status !== 200) {
+      console.error('Error:', res.data.error || 'Unknown error');
+      process.exit(1);
+    }
+
+    if (args.json) {
+      console.log(JSON.stringify(res.data, null, 2));
+    } else {
+      console.log(`\x1b[92mStored\x1b[0m ${res.data.id} (source: auto_learning)`);
+    }
+
+    // TK-0054: Check if auto-distill is needed (same as cmdStore)
     await maybeAutoDistill();
     return;
   }
 
-  if (res.status !== 200) {
-    console.error('Error:', res.data.error || 'Unknown error');
+  // ── Structured path — hybrid: named flags OR text block ──
+  let parsed = null;
+  if (args.what || args.why || args.when || args.tags || args.category) {
+    // Named-flag path: build the structured object directly.
+    parsed = {
+      what: args.what || null,
+      why: args.why || null,
+      when: args.when || null,
+      category: (args.category || 'pattern').toLowerCase(),
+      tags: args.tags
+        ? (Array.isArray(args.tags)
+            ? args.tags
+            : String(args.tags).split(',').map(s => s.trim()).filter(Boolean))
+        : [],
+    };
+    if (!CATEGORY_SET.has(parsed.category)) {
+      console.warn(`[warn] Unknown category '${parsed.category}', defaulting to 'pattern'`);
+      parsed.category = 'pattern';
+    }
+  } else if (textFromPositional) {
+    // Text-block path: parse the positional argument as a LEARNING block.
+    const blocks = splitLearningBlocks(textFromPositional);
+    if (blocks.length === 0) {
+      console.error('Rejected: --structured requires either --what flag or a text block starting with "LEARNING:"');
+      process.exit(1);
+    }
+    parsed = parseLearningBlock(blocks[0]);
+    if (!parsed) {
+      console.warn('Structured parse failed, falling back to free-text storage');
+      const body = { text: textFromPositional, source: 'auto_learning', project_id: autoProjectId(null) };
+      if (args.agent) body.agent_id = args.agent;
+      const res = await tryDaemon('POST', '/api/memory/store', body);
+      if (!res) {
+        process.stderr.write(FILE_MODE_WARN);
+        const id = fileLearn(textFromPositional);
+        if (args.json) {
+          console.log(JSON.stringify({ id, stored: true, mode: 'file', fallback: 'parse_failed' }, null, 2));
+        } else {
+          console.log(`\x1b[92mStored\x1b[0m ${id} (source: auto_learning, file mode → STATE.md)`);
+        }
+        await maybeAutoDistill();
+        return;
+      }
+      if (res.status !== 200) {
+        console.error('Error:', res.data.error || 'Unknown error');
+        process.exit(1);
+      }
+      if (args.json) console.log(JSON.stringify(res.data, null, 2));
+      else console.log(`\x1b[92mStored\x1b[0m ${res.data.id} (source: auto_learning, free-text fallback)`);
+      await maybeAutoDistill();
+      return;
+    }
+  } else {
+    console.error('Rejected: --structured requires either --what flag or a text block arg');
     process.exit(1);
   }
 
-  if (args.json) {
-    console.log(JSON.stringify(res.data, null, 2));
-  } else {
-    console.log(`\x1b[92mStored\x1b[0m ${res.data.id} (source: auto_learning)`);
+  // Required field check
+  if (!parsed.what || !String(parsed.what).trim()) {
+    console.error('Rejected: WHAT is required for structured learnings');
+    process.exit(1);
   }
 
-  // TK-0054: Check if auto-distill is needed (same as cmdStore)
-  await maybeAutoDistill();
+  // Length cap enforcement (hard reject — caller must trim)
+  const capErr = validateLengthCaps(parsed);
+  if (capErr) {
+    console.error(capErr.error);
+    process.exit(1);
+  }
+
+  // Tag normalization + banned strip + auto-trim
+  const norm = normalizeTags(parsed.tags || []);
+  if (norm.error) {
+    console.error(norm.error);
+    process.exit(1);
+  }
+  parsed.tags = norm.tags;
+  if (norm.warnings.length) {
+    for (const w of norm.warnings) console.warn(`[warn] ${w}`);
+  }
+  // Warn only when the caller did not supply ANY category signal — neither
+  // as a named flag nor inside the parsed block (parseLearningBlock sets
+  // category_defaulted=true when the block omits CATEGORY or uses an
+  // unrecognized value).
+  const categoryImplicit = !args.category && (parsed.category_defaulted !== false);
+  if (parsed.category === 'pattern' && categoryImplicit) {
+    console.warn(`[warn] CATEGORY defaulted to 'pattern'. Consider specifying one of: workflow, process, delivery, policy, architecture, convention, pitfall, tool-usage`);
+  }
+
+  // Build the full text for the `text` column (canonical structured block).
+  const fullText = textFromPositional || [
+    `LEARNING: ${parsed.what}`,
+    `  WHAT: ${parsed.what}`,
+    parsed.why  ? `  WHY: ${parsed.why}` : null,
+    parsed.when ? `  WHEN: ${parsed.when}` : null,
+    `  CATEGORY: ${parsed.category}`,
+    `  TAGS: ${parsed.tags.join(', ')}`,
+  ].filter(Boolean).join('\n');
+
+  // Delegate to cmdStore with structured metadata payload.
+  // cmdStore will:
+  //   • forward args.metadata (object) as body.metadata → daemon jsonb column
+  //   • forward args.tags → body.tags (via normalizeTagsList, already-normalized
+  //     tags pass through cleanly)
+  //   • log a file-mode warning if the daemon is unreachable (metadata dropped)
+  args._positional = [fullText];
+  args.text = fullText;
+  args.tags = parsed.tags.join(',');
+  args.source = args.source || 'auto_learning';
+  args.metadata = {
+    what: parsed.what,
+    why: parsed.why,
+    when: parsed.when,
+    category: parsed.category,
+    structured: true,
+    structured_version: '1.0',
+  };
+  return await cmdStore(args);
 }
 
 async function cmdList(args) {
@@ -1644,7 +1804,19 @@ async function cmdDistill(args) {
     process.exit(1);
   }
 
-  const entries = res.data.results || [];
+  const rawEntries = res.data.results || [];
+
+  // Phase 10 LEARN-02: skip structured entries — they are already concise
+  // (<=120 char WHAT) and merging would destroy the WHAT/WHY/WHEN/TAGS structure.
+  const entries = rawEntries.filter((entry) => {
+    const meta = entry && entry.metadata;
+    if (meta && typeof meta === 'object' && meta.what) {
+      if (process.env.DEBUG) console.warn(`[distill] skipping structured entry ${entry.id}`);
+      return false;
+    }
+    return true;
+  });
+
   if (entries.length < 5) {
     console.log(`\x1b[2mOnly ${entries.length} entries — distill not needed (minimum 5).\x1b[0m`);
     return;
