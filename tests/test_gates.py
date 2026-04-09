@@ -173,8 +173,8 @@ class TestValidateAllGates(unittest.TestCase):
         """Non-code task with valid content should get only PASS/SKIP."""
         item = _make_item(
             rpetd={
-                "R": "Researched the topic thoroughly",
-                "P": "Plan: update documentation and verify",
+                "R": "Researched the topic thoroughly, reviewed existing docs and prior art to identify gaps",
+                "P": "Plan: update documentation and verify all cross-references and links are accurate",
                 "E": "Executed the documentation updates",
                 "T": "Verified all links work and content is accurate and complete",
                 "D": "LEARNING: " + _LEARNING_100,
@@ -321,14 +321,19 @@ class TestValidateAllGates(unittest.TestCase):
             self.assertIn("reason", r)
             self.assertIn(r["status"], ("PASS", "FAIL", "SKIP"))
 
-    def test_exactly_5_gates_returned(self):
-        """_validate_all_gates always returns exactly 5 gate results."""
+    def test_exactly_7_gates_returned(self):
+        """_validate_all_gates always returns exactly 7 gate results.
+
+        Gates 2 and 3 (R_PHASE_SUBSTANCE, P_PHASE_SUBSTANCE) were added in v2.5.
+        """
         item = _make_item(rpetd={})
         results = _validate_all_gates(item)
-        self.assertEqual(len(results), 5)
+        self.assertEqual(len(results), 7)
 
         gate_names = [r["gate"] for r in results]
         self.assertIn("RPETD_COMPLETE", gate_names)
+        self.assertIn("R_PHASE_SUBSTANCE", gate_names)
+        self.assertIn("P_PHASE_SUBSTANCE", gate_names)
         self.assertIn("BRANCH_EVIDENCE", gate_names)
         self.assertIn("TEST_EVIDENCE", gate_names)
         self.assertIn("LEARNING_BLOCK", gate_names)
