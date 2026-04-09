@@ -1208,6 +1208,110 @@ async function cmdSKBList(args) {
   console.log('');
 }
 
+// ═══════════════════════════════════════════════════════
+// Phase 10 LEARN-05: skb-candidates subcommand
+// ═══════════════════════════════════════════════════════
+//
+// Surfaces PG memory entries eligible for SKB promotion by applied_count.
+// Two tiers based on CONTEXT.md lines 65-75:
+//   - rising (5..9):     auto-promotable candidates, low review burden
+//   - needs_review (>=10): REQUIRES manual review before promotion — high
+//                          citation count may indicate echo-chamber effect
+//
+// No file-mode fallback: this query is fundamentally PG-backed.
+async function cmdSkbCandidates(args) {
+  if (args.help) {
+    console.log('Usage: gsd-memory skb-candidates [--rising-min 5] [--needs-review-min 10] [--limit 100] [--json]');
+    return;
+  }
+  const risingMin = parseInt(args['rising-min'] || 5, 10);
+  const needsReviewMin = parseInt(args['needs-review-min'] || 10, 10);
+  const limit = parseInt(args.limit || 100, 10);
+
+  const qs = `rising_min=${risingMin}&needs_review_min=${needsReviewMin}&limit=${limit}`;
+  let res;
+  try {
+    res = await httpRequest('GET', `/api/memory/skb-candidates?${qs}`);
+  } catch (e) {
+    console.error(`skb-candidates failed: ${e.message || e}`);
+    console.error('  skb-candidates requires the daemon to be running (no file-mode fallback)');
+    process.exit(1);
+  }
+  if (res.status !== 200) {
+    console.error(`Error (${res.status}):`, (res.data && res.data.error) || 'unknown');
+    process.exit(1);
+  }
+
+  const candidates = (res.data && res.data.candidates) || [];
+  const needsReview = candidates.filter(c => c.needs_review);
+  const rising = candidates.filter(c => c.rising);
+
+  if (args.json) {
+    console.log(JSON.stringify({
+      needs_review: needsReview,
+      rising,
+      total: candidates.length,
+      rising_min: risingMin,
+      needs_review_min: needsReviewMin,
+    }, null, 2));
+    return;
+  }
+
+  if (candidates.length === 0) {
+    console.log(`No SKB candidates found (threshold: rising>=${risingMin}, needs_review>=${needsReviewMin})`);
+    return;
+  }
+
+  if (needsReview.length > 0) {
+    console.log(`\n\x1b[1m=== NEEDS REVIEW\x1b[0m (applied_count >= ${needsReviewMin}) ===`);
+    for (const c of needsReview) {
+      const what = c.what || c.text_preview || '(no preview)';
+      const tags = (c.tags || []).join(', ') || '—';
+      console.log(`  \x1b[91m[${c.applied_count}x]\x1b[0m ${c.id}`);
+      console.log(`    WHAT: ${what}`);
+      console.log(`    CATEGORY: ${c.category || '—'}   TAGS: ${tags}`);
+      console.log(`    FIRST_CITED: ${c.first_cited_at || '—'}   LAST_CITED: ${c.last_cited_at || '—'}`);
+      console.log(`    \x1b[2m-> gsd-memory skb-promote ${c.id} --reviewed --reason "<why>"\x1b[0m`);
+    }
+  }
+  if (rising.length > 0) {
+    console.log(`\n\x1b[1m=== RISING\x1b[0m (applied_count ${risingMin}-${needsReviewMin - 1}) ===`);
+    for (const c of rising) {
+      const what = c.what || c.text_preview || '(no preview)';
+      const tags = (c.tags || []).join(', ') || '—';
+      console.log(`  \x1b[93m[${c.applied_count}x]\x1b[0m ${c.id}  ${what}`);
+      console.log(`    TAGS: ${tags}   CATEGORY: ${c.category || '—'}`);
+    }
+  }
+  console.log(`\nTotal: ${candidates.length}  (needs review: ${needsReview.length}, rising: ${rising.length})`);
+}
+
+// Nested dispatch for `gsd-memory skb <verb>` — supports the space-separated
+// form alongside the hyphenated legacy commands (skb-search / skb-add / etc.).
+// New Phase 10 commands (candidates / promote / remove) expose both forms so
+// callers can use whichever style they prefer.
+async function cmdSkb(args) {
+  const sub = (args._positional || [])[0];
+  args._positional = (args._positional || []).slice(1);
+  switch (sub) {
+    case 'candidates':
+      return await cmdSkbCandidates(args);
+    case 'promote':
+      return await cmdSkbPromote(args);
+    case 'remove':
+      return await cmdSkbRemove(args);
+    case 'search':
+      return await cmdSKBSearch(args);
+    case 'add':
+      return await cmdSKBAdd(args);
+    case 'list':
+      return await cmdSKBList(args);
+    default:
+      console.error('Usage: gsd-memory skb <candidates|promote|remove|search|add|list> [args]');
+      process.exit(1);
+  }
+}
+
 async function cmdHealth(args) {
   try {
     const res = await httpRequest('GET', '/health');
@@ -2388,9 +2492,11 @@ async function main() {
     'backfill-embeddings': cmdBackfillEmbeddings,
     'embedding-stats': cmdEmbeddingStats,
     'infer-tags': cmdInferTags,
+    'skb': cmdSkb,
     'skb-search': cmdSKBSearch,
     'skb-add': cmdSKBAdd,
     'skb-list': cmdSKBList,
+    'skb-candidates': cmdSkbCandidates,
     'status': cmdStatus,
     'health': cmdHealth,
     'help': () => { printUsage(); },
