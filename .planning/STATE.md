@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: Sight Beyond Sight
 status: planning
-stopped_at: Plan 09-07 executed — e2e-advanced.test.cjs 3 failures fixed (createReadyTask defaults + 4 per-test R/P/T overrides >=50 chars)
-last_updated: "2026-04-09T21:00:00.000Z"
-last_activity: "2026-04-09 -- Plan 09-07: e2e-advanced 73/73 green — createReadyTask R/P defaults >=50 chars, 4 per-test overrides updated, 3 tests fixed (b64b93a)"
+stopped_at: Plan 09-06 executed — comprehensive-e2e 4 failures fixed (substance gates + migration count 6→7 + README routes table, commit 440115c)
+last_updated: "2026-04-09T22:00:00.000Z"
+last_activity: "2026-04-09 -- Plan 09-06: fullPhases() R/P defaults >=50 chars (96+91), migration count 6→7, Daemon API Routes table added to README (440115c) -- comprehensive-e2e 117/117 green"
 progress:
   total_phases: 7
   completed_phases: 0
@@ -18,7 +18,7 @@ current_phase:
   status: in-progress
   depends_on: []
   requirements_count: 6
-next_action: "Execute plan 09-06 (comprehensive-e2e GAP fix) then close Phase 9"
+next_action: "Close Phase 9 (all plans 09-01..09-09 complete) then begin Phase 10 planning (D-Phase Structured Learning + CLI Dedup)"
 previous_milestone:
   version: v2.5
   name: Smarter Brain
@@ -39,10 +39,10 @@ See: .planning/PROJECT.md (updated 2026-04-09)
 
 ## Current Position
 
-Phase: 9 — Tech-Debt Sweep (in-progress)
-Plan: 09-07 DONE (GAP: e2e-advanced 73/73 green — createReadyTask R/P defaults >=50 chars, 4 per-test overrides updated). Plan 09-06 pending.
-Status: Plans 09-01 through 09-05 executed (TECH-01..06). Plans 09-07, 09-08, 09-09 executed (GAP). Plan 09-06 (comprehensive-e2e) pending before Phase 9 close.
-Last activity: 2026-04-09 -- Plan 09-07: e2e-advanced 73/73 green, 3 substance gate failures fixed (b64b93a)
+Phase: 9 — Tech-Debt Sweep (complete)
+Plan: 09-06 DONE (GAP: comprehensive-e2e 117/117 green — fullPhases R/P defaults >=50 chars, migration count 6→7, README API routes, commit 440115c).
+Status: All Phase 9 plans executed (09-01..09-09). TECH-01..06 resolved. GAP plans 09-06..09-09 resolved. Phase 9 complete — ready to close.
+Last activity: 2026-04-09 -- Plan 09-06: comprehensive-e2e 4 failures fixed (substance gates + migration count + README routes, 440115c)
 
 Progress: [##........] 11%
 

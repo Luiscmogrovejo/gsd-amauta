@@ -32,7 +32,7 @@
 
 ## Phases
 
-- [ ] **Phase 9: Tech-Debt Sweep** — Green baseline (`npm test && pytest` = 0 failures) before any v2.6 mandate lands
+- [x] **Phase 9: Tech-Debt Sweep** — Green baseline (`npm test && pytest` = 0 failures) before any v2.6 mandate lands — DONE (all 6 TECH + 4 GAP plans complete)
 - [ ] **Phase 10: D-Phase Structured Learning + CLI Dedup** — WHAT/WHY/WHEN/TAGS format, `gsd-memory learn --structured`, cli-variables.md reference, 2-week quarantine
 - [ ] **Phase 11: E-Phase Research-Informed Execution Mandate** — Pre-exec checklist reference, `PRE_EXECUTION_EVIDENCE` block, security checklist, advisory validation in v2.6
 - [ ] **Phase 12: T-Phase QA Department + Spec Inheritance** — `_inherit_parent_spec()` helper, parent G/W/T verification, edge cases, regression sweep, RED-GREEN back-testing
@@ -84,7 +84,7 @@
 - [x] 09-04: TECH-04 — Fix retention mock (PropertyMock [5,3]→[5,3,2])
 - [x] 09-05: TECH-05 — Fix e2e-lifecycle 15s timeout flakes (b371477)
 - [x] ~~09-06: TECH-06~~ — (virtual ref, bundled in 09-05 as commit 2f8ab46)
-- [ ] 09-06: GAP — Fix comprehensive-e2e.test.cjs (4 failures: substance gates + migration count + README routes)
+- [x] 09-06: GAP — Fix comprehensive-e2e.test.cjs (4 failures: substance gates + migration count + README routes) DONE (440115c)
 - [x] 09-07: GAP — Fix e2e-advanced.test.cjs (3 failures: substance gate fixtures) DONE (b64b93a)
 - [x] 09-08: GAP — Fix complex-integration.test.cjs (7 failures: substance gates + amauta_memory ref) (1eee7e4)
 - [x] 09-09: GAP — Fix perplexity-config + auto-learning + e2e-lifecycle (3 failures: search windows + rate limit) DONE (31680cc)
