@@ -131,7 +131,7 @@
 **Plans:**
 - [x] 10-01: Foundation config + references — `tag-rules.json` + `learning-format.md` + `cli-variables.md` (LEARN-01, LEARN-04, LEARN-07) — wave 1 — DONE (6f10983 + b6faa13 + d03dd89)
 - [x] 10-02: Migration 008 — `applied_count` column + DOWN (LEARN-05) — wave 1 — DONE 2026-04-09 (6307d93 + 72ff620)
-- [ ] 10-03: gsd-memory.cjs core — `parse-learning` + `learn --structured` + `normalizeTags` from tag-rules.json + distill guard (LEARN-02, LEARN-04) — wave 2
+- [x] 10-03: gsd-memory.cjs core — `parse-learning` + `learn --structured` + `normalizeTags` from tag-rules.json + distill guard (LEARN-02, LEARN-04) — wave 2 — DONE 2026-04-09 (b5e06de + 1eac6ab + 31088df)
 - [x] 10-04: pg_store.py + daemon API — tag validation + structured metadata + `/api/memory/:id/increment-applied` + `/api/memory/skb-candidates` + search `--tags`/`--category` (LEARN-02, LEARN-03, LEARN-04, LEARN-05) — wave 2 — DONE 2026-04-09 (ec22631 + ab713bc + 05ebb2f + 90e4aa5)
 - [ ] 10-05: gsd-memory.cjs SKB commands — `skb candidates`, `skb-promote --reviewed`, `skb-remove`, `increment-applied`, search `--tags`/`--category` + structured card display (LEARN-03, LEARN-05) — wave 2
 - [ ] 10-06: gsd-operator.md + gsd-validator.md — structured LEARNING detection + APPLIED_LEARNING citation scanner + Gate 2 dual-format acceptance (LEARN-02, LEARN-05, LEARN-06) — wave 3

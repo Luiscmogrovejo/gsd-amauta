@@ -97,7 +97,7 @@ v2.5 codebase docs in .planning/codebase/ (2,337 lines). v2.6 research in .plann
 ### Pending Todos
 
 - Close Phase 9 after validator confirms npm test + pytest both pass with 0 failures
-- Execute remaining Phase 10 plans: 10-03 (gsd-memory.cjs core — parse-learning + learn --structured, Node.js parallel agent), 10-05 (gsd-memory.cjs SKB commands), 10-06 (operator + APPLIED_LEARNING citation scanner), 10-07 (cli-variables dedup across agents + workflows), 10-08 (LEARNING block template across agents), 10-09 (tests + README)
+- Execute remaining Phase 10 plans: 10-05 (gsd-memory.cjs SKB commands — reuses normalizeTagsList + parseLearningBlock exports from 10-03), 10-06 (operator + APPLIED_LEARNING citation scanner), 10-07 (cli-variables dedup across agents + workflows), 10-08 (LEARNING block template across agents), 10-09 (tests + README)
 - Restart amauta-daemon at PID 99724 to pick up new /api/memory/skb-candidates + /api/memory/:id/increment-applied routes (operator action, not executor task)
 
 ### Blockers/Concerns
@@ -108,8 +108,8 @@ None. Part A blockers resolved pre-roadmap:
 
 ## Session Continuity
 
-Last session: 2026-04-09T22:15:00.000Z
-Stopped at: Phase 10 Plan 10-04 complete — pg_store.py + amauta-daemon.py parity for LEARN-02/03/04/05 (defense-in-depth tag validation, GSD_D_STRUCTURED kill switch, memory_increment_applied with FOR UPDATE, memory_skb_candidates, POST /api/memory/:id/increment-applied, GET /api/memory/skb-candidates, /api/memory/search tags+category wire-through)
+Last session: 2026-04-09T22:30:00.000Z
+Stopped at: Phase 10 Plan 10-03 complete — gsd-memory.cjs parse-learning subcommand + learn --structured hybrid CLI + normalizeTags reading tag-rules.json + cmdDistill guard (LEARN-02, LEARN-04). Node.js + Python layers at parity (both read tag-rules.json, both enforce structured metadata contract, both honor GSD_D_STRUCTURED kill switch).
 Resume file: .planning/milestones/v2.1-phases/10-d-phase-structured-learning/10-05-PLAN.md
 
 ## Previous Milestone: v2.5 -- Smarter Brain (COMPLETE)
