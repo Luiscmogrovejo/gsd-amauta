@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: milestone
 status: in-progress
-stopped_at: Phase 10 Plan 10-05 complete — gsd-memory.cjs SKB workflow CLI (increment-applied, skb-candidates, skb-promote --reviewed, skb-remove) + search --tags/--category filters + structured-card display, backed by do_PATCH/do_DELETE daemon verbs + GET/PATCH /api/memory/mem- + GET/DELETE /api/skb/skb- routes + pg_store single-entry fetch + merge-patch (LEARN-03, LEARN-05)
-last_updated: "2026-04-09T23:15:00.000Z"
-last_activity: "2026-04-09 -- Plan 10-05: gsd-memory.cjs SKB commands (7f515ca increment-applied, 41139b7 skb-candidates, 6ee63ee skb-promote/skb-remove + PATCH/DELETE daemon verbs + pg_store methods, 1fac128 search --tags/--category + renderMemoryResult)"
+stopped_at: Phase 10 Plan 10-06 complete — gsd-operator.md structured LEARNING detection + gsd-memory-learn-blocks.sh helper + APPLIED_LEARNING citation scanner (post-task, all 5 RPETD phases, daemon-side dedup) + gsd-validator.md Gate 2 dual-format acceptance (legacy one-liner OR structured block) (LEARN-02, LEARN-05, LEARN-06)
+last_updated: "2026-04-09T23:00:00.000Z"
+last_activity: "2026-04-09 -- Plan 10-06: operator D-phase structured learning handler + citation scanner + validator Gate 2 dual-format (2264177 gsd-memory-learn-blocks.sh helper, dca5ada operator D-phase structured storage, 0d9d997 operator APPLIED_LEARNING scanner, 8ec1284 validator Gate 2 dual-format)"
 progress:
   total_phases: 7
   completed_phases: 1
   total_plans: 18
-  completed_plans: 14
-  percent: 20
+  completed_plans: 15
+  percent: 21
 ---
 
 # GSD-Amauta -- Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-09)
 
 ## Current Position
 
-Phase: 10 — D-Phase Structured Learning + CLI Dedup (in progress, Wave 2 COMPLETE)
-Plan: 10-05 DONE (gsd-memory.cjs SKB workflow + search filters — cmdIncrementApplied (7f515ca), cmdSkbCandidates + cmdSkb nested dispatcher (41139b7), cmdSkbPromote + cmdSkbRemove + new do_PATCH/do_DELETE HTTP verbs + GET /api/memory/mem- + GET /api/skb/skb- + PATCH /api/memory/mem- + DELETE /api/skb/skb- routes + pg_store memory_get_by_id + memory_patch_metadata + skb_get_by_id + skb_delete (6ee63ee), cmdSearch --tags/--category + renderMemoryResult structured card (1fac128); runtime-tested: usage prints, reject paths, reviewed gate, module loads, python syntax ok, 38 cjs tests + 31 pytest tests all pass). 10-04 DONE (pg_store.py + amauta-daemon.py — load_tag_rules + normalize_tags refactor (ec22631), memory_store defense-in-depth + kill switch + search tags/category filters (ab713bc), memory_increment_applied + memory_skb_candidates with FOR UPDATE row lock (05ebb2f), POST /api/memory/:id/increment-applied + GET /api/memory/skb-candidates + /api/memory/search tags/category wire-through (90e4aa5)). 10-03 DONE (gsd-memory.cjs — loadTagRules + normalizeTags refactor (b5e06de), parseLearningBlock + parse-learning subcommand (1eac6ab), cmdLearn --structured hybrid CLI + BOOLEAN_FLAGS tokenizer + cmdDistill guard (31088df)). 10-02 DONE (migration 008 applied_count column + DOWN file; 6307d93 + 72ff620). 10-01 DONE (tag-rules.json + learning-format.md + cli-variables.md; 6f10983 + b6faa13 + d03dd89).
-Status: Phase 9 complete. Phase 10 Wave 1 complete (10-01 + 10-02). Phase 10 Wave 2 COMPLETE (10-03 Node.js CLI structured learning + 10-04 Python daemon parity + 10-05 Node.js CLI SKB workflow — all three layers shipped; LEARN-02, LEARN-03, LEARN-04, LEARN-05 complete across Node.js + Python). Next: Wave 3 — 10-06 (operator + citation scanner), 10-07 (cli-variables dedup across agents + workflows), 10-08 (LEARNING template across agents), 10-09 (tests + README).
-Last activity: 2026-04-09 -- Plan 10-05: gsd-memory.cjs SKB commands + search filters + structured card shipped (7f515ca + 41139b7 + 6ee63ee + 1fac128); daemon gained do_PATCH + do_DELETE HTTP verbs
+Phase: 10 — D-Phase Structured Learning + CLI Dedup (in progress, Wave 3 started)
+Plan: 10-06 DONE (gsd-operator.md structured LEARNING detection + gsd-memory-learn-blocks.sh helper + APPLIED_LEARNING citation scanner + gsd-validator.md Gate 2 dual-format — (1) get-shit-done/bin/gsd-memory-learn-blocks.sh: 78-line bash helper that parses a D-phase content blob, delegates to gsd-memory parse-learning, iterates blocks via node filter emitting shell-quoted learn --structured commands, honors GSD_D_STRUCTURED=false kill switch (2264177); (2) gsd-operator.md D-phase structured learning storage section: detects `^  WHAT:` lines, dispatches to $LEARN_BLOCKS, falls back to legacy $MEM learn on helper-non-zero or kill switch, operator 321->341 lines (dca5ada); (3) gsd-operator.md post-task APPLIED_LEARNING citation scan: $CLI show --json fetches full task content, grep -oE extracts mem-[a-f0-9]{12} across all 5 RPETD phases, loop calls increment-applied deduped daemon-side (already_cited:true = 200 OK), operator 341->356 lines (0d9d997); (4) gsd-validator.md Gate 2 rewritten to accept BOTH legacy one-liner `^LEARNING:` AND structured block `^LEARNING: && ^  WHAT:`, validator bash check with PASS/FAIL branches + learning-format.md failure guidance pointer, validator 112->145 lines (8ec1284). Budgets: operator 356 <= 360, validator 145 <= 200.) 10-05 DONE (gsd-memory.cjs SKB workflow + search filters — cmdIncrementApplied (7f515ca), cmdSkbCandidates + cmdSkb nested dispatcher (41139b7), cmdSkbPromote + cmdSkbRemove + new do_PATCH/do_DELETE HTTP verbs + GET /api/memory/mem- + GET /api/skb/skb- + PATCH /api/memory/mem- + DELETE /api/skb/skb- routes + pg_store memory_get_by_id + memory_patch_metadata + skb_get_by_id + skb_delete (6ee63ee), cmdSearch --tags/--category + renderMemoryResult structured card (1fac128)). 10-04 DONE (pg_store.py + amauta-daemon.py — load_tag_rules + normalize_tags refactor (ec22631), memory_store defense-in-depth + kill switch + search tags/category filters (ab713bc), memory_increment_applied + memory_skb_candidates with FOR UPDATE row lock (05ebb2f), POST /api/memory/:id/increment-applied + GET /api/memory/skb-candidates + /api/memory/search tags/category wire-through (90e4aa5)). 10-03 DONE (gsd-memory.cjs — loadTagRules + normalizeTags refactor (b5e06de), parseLearningBlock + parse-learning subcommand (1eac6ab), cmdLearn --structured hybrid CLI + BOOLEAN_FLAGS tokenizer + cmdDistill guard (31088df)). 10-02 DONE (migration 008 applied_count column + DOWN file; 6307d93 + 72ff620). 10-01 DONE (tag-rules.json + learning-format.md + cli-variables.md; 6f10983 + b6faa13 + d03dd89).
+Status: Phase 9 complete. Phase 10 Wave 1 complete (10-01 + 10-02). Phase 10 Wave 2 COMPLETE (10-03 + 10-04 + 10-05 — all three layers shipped; LEARN-02, LEARN-03, LEARN-04, LEARN-05 complete). Phase 10 Wave 3 IN PROGRESS: 10-06 DONE (operator + validator Gate 2 — LEARN-02, LEARN-05, LEARN-06). Next: 10-07 (cli-variables dedup across agents + workflows), 10-08 (LEARNING template across agents), 10-09 (tests + README).
+Last activity: 2026-04-09 -- Plan 10-06: operator structured LEARNING handler + citation scanner + validator Gate 2 dual-format shipped (2264177 + dca5ada + 0d9d997 + 8ec1284); gsd-memory-learn-blocks.sh helper created under get-shit-done/bin/
 
-Progress: [##........] 20%
+Progress: [##........] 21%
 
 ## v2.6 Phase Map
 
@@ -98,12 +98,18 @@ v2.5 codebase docs in .planning/codebase/ (2,337 lines). v2.6 research in .plann
 - **Two-layer boolean flag safety** (Plan 10-05): `--reviewed` on `skb-promote` is added to `BOOLEAN_FLAGS` (tokenizer-level) AND explicitly checked in the handler with `if (!args.reviewed)` (handler-level). The set prevents token swallowing; the check enforces the gate regardless of how the CLI was invoked. Future risky operations (bulk-delete, tag-rewrite) should follow the same two-layer pattern.
 - **source_task column as promotion link** (Plan 10-05): The `gsd_shared_kb` schema has no dedicated `source_mem_id` column. Rather than adding a migration (out of scope for a Wave 2 plan), skb-promote stores the link as `source_task = 'promoted_from:mem-XXXX'` in the existing free-text column and skb-remove parses the prefix to recover the source mem_id for demotion. Future plan 10-06 (or a later tech-debt sweep) can formalize this with a proper column.
 - **Nested subcommand dispatcher alongside hyphenated commands** (Plan 10-05): `gsd-memory skb candidates` (space) and `gsd-memory skb-candidates` (hyphen) both route to the same handler via a new `cmdSkb` switch dispatcher. Registering both forms preserves existing hyphenated callers AND supports the friendlier space-separated form. Legacy `skb-search`/`skb-add`/`skb-list` commands continue to work as before; they are also routed through `cmdSkb` for consistency.
+- **Extract `node -e` filters into helper scripts instead of inlining in agent prompts** (Plan 10-06): When an agent prompt needs executable JS more than ~3 lines long, put it in `get-shit-done/bin/<helper>.sh` instead of inlining. The previous revision of plan 10-06 tried to inline ~12 lines of nested-quoted `node -e` in the operator markdown — markdown -> bash -> `node -e '...'` -> JS string literals is fragile, hard to test, and easy to silently break. The helper script pattern adds one file but makes the complexity testable in isolation and keeps the operator prompt readable. `gsd-memory-learn-blocks.sh` is the first instance.
+- **Defense-in-depth kill switches checked at both caller and callee** (Plan 10-06): `GSD_D_STRUCTURED=false` is checked at BOTH the operator prompt (before dispatch) AND the helper script (first 5 lines). Either layer alone is sufficient, but the belt-and-suspenders pattern ensures a future refactor cannot accidentally bypass the kill switch. Kill switches are load-bearing — they must survive refactors.
+- **Helper failure falls through to legacy learn, never hard-fails** (Plan 10-06): `$LEARN_BLOCKS "$D_CONTENT" || $MEM learn "$LEARNING_ONE_LINER"`. Agents run in the field with unreliable daemon connectivity — hard-failing the task close on a helper non-zero would lose the learning entirely. Falling through preserves the one-liner in all cases. The learning may lose its structured fields but never gets dropped.
+- **Citation scanner runs post-task, not per-phase** (Plan 10-06): `$CLI show --json` fetches the full task content once at task close and greps all 5 phases for `APPLIED_LEARNING: mem-XXXX` citations. Cheaper than grepping each phase as it lands, and the daemon's (mem_id, task_id) dedup makes running-it-once equivalent to running-it-per-phase. Also localizes the scanner's code to one place in the operator instead of scattered across 5 RPETD handlers.
+- **Daemon-side dedup is the source of truth for citation idempotence** (Plan 10-06): The operator does NOT try to dedupe citations in bash. It calls `increment-applied` for every match and lets the daemon return `already_cited:true` (200 OK, not 409) for repeats. Keeps the operator bash trivial and pushes dedup to the one authoritative place (the pg_store FOR UPDATE row lock on the metadata jsonb).
 
 ### Pending Todos
 
 - Close Phase 9 after validator confirms npm test + pytest both pass with 0 failures
-- Execute remaining Phase 10 plans: 10-06 (operator + APPLIED_LEARNING citation scanner), 10-07 (cli-variables dedup across agents + workflows), 10-08 (LEARNING block template across agents), 10-09 (tests + README)
+- Execute remaining Phase 10 plans: 10-07 (cli-variables dedup across agents + workflows), 10-08 (LEARNING block template across agents), 10-09 (tests + README)
 - Restart amauta-daemon to pick up new /api/memory/skb-candidates + /api/memory/:id/increment-applied + GET/PATCH /api/memory/mem- + GET/DELETE /api/skb/skb- routes + do_PATCH + do_DELETE verb handlers (operator action, not executor task)
+- Sync repo copy of `get-shit-done/bin/` binaries into user-install `~/.claude/get-shit-done/bin/` so `parse-learning` and `increment-applied` subcommands are reachable from agents using the default MEM path (Plan 10-06 helper defaults to user-install; repo callers must pass `MEM="node <repo-path>"` explicitly)
 
 ### Blockers/Concerns
 
@@ -113,9 +119,9 @@ None. Part A blockers resolved pre-roadmap:
 
 ## Session Continuity
 
-Last session: 2026-04-09T23:15:00.000Z
-Stopped at: Phase 10 Plan 10-05 complete — gsd-memory.cjs full SKB workflow (increment-applied, skb-candidates, skb-promote --reviewed, skb-remove) + search --tags/--category filters + structured-card result display. Daemon gained new do_PATCH + do_DELETE HTTP verbs with GET /api/memory/mem- + GET /api/skb/skb- + PATCH /api/memory/mem- + DELETE /api/skb/skb- routes. pg_store gained memory_get_by_id + memory_patch_metadata + skb_get_by_id + skb_delete. LEARN-03 + LEARN-05 complete across all three layers. 38 cjs tests + 31 pytest memory tests still pass. Phase 10 Wave 2 fully shipped.
-Resume file: .planning/milestones/v2.1-phases/10-d-phase-structured-learning/10-06-PLAN.md
+Last session: 2026-04-09T23:00:00.000Z
+Stopped at: Phase 10 Plan 10-06 complete — gsd-operator.md structured LEARNING detection + gsd-memory-learn-blocks.sh helper (get-shit-done/bin/) + APPLIED_LEARNING post-task citation scanner (all 5 RPETD phases, daemon-side dedup by (mem_id, task_id)) + gsd-validator.md Gate 2 dual-format acceptance (legacy one-liner OR structured block). Operator 356 lines (<=360 budget). Validator 145 lines (<=200 budget). LEARN-02 + LEARN-05 + LEARN-06 complete. 4 atomic commits on master (2264177 helper, dca5ada operator D-phase, 0d9d997 operator scanner, 8ec1284 validator Gate 2). Phase 10 Wave 3 plan 10-06 shipped; 10-07, 10-08, 10-09 remain.
+Resume file: .planning/milestones/v2.1-phases/10-d-phase-structured-learning/10-07-PLAN.md
 
 ## Previous Milestone: v2.5 -- Smarter Brain (COMPLETE)
 
