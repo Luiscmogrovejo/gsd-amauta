@@ -588,10 +588,39 @@ function formatSKB(entry, index) {
 // Commands
 // ═══════════════════════════════════════════════════════
 
+// Phase 10 LEARN-03: render a single memory result using either the
+// structured card format (when metadata.what is present) or the legacy
+// one-line format (for free-text entries). Keeps the legacy display
+// working unchanged for old memories while new structured entries show
+// their WHAT/WHY/WHEN/CATEGORY schema directly.
+function renderMemoryResult(r, index) {
+  const metadata = r.metadata || {};
+  const structured = !!metadata.what;
+  if (structured) {
+    const score = (r.score || 0).toFixed(3);
+    const appliedCount = r.applied_count || metadata.applied_count || 0;
+    console.log(`\n[${index + 1}] ${r.id}  (score: ${score}, applied: ${appliedCount})`);
+    console.log(`  WHAT: ${metadata.what}`);
+    if (metadata.why)  console.log(`  WHY: ${metadata.why}`);
+    if (metadata.when) console.log(`  WHEN: ${metadata.when}`);
+    const cat = metadata.category || 'pattern';
+    const tagArr = Array.isArray(r.tags) ? r.tags : [];
+    const tags = tagArr.length ? tagArr.join(', ') : '—';
+    console.log(`  CATEGORY: ${cat}   TAGS: ${tags}`);
+    if (metadata.promoted_to_skb === true) {
+      console.log(`  \x1b[92m[PROMOTED to ${metadata.skb_id || 'SKB'}]\x1b[0m`);
+    }
+  } else {
+    // Legacy free-text — keep the existing formatMemory card so older
+    // memories and test fixtures continue to render as before.
+    process.stdout.write(formatMemory(r, index));
+  }
+}
+
 async function cmdSearch(args) {
   const query = args._positional.join(' ');
   if (!query) {
-    console.error('Usage: amauta-memory search <query> [--agent <id>] [--project <id>] [--source <src>] [--limit <n>] [--include-noise] [--json]');
+    console.error('Usage: amauta-memory search <query> [--agent <id>] [--project <id>] [--source <src>] [--limit <n>] [--tags <t1,t2>] [--category <cat>] [--include-noise] [--json]');
     process.exit(1);
   }
 
@@ -601,6 +630,14 @@ async function cmdSearch(args) {
   if (args.source) body.source = args.source;
   // MEM-01: --include-noise bypasses default exclusion of task_event/rpetd_phase
   if (args['include-noise']) body.include_noise = true;
+  // Phase 10 LEARN-03: forward --tags and --category to daemon search.
+  // tags accepts either an already-split array or a comma string.
+  if (args.tags) {
+    body.tags = Array.isArray(args.tags)
+      ? args.tags
+      : String(args.tags).split(',').map(s => s.trim()).filter(Boolean);
+  }
+  if (args.category) body.category = args.category;
 
   const res = await tryDaemon('POST', '/api/memory/search', body);
 
@@ -617,7 +654,7 @@ async function cmdSearch(args) {
       return;
     }
     console.log(`\n\x1b[1mMemory Search: "${query}"\x1b[0m  (${results.length} results, file mode)\n`);
-    results.forEach((mem, i) => process.stdout.write(formatMemory(mem, i)));
+    results.forEach((mem, i) => renderMemoryResult(mem, i));
     console.log('');
     return;
   }
@@ -639,7 +676,7 @@ async function cmdSearch(args) {
   }
 
   console.log(`\n\x1b[1mMemory Search: "${query}"\x1b[0m  (${results.length} results)\n`);
-  results.forEach((mem, i) => process.stdout.write(formatMemory(mem, i)));
+  results.forEach((mem, i) => renderMemoryResult(mem, i));
   console.log('');
 }
 
