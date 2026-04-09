@@ -3227,6 +3227,253 @@ def cmd_status(args):
         print(c(f"{args.id}: {old_status} → {args.status}", GREEN))
 
 
+def cmd_health(args):
+    """
+    Unified health dashboard: daemon, RLM, Redis, PostgreSQL, agents, tasks, memory.
+
+    Aggregates state from the daemon /health endpoint, the RLM /health endpoint,
+    local task JSON, and direct PG queries (agent performance, memory, SKB).
+
+    Use --json for machine-readable output. Default is colored terminal output.
+    """
+    import urllib.request as _urlreq
+
+    host = os.environ.get("GSD_AMAUTA_HOST", "127.0.0.1")
+    d_port = int(os.environ.get("GSD_AMAUTA_PORT", "18799"))
+    rlm_port = int(os.environ.get("GSD_RLM_PORT", "18798"))
+
+    out = {
+        "timestamp": _now(),
+        "pipeline_status": "unknown",
+        "services": {},
+        "tasks": {},
+        "memory": {},
+        "skb": {},
+        "agents": {},
+        "service_errors": [],
+    }
+
+    # ── Daemon /health ───────────────────────────────────────────────────────
+    try:
+        with _urlreq.urlopen(f"http://{host}:{d_port}/health", timeout=3) as r:
+            daemon = json.loads(r.read().decode("utf-8"))
+        out["pipeline_status"] = daemon.get("pipeline_status", "unknown")
+        out["services"]["daemon"] = {
+            "status": "running",
+            "host": f"{host}:{d_port}",
+            "pid": daemon.get("pid"),
+            "backend": daemon.get("backend"),
+            "features": daemon.get("features", []),
+        }
+        out["services"]["rlm"] = {
+            "status": "running" if daemon.get("rlm_running") else "stopped",
+            "port": daemon.get("rlm_port"),
+            "managed": daemon.get("rlm_managed"),
+            "restarts": daemon.get("rlm_restarts"),
+        }
+        out["services"]["redis"] = {
+            "status": "connected" if daemon.get("redis_running") else "disconnected",
+            "url": daemon.get("redis_url"),
+            "managed": daemon.get("redis_managed"),
+            "restarts": daemon.get("redis_restarts"),
+            "cache_metrics": daemon.get("cache_metrics", {}),
+        }
+        pg_health = daemon.get("pg_health") or {}
+        out["services"]["postgres"] = {
+            "status": pg_health.get("status", "unknown"),
+            "available": daemon.get("pg_available"),
+            "dsn_host": pg_health.get("dsn_host"),
+        }
+        out["services"]["api_keys"] = daemon.get("api_keys", {})
+        for e in daemon.get("service_errors", []) or []:
+            out["service_errors"].append(e)
+    except Exception as e:
+        out["services"]["daemon"] = {"status": "stopped", "error": str(e)}
+        out["service_errors"].append(f"daemon unreachable at {host}:{d_port}: {e}")
+        out["pipeline_status"] = "critical"
+
+    # ── RLM direct /health (for index_size + cache size) ─────────────────────
+    try:
+        with _urlreq.urlopen(f"http://{host}:{rlm_port}/health", timeout=2) as r:
+            rlm = json.loads(r.read().decode("utf-8"))
+        out["services"].setdefault("rlm", {}).update({
+            "index_size": rlm.get("index_size"),
+            "cache_size": rlm.get("cache_size"),
+            "cache_max": rlm.get("cache_max"),
+            "max_chunk_chars": rlm.get("max_chunk_chars"),
+        })
+    except Exception as e:
+        out["services"].setdefault("rlm", {})["direct_health_error"] = str(e)
+
+    # ── Tasks (local JSON state) ─────────────────────────────────────────────
+    try:
+        data = load()
+        items = data.get("items", []) or []
+        by_status, by_type = {}, {}
+        for i in items:
+            s = i.get("status", "?"); by_status[s] = by_status.get(s, 0) + 1
+            t = i.get("type",   "?"); by_type[t]   = by_type.get(t,   0) + 1
+        out["tasks"] = {
+            "total": len(items),
+            "by_status": by_status,
+            "by_type": by_type,
+        }
+    except Exception as e:
+        out["tasks"] = {"error": str(e)}
+
+    # ── Memory + SKB + Agent performance (direct PG) ─────────────────────────
+    try:
+        if _mem_pg_available():
+            with _pg_conn() as conn:
+                cur = conn.cursor()
+
+                # Embedding coverage
+                cur.execute("SELECT COUNT(*) FROM gsd_memory")
+                total_mem = cur.fetchone()[0] or 0
+                cur.execute("SELECT COUNT(*) FROM gsd_memory WHERE embedding IS NOT NULL")
+                with_emb = cur.fetchone()[0] or 0
+                out["memory"] = {
+                    "total_entries": int(total_mem),
+                    "with_embedding": int(with_emb),
+                    "coverage_pct": round(100.0 * with_emb / total_mem, 1) if total_mem else 0.0,
+                }
+
+                # SKB count
+                try:
+                    cur.execute("SELECT COUNT(*) FROM agent_shared_knowledge")
+                    out["skb"] = {"total_entries": int(cur.fetchone()[0] or 0)}
+                except Exception:
+                    out["skb"] = {"total_entries": 0}
+
+                # Per-agent pass rate from gsd_agent_performance
+                try:
+                    cur.execute("""
+                        SELECT agent_id,
+                               COUNT(*) AS total,
+                               COUNT(*) FILTER (WHERE outcome = 'pass') AS pass_count,
+                               COUNT(*) FILTER (WHERE outcome = 'fail') AS fail_count
+                        FROM gsd_agent_performance
+                        WHERE agent_id IS NOT NULL
+                        GROUP BY agent_id
+                        ORDER BY total DESC
+                    """)
+                    for row in cur.fetchall():
+                        agent_id, total, pass_count, fail_count = row
+                        total = int(total or 0)
+                        pc = int(pass_count or 0)
+                        fc = int(fail_count or 0)
+                        out["agents"][agent_id] = {
+                            "total": total,
+                            "pass": pc,
+                            "fail": fc,
+                            "pass_rate": round(pc / total, 3) if total else None,
+                        }
+                except Exception as e:
+                    out["agents"] = {"error": f"agent_performance query failed: {e}"}
+
+                cur.close()
+        else:
+            out["memory"] = {"note": "PG not available — memory stats unavailable"}
+    except Exception as e:
+        out["memory"] = {"error": str(e)}
+
+    # ── JSON output mode ─────────────────────────────────────────────────────
+    if getattr(args, "json", False):
+        print(json.dumps(out, indent=2, default=str))
+        return
+
+    # ── Pretty terminal output ───────────────────────────────────────────────
+    pipe = out.get("pipeline_status", "unknown")
+    pipe_col = GREEN if pipe == "healthy" else (YELLOW if pipe == "degraded" else RED)
+    print(bold(f"\nAmauta Health — pipeline: ") + c(pipe, pipe_col) + "\n")
+
+    def _status_colour(st):
+        if st in ("running", "connected", "ok"):
+            return GREEN
+        if st in ("degraded",):
+            return YELLOW
+        return RED
+
+    # Services
+    print(bold("Services:"))
+    svcs = out.get("services", {}) or {}
+    for name in ("daemon", "rlm", "redis", "postgres"):
+        svc = svcs.get(name, {}) or {}
+        if not svc:
+            continue
+        st = svc.get("status", "?")
+        col = _status_colour(st)
+        extras = []
+        for k in ("host", "port", "pid", "backend", "restarts", "index_size",
+                  "url", "dsn_host", "cache_size", "cache_max"):
+            if k in svc and svc[k] not in (None, ""):
+                extras.append(f"{k}={svc[k]}")
+        print(f"  {name:10s} {c(st, col):20s} {' '.join(extras)}")
+
+    # API keys
+    api = (svcs.get("api_keys") or {})
+    if api:
+        print(bold("\nAPI Keys:"))
+        for k, v in sorted(api.items()):
+            st = (v or {}).get("status", "?")
+            col = GREEN if st == "ok" else (YELLOW if (v or {}).get("set") else RED)
+            print(f"  {k:25s} {c(st, col)}")
+
+    # Tasks
+    t = out.get("tasks") or {}
+    if t and "error" not in t:
+        print(bold(f"\nTasks: {t.get('total', 0)}"))
+        for s, n in sorted((t.get("by_status") or {}).items()):
+            col = STATUS_COL.get(s, WHITE)
+            print(f"  {c(s, col):25s} {n}")
+    elif t.get("error"):
+        print(bold("\nTasks:") + " " + c(f"error: {t['error']}", RED))
+
+    # Memory + SKB
+    m = out.get("memory") or {}
+    if m and "error" not in m and "note" not in m:
+        cov = m.get("coverage_pct", 0)
+        cov_col = GREEN if cov >= 90 else (YELLOW if cov >= 60 else RED)
+        print(bold(f"\nMemory: {m.get('total_entries', 0)} entries, ")
+              + c(f"{cov}% embedded", cov_col))
+    elif m.get("note"):
+        print(bold("\nMemory: ") + dim(m["note"]))
+    elif m.get("error"):
+        print(bold("\nMemory: ") + c(f"error: {m['error']}", RED))
+
+    skb = out.get("skb") or {}
+    if skb.get("total_entries") is not None:
+        print(f"  SKB: {skb['total_entries']} entries")
+
+    # Agents
+    a = out.get("agents") or {}
+    if a and "error" not in a:
+        if a:
+            print(bold("\nAgent Pass Rates:"))
+            for name, stats in sorted(a.items()):
+                pr = stats.get("pass_rate")
+                total = stats.get("total", 0)
+                if pr is not None:
+                    col = GREEN if pr >= 0.85 else (YELLOW if pr >= 0.70 else RED)
+                    print(f"  @{name:25s} {c(f'{pr:.1%}', col)} ({total} tasks, "
+                          f"{stats.get('pass',0)}p/{stats.get('fail',0)}f)")
+                else:
+                    print(f"  @{name:25s} {dim('n/a')} ({total} tasks)")
+        else:
+            print(bold("\nAgent Pass Rates: ") + dim("no performance data yet"))
+    elif a.get("error"):
+        print(bold("\nAgents: ") + c(f"error: {a['error']}", RED))
+
+    # Service errors
+    errs = out.get("service_errors") or []
+    if errs:
+        print(bold("\nService Errors:"))
+        for e in errs:
+            print(f"  {c('!', RED)} {e}")
+
+    print()
+
+
 def cmd_assign(args):
     with _file_lock():
         data = load()
@@ -5297,6 +5544,12 @@ AGENT WORKFLOW (heartbeat cycle):
     st.add_argument("--agent")
     st.add_argument("--force", action="store_true", help="Override state machine / dependency checks")
 
+    # ── health ────────────────────────────────────────────────────────────────
+    hl = sub.add_parser("health",
+        help="Unified health dashboard: daemon, RLM, Redis, PG, agents, tasks, memory")
+    hl.add_argument("--json", action="store_true",
+        help="Emit raw JSON instead of formatted terminal output")
+
     # ── assign ────────────────────────────────────────────────────────────────
     asgn = sub.add_parser("assign", help="Assign to agent")
     asgn.add_argument("id"); asgn.add_argument("agent")
@@ -5507,6 +5760,7 @@ def main():
         "ls":          cmd_list,
         "update":      cmd_update,
         "status":      cmd_status,
+        "health":      cmd_health,
         "assign":      cmd_assign,
         "delete":      cmd_delete,
         "rm":          cmd_delete,

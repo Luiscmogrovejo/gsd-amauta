@@ -764,10 +764,11 @@ All memory and task queries are scoped by `project_id`, automatically derived fr
 
 ## Health Dashboard
 
-`amauta status` provides a unified health view of all system components:
+`amauta health` provides a unified health view of all system components:
 
 ```bash
-amauta status
+amauta health              # colored terminal output
+amauta health --json       # raw JSON for scripting
 ```
 
 Reports:
@@ -791,7 +792,8 @@ Reports:
 # Board and status
 amauta board                                     # Kanban board view
 amauta stats                                     # Project statistics
-amauta status                                    # Health dashboard (daemon, RLM, PG, agents)
+amauta health                                    # Health dashboard (daemon, RLM, Redis, PG, agents, tasks)
+amauta health --json                             # JSON output for scripting
 amauta show TK-0001                              # Full task detail (checks archive as fallback)
 
 # Task creation
