@@ -319,3 +319,23 @@ Check RLM: `curl -s http://127.0.0.1:18798/health`
 
 **ALWAYS use the Write tool to create files** — never use `Bash(cat << 'EOF')` or heredoc commands for file creation.
 </graceful_degradation>
+
+<d_phase_structured_learning>
+### D-phase: Structured Learning Storage (Phase 10)
+
+When the D-phase content contains a structured LEARNING block (indented
+  WHAT: lines), dispatch to `gsd-memory-learn-blocks.sh` which parses and stores each block via `learn --structured`. Otherwise fall back to the legacy one-line `learn` path. Kill switch `GSD_D_STRUCTURED=false` forces the legacy path (defense-in-depth checked in both operator and helper). If the helper exits non-zero (daemon unreachable, parse failure), the `||` fallback stores the one-liner.
+
+```bash
+LEARN_BLOCKS="/Users/luismogrovejo/.claude/get-shit-done/bin/gsd-memory-learn-blocks.sh"
+if printf '%s' "$D_CONTENT" | grep -q '^  WHAT:' && [ "${GSD_D_STRUCTURED:-true}" != "false" ]; then
+  GSD_AGENT="$GSD_AGENT" MEM="$MEM" "$LEARN_BLOCKS" "$D_CONTENT" || \
+    $MEM learn "$LEARNING_ONE_LINER" --agent "$GSD_AGENT"
+else
+  [ "${GSD_D_STRUCTURED:-true}" = "false" ] && \
+    printf 'Structured learning disabled (GSD_D_STRUCTURED=false), storing as free-text\n' >&2
+  $MEM learn "$LEARNING_ONE_LINER" --agent "$GSD_AGENT"
+fi
+```
+</d_phase_structured_learning>
+
