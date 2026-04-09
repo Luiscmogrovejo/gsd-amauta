@@ -3,22 +3,22 @@ gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: Sight Beyond Sight
 status: planning
-stopped_at: Plan 09-05 executed — TECH-05 + TECH-06 CJS timeout + runOrSkip narrowing (2 commits, tests green)
-last_updated: "2026-04-09T19:00:00.000Z"
-last_activity: "2026-04-09 -- Plan 09-05: e2e-lifecycle timeout 15s→30s (TECH-05, b371477); gsd-amauta timeout 15s→30s + runOrSkip narrowed (TECH-06, 2f8ab46)"
+stopped_at: Plan 09-08 executed — complex-integration.test.cjs 7 failures fixed (makeTask R/P defaults >=50 chars + amauta_memory→gsd_memory)
+last_updated: "2026-04-09T20:30:00.000Z"
+last_activity: "2026-04-09 -- Plan 09-08: complex-integration 87/87 green — makeTask R/P >=50 chars, amauta_memory→gsd_memory, 7 tests fixed (1eee7e4); Plan 09-09: perplexity-config fnStart 800→1500, auto-learning proximity 500→2500, e2e-lifecycle store rate-limit retry+skip (31680cc)"
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 6
-  completed_plans: 5
-  percent: 10
+  completed_plans: 6
+  percent: 11
 current_phase:
   number: 9
   name: Tech-Debt Sweep
   status: in-progress
   depends_on: []
   requirements_count: 6
-next_action: "Execute plan 09-06 if separate, or close Phase 9 — TECH-01..06 all addressed"
+next_action: "Execute plans 09-06, 09-07 (comprehensive-e2e, e2e-advanced GAP fixes) then close Phase 9"
 previous_milestone:
   version: v2.5
   name: Smarter Brain
@@ -40,11 +40,11 @@ See: .planning/PROJECT.md (updated 2026-04-09)
 ## Current Position
 
 Phase: 9 — Tech-Debt Sweep (in-progress)
-Plan: 09-05 DONE (TECH-05 + TECH-06 complete). All 6 TECH requirements addressed.
-Status: Plans 09-01 through 09-05 executed. TECH-05 e2e-lifecycle timeout fixed (b371477). TECH-06 gsd-amauta timeout + runOrSkip narrowed (2f8ab46). 6 of 6 TECH requirements resolved.
-Last activity: 2026-04-09 -- Plan 09-05: e2e-lifecycle timeout 15s→30s (TECH-05); gsd-amauta timeout 15s→30s + runOrSkip narrowed — removed (r.error||'').length===0 condition (TECH-06)
+Plan: 09-08 DONE (GAP: complex-integration 87/87 green — makeTask R/P >=50 chars, amauta_memory→gsd_memory). Plans 09-06, 09-07 pending.
+Status: Plans 09-01 through 09-05 executed (TECH-01..06). Plans 09-08 and 09-09 executed (GAP). Plans 09-06, 09-07 (comprehensive-e2e, e2e-advanced) pending before Phase 9 close.
+Last activity: 2026-04-09 -- Plan 09-08: complex-integration 87/87 green (1eee7e4)
 
-Progress: [##........] 9%
+Progress: [##........] 11%
 
 ## v2.6 Phase Map
 
