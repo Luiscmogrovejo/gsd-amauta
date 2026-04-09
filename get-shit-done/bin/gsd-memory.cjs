@@ -108,22 +108,121 @@ function autoProjectId(explicit) {
 
 // ═══════════════════════════════════════════════════════
 // Tag Synonym Normalization (shared with Python stores)
+// Phase 10 LEARN-04: rules loaded from get-shit-done/config/tag-rules.json
 // ═══════════════════════════════════════════════════════
 
-const TAG_SYNONYMS = {
-  postgres: 'postgresql', pg: 'postgresql',
-  k8s: 'kubernetes', kube: 'kubernetes',
-  js: 'javascript', ts: 'typescript', py: 'python',
-  node: 'nodejs', mongo: 'mongodb', gql: 'graphql',
-  tf: 'terraform', 'docker-compose': 'docker', compose: 'docker',
-  'react-native': 'react', reactnative: 'react',
-};
+let _TAG_RULES_CACHE = null;
+function loadTagRules() {
+  if (_TAG_RULES_CACHE) return _TAG_RULES_CACHE;
+  const candidates = [
+    path.resolve(__dirname, '..', 'config', 'tag-rules.json'),
+    path.resolve(process.env.HOME || '', '.claude', 'get-shit-done', 'config', 'tag-rules.json'),
+  ];
+  for (const p of candidates) {
+    try {
+      if (fs.existsSync(p)) {
+        _TAG_RULES_CACHE = JSON.parse(fs.readFileSync(p, 'utf-8'));
+        return _TAG_RULES_CACHE;
+      }
+    } catch (e) {
+      // fall through to next candidate
+    }
+  }
+  // Hardcoded fallback — never crash, log warning on first miss
+  if (!loadTagRules._warned) {
+    console.warn('[gsd-memory] tag-rules.json not found; using hardcoded defaults');
+    loadTagRules._warned = true;
+  }
+  _TAG_RULES_CACHE = {
+    banned: ['best-practice', 'general', 'lesson', 'insight'],
+    synonyms: {
+      db: 'database', postgres: 'postgresql', pg: 'postgresql',
+      k8s: 'kubernetes', ts: 'typescript', js: 'javascript',
+      py: 'python', ci: 'ci-cd',
+    },
+    vocabulary: {},
+    tiers: {
+      domain: ['postgresql', 'kubernetes', 'redis', 'react', 'nodejs', 'python'],
+      technique: ['connection-pool', 'memoization', 'idempotency'],
+      scope: ['backend', 'frontend', 'database', 'api', 'testing', 'security'],
+      meta: ['pattern', 'pitfall', 'convention'],
+    },
+  };
+  return _TAG_RULES_CACHE;
+}
 
-function normalizeTags(tags) {
-  if (!tags || !Array.isArray(tags)) return tags;
+// Determine which tier a tag belongs to (returns 0..3, lower = more specific)
+function tagTier(tag, rules) {
+  if ((rules.tiers.domain || []).includes(tag)) return 0;
+  if ((rules.tiers.technique || []).includes(tag)) return 1;
+  if ((rules.tiers.scope || []).includes(tag)) return 2;
+  if ((rules.tiers.meta || []).includes(tag)) return 3;
+  return 2; // unknown tags default to "scope" tier
+}
+
+/**
+ * Phase 10 LEARN-04: Normalize, strip banned, enforce cap of 5 tags by tier ranking.
+ * @param {string[]|string} input - array or comma-separated string
+ * @returns {{tags: string[], warnings: string[], error: string|null}}
+ */
+function normalizeTags(input) {
+  const rules = loadTagRules();
+  const warnings = [];
+  let tags = Array.isArray(input)
+    ? input
+    : String(input || '').split(',').map(s => s.trim()).filter(Boolean);
+
+  // Lowercase + synonym normalization + dedupe
   const seen = new Set();
-  return tags.map(t => TAG_SYNONYMS[t.toLowerCase().trim()] || t.toLowerCase().trim())
-             .filter(t => { if (seen.has(t)) return false; seen.add(t); return true; });
+  tags = tags
+    .map(t => String(t || '').toLowerCase().trim())
+    .filter(Boolean)
+    .map(t => (rules.synonyms[t] || t))
+    .filter(t => { if (seen.has(t)) return false; seen.add(t); return true; });
+
+  // Strip banned tags
+  const bannedSet = new Set(rules.banned || []);
+  const stripped = tags.filter(t => bannedSet.has(t));
+  tags = tags.filter(t => !bannedSet.has(t));
+  if (stripped.length > 0) {
+    warnings.push(`Stripped banned tags: ${stripped.join(', ')}`);
+  }
+
+  // Reject if nothing left
+  if (tags.length === 0) {
+    const suggest = Object.values(rules.vocabulary || {})
+      .flat()
+      .slice(0, 4)
+      .join(', ');
+    return {
+      tags: [],
+      warnings,
+      error: `Rejected: all tags are generic (${stripped.join(', ') || 'empty'}). Add specific tags like '${suggest || 'postgresql, connection-pool'}'. See learning-format.md.`,
+    };
+  }
+
+  // Auto-trim to 5 by tier ranking (lower tier = kept first)
+  if (tags.length > 5) {
+    const before = tags.length;
+    const withTier = tags.map(t => ({ tag: t, tier: tagTier(t, rules) }));
+    withTier.sort((a, b) => a.tier - b.tier);
+    tags = withTier.slice(0, 5).map(x => x.tag);
+    warnings.push(`Trimmed ${before}->5 tags, kept: [${tags.join(', ')}]`);
+  }
+
+  return { tags, warnings, error: null };
+}
+
+/**
+ * Phase 10 LEARN-04: Backward-compat wrapper — returns just the flat tag list.
+ * Mirrors the `normalize_tags_list()` pattern in pg_store.py (Plan 10-04 Task 1).
+ * Use this at legacy call sites that only expect an array and do not need
+ * warnings or error reporting. New callers should use `normalizeTags()` directly
+ * and destructure `{tags, warnings, error}`.
+ */
+function normalizeTagsList(input) {
+  const r = normalizeTags(input);
+  return r.tags || [];
 }
 
 // ═══════════════════════════════════════════════════════
@@ -453,9 +552,14 @@ async function cmdStore(args) {
   const body = { text, source };
   if (args.agent) body.agent_id = args.agent;
   body.project_id = autoProjectId(args.project);
-  if (args.tags) body.tags = normalizeTags(args.tags.split(',').map(t => t.trim()));
+  if (args.tags) body.tags = normalizeTagsList(args.tags.split(',').map(t => t.trim()));
+  // args.metadata may be a string (from CLI) or an object (from cmdLearn structured path)
   if (args.metadata) {
-    try { body.metadata = JSON.parse(args.metadata); } catch { /* ignore */ }
+    if (typeof args.metadata === 'object') {
+      body.metadata = args.metadata;
+    } else {
+      try { body.metadata = JSON.parse(args.metadata); } catch { /* ignore */ }
+    }
   }
 
   const res = await tryDaemon('POST', '/api/memory/store', body);
@@ -768,7 +872,7 @@ async function cmdCrossProject(args) {
   }
 
   const body = { query, limit: parseInt(args.limit || '10', 10) };
-  if (args.tags) body.tags = normalizeTags(args.tags.split(',').map(t => t.trim().toLowerCase()));
+  if (args.tags) body.tags = normalizeTagsList(args.tags.split(',').map(t => t.trim().toLowerCase()));
   if (args.exclude) body.exclude_project = args.exclude;
 
   const res = await tryDaemon('POST', '/api/memory/cross-project', body);
@@ -829,7 +933,7 @@ async function cmdAutoCapture(args) {
     reason: args.reason || 'context_compaction',
   };
   body.project_id = autoProjectId(args.project);
-  if (args.tags) body.tags = normalizeTags(args.tags.split(',').map(t => t.trim()));
+  if (args.tags) body.tags = normalizeTagsList(args.tags.split(',').map(t => t.trim()));
 
   const res = await tryDaemon('POST', '/api/memory/auto-capture', body);
 
@@ -1926,7 +2030,7 @@ async function main() {
   }
 }
 
-// ── Test exports (02-03) ─────────────────────────────────────────────────────
+// ── Test exports (02-03, Phase 10 LEARN-02/04) ──────────────────────────────
 // Exported for unit testing only. Not part of the public CLI API.
 if (require.main !== module) {
   module.exports = {
@@ -1934,6 +2038,11 @@ if (require.main !== module) {
     _test_selectOllamaModel: selectOllamaModel,
     _test_llmSummarize: llmSummarize,
     _test_claudeSummarize: claudeSummarize,
+    // Phase 10 LEARN-04: tag governance helpers
+    loadTagRules,
+    normalizeTags,
+    normalizeTagsList,
+    tagTier,
   };
 } else {
   main();
