@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: milestone
 status: in-progress
-stopped_at: Phase 10 Plan 10-08 complete — LEARNING block template across 11 agents (LEARN-06). Single atomic commit 01d05f8 per CONTEXT.md two-commit constraint (commit 2 of 2 with Plan 10-07).
-last_updated: "2026-04-09T23:50:00.000Z"
-last_activity: "2026-04-09 -- Plan 10-08: structured LEARNING block template across 11 agents (01d05f8 single atomic refs(LEARN-06) commit)"
+stopped_at: Phase 10 COMPLETE — all 9 plans (10-01 through 10-09) executed. 62 new tests green, README documented. 2-week quarantine before Phase 11.
+last_updated: "2026-04-10T00:30:00.000Z"
+last_activity: "2026-04-09 -- Plan 10-09: 62 new tests (4 CJS + 2 pytest) + README Phase 10 docs + daemon GET route fix"
 progress:
   total_phases: 7
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 18
-  completed_plans: 16
-  percent: 23
+  completed_plans: 18
+  percent: 29
 ---
 
 # GSD-Amauta -- Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-09)
 
 **Core value:** Every RPETD phase must see what other phases have learned. The brain synthesizes, not accumulates.
-**Current focus:** Milestone v2.6 -- Sight Beyond Sight. Roadmap approved. Phase 9 queued for planning.
+**Current focus:** Milestone v2.6 -- Sight Beyond Sight. Phase 10 complete, 2-week quarantine before Phase 11.
 
 ## Current Position
 
-Phase: 10 — D-Phase Structured Learning + CLI Dedup (in progress, Wave 4 next)
-Plan: 10-08 DONE (structured LEARNING block template across 11 agents — All 11 agents gained `D-phase: Structured LEARNING Output (Phase 10 LEARN-06)` section with 6-field WHAT/WHY/WHEN/CATEGORY/TAGS template + domain-specific example per agent + rules + learning-format.md reference + kill switch + agents-are-producers/operator-is-storer annotation. Single atomic commit 01d05f8 per CONTEXT.md two-commit constraint (commit 2 of 2 with Plan 10-07). Budgets: operator 396/400, roadmapper 679/685 (anti_patterns compressed), planner 200/200 (constraints compressed), all other 8 agents <=200. 10-06 + 10-07 sections preserved verbatim.) 10-07 DONE (cli-variables.md runtime Read dedup across 11 agents + 6 workflows, 923510e, commit 1 of 2). 10-06 DONE (operator D-phase handler + validator Gate 2 dual-format). 10-05 DONE (gsd-memory.cjs SKB workflow + search filters). 10-04 DONE (pg_store.py defense-in-depth + daemon routes). 10-03 DONE (gsd-memory.cjs structured learn + parse-learning). 10-02 DONE (migration 008 applied_count). 10-01 DONE (tag-rules.json + learning-format.md + cli-variables.md).
-Status: Phase 9 complete. Phase 10 Waves 1-3 COMPLETE (10-01 through 10-08). Next: 10-09 (tests + README).
-Last activity: 2026-04-09 -- Plan 10-08: structured LEARNING block template across 11 agents (01d05f8 single atomic refs(LEARN-06) commit)
+Phase: 10 — D-Phase Structured Learning + CLI Dedup (COMPLETE)
+Plan: 10-09 DONE (62 new tests: 15 parse-learning + 11 tag-governance + 6 pipeline + 6 legacy-compat CJS + 19 tag-governance + 5 increment-applied pytest. README Phase 10 section. Daemon GET route fix 9ec4004. All tests green.) 10-08 DONE (LEARNING block template across 11 agents, 01d05f8). 10-07 DONE (cli-variables.md dedup across 17 files, 923510e). 10-06 DONE (operator D-phase handler + validator Gate 2). 10-05 DONE (gsd-memory.cjs SKB workflow + search filters). 10-04 DONE (pg_store.py defense-in-depth + daemon routes). 10-03 DONE (gsd-memory.cjs structured learn + parse-learning). 10-02 DONE (migration 008 applied_count). 10-01 DONE (tag-rules.json + learning-format.md + cli-variables.md).
+Status: Phase 9 complete. Phase 10 COMPLETE (all 9 plans, LEARN-01..07 satisfied). 2-week quarantine before Phase 11 starts.
+Last activity: 2026-04-09 -- Plan 10-09: tests + README documentation (terminal plan for Phase 10)
 
-Progress: [##........] 23%
+Progress: [###.......] 29%
 
 ## v2.6 Phase Map
 
@@ -127,3 +127,14 @@ Resume file: .planning/milestones/v2.1-phases/10-d-phase-structured-learning/10-
 
 Shipped 2026-04-06. 8 phases (1..8), 26 plans, 49/49 requirements, 39.4% Layer 2 token reduction, 479 new tests (~2479 total).
 Archive: `.planning/MILESTONES.md` + legacy v2.5 ROADMAP sections.
+
+
+## Learnings
+
+
+
+
+- [learning] 2026-04-09T23:36:40.747Z: legacy with agent
+- [learning] 2026-04-09T23:36:32.812Z: legacy regression test: free text learning
+- [learning] 2026-04-09T23:32:17.915Z: legacy with agent
+- [learning] 2026-04-09T23:32:10.945Z: legacy regression test: free text learning
