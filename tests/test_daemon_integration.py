@@ -52,12 +52,15 @@ def _extract_set_literal(source: str, var_name: str) -> set:
 
 def _extract_health_fields(source: str) -> set:
     """Extract field names from the /health response dict construction."""
-    # Find the health = { ... } block
-    pattern = r'if path == "/health":\s*\n\s*health = \{([^}]+)\}'
+    # Find the health = { ... } block — handle nested dicts by anchoring the closing
+    # brace to the same indentation as 'health = {', skipping nested dict braces.
+    # Backreference \1 matches exactly the indent of 'health = {', so the nested
+    # api_keys closing '},' (deeper indent) is NOT treated as the dict close.
+    pattern = r'if path == "/health":\n( +)health = \{(.*?)\n\1\}'
     m = re.search(pattern, source, re.DOTALL)
     if not m:
         return set()
-    block = m.group(1)
+    block = m.group(2)
     # Extract quoted key names from "key": value lines
     return set(re.findall(r'"(\w+)":', block))
 
