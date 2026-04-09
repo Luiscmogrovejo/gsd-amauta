@@ -114,7 +114,7 @@
 1. An operator can run `gsd-memory learn --structured --what "..." --why "..." --when "..." --tags "postgresql,threading"` and see the record in `gsd_memory` with tags stored in the `tags jsonb` column.
 2. `gsd-memory search --tags postgresql --category pattern` returns matching learnings in < 50ms (measured by GIN index query plan).
 3. An operator reviewing recent learnings via `gsd-memory search` sees structured WHAT/WHY/WHEN/TAGS fields in the output for every learning emitted after Phase 10 lands (legacy free-text still searchable).
-4. Attempting to store a learning with only generic tags (`best-practice`, `lesson`, etc.) is rejected with a guidance message; attempts with > 5 tags are rejected with a guidance message.
+4. Attempting to store a learning with only generic tags (`best-practice`, `lesson`, etc.) is rejected with a guidance message; attempts with > 5 tags are auto-trimmed to 5 by tier ranking with a warning (per plan 10-03 spec).
 5. `gsd-memory skb candidates` excludes any learning with `applied_count > 10` until manually reviewed, visible via the `needs_review` field in the output.
 6. Every agent in `agents/*.md` references `cli-variables.md` via runtime Read at start of RPETD protocol; `CLI=`/`RLM=`/`MEM=`/`RESEARCH=` variables no longer duplicated inline across agent files.
 
@@ -129,7 +129,7 @@
 **Rollback Plan:** Set `GSD_D_STRUCTURED=false`. Structured-format reference files (`learning-format.md`, `cli-variables.md`) stay on disk as inert references. Agent file changes are small per-file diffs (runtime Read line + LEARNING block template) — reverted via single commit. `tags jsonb` GIN index stays (harmless). No schema migration to undo.
 
 **Plans:**
-- [x] 10-01: Foundation config + references — `tag-rules.json` + `learning-format.md` + `cli-variables.md` (LEARN-01, LEARN-04, LEARN-07) — wave 1 — DONE (6f10983 + b6faa13 + d03dd89)
+9/9 plans complete
 - [x] 10-02: Migration 008 — `applied_count` column + DOWN (LEARN-05) — wave 1 — DONE 2026-04-09 (6307d93 + 72ff620)
 - [x] 10-03: gsd-memory.cjs core — `parse-learning` + `learn --structured` + `normalizeTags` from tag-rules.json + distill guard (LEARN-02, LEARN-04) — wave 2 — DONE 2026-04-09 (b5e06de + 1eac6ab + 31088df)
 - [x] 10-04: pg_store.py + daemon API — tag validation + structured metadata + `/api/memory/:id/increment-applied` + `/api/memory/skb-candidates` + search `--tags`/`--category` (LEARN-02, LEARN-03, LEARN-04, LEARN-05) — wave 2 — DONE 2026-04-09 (ec22631 + ab713bc + 05ebb2f + 90e4aa5)
@@ -137,7 +137,7 @@
 - [x] 10-06: gsd-operator.md + gsd-validator.md — structured LEARNING detection + APPLIED_LEARNING citation scanner + Gate 2 dual-format acceptance (LEARN-02, LEARN-05, LEARN-06) — wave 3 — DONE 2026-04-09 (2264177 gsd-memory-learn-blocks.sh helper + dca5ada operator D-phase structured storage + 0d9d997 operator APPLIED_LEARNING scanner + 8ec1284 validator Gate 2 dual-format)
 - [x] 10-07: CLI variables dedup — cli-variables.md Read across 11 agents + 6 workflows (LEARN-07) — wave 3 — **SEPARATE COMMIT 1 of 2** — DONE 2026-04-09 (923510e refs(LEARN-07) dedup across 11 agents + 6 workflows)
 - [x] 10-08: LEARNING block template across 11 agents with per-agent examples (LEARN-06) — wave 3 — **SEPARATE COMMIT 2 of 2** — DONE 2026-04-09 (01d05f8 refs(LEARN-06) structured LEARNING block template across 11 agents)
-- [ ] 10-09: Tests (unit + integration + regression) + README documentation (LEARN-01..LEARN-07) — wave 4
+- [x] 10-09: Tests (unit + integration + regression) + README documentation (LEARN-01..LEARN-07) — wave 4 — DONE 2026-04-09 (232799b..8cf2d20: 4 CJS test files + 2 pytest files + README Phase 10 section + daemon query-param fix)
 
 ---
 
@@ -387,8 +387,7 @@ Phase 11 (E-Phase Research-Informed Execution Mandate)
 | Category | Requirements | Phase | REQ-IDs |
 |----------|--------------|-------|---------|
 | Tech Debt | 6 | 9 | TECH-01..06 |
-| D-Phase Structured Learning | 7 | 10 | LEARN-01..07 |
-| E-Phase Research-Informed Execution | 8 | 11 | EXEC-01..08 |
+| D-Phase Structured Learning | 7 | 10 | LEARN-01..07 | Complete    | 2026-04-09 | 8 | 11 | EXEC-01..08 |
 | T-Phase QA + Spec Inheritance | 8 | 12 | QA-01..08 |
 | R-Phase Creative Research (Narrowed) | 5 | 13 | CREATIVE-01..05 |
 | P-Phase Task-Management Integration | 7 | 14 | PLAN-01..07 |

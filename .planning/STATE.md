@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: milestone
-status: in-progress
-stopped_at: Phase 10 COMPLETE — all 9 plans (10-01 through 10-09) executed. 62 new tests green, README documented. 2-week quarantine before Phase 11.
-last_updated: "2026-04-10T00:30:00.000Z"
-last_activity: "2026-04-09 -- Plan 10-09: 62 new tests (4 CJS + 2 pytest) + README Phase 10 docs + daemon GET route fix"
+status: completed
+stopped_at: Phase 10 Plan 10-08 complete — structured LEARNING block template across 11 agents (01d05f8). LEARN-06 complete. Commit 2 of 2 per CONTEXT.md two-commit constraint. Both LEARN-07 and LEARN-06 committed separately. 10-09 (tests + README) is next.
+last_updated: "2026-04-09T23:52:34.687Z"
+last_activity: "2026-04-09 -- Plan 10-09: tests + README documentation (terminal plan for Phase 10)"
 progress:
   total_phases: 7
-  completed_phases: 2
-  total_plans: 18
-  completed_plans: 18
+  completed_phases: 1
+  total_plans: 9
+  completed_plans: 9
   percent: 29
 ---
 
@@ -134,6 +134,18 @@ Archive: `.planning/MILESTONES.md` + legacy v2.5 ROADMAP sections.
 
 
 
+
+
+
+
+
+
+- [learning] 2026-04-09T23:44:46.710Z: legacy with agent
+- [learning] 2026-04-09T23:44:39.479Z: legacy regression test: free text learning
+- [learning] 2026-04-09T23:44:27.093Z: kill-switch-test — testing — now
+- [learning] 2026-04-09T23:40:29.082Z: legacy with agent
+- [learning] 2026-04-09T23:40:22.298Z: legacy regression test: free text learning
+- [learning] 2026-04-09T23:39:27.736Z: Daemon GET route path matching must strip query params before route comparison (self.path.split('?')[0].rstrip('/') not self.path.rstrip('/')). Routes with query string filters (e.g. /api/memory/skb-candidates?rising_min=5) will 404 if the path variable includes the query string. Discovered during Phase 10 integration testing (10-09).
 - [learning] 2026-04-09T23:36:40.747Z: legacy with agent
 - [learning] 2026-04-09T23:36:32.812Z: legacy regression test: free text learning
 - [learning] 2026-04-09T23:32:17.915Z: legacy with agent
