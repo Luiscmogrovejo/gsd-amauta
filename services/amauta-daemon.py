@@ -1446,6 +1446,52 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             self._send_json({"hit": False}, 404)
             return
 
+        # ─── Memory/SKB single-entry GET routes (Phase 10 LEARN-05) ─────────
+        # GET /api/memory/mem-XXXX — fetch a single memory entry by ID.
+        # Used by cmdSkbPromote to read metadata.promoted_to_skb + tags before
+        # creating the SKB row. Path matches on the mem- prefix so it does not
+        # clash with /api/memory/list, /api/memory/count, /api/memory/skb-candidates,
+        # etc. Placed before the catch-all 404.
+        if path.startswith("/api/memory/mem-"):
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
+                return
+            if not hasattr(store, 'memory_get_by_id'):
+                self._send_json({"error": "memory_get_by_id not supported by this store"}, 501)
+                return
+            mem_id = path[len("/api/memory/"):]
+            try:
+                entry = store.memory_get_by_id(mem_id)
+                if entry is None:
+                    self._send_json({"error": "memory not found"}, 404)
+                    return
+                self._send_json(entry)
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
+        # GET /api/skb/skb-XXXX — fetch a single SKB entry by ID.
+        # Used by cmdSkbRemove to find the source_mem_id before deletion.
+        if path.startswith("/api/skb/skb-"):
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
+                return
+            if not hasattr(store, 'skb_get_by_id'):
+                self._send_json({"error": "skb_get_by_id not supported by this store"}, 501)
+                return
+            skb_id = path[len("/api/skb/"):]
+            try:
+                entry = store.skb_get_by_id(skb_id)
+                if entry is None:
+                    self._send_json({"error": "skb not found"}, 404)
+                    return
+                self._send_json(entry)
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
         self._send_json({"error": f"Unknown GET route: {path}"}, 404)
 
     # ─── POST routes ─────────────────────────────────
@@ -2059,6 +2105,109 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             return
 
         self._send_json({"error": f"Unknown POST route: {path}"}, 404)
+
+    # ─── PATCH routes (Phase 10 LEARN-05) ────────────
+    #
+    # Limited surface: only PATCH /api/memory/mem-XXXX is supported today,
+    # for merge-patching the metadata jsonb column during SKB promotion /
+    # demotion. Body: {"metadata_patch": {key: value, ...}}.
+    def do_PATCH(self):
+        log.debug("request method=%s path=%s", self.command, self.path)
+        if not _check_auth(self):
+            return
+        oidc_result = _check_oidc(self)
+        if not oidc_result["valid"]:
+            self._send_json({"error": oidc_result["error"]}, 401)
+            return
+        self._oidc_sub = oidc_result.get("sub", "anonymous")
+        if not _rate_limiter.allow(self.path):
+            log.warning("rate_limited path=%s", self.path)
+            self.send_response(429)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Too many requests. Try again later."}).encode())
+            return
+        path = self.path.rstrip("/")
+        body = self._read_body()
+        if body is None:
+            return
+
+        if path.startswith("/api/memory/mem-"):
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
+                return
+            if not hasattr(store, 'memory_patch_metadata'):
+                self._send_json({"error": "memory_patch_metadata not supported by this store"}, 501)
+                return
+            mem_id = path[len("/api/memory/"):]
+            patch = body.get("metadata_patch")
+            if not isinstance(patch, dict):
+                self._send_json({"error": "metadata_patch (dict) is required in body"}, 400)
+                return
+            try:
+                result = store.memory_patch_metadata(mem_id, patch)
+                if not result.get("ok"):
+                    err = result.get("error", "unknown")
+                    if err == "memory not found":
+                        self._send_json(result, 404)
+                    else:
+                        self._send_json(result, 500)
+                    return
+                self._send_json(result, 200)
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
+        self._send_json({"error": f"Unknown PATCH route: {path}"}, 404)
+
+    # ─── DELETE routes (Phase 10 LEARN-05) ───────────
+    #
+    # Limited surface: only DELETE /api/skb/skb-XXXX is supported today, for
+    # the SKB demotion path. Returning 404 for not-found keeps the demotion
+    # flow idempotent from the caller's perspective.
+    def do_DELETE(self):
+        log.debug("request method=%s path=%s", self.command, self.path)
+        if not _check_auth(self):
+            return
+        oidc_result = _check_oidc(self)
+        if not oidc_result["valid"]:
+            self._send_json({"error": oidc_result["error"]}, 401)
+            return
+        self._oidc_sub = oidc_result.get("sub", "anonymous")
+        if not _rate_limiter.allow(self.path):
+            log.warning("rate_limited path=%s", self.path)
+            self.send_response(429)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Too many requests. Try again later."}).encode())
+            return
+        path = self.path.rstrip("/")
+
+        if path.startswith("/api/skb/skb-"):
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
+                return
+            if not hasattr(store, 'skb_delete'):
+                self._send_json({"error": "skb_delete not supported by this store"}, 501)
+                return
+            skb_id = path[len("/api/skb/"):]
+            try:
+                result = store.skb_delete(skb_id)
+                if not result.get("ok"):
+                    err = result.get("error", "unknown")
+                    if err == "skb not found":
+                        self._send_json(result, 404)
+                    else:
+                        self._send_json(result, 500)
+                    return
+                self._send_json(result, 200)
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
+        self._send_json({"error": f"Unknown DELETE route: {path}"}, 404)
 
 
 # ═══════════════════════════════════════════════════════

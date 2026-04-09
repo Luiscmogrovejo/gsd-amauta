@@ -763,6 +763,68 @@ class PGStore:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM gsd_memory WHERE id = %s", (mem_id,))
 
+    def memory_get_by_id(self, mem_id):
+        """Fetch a single memory entry by ID.
+
+        Phase 10 LEARN-05: used by skb-promote to read the source entry's
+        metadata before creating an SKB row and marking it promoted. Returns
+        None if not found.
+        """
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    cur.execute(
+                        """SELECT id, text, source, agent_id, tags, metadata,
+                                  applied_count, project_id, created_at
+                           FROM gsd_memory WHERE id = %s""",
+                        (mem_id,),
+                    )
+                    row = cur.fetchone()
+                    if not row:
+                        return None
+                    d = dict(row)
+                    if isinstance(d.get("created_at"), datetime):
+                        d["created_at"] = d["created_at"].isoformat()
+                    return d
+        except Exception:
+            return None
+
+    def memory_patch_metadata(self, mem_id, patch):
+        """Merge-patch the metadata jsonb column for a memory entry.
+
+        Phase 10 LEARN-05: used by skb-promote / skb-remove to flip the
+        promoted_to_skb flag + skb_id + promoted_at (or demoted_at) timestamps
+        without overwriting other metadata fields like citations, what, why.
+
+        Args:
+            mem_id: Memory entry ID.
+            patch: Dict of keys to merge into existing metadata jsonb. Keys in
+                   patch overwrite existing keys; keys not in patch are kept.
+
+        Returns:
+            {"ok": True, "metadata": <merged>} on success
+            {"ok": False, "error": "memory not found"} when mem_id is missing
+        """
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT metadata FROM gsd_memory WHERE id = %s FOR UPDATE",
+                        (mem_id,),
+                    )
+                    row = cur.fetchone()
+                    if not row:
+                        return {"ok": False, "error": "memory not found"}
+                    current = dict(row[0] or {})
+                    current.update(patch or {})
+                    cur.execute(
+                        "UPDATE gsd_memory SET metadata = %s::jsonb WHERE id = %s",
+                        (json.dumps(current), mem_id),
+                    )
+                    return {"ok": True, "metadata": current}
+        except Exception as e:
+            return {"ok": False, "error": self._sanitize_error(e)}
+
     def memory_count_by_source(self):
         """Count memories grouped by source."""
         try:
@@ -1130,6 +1192,54 @@ class PGStore:
                     d[key] = float(d[key])
             formatted.append(d)
         return formatted
+
+    def skb_get_by_id(self, skb_id):
+        """Fetch a single SKB entry by ID.
+
+        Phase 10 LEARN-05: used by skb-remove to find the source_mem_id
+        before deleting the row so the source memory's promoted_to_skb flag
+        can be cleared. Returns None if not found.
+        """
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    cur.execute(
+                        "SELECT * FROM gsd_shared_kb WHERE id = %s",
+                        (skb_id,),
+                    )
+                    row = cur.fetchone()
+                    if not row:
+                        return None
+                    d = dict(row)
+                    for key in ("created_at", "updated_at"):
+                        if key in d and isinstance(d[key], datetime):
+                            d[key] = d[key].isoformat()
+                    for key in ("importance",):
+                        if key in d and isinstance(d[key], Decimal):
+                            d[key] = float(d[key])
+                    return d
+        except Exception:
+            return None
+
+    def skb_delete(self, skb_id):
+        """Delete an SKB entry by ID.
+
+        Phase 10 LEARN-05: used by skb-remove (demotion path). Returns a dict
+        indicating whether the delete touched a row.
+        """
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "DELETE FROM gsd_shared_kb WHERE id = %s RETURNING id",
+                        (skb_id,),
+                    )
+                    row = cur.fetchone()
+                    if not row:
+                        return {"ok": False, "error": "skb not found"}
+                    return {"ok": True, "id": row[0]}
+        except Exception as e:
+            return {"ok": False, "error": self._sanitize_error(e)}
 
     def skb_list(self, category=None, limit=50, offset=0):
         """List SKB entries."""

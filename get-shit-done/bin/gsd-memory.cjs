@@ -511,6 +511,11 @@ const BOOLEAN_FLAGS = new Set([
   'dry-run',
   'use-llm',
   'include-noise',
+  // Phase 10 LEARN-05: skb-promote requires --reviewed (human gate) and
+  // must be parsed as a boolean so the next positional arg (mem-id) is not
+  // swallowed as its value.
+  'reviewed',
+  'help',
 ]);
 
 function parseArgs(argv) {
@@ -1284,6 +1289,190 @@ async function cmdSkbCandidates(args) {
     }
   }
   console.log(`\nTotal: ${candidates.length}  (needs review: ${needsReview.length}, rising: ${rising.length})`);
+}
+
+// ═══════════════════════════════════════════════════════
+// Phase 10 LEARN-05: skb-promote + skb-remove subcommands
+// ═══════════════════════════════════════════════════════
+//
+// Promotion workflow (cmdSkbPromote):
+//   1. GET /api/memory/<mem-id>         — fetch the source memory
+//   2. Reject if metadata.promoted_to_skb is already true
+//   3. POST /api/skb/store              — create the SKB row using WHAT or
+//                                         the first 120 chars of the text as title
+//   4. PATCH /api/memory/<mem-id>       — merge-patch metadata to mark
+//                                         promoted_to_skb=true + skb_id + ts
+//
+// Demotion workflow (cmdSkbRemove) — reverse path:
+//   1. GET /api/skb/<skb-id>            — find source_mem_id from metadata.tags
+//                                         (stored as source_mem_id tag or
+//                                         note on the SKB row)
+//   2. DELETE /api/skb/<skb-id>         — drop the SKB row
+//   3. PATCH /api/memory/<mem-id>       — clear promoted_to_skb flag
+//
+// --reviewed is a required boolean gate on promote: human review must be
+// explicit. The operator (Plan 10-06) will prompt via AskUserQuestion and
+// pass --reviewed only after the user approves.
+async function cmdSkbPromote(args) {
+  const memId = (args._positional || [])[0];
+  if (!memId || !memId.startsWith('mem-')) {
+    console.error('Usage: gsd-memory skb-promote <mem-XXXX> --reviewed [--reason <text>]');
+    process.exit(1);
+  }
+  if (!args.reviewed) {
+    console.error('Rejected: --reviewed flag is required. Human review must be explicit for SKB promotion.');
+    process.exit(1);
+  }
+
+  // 1. Fetch the source memory entry
+  let memRes;
+  try {
+    memRes = await httpRequest('GET', `/api/memory/${encodeURIComponent(memId)}`);
+  } catch (e) {
+    console.error(`skb-promote failed: could not fetch ${memId}: ${e.message || e}`);
+    process.exit(1);
+  }
+  if (memRes.status === 404) {
+    console.error(`Not found: ${memId}`);
+    process.exit(1);
+  }
+  if (memRes.status !== 200) {
+    console.error(`Error fetching ${memId}: ${(memRes.data && memRes.data.error) || memRes.status}`);
+    process.exit(1);
+  }
+  const mem = memRes.data || {};
+  const metadata = mem.metadata || {};
+  if (metadata.promoted_to_skb === true) {
+    console.error(`Already promoted: ${memId} -> ${metadata.skb_id || '?'}`);
+    process.exit(1);
+  }
+
+  // 2. Build SKB payload — use structured WHAT as title if present
+  const what = metadata.what || (mem.text || '').slice(0, 120);
+  const skbPayload = {
+    title: what || memId,
+    content: mem.text || what || '',
+    category: metadata.category || 'pattern',
+    tags: Array.isArray(mem.tags) ? mem.tags : [],
+    source_task: `promoted_from:${memId}`,
+    importance: 6,
+  };
+  if (args.reason) skbPayload.content = `${skbPayload.content}\n\nPROMOTION_REASON: ${args.reason}`;
+
+  // 3. Create SKB row
+  let skbRes;
+  try {
+    skbRes = await httpRequest('POST', '/api/skb/store', skbPayload);
+  } catch (e) {
+    console.error(`skb-promote failed: could not create SKB entry: ${e.message || e}`);
+    process.exit(1);
+  }
+  if (skbRes.status !== 200) {
+    console.error(`Error creating SKB: ${(skbRes.data && skbRes.data.error) || skbRes.status}`);
+    process.exit(1);
+  }
+  const skbId = skbRes.data && skbRes.data.id;
+  if (!skbId) {
+    console.error('skb-promote: SKB creation returned no id');
+    process.exit(1);
+  }
+
+  // 4. Mark source memory as promoted
+  const patchBody = {
+    metadata_patch: {
+      promoted_to_skb: true,
+      skb_id: skbId,
+      promoted_at: new Date().toISOString(),
+      promotion_reason: args.reason || null,
+    },
+  };
+  let patchRes;
+  try {
+    patchRes = await httpRequest('PATCH', `/api/memory/${encodeURIComponent(memId)}`, patchBody);
+  } catch (e) {
+    console.error(`skb-promote: SKB created (${skbId}) but failed to mark source memory promoted: ${e.message || e}`);
+    process.exit(1);
+  }
+  if (patchRes.status !== 200) {
+    console.error(`skb-promote: SKB created (${skbId}) but PATCH failed: ${(patchRes.data && patchRes.data.error) || patchRes.status}`);
+    process.exit(1);
+  }
+
+  if (args.json) {
+    console.log(JSON.stringify({ promoted: true, mem_id: memId, skb_id: skbId, reason: args.reason || null }, null, 2));
+    return;
+  }
+  console.log(`\x1b[92mPromoted\x1b[0m ${memId} -> SKB ${skbId}`);
+  if (args.reason) console.log(`  Reason: ${args.reason}`);
+}
+
+async function cmdSkbRemove(args) {
+  const skbId = (args._positional || [])[0];
+  if (!skbId || !skbId.startsWith('skb-')) {
+    console.error('Usage: gsd-memory skb-remove <skb-XXXX>');
+    process.exit(1);
+  }
+
+  // 1. Fetch the SKB entry to find source_mem_id
+  let skbRes;
+  try {
+    skbRes = await httpRequest('GET', `/api/skb/${encodeURIComponent(skbId)}`);
+  } catch (e) {
+    console.error(`skb-remove failed: could not fetch ${skbId}: ${e.message || e}`);
+    process.exit(1);
+  }
+  if (skbRes.status === 404) {
+    console.error(`Not found: ${skbId}`);
+    process.exit(1);
+  }
+  if (skbRes.status !== 200) {
+    console.error(`Error fetching ${skbId}: ${(skbRes.data && skbRes.data.error) || skbRes.status}`);
+    process.exit(1);
+  }
+  const skb = skbRes.data || {};
+  // source_task format: "promoted_from:mem-XXXX" — parse the mem-id out for demotion
+  let sourceMemId = null;
+  if (skb.source_task && typeof skb.source_task === 'string' && skb.source_task.startsWith('promoted_from:')) {
+    sourceMemId = skb.source_task.slice('promoted_from:'.length);
+  }
+
+  // 2. Delete the SKB entry
+  let delRes;
+  try {
+    delRes = await httpRequest('DELETE', `/api/skb/${encodeURIComponent(skbId)}`);
+  } catch (e) {
+    console.error(`skb-remove failed: ${e.message || e}`);
+    process.exit(1);
+  }
+  if (delRes.status !== 200) {
+    console.error(`Error deleting ${skbId}: ${(delRes.data && delRes.data.error) || delRes.status}`);
+    process.exit(1);
+  }
+
+  // 3. Clear promoted_to_skb flag on source memory (best effort)
+  if (sourceMemId && sourceMemId.startsWith('mem-')) {
+    const patchBody = {
+      metadata_patch: {
+        promoted_to_skb: false,
+        skb_id: null,
+        demoted_at: new Date().toISOString(),
+      },
+    };
+    try {
+      const patchRes = await httpRequest('PATCH', `/api/memory/${encodeURIComponent(sourceMemId)}`, patchBody);
+      if (patchRes.status !== 200) {
+        console.warn(`skb-remove: SKB deleted but failed to clear source memory flag: ${patchRes.status} ${(patchRes.data && patchRes.data.error) || ''}`);
+      }
+    } catch (e) {
+      console.warn(`skb-remove: SKB deleted but failed to clear source memory flag: ${e.message || e}`);
+    }
+  }
+
+  if (args.json) {
+    console.log(JSON.stringify({ removed: true, skb_id: skbId, source_mem_id: sourceMemId }, null, 2));
+    return;
+  }
+  console.log(`\x1b[92mRemoved SKB\x1b[0m ${skbId}${sourceMemId ? `  (source ${sourceMemId} demoted)` : ''}`);
 }
 
 // Nested dispatch for `gsd-memory skb <verb>` — supports the space-separated
@@ -2497,6 +2686,8 @@ async function main() {
     'skb-add': cmdSKBAdd,
     'skb-list': cmdSKBList,
     'skb-candidates': cmdSkbCandidates,
+    'skb-promote': cmdSkbPromote,
+    'skb-remove': cmdSkbRemove,
     'status': cmdStatus,
     'health': cmdHealth,
     'help': () => { printUsage(); },
