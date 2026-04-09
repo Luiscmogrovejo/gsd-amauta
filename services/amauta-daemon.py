@@ -1255,6 +1255,42 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": _safe_error(e)}, 500)
             return
 
+        # ─── SKB Candidates GET route (Phase 10 LEARN-05) ────────
+        # GET /api/memory/skb-candidates?rising_min=5&needs_review_min=10&limit=100
+        # Returns rising (5..9) + needs_review (>=10) applied_count buckets,
+        # excluding entries already promoted (metadata.promoted_to_skb='true').
+        if path == "/api/memory/skb-candidates":
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
+                return
+            if not hasattr(store, 'memory_skb_candidates'):
+                self._send_json({"error": "skb-candidates not supported by this store"}, 501)
+                return
+            params = parse_qs(urlparse(self.path).query) if "?" in self.path else {}
+            try:
+                rising_min = int(params.get("rising_min", ["5"])[0])
+                needs_review_min = int(params.get("needs_review_min", ["10"])[0])
+                limit = int(params.get("limit", ["100"])[0])
+            except (ValueError, TypeError):
+                self._send_json({"error": "Invalid query parameters"}, 400)
+                return
+            try:
+                candidates = store.memory_skb_candidates(
+                    rising_min=rising_min,
+                    needs_review_min=needs_review_min,
+                    limit=limit,
+                )
+                self._send_json({
+                    "candidates": candidates,
+                    "count": len(candidates),
+                    "rising_min": rising_min,
+                    "needs_review_min": needs_review_min,
+                })
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
         # ─── Agent Performance GET route (PG or SQLite) ──────
         if path.startswith("/api/agent-performance"):
             store = _get_store()
@@ -1666,6 +1702,19 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 # MEM-01: include_noise=true bypasses default source exclusion
                 if body.get("include_noise"):
                     kwargs["exclude_sources"] = None
+                # Phase 10 LEARN-03: forward --tags and --category filter kwargs
+                # through to pg_store.memory_search. Accept either a list or a
+                # comma-separated string on the wire (parse_qs returns lists;
+                # JSON clients may send either).
+                tags_param = body.get("tags")
+                if tags_param:
+                    if isinstance(tags_param, list):
+                        kwargs["tags"] = tags_param
+                    elif isinstance(tags_param, str):
+                        kwargs["tags"] = [t.strip() for t in tags_param.split(",") if t.strip()]
+                category_param = body.get("category")
+                if category_param:
+                    kwargs["category"] = category_param
                 results = store.memory_search(**kwargs)
                 self._send_json({"results": results, "count": len(results)})
             except Exception as e:
@@ -1792,6 +1841,51 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             try:
                 result = store.memory_retention_cleanup()
                 self._send_json(result)
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
+        # ─── Memory Increment Applied POST route (Phase 10 LEARN-05) ────────
+        # POST /api/memory/<mem_id>/increment-applied
+        # Body: {"task_id": "TK-XXXX", "phase": "E"?, "reason": "..."?}
+        # Deduped by (mem_id, task_id) — repeat citations from the same task
+        # are idempotent. Returns {incremented, already_cited, applied_count}.
+        if path.startswith("/api/memory/") and path.endswith("/increment-applied"):
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
+                return
+            if not hasattr(store, 'memory_increment_applied'):
+                self._send_json({"error": "increment-applied not supported by this store"}, 501)
+                return
+            mem_id = path[len("/api/memory/"):-len("/increment-applied")]
+            if not mem_id:
+                self._send_json({"error": "memory id required in path"}, 400)
+                return
+            task_id = body.get("task_id")
+            if not task_id:
+                self._send_json({"error": "task_id is required"}, 400)
+                return
+            try:
+                result = store.memory_increment_applied(
+                    mem_id=mem_id,
+                    task_id=task_id,
+                    phase=body.get("phase"),
+                    reason=body.get("reason"),
+                )
+                # Map result to HTTP status:
+                #   incremented=True  → 200 (fresh citation)
+                #   already_cited=True → 200 (idempotent no-op, not an error)
+                #   error='memory not found' → 404
+                #   other error → 500
+                if result.get("incremented") or result.get("already_cited"):
+                    self._send_json(result, 200)
+                elif result.get("error") == "memory not found":
+                    self._send_json(result, 404)
+                else:
+                    self._send_json(result, 500)
+            except ValueError as ve:
+                self._send_json({"error": str(ve)}, 400)
             except Exception as e:
                 self._send_json({"error": _safe_error(e)}, 500)
             return
