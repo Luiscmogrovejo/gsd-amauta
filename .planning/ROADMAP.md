@@ -128,7 +128,16 @@
 
 **Rollback Plan:** Set `GSD_D_STRUCTURED=false`. Structured-format reference files (`learning-format.md`, `cli-variables.md`) stay on disk as inert references. Agent file changes are small per-file diffs (runtime Read line + LEARNING block template) — reverted via single commit. `tags jsonb` GIN index stays (harmless). No schema migration to undo.
 
-**Plans:** TBD
+**Plans:**
+- [x] 10-01: Foundation config + references — `tag-rules.json` + `learning-format.md` + `cli-variables.md` (LEARN-01, LEARN-04, LEARN-07) — wave 1 — DONE (6f10983 + b6faa13 + d03dd89)
+- [x] 10-02: Migration 008 — `applied_count` column + DOWN (LEARN-05) — wave 1 — DONE 2026-04-09 (6307d93 + 72ff620)
+- [ ] 10-03: gsd-memory.cjs core — `parse-learning` + `learn --structured` + `normalizeTags` from tag-rules.json + distill guard (LEARN-02, LEARN-04) — wave 2
+- [ ] 10-04: pg_store.py + daemon API — tag validation + structured metadata + `/api/memory/:id/increment-applied` + `/api/memory/skb-candidates` + search `--tags`/`--category` (LEARN-02, LEARN-03, LEARN-04, LEARN-05) — wave 2
+- [ ] 10-05: gsd-memory.cjs SKB commands — `skb candidates`, `skb-promote --reviewed`, `skb-remove`, `increment-applied`, search `--tags`/`--category` + structured card display (LEARN-03, LEARN-05) — wave 2
+- [ ] 10-06: gsd-operator.md + gsd-validator.md — structured LEARNING detection + APPLIED_LEARNING citation scanner + Gate 2 dual-format acceptance (LEARN-02, LEARN-05, LEARN-06) — wave 3
+- [ ] 10-07: CLI variables dedup — cli-variables.md Read across 11 agents + 6 workflows (LEARN-07) — wave 3 — **SEPARATE COMMIT 1 of 2**
+- [ ] 10-08: LEARNING block template across 11 agents with per-agent examples (LEARN-06) — wave 3 — **SEPARATE COMMIT 2 of 2**
+- [ ] 10-09: Tests (unit + integration + regression) + README documentation (LEARN-01..LEARN-07) — wave 4
 
 ---
 

@@ -1,31 +1,17 @@
 ---
 gsd_state_version: 1.0
 milestone: v2.6
-milestone_name: Sight Beyond Sight
-status: planning
-stopped_at: Plan 09-06 executed — comprehensive-e2e 4 failures fixed (substance gates + migration count 6→7 + README routes table, commit 440115c)
-last_updated: "2026-04-09T22:00:00.000Z"
-last_activity: "2026-04-09 -- Plan 09-06: fullPhases() R/P defaults >=50 chars (96+91), migration count 6→7, Daemon API Routes table added to README (440115c) -- comprehensive-e2e 117/117 green"
+milestone_name: milestone
+status: in-progress
+stopped_at: Phase 10 Plan 10-02 complete — migration 008 applied_count column shipped + applied to dev DB (LEARN-05)
+last_updated: "2026-04-09T21:40:00.000Z"
+last_activity: "2026-04-09 -- Plan 10-02: migrations/008-applied-count.sql + DOWN (6307d93 + 72ff620), applied to dev DB + idempotency verified"
 progress:
   total_phases: 7
-  completed_phases: 0
-  total_plans: 6
-  completed_plans: 6
-  percent: 11
-current_phase:
-  number: 9
-  name: Tech-Debt Sweep
-  status: in-progress
-  depends_on: []
-  requirements_count: 6
-next_action: "Close Phase 9 (all plans 09-01..09-09 complete) then begin Phase 10 planning (D-Phase Structured Learning + CLI Dedup)"
-previous_milestone:
-  version: v2.5
-  name: Smarter Brain
-  shipped: "2026-04-06"
-  phases: 8
-  plans: 26
-  requirements: "49/49"
+  completed_phases: 1
+  total_plans: 18
+  completed_plans: 11
+  percent: 16
 ---
 
 # GSD-Amauta -- Project State
@@ -39,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-09)
 
 ## Current Position
 
-Phase: 9 — Tech-Debt Sweep (complete)
-Plan: 09-06 DONE (GAP: comprehensive-e2e 117/117 green — fullPhases R/P defaults >=50 chars, migration count 6→7, README API routes, commit 440115c).
-Status: All Phase 9 plans executed (09-01..09-09). TECH-01..06 resolved. GAP plans 09-06..09-09 resolved. Phase 9 complete — ready to close.
-Last activity: 2026-04-09 -- Plan 09-06: comprehensive-e2e 4 failures fixed (substance gates + migration count + README routes, 440115c)
+Phase: 10 — D-Phase Structured Learning + CLI Dedup (in progress, Wave 1)
+Plan: 10-02 DONE (migration 008 applied_count column + DOWN file; commits 6307d93 + 72ff620; applied to dev DB 127.0.0.1:5432/gsd_amauta; idempotency verified via re-run NOTICE). 10-01 DONE (tag-rules.json + learning-format.md + cli-variables.md; 6f10983 + b6faa13 + d03dd89).
+Status: Phase 9 complete. Phase 10 Wave 1 complete (10-01 + 10-02 shipped). Next: Wave 2 — 10-03 (gsd-memory.cjs parse-learning + learn --structured) and 10-04 (pg_store.py + daemon API increment-applied endpoint, depends on 10-02 schema).
+Last activity: 2026-04-09 -- Plan 10-02: migrations/008-applied-count.sql + DOWN (6307d93 + 72ff620), applied to dev DB + idempotency verified
 
-Progress: [##........] 11%
+Progress: [##........] 16%
 
 ## v2.6 Phase Map
 
@@ -98,13 +84,14 @@ v2.5 codebase docs in .planning/codebase/ (2,337 lines). v2.6 research in .plann
 - **Kill switch per phase**: Every v2.6 phase ships with an env var so upgrade can be disabled without code revert.
 - **External validator principle**: Evidence blocks inspected by gsd-validator (not executor self-validation) per v2.5 AGT-05.
 - **Runtime Read, NOT `@` include**: `references/*.md` files are read by agents at runtime via `Read` tool, not via `@` include syntax (which doesn't work in agent .md files). Pattern applies to `cli-variables.md`, `pre-execution-checklist.md`, `learning-format.md`, etc.
-- **No new runtimes, no new schema**: v2.6 is 90% prompt engineering, 10% CLI flags (~425 LOC); zero `ALTER TABLE`, zero new runtime deps, pytest-bdd/fast-check/Hypothesis are opt-in per-project dev deps.
+- **No new runtimes, no new schema**: v2.6 is 90% prompt engineering, 10% CLI flags (~425 LOC); zero `ALTER TABLE`, zero new runtime deps, pytest-bdd/fast-check/Hypothesis are opt-in per-project dev deps. **One exception (locked):** migration 008 adds `applied_count INTEGER NOT NULL DEFAULT 0` to `gsd_memory` (LEARN-05 echo-chamber defense). No other ALTER TABLE permitted in v2.6.
 - **Phase 12 unblocks Phase 14**: `_inherit_parent_spec` helper (Phase 12) is used by planner when emitting child tasks (Phase 14).
+- **Migration 008 idempotency pattern** (Plan 10-02): BEGIN/COMMIT wrapper + `ADD COLUMN IF NOT EXISTS` + `CREATE INDEX IF NOT EXISTS` + COMMENT ON COLUMN. Partial index (`WHERE applied_count > 0`) minimizes maintenance cost because new learnings start at 0 — only cited entries get indexed. Re-run produces NOTICE skip messages but no error, safe for `init-db.sh` loops.
 
 ### Pending Todos
 
 - Close Phase 9 after validator confirms npm test + pytest both pass with 0 failures
-- Begin Phase 10 planning (D-Phase Structured Learning + CLI Dedup)
+- Execute remaining Phase 10 plans: 10-03 (gsd-memory.cjs core — parse-learning + learn --structured), 10-04 (pg_store.py + daemon API — increment-applied + skb-candidates endpoints, depends on 10-02 schema), 10-05 (gsd-memory.cjs SKB commands), 10-06 (operator + APPLIED_LEARNING citation scanner), 10-07 (cli-variables dedup across agents + workflows), 10-08 (LEARNING block template across agents), 10-09 (tests + README)
 
 ### Blockers/Concerns
 
@@ -114,9 +101,9 @@ None. Part A blockers resolved pre-roadmap:
 
 ## Session Continuity
 
-Last session: 2026-04-09T17:00:00.000Z
-Stopped at: v2.6 roadmap written; Phase 9 queued; ready for `/amauta:plan-phase 9`
-Resume file: `.planning/ROADMAP.md` (Phase 9 details) + `.planning/REQUIREMENTS.md` (TECH-01..06)
+Last session: 2026-04-09T21:40:00.000Z
+Stopped at: Phase 10 Plan 10-02 complete — migration 008 applied_count column + DOWN shipped, applied to dev DB (LEARN-05)
+Resume file: .planning/milestones/v2.1-phases/10-d-phase-structured-learning/10-03-PLAN.md
 
 ## Previous Milestone: v2.5 -- Smarter Brain (COMPLETE)
 
