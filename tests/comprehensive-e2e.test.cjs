@@ -231,8 +231,8 @@ describe('Validation Gates — complex E2E', () => {
   }
 
   const fullPhases = (overrides = {}) => ({
-    R: 'R: Research findings here.',
-    P: 'P: Plan with Given/When/Then.',
+    R: 'R: Researched existing patterns and architecture constraints. Found three prior approaches in codebase.',
+    P: 'P: Plan uses Given/When/Then structure. Dependencies mapped and risk assessed for each task.',
     E: overrides.E || 'E: Implemented on feat/test-branch.',
     T: overrides.T || '$ npm test\n10 tests passed, 0 failed\nexit 0',
     D: overrides.D || 'D: Delivered successfully. LEARNING: always validate edge cases before merging to main because untested edge cases cause regressions that are expensive to debug in production environments and erode user trust. https://github.com/org/repo/pull/42',
@@ -816,12 +816,12 @@ describe('Spec compliance verification', () => {
     assert.ok(c.includes("outcome IN ('pass', 'fail')"));
   });
 
-  test('6.12 6 UP + 6 DOWN migration files exist', () => {
+  test('6.12 7 UP + 7 DOWN migration files exist', () => {
     const migs = fs.readdirSync(path.join(__dirname, '..', 'migrations')).filter(f => f.endsWith('.sql'));
     const up = migs.filter(f => !f.includes('DOWN'));
     const down = migs.filter(f => f.includes('DOWN'));
-    assert.strictEqual(up.length, 6, `Expected 6 UP migrations, got ${up.length}`);
-    assert.strictEqual(down.length, 6, `Expected 6 DOWN migrations, got ${down.length}`);
+    assert.strictEqual(up.length, 7, `Expected 7 UP migrations, got ${up.length}`);
+    assert.strictEqual(down.length, 7, `Expected 7 DOWN migrations, got ${down.length}`);
   });
 });
 

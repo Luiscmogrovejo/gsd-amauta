@@ -728,6 +728,23 @@ python3 -m pytest tests/ -q                                     # Tests
 
 ---
 
+## Daemon API Routes
+
+The Amauta daemon exposes these HTTP endpoints on `http://127.0.0.1:18799`:
+
+| Route | Method | Description |
+|-------|--------|-------------|
+| `/health` | GET | Health check with version, uptime, and feature flags |
+| `/api/board` | GET | Kanban board view of all tasks |
+| `/api/list` | GET | List tasks with optional filters |
+| `/api/show` | GET | Show task details (`/api/show/<id>`) |
+| `/api/add` | POST | Create a new task |
+| `/api/claim` | POST | Claim a task for an agent |
+| `/api/rpetd` | POST | Log RPETD phase content |
+| `/api/validate` | POST | Validate a completed task |
+
+---
+
 ## Configuration
 
 | Variable | Default | Description |
