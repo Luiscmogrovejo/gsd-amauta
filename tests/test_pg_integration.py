@@ -212,16 +212,20 @@ class TestRetentionMovesOldEntries(unittest.TestCase):
         """Result dict should contain task_event_archived count from cursor.rowcount."""
         store = _make_pg_store()
         cursor = _make_mock_cursor()
-        # RETENTION_DAYS has 2 entries (task_event, rpetd_phase)
+        # RETENTION_DAYS has 3 entries (task_event, rpetd_phase, web_search_result)
         # rowcount is read once per source (after INSERT INTO archive)
-        type(cursor).rowcount = PropertyMock(side_effect=[5, 3])
+        type(cursor).rowcount = PropertyMock(side_effect=[5, 3, 2])
         _patch_get_conn(store, [cursor])
         store._ensure_archive_table = MagicMock()
 
         result = store.memory_retention_cleanup()
         self.assertEqual(result["task_event_archived"], 5)
+        self.assertIn("rpetd_phase_archived", result)
+        self.assertEqual(result["rpetd_phase_archived"], 3)
+        self.assertIn("web_search_result_archived", result)
+        self.assertEqual(result["web_search_result_archived"], 2)
         self.assertIn("total", result)
-        self.assertEqual(result["total"], 8)
+        self.assertEqual(result["total"], 10)
 
 
 class TestRetentionPreservesAutoLearning(unittest.TestCase):
