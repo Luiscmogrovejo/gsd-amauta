@@ -181,8 +181,8 @@ describe('Performance recording in cmd_validate', () => {
     const content = fs.readFileSync(AMAUTA_PY, 'utf-8');
     const failSection = content.indexOf('FAILED ✗');
     const recordCall = content.indexOf('_record_agent_performance', failSection);
-    assert.ok(recordCall > failSection && recordCall - failSection < 500,
-      '_record_agent_performance should be called near FAILED print');
+    assert.ok(recordCall > failSection && recordCall - failSection < 2500,
+      '_record_agent_performance should be called near FAILED print');  // threshold expanded: gitflow audit + logging added between print and call
   });
 
   test('pass path includes learning_captured from D-phase', () => {

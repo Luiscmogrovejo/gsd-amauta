@@ -163,7 +163,7 @@ describe("PERP-03: PERPLEXITY_MODEL === 'auto' wiring", () => {
     // Find providerPerplexity body
     const fnStart = content.indexOf('async function providerPerplexity');
     assert.ok(fnStart !== -1, 'providerPerplexity must exist');
-    const fnBody = content.slice(fnStart, fnStart + 800);
+    const fnBody = content.slice(fnStart, fnStart + 1500);  // window expanded: caching logic added before API call
     assert.ok(
       fnBody.includes('model: selectedModel,'),
       'providerPerplexity API request should use `model: selectedModel,`'

@@ -242,7 +242,16 @@ describe('E2E Lifecycle', () => {
   describe('4. Memory integration', () => {
     test('store a memory entry', (t) => {
       if (skipIfNoDaemon(t)) return;
-      const r = memory(['store', 'E2E test memory entry — should be cleaned up', '--source', 'agent', '--tags', 'e2e-test']);
+      let r = memory(['store', 'E2E test memory entry — should be cleaned up', '--source', 'agent', '--tags', 'e2e-test']);
+      const isRateLimited = (res) => ((res.error || '') + (res.output || '')).includes('Too many requests');
+      if (!r.success && isRateLimited(r)) {
+        execFileSync('sleep', ['3']);
+        r = memory(['store', 'E2E test memory entry — should be cleaned up', '--source', 'agent', '--tags', 'e2e-test']);
+      }
+      if (!r.success && isRateLimited(r)) {
+        t.skip('daemon rate-limited (60 req/min on /api/memory/store exhausted by prior tests)');
+        return;
+      }
       assert.ok(r.success, `store: ${r.error || r.output}`);
       assert.ok(r.output.includes('Stored'), 'should confirm stored');
     });
