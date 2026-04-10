@@ -123,14 +123,16 @@ Research finding: highest blast radius on task topology, ships LAST. Uses struct
 
 Research finding: observational only, not a hard gate. Dedicated workflow + CLI tool for future regression detection.
 
-- [ ] **DOGFOOD-01**: `get-shit-done/bin/gsd-tools.cjs audit-rpetd-intelligence <task_id>` subcommand parses a completed task's RPETD content and verifies: (a) D-phase has structured LEARNING with non-empty WHAT/WHY/WHEN/TAGS, (b) E-phase has non-empty `PRE_EXECUTION_EVIDENCE` block, (c) T-phase has `inherited_success_criteria` verification + EDGE_CASES + REGRESSION blocks
-- [ ] **DOGFOOD-02**: `get-shit-done/workflows/verify-rpetd-intelligence.md` workflow creates a sample story, claims it through all 5 phases, invokes `audit-rpetd-intelligence` at the end, reports per-phase compliance
-- [ ] **DOGFOOD-03**: `scripts/verify-v26.sh` end-to-end shell script runs the full dogfood flow + `amauta health` + `npm test` + `pytest` and emits a PASS/FAIL report per capability
-- [ ] **DOGFOOD-04**: `commands/amauta/verify-v26.md` slash command exposes the verification flow to users
-- [ ] **DOGFOOD-05**: Post-v2.6 regression: `verify-v26.sh` must pass 6/6 phases green before the milestone is considered shipped
+- [x] **DOGFOOD-01**: ~~`get-shit-done/bin/gsd-tools.cjs audit-rpetd-intelligence <task_id>` subcommand~~ standalone binary `get-shit-done/bin/audit-rpetd-intelligence.cjs` parses a completed task's RPETD content and verifies: (a) D-phase has structured LEARNING with non-empty WHAT/WHY/WHEN/TAGS, (b) E-phase has non-empty `PRE_EXECUTION_EVIDENCE` block, (c) T-phase has `inherited_success_criteria` verification + EDGE_CASES + REGRESSION blocks
+- [x] **DOGFOOD-02**: `get-shit-done/workflows/verify-rpetd-intelligence.md` workflow creates a sample story, claims it through all 5 phases, invokes `audit-rpetd-intelligence` at the end, reports per-phase compliance
+- [x] **DOGFOOD-03**: ~~`scripts/verify-v26.sh` end-to-end shell script~~ `scripts/verify-v26.cjs` end-to-end Node script runs the full dogfood flow + `amauta health` + `npm test` + `pytest` and emits a PASS/FAIL report per capability
+- [x] **DOGFOOD-04**: `commands/amauta/verify-v26.md` slash command exposes the verification flow to users
+- [x] **DOGFOOD-05**: Post-v2.6 regression: ~~`verify-v26.sh`~~ `verify-v26.cjs` must pass 6/6 phases green before the milestone is considered shipped
+
+> **Closeout errata (2026-04-10, Phase 15 closeout commit):** Two requirements changes locked during Phase 15 discuss-phase and applied here. **(a) DOGFOOD-01** subcommand → standalone binary: Q1 (no modifications to existing `.cjs` files during Phase 15) prevented adding a subcommand to `gsd-tools.cjs`; Q6 (`require()` over subprocess) applies — the binary direct-`require()`s gsd-tools.cjs exports for correctness. **(b) DOGFOOD-03/05** `.sh` → `.cjs`: same Q6 rationale — the script must `require()` gsd-tools.cjs exports (`manifestCheck`, `resolvePhaseDir`, `GLOBAL_ALLOWLIST`) to exercise the Phase 13.1 infrastructure directly, not via subprocess indirection. Full audit trail: `.planning/milestones/v2.2-phases/15-dogfood/15-CONTEXT.md` §Gap 1a/1c and `docs/v2.6-dogfood-ledger.md`.
 
 **Kill switch:** none (observational only — doesn't affect running tasks)
-**Measurement:** verify-v26.sh reports 6/6 phases green; baseline regression tests unchanged
+**Measurement:** ~~verify-v26.sh~~ verify-v26.cjs reports 6/6 phases green; baseline regression tests unchanged
 
 ---
 
@@ -250,11 +252,11 @@ v2.6 phase numbering continues from v2.5 (which ended at Phase 8). v2.6 uses Pha
 | PLAN-05 | Phase 14 | P-Phase Task-Management Integration | `GSD_P_AUTO_TASK` | Done (f9016bd) |
 | PLAN-06 | Phase 14 | P-Phase Task-Management Integration | `GSD_P_AUTO_TASK` | Done (f9016bd) |
 | PLAN-07 | Phase 14 | P-Phase Task-Management Integration | `GSD_P_AUTO_TASK` | Done (f9016bd) |
-| DOGFOOD-01 | Phase 15 | End-to-End Dogfood Verification | N/A | Pending |
-| DOGFOOD-02 | Phase 15 | End-to-End Dogfood Verification | N/A | Pending |
-| DOGFOOD-03 | Phase 15 | End-to-End Dogfood Verification | N/A | Pending |
-| DOGFOOD-04 | Phase 15 | End-to-End Dogfood Verification | N/A | Pending |
-| DOGFOOD-05 | Phase 15 | End-to-End Dogfood Verification | N/A | Pending |
+| DOGFOOD-01 | Phase 15 | End-to-End Dogfood Verification | N/A | Done (15-01, 16513ed, errata 2026-04-10) |
+| DOGFOOD-02 | Phase 15 | End-to-End Dogfood Verification | N/A | Done (15-01, 26ae849) |
+| DOGFOOD-03 | Phase 15 | End-to-End Dogfood Verification | N/A | Done (15-01, 36a2d2a, errata 2026-04-10) |
+| DOGFOOD-04 | Phase 15 | End-to-End Dogfood Verification | N/A | Done (15-01, 447c9b5) |
+| DOGFOOD-05 | Phase 15 | End-to-End Dogfood Verification | N/A | Done (15-02, 5d2f1f8, errata 2026-04-10) |
 
 **Coverage:**
 - v2.6 requirements: 46 total (6 + 7 + 8 + 8 + 5 + 7 + 5)

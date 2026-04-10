@@ -5,6 +5,8 @@
 **Phases:** 7 (Phase 9..15)
 **Requirements:** 46 total (v2.6 scope)
 **Granularity:** coarse (per config.json)
+**Status:** ✓ COMPLETE (2026-04-10) — all 7 phases shipped; Phase 15 End-to-End Dogfood Verification passed (status: passed per `.planning/milestones/v2.2-phases/15-dogfood/15-VERIFICATION.md`, commit `f52e13f`)
+**Downstream:** v2.6 closed. v2.7 planning deferred to separate session. See `docs/v2.6-dogfood-ledger.md` for the Phase 15 dogfood audit + routed follow-ups for v2.7.
 **Research inputs:**
 - `.planning/research/v2.6/STACK.md`
 - `.planning/research/v2.6/FEATURES.md`
@@ -39,7 +41,7 @@
 - [x] **Phase 13: R-Phase Creative Research (Narrowed)** — Task-type gated creative variants, `gsd-research --creative` flag, conservative default for implementation tasks — DONE (3 plans, CREATIVE-01..05 complete) 2026-04-10
 - [x] **Phase 13.1: Orchestrator Hardening & Divergence Protocol** — Deterministic manifest check + behavioral divergence protocol + agent .md updates + validator `--gaps-found` verdict + synthetic divergence test — DONE (5 plans, HARDEN-01..05 complete, 3 dogfood moments captured, validator `--pass`) 2026-04-10
 - [x] **Phase 14: P-Phase Task-Management Integration** — Structured XML plan blocks, `gsd-tools plan-to-tasks`, auto-agent-assign, dep-linking, 10-task cap (completed 2026-04-10)
-- [ ] **Phase 15: End-to-End Dogfood Verification** — `audit-rpetd-intelligence`, `verify-v26.sh`, 6/6 phases green observational report
+- [x] **Phase 15: End-to-End Dogfood Verification** — `audit-rpetd-intelligence`, ~~`verify-v26.sh`~~ `verify-v26.cjs`, 6/6 phases green observational report — DONE 2026-04-10 (3 plans, DOGFOOD-01..05, VERIFICATION passed at f52e13f, ledger published at 89c6288)
 
 ---
 
@@ -349,17 +351,17 @@ Notable: 3 in-production dogfood moments captured at 3 recursion depths (Wave 1 
 **Deliverables:**
 | # | Deliverable | Requirement |
 |---|-------------|-------------|
-| 1 | `gsd-tools.cjs audit-rpetd-intelligence <task_id>` parses RPETD content and verifies D/E/T evidence blocks | DOGFOOD-01 |
+| 1 | ~~`gsd-tools.cjs audit-rpetd-intelligence <task_id>` subcommand~~ standalone binary `get-shit-done/bin/audit-rpetd-intelligence.cjs` parses RPETD content and verifies D/E/T evidence blocks (errata 2026-04-10, see REQUIREMENTS.md closeout note) | DOGFOOD-01 |
 | 2 | `get-shit-done/workflows/verify-rpetd-intelligence.md` creates sample story, runs through 5 phases, invokes audit | DOGFOOD-02 |
-| 3 | `scripts/verify-v26.sh` end-to-end shell script: dogfood flow + `amauta health` + `npm test` + `pytest`, emits PASS/FAIL per capability | DOGFOOD-03 |
+| 3 | ~~`scripts/verify-v26.sh` end-to-end shell script~~ `scripts/verify-v26.cjs` end-to-end Node script: dogfood flow + `amauta health` + `npm test` + `pytest`, emits PASS/FAIL per capability (errata 2026-04-10) | DOGFOOD-03 |
 | 4 | `commands/amauta/verify-v26.md` slash command exposes verification flow to users | DOGFOOD-04 |
-| 5 | Post-v2.6 regression: `verify-v26.sh` must pass 6/6 capabilities green before milestone shipped | DOGFOOD-05 |
+| 5 | Post-v2.6 regression: ~~`verify-v26.sh`~~ `verify-v26.cjs` must pass 6/6 capabilities green before milestone shipped | DOGFOOD-05 |
 
 **Success Criteria (what must be TRUE for users):**
 1. An operator running `gsd-tools audit-rpetd-intelligence TK-XXXX` on a completed v2.6 task sees a JSON report with pass/fail flags for D-phase structured learning, E-phase evidence block, T-phase inherited criteria + edge cases + regression sweep.
 2. An operator running `/amauta:verify-v26` slash command sees end-to-end verification: sample story created, 5 phases executed, audit report, `amauta health` output, test suite results — all in one session.
-3. `scripts/verify-v26.sh` executed after Phase 14 ships reports 6/6 capabilities PASS (D-learning, E-mandate, T-spec-inherit, R-creative-gated, P-auto-task, baseline-tests-green).
-4. An operator regression-testing post-v2.6 can run `verify-v26.sh` and get a single PASS/FAIL verdict with per-capability breakdown.
+3. ~~`scripts/verify-v26.sh`~~ `scripts/verify-v26.cjs` executed after Phase 14 ships reports 6/6 capabilities PASS (D-learning, E-mandate, T-spec-inherit, R-creative-gated, P-auto-task, baseline-tests-green).
+4. An operator regression-testing post-v2.6 can run ~~`verify-v26.sh`~~ `verify-v26.cjs` and get a single PASS/FAIL verdict with per-capability breakdown.
 5. At least 8 of 10 randomly-sampled completed v2.6 tasks have all 5 RPETD intelligence checks firing when audited via `audit-rpetd-intelligence`.
 
 **Kill switch:** None (observational only — doesn't affect running tasks). DOGFOOD-05 gate can be manually overridden via `--force-reason` on milestone close if 6/6 cannot be achieved.
@@ -368,7 +370,7 @@ Notable: 3 in-production dogfood moments captured at 3 recursion depths (Wave 1 
 - **AF7 — Trajectory evaluation theatre**: prevented by audit checking for SPECIFIC evidence markers (structured LEARNING fields, `PRE_EXECUTION_EVIDENCE:` block, `EDGE_CASES:` block) rather than tool-call presence.
 - **C5 — Solo-developer rollout risk**: verify-v26.sh provides a single regression harness for all 5 upgrades; one command to detect if any capability regressed post-ship.
 
-**Rollback Plan:** Delete `audit-rpetd-intelligence` subcommand, `verify-rpetd-intelligence.md` workflow, `verify-v26.sh` script, and `commands/amauta/verify-v26.md` slash command. Zero operational impact on running tasks since dogfood is observational.
+**Rollback Plan:** Delete ~~`audit-rpetd-intelligence` subcommand~~ `audit-rpetd-intelligence.cjs` standalone binary, `verify-rpetd-intelligence.md` workflow, ~~`verify-v26.sh` script~~ `verify-v26.cjs` script, and `commands/amauta/verify-v26.md` slash command. Zero operational impact on running tasks since dogfood is observational.
 
 **Plans:**
 3/3 plans complete
@@ -460,7 +462,7 @@ Note: Phases 13 and 14 are opt-in by default (kill switch off) per PITFALLS roll
 | 12. T-Phase QA Department + Spec Inheritance | 0/? | Not started | - |
 | 13. R-Phase Creative Research (Narrowed) | 0/? | Not started | - |
 | 14. P-Phase Task-Management Integration | 0/? | Not started | - |
-| 15. End-to-End Dogfood Verification | 0/? | Not started | - |
+| 15. End-to-End Dogfood Verification | 3/3 | Complete | 2026-04-10 (VERIFICATION passed f52e13f) |
 
 ---
 
