@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: milestone
 status: verifying
-stopped_at: Phase 11 Plan 11-01 complete (8 tasks, 8 commits)
-last_updated: "2026-04-10T01:40:00.466Z"
+stopped_at: Phase 12 context gathered
+last_updated: "2026-04-10T02:06:00.385Z"
 last_activity: "2026-04-10 -- Plan 11-02: checkEvidenceAdvisory() + 22 tests (EXEC-04)"
 progress:
   total_phases: 7
@@ -120,9 +120,9 @@ None. Part A blockers resolved pre-roadmap:
 
 ## Session Continuity
 
-Last session: 2026-04-09
-Stopped at: Phase 11 Plan 11-01 complete (8 tasks, 8 commits)
-Resume file: .planning/milestones/v2.2-phases/11-context-engine-activation/11-01-SUMMARY.md
+Last session: 2026-04-10T02:06:00.379Z
+Stopped at: Phase 12 context gathered
+Resume file: .planning/milestones/v2.2-phases/12-semantic-memory-pipeline/12-CONTEXT.md
 Next: Plan 11-02 — gsd-validator advisory PRE_EXECUTION_EVIDENCE parser (EXEC-04)
 
 ## Previous Milestone: v2.5 -- Smarter Brain (COMPLETE)
@@ -145,6 +145,10 @@ Archive: `.planning/MILESTONES.md` + legacy v2.5 ROADMAP sections.
 
 
 
+
+
+- [learning] 2026-04-10T01:44:59.926Z: legacy regression test: free text learning
+- [learning] 2026-04-10T01:40:12.323Z: Phase 11 execution: rate limiting causes agent stalls during long-running phases — commit partial work and respawn with explicit partial state context is the reliable recovery pattern. Also: require.main guard needed when adding module.exports to CLI scripts for test imports.
 - [learning] 2026-04-10T01:31:45.096Z: legacy with agent
 - [learning] 2026-04-10T01:31:37.659Z: legacy regression test: free text learning
 - [learning] 2026-04-09T23:53:04.660Z: Phase 10 execution: validator caught GIN index missing from live DB despite being defined in migration 001-init.sql — always verify index existence on the LIVE database, not just migration file presence. Also: ROADMAP success criteria wording can diverge from plan must-haves; plan spec is the implementation authority.
