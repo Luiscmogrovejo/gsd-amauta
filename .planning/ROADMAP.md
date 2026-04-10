@@ -228,7 +228,7 @@
 - [x] 12-01: Python _inherit_parent_spec() helper + cmd_show --json inherited_success_criteria + --no-inherit (QA-01, QA-02) -- wave 1 -- DONE 2026-04-09 (commits 4ccd2dd, 05f5553, 77e699f)
 - [x] 12-02: qa-checklist.md reference + gsd-checker.md update + agent-capabilities security_patterns (QA-03, QA-04, QA-05) -- wave 2 -- DONE 2026-04-09 (commits 52d67ff, c781bfe, b9f887a, bbee0b1)
 - [x] 12-03: test-phase.md regression sweep + gsd-validator advisory + checkSpecInheritanceAdvisory + _checkQaBlocks + _checkRedGreenOrder (QA-04, QA-05, QA-06, QA-07, QA-08) -- wave 2 -- DONE 2026-04-09 (commits 1900dd5, 8f8d7ee, 47f32ac)
-- [ ] 12-04: Tests (Python + CJS) + STATE.md baseline section (QA-01..QA-08) -- wave 3
+- [x] 12-04: Tests (Python + CJS) + STATE.md baseline section (QA-01..QA-08) -- wave 3 -- DONE 2026-04-09 (commits e4cac87, cadef90, 3b4df58, 8a114ee)
 
 ---
 
@@ -393,7 +393,9 @@ Phase 11 (E-Phase Research-Informed Execution Mandate)
 | Category | Requirements | Phase | REQ-IDs |
 |----------|--------------|-------|---------|
 | Tech Debt | 6 | 9 | TECH-01..06 |
-| D-Phase Structured Learning | 7 | 10 | LEARN-01..07 | Complete    | 2026-04-09 | 8 | 11 | EXEC-01..08 | Complete    | 2026-04-10 | 8 | 12 | QA-01..08 |
+| D-Phase Structured Learning | 7 | 10 | LEARN-01..07 |
+| E-Phase Research-Informed Execution | 8 | 11 | EXEC-01..08 |
+| T-Phase QA + Spec Inheritance | 8 | 12 | QA-01..08 |
 | R-Phase Creative Research (Narrowed) | 5 | 13 | CREATIVE-01..05 |
 | P-Phase Task-Management Integration | 7 | 14 | PLAN-01..07 |
 | Dogfood Verification | 5 | 15 | DOGFOOD-01..05 |
