@@ -733,6 +733,111 @@ async function checkValidationGates(useDaemon, id, flags) {
   return gateFailures;
 }
 
+// ─── Evidence Advisory (Phase 11 EXEC-04) ───────────────
+// Free-standing advisory check — NOT a numbered gate.
+// Called AFTER checkValidationGates(), outputs to stdout, does NOT affect gate failures.
+// Kill switch: GSD_E_MANDATE=off -> skip. GSD_E_MANDATE=advisory (default) -> run.
+
+/**
+ * Pure logic function — testable without daemon access.
+ * Accepts pre-fetched E-phase content + taskType, returns advisory result object.
+ */
+function _checkEvidenceBlock(eContent, taskType) {
+  // Non-code task filter (same set as Gate 1)
+  if (NON_CODE_TYPES.has(taskType)) {
+    return { advisory: false, reason: 'non-code task' };
+  }
+
+  // Empty E-phase
+  if (!eContent || !eContent.trim()) {
+    return { advisory: true, reason: 'E-phase is empty' };
+  }
+
+  // Detect PRE_EXECUTION_EVIDENCE block
+  const hasEvidenceBlock = /^PRE_EXECUTION_EVIDENCE:/m.test(eContent);
+  if (!hasEvidenceBlock) {
+    return { advisory: true, reason: 'PRE_EXECUTION_EVIDENCE block missing from E-phase' };
+  }
+
+  // Check for valid skip markers (intentional skips — no advisory)
+  const skipPattern = /^PRE_EXECUTION_EVIDENCE:\s*skipped\s*--/m;
+  if (skipPattern.test(eContent)) {
+    return { advisory: false, reason: 'intentional skip' };
+  }
+
+  // Check 4 subfields present (warn on missing, don't fail in v2.6)
+  const subfields = ['failure_patterns', 'best_practices', 'existing_style', 'security_checklist'];
+  const missingSubfields = subfields.filter(f => !new RegExp(`^\\s+${f}:`, 'm').test(eContent));
+  const warnings = [];
+  if (missingSubfields.length > 0) {
+    warnings.push(`missing subfields: ${missingSubfields.join(', ')}`);
+  }
+
+  // Cargo-cult detection: bare single-word responses on applied items trigger advisory
+  // Checks for patterns like "  input_validation: applied" (no -- explanation after)
+  const bareCargoCultApplied = /^\s+\w+:\s+applied\s*$/m;
+  if (bareCargoCultApplied.test(eContent)) {
+    warnings.push('cargo-cult: applied items have bare single-word response (missing explanatory note)');
+  }
+  // Also check for other single-word cargo-cult responses
+  const bareCargoCultOther = /^\s+\w+:\s+(checked|done|yes|ok)\s*$/im;
+  if (bareCargoCultOther.test(eContent)) {
+    warnings.push('cargo-cult: security checklist item has single-word response');
+  }
+
+  if (warnings.length > 0) {
+    return { advisory: true, reason: warnings.join('; '), partial: true };
+  }
+  return { advisory: false, reason: 'evidence block present and complete' };
+}
+
+async function checkEvidenceAdvisory(useDaemon, id, flags) {
+  // Kill switch check first
+  const mandateMode = (process.env.GSD_E_MANDATE || 'advisory').toLowerCase();
+  if (mandateMode === 'off') return { advisory: false, reason: 'mandate disabled' };
+
+  // Fetch task data (same daemon/direct pattern as checkValidationGates)
+  let taskType = 'task';
+  let phases = {};
+  try {
+    if (useDaemon) {
+      const { data } = await httpRequest('POST', '/api/exec', { args: ['show', id, '--json'] });
+      const jsonStr = data.output || '';
+      if (jsonStr) {
+        const parsed = JSON.parse(jsonStr);
+        taskType = parsed.type || 'task';
+        phases = parsed.rpetd_phases || {};
+      }
+    } else {
+      const jsonResult = runDirect(['show', id, '--json']);
+      const jsonStr = jsonResult.output || '';
+      if (jsonStr) {
+        const parsed = JSON.parse(jsonStr);
+        taskType = parsed.type || 'task';
+        phases = parsed.rpetd_phases || {};
+      }
+    }
+  } catch {
+    return { advisory: false, reason: 'task fetch failed' };
+  }
+
+  // Dynamic reference file parsing for checklist item names (extensible, not hardcoded)
+  // (Read attempted but result not used to gate — _checkEvidenceBlock uses regex on the block)
+  try {
+    const refPath = process.env.PRE_EXECUTION_CHECKLIST ||
+      '/Users/luismogrovejo/.claude/get-shit-done/references/pre-execution-checklist.md';
+    if (fs.existsSync(refPath)) {
+      // Parse checklist item names dynamically from reference file
+      // Pattern: lines like "- `input_validation` -- ..."
+      fs.readFileSync(refPath, 'utf8').matchAll(/^\s*-\s+`(\w+)`\s+--/gm);
+      // Item names are available for future use; current cargo-cult detection uses regex
+    }
+  } catch { /* use defaults — never block advisory on reference file unavailability */ }
+
+  const eContent = (phases.E || '').trim();
+  return _checkEvidenceBlock(eContent, taskType);
+}
+
 async function cmdValidate(useDaemon, id, flags, jsonMode) {
   if (!id) die('Usage: amauta validate <id> --pass/--fail [--validator V] [--notes N] [--force-reason "justification"]');
   if (flags.pass_result === undefined) die('--pass or --fail is required');
@@ -750,6 +855,19 @@ async function cmdValidate(useDaemon, id, flags, jsonMode) {
         console.error(msg);
       }
       return 1;
+    }
+  }
+
+  // Evidence advisory (Phase 11 EXEC-04) -- non-blocking, logs to stdout
+  // Runs on --pass only (no evidence check needed for --fail)
+  if (flags.pass_result && !flags.force_reason) {
+    try {
+      const evidenceResult = await checkEvidenceAdvisory(useDaemon, id, flags);
+      if (evidenceResult.advisory) {
+        console.log(`[ADVISORY] PRE_EXECUTION_EVIDENCE: ${evidenceResult.reason}`);
+      }
+    } catch {
+      // Advisory is best-effort -- never block validation
     }
   }
 
@@ -1593,3 +1711,8 @@ main().catch((err) => {
   process.stderr.write(`FATAL: ${err.message}\n`);
   process.exit(1);
 });
+
+// Test-only exports — not used in production flow
+if (typeof module !== 'undefined' && require.main !== module) {
+  module.exports = { _checkEvidenceBlock, checkEvidenceAdvisory };
+}
