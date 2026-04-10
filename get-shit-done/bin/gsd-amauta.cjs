@@ -1707,10 +1707,13 @@ async function main() {
   process.exit(exitCode);
 }
 
-main().catch((err) => {
-  process.stderr.write(`FATAL: ${err.message}\n`);
-  process.exit(1);
-});
+// Guard: only run main() when executed directly (not when require()'d by tests)
+if (require.main === module) {
+  main().catch((err) => {
+    process.stderr.write(`FATAL: ${err.message}\n`);
+    process.exit(1);
+  });
+}
 
 // Test-only exports — not used in production flow
 if (typeof module !== 'undefined' && require.main !== module) {
