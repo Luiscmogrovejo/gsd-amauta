@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.7
 milestone_name: Steady Hands
 status: phase_complete
-stopped_at: Phase 16 complete. Plan 16-01 (RESOLVE-01, milestone-scoped resolver) and Plan 16-02 (RESOLVE-02, --phase-dir override) both shipped. All four phase-aware init subcommands accept --phase-dir bypass; validatePhaseDirOverride() validates path existence, directory type, and empty-dir with sibling suggestion. Cross-milestone override verified. Next step: plan-phase 17 (Audit Script Hardening).
-last_updated: "2026-04-10T00:45:00.000Z"
-last_activity: "2026-04-10 -- Phase 16 Plan 02 (--phase-dir Override Flag) executed. Task 16-02-01 pre-committed (019d767); task 16-02-02 committed this session (e2c37d7). validatePhaseDirOverride() added to init.cjs with full hard-error validation; all four cmdInit*Phase functions updated with ternary bypass; exported for testability. All three plan VCs pass including cross-milestone v2.3 path override. Phase 16 RESOLVE-01+02 complete."
+stopped_at: Phase 16 fully complete (all 3 plans). Plan 16-01 (RESOLVE-01, milestone-scoped resolver), Plan 16-02 (RESOLVE-02, --phase-dir override), and Plan 16-03 (regression tests) all shipped. 11-test suite (tests/16-init-resolver.test.cjs) covers depths 7/8/10 replays, RESOLVE-02 override, 5 edge cases, and live smoke test. All pass. Next step: plan-phase 17 (Audit Script Hardening).
+last_updated: "2026-04-10T01:30:00.000Z"
+last_activity: "2026-04-10 -- Phase 16 Plan 03 (Regression Tests) executed. Task 16-03-01 committed (5ffd1e6): tests/16-init-resolver.test.cjs, 11 tests, all pass. process.exit capture pattern used for hard-error edge cases. Live smoke test confirms real repo returns v2.7-phases/16-init-resolver-fix. No new npm failures. Phase 16 RESOLVE-01+02+tests fully complete."
 progress:
   total_phases: 4
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  total_plans: 3
+  completed_plans: 3
   percent: 25
 ---
 
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-04-11 for v2.7)
 ## Current Position
 
 Phase: 16 complete, Phase 17 next
-Plan: 16-02 complete (all plans in Phase 16 done)
-Status: Phase 16 (Init Resolver Fix) complete — RESOLVE-01 (milestone-scoped resolver) + RESOLVE-02 (--phase-dir override) both shipped. 2 plans, 4 tasks, commits d3f781e/a3dd52e/be36977/019d767/e2c37d7. Next step: /amauta:plan-phase 17 (Audit Script Hardening).
-Last activity: 2026-04-10 -- Phase 16 plan 16-02 executed. validatePhaseDirOverride() + ternary bypass in all four phase-aware init subcommands. Ghost directory bug structurally eliminated. Cross-milestone --phase-dir override verified.
+Plan: 16-03 complete (all 3 plans in Phase 16 done — implementation + tests)
+Status: Phase 16 (Init Resolver Fix) fully complete — RESOLVE-01 (milestone-scoped resolver) + RESOLVE-02 (--phase-dir override) + regression tests all shipped. 3 plans, 5 tasks, commits d3f781e/a3dd52e/be36977/019d767/e2c37d7/5ffd1e6. Next step: /amauta:plan-phase 17 (Audit Script Hardening).
+Last activity: 2026-04-10 -- Phase 16 plan 16-03 executed. tests/16-init-resolver.test.cjs created with 11 tests (depths 7/8/10 replays, RESOLVE-02 override, 5 edge cases, live smoke). process.exit capture pattern handles hard-error testing. All 11 pass, no new npm failures.
 
 Progress: [##········] 25% (Phase 16 done, Phases 17-19 pending)
 
@@ -251,6 +251,10 @@ Behavioral test suite (tests/13.1-divergence-protocol.integration.test.cjs, 15 i
 
 
 
+
+
+- [learning] 2026-04-10T21:43:39.917Z: legacy regression test: free text learning
+- [learning] 2026-04-10T21:41:28.937Z: legacy regression test: free text learning
 - [learning] 2026-04-10T21:37:11.566Z: findPhaseInternal ghost-directory fix: read current_milestone from config.json and scope directory walk to that milestone's v*-phases/ only — null on miss, no archived-milestone fallback. getMilestoneInfo uses same config.json field as primary version source.
 - [learning] 2026-04-10T18:37:27.412Z: Ledger transcription (Phase 15 Wave 3): when plan text and wave framing disagree on scope (plan said 7 entries, framing said 9 because depths 8+9 emerged after plan was authored), surface the mismatch in SUMMARY.md Plan vs Reality rather than silently choosing one interpretation. Faithful transcription means preserving each memory entrys distinct rationalization verbatim including length; paraphrasing for brevity is the Phase 13 fingerprint at Wave 3 recursion. Depth-3 placeholder should explicitly name both honest interpretations (depth does not exist in practice vs depth is silently caught but never formalized) rather than fabricating a story to close the gap.
 - [learning] 2026-04-10T18:20:06.394Z: Phase 15 Wave 2 dogfood depth-8: executor ran audit ONCE as-is, resisted 4 distinct fix temptations (VERIFICATION.md prefix probe, npm failure regex upgrade, adding tooling_bugs_observed schema category, hand-editing JSON to inject missing pre-locked findings). Surfaced all 4 as divergences in SUMMARY.md instead. The temptation pattern is 'the report says X and reality is Y therefore X is a reporter bug I should fix' — correct response is 'the delta is a finding, document it.' Phase 15 passes on audit completeness not cleanliness.
