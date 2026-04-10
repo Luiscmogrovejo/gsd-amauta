@@ -401,6 +401,16 @@ Every task MUST include these fields — they are NOT optional:
 - [ ] Dependencies correctly identified
 - [ ] Waves assigned for parallel execution
 - [ ] must_haves derived from phase goal
+- [ ] `<story>` block present at top of plan (mandatory for phases >= 14, per plan-task-xml-schema.md)
+- [ ] Every `<task>` has a non-empty `<agent>` field (executor-backend, executor-frontend, executor-infra, or executor-general)
+- [ ] Every `<task>` has a `<files_expected>` block with modify/create/delete sublists (HARDEN-01 mandate)
+- [ ] Task count per plan does not exceed 10 (PLAN-05 cap)
+- [ ] Each plan has `requirements` field in frontmatter listing covered PLAN-XX IDs
+
+**Advisory: Zero-dependency warning (Phase 14+):**
+If a wave contains more than 2 tasks and NONE of them declare `<depends_on>` edges (all are `[]`), emit an advisory warning: "Wave N has {count} tasks with zero explicit dependencies — verify that all tasks are truly parallel-eligible (PITFALLS P8)." This is an advisory, not a hard gate — genuinely parallel tasks are valid.
+
+**NOTE:** The plan-checker does NOT validate DAG cycles or run the cap-overflow split algorithm — those belong to `plan-to-tasks` Pass 0 (runtime validation, not plan-time). The checker focuses on content quality: read_first completeness, action concreteness, acceptance criteria verifiability, schema compliance.
 </quality_gate>
 ```
 
