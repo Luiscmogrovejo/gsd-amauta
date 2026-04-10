@@ -25,14 +25,13 @@ See: .planning/PROJECT.md (updated 2026-04-09)
 
 ## Current Position
 
-Phase: 12 -- T-Phase QA Department + Spec Inheritance (IN PROGRESS)
-Plan: 12-03 DONE (checkSpecInheritanceAdvisory() wired into cmdValidate + _checkQaBlocks/_checkRedGreenOrder in module.exports + gsd-validator.md Phase 12 advisory section. 3 commits. QA-04, QA-05, QA-06, QA-07, QA-08 addressed.)
-Plan: 12-02 DONE (qa-checklist.md reference file with 7 sections + gsd-checker.md runtime Read pattern + Pre-T Context Retrieval + T-Phase Structured Blocks + agent-capabilities.json security_patterns 9 globs + gsd-operator.md qa_report_phase_end parser. 4 commits. QA-03, QA-04, QA-05 addressed.)
-Plan: 12-01 DONE (_inherit_parent_spec() 57 lines + claim-time caching to metadata.inherited_spec + SC-01..SC-N IDs + cap@10 + kill switch + inherited_success_criteria in show --json + --no-inherit flag end-to-end. 3 commits. QA-01, QA-02 addressed.)
-Plan: 12-04 DONE (Python tests 8 scenarios + CJS qa-blocks 17 scenarios + CJS red-green 8 scenarios + STATE.md test baseline. 3 commits.)
-Previous: Phase 11 COMPLETE (all 2 plans, EXEC-01..08 satisfied, verified).
-Status: Phase 12 all 4 plans complete. Awaiting phase verification.
-Last activity: 2026-04-09 -- Plan 12-04: tests + STATE.md baseline (QA-01..QA-08 test coverage)
+Phase: 13 -- R-Phase Creative Research (Narrowed) (IN PROGRESS)
+Plan: 13-01 DONE (_jaccardSimilarity + generateVariants + detectDomain + shouldEnableCreative + deduplicateResults + module.exports guard + CREATIVE_* constants + parseArgs boolean flags. 1 commit. CREATIVE-01..03 addressed.)
+Plan: 13-02 DONE (creative cascade loop in cmdSearch + providerPerplexity._creative wrapper + _appendCreativeLog + creative-research.md reference + gsd-researcher.md creative_protocol + gsd-operator.md execution_type_classification + execute-phase.md --creative flags. 1 commit. CREATIVE-02..05 addressed.)
+Plan: 13-03 DONE (30 CJS unit tests in 13-creative-research.test.cjs + full test suite run + STATE.md baseline update. 1 commit.)
+Previous: Phase 12 COMPLETE (all 4 plans, QA-01..QA-08 satisfied, verified 2026-04-09).
+Status: Phase 13 all 3 plans complete. Awaiting phase verification.
+Last activity: 2026-04-10 -- Plan 13-03: 30 unit tests + test baseline (CREATIVE-01..05 test coverage)
 
 Progress: [###.......] 29%
 
@@ -146,15 +145,16 @@ Archive: `.planning/MILESTONES.md` + legacy v2.5 ROADMAP sections.
 
 ## Test Baseline (auto-updated at phase completion)
 
-npm_pass: 2006
-npm_fail: 3
+npm_pass: 2058
+npm_fail: 4
 pytest_pass: 466
 pytest_fail: 3
-last_updated: 2026-04-09
-phase: 12
+last_updated: 2026-04-10
+phase: 13
 
-Baseline includes Phase 12 tests: test_phase12_inherit_spec.py (8 tests), 12-qa-blocks.test.cjs (17 tests), 12-red-green.test.cjs (8 tests).
-Pre-existing failures: npm 3 (rlm-workflow-spec.test.cjs), pytest 3 (test_pg_integration.py) — not Phase 12 regressions.
+Baseline includes Phase 13 tests: 13-creative-research.test.cjs (30 tests).
+Previous: Phase 12 tests: test_phase12_inherit_spec.py (8 tests), 12-qa-blocks.test.cjs (17 tests), 12-red-green.test.cjs (8 tests).
+Pre-existing failures: npm 4 (rlm-workflow-spec.test.cjs, agent-frontmatter.test.cjs gsd-planner, comprehensive-e2e.test.cjs 6.12 migration count, gsd-amauta.test.cjs daemon not running), pytest 3 (test_pg_integration.py) — not Phase 13 regressions.
 
 ## Learnings
 
@@ -178,6 +178,36 @@ Pre-existing failures: npm 3 (rlm-workflow-spec.test.cjs), pytest 3 (test_pg_int
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+- [learning] 2026-04-10T04:21:49.640Z: E2E test learning — cleanup after test
+- [learning] 2026-04-10T04:21:33.738Z: legacy with agent
+- [learning] 2026-04-10T04:21:33.593Z: legacy regression test: free text learning
+- [learning] 2026-04-10T04:21:02.379Z: E2E test learning — cleanup after test
+- [learning] 2026-04-10T04:20:45.967Z: legacy with agent
+- [learning] 2026-04-10T04:20:45.750Z: legacy regression test: free text learning
+- [learning] 2026-04-10T04:20:04.585Z: E2E test learning — cleanup after test
+- [learning] 2026-04-10T04:19:49.166Z: legacy with agent
+- [learning] 2026-04-10T04:19:48.972Z: legacy regression test: free text learning
+- [learning] 2026-04-10T04:19:15.770Z: E2E test learning — cleanup after test
+- [learning] 2026-04-10T04:19:05.733Z: legacy with agent
+- [learning] 2026-04-10T04:19:05.496Z: legacy regression test: free text learning
+- [learning] 2026-04-10T04:18:37.465Z: E2E test learning — cleanup after test
+- [learning] 2026-04-10T04:18:19.597Z: legacy with agent
+- [learning] 2026-04-10T04:18:19.230Z: legacy regression test: free text learning
 - [learning] 2026-04-10T03:15:44.790Z: legacy regression test: free text learning
 - [learning] 2026-04-10T03:15:01.241Z: E2E test learning — cleanup after test
 - [learning] 2026-04-10T03:12:54.629Z: legacy regression test: free text learning

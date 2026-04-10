@@ -35,8 +35,8 @@
 - [x] **Phase 9: Tech-Debt Sweep** — Green baseline (`npm test && pytest` = 0 failures) before any v2.6 mandate lands — DONE (all 6 TECH + 4 GAP plans complete)
 - [x] **Phase 10: D-Phase Structured Learning + CLI Dedup** — WHAT/WHY/WHEN/TAGS format, `gsd-memory learn --structured`, cli-variables.md reference, 2-week quarantine — DONE (9 plans, 62 new tests, LEARN-01..07 complete)
 - [x] **Phase 11: E-Phase Research-Informed Execution Mandate** — Pre-exec checklist reference, `PRE_EXECUTION_EVIDENCE` block, security checklist, advisory validation in v2.6 (Plan 11-01 DONE) (completed 2026-04-10)
-- [ ] **Phase 12: T-Phase QA Department + Spec Inheritance** — `_inherit_parent_spec()` helper, parent G/W/T verification, edge cases, regression sweep, RED-GREEN back-testing [Plans 12-01, 12-02, 12-03 DONE]
-- [ ] **Phase 13: R-Phase Creative Research (Narrowed)** — Task-type gated creative variants, `gsd-research --creative` flag, conservative default for implementation tasks
+- [x] **Phase 12: T-Phase QA Department + Spec Inheritance** — `_inherit_parent_spec()` helper, parent G/W/T verification, edge cases, regression sweep, RED-GREEN back-testing — DONE (4 plans, QA-01..08 complete)
+- [x] **Phase 13: R-Phase Creative Research (Narrowed)** — Task-type gated creative variants, `gsd-research --creative` flag, conservative default for implementation tasks — DONE (3 plans, CREATIVE-01..05 complete) 2026-04-10
 - [ ] **Phase 14: P-Phase Task-Management Integration** — Structured XML plan blocks, `gsd-tools plan-to-tasks`, auto-agent-assign, dep-linking, 10-task cap
 - [ ] **Phase 15: End-to-End Dogfood Verification** — `audit-rpetd-intelligence`, `verify-v26.sh`, 6/6 phases green observational report
 
@@ -266,7 +266,10 @@
 
 **Rollback Plan:** Set `GSD_R_CREATIVE=off`. `--creative` flag in `gsd-research.cjs` stays but dormant. `gsd-researcher.md` `<creative_protocol>` block reverts via single commit. `creative-research.md` reference stays on disk as inert documentation.
 
-**Plans:** TBD
+**Plans:**
+- [x] 13-01: Creative research foundation -- creative-research.md reference + Jaccard JS + variant generation + gating logic + dedup + module.exports guard (CREATIVE-01, CREATIVE-02, CREATIVE-03) -- wave 1 -- DONE 2026-04-10
+- [x] 13-02: Creative cascade wiring + agent updates -- cmdSearch creative loop + providerPerplexity._creative + creative log + JSON/human output + gsd-researcher.md creative_protocol + gsd-operator.md execution_type + execute-phase.md flags (CREATIVE-02, CREATIVE-03, CREATIVE-04, CREATIVE-05) -- wave 2, depends on 13-01 -- DONE 2026-04-10
+- [x] 13-03: Tests (30 CJS) + STATE.md baseline update (CREATIVE-01..05 coverage) -- wave 3, depends on 13-01 + 13-02 -- DONE 2026-04-10
 
 ---
 
