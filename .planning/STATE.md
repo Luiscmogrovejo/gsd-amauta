@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: milestone
-status: verifying
-stopped_at: Phase 15 Wave 3 complete — docs/v2.6-dogfood-ledger.md published (706 lines, 10 depth rows 0-9, depth-3 honest placeholder, Limitations + Routed follow-ups sections); 3/3 plans complete, awaiting validator for phase closeout
-last_updated: "2026-04-10T19:00:00.000Z"
-last_activity: "2026-04-10 -- Phase 15 Plan 15-03 DONE: dogfood ledger published (89c6288); 9 memory entries transcribed faithfully (depths 8+9 included per wave framing; plan-text-vs-framing mismatch surfaced); depth-3 gap preserved. Phase 15 ready for validator + closeout."
+status: complete
+stopped_at: Phase 15 SHIPPED, v2.6 milestone COMPLETE. All 7 phases delivered. Dogfood ledger published (docs/v2.6-dogfood-ledger.md — 9 captured depths, 1 honest open slot, 7 routed follow-ups to v2.7). v2.7 planning deferred to separate session.
+last_updated: "2026-04-10T19:45:00.000Z"
+last_activity: "2026-04-10 -- Phase 15 closeout (91685e0): REQUIREMENTS.md errata (DOGFOOD-01 subcommand → standalone binary; DOGFOOD-03/05 .sh → .cjs) + ROADMAP.md Phase 15 [x] + v2.6 COMPLETE marker + v2.7 deferred note. VERIFICATION passed (f52e13f). Depths 8 + 9 captured during execution (orchestrator init-resolver catch pre-Wave-1; Wave 2 executor auditor self-restraint resisting 4 distinct patches to audit script while auditing). Milestone v2.6 closed."
 progress:
-  total_phases: 8
-  completed_phases: 1
-  total_plans: 10
-  completed_plans: 10
-  percent: 78
+  total_phases: 7
+  completed_phases: 7
+  total_plans: 13
+  completed_plans: 13
+  percent: 100
 ---
 
 # GSD-Amauta -- Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-09)
 
 ## Current Position
 
-Phase: 15 -- End-to-End Dogfood Verification (Wave 3 complete, 3/3 plans done)
-Status: Plan 15-03 DONE — docs/v2.6-dogfood-ledger.md published (706 lines, commit 89c6288). Ledger transcribes 9 dogfood memory entries (depths 0, 1, 2, 4, 5, 6, 7, 8, 9) faithfully with literal quotes from each source; depth 3 preserved as honest placeholder with "expected shape" explanation. Limitations section names three meta-findings: schema-orphaned depths 8+9 (Wave 1 JSON schema doesn't encode them), depth-3 coverage gap as open question, and resistance-to-fix ratio (four fixes prevented in Wave 2 alone). Routed follow-ups section lists 2 Wave-0 tooling bugs + 4 Wave-2 resisted audit fixes + 1 schema modernization item, all routed to Phase 16 / v2.7. Plan-text-vs-wave-framing mismatch (plan said 7 entries, framing said 9) surfaced in 15-03-SUMMARY.md as divergence rather than silently reconciled. Zero existing files modified. Phase 15 is ready for validator + closeout.
-Previous: 15-02 DONE — verify-v26.cjs executed ONCE, 15-AUDIT-REPORT.{json,md} captured (5d2f1f8). 15-01 DONE — 4 new audit-infra files (16513ed + 26ae849 + 36a2d2a + 447c9b5). Phase 14 verified PASS (f9016bd), PLAN-01..07 flipped to Done.
-Last activity: 2026-04-10 -- Phase 15 Plan 15-03 shipped: dogfood ledger published atomically (89c6288). Awaiting validator for phase closeout.
+Phase: 15 -- End-to-End Dogfood Verification (SHIPPED) | v2.6 milestone COMPLETE
+Status: Phase 15 closed 2026-04-10 (closeout commit 91685e0). VERIFICATION.md status: passed (f52e13f). All 5 DOGFOOD-0N requirements traced, checkboxes flipped, errata applied (DOGFOOD-01 subcommand → standalone binary; DOGFOOD-03/05 .sh → .cjs). 3 plans, 14 commits total. Phase 15 artifacts: verify-v26.cjs (36a2d2a) + audit-rpetd-intelligence.cjs (16513ed) + verify-rpetd-intelligence.md (26ae849) + verify-v26.md slash command (447c9b5) + 15-AUDIT-REPORT.{json,md} (5d2f1f8) + docs/v2.6-dogfood-ledger.md (89c6288). Zero existing source files modified across the entire phase.
+Previous: v2.6 milestone — 7 phases shipped (9, 10, 11, 12, 13, 13.1, 14, 15). Phase 14 verified PASS (f9016bd). Phase 13.1 hardening held across Phases 14 and 15. Phase 13 incident → 13.1 hardening → 14 clean execution → 15 audit-confirms-hardening arc complete.
+Last activity: 2026-04-10 -- Phase 15 closeout commit 91685e0 landed. Dogfood ledger published (89c6288, 706 lines, depths 0-9 + honest depth-3 placeholder + 3 meta-findings in Limitations + 7 routed follow-ups to v2.7). Two new depths captured during Phase 15 execution: depth 8 (orchestrator init-resolver ghost-directory catch at execute-phase init boundary before Wave 1 spawned) + depth 9 (Wave 2 executor resisted 4 distinct patches to verify-v26.cjs while auditing — Phase 13 fingerprint at maximum recursion depth). Milestone v2.6 closed.
 
-Progress: [#########.] 87% (v2.6 milestone — phases 10, 11, 12, 13, 13.1, 14 done; phase 9 pending green baseline; phase 15 Waves 1-3 shipped, phase closeout pending)
+Progress: [##########] 100% (v2.6 milestone COMPLETE — all 7 phases shipped: 9, 10, 11, 12, 13, 13.1, 14, 15)
 
 ## v2.6 Phase Map
 
@@ -145,16 +145,29 @@ None. Part A blockers resolved pre-roadmap:
 
 ## Session Continuity
 
-Last session: 2026-04-10T16:32:10.662Z
-Stopped at: Phase 15 context gathered — 15 locked decisions, 4 gap resolutions, depth-7 dogfood stored
-Resume file: .planning/milestones/v2.2-phases/15-dogfood/15-CONTEXT.md
-Next: /amauta:discuss-phase 15 — End-to-End Dogfood Verification (observational, not code-generating)
+Last session: 2026-04-10T19:45:00.000Z
+Stopped at: Phase 15 SHIPPED, v2.6 milestone COMPLETE
+Resume file: docs/v2.6-dogfood-ledger.md (read this FIRST on next session — it is v2.7's primary input; the 9 captured depths + 7 routed follow-ups drive v2.7 planning)
+Next: v2.7 planning in a separate fresh-context session. Start by reading docs/v2.6-dogfood-ledger.md.
 
-Memory entries from Phase 13.1 (researcher recall during Phase 14 planning should surface these):
-- project_phase13_1_wave1_dogfood.md — first-invocation positive example (depth 0)
-- project_phase13_1_meta_recursive_dogfood.md — 13.1-02 executor applied protocol to its own creation (depth 1)
-- project_phase13_1_wave3_near_miss.md — 13.1-05 executor resisted Phase-13-shaped rationalization at hard ceiling (depth 2)
-- project_phase13_1_postmortem_followups.md — 5 operational follow-ups for Phase 14 (amauta pre-registration, gsd-amauta.cjs inline resolver refactor, etc.)
+v2.7 planning primary inputs (read in this order on next session):
+1. docs/v2.6-dogfood-ledger.md — the Phase 15 dogfood audit, 9 captured depths, Limitations section, 7 routed follow-ups (section "Routed follow-ups (Phase 16 / v2.7)")
+2. .planning/milestones/v2.2-phases/15-dogfood/15-AUDIT-REPORT.json + 15-AUDIT-REPORT.md — machine-readable audit, with noted schema gaps (depths 8+9 are ledger-only, not JSON-encoded)
+3. .planning/milestones/v2.2-phases/15-dogfood/15-02-SUMMARY.md § "Temptations resisted" — the four Wave 2 script-patches that were deflected; v2.7 decides which to actually implement
+4. .planning/milestones/v2.2-phases/15-dogfood/15-VERIFICATION.md — phase-goal verification (status: passed)
+5. .planning/milestones/v2.2-phases/15-dogfood/15-CONTEXT.md § Gap 1a/1c, Q15 — errata audit trail
+
+Phase 15 dogfood memory entries (all transcribed in the published ledger — prefer the ledger as the human entry point):
+- project_phase13_1_wave1_dogfood.md — depth 0
+- project_phase13_1_meta_recursive_dogfood.md — depth 1
+- project_phase13_1_wave3_near_miss.md — depth 2
+- (depth 3 — no entry, honest open slot, see ledger § "Expected shape of depth-3")
+- project_phase13_1_closeout_paperwork_dogfood.md — depth 4
+- project_phase13_1_discuss_phase_reconciliation_dogfood.md — depth 5
+- project_phase14_prior_session_verification_dogfood.md — depth 6
+- project_phase15_ghost_directory_dogfood.md — depth 7
+- project_phase15_execute_init_dogfood.md — depth 8
+- project_phase15_wave2_auditor_self_restraint_dogfood.md — depth 9
 
 ## Previous Milestone: v2.5 -- Smarter Brain (COMPLETE)
 
@@ -169,8 +182,9 @@ npm_fail: 4
 pytest_pass: 466
 pytest_fail: 3
 last_updated: 2026-04-10
-phase: 14
+phase: 15
 
+Phase 15 is observational — no new tests added, baseline unchanged from Phase 14. The v2.6 audit (15-AUDIT-REPORT.json) surfaced that `parseNpmFailures()` in verify-v26.cjs currently matches pytest entries only, not npm (routed to v2.7 follow-up #4). The 4 npm pre-existing failures and 3 pytest failures remain correctly classified as pre-existing.
 Baseline includes Phase 14 tests: 14-plan-to-tasks.test.cjs (20 unit tests, 20/20 pass), 14-plan-to-tasks.integration.test.cjs (8 integration tests, daemon-required).
 Also includes Phase 13.1 tests: 13.1-manifest-check.test.cjs (13 deterministic tests).
 Also includes Phase 13 tests: 13-creative-research.test.cjs (30 tests).
