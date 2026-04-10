@@ -19,12 +19,12 @@
 
 Research finding: baseline has 34 CJS fails + 6 pytest fails (confirmed 2026-04-09). Adding mandates on top of a flaky base amplifies flakes. Phase 0 gets baseline to green before any v2.6 upgrades land.
 
-- [ ] **TECH-01**: Fix `tests/test_daemon_integration.py::TestHealthResponseHasAllRequiredFields` — regex helper doesn't extract `oidc_enabled`/`oidc_issuer` fields even though they exist at `amauta-daemon.py:1031-1032`
-- [ ] **TECH-02**: Fix `tests/test_enrichment_memory.py` mock StopIteration — 3 tests fail because mock iterators are exhausted mid-test (fixture cleanup issue)
-- [ ] **TECH-03**: Fix `tests/test_gates.py::TestValidateAllGates::test_exactly_5_gates_returned` — gate-count assertion drifted
-- [ ] **TECH-04**: Fix `tests/test_pg_integration.py::TestRetentionMovesOldEntries` retention cleanup flake
-- [ ] **TECH-05**: Fix `tests/e2e-lifecycle.test.cjs` 15-second timeout flakes in claim/RPETD R-P-E-T phases (spawned-process subprocess timeout — likely daemon-busy race condition)
-- [ ] **TECH-06**: Fix `tests/gsd-amauta.test.cjs::12. task status after validate` — status stuck at "pending" after validate --pass
+- [x] **TECH-01**: Fix `tests/test_daemon_integration.py::TestHealthResponseHasAllRequiredFields` — regex helper doesn't extract `oidc_enabled`/`oidc_issuer` fields even though they exist at `amauta-daemon.py:1031-1032`
+- [x] **TECH-02**: Fix `tests/test_enrichment_memory.py` mock StopIteration — 3 tests fail because mock iterators are exhausted mid-test (fixture cleanup issue)
+- [x] **TECH-03**: Fix `tests/test_gates.py::TestValidateAllGates::test_exactly_5_gates_returned` — gate-count assertion drifted
+- [x] **TECH-04**: Fix `tests/test_pg_integration.py::TestRetentionMovesOldEntries` retention cleanup flake
+- [x] **TECH-05**: Fix `tests/e2e-lifecycle.test.cjs` 15-second timeout flakes in claim/RPETD R-P-E-T phases (spawned-process subprocess timeout — likely daemon-busy race condition)
+- [x] **TECH-06**: Fix `tests/gsd-amauta.test.cjs::12. task status after validate` — status stuck at "pending" after validate --pass
 
 **Success:** `npm test && pytest` = 0 failures before Phase 1 starts. Agreed baseline.
 

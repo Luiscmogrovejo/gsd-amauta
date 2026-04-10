@@ -34,7 +34,7 @@
 
 - [x] **Phase 9: Tech-Debt Sweep** — Green baseline (`npm test && pytest` = 0 failures) before any v2.6 mandate lands — DONE (all 6 TECH + 4 GAP plans complete)
 - [x] **Phase 10: D-Phase Structured Learning + CLI Dedup** — WHAT/WHY/WHEN/TAGS format, `gsd-memory learn --structured`, cli-variables.md reference, 2-week quarantine — DONE (9 plans, 62 new tests, LEARN-01..07 complete)
-- [ ] **Phase 11: E-Phase Research-Informed Execution Mandate** — Pre-exec checklist reference, `PRE_EXECUTION_EVIDENCE` block, security checklist, advisory validation in v2.6 (Plan 11-01 DONE)
+- [x] **Phase 11: E-Phase Research-Informed Execution Mandate** — Pre-exec checklist reference, `PRE_EXECUTION_EVIDENCE` block, security checklist, advisory validation in v2.6 (Plan 11-01 DONE) (completed 2026-04-10)
 - [ ] **Phase 12: T-Phase QA Department + Spec Inheritance** — `_inherit_parent_spec()` helper, parent G/W/T verification, edge cases, regression sweep, RED-GREEN back-testing
 - [ ] **Phase 13: R-Phase Creative Research (Narrowed)** — Task-type gated creative variants, `gsd-research --creative` flag, conservative default for implementation tasks
 - [ ] **Phase 14: P-Phase Task-Management Integration** — Structured XML plan blocks, `gsd-tools plan-to-tasks`, auto-agent-assign, dep-linking, 10-task cap
@@ -180,7 +180,7 @@
 **Rollback Plan:** Set `GSD_E_MANDATE=off`. 3-line runtime Read blocks in each executor agent revert via single commit per file. `pre-execution-checklist.md` stays on disk as inert reference. `gsd-validator` parser block guarded by the env var — no code revert needed beyond flipping the flag.
 
 **Plans:**
-- [x] 11-01: pre-execution-checklist.md reference + PRE_EXECUTION_CHECKLIST in cli-variables.md + <pre_execution_mandate> in 4 executors + debugger + fallback in 6 agent files (EXEC-01,02,03,05,06,07,08) — wave 1 — DONE 2026-04-09 (45b84bb..3b12230: 8 atomic commits)
+2/2 plans complete
 - [ ] 11-02: gsd-validator advisory PRE_EXECUTION_EVIDENCE parser — logs WARNING if missing, does NOT fail validation in v2.6 (EXEC-04) — wave 2
 
 ---
@@ -389,8 +389,7 @@ Phase 11 (E-Phase Research-Informed Execution Mandate)
 | Category | Requirements | Phase | REQ-IDs |
 |----------|--------------|-------|---------|
 | Tech Debt | 6 | 9 | TECH-01..06 |
-| D-Phase Structured Learning | 7 | 10 | LEARN-01..07 | Complete    | 2026-04-09 | 8 | 11 | EXEC-01..08 |
-| T-Phase QA + Spec Inheritance | 8 | 12 | QA-01..08 |
+| D-Phase Structured Learning | 7 | 10 | LEARN-01..07 | Complete    | 2026-04-09 | 8 | 11 | EXEC-01..08 | Complete    | 2026-04-10 | 8 | 12 | QA-01..08 |
 | R-Phase Creative Research (Narrowed) | 5 | 13 | CREATIVE-01..05 |
 | P-Phase Task-Management Integration | 7 | 14 | PLAN-01..07 |
 | Dogfood Verification | 5 | 15 | DOGFOOD-01..05 |
