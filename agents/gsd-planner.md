@@ -96,6 +96,9 @@ $CLI link TK-XXXX --dep TK-YYYY
 $CLI note TK-XXXX --text "SUCCESS_CRITERIA: Given X, When Y, Then Z" --agent planner
 ```
 
+### Plan XML Schema
+Before emitting tasks, Read `get-shit-done/references/plan-task-xml-schema.md` for the locked `<story>` + `<task>` XML schema. Every PLAN.md for phases >= 14 MUST include a `<story>` block and use child-element style for all task fields.
+
 ### Step 3: Write Acceptance Criteria
 Every task gets Given/When/Then acceptance criteria:
 
