@@ -1,0 +1,40 @@
+name: Behavioral Tests (HARDEN-05)
+
+# HARDEN-05 auto-triggers on PRs that touch the agent definitions or the
+# divergence-protocol reference, because those are the files whose behavior
+# the test verifies. Fork PRs cannot access ANTHROPIC_API_KEY and will fail
+# the real-LLM step — this is acceptable per plan 13.1-05 Risk #3.
+
+on:
+  pull_request:
+    paths:
+      - 'agents/**/*.md'
+      - 'get-shit-done/workflows/execute-phase.md'
+      - 'get-shit-done/references/divergence-protocol.md'
+
+jobs:
+  behavioral:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        run: npm ci || npm install
+      - name: Run behavioral tests
+        run: npm run test:behavioral
+        env:
+          GSD_TEST_MODE: behavioral
+          # ANTHROPIC_API_KEY must be configured as repo secret for real LLM calls.
+          # Fork PRs lack access to this secret and will fail — this is
+          # deliberate per plan 13.1-05 Risk #3 (LLM invocation cost + security).
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      - name: Upload preserved temp dirs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: behavioral-failure-artifacts
+          path: /tmp/gsd-13.1-*
+          retention-days: 7
