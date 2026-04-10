@@ -156,9 +156,17 @@ Three categories, every DOGFOOD criterion tagged with one:
 - Add downstream note: "v2.6 closed. v2.7 planning deferred to separate session."
 - This prevents the next discuss-phase invocation from hitting another ghost directory at milestone transition.
 
-### DOGFOOD-03 and DOGFOOD-05 mapping (Gap 1)
-- **DOGFOOD-03** (verify-v26 script) maps to Plan 15-01 as `scripts/verify-v26.cjs` — already covered by Q6.
-- **DOGFOOD-05** (6/6 phases green before milestone shipped) is a milestone ship gate assessed by Plan 15-02. The audit captures the 6/6 verdict as a `criteria[]` entry with `id: "DOGFOOD-05"`. If not 6/6, verdict is `gaps_found` — does not prevent Phase 15 from completing (per Q14: audit completeness, not cleanliness). Milestone closeout (Q15) consults DOGFOOD-05 verdict separately.
+### DOGFOOD-03 errata: .sh → .cjs (Gap 1a)
+- REQUIREMENTS.md says `scripts/verify-v26.sh` (shell). Q6 locked `scripts/verify-v26.cjs` (Node) with a correctness argument: the script must `require()` gsd-tools.cjs exports (`manifestCheck`, `resolvePhaseDir`, `GLOBAL_ALLOWLIST`) to exercise the Phase 13.1 infrastructure directly, not via subprocess indirection.
+- **This is a real requirements change, not a reinterpretation.** Same shape as PLAN-04 errata.
+- **Handle at Phase 15 closeout:** Strike through the `.sh` language in REQUIREMENTS.md DOGFOOD-03, add `.cjs` underneath with a footnote citing the require-based dogfooding argument and this CONTEXT.md decision. Do NOT edit REQUIREMENTS.md during execution.
+- **Why this matters:** Without the errata, future readers see "verify-v26.sh" in REQUIREMENTS.md and `verify-v26.cjs` in the filesystem with no audit trail explaining the drift.
+
+### DOGFOOD-05 phase enumeration (Gap 1b)
+- REQUIREMENTS.md says "6/6 phases green." v2.6 contains 8 slots (9, 10, 11, 12, 13, 13.1, 14, 15). "6/6" doesn't match 8 or 7.
+- **Locked interpretation (#2):** Phase 9 is excluded as baseline (tech-debt sweep, not an RPETD upgrade). Phase 15 is excluded per Q10 (recursive scope exclusion). Remaining: **10, 11, 12, 13, 13.1, 14 = 6 phases.** The "6/6" was correct for the current reality.
+- **Lock:** `DOGFOOD-05` audits exactly these 6 phases: `["10", "11", "12", "13", "13.1", "14"]`. Phase 9 excluded as baseline. Phase 15 excluded per Q10. The audit script hard-codes this list — it does not pick which 6 at runtime. Non-reproducible audit results from ambiguous phase enumeration is exactly the kind of drift Phase 15 exists to prevent.
+- DOGFOOD-05 is a milestone ship gate assessed by Plan 15-02. The audit captures the 6/6 verdict as a `criteria[]` entry. If not 6/6, verdict is `gaps_found` — does not prevent Phase 15 from completing (per Q14: audit completeness, not cleanliness). Milestone closeout (Q15) consults DOGFOOD-05 verdict separately.
 
 ### Behavioral test timeout (Gap 2)
 - **Hard timeout: 30 minutes total wall-clock** for the behavioral suite, enforced by the audit script via subprocess timeout wrapper around `npm run test:behavioral`.
