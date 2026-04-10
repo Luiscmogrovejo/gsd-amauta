@@ -380,9 +380,10 @@ async function cmdStats(useDaemon, jsonMode) {
   return result.exit_code;
 }
 
-async function cmdShow(useDaemon, id, jsonMode) {
+async function cmdShow(useDaemon, id, jsonMode, noInherit = false) {
   if (!id) die('Usage: amauta show <id> [--json]');
   const args = jsonMode ? ['show', id, '--json'] : ['show', id];
+  if (noInherit) args.push('--no-inherit');
   if (useDaemon) {
     // Use exec for --json passthrough
     if (jsonMode) {
@@ -1492,6 +1493,11 @@ async function main() {
   let jsonMode = jsonIdx !== -1;
   if (jsonIdx !== -1) rawArgs.splice(jsonIdx, 1);
 
+  // --no-inherit: skip inherited spec resolution in show --json output
+  const noInheritIdx = rawArgs.indexOf('--no-inherit');
+  const noInherit = noInheritIdx !== -1;
+  if (noInheritIdx !== -1) rawArgs.splice(noInheritIdx, 1);  // strip --no-inherit before subcommand dispatch
+
   const command = rawArgs[0];
   const rest = rawArgs.slice(1);
 
@@ -1512,7 +1518,7 @@ async function main() {
       '    board                       Kanban view of all tasks\n' +
       '    stats                       Task counts by status\n' +
       '    list [--type T] [--status S] [--agent A]\n' +
-      '    show <id> [--json]          Full task details\n' +
+      '    show <id> [--json] [--no-inherit]  Full task details\n' +
       '    next <agent> [--json]       Next task for an agent\n' +
       '    search <query>              Full-text task search\n' +
       '    score <id>                  Priority score breakdown\n' +
@@ -1603,7 +1609,7 @@ async function main() {
       break;
 
     case 'show':
-      exitCode = await cmdShow(useDaemon, id, jsonMode);
+      exitCode = await cmdShow(useDaemon, id, jsonMode, noInherit);
       break;
 
     case 'next':
