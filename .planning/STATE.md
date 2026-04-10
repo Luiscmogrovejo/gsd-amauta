@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.7
 milestone_name: Steady Hands
-status: roadmap_defined
-stopped_at: v2.7 "Steady Hands" ROADMAP.md written — 4 phases (16 RESOLVE, 17 AUDIT, 18 SAMPLE, 19 SCHEMA), 7 requirements, full coverage, goal-backward success criteria derived per phase. v2.6 ROADMAP.md archived to milestones/v2.6-ROADMAP.md. Next step: /amauta:plan-phase 16.
-last_updated: "2026-04-11T11:00:00.000Z"
-last_activity: "2026-04-11 -- v2.7 'Steady Hands' milestone initialized (morning session, fresh context). v2.6 archived to MILESTONES.md. PROJECT.md Current Milestone flipped from v2.6 to v2.7. 4 phases planned from the 7 routed follow-ups in the v2.6 dogfood ledger: Phase 16 = Init Resolver Fix (RESOLVE-01..02, Cluster A — items 1+2, highest real-world friction, fired 3 times in v2.6), Phase 17 = Audit Script Hardening (AUDIT-01..03, Cluster B — items 3+4+5), Phase 18 = Sampling Pool Expansion (SAMPLE-01, Cluster D — item 6), Phase 19 = Dynamic Ledger Schema (SCHEMA-01, Cluster C — item 7)."
+status: phase_context_gathered
+stopped_at: Phase 16 context gathered — 4 gray areas locked (milestone identity = config.json::current_milestone, resolver-only scope, --phase-dir strict validation + both forms + empty-dir hard error, synthetic fixtures replaying depths 7/8/10 as specific cases + live smoke test). Depth 10 captured during this discuss-phase init. Next step /amauta:plan-phase 16.
+last_updated: "2026-04-11T11:45:00.000Z"
+last_activity: "2026-04-11 -- v2.7 Phase 16 discuss-phase complete. Depth 10 fired on the very first `gsd-tools init phase-op 16` call (resolver returned `.planning/milestones/v2.3-phases/16-data-integrity` ghost with has_plans:true); pre-warning caught it before silent v2.3 plan inheritance, memory entry captured (project_phase16_init_resolver_self_referential_dogfood.md). Phase directory created at .planning/milestones/v2.7-phases/16-init-resolver-fix/ (fresh v2.7 convention, not a continuation of deferred v2.2-phases/). 16-CONTEXT.md written covering domain boundary, 4 locked gray-area decisions, canonical refs, code context, specifics, deferred ideas, and positive observations. All workflow steps after init hand-routed to bypass the broken resolver (Phase 15 bootstrap pattern). Phase 16 ready for planning."
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
-  percent: 0
+  percent: 5
 ---
 
 # GSD-Amauta -- Project State
