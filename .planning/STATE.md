@@ -256,6 +256,8 @@ Behavioral test suite (tests/13.1-divergence-protocol.integration.test.cjs, 15 i
 
 
 
+
+- [learning] 2026-04-10T22:57:21.406Z: verify-v26.cjs: tasks 17-01-01 and core of 17-01-02 (checkVerificationFiles dual-probe + parseNpmFailures structured objects) were pre-committed from a prior session — always read the target file before executing a plan task to detect prior-session pre-commits.
 - [learning] 2026-04-10T22:32:38.606Z: legacy regression test: free text learning
 - [learning] 2026-04-10T22:11:42.948Z: legacy regression test: free text learning
 - [learning] 2026-04-10T21:50:32.123Z: CJS modules using error()+process.exit(1) require a captureError() sentinel-throw helper for testing hard-error paths — intercept process.exit, throw { __capturedExit: true }, restore in finally; do not use child process spawn for per-call error tests
