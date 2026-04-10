@@ -76,6 +76,7 @@ At the start of the RPETD protocol, Read the shared CLI variable file and paste 
 # TOOLS="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-tools.cjs"    # fallback: tools/audit
 # LEARNING_FORMAT="/Users/luismogrovejo/.claude/get-shit-done/references/learning-format.md"  # fallback: D-phase template
 # TAG_RULES="/Users/luismogrovejo/.claude/get-shit-done/config/tag-rules.json"                # fallback: tag governance
+# PRE_EXECUTION_CHECKLIST="/Users/luismogrovejo/.claude/get-shit-done/references/pre-execution-checklist.md"  # fallback: E-phase mandate checklist
 ```
 
 ```bash
