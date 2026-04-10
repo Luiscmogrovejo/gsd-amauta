@@ -221,6 +221,8 @@ Behavioral test suite (tests/13.1-divergence-protocol.integration.test.cjs, 15 i
 
 
 
+
+- [learning] 2026-04-10T18:00:21.706Z: Phase 15-01 observational phase discipline: when plan says N new files, deliver exactly N — resisted helper refactor, 5th file, and ROADMAP errata ("fix while Im here"). Errata routed to phase closeout per CONTEXT.md gap resolutions, not execution. Hard-coded paths bypassed known init-resolver ghost-directory bug.
 - [learning] 2026-04-10T16:11:54.389Z: Plan 14-04 wiring pattern: when tasks 01+02 are already committed from a prior session, verify acceptance criteria before treating as done rather than re-doing work; execute-phase phase-gated branching uses PHASE_NUM_FLOAT >= 14 float comparison; REQUIREMENTS errata pattern uses ~~strikethrough~~ + replacement + PITFALLS footnote
 - [learning] 2026-04-10T16:03:52.792Z: planToTasks() idempotency in amauta: --from-plan stamps metadata.plan_id but NOT plan_local_id; use tags 'task:ID' as secondary lookup. spawnAmauta() must be defined as a closure inside planToTasks() sharing _spawnOpts. note command uses --content not --text.
 - [learning] 2026-04-10T15:47:24.783Z: planToTasks Pass 0 pattern: _filesDisjointSplit returns the FIRST disjoint boundary (smallest valid cut), not a midpoint — walking forward and taking the first clean cut matches 'largest contiguous prefix' semantics. _renderDagText total-output cap (including truncation marker) requires cut at 500-marker.length, not a fixed 490.
