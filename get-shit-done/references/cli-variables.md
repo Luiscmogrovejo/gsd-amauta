@@ -19,6 +19,7 @@ TOOLS="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-tools.cjs"
 # Artifact paths — reference files agents Read at runtime
 LEARNING_FORMAT="/Users/luismogrovejo/.claude/get-shit-done/references/learning-format.md"
 TAG_RULES="/Users/luismogrovejo/.claude/get-shit-done/config/tag-rules.json"
+PRE_EXECUTION_CHECKLIST="/Users/luismogrovejo/.claude/get-shit-done/references/pre-execution-checklist.md"
 ```
 
 ---
@@ -36,6 +37,7 @@ RESEARCH="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-research.cjs" 
 TOOLS="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-tools.cjs"    # fallback: routing/audit
 LEARNING_FORMAT="/Users/luismogrovejo/.claude/get-shit-done/references/learning-format.md"  # fallback: D-phase template
 TAG_RULES="/Users/luismogrovejo/.claude/get-shit-done/config/tag-rules.json"                # fallback: tag governance
+PRE_EXECUTION_CHECKLIST="/Users/luismogrovejo/.claude/get-shit-done/references/pre-execution-checklist.md"  # fallback: E-phase mandate checklist
 ```
 
 ---
@@ -51,6 +53,7 @@ TAG_RULES="/Users/luismogrovejo/.claude/get-shit-done/config/tag-rules.json"    
 | `TOOLS`          | gsd-tools.cjs              | Routing, performance tiebreaker, audit utilities   |
 | `LEARNING_FORMAT`| references/learning-format.md | WHAT/WHY/WHEN/TAGS template (D-phase reference) |
 | `TAG_RULES`      | config/tag-rules.json      | Banned tags, synonyms, vocabulary, tiers           |
+| `PRE_EXECUTION_CHECKLIST` | references/pre-execution-checklist.md | E-phase query templates + security checklist (pre-exec mandate) |
 
 ---
 
