@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: milestone
 status: verifying
-stopped_at: Phase 14 planned — 4 plans, 10 tasks, 4 waves, checker passed
-last_updated: "2026-04-10T15:26:16.287Z"
-last_activity: "2026-04-10 -- Phase 13.1 closeout: validator --pass, ROADMAP/REQUIREMENTS/STATE updated, behavioral test run pending."
+stopped_at: Phase 14 plan 14-01 DONE — divergence-protocol v1.1.0 + plan-task-xml-schema.md + planner pointer
+last_updated: "2026-04-10T16:00:00.000Z"
+last_activity: "2026-04-10 -- Plan 14-01 complete: 2 tasks, 2 commits. PLAN-01 requirement addressed."
 progress:
   total_phases: 8
   completed_phases: 1
@@ -25,16 +25,11 @@ See: .planning/PROJECT.md (updated 2026-04-09)
 
 ## Current Position
 
-Phase: 13.1 -- Orchestrator Hardening & Divergence Protocol (COMPLETE)
-Plan: 13.1-01 DONE (manifestCheck utility in gsd-tools.cjs + execute-phase.md wiring + STATE.md + REQUIREMENTS.md traceability. 3 commits. HARDEN-01 addressed.)
-Plan: 13.1-02 DONE (divergence-protocol.md reference file, 414 lines, version 1.0.0, 4-option decision tree, mandatory rationalization_check, validator variant with verdict_ambiguity. 1 commit. HARDEN-02 addressed.)
-Plan: 13.1-03 DONE (4 executor .md files + validator .md vocabulary lock + req-ID rule + divergence pre-gate scan. 5 commits. HARDEN-03 addressed.)
-Plan: 13.1-04 DONE (cmdValidate --gaps-found flag exit code 2 + writeGapsReport + execute-phase.md routing branches pass/gaps_found/fail. 2 commits. HARDEN-04 addressed.)
-Plan: 13.1-05 DONE (behavioral test runner + deterministic test suite 13/13 pass + behavioral integration test with Phase 13 incident replay + CI workflow + Wave 1+2 fold-ins in task 05-05. 5 commits. HARDEN-05 addressed.)
-Plus 2 wave-boundary amendments (849471d, 0e4077c) — explicit orchestrator decisions at review gates, not executor scope expansion.
-Previous: Phase 13 VERIFIED (3 plans, CREATIVE-01..05 complete). Phase 12 COMPLETE (4 plans, QA-01..08).
-Status: Phase 13.1 VERIFIED. Validator verdict --pass. All 5 HARDEN requirements verified. Hard ceiling on 13.1-05-05 held. 3 dogfood moments captured in SKB at 3 recursion depths. Ready for Phase 14.
-Last activity: 2026-04-10 -- Phase 13.1 closeout: validator --pass, ROADMAP/REQUIREMENTS/STATE updated, behavioral test run pending.
+Phase: 14 -- P-Phase Task-Management Integration (IN PROGRESS)
+Plan: 14-01 DONE (divergence-protocol.md v1.0.0->v1.1.0 + plan-task-xml-schema.md reference file + gsd-planner.md Read pointer. 2 commits. PLAN-01 addressed.)
+Previous: Phase 13.1 VERIFIED (5 plans, HARDEN-01..05 complete, validator --pass). Phase 13 VERIFIED (3 plans, CREATIVE-01..05). Phase 12 COMPLETE (4 plans, QA-01..08).
+Status: Phase 14 Wave 1 complete. Plans 14-02, 14-03, 14-04 not started.
+Last activity: 2026-04-10 -- Plan 14-01 complete: divergence-protocol v1.1.0 + plan-task-xml-schema.md + gsd-planner Read pointer. 2 atomic commits.
 
 Progress: [####......] 40% (v2.6 milestone — phases 10, 12, 13, 13.1 done; phase 9 pending green baseline; phases 11, 14, 15 not started)
 
@@ -125,6 +120,9 @@ v2.5 codebase docs in .planning/codebase/ (2,337 lines). v2.6 research in .plann
 - **Citation scanner runs post-task, not per-phase** (Plan 10-06): `$CLI show --json` fetches the full task content once at task close and greps all 5 phases for `APPLIED_LEARNING: mem-XXXX` citations. Cheaper than grepping each phase as it lands, and the daemon's (mem_id, task_id) dedup makes running-it-once equivalent to running-it-per-phase. Also localizes the scanner's code to one place in the operator instead of scattered across 5 RPETD handlers.
 - **Daemon-side dedup is the source of truth for citation idempotence** (Plan 10-06): The operator does NOT try to dedupe citations in bash. It calls `increment-applied` for every match and lets the daemon return `already_cited:true` (200 OK, not 409) for repeats. Keeps the operator bash trivial and pushes dedup to the one authoritative place (the pg_store FOR UPDATE row lock on the metadata jsonb).
 - **Manifest enforcement cutoff (Phase 13.1)**: `files_expected:` per-task manifest blocks are MANDATORY for phases 13.1 and later. Phases 9-13 are grandfathered — the orchestrator skips the check when a PLAN.md lacks a `files_expected:` block. Override: `GSD_MANIFEST_CHECK=warn` downgrades halts to warnings (logged in `orchestrator_action`); removed in v2.7. Orchestrator-owned files (`.planning/STATE.md`, `.planning/ROADMAP.md`, `.planning/REQUIREMENTS.md`) always hard-halt regardless of override.
+- **divergence-protocol.md at v1.1.0 (Plan 14-01)**: Bumped from 1.0.0 in a single atomic edit. Two new enum values: `agent_assignment_conflict` (planner-emitted `<agent>` field disagrees with `routeExecutor()` computed from `<files_expected>`) and `plan_amauta_drift` (structural fields in PLAN.md diverge from amauta task on re-run). Phase 13.2 baseline is now 1.1.0.
+- **plan-task-xml-schema.md reference file (Plan 14-01)**: Runtime-Read reference locking the `<story>` + `<task>` XML schema for phases >= 14. MANDATORY `<story>` block (title, success_criteria, doc_refs), child-element style `<task>` (7 required fields), 7 validation rules, phase cutoff at 14 (phases 9-13 grandfathered). gsd-planner.md has Read pointer (203 lines, within 200+4 budget).
+- **Plan-to-tasks phase cutoff (Plan 14-01 lock)**: Phase cutoff is the authoritative trigger for plan-to-tasks registration, NOT the presence of a `<story>` block. A future editor adding `<story>` to a Phase 9-13 plan for documentation reasons must NOT accidentally trigger registration.
 
 ### Pending Todos
 

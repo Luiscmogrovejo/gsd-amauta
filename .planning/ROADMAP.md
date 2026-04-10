@@ -330,7 +330,11 @@ Notable: 3 in-production dogfood moments captured at 3 recursion depths (Wave 1 
 
 **Rollback Plan:** Set `GSD_P_AUTO_TASK=false`. `plan-to-tasks` subcommand stays in `gsd-tools.cjs` but is never invoked. Planner prompt changes revert via single commit. Existing PLAN.md files are unaffected (they were never parsed for amauta registration before v2.6).
 
-**Plans:** TBD
+**Plans:**
+- [x] 14-01: Protocol & Schema Foundation — divergence-protocol v1.1.0 + plan-task-xml-schema.md + gsd-planner Read pointer (PLAN-01) — Wave 1 — DONE 2026-04-10 (7b8b887 + bfe0272)
+- [ ] 14-02: plan-to-tasks CLI implementation (PLAN-02, PLAN-03, PLAN-04, PLAN-05) — Wave 2
+- [ ] 14-03: P-phase RPETD output block + validator advisory (PLAN-06, PLAN-07) — Wave 3
+- [ ] 14-04: Tests + integration + requirements errata (PLAN-04 errata, all) — Wave 4
 
 ---
 
