@@ -243,13 +243,13 @@ v2.6 phase numbering continues from v2.5 (which ended at Phase 8). v2.6 uses Pha
 | HARDEN-03 | Phase 13.1 | Orchestrator Hardening & Divergence Protocol | `GSD_MANIFEST_CHECK` (01 only) | Done |
 | HARDEN-04 | Phase 13.1 | Orchestrator Hardening & Divergence Protocol | `GSD_MANIFEST_CHECK` (01 only) | Done |
 | HARDEN-05 | Phase 13.1 | Orchestrator Hardening & Divergence Protocol | `GSD_MANIFEST_CHECK` (01 only) | Done |
-| PLAN-01 | Phase 14 | P-Phase Task-Management Integration | `GSD_P_AUTO_TASK` | Pending |
-| PLAN-02 | Phase 14 | P-Phase Task-Management Integration | `GSD_P_AUTO_TASK` | Pending |
-| PLAN-03 | Phase 14 | P-Phase Task-Management Integration | `GSD_P_AUTO_TASK` | Pending |
-| PLAN-04 | Phase 14 | P-Phase Task-Management Integration | `GSD_P_AUTO_TASK` | Pending |
-| PLAN-05 | Phase 14 | P-Phase Task-Management Integration | `GSD_P_AUTO_TASK` | Pending |
-| PLAN-06 | Phase 14 | P-Phase Task-Management Integration | `GSD_P_AUTO_TASK` | Pending |
-| PLAN-07 | Phase 14 | P-Phase Task-Management Integration | `GSD_P_AUTO_TASK` | Pending |
+| PLAN-01 | Phase 14 | P-Phase Task-Management Integration | `GSD_P_AUTO_TASK` | Done (f9016bd) |
+| PLAN-02 | Phase 14 | P-Phase Task-Management Integration | `GSD_P_AUTO_TASK` | Done (f9016bd) |
+| PLAN-03 | Phase 14 | P-Phase Task-Management Integration | `GSD_P_AUTO_TASK` | Done (f9016bd) |
+| PLAN-04 | Phase 14 | P-Phase Task-Management Integration | `GSD_P_AUTO_TASK` | Done (f9016bd) |
+| PLAN-05 | Phase 14 | P-Phase Task-Management Integration | `GSD_P_AUTO_TASK` | Done (f9016bd) |
+| PLAN-06 | Phase 14 | P-Phase Task-Management Integration | `GSD_P_AUTO_TASK` | Done (f9016bd) |
+| PLAN-07 | Phase 14 | P-Phase Task-Management Integration | `GSD_P_AUTO_TASK` | Done (f9016bd) |
 | DOGFOOD-01 | Phase 15 | End-to-End Dogfood Verification | N/A | Pending |
 | DOGFOOD-02 | Phase 15 | End-to-End Dogfood Verification | N/A | Pending |
 | DOGFOOD-03 | Phase 15 | End-to-End Dogfood Verification | N/A | Pending |

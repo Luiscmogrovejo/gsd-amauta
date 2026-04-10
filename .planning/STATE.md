@@ -25,13 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-09)
 
 ## Current Position
 
-Phase: 14 -- P-Phase Task-Management Integration (DONE)
-Plan: 14-04 DONE (operator PLAN_REGISTRATION parser, validator advisory, plan-phase PLAN-06 quality gate, execute-phase phase-gated plan-to-tasks, PLAN-04 errata. 3 commits.)
-Previous: 14-03 DONE (planToTasks() Pass 0.5/1/2 real subprocess calls + amauta.py scoped _dedup_check bypass + 8 integration tests. 2 commits.)
-Status: Phase 14 ALL WAVES COMPLETE. All 4 plans done (14-01 through 14-04). Phase 15 unblocked.
-Last activity: 2026-04-10 -- Plan 14-04 complete: PLAN_REGISTRATION parser in gsd-operator.md, Plan Registration Advisory in gsd-validator.md, PLAN-06 quality gate items in plan-phase.md, phase-gated plan-to-tasks in execute-phase.md, PLAN-04 errata in REQUIREMENTS.md, cutoff documentation in STATE.md.
+Phase: 14 -- P-Phase Task-Management Integration (SHIPPED)
+Status: Phase 14 verified PASS (f9016bd), PLAN-01..07 flipped to Done. Phase 15 unblocked.
+Previous: 14-04 DONE, 14-03 DONE, 14-02 DONE, 14-01 DONE. 4 waves, 4 plans, all verified by external validator.
+Last activity: 2026-04-10 -- Phase 14 closeout: REQUIREMENTS.md PLAN-01..07 Done, VERIFICATION.md PASS, depth-6 dogfood moment captured (prior-session pre-commit verification).
 
-Progress: [####......] 40% (v2.6 milestone — phases 10, 12, 13, 13.1 done; phase 9 pending green baseline; phases 11, 14, 15 not started)
+Progress: [########..] 75% (v2.6 milestone — phases 10, 11, 12, 13, 13.1, 14 done; phase 9 pending green baseline; phase 15 next)
 
 ## v2.6 Phase Map
 
@@ -146,10 +145,10 @@ None. Part A blockers resolved pre-roadmap:
 
 ## Session Continuity
 
-Last session: 2026-04-10T15:26:16.283Z
-Stopped at: Phase 14 planned — 4 plans, 10 tasks, 4 waves, checker passed
-Resume file: .planning/milestones/v2.2-phases/14-p-phase-task-management-integration/14-04-PLAN.md
-Next: /amauta:discuss-phase 14 — P-Phase Task-Management Integration (unblocked by Phase 13.1, blocked by Phase 12 which is already done)
+Last session: 2026-04-10
+Stopped at: Phase 14 SHIPPED — verified PASS, PLAN-01..07 Done, depth-6 dogfood captured
+Resume file: N/A (phase complete)
+Next: /amauta:discuss-phase 15 — End-to-End Dogfood Verification (observational, not code-generating)
 
 Memory entries from Phase 13.1 (researcher recall during Phase 14 planning should surface these):
 - project_phase13_1_wave1_dogfood.md — first-invocation positive example (depth 0)
@@ -170,13 +169,14 @@ npm_fail: 4
 pytest_pass: 466
 pytest_fail: 3
 last_updated: 2026-04-10
-phase: 13.1
+phase: 14
 
-Baseline includes Phase 13.1 tests: 13.1-manifest-check.test.cjs (13 deterministic tests, validator-verified 13/13 pass).
+Baseline includes Phase 14 tests: 14-plan-to-tasks.test.cjs (20 unit tests, 20/20 pass), 14-plan-to-tasks.integration.test.cjs (8 integration tests, daemon-required).
+Also includes Phase 13.1 tests: 13.1-manifest-check.test.cjs (13 deterministic tests).
 Also includes Phase 13 tests: 13-creative-research.test.cjs (30 tests).
 Previous: Phase 12 tests: test_phase12_inherit_spec.py (8 tests), 12-qa-blocks.test.cjs (17 tests), 12-red-green.test.cjs (8 tests).
-Pre-existing failures: npm 4 (rlm-workflow-spec.test.cjs, agent-frontmatter.test.cjs gsd-planner, comprehensive-e2e.test.cjs 6.12 migration count, gsd-amauta.test.cjs daemon not running), pytest 3 (test_pg_integration.py) — not Phase 13 or 13.1 regressions.
-Behavioral test suite (tests/13.1-divergence-protocol.integration.test.cjs, 15 invocations + Phase 13 incident replay) is run via `npm run test:behavioral` — NOT in `npm test`. Real-LLM execution; triggers via CI on PRs touching sensitive path globs OR run manually. Phase 13 incident replay test verified in isolation at phase close (76s runtime, PASS).
+Pre-existing failures: npm 4 (rlm-workflow-spec.test.cjs, agent-frontmatter.test.cjs gsd-planner, comprehensive-e2e.test.cjs 6.12 migration count, gsd-amauta.test.cjs daemon not running), pytest 3 (test_pg_integration.py) — not Phase 14 regressions.
+Behavioral test suite (tests/13.1-divergence-protocol.integration.test.cjs, 15 invocations + Phase 13 incident replay) is run via `npm run test:behavioral` — NOT in `npm test`. Real-LLM execution. Phase 14 has no LLM-behavioral test equivalent — its test surface is unit + integration against real daemon, deterministic.
 
 ## Learnings
 
