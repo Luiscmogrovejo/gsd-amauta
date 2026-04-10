@@ -4,14 +4,14 @@ milestone: v2.7
 milestone_name: milestone
 status: completed
 stopped_at: Phase 15 SHIPPED, v2.6 milestone COMPLETE
-last_updated: "2026-04-10T21:54:49.184Z"
-last_activity: 2026-04-10 -- Phase 16 plan 16-03 executed. tests/16-init-resolver.test.cjs created with 11 tests (depths 7/8/10 replays, RESOLVE-02 override, 5 edge cases, live smoke). process.exit capture pattern handles hard-error testing. All 11 pass, no new npm failures.
+last_updated: "2026-04-10T23:05:00.000Z"
+last_activity: 2026-04-10 -- Plan 17-01 complete. Three-fix bundle applied to scripts/verify-v26.cjs (AUDIT-01 prefix probe, AUDIT-02 structured npm failures, AUDIT-03 tooling_bugs_observed + schema_version: 2). All 5 tasks executed, 4 atomic commits (9400044, 2840428, 6403481, 4e731b8 plus prior-session 6be5cf6). SUMMARY.md created. Next step: execute Plan 17-02 regression tests.
 progress:
   total_phases: 4
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 25
+  total_plans: 2
+  completed_plans: 1
+  percent: 37
 ---
 
 # GSD-Amauta -- Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-11 for v2.7)
 
 ## Current Position
 
-Phase: 16 complete, Phase 17 next
-Plan: 16-03 complete (all 3 plans in Phase 16 done — implementation + tests)
-Status: Phase 16 (Init Resolver Fix) fully complete — RESOLVE-01 (milestone-scoped resolver) + RESOLVE-02 (--phase-dir override) + regression tests all shipped. 3 plans, 5 tasks, commits d3f781e/a3dd52e/be36977/019d767/e2c37d7/5ffd1e6. Next step: /amauta:plan-phase 17 (Audit Script Hardening).
-Last activity: 2026-04-10 -- Phase 16 plan 16-03 executed. tests/16-init-resolver.test.cjs created with 11 tests (depths 7/8/10 replays, RESOLVE-02 override, 5 edge cases, live smoke). process.exit capture pattern handles hard-error testing. All 11 pass, no new npm failures.
+Phase: 17 (in progress — Plan 17-01 complete, Plan 17-02 pending)
+Plan: 17-02 (regression tests for audit script) — wave 2, unblocked
+Status: Plan 17-01 COMPLETE. All three AUDIT-* fixes applied to scripts/verify-v26.cjs. Functions and constants exported for test access. Plan 17-02 regression tests are next.
+Last activity: 2026-04-10 -- Plan 17-01 executed. Prior-session pre-commit (6be5cf6: tasks 1+2 core) surfaced at R-phase and carried forward. This session completed tasks 17-01-02 partial (generateMarkdown renderer), 17-01-03 (TOOLING_BUGS_SEED + buildReport schema), 17-01-04 (Tooling Bugs Observed section), 17-01-05 (exports). SUMMARY.md created. Next: execute Plan 17-02.
 
-Progress: [##········] 25% (Phase 16 done, Phases 17-19 pending)
+Progress: [###·······] 37% (Phase 16 done, Plan 17-01 done, Plan 17-02 + Phases 18-19 pending)
 
 ## v2.7 Phase Map (locked per ROADMAP.md)
 
@@ -254,6 +254,10 @@ Behavioral test suite (tests/13.1-divergence-protocol.integration.test.cjs, 15 i
 
 
 
+
+
+- [learning] 2026-04-10T22:32:38.606Z: legacy regression test: free text learning
+- [learning] 2026-04-10T22:11:42.948Z: legacy regression test: free text learning
 - [learning] 2026-04-10T21:50:32.123Z: CJS modules using error()+process.exit(1) require a captureError() sentinel-throw helper for testing hard-error paths — intercept process.exit, throw { __capturedExit: true }, restore in finally; do not use child process spawn for per-call error tests
 - [learning] 2026-04-10T21:43:39.917Z: legacy regression test: free text learning
 - [learning] 2026-04-10T21:41:28.937Z: legacy regression test: free text learning
