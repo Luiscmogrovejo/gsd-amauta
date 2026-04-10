@@ -3,11 +3,11 @@ gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: milestone
 status: verifying
-stopped_at: Phase 12 context gathered
-last_updated: "2026-04-10T04:31:58.983Z"
+stopped_at: Phase 13.1 context gathered
+last_updated: "2026-04-10T05:20:01.558Z"
 last_activity: "2026-04-10 -- Plan 13-03: 30 unit tests + test baseline (CREATIVE-01..05 test coverage)"
 progress:
-  total_phases: 7
+  total_phases: 8
   completed_phases: 1
   total_plans: 9
   completed_plans: 9
@@ -44,7 +44,8 @@ Progress: [###.......] 29%
 | 11 | E-Phase Research-Informed Execution Mandate | EXEC-01..08 (8) | 10 | `GSD_E_MANDATE=off` | 3 |
 | 12 | T-Phase QA + Spec Inheritance | QA-01..08 (8) | 11 | `GSD_T_SPEC_INHERIT=false` | 4 |
 | 13 | R-Phase Creative Research (Narrowed) | CREATIVE-01..05 (5) | 11 | `GSD_R_CREATIVE=off` (default) | 4 |
-| 14 | P-Phase Task-Management Integration | PLAN-01..07 (7) | 12 | `GSD_P_AUTO_TASK=false` (default) | 5 |
+| 13.1 | Orchestrator Hardening & Divergence Protocol | HARDEN-01..05 (5) | 13 | N/A | 4.5 |
+| 14 | P-Phase Task-Management Integration | PLAN-01..07 (7) | 12, 13.1 | `GSD_P_AUTO_TASK=false` (default) | 5 |
 | 15 | End-to-End Dogfood Verification | DOGFOOD-01..05 (5) | 14 | N/A (observational) | 6 |
 
 Waves 4 has Phase 12 + Phase 13 running in parallel (T and R are architecturally independent once E lands).
@@ -74,6 +75,10 @@ Previous milestone research preserved in .planning/research/ (legacy v2.5 docs).
 v2.5 codebase docs in .planning/codebase/ (2,337 lines). v2.6 research in .planning/research/v2.6/ (5 docs).
 
 ## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 13.1 inserted after Phase 13: Orchestrator Hardening & Divergence Protocol (URGENT) — post-wave commit/file manifest check, shared divergence protocol for executors and validators, validator severity vocabulary lock. Triggered by Phase 13 silent scope-expansion incident. Must land before Phase 14 (highest blast radius).
 
 ### Decisions (v2.6-specific)
 
@@ -132,9 +137,9 @@ None. Part A blockers resolved pre-roadmap:
 
 ## Session Continuity
 
-Last session: 2026-04-10T02:06:00.379Z
-Stopped at: Phase 12 context gathered
-Resume file: .planning/milestones/v2.2-phases/13-validation-hardening/13-CONTEXT.md
+Last session: 2026-04-10T05:20:01.555Z
+Stopped at: Phase 13.1 context gathered
+Resume file: .planning/milestones/v2.2-phases/13.1-orchestrator-hardening-divergence-protocol/13.1-CONTEXT.md
 Next: /amauta:plan-phase 13 — R-Phase Creative Research planning
 
 ## Previous Milestone: v2.5 -- Smarter Brain (COMPLETE)
