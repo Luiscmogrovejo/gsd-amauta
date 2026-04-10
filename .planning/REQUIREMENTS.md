@@ -130,6 +130,21 @@ Research finding: observational only, not a hard gate. Dedicated workflow + CLI 
 
 ---
 
+### Phase 13.1: Orchestrator Hardening & Divergence Protocol
+
+Triggered by the Phase 13 silent scope-expansion incident. Five requirements hardening the execute/validate pipeline against drift. Scope is locked at 5; overflow goes to Phase 13.2.
+
+- [ ] **HARDEN-01**: Deterministic manifest check — `gsd-tools.cjs manifest-check` subcommand halts the wave when executor writes diverge from per-task `files_expected:` block; per-task check runs in `execute-phase.md` after each task with `git rev-parse HEAD` before/after; global allowlist for orchestrator-generated files; JSON violation reports at `.planning/milestones/<phase>/manifest-violation-<timestamp>.json`; `GSD_MANIFEST_CHECK=warn` override logged in `orchestrator_action`; orchestrator-owned files (`.planning/STATE.md`, `.planning/ROADMAP.md`, `.planning/REQUIREMENTS.md`) hard-halt regardless of override; phases 13.1+ mandatory, 9-13 grandfathered.
+- [ ] **HARDEN-02**: Divergence protocol — `get-shit-done/references/divergence-protocol.md` with versioned decision tree (4 orchestrator options: re-route, re-plan, expand scope, halt phase), complete divergence_report JSON schema including mandatory `rationalization_check` field, `work_in_progress_state` sub-schema for mid-execution divergences, exit code 87 fallback for report-write failure, validator variant with `verdict_ambiguity` divergence_type, reports written to `.planning/milestones/<phase>/divergence-reports/<task_id>-<timestamp>.json`.
+- [ ] **HARDEN-03**: Executor agent updates — mechanical @-reference addition of `get-shit-done/references/divergence-protocol.md` to all 4 executor .md files (`gsd-executor-backend.md`, `-frontend.md`, `-infra.md`, `-general.md`) plus hard rule "if prerequisites unmet, return error, don't implement". Validator (`gsd-validator.md`) gains vocabulary lock (`--pass`/`--fail`/`--gaps-found`), never-invent-req-IDs rule, and divergence report scanning before gate evaluation.
+- [ ] **HARDEN-04**: Validator `--gaps-found` flag — `cmdValidate` in `get-shit-done/bin/gsd-amauta.cjs` gains `--gaps-found` (exit code 2); `gaps-report-<timestamp>.json` with every gap tied to `requirement_id`; `non_gaps_observations[]` pressure-release array; orchestrator routing: pass→advance, gaps_found→re-route to re-planning (no retry counter), fail→human escalation; `gaps_found` does NOT count toward the 3-consecutive-failure auto-escalation rule.
+- [ ] **HARDEN-05**: Synthetic divergence test — `tests/13.1-manifest-check.test.cjs` (deterministic unit test, runs in `npm test`) + `tests/13.1-divergence-protocol.integration.test.cjs` (behavioral test: real LLM via Task tool, no mocking, assertions on filesystem effects, 3 scenarios × 5 runs = 15 invocations, preserves temp dir on failure); `scripts/run-behavioral-tests.cjs` runner + `test:behavioral` npm script; programmatic fixture functions `createStalePrerequisiteScenario()` / `createUnexpectedFileStateScenario()` / `createManifestViolationScenario()`; Phase 13 incident replay test named exactly `test('Phase 13 incident replay: silent re-implementation is now caught')`; CI auto-triggers `npm run test:behavioral` on PRs modifying `agents/**/*.md`, `get-shit-done/workflows/execute-phase.md`, or `get-shit-done/references/divergence-protocol.md`.
+
+**Kill switch:** `GSD_MANIFEST_CHECK=warn` (HARDEN-01 override; removed v2.7). No other overrides.
+**Measurement:** deterministic manifest test 1/1 green; behavioral test 15/15 green; Phase 13 incident replay test PASS; `divergence-reports/` and `manifest-violation-*.json` artifacts generated on synthetic scenarios.
+
+---
+
 ## v2 Requirements (deferred to v2.7)
 
 ### Graph-Ranked Repo Map
@@ -219,6 +234,11 @@ v2.6 phase numbering continues from v2.5 (which ended at Phase 8). v2.6 uses Pha
 | CREATIVE-03 | Phase 13 | R-Phase Creative Research (Narrowed) | `GSD_R_CREATIVE` | Pending |
 | CREATIVE-04 | Phase 13 | R-Phase Creative Research (Narrowed) | `GSD_R_CREATIVE` | Pending |
 | CREATIVE-05 | Phase 13 | R-Phase Creative Research (Narrowed) | `GSD_R_CREATIVE` | Pending |
+| HARDEN-01 | Phase 13.1 | Orchestrator Hardening & Divergence Protocol | `GSD_MANIFEST_CHECK` (01 only) | Pending |
+| HARDEN-02 | Phase 13.1 | Orchestrator Hardening & Divergence Protocol | `GSD_MANIFEST_CHECK` (01 only) | Pending |
+| HARDEN-03 | Phase 13.1 | Orchestrator Hardening & Divergence Protocol | `GSD_MANIFEST_CHECK` (01 only) | Pending |
+| HARDEN-04 | Phase 13.1 | Orchestrator Hardening & Divergence Protocol | `GSD_MANIFEST_CHECK` (01 only) | Pending |
+| HARDEN-05 | Phase 13.1 | Orchestrator Hardening & Divergence Protocol | `GSD_MANIFEST_CHECK` (01 only) | Pending |
 | PLAN-01 | Phase 14 | P-Phase Task-Management Integration | `GSD_P_AUTO_TASK` | Pending |
 | PLAN-02 | Phase 14 | P-Phase Task-Management Integration | `GSD_P_AUTO_TASK` | Pending |
 | PLAN-03 | Phase 14 | P-Phase Task-Management Integration | `GSD_P_AUTO_TASK` | Pending |
