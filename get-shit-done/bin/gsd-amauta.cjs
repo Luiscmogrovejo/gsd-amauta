@@ -1021,9 +1021,130 @@ async function checkSpecInheritanceAdvisory(useDaemon, id, flags) {
   return { advisory: false, reason: 'spec inheritance advisory passed' };
 }
 
+/**
+ * HARDEN-04: Write a structured gaps report for a `gaps_found` verdict.
+ *
+ * Schema (locked — see plan 13.1-04):
+ *   {
+ *     phase: string,
+ *     timestamp: ISO8601,
+ *     task_id: string,
+ *     verdict: "gaps_found",
+ *     gaps: [{ requirement_id, description }],
+ *     non_gaps_observations: [string]
+ *   }
+ *
+ * No `severity` or `priority` fields — the validator vocabulary is locked:
+ * every entry in `gaps[]` is equal. Cosmetic findings go in
+ * `non_gaps_observations[]` as a pressure-release valve.
+ *
+ * @param {string} phase        Phase identifier (used in the milestone dir path)
+ * @param {string} taskId       Originating task id
+ * @param {Array<{requirement_id: string, description: string}>} gaps
+ * @param {string[]} nonGapsObservations
+ * @returns {string} Absolute path to the written report
+ */
+function writeGapsReport(phase, taskId, gaps, nonGapsObservations) {
+  const safePhase = String(phase || 'unknown').trim() || 'unknown';
+  const dir = path.join(process.cwd(), '.planning', 'milestones', safePhase);
+  fs.mkdirSync(dir, { recursive: true });
+  // ISO8601 with millisecond precision, colons stripped for fs-safe names.
+  const now = new Date();
+  const isoTs = now.toISOString();
+  const fsTs = isoTs.replace(/[:.]/g, '-');
+  const reportPath = path.join(dir, `gaps-report-${fsTs}.json`);
+  const report = {
+    phase: safePhase,
+    timestamp: isoTs,
+    task_id: taskId,
+    verdict: 'gaps_found',
+    gaps: Array.isArray(gaps) ? gaps : [],
+    non_gaps_observations: Array.isArray(nonGapsObservations) ? nonGapsObservations : [],
+  };
+  fs.writeFileSync(reportPath, JSON.stringify(report, null, 2) + '\n');
+  return reportPath;
+}
+
 async function cmdValidate(useDaemon, id, flags, jsonMode) {
-  if (!id) die('Usage: amauta validate <id> --pass/--fail [--validator V] [--notes N] [--force-reason "justification"]');
-  if (flags.pass_result === undefined) die('--pass or --fail is required');
+  // HARDEN-04: `validate --help` prints the three-verdict usage string.
+  if (flags.help || id === '--help' || id === 'help') {
+    process.stdout.write(
+      'Usage: amauta validate <id> [--pass|--fail|--gaps-found] [options]\n' +
+      '\n' +
+      'Verdicts (mutually exclusive):\n' +
+      '  --pass              Task passes validation (exit 0)\n' +
+      '  --fail              Task fails validation (exit 1)\n' +
+      '  --gaps-found        Task has gaps — not a failure, re-plan (exit 2)\n' +
+      '\n' +
+      'Options:\n' +
+      '  --validator <name>  Validator agent id\n' +
+      '  --notes "..."       Notes / rejection reason\n' +
+      '  --force-reason "..." Override gate checks with justification\n' +
+      '  --subtasks "a|b"    Follow-up subtasks (used with --fail)\n' +
+      '  --phase <phase>     Phase id for gaps-report path (optional)\n' +
+      '  --gap "REQ:desc"    Gap finding — repeatable (used with --gaps-found)\n' +
+      '  --non-gaps "..."    Cosmetic observation — repeatable\n' +
+      '  --json              JSON output\n'
+    );
+    return 0;
+  }
+  if (!id) die('Usage: amauta validate <id> --pass|--fail|--gaps-found [--validator V] [--notes N] [--force-reason "justification"]');
+
+  // HARDEN-04: three verdicts are mutually exclusive
+  const verdictFlags = [
+    flags.pass_result === true,
+    flags.pass_result === false,
+    flags.gaps_found === true,
+  ].filter(Boolean).length;
+  if (verdictFlags > 1) die('validate: --pass, --fail, and --gaps-found are mutually exclusive');
+  if (flags.pass_result === undefined && !flags.gaps_found) die('--pass, --fail, or --gaps-found is required');
+
+  // HARDEN-04: --gaps-found verdict short-circuits the gate flow.
+  // It writes a structured gaps report and exits with code 2.
+  // The validator vocabulary is locked: no severity, no priority, no ranking.
+  if (flags.gaps_found) {
+    // Resolve phase: explicit --phase flag wins; otherwise derive from the task id
+    // (e.g. "13.1-04-01" -> "13.1"); final fallback is "unknown".
+    let phase = flags.phase || '';
+    if (!phase && typeof id === 'string') {
+      const m = id.match(/^([0-9]+(?:\.[0-9]+)?)/);
+      if (m) phase = m[1];
+    }
+    if (!phase) phase = 'unknown';
+
+    // --gap accepts repeated "REQ-ID:description" pairs (collected upstream).
+    const rawGaps = Array.isArray(flags.gaps_list) ? flags.gaps_list : [];
+    const gaps = rawGaps.map((raw) => {
+      const idx = raw.indexOf(':');
+      if (idx < 0) die('gap finding must be "REQ-ID:description"');
+      const requirementId = raw.slice(0, idx).trim();
+      const description = raw.slice(idx + 1).trim();
+      if (!requirementId) die('gap finding must be "REQ-ID:description"');
+      return { requirement_id: requirementId, description };
+    });
+    const nonGapsObservations = Array.isArray(flags.non_gaps_list) ? flags.non_gaps_list : [];
+
+    try {
+      const reportPath = writeGapsReport(phase, id, gaps, nonGapsObservations);
+      if (jsonMode) {
+        console.log(JSON.stringify({
+          verdict: 'gaps_found',
+          phase,
+          task_id: id,
+          report: reportPath,
+          gaps_count: gaps.length,
+          non_gaps_count: nonGapsObservations.length,
+        }));
+      } else {
+        console.log(`gaps_found: wrote ${reportPath}`);
+        console.log(`  gaps=${gaps.length} non_gaps_observations=${nonGapsObservations.length}`);
+      }
+    } catch (err) {
+      process.stderr.write(`ERROR: failed to write gaps report: ${err.message}\n`);
+      return 1;
+    }
+    return 2;
+  }
 
   // Check validation gates (unless --force-reason)
   if (flags.pass_result && !flags.force_reason) {
@@ -1731,7 +1852,8 @@ async function main() {
       '  \x1b[33mRPETD pipeline:\x1b[0m\n' +
       '    claim <id> --agent <agent>\n' +
       '    rpetd <id> --phase <R|P|E|T|D> --content "..."\n' +
-      '    validate <id> --pass|--fail --validator <agent> --notes "..."\n' +
+      '    validate <id> --pass|--fail|--gaps-found (exit 2) --validator <agent> --notes "..."\n' +
+      '                [--gap "REQ-ID:description"] [--non-gaps "obs"]\n' +
       '                [--subtasks "Fix A|Add B"] [--force-reason "justification"] [--json]\n' +
       '\n' +
       '  \x1b[33mAudit:\x1b[0m\n' +
@@ -1834,7 +1956,23 @@ async function main() {
     }
 
     case 'validate': {
-      const flags = parseFlags(rest, 1);
+      // HARDEN-04: collect repeatable --gap / --non-gaps entries and the
+      // --gaps-found bool BEFORE parseFlags (which would overwrite repeats).
+      const gapsList = [];
+      const nonGapsList = [];
+      let gapsFound = false;
+      const filtered = [rest[0]];
+      for (let i = 1; i < rest.length; i++) {
+        const a = rest[i];
+        if (a === '--gaps-found') { gapsFound = true; continue; }
+        if (a === '--gap') { if (rest[i + 1] !== undefined) { gapsList.push(rest[++i]); } continue; }
+        if (a === '--non-gaps') { if (rest[i + 1] !== undefined) { nonGapsList.push(rest[++i]); } continue; }
+        filtered.push(a);
+      }
+      const flags = parseFlags(filtered, 1);
+      if (gapsFound) flags.gaps_found = true;
+      flags.gaps_list = gapsList;
+      flags.non_gaps_list = nonGapsList;
       exitCode = await cmdValidate(useDaemon, id, flags, jsonMode);
       break;
     }
@@ -1917,5 +2055,5 @@ if (require.main === module) {
 
 // Test-only exports — not used in production flow
 if (typeof module !== 'undefined' && require.main !== module) {
-  module.exports = { _checkEvidenceBlock, checkEvidenceAdvisory, _checkQaBlocks, _checkRedGreenOrder, checkSpecInheritanceAdvisory };
+  module.exports = { _checkEvidenceBlock, checkEvidenceAdvisory, _checkQaBlocks, _checkRedGreenOrder, checkSpecInheritanceAdvisory, writeGapsReport };
 }
