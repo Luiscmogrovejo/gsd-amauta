@@ -371,9 +371,9 @@ Notable: 3 in-production dogfood moments captured at 3 recursion depths (Wave 1 
 **Rollback Plan:** Delete `audit-rpetd-intelligence` subcommand, `verify-rpetd-intelligence.md` workflow, `verify-v26.sh` script, and `commands/amauta/verify-v26.md` slash command. Zero operational impact on running tasks since dogfood is observational.
 
 **Plans:**
-1/3 plans complete
+2/3 plans complete
 - [x] 15-01: Tooling Creation — 4 new files: `audit-rpetd-intelligence.cjs` standalone binary, `verify-rpetd-intelligence.md` workflow, `verify-v26.cjs` end-to-end script, `verify-v26.md` slash command (DOGFOOD-01..04 structural) — Wave 1 — DONE 2026-04-10 (16513ed + 26ae849 + 36a2d2a + 447c9b5)
-- [ ] 15-02: Run the audit — execute verify-v26.cjs, capture 15-AUDIT-REPORT.{json,md}, run behavioral suite (DOGFOOD-01..05) — Wave 2
+- [x] 15-02: Run the audit — executed verify-v26.cjs ONCE, captured 15-AUDIT-REPORT.{json,md}, behavioral suite skipped via environment_missing (ANTHROPIC_API_KEY unset, CONTEXT.md Gap 3 clean path); 5/5 DOGFOOD criteria assessed, Phase 15 passes on audit completeness per Q14 — Wave 2 — DONE 2026-04-10 (5d2f1f8)
 - [ ] 15-03: Publish ledger — `docs/v2.6-dogfood-ledger.md` with 7 depth entries + depth-3 placeholder — Wave 3
 
 ---

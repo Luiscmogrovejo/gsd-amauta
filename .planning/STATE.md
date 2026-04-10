@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: milestone
 status: verifying
-stopped_at: Phase 15 Wave 1 complete — 4 new audit-infrastructure files created (audit-rpetd-intelligence.cjs, verify-rpetd-intelligence.md workflow, verify-v26.cjs, verify-v26.md slash command), zero existing files modified
-last_updated: "2026-04-10T16:32:10.670Z"
-last_activity: "2026-04-10 -- Phase 15 Plan 15-01 DONE: 4 new Phase 15 audit-infra files committed atomically (16513ed, 26ae849, 36a2d2a, 447c9b5); DOGFOOD-01..04 structural; Wave 2 (run audit) next."
+stopped_at: Phase 15 Wave 2 complete — verify-v26.cjs executed ONCE, 15-AUDIT-REPORT.{json,md} captured, 5/5 DOGFOOD criteria assessed, behavioral suite skipped via environment_missing (ANTHROPIC_API_KEY unset), zero existing files modified; new findings surfaced in 15-02-SUMMARY.md
+last_updated: "2026-04-10T18:30:00.000Z"
+last_activity: "2026-04-10 -- Phase 15 Plan 15-02 DONE: 2 audit reports committed atomically (5d2f1f8); DOGFOOD-01 gaps_found (pool=1), DOGFOOD-05 gaps_found (Phase 14 VERIFICATION.md naming drift + 13.1 known missing); Wave 3 (publish ledger) next."
 progress:
   total_phases: 8
   completed_phases: 1
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-09)
 
 ## Current Position
 
-Phase: 15 -- End-to-End Dogfood Verification (Wave 1 complete)
-Status: Plan 15-01 DONE — 4 new audit-infrastructure files created (audit-rpetd-intelligence.cjs, verify-rpetd-intelligence.md, verify-v26.cjs, verify-v26.md slash command). Zero existing files modified. Wave 2 (execute the audit) is next.
-Previous: 14-04 DONE, 14-03 DONE, 14-02 DONE, 14-01 DONE. Phase 14 verified PASS (f9016bd), PLAN-01..07 flipped to Done.
-Last activity: 2026-04-10 -- Phase 15 Plan 15-01 shipped: 4 atomic commits (16513ed + 26ae849 + 36a2d2a + 447c9b5). Awaiting validator.
+Phase: 15 -- End-to-End Dogfood Verification (Wave 2 complete)
+Status: Plan 15-02 DONE — executed verify-v26.cjs ONCE, captured 15-AUDIT-REPORT.json + 15-AUDIT-REPORT.md (MD derived from JSON via generateMarkdown). All 5 DOGFOOD criteria assessed. Behavioral suite skipped via environment_missing (ANTHROPIC_API_KEY unset, CONTEXT.md Gap 3 clean exit). Phase 15 passes on audit completeness per Q14, not cleanliness. 15-02-SUMMARY.md surfaces 4 divergences including the Wave 1 script's absent tooling_bugs_observed category (the two pre-locked findings could not be encoded). Zero existing files modified. Wave 3 (publish ledger) is next.
+Previous: 15-01 DONE — 4 new audit-infra files (16513ed + 26ae849 + 36a2d2a + 447c9b5). 14-04 DONE, 14-03 DONE, 14-02 DONE, 14-01 DONE. Phase 14 verified PASS (f9016bd), PLAN-01..07 flipped to Done.
+Last activity: 2026-04-10 -- Phase 15 Plan 15-02 shipped: audit artifacts committed atomically (5d2f1f8). Awaiting validator.
 
-Progress: [########..] 78% (v2.6 milestone — phases 10, 11, 12, 13, 13.1, 14 done; phase 9 pending green baseline; phase 15 Wave 1 shipped, Waves 2-3 pending)
+Progress: [########..] 78% (v2.6 milestone — phases 10, 11, 12, 13, 13.1, 14 done; phase 9 pending green baseline; phase 15 Waves 1-2 shipped, Wave 3 pending)
 
 ## v2.6 Phase Map
 
@@ -222,6 +222,8 @@ Behavioral test suite (tests/13.1-divergence-protocol.integration.test.cjs, 15 i
 
 
 
+
+- [learning] 2026-04-10T18:08:06.460Z: legacy regression test: free text learning
 - [learning] 2026-04-10T18:00:21.706Z: Phase 15-01 observational phase discipline: when plan says N new files, deliver exactly N — resisted helper refactor, 5th file, and ROADMAP errata ("fix while Im here"). Errata routed to phase closeout per CONTEXT.md gap resolutions, not execution. Hard-coded paths bypassed known init-resolver ghost-directory bug.
 - [learning] 2026-04-10T16:11:54.389Z: Plan 14-04 wiring pattern: when tasks 01+02 are already committed from a prior session, verify acceptance criteria before treating as done rather than re-doing work; execute-phase phase-gated branching uses PHASE_NUM_FLOAT >= 14 float comparison; REQUIREMENTS errata pattern uses ~~strikethrough~~ + replacement + PITFALLS footnote
 - [learning] 2026-04-10T16:03:52.792Z: planToTasks() idempotency in amauta: --from-plan stamps metadata.plan_id but NOT plan_local_id; use tags 'task:ID' as secondary lookup. spawnAmauta() must be defined as a closure inside planToTasks() sharing _spawnOpts. note command uses --content not --text.
