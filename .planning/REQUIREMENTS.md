@@ -105,7 +105,11 @@ Research finding: highest blast radius on task topology, ships LAST. Uses struct
 - [ ] **PLAN-01**: `agents/gsd-planner.md` updated `<planning_protocol>` to emit structured XML plan block with `<task>` elements containing `id`, `title`, `agent`, `depends_on`, `success_criteria` fields (inherits from parent story via the Phase 3 helper)
 - [ ] **PLAN-02**: `get-shit-done/bin/gsd-tools.cjs` gains new `plan-to-tasks <plan-file>` subcommand that parses the XML block, does a 2-pass walk (pass 1 creates tasks via `amauta add task --parent ST-XXXX`, pass 2 links deps via `amauta link`), and is idempotent on re-runs (skips already-existing tasks by stable ID)
 - [ ] **PLAN-03**: Auto-agent-assignment — `plan-to-tasks` reads `get-shit-done/agent-capabilities.json` and assigns `--agent` to each task based on file-pattern matching of the task's target file paths. Tasks with no file-pattern match default to `executor-general`. Tasks with multiple matches use the performance tiebreaker (existing logic in `gsd-tools.cjs routeExecutor`).
-- [ ] **PLAN-04**: Auto-dep-linking — explicit `depends_on` field in XML creates `amauta link` edges; planner can also set implicit dependencies via task ordering (task N+1 depends on task N by default) with `parallel: true` to opt out
+- [ ] **PLAN-04**: ~~Auto-dep-linking — explicit `depends_on` field in XML creates `amauta link` edges; planner can also set implicit dependencies via task ordering (task N+1 depends on task N by default) with `parallel: true` to opt out~~
+
+  Dependencies are **explicit-only**. Every dependency MUST appear in `<depends_on>`. Tasks without explicit dependencies are parallel-eligible by default. NO implicit N+1 ordering.
+
+  *Errata (Phase 14): Original implicit-N+1 text struck per PITFALLS P8 ("reject spurious dependency inference"). See 14-CONTEXT.md Area 2.*
 - [ ] **PLAN-05**: Runaway defense — `plan-to-tasks` caps sub-task creation at 10 per plan (from PITFALLS research). Plans exceeding 10 tasks must be split into multiple plans. Hard error with guidance message.
 - [ ] **PLAN-06**: Task-creation exit criteria — `get-shit-done/workflows/plan-phase.md` fails plan review if any sub-task lacks `--agent`, if any dep cycle detected, or if task count > 10
 - [ ] **PLAN-07**: P-phase RPETD content includes structured output: task IDs created, agent assignments with reasoning, dependency graph as DAG text, inherited success criteria per task

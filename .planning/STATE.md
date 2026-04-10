@@ -77,6 +77,7 @@ v2.5 codebase docs in .planning/codebase/ (2,337 lines). v2.6 research in .plann
 ### Roadmap Evolution
 
 - Phase 13.1 inserted after Phase 13: Orchestrator Hardening & Divergence Protocol (URGENT) — post-wave commit/file manifest check, shared divergence protocol for executors and validators, validator severity vocabulary lock. Triggered by Phase 13 silent scope-expansion incident. Must land before Phase 14 (highest blast radius).
+- Phase 14+ plans are auto-registered via plan-to-tasks. Phases 9-13 are grandfathered. The phase number cutoff is authoritative — the presence of a `<story>` block in a Phase 12 plan does NOT trigger registration. Kill switch: `GSD_P_AUTO_TASK=false`.
 
 ### Decisions (v2.6-specific)
 
@@ -218,6 +219,8 @@ Behavioral test suite (tests/13.1-divergence-protocol.integration.test.cjs, 15 i
 
 
 
+
+- [learning] 2026-04-10T16:03:52.792Z: planToTasks() idempotency in amauta: --from-plan stamps metadata.plan_id but NOT plan_local_id; use tags 'task:ID' as secondary lookup. spawnAmauta() must be defined as a closure inside planToTasks() sharing _spawnOpts. note command uses --content not --text.
 - [learning] 2026-04-10T15:47:24.783Z: planToTasks Pass 0 pattern: _filesDisjointSplit returns the FIRST disjoint boundary (smallest valid cut), not a midpoint — walking forward and taking the first clean cut matches 'largest contiguous prefix' semantics. _renderDagText total-output cap (including truncation marker) requires cut at 500-marker.length, not a fixed 490.
 - [learning] 2026-04-10T15:42:46.694Z: legacy regression test: free text learning
 - [learning] 2026-04-10T15:33:58.988Z: Plan 14-01 pattern: when two enum values in the same file require a version bump, land them in a single atomic edit to prevent version-field collision if fragmented across tasks.
