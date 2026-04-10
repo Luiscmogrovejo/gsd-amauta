@@ -2,6 +2,17 @@
   "$schema": "agent-capabilities-schema",
   "version": "1.0",
   "description": "Structured capability declarations for all GSD agents. Used by routing logic and operator awareness.",
+  "security_patterns": [
+    "**/auth*",
+    "**/crypto*",
+    "**/payment*",
+    "**/admin*",
+    "**/permission*",
+    "**/token*",
+    "**/session*",
+    "**/password*",
+    "**/secret*"
+  ],
   "agents": [
     {
       "id": "gsd-operator",
