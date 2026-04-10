@@ -1,0 +1,128 @@
+{
+  "audit_timestamp": "2026-04-10T18:14:02.328Z",
+  "milestone": "v2.6",
+  "phases_audited": [
+    "10",
+    "11",
+    "12",
+    "13",
+    "13.1",
+    "14"
+  ],
+  "phase_15_excluded_from_audit": true,
+  "self_exclusion": [
+    "scripts/verify-v26.cjs",
+    "15-AUDIT-REPORT.json",
+    "15-AUDIT-REPORT.md",
+    "docs/v2.6-dogfood-ledger.md",
+    "get-shit-done/bin/audit-rpetd-intelligence.cjs",
+    "get-shit-done/workflows/verify-rpetd-intelligence.md",
+    "commands/amauta/verify-v26.md"
+  ],
+  "environment": {
+    "available": false,
+    "missing": [
+      "ANTHROPIC_API_KEY"
+    ]
+  },
+  "criteria": [
+    {
+      "id": "DOGFOOD-01",
+      "category": "sampling",
+      "verdict": "gaps_found",
+      "evidence": [
+        "assessed on n=1 pool, below ROADMAP's assumed sample size of 10",
+        "0/1 sampled tasks passed",
+        "TK-0774:gaps_found"
+      ],
+      "details": "Sampled 1 task(s) from pool of 1. Passes: 0."
+    },
+    {
+      "id": "DOGFOOD-02",
+      "category": "indirectly_assessed",
+      "verdict": "pass",
+      "evidence": [
+        "found:purpose",
+        "found:step",
+        "found:audit_ref"
+      ],
+      "details": "Structural workflow presence check — direct execution requires running a full task through 5 phases, out of audit scope."
+    },
+    {
+      "id": "DOGFOOD-03",
+      "category": "deterministic",
+      "verdict": "pass",
+      "evidence": [
+        "verify-v26.cjs executed successfully"
+      ],
+      "details": "Self-referential. The script running to completion IS the deliverable proof."
+    },
+    {
+      "id": "DOGFOOD-04",
+      "category": "deterministic",
+      "verdict": "pass",
+      "evidence": [
+        "found:name_frontmatter",
+        "found:workflow_ref"
+      ],
+      "details": "Slash command structural check."
+    },
+    {
+      "id": "DOGFOOD-05",
+      "category": "deterministic",
+      "verdict": "gaps_found",
+      "evidence": [
+        "phases_with_verification=4/6",
+        "10:present",
+        "11:present",
+        "12:present",
+        "13:present",
+        "13.1:missing",
+        "14:missing"
+      ],
+      "details": "Missing VERIFICATION.md for phases: 13.1, 14. Phase 13.1 missing is expected (known hygiene debt)."
+    }
+  ],
+  "behavioral_test_results": {
+    "total_invocations_attempted": null,
+    "invocations_completed": null,
+    "phase_13_incident_replay": "skipped",
+    "per_scenario_results": {},
+    "harness_limitations_observed": [
+      "behavioral suite skipped — environment_missing: ANTHROPIC_API_KEY"
+    ]
+  },
+  "pre_existing_failures_verified": [
+    "tests/test_pg_integration.py"
+  ],
+  "new_failures_surfaced": [],
+  "hygiene_debt_observed": [
+    "Phase 10 VERIFICATION.md is under v2.1-phases/, not v2.2-phases/ (cross-milestone directory split)",
+    "Phase 13.1 has no VERIFICATION.md (only .gitkeep and divergence-reports/)",
+    "Nyquist gate CONTEXT.md-as-source pattern: workflow should formalize CONTEXT.md as a valid validation source (3rd instance in v2.6: 13.1, 14, 15)",
+    "discuss-phase init is a recurring drift-detection surface (3 instances: Phase 14, Phase 15, Phase 13.1 reconciliation); consider formalizing the cross-reference check as part of init itself",
+    "environment_missing: ANTHROPIC_API_KEY"
+  ],
+  "dogfood_ledger_depths_captured": [
+    0,
+    1,
+    2,
+    4,
+    5,
+    6,
+    7
+  ],
+  "dogfood_ledger_gaps": [
+    3
+  ],
+  "deterministic_summary": {
+    "gsd_tools_exports_ok": {
+      "manifestCheck": true,
+      "resolvePhaseDir": true,
+      "GLOBAL_ALLOWLIST": true
+    },
+    "gsd_amauta_exports_ok": true,
+    "npm_exit": 1,
+    "pytest_exit": 1
+  }
+}
