@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.7
 milestone_name: Steady Hands
-status: phase_context_gathered
-stopped_at: Phase 16 context gathered — 4 gray areas locked (milestone identity = config.json::current_milestone, resolver-only scope, --phase-dir strict validation + both forms + empty-dir hard error, synthetic fixtures replaying depths 7/8/10 as specific cases + live smoke test). Depth 10 captured during this discuss-phase init. Next step /amauta:plan-phase 16.
-last_updated: "2026-04-11T11:45:00.000Z"
-last_activity: "2026-04-11 -- v2.7 Phase 16 discuss-phase complete. Depth 10 fired on the very first `gsd-tools init phase-op 16` call (resolver returned `.planning/milestones/v2.3-phases/16-data-integrity` ghost with has_plans:true); pre-warning caught it before silent v2.3 plan inheritance, memory entry captured (project_phase16_init_resolver_self_referential_dogfood.md). Phase directory created at .planning/milestones/v2.7-phases/16-init-resolver-fix/ (fresh v2.7 convention, not a continuation of deferred v2.2-phases/). 16-CONTEXT.md written covering domain boundary, 4 locked gray-area decisions, canonical refs, code context, specifics, deferred ideas, and positive observations. All workflow steps after init hand-routed to bypass the broken resolver (Phase 15 bootstrap pattern). Phase 16 ready for planning."
+status: plan_executing
+stopped_at: Phase 16 Plan 01 complete. findPhaseInternal now milestone-scoped (reads config.json::current_milestone, no archived-milestone fallback). getMilestoneInfo updated to use config.json as primary source. All 5 plan VC pass. RESOLVE-01 done. Next step: plan 16-02 (RESOLVE-02 --phase-dir override flag).
+last_updated: "2026-04-10T00:25:00.000Z"
+last_activity: "2026-04-10 -- Phase 16 Plan 01 (Milestone-Scoped Resolver + Config Identity) executed. Task 16-01-01 pre-committed (d3f781e); tasks 16-01-02 (a3dd52e) and 16-01-03 (be36977) committed this session. findPhaseInternal no longer falls back to archived milestones — ghost directory bug that fired at depths 7, 8, and 10 is eliminated. Phase 15 now returns null; Phase 16 resolves to .planning/milestones/v2.7-phases/16-init-resolver-fix."
 progress:
   total_phases: 4
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 5
+  total_plans: 1
+  completed_plans: 1
+  percent: 10
 ---
 
 # GSD-Amauta -- Project State
