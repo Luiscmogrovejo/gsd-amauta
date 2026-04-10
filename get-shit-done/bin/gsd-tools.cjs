@@ -686,6 +686,429 @@ async function _runManifestCheckCli(args, cwd) {
   }
 }
 
+// --- Plan-to-Tasks (PLAN-02..05) -----------------------------------------------
+
+/**
+ * _validatePlanShape(planContent) — Pass 0 shape validation.
+ * Returns {valid: bool, errors: [], taskCount: N, tasks: [{id,agent,files,depends_on}]}.
+ *
+ * Checks:
+ *  - <story> block is present
+ *  - every <task> has <agent>, <files_expected>, <acceptance_criteria>
+ *  - task count <= 10 (returns cap error if exceeded)
+ *  - all <depends_on> references are valid intra-plan task IDs
+ */
+function _validatePlanShape(planContent) {
+  const errors = [];
+
+  // Check <story> block
+  if (!/<story[\s>]/i.test(planContent)) {
+    errors.push({ code: 'missing_story', message: 'PLAN.md is missing a <story> block — required for phases >= 14.' });
+    return { valid: false, errors, taskCount: 0, tasks: [] };
+  }
+
+  // Extract all task blocks
+  const taskRe = /<task\s+id="([^"]+)">([\s\S]*?)<\/task>/gi;
+  const tasks = [];
+  let m;
+  while ((m = taskRe.exec(planContent)) !== null) {
+    const id = m[1];
+    const body = m[2];
+
+    const getField = (name) => {
+      const re = new RegExp(`<${name}>(\\s*[\\s\\S]*?\\s*)<\\/${name}>`, 'i');
+      const match = body.match(re);
+      return match ? match[1].trim() : null;
+    };
+
+    const titleField = getField('title');
+    const agentField = getField('agent');
+    const criteriaField = getField('acceptance_criteria');
+    const filesField = getField('files_expected');
+    const dependsOnField = getField('depends_on');
+
+    // Parse depends_on as JSON array
+    let dependsOn = [];
+    if (dependsOnField) {
+      try {
+        dependsOn = JSON.parse(dependsOnField.trim());
+        if (!Array.isArray(dependsOn)) dependsOn = [];
+      } catch (_) {
+        dependsOn = [];
+      }
+    }
+
+    // Parse files_expected via existing helper
+    let filesExpected = { modify: [], create: [], delete: [] };
+    if (filesField) {
+      try {
+        filesExpected = _parseFilesExpectedYaml(filesField);
+      } catch (_) {
+        filesExpected = { modify: [], create: [], delete: [] };
+      }
+    }
+
+    tasks.push({ id, title: titleField, agent: agentField, filesExpected, dependsOn, hasFiles: !!filesField, hasCriteria: !!criteriaField });
+  }
+
+  // Validate each task has required fields
+  for (const task of tasks) {
+    if (!task.agent) {
+      errors.push({ code: 'missing_agent', taskId: task.id, message: `Task ${task.id} is missing <agent> field.` });
+    }
+    if (!task.hasFiles) {
+      errors.push({ code: 'missing_files_expected', taskId: task.id, message: `Task ${task.id} is missing <files_expected> block (HARDEN-01 mandate).` });
+    }
+    if (!task.hasCriteria) {
+      errors.push({ code: 'missing_acceptance_criteria', taskId: task.id, message: `Task ${task.id} is missing <acceptance_criteria>.` });
+    }
+  }
+
+  if (errors.length > 0) {
+    return { valid: false, errors, taskCount: tasks.length, tasks };
+  }
+
+  // Check task count cap
+  if (tasks.length > 10) {
+    errors.push({ code: 'cap_exceeded', cap: 10, actual: tasks.length, message: `Plan has ${tasks.length} tasks, exceeding the 10-task cap (PLAN-05 mandate).` });
+    return { valid: false, errors, taskCount: tasks.length, tasks };
+  }
+
+  // Validate intra-plan depends_on references
+  const taskIds = new Set(tasks.map(t => t.id));
+  for (const task of tasks) {
+    for (const dep of task.dependsOn) {
+      if (!taskIds.has(dep)) {
+        errors.push({ code: 'invalid_depends_on', taskId: task.id, dep, message: `Task ${task.id} depends_on "${dep}" which is not a task ID in this plan.` });
+      }
+    }
+  }
+
+  return { valid: errors.length === 0, errors, taskCount: tasks.length, tasks };
+}
+
+/**
+ * _detectCycles(tasks) — DFS-based cycle detection.
+ * tasks: array of {id, dependsOn: [ids]}
+ * Returns {hasCycle: bool, cycle: [id, ...]}
+ */
+function _detectCycles(tasks) {
+  const adj = {};
+  for (const t of tasks) {
+    adj[t.id] = t.dependsOn || [];
+  }
+
+  const visited = new Set();
+  const inStack = new Set();
+  let foundCycle = null;
+
+  function dfs(nodeId, stack) {
+    if (foundCycle) return;
+    if (inStack.has(nodeId)) {
+      // Cycle found — reconstruct the cycle path from the stack
+      const cycleStart = stack.indexOf(nodeId);
+      foundCycle = [...stack.slice(cycleStart), nodeId];
+      return;
+    }
+    if (visited.has(nodeId)) return;
+
+    visited.add(nodeId);
+    inStack.add(nodeId);
+    stack.push(nodeId);
+
+    for (const dep of (adj[nodeId] || [])) {
+      dfs(dep, stack);
+      if (foundCycle) return;
+    }
+
+    stack.pop();
+    inStack.delete(nodeId);
+  }
+
+  for (const t of tasks) {
+    if (!visited.has(t.id)) {
+      dfs(t.id, []);
+    }
+    if (foundCycle) break;
+  }
+
+  return foundCycle ? { hasCycle: true, cycle: foundCycle } : { hasCycle: false, cycle: [] };
+}
+
+/**
+ * _checkAgentConflicts(tasks) — check planner <agent> against routeExecutor().
+ * tasks: array of {id, agent, filesExpected: {modify, create, delete}}
+ * Returns {conflicts: [{taskId, planAgent, computedAgent, files}]}
+ */
+function _checkAgentConflicts(tasks) {
+  const conflicts = [];
+  for (const task of tasks) {
+    const files = [
+      ...(task.filesExpected.modify || []),
+      ...(task.filesExpected.create || []),
+    ];
+    if (files.length === 0) continue;
+    const computedAgent = routeExecutor(files.join(','));
+    const planAgent = (task.agent || '').trim();
+
+    if (planAgent && computedAgent && planAgent !== computedAgent) {
+      conflicts.push({ taskId: task.id, planAgent, computedAgent, files });
+    }
+  }
+  return { conflicts };
+}
+
+/**
+ * _filesDisjointSplit(tasks) — find the best split boundary for an over-cap plan.
+ * tasks: array of {id, filesExpected: {modify, create, delete}}
+ * Returns {suggested_split_index, split_rationale, new_plan_files}
+ */
+function _filesDisjointSplit(tasks) {
+  if (tasks.length === 0) return { suggested_split_index: null, split_rationale: 'no_tasks', new_plan_files: [] };
+
+  const getFiles = (t) => new Set([
+    ...(t.filesExpected.modify || []),
+    ...(t.filesExpected.create || []),
+  ]);
+
+  // Try every candidate boundary i (tasks[0..i] vs tasks[i+1..N-1])
+  const candidates = [];
+  for (let i = 0; i < tasks.length - 1; i++) {
+    const leftFiles = new Set();
+    for (let j = 0; j <= i; j++) {
+      for (const f of getFiles(tasks[j])) leftFiles.add(f);
+    }
+    const rightFiles = new Set();
+    for (let j = i + 1; j < tasks.length; j++) {
+      for (const f of getFiles(tasks[j])) rightFiles.add(f);
+    }
+    // Count overlap
+    let overlapCount = 0;
+    for (const f of leftFiles) {
+      if (rightFiles.has(f)) overlapCount++;
+    }
+    candidates.push({ index: i + 1, overlapCount });
+  }
+
+  // Find fully disjoint boundary
+  const disjoint = candidates.find(c => c.overlapCount === 0);
+  if (disjoint) {
+    return {
+      suggested_split_index: disjoint.index,
+      split_rationale: `disjoint_at_${disjoint.index}`,
+      new_plan_files: [],
+    };
+  }
+
+  // All tasks touch same files (all candidates have overlap with everyone)
+  // Check if ALL candidates have the max possible overlap (no clean cut anywhere)
+  const minOverlap = Math.min(...candidates.map(c => c.overlapCount));
+  const allMax = candidates.every(c => c.overlapCount === candidates[0].overlapCount);
+
+  // If only one candidate and overlap > 0, it's "all overlap with everyone"
+  if (allMax && candidates.length >= 1) {
+    const minCand = candidates.find(c => c.overlapCount === minOverlap);
+    // If minOverlap is equal across all, no meaningful split
+    // Check: are ALL files shared across all tasks?
+    const allFiles = new Set();
+    for (const t of tasks) {
+      for (const f of getFiles(t)) allFiles.add(f);
+    }
+    // If every task touches every file that overlaps, return null
+    if (allMax && minOverlap === candidates[0].overlapCount) {
+      // Pick the cut with least overlap (even if non-zero)
+      const best = candidates.reduce((a, b) => a.overlapCount <= b.overlapCount ? a : b);
+      // If every candidate has the same overlap and it's max overlap possible, no clean split
+      const leftFilesAtBest = new Set();
+      for (let j = 0; j < best.index; j++) {
+        for (const f of getFiles(tasks[j])) leftFilesAtBest.add(f);
+      }
+      const rightFilesAtBest = new Set();
+      for (let j = best.index; j < tasks.length; j++) {
+        for (const f of getFiles(tasks[j])) rightFilesAtBest.add(f);
+      }
+      // If all files overlap (same file in every task), return no_disjoint_prefix
+      if (leftFilesAtBest.size > 0 && rightFilesAtBest.size > 0) {
+        let allOverlap = true;
+        for (const f of leftFilesAtBest) {
+          if (!rightFilesAtBest.has(f)) { allOverlap = false; break; }
+        }
+        if (allOverlap) {
+          return { suggested_split_index: null, split_rationale: 'no_disjoint_prefix', new_plan_files: [] };
+        }
+      }
+      return {
+        suggested_split_index: best.index,
+        split_rationale: `least_overlap_at_${best.index}`,
+        overlap_count: best.overlapCount,
+        new_plan_files: [],
+      };
+    }
+  }
+
+  // Fallback: least overlap cut
+  const best = candidates.reduce((a, b) => a.overlapCount <= b.overlapCount ? a : b);
+  return {
+    suggested_split_index: best.index,
+    split_rationale: `least_overlap_at_${best.index}`,
+    overlap_count: best.overlapCount,
+    new_plan_files: [],
+  };
+}
+
+/**
+ * _renderDagText(tasks) — ASCII DAG rendering, max 500 chars.
+ * tasks: array of {id, dependsOn: [ids]}
+ * Returns string.
+ */
+function _renderDagText(tasks) {
+  const lines = [];
+  for (const task of tasks) {
+    if (task.dependsOn && task.dependsOn.length > 0) {
+      for (const dep of task.dependsOn) {
+        lines.push(`${dep} -> ${task.id}`);
+      }
+    } else {
+      lines.push(`${task.id} (no deps)`);
+    }
+  }
+  const full = lines.join('\n');
+  if (full.length <= 500) return full;
+  // Truncate with marker
+  const truncated = full.slice(0, 490);
+  return truncated + '\n...(full DAG in sidecar file)';
+}
+
+/**
+ * _diffPlanVsAmauta(planTasks, amautaTasks) — structural drift detection.
+ * Compares title, agent, files_expected (modify/create/delete), depends_on.
+ * Does NOT compare read_first, action, acceptance_criteria.
+ * Returns {drifted: bool, divergence_type, diffs: [{taskId, field, planValue, amautaValue}]}
+ */
+function _diffPlanVsAmauta(planTasks, amautaTasks) {
+  const diffs = [];
+  const amautaById = {};
+  for (const t of (amautaTasks || [])) {
+    const lid = (t.metadata && t.metadata.plan_local_id) ? t.metadata.plan_local_id : t.id;
+    amautaById[lid] = t;
+  }
+
+  for (const planTask of (planTasks || [])) {
+    const aTask = amautaById[planTask.id];
+    if (!aTask) continue;
+
+    // Compare title
+    if (planTask.title !== aTask.title) {
+      diffs.push({ taskId: planTask.id, field: 'title', planValue: planTask.title, amautaValue: aTask.title });
+    }
+    // Compare agent
+    const planAgent = planTask.agent || '';
+    const amautaAgent = aTask.assigned_to || '';
+    if (planAgent !== amautaAgent) {
+      diffs.push({ taskId: planTask.id, field: 'agent', planValue: planAgent, amautaValue: amautaAgent });
+    }
+    // Compare files_expected fields
+    const fe = planTask.filesExpected || { modify: [], create: [], delete: [] };
+    const afe = (aTask.files_expected) || { modify: [], create: [], delete: [] };
+    for (const key of ['modify', 'create', 'delete']) {
+      const pVal = JSON.stringify((fe[key] || []).slice().sort());
+      const aVal = JSON.stringify((afe[key] || []).slice().sort());
+      if (pVal !== aVal) {
+        diffs.push({ taskId: planTask.id, field: `files_expected.${key}`, planValue: fe[key] || [], amautaValue: afe[key] || [] });
+      }
+    }
+    // Compare depends_on
+    const pDeps = JSON.stringify((planTask.dependsOn || []).slice().sort());
+    const aDeps = JSON.stringify((aTask.dependencies || []).slice().sort());
+    if (pDeps !== aDeps) {
+      diffs.push({ taskId: planTask.id, field: 'depends_on', planValue: planTask.dependsOn || [], amautaValue: aTask.dependencies || [] });
+    }
+  }
+
+  return {
+    drifted: diffs.length > 0,
+    divergence_type: diffs.length > 0 ? 'plan_amauta_drift' : null,
+    diffs,
+  };
+}
+
+/**
+ * planToTasks(planFilePath, opts) — Parse a PLAN.md and run Pass 0 validation.
+ *
+ * Pass 0: validate plan shape (story, fields, cap, cycles, agent conflicts).
+ * Returns structured result for Pass 1+2 (Plan 14-03).
+ */
+async function planToTasks(planFilePath, opts) {
+  opts = opts || {};
+
+  // Kill switch
+  if (process.env.GSD_P_AUTO_TASK === 'false') {
+    process.stderr.write('[plan-to-tasks] GSD_P_AUTO_TASK=false — skipping plan registration.\n');
+    return { skipped: true, reason: 'kill_switch' };
+  }
+
+  const cwd = opts.cwd || process.cwd();
+  const resolved = path.isAbsolute(planFilePath) ? planFilePath : path.join(cwd, planFilePath);
+  const planContent = fs.readFileSync(resolved, 'utf-8');
+
+  // Extract plan_id from frontmatter
+  const planIdMatch = planContent.match(/^plan_id:\s*(.+)$/m);
+  const planId = planIdMatch ? planIdMatch[1].trim() : null;
+
+  // Run _validatePlanShape — hard error if invalid
+  const shapeResult = _validatePlanShape(planContent);
+  if (!shapeResult.valid) {
+    const capError = shapeResult.errors.find(e => e.code === 'cap_exceeded');
+    if (capError) {
+      const splitResult = _filesDisjointSplit(shapeResult.tasks);
+      return {
+        error: 'cap_exceeded',
+        cap: capError.cap,
+        actual: capError.actual,
+        suggested_split_index: splitResult.suggested_split_index,
+        split_rationale: splitResult.split_rationale,
+        new_plan_files: splitResult.new_plan_files || [],
+      };
+    }
+    return { error: 'validation_failed', errors: shapeResult.errors };
+  }
+
+  const tasks = shapeResult.tasks;
+
+  // Run _detectCycles — hard error if cycle found
+  const cycleResult = _detectCycles(tasks);
+  if (cycleResult.hasCycle) {
+    return {
+      error: 'cycle_detected',
+      cycle: cycleResult.cycle,
+      message: `Dependency cycle detected: ${cycleResult.cycle.join(' -> ')}. Zero tasks created.`,
+    };
+  }
+
+  // Run _checkAgentConflicts — halt if any conflict
+  const conflictResult = _checkAgentConflicts(tasks);
+  if (conflictResult.conflicts.length > 0) {
+    return {
+      error: 'agent_assignment_conflict',
+      divergence_type: 'agent_assignment_conflict',
+      conflicts: conflictResult.conflicts,
+      message: `Agent assignment conflicts detected. Plan must be corrected before registration.`,
+    };
+  }
+
+  // Pass 0 complete — stub for Pass 1+2 (Plan 14-03)
+  // Extract story block
+  const storyMatch = planContent.match(/<story>([\s\S]*?)<\/story>/i);
+  const parsedStory = storyMatch ? storyMatch[1].trim() : null;
+
+  return {
+    pass0: 'complete',
+    plan_id: planId,
+    tasks,
+    story: parsedStory,
+  };
+}
+
 // Export test-only entry points when imported (not invoked) as a module.
 if (require.main !== module) {
   module.exports = {
@@ -698,6 +1121,13 @@ if (require.main !== module) {
     _globToRegExp,
     _diffNameStatus,
     routeExecutor,
+    planToTasks,
+    _validatePlanShape,
+    _detectCycles,
+    _checkAgentConflicts,
+    _filesDisjointSplit,
+    _renderDagText,
+    _diffPlanVsAmauta,
   };
 }
 
@@ -1159,6 +1589,15 @@ async function main() {
       // See manifestCheck() above for the locked API shape.
       const code = await _runManifestCheckCli(args.slice(1), cwd);
       process.exit(code);
+      break;
+    }
+
+    case 'plan-to-tasks': {
+      const planFile = args[1];
+      if (!planFile) { error('Usage: gsd-tools plan-to-tasks <plan-file>'); break; }
+      const result = await planToTasks(planFile, { cwd });
+      process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+      process.exit(result.error ? 1 : 0);
       break;
     }
 
