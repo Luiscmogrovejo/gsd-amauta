@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: milestone
-status: completed
-stopped_at: Phase 14 planned — 4 plans, 10 tasks, 4 waves, checker passed
-last_updated: "2026-04-10T16:16:30.429Z"
-last_activity: "2026-04-10 -- Plan 14-04 complete: PLAN_REGISTRATION parser in gsd-operator.md, Plan Registration Advisory in gsd-validator.md, PLAN-06 quality gate items in plan-phase.md, phase-gated plan-to-tasks in execute-phase.md, PLAN-04 errata in REQUIREMENTS.md, cutoff documentation in STATE.md."
+status: verifying
+stopped_at: Phase 15 context gathered — 15 locked decisions, 4 gap resolutions, depth-7 dogfood stored
+last_updated: "2026-04-10T16:32:10.670Z"
+last_activity: "2026-04-10 -- Phase 14 closeout: REQUIREMENTS.md PLAN-01..07 Done, VERIFICATION.md PASS, depth-6 dogfood moment captured (prior-session pre-commit verification)."
 progress:
   total_phases: 8
   completed_phases: 1
   total_plans: 9
   completed_plans: 9
-  percent: 40
+  percent: 75
 ---
 
 # GSD-Amauta -- Project State
@@ -145,9 +145,9 @@ None. Part A blockers resolved pre-roadmap:
 
 ## Session Continuity
 
-Last session: 2026-04-10
-Stopped at: Phase 14 SHIPPED — verified PASS, PLAN-01..07 Done, depth-6 dogfood captured
-Resume file: N/A (phase complete)
+Last session: 2026-04-10T16:32:10.662Z
+Stopped at: Phase 15 context gathered — 15 locked decisions, 4 gap resolutions, depth-7 dogfood stored
+Resume file: .planning/milestones/v2.2-phases/15-dogfood/15-CONTEXT.md
 Next: /amauta:discuss-phase 15 — End-to-End Dogfood Verification (observational, not code-generating)
 
 Memory entries from Phase 13.1 (researcher recall during Phase 14 planning should surface these):
