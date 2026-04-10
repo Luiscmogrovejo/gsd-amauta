@@ -1820,12 +1820,28 @@ async function main() {
 
     case 'init': {
       const workflow = args[1];
+
+      // Extract --phase-dir override (RESOLVE-02)
+      let phaseDirOverride = null;
+      const phaseDirIdx = args.indexOf('--phase-dir');
+      if (phaseDirIdx !== -1) {
+        phaseDirOverride = args[phaseDirIdx + 1] || null;
+        // Remove --phase-dir and its value from args so they don't interfere
+        args.splice(phaseDirIdx, 2);
+      }
+      // Also handle --phase-dir=value form
+      const phaseDirEqArg = args.find(a => a.startsWith('--phase-dir='));
+      if (phaseDirEqArg) {
+        phaseDirOverride = phaseDirEqArg.split('=').slice(1).join('=');
+        args.splice(args.indexOf(phaseDirEqArg), 1);
+      }
+
       switch (workflow) {
         case 'execute-phase':
-          init.cmdInitExecutePhase(cwd, args[2], raw);
+          init.cmdInitExecutePhase(cwd, args[2], raw, phaseDirOverride);
           break;
         case 'plan-phase':
-          init.cmdInitPlanPhase(cwd, args[2], raw);
+          init.cmdInitPlanPhase(cwd, args[2], raw, phaseDirOverride);
           break;
         case 'new-project':
           init.cmdInitNewProject(cwd, raw);
@@ -1840,10 +1856,10 @@ async function main() {
           init.cmdInitResume(cwd, raw);
           break;
         case 'verify-work':
-          init.cmdInitVerifyWork(cwd, args[2], raw);
+          init.cmdInitVerifyWork(cwd, args[2], raw, phaseDirOverride);
           break;
         case 'phase-op':
-          init.cmdInitPhaseOp(cwd, args[2], raw);
+          init.cmdInitPhaseOp(cwd, args[2], raw, phaseDirOverride);
           break;
         case 'todos':
           init.cmdInitTodos(cwd, args[2], raw);

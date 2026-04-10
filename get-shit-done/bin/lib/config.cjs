@@ -8,7 +8,7 @@ const { output, error } = require('./core.cjs');
 
 const VALID_CONFIG_KEYS = new Set([
   'mode', 'granularity', 'parallelization', 'commit_docs', 'model_profile',
-  'search_gitignored', 'brave_search',
+  'search_gitignored', 'brave_search', 'current_milestone',
   'workflow.research', 'workflow.plan_check', 'workflow.verifier',
   'workflow.nyquist_validation', 'workflow.ui_phase', 'workflow.ui_safety_gate',
   'workflow._auto_chain_active',
@@ -130,9 +130,11 @@ function cmdConfigSet(cwd, keyPath, value, raw) {
   }
   current[keys[keys.length - 1]] = parsedValue;
 
-  // Write back
+  // Write back atomically via temp+rename
   try {
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
+    const tmpPath = configPath + '.tmp.' + process.pid;
+    fs.writeFileSync(tmpPath, JSON.stringify(config, null, 2), 'utf-8');
+    fs.renameSync(tmpPath, configPath);
     const result = { updated: true, key: keyPath, value: parsedValue };
     output(result, raw, `${keyPath}=${parsedValue}`);
   } catch (err) {
