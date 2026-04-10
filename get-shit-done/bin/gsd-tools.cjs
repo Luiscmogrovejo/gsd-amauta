@@ -974,9 +974,10 @@ function _renderDagText(tasks) {
   }
   const full = lines.join('\n');
   if (full.length <= 500) return full;
-  // Truncate with marker
-  const truncated = full.slice(0, 490);
-  return truncated + '\n...(full DAG in sidecar file)';
+  // Truncate to ensure total output stays <= 500 chars
+  const marker = '\n...(full DAG in sidecar file)';
+  const truncated = full.slice(0, 500 - marker.length);
+  return truncated + marker;
 }
 
 /**
