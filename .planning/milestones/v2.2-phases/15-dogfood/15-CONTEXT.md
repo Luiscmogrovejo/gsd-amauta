@@ -70,7 +70,7 @@ Three categories, every DOGFOOD criterion tagged with one:
 {
   "audit_timestamp": "...",
   "milestone": "v2.6",
-  "phases_audited": ["9", "10", "11", "12", "13", "13.1", "14"],
+  "phases_audited": ["10", "11", "12", "13", "13.1", "14"],
   "phase_15_excluded_from_audit": true,
   "criteria": [
     {
@@ -161,6 +161,13 @@ Three categories, every DOGFOOD criterion tagged with one:
 - **This is a real requirements change, not a reinterpretation.** Same shape as PLAN-04 errata.
 - **Handle at Phase 15 closeout:** Strike through the `.sh` language in REQUIREMENTS.md DOGFOOD-03, add `.cjs` underneath with a footnote citing the require-based dogfooding argument and this CONTEXT.md decision. Do NOT edit REQUIREMENTS.md during execution.
 - **Why this matters:** Without the errata, future readers see "verify-v26.sh" in REQUIREMENTS.md and `verify-v26.cjs` in the filesystem with no audit trail explaining the drift.
+
+### DOGFOOD-01 errata: subcommand → standalone binary (Gap 1c)
+- REQUIREMENTS.md line 126 and ROADMAP.md line 352 describe DOGFOOD-01 as a `gsd-tools.cjs audit-rpetd-intelligence <task_id>` **subcommand**. Q1 (new files only, no modification of existing `.cjs` files) prevents adding a subcommand to gsd-tools.cjs. Q6 rationale (require the exports, don't subprocess them) applies equally here.
+- **Locked implementation:** `get-shit-done/bin/audit-rpetd-intelligence.cjs` as a **standalone binary** that `require()`s gsd-tools.cjs exports. Same correctness argument as Gap 1a — direct require() over subprocess indirection.
+- **This is a real requirements change, not a reinterpretation.** Same shape as Gap 1a.
+- **Handle at Phase 15 closeout:** Strike through "gsd-tools.cjs audit-rpetd-intelligence subcommand" language in REQUIREMENTS.md DOGFOOD-01 AND ROADMAP.md Phase 15 deliverable row 1, replace with "standalone binary `get-shit-done/bin/audit-rpetd-intelligence.cjs`" with a footnote citing Q1 (no-modify-existing-files) + Q6 (require over subprocess) as the correctness argument. Both DOGFOOD-01 and DOGFOOD-03 errata ship in the same closeout commit.
+- **Why this matters:** Without the errata, future readers see "gsd-tools.cjs audit-rpetd-intelligence" in REQUIREMENTS.md and no such subcommand in the filesystem, with no audit trail explaining the drift.
 
 ### DOGFOOD-05 phase enumeration (Gap 1b)
 - REQUIREMENTS.md says "6/6 phases green." v2.6 contains 8 slots (9, 10, 11, 12, 13, 13.1, 14, 15). "6/6" doesn't match 8 or 7.
