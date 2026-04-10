@@ -168,6 +168,27 @@ past-tense "merged" evidence). A branch name alone does NOT satisfy this gate.
 **Consistency note:** "RPETD Complete" (all 5 phases non-empty) is enforced by `amauta.py cmd_validate`
 at the Python layer before gates are checked — it is pre-gate blocking, not one of the 4 gates.
 
+### E-Phase Evidence Advisory (Phase 11 -- not a numbered gate)
+
+After gates pass, check validation output for `[ADVISORY] PRE_EXECUTION_EVIDENCE`. This advisory is informational in v2.6 -- it does NOT block validation.
+
+**When you see the advisory:**
+```bash
+# Log advisory to task notes (visible in amauta show)
+$CLI note TK-XXXX --text "[ADVISORY] E-phase PRE_EXECUTION_EVIDENCE block absent -- executor skipped pre-code queries" --agent validator
+```
+
+**When advisory does NOT fire:** No action needed. Evidence block is present.
+
+**Kill switch:** `GSD_E_MANDATE=off` disables the advisory entirely. `GSD_E_MANDATE=advisory` (default) enables it.
+
+**Non-code tasks:** Advisory does not fire for non-code task types (docs, research, planning).
+
+**Cargo-cult warning:** If advisory reports cargo-cult responses on security checklist items, note it:
+```bash
+$CLI note TK-XXXX --text "[ADVISORY] Security checklist has cargo-cult responses -- items need specific action descriptions" --agent validator
+```
+
 ### Override
 Use `--force` to override gates for legitimate exceptions (local-only tasks, scaffolding, etc.):
 ```bash
