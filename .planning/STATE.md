@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: milestone
 status: verifying
-stopped_at: Phase 14 plan 14-01 DONE — divergence-protocol v1.1.0 + plan-task-xml-schema.md + planner pointer
-last_updated: "2026-04-10T16:00:00.000Z"
-last_activity: "2026-04-10 -- Plan 14-01 complete: 2 tasks, 2 commits. PLAN-01 requirement addressed."
+stopped_at: Phase 14 plan 14-02 DONE — planToTasks() Pass 0 engine + scoped dedup bypass + 20 unit tests
+last_updated: "2026-04-10T18:15:00.000Z"
+last_activity: "2026-04-10 -- Plan 14-02 complete: 3 tasks, 3 commits. PLAN-02/03/04/05 requirements addressed."
 progress:
   total_phases: 8
   completed_phases: 1
@@ -26,10 +26,10 @@ See: .planning/PROJECT.md (updated 2026-04-09)
 ## Current Position
 
 Phase: 14 -- P-Phase Task-Management Integration (IN PROGRESS)
-Plan: 14-01 DONE (divergence-protocol.md v1.0.0->v1.1.0 + plan-task-xml-schema.md reference file + gsd-planner.md Read pointer. 2 commits. PLAN-01 addressed.)
-Previous: Phase 13.1 VERIFIED (5 plans, HARDEN-01..05 complete, validator --pass). Phase 13 VERIFIED (3 plans, CREATIVE-01..05). Phase 12 COMPLETE (4 plans, QA-01..08).
-Status: Phase 14 Wave 1 complete. Plans 14-02, 14-03, 14-04 not started.
-Last activity: 2026-04-10 -- Plan 14-01 complete: divergence-protocol v1.1.0 + plan-task-xml-schema.md + gsd-planner Read pointer. 2 atomic commits.
+Plan: 14-02 DONE (planToTasks() Pass 0 engine + scoped _dedup_check bypass + gsd-amauta.cjs CJS pass-through + 20 unit tests. 3 commits. PLAN-02/03/04/05 addressed.)
+Previous: 14-01 DONE (divergence-protocol v1.1.0 + plan-task-xml-schema.md + gsd-planner pointer). Phase 13.1 VERIFIED (HARDEN-01..05). Phase 13 VERIFIED (CREATIVE-01..05). Phase 12 COMPLETE (QA-01..08).
+Status: Phase 14 Wave 2 complete. Plans 14-03, 14-04 not started.
+Last activity: 2026-04-10 -- Plan 14-02 complete: planToTasks() Pass 0 validation engine + scoped dedup bypass + 20 unit tests all green. 3 atomic commits.
 
 Progress: [####......] 40% (v2.6 milestone — phases 10, 12, 13, 13.1 done; phase 9 pending green baseline; phases 11, 14, 15 not started)
 
@@ -123,6 +123,10 @@ v2.5 codebase docs in .planning/codebase/ (2,337 lines). v2.6 research in .plann
 - **divergence-protocol.md at v1.1.0 (Plan 14-01)**: Bumped from 1.0.0 in a single atomic edit. Two new enum values: `agent_assignment_conflict` (planner-emitted `<agent>` field disagrees with `routeExecutor()` computed from `<files_expected>`) and `plan_amauta_drift` (structural fields in PLAN.md diverge from amauta task on re-run). Phase 13.2 baseline is now 1.1.0.
 - **plan-task-xml-schema.md reference file (Plan 14-01)**: Runtime-Read reference locking the `<story>` + `<task>` XML schema for phases >= 14. MANDATORY `<story>` block (title, success_criteria, doc_refs), child-element style `<task>` (7 required fields), 7 validation rules, phase cutoff at 14 (phases 9-13 grandfathered). gsd-planner.md has Read pointer (203 lines, within 200+4 budget).
 - **Plan-to-tasks phase cutoff (Plan 14-01 lock)**: Phase cutoff is the authoritative trigger for plan-to-tasks registration, NOT the presence of a `<story>` block. A future editor adding `<story>` to a Phase 9-13 plan for documentation reasons must NOT accidentally trigger registration.
+- **planToTasks() Pass 0 engine (Plan 14-02)**: `gsd-tools.cjs` now exports `planToTasks()` and 6 helpers: `_validatePlanShape` (story, required fields, 10-task cap), `_detectCycles` (DFS), `_checkAgentConflicts` (routeExecutor comparison), `_filesDisjointSplit` (disjoint boundary finder), `_renderDagText` (500-char truncating DAG), `_diffPlanVsAmauta` (structural drift with plan_amauta_drift type). Kill switch: `GSD_P_AUTO_TASK=false`.
+- **_filesDisjointSplit boundary semantics (Plan 14-02)**: Returns the FIRST disjoint boundary (smallest valid cut index), not a midpoint suggestion. "Largest contiguous prefix" means the algorithm takes the first clean cut walking forward — if tasks[0] and tasks[1] have no shared files, the split is at index 1. Partial-overlap case returns least-overlap cut with `split_rationale: "least_overlap_at_N"`.
+- **_renderDagText 500-char contract (Plan 14-02)**: Total output (including `\n...(full DAG in sidecar file)` marker of 30 chars) must be <= 500 chars. Truncation point is `500 - marker.length`, not a fixed 490. Tests assert on the total length, not just the pre-marker portion.
+- **scoped _dedup_check bypass already in amauta.py (Plan 14-02 observation)**: The bypass, cmd_add stamping, and argparse flags were already present from a prior partial implementation. Only the CJS cmdAdd direct-CLI path was missing `--source`/`--from-plan` pass-through. Daemon path always passed flags through via `...flags` spread.
 
 ### Pending Todos
 
@@ -209,6 +213,10 @@ Behavioral test suite (tests/13.1-divergence-protocol.integration.test.cjs, 15 i
 
 
 
+
+
+- [learning] 2026-04-10T15:42:46.694Z: legacy regression test: free text learning
+- [learning] 2026-04-10T15:33:58.988Z: Plan 14-01 pattern: when two enum values in the same file require a version bump, land them in a single atomic edit to prevent version-field collision if fragmented across tasks.
 - [learning] 2026-04-10T04:26:03.843Z: Phase 13 creative research: when adding module.exports to a CLI script for CJS test imports, use require.main !== module guard with else { main() } pattern -- not just a guard block -- so CLI still executes when run directly. Also: npm_fail counts must be verified by running the full suite before stash/after, not assumed from prior baseline.
 - [learning] 2026-04-10T04:21:49.640Z: E2E test learning — cleanup after test
 - [learning] 2026-04-10T04:21:33.738Z: legacy with agent
