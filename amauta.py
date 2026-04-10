@@ -2215,6 +2215,65 @@ def _rpetd_phase_enrich(phase: str, item: dict, agent_content: str) -> str:
     return ""
 
 
+def _inherit_parent_spec(item: dict, items: list) -> str:
+    """
+    Walk the parent chain (task -> story -> epic) and collect the first non-empty
+    success_criteria list. Returns a formatted [INHERITED SPEC] block string, or
+    empty string if no parent criteria found. Caches result on item.metadata.inherited_spec.
+    Never raises.
+    """
+    try:
+        # Kill switch
+        if os.environ.get("GSD_T_SPEC_INHERIT", "").lower() == "false":
+            item.setdefault("metadata", {})["inherited_spec"] = None
+            return ""
+
+        cur = item
+        for _ in range(3):  # walk up to 3 levels: task -> story -> epic
+            pid = cur.get("parent")
+            if not pid:
+                break
+            parent = _find(items, pid)
+            if not parent:
+                break
+            crit = parent.get("success_criteria") or []
+            if crit:
+                # Cap at 10 criteria
+                capped = crit[:10]
+                truncation = ""
+                if len(crit) > 10:
+                    truncation = (
+                        f"\n  ({len(crit) - 10} criteria truncated, "
+                        f"run `amauta show {pid} --json` for full list)"
+                    )
+                # Assign SC-IDs
+                sc_lines = [f"SC-{i:02d}: {c}" for i, c in enumerate(capped, 1)]
+                block = (
+                    f"[INHERITED SPEC from {pid} ({parent.get('type', '?')})]\n"
+                    + "\n".join(sc_lines)
+                    + truncation
+                )
+                # Cache to metadata
+                item.setdefault("metadata", {})["inherited_spec"] = {
+                    "source": pid,
+                    "source_type": parent.get("type", "?"),
+                    "criteria": [
+                        {"id": f"SC-{i:02d}", "text": c}
+                        for i, c in enumerate(capped, 1)
+                    ],
+                    "truncated": len(crit) > 10,
+                }
+                return block
+            # No criteria at this level -- walk up
+            cur = parent
+
+        # No match found anywhere in the chain
+        item.setdefault("metadata", {})["inherited_spec"] = None
+        return ""
+    except Exception:
+        return ""
+
+
 def _enrich_task_context(item: dict, items: list) -> str:
     """
     Layer 1: Claim-time context enrichment.
@@ -2246,6 +2305,11 @@ def _enrich_task_context(item: dict, items: list) -> str:
                         last = dep_notes[-1] if isinstance(dep_notes[-1], str) else dep_notes[-1].get("text", "")
                         summary += f"\n  Last note: {str(last)[:150]}"
                     parts.append(summary)
+
+        # -- Inherited parent spec --
+        spec_block = _inherit_parent_spec(item, items)
+        if spec_block:
+            parts.append(spec_block)
 
         # ── Sibling tasks (same sprint/epic) ───────────────────────────
         sprint = item.get("sprint", "")
