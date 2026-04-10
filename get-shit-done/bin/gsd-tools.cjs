@@ -130,6 +130,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 const { error } = require('./lib/core.cjs');
 const state = require('./lib/state.cjs');
 const phase = require('./lib/phase.cjs');
@@ -224,6 +225,444 @@ function routeExecutor(filesStr) {
   }
 
   return 'executor-general';
+}
+
+// ─── Manifest Check (HARDEN-01) ──────────────────────────────────────────────
+
+// Global allowlist for orchestrator-generated files that are permitted to drift
+// outside a task's files_expected: manifest. Paths matching these globs are
+// stripped from `unexpected_*` violation arrays before the halt decision.
+// Reviewed whenever a new orchestrator-generated artifact type is introduced.
+const GLOBAL_ALLOWLIST = [
+  'package-lock.json',
+  '.planning/STATE.md',
+  'coverage/**',
+];
+
+// Files that only the orchestrator may write. An executor diff touching any of
+// these triggers an immediate hard halt (`halt_orchestrator_owned`) regardless
+// of the per-task manifest or the `GSD_MANIFEST_CHECK=warn` override.
+const ORCHESTRATOR_OWNED = [
+  '.planning/STATE.md',
+  '.planning/ROADMAP.md',
+  '.planning/REQUIREMENTS.md',
+];
+
+// Overly broad globs that defeat the purpose of a manifest. Any manifest
+// containing one of these strings as a declared path is rejected before the
+// diff is compared.
+const MANIFEST_GLOB_BLOCKLIST = ['**/*.md', '**/*', '*'];
+
+/**
+ * Compile a glob (supports `*`, `**`, path-segment wildcards) into a RegExp
+ * that matches against full POSIX-style paths. This is a minimal matcher to
+ * avoid adding a runtime dep — it covers the shapes actually used in plan
+ * manifests (`tests/13.1-*.test.cjs`, `get-shit-done/bin/*.cjs`, explicit
+ * paths). Unsupported glob features (brace expansion, extglob) are NOT
+ * implemented; callers should use explicit paths for anything exotic.
+ */
+function _globToRegExp(glob) {
+  // Escape regex metacharacters except `*` and `/`
+  let re = '';
+  let i = 0;
+  while (i < glob.length) {
+    const c = glob[i];
+    if (c === '*') {
+      if (glob[i + 1] === '*') {
+        // `**` -> match any number of path segments
+        re += '.*';
+        i += 2;
+        // Swallow a trailing `/` so `**/` matches zero or more segments
+        if (glob[i] === '/') i += 1;
+      } else {
+        // Single `*` -> match anything except `/`
+        re += '[^/]*';
+        i += 1;
+      }
+    } else if ('.+?^${}()|[]\\'.includes(c)) {
+      re += '\\' + c;
+      i += 1;
+    } else {
+      re += c;
+      i += 1;
+    }
+  }
+  return new RegExp('^' + re + '$');
+}
+
+function _matchesAny(pathStr, patterns) {
+  for (const p of patterns) {
+    if (p === pathStr) return true;
+    if (p.includes('*')) {
+      if (_globToRegExp(p).test(pathStr)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Minimal YAML loader for `files_expected:` manifest fragments.
+ * Supports ONLY:
+ *   - top-level key: value mappings where value is a flat list
+ *   - inline empty lists: `key: []`
+ *   - multi-line lists with `- item` entries
+ *
+ * Any unsupported construct yields `null` for that key (missing field), which
+ * triggers the "must declare all of modify, create, delete" error upstream.
+ */
+function _parseFilesExpectedYaml(yamlText) {
+  const lines = yamlText.split(/\r?\n/);
+  const result = {};
+  let currentKey = null;
+  for (let raw of lines) {
+    // Strip comments and trailing whitespace
+    const hashIdx = raw.indexOf('#');
+    if (hashIdx !== -1) raw = raw.slice(0, hashIdx);
+    const line = raw.replace(/\s+$/, '');
+    if (!line.trim()) continue;
+
+    // Top-level key
+    const topMatch = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(line);
+    if (topMatch && !line.startsWith(' ') && !line.startsWith('\t') && !line.startsWith('-')) {
+      currentKey = topMatch[1];
+      const rest = topMatch[2];
+      if (rest === '' || rest === undefined) {
+        result[currentKey] = [];
+      } else if (rest === '[]') {
+        result[currentKey] = [];
+        currentKey = null;
+      } else {
+        // Inline scalar — unsupported for our use case
+        result[currentKey] = rest;
+        currentKey = null;
+      }
+      continue;
+    }
+
+    // List item under current key
+    const listMatch = /^\s*-\s*(.+)$/.exec(line);
+    if (listMatch && currentKey) {
+      if (!Array.isArray(result[currentKey])) {
+        result[currentKey] = [];
+      }
+      let value = listMatch[1].trim();
+      // Strip wrapping quotes
+      if ((value.startsWith('"') && value.endsWith('"')) ||
+          (value.startsWith("'") && value.endsWith("'"))) {
+        value = value.slice(1, -1);
+      }
+      result[currentKey].push(value);
+    }
+  }
+  return result;
+}
+
+function _diffNameStatus(before, after, cwd) {
+  const out = execSync(
+    `git diff --name-status ${before} ${after}`,
+    { cwd, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] }
+  );
+  const modified = [];
+  const created = [];
+  const deleted = [];
+  for (const line of out.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const parts = line.split('\t');
+    const status = parts[0] || '';
+    if (status.startsWith('M')) {
+      if (parts[1]) modified.push(parts[1]);
+    } else if (status.startsWith('A')) {
+      if (parts[1]) created.push(parts[1]);
+    } else if (status.startsWith('D')) {
+      if (parts[1]) deleted.push(parts[1]);
+    } else if (status.startsWith('R') || status.startsWith('C')) {
+      // Rename/copy: R100\told\tnew  -> delete(old) + create(new)
+      if (parts[1]) deleted.push(parts[1]);
+      if (parts[2]) created.push(parts[2]);
+    } else if (status.startsWith('T')) {
+      // Type change — treat as modify
+      if (parts[1]) modified.push(parts[1]);
+    }
+  }
+  return { modified, created, deleted };
+}
+
+function _expectedMatches(expectedList, actualList) {
+  // Returns { matched: Set<actualPath>, unmatchedExpected: string[] }
+  const matched = new Set();
+  const unmatchedExpected = [];
+  for (const expected of expectedList) {
+    let hit = false;
+    if (expected.includes('*')) {
+      const re = _globToRegExp(expected);
+      for (const actual of actualList) {
+        if (re.test(actual)) {
+          matched.add(actual);
+          hit = true;
+        }
+      }
+    } else {
+      if (actualList.includes(expected)) {
+        matched.add(expected);
+        hit = true;
+      }
+    }
+    if (!hit) unmatchedExpected.push(expected);
+  }
+  return { matched, unmatchedExpected };
+}
+
+/**
+ * manifestCheck — deterministic per-task manifest enforcement.
+ * See plan 13.1-01 task 13.1-01-01 for the locked API shape.
+ *
+ * Returns: { ok, reportPath, action }
+ *   ok       — false on `halt` / `halt_orchestrator_owned`, true otherwise
+ *   reportPath — path to JSON violation report, or null if no report written
+ *   action   — 'pass' | 'warn' | 'halt' | 'halt_orchestrator_owned'
+ */
+async function manifestCheck({ phase, wave, taskId, filesExpected, gitShaBefore, gitShaAfter, envOverride, cwd }) {
+  cwd = cwd || process.cwd();
+
+  // Validate manifest: all three keys present (empty list allowed)
+  const required = ['modify', 'create', 'delete'];
+  for (const key of required) {
+    if (!Array.isArray(filesExpected[key])) {
+      throw new Error('manifest-check: files_expected must declare all of modify, create, delete (use [] for empty)');
+    }
+  }
+
+  // Reject overly broad globs
+  for (const key of required) {
+    for (const entry of filesExpected[key]) {
+      if (MANIFEST_GLOB_BLOCKLIST.includes(entry)) {
+        throw new Error(`manifest-check: overly broad glob "${entry}" rejected — use explicit paths or narrower globs`);
+      }
+    }
+  }
+
+  // Compute actual diff
+  const actual = _diffNameStatus(gitShaBefore, gitShaAfter, cwd);
+
+  // Check orchestrator-owned files first — always hard halt
+  const orchestratorHits = [];
+  for (const p of [...actual.modified, ...actual.created]) {
+    if (_matchesAny(p, ORCHESTRATOR_OWNED)) {
+      orchestratorHits.push(p);
+    }
+  }
+
+  // Expected vs actual
+  const modMatch = _expectedMatches(filesExpected.modify, actual.modified);
+  const crtMatch = _expectedMatches(filesExpected.create, actual.created);
+  const delMatch = _expectedMatches(filesExpected.delete, actual.deleted);
+
+  const unexpected_modifies = actual.modified.filter(p => !modMatch.matched.has(p));
+  const unexpected_creates = actual.created.filter(p => !crtMatch.matched.has(p));
+  const unexpected_deletes = actual.deleted.filter(p => !delMatch.matched.has(p));
+  const missing_creates = crtMatch.unmatchedExpected.slice();
+
+  // Apply global allowlist (does NOT cover orchestrator-owned files, which
+  // already shorted to a hard halt above)
+  const filterAllowlist = arr => arr.filter(p => !_matchesAny(p, GLOBAL_ALLOWLIST));
+  const violations = {
+    unexpected_modifies: filterAllowlist(unexpected_modifies),
+    unexpected_creates: filterAllowlist(unexpected_creates),
+    unexpected_deletes: filterAllowlist(unexpected_deletes),
+    missing_creates,
+  };
+
+  const hasViolations =
+    violations.unexpected_modifies.length > 0 ||
+    violations.unexpected_creates.length > 0 ||
+    violations.unexpected_deletes.length > 0 ||
+    violations.missing_creates.length > 0;
+
+  if (orchestratorHits.length === 0 && !hasViolations) {
+    return { ok: true, reportPath: null, action: 'pass' };
+  }
+
+  // Decide action
+  const warnOverride = envOverride === 'warn' || process.env.GSD_MANIFEST_CHECK === 'warn';
+  let action;
+  if (orchestratorHits.length > 0) {
+    action = 'halt_orchestrator_owned';
+  } else if (warnOverride) {
+    action = 'warn';
+  } else {
+    action = 'halt';
+  }
+
+  // Write violation report
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const phaseDir = path.join(cwd, '.planning', 'milestones');
+  // Find the phase directory matching the given phase number (e.g. 13.1 -> .../13.1-*)
+  let targetDir = null;
+  try {
+    // Look one level down for milestone subdir (e.g. v2.2-phases) then phase dirs
+    const walk = (dir) => {
+      if (!fs.existsSync(dir)) return null;
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const ent of entries) {
+        if (!ent.isDirectory()) continue;
+        if (ent.name.startsWith(`${phase}-`) || ent.name === String(phase)) {
+          return path.join(dir, ent.name);
+        }
+      }
+      for (const ent of entries) {
+        if (!ent.isDirectory()) continue;
+        const sub = path.join(dir, ent.name);
+        const hit = walk(sub);
+        if (hit) return hit;
+      }
+      return null;
+    };
+    targetDir = walk(phaseDir);
+  } catch (_) {
+    targetDir = null;
+  }
+  if (!targetDir) {
+    // Fall back to a flat directory under .planning/milestones/<phase>/
+    targetDir = path.join(phaseDir, String(phase));
+  }
+  try {
+    fs.mkdirSync(targetDir, { recursive: true });
+  } catch (_) {}
+
+  const reportPath = path.join(targetDir, `manifest-violation-${timestamp}.json`);
+  const report = {
+    phase,
+    wave,
+    task_id: taskId,
+    expected: {
+      modify: filesExpected.modify,
+      create: filesExpected.create,
+      delete: filesExpected.delete,
+    },
+    actual: {
+      modified: actual.modified,
+      created: actual.created,
+      deleted: actual.deleted,
+    },
+    violations,
+    git_sha_before: gitShaBefore,
+    git_sha_after: gitShaAfter,
+    timestamp: new Date().toISOString(),
+    orchestrator_action: action,
+  };
+  if (orchestratorHits.length > 0) {
+    report.orchestrator_owned_hits = orchestratorHits;
+  }
+
+  try {
+    fs.writeFileSync(reportPath, JSON.stringify(report, null, 2) + '\n', 'utf-8');
+  } catch (err) {
+    // Report-write failure is non-fatal here — surface via stderr and continue
+    process.stderr.write(`manifest-check: failed to write violation report: ${err.message}\n`);
+    return { ok: action === 'warn', reportPath: null, action };
+  }
+
+  return {
+    ok: action === 'warn',
+    reportPath,
+    action,
+  };
+}
+
+function _manifestCheckHelp() {
+  return [
+    'Usage: gsd-tools manifest-check [options]',
+    '',
+    'Options:',
+    '  --phase <n>            Phase id (e.g. 13.1)',
+    '  --wave <n>             Wave number within the phase',
+    '  --task-id <id>         Task id (e.g. 13.1-01-01)',
+    '  --files-expected <p>   Path to YAML file containing modify/create/delete lists',
+    '  --before <sha>         Git sha BEFORE the task',
+    '  --after <sha>          Git sha AFTER the task',
+    '',
+    'Environment:',
+    '  GSD_MANIFEST_CHECK=warn   Downgrade halts to warnings (logged in orchestrator_action)',
+    '',
+    'Exit codes:',
+    '  0  pass or warn',
+    '  1  halt or halt_orchestrator_owned',
+    '',
+  ].join('\n');
+}
+
+async function _runManifestCheckCli(args, cwd) {
+  const getFlag = (name) => {
+    const idx = args.indexOf(name);
+    return idx !== -1 ? args[idx + 1] : null;
+  };
+
+  if (args.includes('--help') || args.includes('-h')) {
+    process.stdout.write(_manifestCheckHelp());
+    return 0;
+  }
+
+  const phase = getFlag('--phase');
+  const wave = getFlag('--wave');
+  const taskId = getFlag('--task-id');
+  const filesExpectedPath = getFlag('--files-expected');
+  const before = getFlag('--before');
+  const after = getFlag('--after');
+
+  const missing = [];
+  if (!phase) missing.push('--phase');
+  if (!wave) missing.push('--wave');
+  if (!taskId) missing.push('--task-id');
+  if (!filesExpectedPath) missing.push('--files-expected');
+  if (!before) missing.push('--before');
+  if (!after) missing.push('--after');
+  if (missing.length) {
+    process.stderr.write(`manifest-check: missing required flags: ${missing.join(', ')}\n`);
+    process.stderr.write(_manifestCheckHelp());
+    return 1;
+  }
+
+  const resolved = path.isAbsolute(filesExpectedPath) ? filesExpectedPath : path.join(cwd, filesExpectedPath);
+  if (!fs.existsSync(resolved)) {
+    process.stderr.write(`manifest-check: files-expected file not found: ${resolved}\n`);
+    return 1;
+  }
+  const yamlText = fs.readFileSync(resolved, 'utf-8');
+  const parsed = _parseFilesExpectedYaml(yamlText);
+
+  try {
+    const result = await manifestCheck({
+      phase,
+      wave,
+      taskId,
+      filesExpected: parsed,
+      gitShaBefore: before,
+      gitShaAfter: after,
+      cwd,
+    });
+    process.stdout.write(JSON.stringify(result) + '\n');
+    if (result.action === 'halt' || result.action === 'halt_orchestrator_owned') {
+      return 1;
+    }
+    return 0;
+  } catch (err) {
+    process.stderr.write(`manifest-check: ${err.message}\n`);
+    return 1;
+  }
+}
+
+// Export test-only entry points when imported (not invoked) as a module.
+if (require.main !== module) {
+  module.exports = {
+    manifestCheck,
+    GLOBAL_ALLOWLIST,
+    ORCHESTRATOR_OWNED,
+    MANIFEST_GLOB_BLOCKLIST,
+    _parseFilesExpectedYaml,
+    _globToRegExp,
+    _diffNameStatus,
+    routeExecutor,
+  };
 }
 
 // ─── CLI Router ───────────────────────────────────────────────────────────────
@@ -679,9 +1118,19 @@ async function main() {
       break;
     }
 
+    case 'manifest-check': {
+      // HARDEN-01: deterministic per-task manifest enforcement.
+      // See manifestCheck() above for the locked API shape.
+      const code = await _runManifestCheckCli(args.slice(1), cwd);
+      process.exit(code);
+      break;
+    }
+
     default:
       error(`Unknown command: ${command}`);
   }
 }
 
-main();
+if (require.main === module) {
+  main();
+}
