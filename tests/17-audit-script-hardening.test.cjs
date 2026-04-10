@@ -87,3 +87,75 @@ test('AUDIT-01: both-exist collision -- prefixed form wins over unprefixed', () 
   // Cleanup
   fs.rmSync(tmpBase, { recursive: true, force: true });
 });
+
+// ── AUDIT-02: parseNpmFailures structured output ──────────────────────────
+
+test('AUDIT-02: parseNpmFailures returns structured objects from node --test output', () => {
+  const fixture = [
+    'test at tests/core.test.cjs:579:3',
+    '\u2716 searches archived milestones when not in current (0.941459ms)',
+    '  TypeError: Cannot read properties of null (reading \'found\')',
+    '',
+    'test at tests/gsd-amauta.test.cjs:42:3',
+    '\u2716 validates agent prompt (1.234ms)',
+    '  AssertionError: expected true to be false',
+  ].join('\n');
+
+  const result = parseNpmFailures(fixture, '');
+  assert.ok(Array.isArray(result), 'Must return an array');
+  assert.ok(result.length >= 2, 'Must find at least 2 failures, got ' + result.length);
+
+  const core = result.find(e => e.test_file === 'core.test.cjs');
+  assert.ok(core, 'Must find core.test.cjs failure');
+  assert.strictEqual(core.test_name, 'searches archived milestones when not in current');
+  assert.ok(core.reason.includes('TypeError'), 'Reason must contain TypeError');
+
+  const amauta = result.find(e => e.test_file === 'gsd-amauta.test.cjs');
+  assert.ok(amauta, 'Must find gsd-amauta.test.cjs failure');
+  assert.strictEqual(amauta.test_name, 'validates agent prompt');
+});
+
+test('AUDIT-02: parseNpmFailures returns { test_file, test_name, reason } shape', () => {
+  const fixture = [
+    'test at tests/rlm-workflow-spec.test.cjs:10:1',
+    '\u2716 RLM workflow spec loads (2.5ms)',
+    '  Error: ENOENT: no such file or directory',
+  ].join('\n');
+
+  const result = parseNpmFailures(fixture, '');
+  assert.ok(result.length >= 1, 'Must find at least 1 failure');
+  const entry = result[0];
+  assert.ok('test_file' in entry, 'Entry must have test_file');
+  assert.ok('test_name' in entry, 'Entry must have test_name');
+  assert.ok('reason' in entry, 'Entry must have reason');
+  assert.strictEqual(typeof entry.test_file, 'string');
+  assert.strictEqual(typeof entry.test_name, 'string');
+  assert.strictEqual(typeof entry.reason, 'string');
+});
+
+test('AUDIT-02: parseNpmFailures handles empty output gracefully', () => {
+  const result = parseNpmFailures('', '');
+  assert.ok(Array.isArray(result), 'Must return an array');
+  assert.strictEqual(result.length, 0, 'Empty output must produce empty array');
+});
+
+test('AUDIT-02: parseNpmFailures legacy FAIL line fallback still works', () => {
+  const fixture = 'FAIL tests/old-style.test.cjs\nSome error output\n';
+  const result = parseNpmFailures(fixture, '');
+  assert.ok(result.length >= 1, 'Must find at least 1 legacy failure');
+  const entry = result.find(e => e.test_file === 'old-style.test.cjs');
+  assert.ok(entry, 'Must find old-style.test.cjs');
+  assert.strictEqual(entry.test_name, 'legacy_match');
+});
+
+test('AUDIT-02: classifyFailures handles structured objects for npm pre-existing', () => {
+  const observed = [
+    { test_file: 'rlm-workflow-spec.test.cjs', test_name: 'loads', reason: 'Error' },
+    { test_file: 'brand-new.test.cjs', test_name: 'breaks', reason: 'TypeError' },
+  ];
+  const classified = classifyFailures(observed, PRE_EXISTING_NPM_FAILURES, null);
+  assert.strictEqual(classified.preExistingObserved.length, 1, 'Must classify rlm as pre-existing');
+  assert.strictEqual(classified.preExistingObserved[0].test_file, 'rlm-workflow-spec.test.cjs');
+  assert.strictEqual(classified.newFailures.length, 1, 'Must classify brand-new as new');
+  assert.strictEqual(classified.newFailures[0].test_file, 'brand-new.test.cjs');
+});
