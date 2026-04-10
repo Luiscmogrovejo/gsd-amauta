@@ -106,7 +106,7 @@
 
 **Rollback plan:** Revert the single modified file and delete the new test file. The audit JSON schema change is additive (`tooling_bugs_observed: []` defaults to empty list) so downstream consumers that haven't learned the new field continue to work. Clean rollback.
 
-**Plans:** 2/2 plans complete (17-01: three-fix bundle in scripts/verify-v26.cjs DONE 2026-04-10; 17-02: regression tests in tests/17-audit-script-hardening.test.cjs DONE 2026-04-10). 8/8 tasks complete.
+**Plans:** 2/2 plans complete
 
 ---
 
@@ -205,7 +205,7 @@ Phase 19 (Dynamic Ledger Schema) ──> final v2.7 deliverable, closes schema-o
 | Phase | Plans Complete | Status | Completed |
 |---|---|---|---|
 | 16. Init Resolver Fix | 2/2 | Complete    | 2026-04-10 |
-| 17. Audit Script Hardening | 2/2 | Planned     | - |
+| 17. Audit Script Hardening | 2/2 | Complete    | 2026-04-10 |
 | 18. Sampling Pool Expansion | 0/? | Not started | - |
 | 19. Dynamic Ledger Schema | 0/? | Not started | - |
 

@@ -4,13 +4,13 @@ milestone: v2.7
 milestone_name: milestone
 status: completed
 stopped_at: Phase 15 SHIPPED, v2.6 milestone COMPLETE
-last_updated: "2026-04-10T23:25:00.000Z"
-last_activity: 2026-04-10 -- Plan 17-02 complete. 15 regression tests in tests/17-audit-script-hardening.test.cjs covering AUDIT-01 (5 tests), AUDIT-02 (5 tests), AUDIT-03 (5 tests). All 15 pass via node --test. 3 atomic commits (d24d0d2, 98450b3, b36aa82). SUMMARY.md created. Phase 17 COMPLETE. Next: execute Phase 18 (Sampling Pool Expansion).
+last_updated: "2026-04-10T23:11:16.397Z"
+last_activity: 2026-04-10 -- Plan 17-02 executed. 3 serial tasks (17-02-01 AUDIT-01 tests, 17-02-02 AUDIT-02 tests, 17-02-03 AUDIT-03 tests). 15/15 tests pass. 3 atomic commits (d24d0d2, 98450b3, b36aa82). SUMMARY.md, STATE.md, ROADMAP.md updated. Phase 18 is next.
 progress:
   total_phases: 4
-  completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
   percent: 50
 ---
 
@@ -257,6 +257,12 @@ Behavioral test suite (tests/13.1-divergence-protocol.integration.test.cjs, 15 i
 
 
 
+
+
+
+- [learning] 2026-04-10T23:08:30.642Z: legacy regression test: free text learning
+- [learning] 2026-04-10T23:05:54.768Z: legacy regression test: free text learning
+- [learning] 2026-04-10T23:04:12.052Z: verify-v26.cjs exports all test-target functions (parseNpmFailures, checkVerificationFiles, findPhaseDir, classifyFailures, TOOLING_BUGS_SEED, PRE_EXISTING_NPM_FAILURES) via module.exports -- live-repo filesystem tests are valid for checkVerificationFiles because real phase directories are the authoritative fixture; buildReport(deterministic, null, envCheck) is safe with behavioral=null due to explicit null guard at lines 529-547
 - [learning] 2026-04-10T22:57:21.406Z: verify-v26.cjs: tasks 17-01-01 and core of 17-01-02 (checkVerificationFiles dual-probe + parseNpmFailures structured objects) were pre-committed from a prior session — always read the target file before executing a plan task to detect prior-session pre-commits.
 - [learning] 2026-04-10T22:32:38.606Z: legacy regression test: free text learning
 - [learning] 2026-04-10T22:11:42.948Z: legacy regression test: free text learning

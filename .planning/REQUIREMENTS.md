@@ -25,8 +25,8 @@
 
 **Scope ceiling:** ~100 LOC across `get-shit-done/bin/lib/init.cjs` and `get-shit-done/bin/gsd-tools.cjs`. Do-not-expand. Any temptation to also fix items 3-7 "while in the resolver code" gets surfaced as a divergence observation, not absorbed.
 
-- [ ] **RESOLVE-01**: `gsd-tools init phase-op`, `gsd-tools init execute-phase`, `gsd-tools init plan-phase`, and `gsd-tools init verify-work` all perform milestone-scoped phase-directory resolution. For any given phase number `N`, the resolver must consult `.planning/ROADMAP.md` to identify the current active milestone and scope its directory search to that milestone's phase directories (e.g., `v2.2-phases/` during v2.6, `v2.7-phases/` during v2.7), NOT return the first `N-*` directory match across all historical `v*.*-phases/` folders. When a phase number matches multiple directories (one in current milestone, one or more in archived milestones), the current-milestone match always wins. When a phase number matches zero directories in the current milestone, the resolver returns `phase_found: false` instead of falling back to a historical match.
-- [ ] **RESOLVE-02**: `cmdInitExecutePhase(cwd, phase, raw)` gains a `--phase-dir <path>` parameter that bypasses the resolver entirely when present. When supplied, the resolver is not called and the provided path is used verbatim (after basic existence + shape validation). The same override is available on `cmdInitPlanPhase`, `cmdInitPhaseOp`, and `cmdInitVerifyWork` so all phase-aware init surfaces support the escape hatch. The override flag is documented in the help text of each subcommand. ~20 LOC per subcommand.
+- [x] **RESOLVE-01**: `gsd-tools init phase-op`, `gsd-tools init execute-phase`, `gsd-tools init plan-phase`, and `gsd-tools init verify-work` all perform milestone-scoped phase-directory resolution. For any given phase number `N`, the resolver must consult `.planning/ROADMAP.md` to identify the current active milestone and scope its directory search to that milestone's phase directories (e.g., `v2.2-phases/` during v2.6, `v2.7-phases/` during v2.7), NOT return the first `N-*` directory match across all historical `v*.*-phases/` folders. When a phase number matches multiple directories (one in current milestone, one or more in archived milestones), the current-milestone match always wins. When a phase number matches zero directories in the current milestone, the resolver returns `phase_found: false` instead of falling back to a historical match.
+- [x] **RESOLVE-02**: `cmdInitExecutePhase(cwd, phase, raw)` gains a `--phase-dir <path>` parameter that bypasses the resolver entirely when present. When supplied, the resolver is not called and the provided path is used verbatim (after basic existence + shape validation). The same override is available on `cmdInitPlanPhase`, `cmdInitPhaseOp`, and `cmdInitVerifyWork` so all phase-aware init surfaces support the escape hatch. The override flag is documented in the help text of each subcommand. ~20 LOC per subcommand.
 
 **Success (Phase 16):** After Phase 16 ships, running `gsd-tools init execute-phase 15` from a v2.7 context resolves to `phase_found: false` (because v2.7 doesn't have a Phase 15) instead of the v2.3 ghost directory. Running `gsd-tools init execute-phase 15 --phase-dir .planning/milestones/v2.2-phases/15-dogfood/` resolves to that exact directory without consulting the resolver. Tests cover the cross-milestone collision case, the override bypass, and the "no match in current milestone" case.
 
@@ -109,8 +109,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |---|---|---|
-| RESOLVE-01 | Phase 16 | Pending |
-| RESOLVE-02 | Phase 16 | Pending |
+| RESOLVE-01 | Phase 16 | Complete |
+| RESOLVE-02 | Phase 16 | Complete |
 | AUDIT-01 | Phase 17 | Pending |
 | AUDIT-02 | Phase 17 | Pending |
 | AUDIT-03 | Phase 17 | Pending |
