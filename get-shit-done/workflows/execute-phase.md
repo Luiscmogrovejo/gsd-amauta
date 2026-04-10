@@ -299,6 +299,38 @@ fi
 
 3. **Wait for all agents in wave to complete.**
 
+   #### Per-task manifest check (HARDEN-01)
+
+   The `manifest-check` subcommand from `get-shit-done/bin/gsd-tools.cjs` runs once per task and compares the git diff between the before/after shas against the task's declared `files_expected:` block.
+
+   For each task in the wave:
+
+   1. **Before dispatching the executor**, capture the baseline sha:
+      ```
+      GIT_SHA_BEFORE=$(git rev-parse HEAD)
+      ```
+   2. **After the executor returns**, capture the post sha:
+      ```
+      GIT_SHA_AFTER=$(git rev-parse HEAD)
+      ```
+   3. **For orchestrator-owned `.planning/` files declared in `files_expected:`**, the orchestrator (not the executor) runs `git add -f <path>` before commit. Executors are FORBIDDEN from using `git add -f`.
+   4. **Run the manifest check**:
+      ```
+      node get-shit-done/bin/gsd-tools.cjs manifest-check \
+        --phase <phase> --wave <wave> --task-id <task_id> \
+        --files-expected <path-to-task-manifest-yaml> \
+        --before "$GIT_SHA_BEFORE" --after "$GIT_SHA_AFTER"
+      ```
+   5. **Exit handling**:
+      - Exit 0 → task passed manifest check, proceed.
+      - Exit 1 with `orchestrator_action: "halt"` → HARD HALT the wave. Read the violation report and surface it. Do not continue to the next task.
+      - Exit 1 with `orchestrator_action: "halt_orchestrator_owned"` → HARD HALT always. This override ignores `GSD_MANIFEST_CHECK=warn`.
+      - `GSD_MANIFEST_CHECK=warn` → exit 0, but the violation report is still written with `orchestrator_action: "warn"`. Log the warning inline. This override is removed in v2.7.
+
+   #### Migration note
+
+   The `manifest-check` step is MANDATORY for phases 13.1 and later. Phases 9-13 are grandfathered; the orchestrator skips `manifest-check` if the PLAN.md lacks a `files_expected:` block. See `.planning/STATE.md` for the migration cutoff note.
+
 4. **Report completion — spot-check claims first:**
 
    For each SUMMARY.md:
