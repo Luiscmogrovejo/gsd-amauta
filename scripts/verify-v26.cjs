@@ -99,14 +99,20 @@ function checkVerificationFiles() {
       perPhase[phase] = { dir: null, verification_md: false, note: 'phase_directory_not_found' };
       continue;
     }
-    const vpath = path.join(dir, 'VERIFICATION.md');
-    const exists = fs.existsSync(vpath);
+    // Probe prefixed form first (e.g., "14-VERIFICATION.md"), then unprefixed fallback
+    const prefixedPath = path.join(dir, phase + '-VERIFICATION.md');
+    const unprefixedPath = path.join(dir, 'VERIFICATION.md');
+    const prefixedExists = fs.existsSync(prefixedPath);
+    const unprefixedExists = fs.existsSync(unprefixedPath);
+    const found = prefixedExists || unprefixedExists;
+    const resolvedPath = prefixedExists ? prefixedPath : (unprefixedExists ? unprefixedPath : null);
     perPhase[phase] = {
       dir,
-      verification_md: exists,
-      path: vpath,
+      verification_md: found,
+      path: resolvedPath,
+      form: prefixedExists ? 'prefixed' : (unprefixedExists ? 'unprefixed' : 'none'),
     };
-    if (exists) present += 1;
+    if (found) present += 1;
   }
   return {
     total: AUDITED_PHASES.length,
