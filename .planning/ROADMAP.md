@@ -267,7 +267,7 @@
 **Rollback Plan:** Set `GSD_R_CREATIVE=off`. `--creative` flag in `gsd-research.cjs` stays but dormant. `gsd-researcher.md` `<creative_protocol>` block reverts via single commit. `creative-research.md` reference stays on disk as inert documentation.
 
 **Plans:**
-- [x] 13-01: Creative research foundation -- creative-research.md reference + Jaccard JS + variant generation + gating logic + dedup + module.exports guard (CREATIVE-01, CREATIVE-02, CREATIVE-03) -- wave 1 -- DONE 2026-04-10
+3/3 plans complete
 - [x] 13-02: Creative cascade wiring + agent updates -- cmdSearch creative loop + providerPerplexity._creative + creative log + JSON/human output + gsd-researcher.md creative_protocol + gsd-operator.md execution_type + execute-phase.md flags (CREATIVE-02, CREATIVE-03, CREATIVE-04, CREATIVE-05) -- wave 2, depends on 13-01 -- DONE 2026-04-10
 - [x] 13-03: Tests (30 CJS) + STATE.md baseline update (CREATIVE-01..05 coverage) -- wave 3, depends on 13-01 + 13-02 -- DONE 2026-04-10
 
@@ -399,8 +399,7 @@ Phase 11 (E-Phase Research-Informed Execution Mandate)
 | D-Phase Structured Learning | 7 | 10 | LEARN-01..07 |
 | E-Phase Research-Informed Execution | 8 | 11 | EXEC-01..08 |
 | T-Phase QA + Spec Inheritance | 8 | 12 | QA-01..08 |
-| R-Phase Creative Research (Narrowed) | 5 | 13 | CREATIVE-01..05 |
-| P-Phase Task-Management Integration | 7 | 14 | PLAN-01..07 |
+| R-Phase Creative Research (Narrowed) | 5 | 13 | CREATIVE-01..05 | Complete    | 2026-04-10 | 7 | 14 | PLAN-01..07 |
 | Dogfood Verification | 5 | 15 | DOGFOOD-01..05 |
 | **Total** | **46** | **7 phases** | — |
 

@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: milestone
-status: in-progress
-stopped_at: Phase 13 context gathered
-last_updated: "2026-04-10T00:00:00.000Z"
-last_activity: "2026-04-09 -- Phase 13 context: 16 decisions for R-Phase Creative Research (query variants, task-type gating, JS Jaccard, token monitoring)"
+status: verifying
+stopped_at: Phase 12 context gathered
+last_updated: "2026-04-10T04:31:58.983Z"
+last_activity: "2026-04-10 -- Plan 13-03: 30 unit tests + test baseline (CREATIVE-01..05 test coverage)"
 progress:
   total_phases: 7
   completed_phases: 1
@@ -193,6 +193,8 @@ Pre-existing failures: npm 4 (rlm-workflow-spec.test.cjs, agent-frontmatter.test
 
 
 
+
+- [learning] 2026-04-10T04:26:03.843Z: Phase 13 creative research: when adding module.exports to a CLI script for CJS test imports, use require.main !== module guard with else { main() } pattern -- not just a guard block -- so CLI still executes when run directly. Also: npm_fail counts must be verified by running the full suite before stash/after, not assumed from prior baseline.
 - [learning] 2026-04-10T04:21:49.640Z: E2E test learning — cleanup after test
 - [learning] 2026-04-10T04:21:33.738Z: legacy with agent
 - [learning] 2026-04-10T04:21:33.593Z: legacy regression test: free text learning
