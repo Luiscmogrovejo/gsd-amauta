@@ -415,12 +415,37 @@ function generateSlugInternal(text) {
 }
 
 function getMilestoneInfo(cwd) {
+  // Primary source: config.json current_milestone
+  try {
+    const configPath = path.join(cwd, '.planning', 'config.json');
+    const configRaw = fs.readFileSync(configPath, 'utf-8');
+    const config = JSON.parse(configRaw);
+    if (config.current_milestone) {
+      // Extract name from ROADMAP.md header for display purposes
+      let name = 'milestone';
+      try {
+        const roadmap = fs.readFileSync(path.join(cwd, '.planning', 'ROADMAP.md'), 'utf-8');
+        const cleaned = roadmap.replace(/<details>[\s\S]*?<\/details>/gi, '');
+        // Match milestone name from roadmap title or heading
+        const versionStr = config.current_milestone.replace('v', '');
+        const nameMatch = cleaned.match(new RegExp('v' + versionStr.replace('.', '\\.') + '[:\\s]+"?([^"\\n(]+)', 'i'))
+          || cleaned.match(new RegExp('"([^"]+)"', 'i'));
+        if (nameMatch) name = nameMatch[1].trim();
+      } catch {}
+      return {
+        version: config.current_milestone,
+        name: name,
+      };
+    }
+  } catch {}
+
+  // Fallback: parse ROADMAP.md (backward compatibility for projects without current_milestone)
   try {
     const roadmap = fs.readFileSync(path.join(cwd, '.planning', 'ROADMAP.md'), 'utf-8');
 
     // First: check for list-format roadmaps using 🚧 (in-progress) marker
     // e.g. "- 🚧 **v2.1 Belgium** — Phases 24-28 (in progress)"
-    const inProgressMatch = roadmap.match(/🚧\s*\*\*v(\d+\.\d+)\s+([^*]+)\*\*/);
+    const inProgressMatch = roadmap.match(/\u{1F6A7}\s*\*\*v(\d+\.\d+)\s+([^*]+)\*\*/u);
     if (inProgressMatch) {
       return {
         version: 'v' + inProgressMatch[1],
