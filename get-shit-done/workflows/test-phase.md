@@ -146,6 +146,18 @@ if [ -n "$TASK_ID" ]; then
     TASK_INFO=$($AMAUTA_CLI show "$TASK_ID" --json 2>/dev/null || echo "")
   fi
 fi
+
+# Pull inherited spec criteria for T-phase evidence (Phase 12 QA-02)
+if [ -n "$TASK_ID" ] && [ "$AMAUTA_OK" = "1" ]; then
+  INHERITED_SPEC=$($CLI show "$TASK_ID" --json 2>/dev/null | python3 -c "
+import sys,json
+try:
+  d=json.load(sys.stdin)
+  isc=d.get('inherited_success_criteria','none')
+  print(json.dumps(isc) if isinstance(isc,dict) else str(isc))
+except: print('none')
+" 2>/dev/null || echo "none")
+fi
 ```
 
 **Report scope to user:**
@@ -190,6 +202,41 @@ T-phase content should include:
 ```
 </step>
 
+<step name="regression_sweep">
+Compare test results against known-good baseline from STATE.md.
+
+Parse the baseline from STATE.md (look for "## Test Baseline" section or "~NNNN total" pattern):
+
+bash:
+```bash
+# Parse test baseline from STATE.md (Phase 12 QA-06)
+BASELINE_LINE=$(grep -A2 "Test Baseline" .planning/STATE.md 2>/dev/null | grep -oE '[0-9]+ pass' | head -1 || echo "")
+if [ -z "$BASELINE_LINE" ]; then
+  BASELINE_LINE=$(grep -oE '~[0-9]+ total' .planning/STATE.md 2>/dev/null | head -1 || echo "unknown")
+fi
+
+# Parse current counts from TEST_OUTPUT
+CURRENT_PASS=$(echo "$TEST_OUTPUT" | grep -oE '[0-9]+ pass(ing|ed)?' | grep -oE '[0-9]+' | tail -1 || echo "?")
+CURRENT_FAIL=$(echo "$TEST_OUTPUT" | grep -oE '[0-9]+ fail(ing|ed|ure)?' | grep -oE '[0-9]+' | tail -1 || echo "0")
+
+# Build REGRESSION block (<=100 chars)
+if [ "$CURRENT_FAIL" = "0" ] || [ "$CURRENT_FAIL" = "" ]; then
+  REGRESSION_STATUS="none"
+else
+  REGRESSION_STATUS="CHECK FAILURES"
+fi
+REGRESSION_BLOCK="REGRESSION: after: ${CURRENT_PASS} pass / ${CURRENT_FAIL} fail. Baseline: ${BASELINE_LINE}. Regression: ${REGRESSION_STATUS}."
+```
+
+Report to user:
+```
+## Regression Sweep
+**Baseline:** ${BASELINE_LINE}
+**Current:** ${CURRENT_PASS} pass / ${CURRENT_FAIL} fail
+**Regression:** ${REGRESSION_STATUS}
+```
+</step>
+
 <step name="log_to_rpetd">
 **Log results to RPETD T-phase on the target task.**
 
@@ -206,6 +253,20 @@ Exit code: ${TEST_EXIT_CODE}
 ${TEST_OUTPUT_TRUNCATED}
 
 Result: ${PASS_COUNT} passing, ${FAIL_COUNT} failing"
+
+  # Append regression sweep result (Phase 12 QA-06)
+  if [ -n "$REGRESSION_BLOCK" ]; then
+    T_CONTENT="${T_CONTENT}
+
+${REGRESSION_BLOCK}"
+  fi
+
+  # Append inherited spec if available (Phase 12 QA-02)
+  if [ -n "$INHERITED_SPEC" ] && [ "$INHERITED_SPEC" != "none" ]; then
+    T_CONTENT="${T_CONTENT}
+
+INHERITED_CRITERIA: ${INHERITED_SPEC}"
+  fi
 
   # Log to RPETD T-phase
   $AMAUTA_CLI rpetd "$TASK_ID" --phase T --content "$T_CONTENT"
