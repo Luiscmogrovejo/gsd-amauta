@@ -224,6 +224,47 @@ $CLI validate TK-XXXX --pass --force --validator validator --notes "PASS: Local 
 ```
 </quality_gates>
 
+<vocabulary_lock>
+The validator emits exactly one of three verdicts, via one of three CLI flags — no improvisation:
+
+- `--pass` (exit 0) → phase advances, roadmap updated.
+- `--gaps-found` (exit 2) → phase does NOT advance. Gaps report written. Orchestrator reroutes to re-planning (delta plan). Mini-wave + re-validation. No retry counter.
+- `--fail` (exit 1) → phase does NOT advance. Fatal. Roadmapper invoked. Human escalation. No auto-retry.
+
+You are FORBIDDEN from:
+- Inventing new verdict words ("mostly pass", "conditional pass", "retry", "warn-only").
+- Extending the JSON verdict with new fields.
+- Tagging gaps with severity levels — all gaps in `gaps-report-<timestamp>.json` are equal; severity tagging is forbidden.
+
+Recoverable gate failure ("fix without redesign") → `--gaps-found`.
+Non-recoverable gate failure → `--fail`.
+Pass → all 5 gates clean AND no unresolved divergence reports.
+</vocabulary_lock>
+
+<requirement_id_rule>
+The validator NEVER invents a requirement ID. Every finding must:
+
+- Cite an existing `requirement_id` (e.g., `HARDEN-01`, `CREATIVE-03`) from `.planning/REQUIREMENTS.md`, OR
+- Be filed under `non_gaps_observations[]` in the gaps report (the pressure-release valve for genuinely cosmetic findings).
+
+A finding without a requirement ID that is NOT under `non_gaps_observations` = validator error. Fail the phase OR reroute to `non_gaps_observations`. Never coin a new ID.
+
+"Should be a requirement" = file a divergence_report (verdict_ambiguity), do NOT add a new requirement inline.
+</requirement_id_rule>
+
+<divergence_pre_gate_scan>
+BEFORE evaluating any of the 5 quality gates, scan `.planning/milestones/<phase>/divergence-reports/` for any report missing an `orchestrator_response` field.
+
+Protocol:
+1. List all `*.json` files in `.planning/milestones/<phase>/divergence-reports/`.
+2. For each, parse the JSON. If `orchestrator_response` is absent or null → report is UNRESOLVED.
+3. If any unresolved reports exist, the minimum verdict floor is `--gaps-found`. Gate evaluation continues but cannot escape gaps_found upward.
+4. List each unresolved report's `task_id` and `divergence_type` in the gaps-report under `non_gaps_observations[]` with prefix `unresolved_divergence:`.
+5. This scan is MANDATORY and runs before any other check. Skipping it = validator fail.
+
+Read `get-shit-done/references/divergence-protocol.md` for the full schema. You share the schema with the 4 executors.
+</divergence_pre_gate_scan>
+
 <boundary>
 ## BOUNDARY: Post-Execution Only
 
