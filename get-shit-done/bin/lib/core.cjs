@@ -277,37 +277,35 @@ function searchPhaseInDir(baseDir, relBase, normalized) {
 function findPhaseInternal(cwd, phase) {
   if (!phase) return null;
 
-  const phasesDir = path.join(cwd, '.planning', 'phases');
   const normalized = normalizePhaseName(phase);
 
-  // Search current phases first
+  // 1. Read current_milestone from config.json (single source of truth)
+  let currentMilestone = null;
+  try {
+    const configPath = path.join(cwd, '.planning', 'config.json');
+    const configRaw = fs.readFileSync(configPath, 'utf-8');
+    const config = JSON.parse(configRaw);
+    currentMilestone = config.current_milestone || null;
+  } catch {}
+
+  // 2. If current_milestone is set, search ONLY that milestone's phase dir
+  if (currentMilestone) {
+    const milestonePhasesDir = path.join(cwd, '.planning', 'milestones', currentMilestone + '-phases');
+    const relBase = '.planning/milestones/' + currentMilestone + '-phases';
+    if (fs.existsSync(milestonePhasesDir)) {
+      const result = searchPhaseInDir(milestonePhasesDir, relBase, normalized);
+      if (result) return result;
+    }
+  }
+
+  // 3. Also search .planning/phases/ (non-archived phases from current milestone)
+  const phasesDir = path.join(cwd, '.planning', 'phases');
   const current = searchPhaseInDir(phasesDir, '.planning/phases', normalized);
   if (current) return current;
 
-  // Search archived milestone phases (newest first)
-  const milestonesDir = path.join(cwd, '.planning', 'milestones');
-  if (!fs.existsSync(milestonesDir)) return null;
-
-  try {
-    const milestoneEntries = fs.readdirSync(milestonesDir, { withFileTypes: true });
-    const archiveDirs = milestoneEntries
-      .filter(e => e.isDirectory() && /^v[\d.]+-phases$/.test(e.name))
-      .map(e => e.name)
-      .sort()
-      .reverse();
-
-    for (const archiveName of archiveDirs) {
-      const version = archiveName.match(/^(v[\d.]+)-phases$/)[1];
-      const archivePath = path.join(milestonesDir, archiveName);
-      const relBase = '.planning/milestones/' + archiveName;
-      const result = searchPhaseInDir(archivePath, relBase, normalized);
-      if (result) {
-        result.archived = version;
-        return result;
-      }
-    }
-  } catch {}
-
+  // 4. No match in current milestone = phase_found: false
+  //    Do NOT fall back to archived milestones.
+  //    This is the fix for depths 7, 8, and 10.
   return null;
 }
 
