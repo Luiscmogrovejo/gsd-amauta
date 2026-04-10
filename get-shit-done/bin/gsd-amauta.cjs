@@ -455,6 +455,8 @@ async function cmdAdd(useDaemon, argv, jsonMode) {
   if (flags.importance) args.push('--importance', flags.importance);
   if (flags.urgency) args.push('--urgency', flags.urgency);
   if (flags.tags) args.push('--tags', flags.tags);
+  if (flags.source) args.push('--source', flags.source);
+  if (flags['from-plan']) args.push('--from-plan', flags['from-plan']);
   const result = runDirect(args);
   printResponse(result, jsonMode);
   return result.exit_code;
