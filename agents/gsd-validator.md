@@ -189,6 +189,34 @@ $CLI note TK-XXXX --text "[ADVISORY] E-phase PRE_EXECUTION_EVIDENCE block absent
 $CLI note TK-XXXX --text "[ADVISORY] Security checklist has cargo-cult responses -- items need specific action descriptions" --agent validator
 ```
 
+### Spec Inheritance + QA Advisory (Phase 12 -- not a numbered gate)
+
+After gates pass, check validation output for `[ADVISORY] SPEC_INHERITANCE`. This advisory is informational in v2.6 -- it does NOT block validation.
+
+**When you see the advisory:**
+```bash
+# Log advisory to task notes (visible in amauta show)
+$CLI note TK-XXXX --text "[ADVISORY] T-phase QA blocks incomplete -- checker may have skipped edge cases or regression sweep" --agent validator
+```
+
+**QA blocks checked (structural presence only, NOT quality):**
+- `EDGE_CASES:` -- 2+ edge cases per criterion (code tasks)
+- `REGRESSION:` -- one-line baseline comparison (code tasks)
+- `ADVERSARIAL:` -- security checks (only when `security_sensitive: true` metadata set)
+- `QA_REPORT:` -- one-line summary (code tasks)
+
+**RED-GREEN for bug tasks (BG-XXXX):**
+If advisory reports RED-GREEN order violation, note it:
+```bash
+$CLI note TK-XXXX --text "[ADVISORY] RED-GREEN: bug task missing RED commit before GREEN -- see qa-checklist.md Section 6" --agent validator
+```
+
+**When advisory does NOT fire:** No action needed. QA blocks are structurally present.
+
+**Kill switch:** `GSD_T_SPEC_INHERIT=false` disables the advisory entirely.
+
+**Non-code tasks:** Advisory does not fire for non-code task types.
+
 ### Override
 Use `--force` to override gates for legitimate exceptions (local-only tasks, scaffolding, etc.):
 ```bash
