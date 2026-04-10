@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: milestone
 status: in-progress
-stopped_at: Plan 12-01 complete -- _inherit_parent_spec() + --no-inherit + inherited_success_criteria JSON field
-last_updated: "2026-04-09T00:30:00.000Z"
-last_activity: "2026-04-09 -- Plan 12-01: _inherit_parent_spec() Python helper + --no-inherit CLI flag (QA-01, QA-02)"
+stopped_at: Plan 12-02 complete -- qa-checklist.md + gsd-checker.md runtime Read + security_patterns + QA_REPORT operator parser
+last_updated: "2026-04-09T01:00:00.000Z"
+last_activity: "2026-04-09 -- Plan 12-02: qa-checklist.md reference + gsd-checker update + agent-capabilities security_patterns + gsd-operator QA_REPORT parser (QA-03, QA-04, QA-05)"
 progress:
   total_phases: 7
   completed_phases: 1
@@ -26,9 +26,10 @@ See: .planning/PROJECT.md (updated 2026-04-09)
 ## Current Position
 
 Phase: 12 -- T-Phase QA Department + Spec Inheritance (IN PROGRESS)
+Plan: 12-02 DONE (qa-checklist.md reference file with 7 sections + gsd-checker.md runtime Read pattern + Pre-T Context Retrieval + T-Phase Structured Blocks + agent-capabilities.json security_patterns 9 globs + gsd-operator.md qa_report_phase_end parser. 4 commits. QA-03, QA-04, QA-05 addressed.)
 Plan: 12-01 DONE (_inherit_parent_spec() 57 lines + claim-time caching to metadata.inherited_spec + SC-01..SC-N IDs + cap@10 + kill switch + inherited_success_criteria in show --json + --no-inherit flag end-to-end. 3 commits. QA-01, QA-02 addressed.)
 Previous: Phase 11 COMPLETE (all 2 plans, EXEC-01..08 satisfied, verified).
-Status: Phase 12 plan 12-01 complete. Awaiting plans 12-02..N and phase verification.
+Status: Phase 12 plans 12-01 and 12-02 complete. Awaiting plans 12-03..N and phase verification.
 Last activity: 2026-04-09 -- Plan 12-01: _inherit_parent_spec() Python helper + --no-inherit CLI flag (QA-01, QA-02)
 
 Progress: [###.......] 29%
@@ -91,6 +92,9 @@ v2.5 codebase docs in .planning/codebase/ (2,337 lines). v2.6 research in .plann
 - **_inherit_parent_spec on-demand fallback** (Plan 12-01): If `metadata.inherited_spec` is missing at show time (task not yet claimed), `cmd_show` calls `_inherit_parent_spec()` on demand. Claim-time caching is the primary path but show-time resolution is the safe fallback.
 - **noInherit global flag extraction in CJS** (Plan 12-01): `--no-inherit` extracted from `rawArgs` in `main()` alongside `--json`, stripped before subcommand dispatch. Same pattern as `--json` extraction. Passed as 4th parameter to `cmdShow(useDaemon, id, jsonMode, noInherit)`.
 - **SC-ID assignment is position-based** (Plan 12-01): `f"SC-{i:02d}: {c}"` with `enumerate(capped, 1)`. Position-based IDs are grep-friendly and accept rare reorder edge case; `resync-criteria` (future) regenerates if parent criteria change.
+- **qa-checklist.md as runtime Read reference** (Plan 12-02): gsd-checker.md absorbs inline 6-step checklist into runtime Read of qa-checklist.md, same pattern as cli-variables.md and pre-execution-checklist.md. Inline checklists in agent prompts are replaced by Read instructions when they grow beyond 6 items or require structured block format examples.
+- **security_patterns before "agents" in agent-capabilities.json** (Plan 12-02): Top-level key placed before the agents array for readability. Operator matches patterns via `fnmatch.fnmatch()` against task doc_refs at claim time and sets `metadata.security_sensitive=true` to trigger adversarial testing gate in checker.
+- **QA_REPORT has dedicated operator parser, not generic block scanner** (Plan 12-02): gsd-operator.md has specific parsers for LEARNING (d_phase_structured_learning), APPLIED_LEARNING (applied_learning_citation_scan), and now QA_REPORT (qa_report_phase_end). Operator does NOT have a catch-all block scanner -- each block type gets its own section with its own dispatch logic.
 - **Migration 008 idempotency pattern** (Plan 10-02): BEGIN/COMMIT wrapper + `ADD COLUMN IF NOT EXISTS` + `CREATE INDEX IF NOT EXISTS` + COMMENT ON COLUMN. Partial index (`WHERE applied_count > 0`) minimizes maintenance cost because new learnings start at 0 — only cited entries get indexed. Re-run produces NOTICE skip messages but no error, safe for `init-db.sh` loops.
 - **FOR UPDATE row lock on metadata jsonb read-modify-write** (Plan 10-04): When concurrent mutations to a jsonb field need dedup that can't be expressed as a UNIQUE constraint (e.g., dedup key lives inside a nested array), SELECT ... FOR UPDATE inside a transaction is the least-invasive serialization mechanism. Advisory locks require namespacing; separate tables require a migration + join. FOR UPDATE scopes the lock to the exact row for the exact transaction duration.
 - **Idempotent HTTP mutations return 200, not 409** (Plan 10-04): Repeat citation endpoints (`/api/memory/:id/increment-applied`) return 200 + `{action: False, already_done: True}` on dedup hit. 409 would force callers to treat conflict-as-success, which is fragile. 200-with-flag lets callers treat idempotence as the expected case — the operator's APPLIED_LEARNING scanner runs on every D-phase and will re-hit the same keys legitimately.
@@ -151,6 +155,8 @@ Archive: `.planning/MILESTONES.md` + legacy v2.5 ROADMAP sections.
 
 
 
+
+- [learning] 2026-04-10T02:52:56.868Z: Phase 12 _inherit_parent_spec pattern: parent-chain walk stops at first non-empty success_criteria (first-wins semantics); cmd_show uses shallow dict copy (dict(item)) to inject inherited_success_criteria without mutating stored item; CJS --no-inherit extracted as global flag in main() alongside --json using same rawArgs.indexOf+splice pattern
 - [learning] 2026-04-10T01:44:59.926Z: legacy regression test: free text learning
 - [learning] 2026-04-10T01:40:12.323Z: Phase 11 execution: rate limiting causes agent stalls during long-running phases — commit partial work and respawn with explicit partial state context is the reliable recovery pattern. Also: require.main guard needed when adding module.exports to CLI scripts for test imports.
 - [learning] 2026-04-10T01:31:45.096Z: legacy with agent
