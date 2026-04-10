@@ -34,7 +34,7 @@
 
 ## Phases
 
-- [ ] **Phase 16: Init Resolver Fix** — milestone-scoped resolver + `--phase-dir` override so cross-milestone phase-number collisions stop returning ghost directories (RESOLVE-01..02)
+- [x] **Phase 16: Init Resolver Fix** — milestone-scoped resolver + `--phase-dir` override so cross-milestone phase-number collisions stop returning ghost directories (RESOLVE-01..02) — COMPLETE 2026-04-10
 - [ ] **Phase 17: Audit Script Hardening** — `verify-v26.cjs` prefix-form probe, npm failure parser, and `tooling_bugs_observed` schema category so the audit script stops producing silent false negatives (AUDIT-01..03)
 - [ ] **Phase 18: Sampling Pool Expansion** — `sampleCompletedTasks()` queries the amauta daemon's RPETD logs instead of scraping SUMMARY text so DOGFOOD-01 stops collapsing to n=1 (SAMPLE-01)
 - [ ] **Phase 19: Dynamic Ledger Schema** — runtime filesystem scan of memory directory populates `dogfood_ledger_depths_captured` so depths discovered during execution stop getting orphaned from the audit JSON (SCHEMA-01)
@@ -204,7 +204,7 @@ Phase 19 (Dynamic Ledger Schema) ──> final v2.7 deliverable, closes schema-o
 
 | Phase | Plans Complete | Status | Completed |
 |---|---|---|---|
-| 16. Init Resolver Fix | 1/2 | In progress | - |
+| 16. Init Resolver Fix | 2/2 | Complete | 2026-04-10 |
 | 17. Audit Script Hardening | 0/? | Not started | - |
 | 18. Sampling Pool Expansion | 0/? | Not started | - |
 | 19. Dynamic Ledger Schema | 0/? | Not started | - |

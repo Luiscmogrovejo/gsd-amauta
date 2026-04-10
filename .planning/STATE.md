@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.7
 milestone_name: Steady Hands
-status: plan_executing
-stopped_at: Phase 16 Plan 01 complete. findPhaseInternal now milestone-scoped (reads config.json::current_milestone, no archived-milestone fallback). getMilestoneInfo updated to use config.json as primary source. All 5 plan VC pass. RESOLVE-01 done. Next step: plan 16-02 (RESOLVE-02 --phase-dir override flag).
-last_updated: "2026-04-10T00:25:00.000Z"
-last_activity: "2026-04-10 -- Phase 16 Plan 01 (Milestone-Scoped Resolver + Config Identity) executed. Task 16-01-01 pre-committed (d3f781e); tasks 16-01-02 (a3dd52e) and 16-01-03 (be36977) committed this session. findPhaseInternal no longer falls back to archived milestones — ghost directory bug that fired at depths 7, 8, and 10 is eliminated. Phase 15 now returns null; Phase 16 resolves to .planning/milestones/v2.7-phases/16-init-resolver-fix."
+status: phase_complete
+stopped_at: Phase 16 complete. Plan 16-01 (RESOLVE-01, milestone-scoped resolver) and Plan 16-02 (RESOLVE-02, --phase-dir override) both shipped. All four phase-aware init subcommands accept --phase-dir bypass; validatePhaseDirOverride() validates path existence, directory type, and empty-dir with sibling suggestion. Cross-milestone override verified. Next step: plan-phase 17 (Audit Script Hardening).
+last_updated: "2026-04-10T00:45:00.000Z"
+last_activity: "2026-04-10 -- Phase 16 Plan 02 (--phase-dir Override Flag) executed. Task 16-02-01 pre-committed (019d767); task 16-02-02 committed this session (e2c37d7). validatePhaseDirOverride() added to init.cjs with full hard-error validation; all four cmdInit*Phase functions updated with ternary bypass; exported for testability. All three plan VCs pass including cross-milestone v2.3 path override. Phase 16 RESOLVE-01+02 complete."
 progress:
   total_phases: 4
-  completed_phases: 0
-  total_plans: 1
-  completed_plans: 1
-  percent: 10
+  completed_phases: 1
+  total_plans: 2
+  completed_plans: 2
+  percent: 25
 ---
 
 # GSD-Amauta -- Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-11 for v2.7)
 
 ## Current Position
 
-Phase: Not started (ROADMAP.md defined, awaiting plan-phase 16)
-Plan: —
-Status: v2.7 "Steady Hands" ROADMAP.md written. 4 phases (16-19), 7 requirements, 100% coverage, goal-backward success criteria derived per phase. v2.6 ROADMAP.md archived to milestones/v2.6-ROADMAP.md. Next step: /amauta:plan-phase 16.
-Last activity: 2026-04-11 -- gsd-roadmapper wrote .planning/ROADMAP.md for v2.7. Phase 16 = RESOLVE (Cluster A), Phase 17 = AUDIT (Cluster B), Phase 18 = SAMPLE (Cluster D), Phase 19 = SCHEMA (Cluster C). Total scope ~250 LOC. Ship order locked: 16 → 17 → 18 → 19 (strictly sequential due to verify-v26.cjs shared file).
+Phase: 16 complete, Phase 17 next
+Plan: 16-02 complete (all plans in Phase 16 done)
+Status: Phase 16 (Init Resolver Fix) complete — RESOLVE-01 (milestone-scoped resolver) + RESOLVE-02 (--phase-dir override) both shipped. 2 plans, 4 tasks, commits d3f781e/a3dd52e/be36977/019d767/e2c37d7. Next step: /amauta:plan-phase 17 (Audit Script Hardening).
+Last activity: 2026-04-10 -- Phase 16 plan 16-02 executed. validatePhaseDirOverride() + ternary bypass in all four phase-aware init subcommands. Ghost directory bug structurally eliminated. Cross-milestone --phase-dir override verified.
 
-Progress: [··········] 0% (v2.7 roadmap defined, phase planning pending)
+Progress: [##········] 25% (Phase 16 done, Phases 17-19 pending)
 
 ## v2.7 Phase Map (locked per ROADMAP.md)
 
@@ -250,6 +250,8 @@ Behavioral test suite (tests/13.1-divergence-protocol.integration.test.cjs, 15 i
 
 
 
+
+- [learning] 2026-04-10T21:37:11.566Z: findPhaseInternal ghost-directory fix: read current_milestone from config.json and scope directory walk to that milestone's v*-phases/ only — null on miss, no archived-milestone fallback. getMilestoneInfo uses same config.json field as primary version source.
 - [learning] 2026-04-10T18:37:27.412Z: Ledger transcription (Phase 15 Wave 3): when plan text and wave framing disagree on scope (plan said 7 entries, framing said 9 because depths 8+9 emerged after plan was authored), surface the mismatch in SUMMARY.md Plan vs Reality rather than silently choosing one interpretation. Faithful transcription means preserving each memory entrys distinct rationalization verbatim including length; paraphrasing for brevity is the Phase 13 fingerprint at Wave 3 recursion. Depth-3 placeholder should explicitly name both honest interpretations (depth does not exist in practice vs depth is silently caught but never formalized) rather than fabricating a story to close the gap.
 - [learning] 2026-04-10T18:20:06.394Z: Phase 15 Wave 2 dogfood depth-8: executor ran audit ONCE as-is, resisted 4 distinct fix temptations (VERIFICATION.md prefix probe, npm failure regex upgrade, adding tooling_bugs_observed schema category, hand-editing JSON to inject missing pre-locked findings). Surfaced all 4 as divergences in SUMMARY.md instead. The temptation pattern is 'the report says X and reality is Y therefore X is a reporter bug I should fix' — correct response is 'the delta is a finding, document it.' Phase 15 passes on audit completeness not cleanliness.
 - [learning] 2026-04-10T18:08:06.460Z: legacy regression test: free text learning
