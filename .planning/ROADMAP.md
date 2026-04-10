@@ -35,7 +35,7 @@
 ## Phases
 
 - [x] **Phase 16: Init Resolver Fix** — milestone-scoped resolver + `--phase-dir` override so cross-milestone phase-number collisions stop returning ghost directories (RESOLVE-01..02) — COMPLETE 2026-04-10
-- [ ] **Phase 17: Audit Script Hardening** — `verify-v26.cjs` prefix-form probe, npm failure parser, and `tooling_bugs_observed` schema category so the audit script stops producing silent false negatives (AUDIT-01..03)
+- [x] **Phase 17: Audit Script Hardening** — `verify-v26.cjs` prefix-form probe, npm failure parser, and `tooling_bugs_observed` schema category so the audit script stops producing silent false negatives (AUDIT-01..03) — COMPLETE 2026-04-10
 - [ ] **Phase 18: Sampling Pool Expansion** — `sampleCompletedTasks()` queries the amauta daemon's RPETD logs instead of scraping SUMMARY text so DOGFOOD-01 stops collapsing to n=1 (SAMPLE-01)
 - [ ] **Phase 19: Dynamic Ledger Schema** — runtime filesystem scan of memory directory populates `dogfood_ledger_depths_captured` so depths discovered during execution stop getting orphaned from the audit JSON (SCHEMA-01)
 
@@ -106,7 +106,7 @@
 
 **Rollback plan:** Revert the single modified file and delete the new test file. The audit JSON schema change is additive (`tooling_bugs_observed: []` defaults to empty list) so downstream consumers that haven't learned the new field continue to work. Clean rollback.
 
-**Plans:** 1/2 plans complete (17-01: three-fix bundle in scripts/verify-v26.cjs DONE 2026-04-10; 17-02: regression tests in tests/17-audit-script-hardening.test.cjs pending). 5/8 tasks complete.
+**Plans:** 2/2 plans complete (17-01: three-fix bundle in scripts/verify-v26.cjs DONE 2026-04-10; 17-02: regression tests in tests/17-audit-script-hardening.test.cjs DONE 2026-04-10). 8/8 tasks complete.
 
 ---
 

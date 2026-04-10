@@ -4,14 +4,14 @@ milestone: v2.7
 milestone_name: milestone
 status: completed
 stopped_at: Phase 15 SHIPPED, v2.6 milestone COMPLETE
-last_updated: "2026-04-10T23:05:00.000Z"
-last_activity: 2026-04-10 -- Plan 17-01 complete. Three-fix bundle applied to scripts/verify-v26.cjs (AUDIT-01 prefix probe, AUDIT-02 structured npm failures, AUDIT-03 tooling_bugs_observed + schema_version: 2). All 5 tasks executed, 4 atomic commits (9400044, 2840428, 6403481, 4e731b8 plus prior-session 6be5cf6). SUMMARY.md created. Next step: execute Plan 17-02 regression tests.
+last_updated: "2026-04-10T23:25:00.000Z"
+last_activity: 2026-04-10 -- Plan 17-02 complete. 15 regression tests in tests/17-audit-script-hardening.test.cjs covering AUDIT-01 (5 tests), AUDIT-02 (5 tests), AUDIT-03 (5 tests). All 15 pass via node --test. 3 atomic commits (d24d0d2, 98450b3, b36aa82). SUMMARY.md created. Phase 17 COMPLETE. Next: execute Phase 18 (Sampling Pool Expansion).
 progress:
   total_phases: 4
-  completed_phases: 0
-  total_plans: 2
-  completed_plans: 1
-  percent: 37
+  completed_phases: 2
+  total_plans: 4
+  completed_plans: 4
+  percent: 50
 ---
 
 # GSD-Amauta -- Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-11 for v2.7)
 
 ## Current Position
 
-Phase: 17 (in progress — Plan 17-01 complete, Plan 17-02 pending)
-Plan: 17-02 (regression tests for audit script) — wave 2, unblocked
-Status: Plan 17-01 COMPLETE. All three AUDIT-* fixes applied to scripts/verify-v26.cjs. Functions and constants exported for test access. Plan 17-02 regression tests are next.
-Last activity: 2026-04-10 -- Plan 17-01 executed. Prior-session pre-commit (6be5cf6: tasks 1+2 core) surfaced at R-phase and carried forward. This session completed tasks 17-01-02 partial (generateMarkdown renderer), 17-01-03 (TOOLING_BUGS_SEED + buildReport schema), 17-01-04 (Tooling Bugs Observed section), 17-01-05 (exports). SUMMARY.md created. Next: execute Plan 17-02.
+Phase: 18 (pending — Phase 17 complete)
+Plan: 18-01 (sampling pool expansion via daemon RPETD logs) — next
+Status: Phase 17 COMPLETE. 15 regression tests (AUDIT-01/02/03) pass in tests/17-audit-script-hardening.test.cjs. Phase 18 is unblocked.
+Last activity: 2026-04-10 -- Plan 17-02 executed. 3 serial tasks (17-02-01 AUDIT-01 tests, 17-02-02 AUDIT-02 tests, 17-02-03 AUDIT-03 tests). 15/15 tests pass. 3 atomic commits (d24d0d2, 98450b3, b36aa82). SUMMARY.md, STATE.md, ROADMAP.md updated. Phase 18 is next.
 
-Progress: [###·······] 37% (Phase 16 done, Plan 17-01 done, Plan 17-02 + Phases 18-19 pending)
+Progress: [#####·····] 50% (Phases 16-17 done, Phases 18-19 pending)
 
 ## v2.7 Phase Map (locked per ROADMAP.md)
 
