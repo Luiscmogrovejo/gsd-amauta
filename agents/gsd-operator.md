@@ -412,6 +412,27 @@ fi
 **Phase-end summary:** When completing a phase, aggregate QA_REPORT lines from all tasks in the phase for an overall QA health summary (e.g., "8/10 tasks had QA blocks, 0 regressions detected").
 </qa_report_phase_end>
 
+<plan_registration_phase_end>
+### Post-Task: PLAN_REGISTRATION Summary (Phase 14)
+
+After RPETD phases are logged, grep P-phase content for the `PLAN_REGISTRATION:` block. Surface at phase-end alongside LEARNING/APPLIED_LEARNING/QA_REPORT. The block has a 1500-char budget (500 extra chars vs T-phase for the dag_text field).
+
+```bash
+# Extract PLAN_REGISTRATION from P-phase content (Phase 14 PLAN-07)
+PLAN_REG_BLOCK=$(printf '%s' "$TASK_CONTENT" | grep -A 20 '^PLAN_REGISTRATION:' | head -25 || echo "")
+if [ -n "$PLAN_REG_BLOCK" ]; then
+  PLAN_ID=$(printf '%s' "$PLAN_REG_BLOCK" | grep -oE 'plan_id: [^ ]+' | head -1 || echo "")
+  TASK_COUNT=$(printf '%s' "$PLAN_REG_BLOCK" | grep -oE 'task_count: [0-9]+' | head -1 || echo "")
+  STORY_ID=$(printf '%s' "$PLAN_REG_BLOCK" | grep -oE 'story_id: ST-[0-9]+' | head -1 || echo "")
+  printf '[PLAN_REG] %s | %s | %s\n' "$PLAN_ID" "$TASK_COUNT" "$STORY_ID"
+fi
+```
+
+**Non-code tasks:** PLAN_REGISTRATION only appears on P-phase tasks. Non-plan tasks have no PLAN_REGISTRATION line (both are valid).
+
+**Phase-end summary:** When completing a phase, aggregate PLAN_REGISTRATION blocks from all plan tasks for a registration health summary (e.g., "4 plans registered, 28 tasks total, 0 registration failures").
+</plan_registration_phase_end>
+
 <execution_type_classification>
 ## Execution Type Classification (Phase 13)
 

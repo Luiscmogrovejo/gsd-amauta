@@ -217,6 +217,28 @@ $CLI note TK-XXXX --text "[ADVISORY] RED-GREEN: bug task missing RED commit befo
 
 **Non-code tasks:** Advisory does not fire for non-code task types.
 
+### Plan Registration Advisory (Phase 14 -- not a numbered gate)
+
+After gates pass, check validation output for `[ADVISORY] PLAN_REGISTRATION`. This advisory is informational in v2.6 -- it does NOT block validation.
+
+**When you see the advisory:**
+```bash
+# Log advisory to task notes (visible in amauta show)
+$CLI note TK-XXXX --text "[ADVISORY] P-phase PLAN_REGISTRATION block absent -- plan-to-tasks may not have run" --agent validator
+```
+
+**Structural checks (presence only, NOT content validation):**
+- `PLAN_REGISTRATION:` -- block is present
+- `plan_id:` -- non-empty
+- `task_count:` -- non-empty, numeric
+- `story_id:` -- non-empty, matches ST-[0-9]+ pattern
+
+**When advisory does NOT fire:** No action needed. PLAN_REGISTRATION block is structurally present.
+
+**Kill switch:** `GSD_P_AUTO_TASK=false` disables the advisory entirely (plan-to-tasks was not invoked).
+
+**Non-plan tasks:** Advisory does not fire for non-plan task types.
+
 ### Override
 Use `--force` to override gates for legitimate exceptions (local-only tasks, scaffolding, etc.):
 ```bash
