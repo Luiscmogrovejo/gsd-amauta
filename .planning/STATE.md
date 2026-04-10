@@ -253,6 +253,8 @@ Behavioral test suite (tests/13.1-divergence-protocol.integration.test.cjs, 15 i
 
 
 
+
+- [learning] 2026-04-10T21:50:32.123Z: CJS modules using error()+process.exit(1) require a captureError() sentinel-throw helper for testing hard-error paths — intercept process.exit, throw { __capturedExit: true }, restore in finally; do not use child process spawn for per-call error tests
 - [learning] 2026-04-10T21:43:39.917Z: legacy regression test: free text learning
 - [learning] 2026-04-10T21:41:28.937Z: legacy regression test: free text learning
 - [learning] 2026-04-10T21:37:11.566Z: findPhaseInternal ghost-directory fix: read current_milestone from config.json and scope directory walk to that milestone's v*-phases/ only — null on miss, no archived-milestone fallback. getMilestoneInfo uses same config.json field as primary version source.
