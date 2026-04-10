@@ -1,38 +1,49 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.6
-milestone_name: milestone
-status: complete
-stopped_at: Phase 15 SHIPPED, v2.6 milestone COMPLETE. All 7 phases delivered. Dogfood ledger published (docs/v2.6-dogfood-ledger.md — 9 captured depths, 1 honest open slot, 7 routed follow-ups to v2.7). v2.7 planning deferred to separate session.
-last_updated: "2026-04-10T19:45:00.000Z"
-last_activity: "2026-04-10 -- Phase 15 closeout (91685e0): REQUIREMENTS.md errata (DOGFOOD-01 subcommand → standalone binary; DOGFOOD-03/05 .sh → .cjs) + ROADMAP.md Phase 15 [x] + v2.6 COMPLETE marker + v2.7 deferred note. VERIFICATION passed (f52e13f). Depths 8 + 9 captured during execution (orchestrator init-resolver catch pre-Wave-1; Wave 2 executor auditor self-restraint resisting 4 distinct patches to audit script while auditing). Milestone v2.6 closed."
+milestone: v2.7
+milestone_name: Steady Hands
+status: defining_requirements
+stopped_at: v2.7 "Steady Hands" initialized — hardening milestone closing v2.6 audit-phase follow-ups. PROJECT.md updated, MILESTONES.md archived v2.6, next step is REQUIREMENTS.md + ROADMAP.md (4 phases: 16 RESOLVE, 17 AUDIT, 18 SAMPLE, 19 SCHEMA).
+last_updated: "2026-04-11T11:00:00.000Z"
+last_activity: "2026-04-11 -- v2.7 'Steady Hands' milestone initialized (morning session, fresh context). v2.6 archived to MILESTONES.md. PROJECT.md Current Milestone flipped from v2.6 to v2.7. 4 phases planned from the 7 routed follow-ups in the v2.6 dogfood ledger: Phase 16 = Init Resolver Fix (RESOLVE-01..02, Cluster A — items 1+2, highest real-world friction, fired 3 times in v2.6), Phase 17 = Audit Script Hardening (AUDIT-01..03, Cluster B — items 3+4+5), Phase 18 = Sampling Pool Expansion (SAMPLE-01, Cluster D — item 6), Phase 19 = Dynamic Ledger Schema (SCHEMA-01, Cluster C — item 7)."
 progress:
-  total_phases: 7
-  completed_phases: 7
-  total_plans: 13
-  completed_plans: 13
-  percent: 100
+  total_phases: 4
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # GSD-Amauta -- Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-09)
+See: .planning/PROJECT.md (updated 2026-04-11 for v2.7)
 
 **Core value:** Every RPETD phase must see what other phases have learned. The brain synthesizes, not accumulates.
-**Current focus:** Milestone v2.6 -- Sight Beyond Sight. Phase 10 complete, 2-week quarantine before Phase 11.
+**Current focus:** Milestone v2.7 -- Steady Hands. Hardening milestone closing v2.6 audit-phase follow-ups. Body-metaphor sequence: brain → sight → hands.
 
 ## Current Position
 
-Phase: 15 -- End-to-End Dogfood Verification (SHIPPED) | v2.6 milestone COMPLETE
-Status: Phase 15 closed 2026-04-10 (closeout commit 91685e0). VERIFICATION.md status: passed (f52e13f). All 5 DOGFOOD-0N requirements traced, checkboxes flipped, errata applied (DOGFOOD-01 subcommand → standalone binary; DOGFOOD-03/05 .sh → .cjs). 3 plans, 14 commits total. Phase 15 artifacts: verify-v26.cjs (36a2d2a) + audit-rpetd-intelligence.cjs (16513ed) + verify-rpetd-intelligence.md (26ae849) + verify-v26.md slash command (447c9b5) + 15-AUDIT-REPORT.{json,md} (5d2f1f8) + docs/v2.6-dogfood-ledger.md (89c6288). Zero existing source files modified across the entire phase.
-Previous: v2.6 milestone — 7 phases shipped (9, 10, 11, 12, 13, 13.1, 14, 15). Phase 14 verified PASS (f9016bd). Phase 13.1 hardening held across Phases 14 and 15. Phase 13 incident → 13.1 hardening → 14 clean execution → 15 audit-confirms-hardening arc complete.
-Last activity: 2026-04-10 -- Phase 15 closeout commit 91685e0 landed. Dogfood ledger published (89c6288, 706 lines, depths 0-9 + honest depth-3 placeholder + 3 meta-findings in Limitations + 7 routed follow-ups to v2.7). Two new depths captured during Phase 15 execution: depth 8 (orchestrator init-resolver ghost-directory catch at execute-phase init boundary before Wave 1 spawned) + depth 9 (Wave 2 executor resisted 4 distinct patches to verify-v26.cjs while auditing — Phase 13 fingerprint at maximum recursion depth). Milestone v2.6 closed.
+Phase: Not started (defining requirements)
+Plan: —
+Status: v2.7 "Steady Hands" initialized. PROJECT.md updated, MILESTONES.md archived v2.6. Requirements definition next, then gsd-roadmapper for ROADMAP.md.
+Last activity: 2026-04-11 -- v2.7 milestone initialized. 4 phases planned from the 7 routed follow-ups in the v2.6 dogfood ledger: Phase 16 = RESOLVE (Cluster A), Phase 17 = AUDIT (Cluster B), Phase 18 = SAMPLE (Cluster D), Phase 19 = SCHEMA (Cluster C).
 
-Progress: [##########] 100% (v2.6 milestone COMPLETE — all 7 phases shipped: 9, 10, 11, 12, 13, 13.1, 14, 15)
+Progress: [··········] 0% (v2.7 initialized, requirements definition in progress)
 
-## v2.6 Phase Map
+## v2.7 Phase Map (proposed, pre-roadmapper)
+
+| Phase | Name | Requirements | Cluster | Depends On | Kill Switch |
+|-------|------|--------------|---------|------------|-------------|
+| 16 | Init Resolver Fix | RESOLVE-01..02 (2) | A — items 1+2 | — | N/A |
+| 17 | Audit Script Hardening | AUDIT-01..03 (3) | B — items 3,4,5 | 16 (shared resolver test patterns) | N/A |
+| 18 | Sampling Pool Expansion | SAMPLE-01 (1) | D — item 6 | 17 (audit surface stable first) | N/A |
+| 19 | Dynamic Ledger Schema | SCHEMA-01 (1) | C — item 7 | 18 (sampling hitting audit schema) | N/A |
+
+All four phases are post-13.1 so HARDEN-01 manifest enforcement is active by default. All are post-14 so plan-to-tasks auto-registration is mandatory for phases that touch the orchestrator (Phase 16 touches `gsd-tools.cjs` which is orchestrator-adjacent, so the hard cutoff applies).
+
+## v2.6 Phase Map (completed, archived to MILESTONES.md)
 
 | Phase | Name | Requirements | Depends On | Kill Switch | Wave |
 |-------|------|--------------|------------|-------------|------|
@@ -45,7 +56,7 @@ Progress: [##########] 100% (v2.6 milestone COMPLETE — all 7 phases shipped: 9
 | 14 | P-Phase Task-Management Integration | PLAN-01..07 (7) | 12, 13.1 | `GSD_P_AUTO_TASK=false` (default) | 5 |
 | 15 | End-to-End Dogfood Verification | DOGFOOD-01..05 (5) | 14 | N/A (observational) | 6 |
 
-Waves 4 has Phase 12 + Phase 13 running in parallel (T and R are architecturally independent once E lands).
+All 7 phases shipped 2026-04-10. VERIFICATION passed (f52e13f). See `.planning/MILESTONES.md` for the archived milestone entry with full accomplishment list.
 
 ## Research Completed
 
