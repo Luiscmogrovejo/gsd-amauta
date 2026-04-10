@@ -38,7 +38,7 @@
 - [x] **Phase 12: T-Phase QA Department + Spec Inheritance** — `_inherit_parent_spec()` helper, parent G/W/T verification, edge cases, regression sweep, RED-GREEN back-testing — DONE (4 plans, QA-01..08 complete)
 - [x] **Phase 13: R-Phase Creative Research (Narrowed)** — Task-type gated creative variants, `gsd-research --creative` flag, conservative default for implementation tasks — DONE (3 plans, CREATIVE-01..05 complete) 2026-04-10
 - [x] **Phase 13.1: Orchestrator Hardening & Divergence Protocol** — Deterministic manifest check + behavioral divergence protocol + agent .md updates + validator `--gaps-found` verdict + synthetic divergence test — DONE (5 plans, HARDEN-01..05 complete, 3 dogfood moments captured, validator `--pass`) 2026-04-10
-- [ ] **Phase 14: P-Phase Task-Management Integration** — Structured XML plan blocks, `gsd-tools plan-to-tasks`, auto-agent-assign, dep-linking, 10-task cap
+- [x] **Phase 14: P-Phase Task-Management Integration** — Structured XML plan blocks, `gsd-tools plan-to-tasks`, auto-agent-assign, dep-linking, 10-task cap (completed 2026-04-10)
 - [ ] **Phase 15: End-to-End Dogfood Verification** — `audit-rpetd-intelligence`, `verify-v26.sh`, 6/6 phases green observational report
 
 ---
@@ -331,7 +331,7 @@ Notable: 3 in-production dogfood moments captured at 3 recursion depths (Wave 1 
 **Rollback Plan:** Set `GSD_P_AUTO_TASK=false`. `plan-to-tasks` subcommand stays in `gsd-tools.cjs` but is never invoked. Planner prompt changes revert via single commit. Existing PLAN.md files are unaffected (they were never parsed for amauta registration before v2.6).
 
 **Plans:**
-- [x] 14-01: Protocol & Schema Foundation — divergence-protocol v1.1.0 + plan-task-xml-schema.md + gsd-planner Read pointer (PLAN-01) — Wave 1 — DONE 2026-04-10 (7b8b887 + bfe0272)
+4/4 plans complete
 - [x] 14-02: Dedup Bypass + Pass 0 Validation Engine — planToTasks() Pass 0 engine + scoped dedup bypass + 20 unit tests (PLAN-02/03/04/05) — Wave 2 — DONE 2026-04-10 (0965af3 + db50900 + eef17f2)
 - [x] 14-03: Pass 1+2 Registration + Integration Tests — Pass 0.5/1/2 real subprocess calls + amauta.py scoped dedup bypass + 8 integration tests with SIGKILL failure injection (PLAN-02/03/04) — Wave 3 — DONE 2026-04-10 (bfb7301 + bb94163)
 - [x] 14-04: Agent Wiring + Workflow Integration — operator PLAN_REGISTRATION parser + validator advisory + plan-phase PLAN-06 quality gate + execute-phase plan-to-tasks invocation + PLAN-04 errata (PLAN-04/06/07) — Wave 4 — DONE 2026-04-10 (0f3770c + a78fa18 + 06fe2cb)
@@ -421,8 +421,7 @@ Phase 11 (E-Phase Research-Informed Execution Mandate)
 | D-Phase Structured Learning | 7 | 10 | LEARN-01..07 |
 | E-Phase Research-Informed Execution | 8 | 11 | EXEC-01..08 |
 | T-Phase QA + Spec Inheritance | 8 | 12 | QA-01..08 |
-| R-Phase Creative Research (Narrowed) | 5 | 13 | CREATIVE-01..05 | Complete    | 2026-04-10 | 7 | 14 | PLAN-01..07 |
-| Dogfood Verification | 5 | 15 | DOGFOOD-01..05 |
+| R-Phase Creative Research (Narrowed) | 5 | 13 | CREATIVE-01..05 | Complete    | 2026-04-10 | 7 | 14 | PLAN-01..07 | Complete    | 2026-04-10 | 5 | 15 | DOGFOOD-01..05 |
 | **Total** | **46** | **7 phases** | — |
 
 **Mapped:** 46/46 ✓
