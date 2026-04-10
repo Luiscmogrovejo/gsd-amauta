@@ -424,7 +424,7 @@ Note: Phases 13 and 14 are opt-in by default (kill switch off) per PITFALLS roll
 |-------|----------------|--------|-----------|
 | 9. Tech-Debt Sweep | 1/6 | In progress | Plan 09-01 complete (TECH-01, commit 5cee8a9) |
 | 10. D-Phase Structured Learning + CLI Dedup | 7/9 | In progress | Plans 10-01..10-07 complete |
-| 11. E-Phase Research-Informed Execution Mandate | 0/? | Not started | - |
+| 11. E-Phase Research-Informed Execution Mandate | 2/2 | Awaiting verification | Plans 11-01 + 11-02 complete, EXEC-01..08 addressed |
 | 12. T-Phase QA Department + Spec Inheritance | 0/? | Not started | - |
 | 13. R-Phase Creative Research (Narrowed) | 0/? | Not started | - |
 | 14. P-Phase Task-Management Integration | 0/? | Not started | - |

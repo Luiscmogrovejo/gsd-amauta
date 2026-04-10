@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: milestone
-status: completed
-stopped_at: Phase 11 Plan 11-01 complete
-last_updated: "2026-04-09T00:00:00.000Z"
-last_activity: "2026-04-09 -- Plan 11-01: pre-execution-checklist.md + executor mandate prompts (8 tasks, 8 commits)"
+status: in_progress
+stopped_at: Phase 11 both plans complete, awaiting verification
+last_updated: "2026-04-10T01:45:00.000Z"
+last_activity: "2026-04-10 -- Plan 11-02: checkEvidenceAdvisory() + 22 tests (EXEC-04)"
 progress:
   total_phases: 7
   completed_phases: 1
-  total_plans: 9
-  completed_plans: 9
-  percent: 29
+  total_plans: 11
+  completed_plans: 11
+  percent: 43
 ---
 
 # GSD-Amauta -- Project State
@@ -25,11 +25,11 @@ See: .planning/PROJECT.md (updated 2026-04-09)
 
 ## Current Position
 
-Phase: 11 — E-Phase Research-Informed Execution Mandate (IN PROGRESS)
-Plan: 11-01 DONE (pre-execution-checklist.md 98 lines + PRE_EXECUTION_CHECKLIST in cli-variables.md (3 locations) + <pre_execution_mandate> block in 4 executor agents + debugger + PRE_EXECUTION_CHECKLIST fallback in all 6 agent files. 8 atomic commits. EXEC-01,02,03,05,06,07,08 addressed.)
-Previous: Phase 10 COMPLETE (all 9 plans, LEARN-01..07 satisfied). 10-09 DONE (62 new tests, README Phase 10 section). 10-08 DONE (LEARNING block template across 11 agents, 01d05f8). 10-07 DONE (cli-variables.md dedup across 17 files, 923510e).
-Status: Phase 11 started. Plan 11-01 complete. Next: Plan 11-02 (gsd-validator advisory PRE_EXECUTION_EVIDENCE parser).
-Last activity: 2026-04-09 -- Plan 11-01: pre-execution-checklist.md + executor mandate prompts (8 tasks, 8 commits)
+Phase: 11 — E-Phase Research-Informed Execution Mandate (EXECUTION COMPLETE — AWAITING VERIFICATION)
+Plan: 11-02 DONE (checkEvidenceAdvisory() 123 lines + _checkEvidenceBlock() pure logic + cmdValidate integration + gsd-validator.md advisory section + 22 CJS tests. 4 commits. EXEC-04 addressed.) 11-01 DONE (pre-execution-checklist.md 98 lines + PRE_EXECUTION_CHECKLIST in cli-variables.md (3 locations) + <pre_execution_mandate> block in 4 executor agents + debugger + PRE_EXECUTION_CHECKLIST fallback in all 6 agent files. 9 commits. EXEC-01,02,03,05,06,07,08 addressed.)
+Previous: Phase 10 COMPLETE (all 9 plans, LEARN-01..07 satisfied).
+Status: Phase 11 both plans complete. All 8 EXEC requirements addressed. Awaiting phase verification.
+Last activity: 2026-04-10 -- Plan 11-02: checkEvidenceAdvisory() + 22 tests (EXEC-04)
 
 Progress: [###.......] 29%
 
@@ -143,6 +143,10 @@ Archive: `.planning/MILESTONES.md` + legacy v2.5 ROADMAP sections.
 
 
 
+
+
+- [learning] 2026-04-10T01:31:45.096Z: legacy with agent
+- [learning] 2026-04-10T01:31:37.659Z: legacy regression test: free text learning
 - [learning] 2026-04-09T23:53:04.660Z: Phase 10 execution: validator caught GIN index missing from live DB despite being defined in migration 001-init.sql — always verify index existence on the LIVE database, not just migration file presence. Also: ROADMAP success criteria wording can diverge from plan must-haves; plan spec is the implementation authority.
 - [learning] 2026-04-09T23:44:46.710Z: legacy with agent
 - [learning] 2026-04-09T23:44:39.479Z: legacy regression test: free text learning
