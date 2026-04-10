@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: milestone
 status: verifying
-stopped_at: Phase 15 Wave 2 complete — verify-v26.cjs executed ONCE, 15-AUDIT-REPORT.{json,md} captured, 5/5 DOGFOOD criteria assessed, behavioral suite skipped via environment_missing (ANTHROPIC_API_KEY unset), zero existing files modified; new findings surfaced in 15-02-SUMMARY.md
-last_updated: "2026-04-10T18:30:00.000Z"
-last_activity: "2026-04-10 -- Phase 15 Plan 15-02 DONE: 2 audit reports committed atomically (5d2f1f8); DOGFOOD-01 gaps_found (pool=1), DOGFOOD-05 gaps_found (Phase 14 VERIFICATION.md naming drift + 13.1 known missing); Wave 3 (publish ledger) next."
+stopped_at: Phase 15 Wave 3 complete — docs/v2.6-dogfood-ledger.md published (706 lines, 10 depth rows 0-9, depth-3 honest placeholder, Limitations + Routed follow-ups sections); 3/3 plans complete, awaiting validator for phase closeout
+last_updated: "2026-04-10T19:00:00.000Z"
+last_activity: "2026-04-10 -- Phase 15 Plan 15-03 DONE: dogfood ledger published (89c6288); 9 memory entries transcribed faithfully (depths 8+9 included per wave framing; plan-text-vs-framing mismatch surfaced); depth-3 gap preserved. Phase 15 ready for validator + closeout."
 progress:
   total_phases: 8
   completed_phases: 1
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-09)
 
 ## Current Position
 
-Phase: 15 -- End-to-End Dogfood Verification (Wave 2 complete)
-Status: Plan 15-02 DONE — executed verify-v26.cjs ONCE, captured 15-AUDIT-REPORT.json + 15-AUDIT-REPORT.md (MD derived from JSON via generateMarkdown). All 5 DOGFOOD criteria assessed. Behavioral suite skipped via environment_missing (ANTHROPIC_API_KEY unset, CONTEXT.md Gap 3 clean exit). Phase 15 passes on audit completeness per Q14, not cleanliness. 15-02-SUMMARY.md surfaces 4 divergences including the Wave 1 script's absent tooling_bugs_observed category (the two pre-locked findings could not be encoded). Zero existing files modified. Wave 3 (publish ledger) is next.
-Previous: 15-01 DONE — 4 new audit-infra files (16513ed + 26ae849 + 36a2d2a + 447c9b5). 14-04 DONE, 14-03 DONE, 14-02 DONE, 14-01 DONE. Phase 14 verified PASS (f9016bd), PLAN-01..07 flipped to Done.
-Last activity: 2026-04-10 -- Phase 15 Plan 15-02 shipped: audit artifacts committed atomically (5d2f1f8). Awaiting validator.
+Phase: 15 -- End-to-End Dogfood Verification (Wave 3 complete, 3/3 plans done)
+Status: Plan 15-03 DONE — docs/v2.6-dogfood-ledger.md published (706 lines, commit 89c6288). Ledger transcribes 9 dogfood memory entries (depths 0, 1, 2, 4, 5, 6, 7, 8, 9) faithfully with literal quotes from each source; depth 3 preserved as honest placeholder with "expected shape" explanation. Limitations section names three meta-findings: schema-orphaned depths 8+9 (Wave 1 JSON schema doesn't encode them), depth-3 coverage gap as open question, and resistance-to-fix ratio (four fixes prevented in Wave 2 alone). Routed follow-ups section lists 2 Wave-0 tooling bugs + 4 Wave-2 resisted audit fixes + 1 schema modernization item, all routed to Phase 16 / v2.7. Plan-text-vs-wave-framing mismatch (plan said 7 entries, framing said 9) surfaced in 15-03-SUMMARY.md as divergence rather than silently reconciled. Zero existing files modified. Phase 15 is ready for validator + closeout.
+Previous: 15-02 DONE — verify-v26.cjs executed ONCE, 15-AUDIT-REPORT.{json,md} captured (5d2f1f8). 15-01 DONE — 4 new audit-infra files (16513ed + 26ae849 + 36a2d2a + 447c9b5). Phase 14 verified PASS (f9016bd), PLAN-01..07 flipped to Done.
+Last activity: 2026-04-10 -- Phase 15 Plan 15-03 shipped: dogfood ledger published atomically (89c6288). Awaiting validator for phase closeout.
 
-Progress: [########..] 78% (v2.6 milestone — phases 10, 11, 12, 13, 13.1, 14 done; phase 9 pending green baseline; phase 15 Waves 1-2 shipped, Wave 3 pending)
+Progress: [#########.] 87% (v2.6 milestone — phases 10, 11, 12, 13, 13.1, 14 done; phase 9 pending green baseline; phase 15 Waves 1-3 shipped, phase closeout pending)
 
 ## v2.6 Phase Map
 
