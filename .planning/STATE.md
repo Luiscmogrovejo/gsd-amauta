@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v2.7
 milestone_name: Steady Hands
-status: defining_requirements
-stopped_at: v2.7 "Steady Hands" initialized — hardening milestone closing v2.6 audit-phase follow-ups. PROJECT.md updated, MILESTONES.md archived v2.6, next step is REQUIREMENTS.md + ROADMAP.md (4 phases: 16 RESOLVE, 17 AUDIT, 18 SAMPLE, 19 SCHEMA).
+status: roadmap_defined
+stopped_at: v2.7 "Steady Hands" ROADMAP.md written — 4 phases (16 RESOLVE, 17 AUDIT, 18 SAMPLE, 19 SCHEMA), 7 requirements, full coverage, goal-backward success criteria derived per phase. v2.6 ROADMAP.md archived to milestones/v2.6-ROADMAP.md. Next step: /amauta:plan-phase 16.
 last_updated: "2026-04-11T11:00:00.000Z"
 last_activity: "2026-04-11 -- v2.7 'Steady Hands' milestone initialized (morning session, fresh context). v2.6 archived to MILESTONES.md. PROJECT.md Current Milestone flipped from v2.6 to v2.7. 4 phases planned from the 7 routed follow-ups in the v2.6 dogfood ledger: Phase 16 = Init Resolver Fix (RESOLVE-01..02, Cluster A — items 1+2, highest real-world friction, fired 3 times in v2.6), Phase 17 = Audit Script Hardening (AUDIT-01..03, Cluster B — items 3+4+5), Phase 18 = Sampling Pool Expansion (SAMPLE-01, Cluster D — item 6), Phase 19 = Dynamic Ledger Schema (SCHEMA-01, Cluster C — item 7)."
 progress:
@@ -25,14 +25,14 @@ See: .planning/PROJECT.md (updated 2026-04-11 for v2.7)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: Not started (ROADMAP.md defined, awaiting plan-phase 16)
 Plan: —
-Status: v2.7 "Steady Hands" initialized. PROJECT.md updated, MILESTONES.md archived v2.6. Requirements definition next, then gsd-roadmapper for ROADMAP.md.
-Last activity: 2026-04-11 -- v2.7 milestone initialized. 4 phases planned from the 7 routed follow-ups in the v2.6 dogfood ledger: Phase 16 = RESOLVE (Cluster A), Phase 17 = AUDIT (Cluster B), Phase 18 = SAMPLE (Cluster D), Phase 19 = SCHEMA (Cluster C).
+Status: v2.7 "Steady Hands" ROADMAP.md written. 4 phases (16-19), 7 requirements, 100% coverage, goal-backward success criteria derived per phase. v2.6 ROADMAP.md archived to milestones/v2.6-ROADMAP.md. Next step: /amauta:plan-phase 16.
+Last activity: 2026-04-11 -- gsd-roadmapper wrote .planning/ROADMAP.md for v2.7. Phase 16 = RESOLVE (Cluster A), Phase 17 = AUDIT (Cluster B), Phase 18 = SAMPLE (Cluster D), Phase 19 = SCHEMA (Cluster C). Total scope ~250 LOC. Ship order locked: 16 → 17 → 18 → 19 (strictly sequential due to verify-v26.cjs shared file).
 
-Progress: [··········] 0% (v2.7 initialized, requirements definition in progress)
+Progress: [··········] 0% (v2.7 roadmap defined, phase planning pending)
 
-## v2.7 Phase Map (proposed, pre-roadmapper)
+## v2.7 Phase Map (locked per ROADMAP.md)
 
 | Phase | Name | Requirements | Cluster | Depends On | Kill Switch |
 |-------|------|--------------|---------|------------|-------------|

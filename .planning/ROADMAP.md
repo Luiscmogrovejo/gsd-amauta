@@ -1,471 +1,238 @@
-# Roadmap: GSD-Amauta v2.6 "Sight Beyond Sight"
+# Roadmap: GSD-Amauta v2.7 "Steady Hands"
 
-**Milestone:** v2.6 — Sight Beyond Sight (RPETD Intelligence Upgrade)
-**Starting phase number:** 9 (previous milestone v2.5 ended at phase 8)
-**Phases:** 7 (Phase 9..15)
-**Requirements:** 46 total (v2.6 scope)
+**Milestone:** v2.7 — Steady Hands (Hardening Milestone)
+**Starting phase number:** 16 (previous milestone v2.6 ended at phase 15)
+**Phases:** 4 (Phase 16..19)
+**Requirements:** 7 total (v2.7 scope)
 **Granularity:** coarse (per config.json)
-**Status:** ✓ COMPLETE (2026-04-10) — all 7 phases shipped; Phase 15 End-to-End Dogfood Verification passed (status: passed per `.planning/milestones/v2.2-phases/15-dogfood/15-VERIFICATION.md`, commit `f52e13f`)
-**Downstream:** v2.6 closed. v2.7 planning deferred to separate session. See `docs/v2.6-dogfood-ledger.md` for the Phase 15 dogfood audit + routed follow-ups for v2.7.
-**Research inputs:**
-- `.planning/research/v2.6/STACK.md`
-- `.planning/research/v2.6/FEATURES.md`
-- `.planning/research/v2.6/ARCHITECTURE.md`
-- `.planning/research/v2.6/PITFALLS.md`
-- `.planning/research/v2.6/SUMMARY.md` (5 course corrections)
-- `~/.claude/plans/reactive-watching-fountain.md` (original approved plan)
+**Primary input:** `docs/v2.6-dogfood-ledger.md` § "Routed follow-ups (Phase 16 / v2.7)" — 7 items clustered into 4 phases
+**Research:** skipped (no external domain to research; v2.7 is hardening of code the team wrote during v2.6). The v2.6 dogfood ledger IS the research input.
+**Status:** Defined 2026-04-11 — awaiting `/amauta:plan-phase 16`
 
-**Core value:** Every RPETD phase must *see* what the other phases have already learned — past failures, validated best-practices, existing codebase style, parent-story acceptance criteria — so the system makes better decisions with each task it runs, not worse as context bloats.
+**Core value:** Every RPETD phase must see what other phases have already learned — past failures, validated best-practices, existing codebase style, parent-story acceptance criteria — so the system makes better decisions with each task it runs, not worse as context bloats. The brain synthesizes, not accumulates.
 
-**Ship order is LOCKED** by research (SUMMARY.md Correction 1). Tech-debt first → D-phase (unlocks tag schema) → E-phase (pre-exec mandate) → T-phase + R-phase (parallel) → P-phase (highest blast radius, last) → Dogfood (terminal).
+**Body-metaphor sequence:** v2.5 "Smarter Brain" (cognition) → v2.6 "Sight Beyond Sight" (perception) → v2.7 "Steady Hands" (action/tooling). This is the milestone where the tooling stops shaking. After v2.5 gave the system a brain and v2.6 gave it eyes, v2.7 fixes the hands so that when the eyes see a problem, the hands can act on it without producing the same divergence event for the fourth time.
+
+**Ship order is dependency-driven:** 16 (resolver) → 17 (audit script) → 18 (sampling) → 19 (schema). Phase 16 must ship first because every other phase's executor will use the resolver to locate its own phase directory; fixing the resolver early means Phases 17-19 run against a clean init surface. Phases 17-19 are sequential because each builds on the audit surface the previous one stabilized: Phase 17 stabilizes `verify-v26.cjs` (the audit script itself), Phase 18 broadens the sampling pool the audit consumes, and Phase 19 modernizes the schema the audit emits.
+
+**Total v2.7 scope: ~250 LOC of surgical fixes** — the smallest milestone since v2.3. This is deliberate. Hardening milestones should feel small.
 
 ---
 
 ## Hard Constraints (apply to every phase)
 
-1. **Prompt-size budget (context rot defense):** NEW agent definitions must be ≤ 200 lines. Existing agents may grow by max +25%. `gsd-roadmapper.md` is grandfathered at 685 lines but MUST NOT grow. Enforced per phase at plan review.
-2. **Kill switch per phase:** Every upgrade ships with an env var kill switch so it can be disabled without code revert. Documented in each phase detail.
-3. **Pitfall citations:** Every phase must reference at least one PITFALLS.md entry it prevents and the prevention mechanism.
-4. **Green test gate:** `npm test && pytest` must pass with 0 new failures before the phase is marked complete.
-5. **Phase 10 quarantine:** Phase 10 (D-learning) ships with a 2-week additive/reversible quarantine before Phase 11 work starts.
-6. **External validation principle (v2.5 AGT-05):** Evidence blocks must be inspected by `gsd-validator` or a deterministic check — never the executor itself.
+1. **Scope ceilings are load-bearing.** Each phase has a declared LOC ceiling in its deliverable table. Exceeding the ceiling without an explicit divergence report is a Phase 13 fingerprint and triggers halt-phase.
+2. **Post-13.1:** HARDEN-01 manifest enforcement is active for every task in this milestone. `files_expected` blocks with all three subfields (`modify` / `create` / `delete`) are mandatory per task. No grandfather clause applies — v2.7 phases are all newly authored.
+3. **Post-14:** `gsd-tools plan-to-tasks` auto-registration is mandatory for any phase that touches the orchestrator or its adjacent tooling. Every PLAN.md must have `<story>` and `<task>` XML blocks with `metadata.plan_local_id` identity. Phase 16 (which touches `gsd-tools.cjs`) definitely applies; Phases 17-19 touch `scripts/verify-v26.cjs` which is orchestrator-adjacent audit tooling and the hard cutoff also applies.
+4. **Divergence protocol v1.1.0 active:** any plan-vs-reality mismatch during execution triggers the STOP → `divergence_report` JSON → exit non-zero flow. Surface mismatches; never silently absorb them.
+5. **Dogfood ledger continues.** New depths captured during v2.7 are added to `docs/v2.6-dogfood-ledger.md` (or its v2.7 successor per Phase 19). **Depth 3 is still open.** Phase 16 is a candidate to fill depth 3 if a sub-task-level rationalization surfaces during the resolver fix (e.g., "while I'm in the resolver code I should also fix items 3-7").
+6. **No out-of-scope fixes.** The 7 routed follow-ups from the v2.6 ledger are the complete v2.7 scope. Any other bugs noticed during execution are v2.8 candidates, not phase expansions. Surface via divergence report, do not absorb.
+7. **No new mandates.** v2.7 is a hardening milestone, not a mandate-expansion milestone. No new RPETD phase mandates, no new kill switches, no new D-phase formats. The existing v2.6 kill switches (`GSD_D_STRUCTURED`, `GSD_E_MANDATE`, `GSD_T_SPEC_INHERIT`, `GSD_R_CREATIVE`, `GSD_P_AUTO_TASK`, `GSD_MANIFEST_CHECK`) cover the behavioral surface unchanged.
+8. **Green test gate.** `npm test && pytest` must pass with 0 new failures before each phase is marked complete. Pre-existing failures from the v2.6 baseline (4 known npm failures in `rlm-workflow-spec`, `agent-frontmatter`, `comprehensive-e2e`, `gsd-amauta`) are tolerated until Phase 17's AUDIT-02 regex fix surfaces them in the audit report.
 
 ---
 
 ## Phases
 
-- [x] **Phase 9: Tech-Debt Sweep** — Green baseline (`npm test && pytest` = 0 failures) before any v2.6 mandate lands — DONE (all 6 TECH + 4 GAP plans complete)
-- [x] **Phase 10: D-Phase Structured Learning + CLI Dedup** — WHAT/WHY/WHEN/TAGS format, `gsd-memory learn --structured`, cli-variables.md reference, 2-week quarantine — DONE (9 plans, 62 new tests, LEARN-01..07 complete)
-- [x] **Phase 11: E-Phase Research-Informed Execution Mandate** — Pre-exec checklist reference, `PRE_EXECUTION_EVIDENCE` block, security checklist, advisory validation in v2.6 (Plan 11-01 DONE) (completed 2026-04-10)
-- [x] **Phase 12: T-Phase QA Department + Spec Inheritance** — `_inherit_parent_spec()` helper, parent G/W/T verification, edge cases, regression sweep, RED-GREEN back-testing — DONE (4 plans, QA-01..08 complete)
-- [x] **Phase 13: R-Phase Creative Research (Narrowed)** — Task-type gated creative variants, `gsd-research --creative` flag, conservative default for implementation tasks — DONE (3 plans, CREATIVE-01..05 complete) 2026-04-10
-- [x] **Phase 13.1: Orchestrator Hardening & Divergence Protocol** — Deterministic manifest check + behavioral divergence protocol + agent .md updates + validator `--gaps-found` verdict + synthetic divergence test — DONE (5 plans, HARDEN-01..05 complete, 3 dogfood moments captured, validator `--pass`) 2026-04-10
-- [x] **Phase 14: P-Phase Task-Management Integration** — Structured XML plan blocks, `gsd-tools plan-to-tasks`, auto-agent-assign, dep-linking, 10-task cap (completed 2026-04-10)
-- [x] **Phase 15: End-to-End Dogfood Verification** — `audit-rpetd-intelligence`, ~~`verify-v26.sh`~~ `verify-v26.cjs`, 6/6 phases green observational report — DONE 2026-04-10 (3 plans, DOGFOOD-01..05, VERIFICATION passed at f52e13f, ledger published at 89c6288)
+- [ ] **Phase 16: Init Resolver Fix** — milestone-scoped resolver + `--phase-dir` override so cross-milestone phase-number collisions stop returning ghost directories (RESOLVE-01..02)
+- [ ] **Phase 17: Audit Script Hardening** — `verify-v26.cjs` prefix-form probe, npm failure parser, and `tooling_bugs_observed` schema category so the audit script stops producing silent false negatives (AUDIT-01..03)
+- [ ] **Phase 18: Sampling Pool Expansion** — `sampleCompletedTasks()` queries the amauta daemon's RPETD logs instead of scraping SUMMARY text so DOGFOOD-01 stops collapsing to n=1 (SAMPLE-01)
+- [ ] **Phase 19: Dynamic Ledger Schema** — runtime filesystem scan of memory directory populates `dogfood_ledger_depths_captured` so depths discovered during execution stop getting orphaned from the audit JSON (SCHEMA-01)
 
 ---
 
 ## Phase Details
 
-### Phase 9: Tech-Debt Sweep
+### Phase 16: Init Resolver Fix
 
-**Goal:** Get `npm test && pytest` to 0 failures before any v2.6 mandate lands, so flake counts don't compound as new mandates add I/O per test.
+**Goal:** The `gsd-tools init` family of commands resolves phase directories within the current milestone only, and operators can bypass the resolver entirely with an explicit `--phase-dir` override when needed.
 
-**Depends on:** Nothing (first v2.6 phase; blocks all downstream work)
+**Depends on:** nothing (v2.6 is complete; this phase starts from a clean baseline)
 
-**Requirements:** TECH-01, TECH-02, TECH-03, TECH-04, TECH-05, TECH-06
+**Requirements:** RESOLVE-01, RESOLVE-02
 
-**Deliverables:**
-| # | Deliverable | Requirement |
-|---|-------------|-------------|
-| 1 | Fix `oidc_enabled`/`oidc_issuer` regex helper in `tests/test_daemon_integration.py` | TECH-01 |
-| 2 | Fix mock StopIteration (fixture exhaustion) in `tests/test_enrichment_memory.py` (3 tests) | TECH-02 |
-| 3 | Fix `tests/test_gates.py::test_exactly_5_gates_returned` gate-count assertion drift | TECH-03 |
-| 4 | Fix `tests/test_pg_integration.py::TestRetentionMovesOldEntries` retention cleanup flake | TECH-04 | DONE (09-04) |
-| 5 | Fix 15s timeout flakes in `tests/e2e-lifecycle.test.cjs` claim/RPETD R-P-E-T phases (daemon-busy race) | TECH-05 | DONE (09-05) |
-| 6 | Fix `tests/gsd-amauta.test.cjs::12. task status after validate` (status stuck at "pending") | TECH-06 | DONE (09-05) |
+**Scope ceiling:** ~100 LOC across `get-shit-done/bin/lib/init.cjs` and `get-shit-done/bin/gsd-tools.cjs`, plus tests. Hard do-not-expand. Any temptation to also fix items 3-7 "while in the resolver code" gets surfaced as a divergence observation, not absorbed.
 
-**Success Criteria (what must be TRUE for users):**
-1. `pytest` runs to completion with 0 failures on a clean checkout.
-2. `npm test` runs to completion with 0 failures on a clean checkout.
-3. `tests/e2e-lifecycle.test.cjs` claim/RPETD phases complete inside the 15s timeout budget across 5 consecutive local runs.
-4. `amauta validate --pass` transitions task state to `validated` (not stuck at `pending`) verifiable via `amauta show TK-XXXX`.
-5. Baseline CI pass rate matches or beats v2.5 final (79%+ gates) as reported by `verify-v26.sh` pre-merge check.
+**Files expected (preview, to be finalized per-task in PLAN.md):**
+- modify: `get-shit-done/bin/lib/init.cjs`, `get-shit-done/bin/gsd-tools.cjs`
+- create: `tests/16-init-resolver.test.cjs` (or equivalent test file covering the three cases)
+- delete: []
 
-**Kill switch:** N/A (pure tech-debt cleanup, no new feature to disable).
+**Success Criteria (what must be TRUE for users after Phase 16 ships):**
 
-**Pitfalls Prevented:**
-- **C4 — Test Flakiness Amplification** (PITFALLS.md): "Adding more mandates on top of a flaky base amplifies flakes." Prevention: fix the flaky base before any v2.6 mandate adds I/O per test.
-- **T8 — Edge cases collide with existing test flakes**: prevented by fixing baseline before T-phase mandates land.
+1. **Cross-milestone ghost directory bug no longer fires.** Running `gsd-tools init execute-phase 15` from a v2.7 context returns `phase_found: false` with a clear "no Phase 15 in current milestone v2.7" diagnostic, instead of silently resolving to the v2.3-phases or v2.2-phases directory that happens to have a `15-*` entry. The three fire events from v2.6 (depths 7, 8, and the closeout edit) cannot reoccur because the resolver now consults ROADMAP.md to identify the current milestone before walking directories.
+2. **Operator escape hatch exists.** Running `gsd-tools init execute-phase 15 --phase-dir .planning/milestones/v2.2-phases/15-dogfood/` resolves to that exact directory without consulting the resolver at all. The override works across all four phase-aware init subcommands (`phase-op`, `execute-phase`, `plan-phase`, `verify-work`) and the `--phase-dir` flag is documented in each subcommand's help text.
+3. **"No match" is a distinct outcome from "wrong match".** When a phase number has zero matches in the current milestone, the resolver returns `phase_found: false` with an explicit message, rather than falling back to a historical match from an archived milestone. Operators can distinguish "this phase doesn't exist yet" from "I pointed at the wrong phase."
+4. **Tests cover the three cases that caused real-world drift.** Test suite exercises (a) the cross-milestone collision case where N matches directories in both v2.7-phases and an archived milestone, (b) the `--phase-dir` override bypass path, and (c) the "no match in current milestone" path. The tests are runnable via the standard `npm test` harness.
 
-**Rollback Plan:** Each test fix is an independent commit; revert individual commits if a fix introduces regressions. Baseline reverts to v2.5-final (6 pytest + 34 CJS known failures) which is the known-good state.
+**Pitfalls prevented:**
+- **Phase 13 fingerprint: "while I'm in the resolver code" scope expansion.** HARDEN-01 manifest enforcement catches this deterministically by rejecting edits to files not in `files_expected`. The divergence protocol v1.1.0 catches the behavioral form by requiring a STOP + divergence_report when the plan-vs-reality mismatch surfaces.
+- **Silent cross-milestone drift.** The root cause of depths 7, 8, and the v2.6 closeout incident is first-match-by-numeric-prefix across all historical `v*.*-phases/` folders. Replacing the lookup with a milestone-scoped search via ROADMAP.md cross-reference makes this class of bug structurally impossible.
 
-**Plans:**
-- [x] 09-01: TECH-01 — Fix `_extract_health_fields` regex (oidc_enabled/oidc_issuer)
-- [x] 09-02: TECH-02 — Sync E/T-phase enrichment tests to TOK-02 behavior (commit e64c6fe)
-- [x] 09-03: TECH-03 — Fix gate count assertion (5→7)
-- [x] 09-04: TECH-04 — Fix retention mock (PropertyMock [5,3]→[5,3,2])
-- [x] 09-05: TECH-05 — Fix e2e-lifecycle 15s timeout flakes (b371477)
-- [x] ~~09-06: TECH-06~~ — (virtual ref, bundled in 09-05 as commit 2f8ab46)
-- [x] 09-06: GAP — Fix comprehensive-e2e.test.cjs (4 failures: substance gates + migration count + README routes) DONE (440115c)
-- [x] 09-07: GAP — Fix e2e-advanced.test.cjs (3 failures: substance gate fixtures) DONE (b64b93a)
-- [x] 09-08: GAP — Fix complex-integration.test.cjs (7 failures: substance gates + amauta_memory ref) (1eee7e4)
-- [x] 09-09: GAP — Fix perplexity-config + auto-learning + e2e-lifecycle (3 failures: search windows + rate limit) DONE (31680cc)
+**Rollback plan:** Revert the two modified files (`init.cjs` and `gsd-tools.cjs`) and delete the new test file. No schema changes, no data migration, no orchestrator state changes, no kill switch to toggle. Clean rollback, no side effects.
+
+**Dogfood depth 3 candidate:** Phase 16 is the primary candidate to fill depth 3 in the dogfood ledger (currently open). Depth 3 is a sub-task-level rationalization catch — if the executor notices a temptation to refactor adjacent code "while here" and surfaces it as an observation instead of absorbing it, that's a depth-3 event. The resolver fix has a high density of "while I'm here" temptations (item 3 in the same file, item 4 in a neighbor), so the dogfood surface is rich.
+
+**Plans:** To be atomized by `/amauta:plan-phase 16`. Expected 1-2 plans (one for RESOLVE-01 milestone-scoped lookup, possibly one for RESOLVE-02 override flag, or both combined if disjoint files allow).
 
 ---
 
-### Phase 10: D-Phase Structured Learning + CLI Dedup
+### Phase 17: Audit Script Hardening
 
-**Goal:** Ship WHAT/WHY/WHEN/TAGS structured learning format as a HUMAN-REVIEW and SKB-promotion layer (NOT a retrieval optimizer — free-text + embeddings still wins recall). Pair with `cli-variables.md` shared reference to dedupe boilerplate across all 11 agents. Must land first because every downstream phase reads from its tag schema.
+**Goal:** `scripts/verify-v26.cjs` stops producing silent false negatives: it finds prefixed verification files, parses real npm runner output, and emits a distinct `tooling_bugs_observed` category so the class of findings that routed from Phase 15 Wave 2 can land in the machine-readable audit trail.
 
-**Depends on:** Phase 9 (needs green baseline)
+**Depends on:** Phase 16 (shares test infrastructure patterns; Phase 16's clean init surface also makes future re-runs of the audit script deterministic across milestones)
 
-**Requirements:** LEARN-01, LEARN-02, LEARN-03, LEARN-04, LEARN-05, LEARN-06, LEARN-07
+**Requirements:** AUDIT-01, AUDIT-02, AUDIT-03
 
-**Deliverables:**
-| # | Deliverable | Requirement |
-|---|-------------|-------------|
-| 1 | `get-shit-done/references/learning-format.md` with WHAT/WHY/WHEN/TAGS template + per-agent examples | LEARN-01 |
-| 2 | `gsd-memory.cjs learn --structured` flag parses fields into existing `tags jsonb` column (NO new PG column) | LEARN-02 |
-| 3 | `gsd-memory.cjs search --category --tags` text filters + verified GIN index on `tags jsonb` | LEARN-03 |
-| 4 | Tag-inflation defense: ≤5 tags per learning, reject tags-only matches to generic set | LEARN-04 |
-| 5 | Echo-chamber defense: `applied_count` column + `APPLIED_LEARNING:` citation tracker + SKB manual review gate >10 | LEARN-05 |
-| 6 | All 11 agents updated to emit structured LEARNING blocks per template | LEARN-06 |
-| 7 | `get-shit-done/references/cli-variables.md` shared CLI var declarations referenced via runtime Read (NOT `@` include) | LEARN-07 |
+**Scope ceiling:** ~80 LOC confined to `scripts/verify-v26.cjs` plus tests. Any temptation to refactor the audit script's internal structure "while in there" gets surfaced as a divergence observation. The three fixes are additive, not structural.
 
-**Success Criteria (what must be TRUE for users):**
-1. An operator can run `gsd-memory learn --structured --what "..." --why "..." --when "..." --tags "postgresql,threading"` and see the record in `gsd_memory` with tags stored in the `tags jsonb` column.
-2. `gsd-memory search --tags postgresql --category pattern` returns matching learnings in < 50ms (measured by GIN index query plan).
-3. An operator reviewing recent learnings via `gsd-memory search` sees structured WHAT/WHY/WHEN/TAGS fields in the output for every learning emitted after Phase 10 lands (legacy free-text still searchable).
-4. Attempting to store a learning with only generic tags (`best-practice`, `lesson`, etc.) is rejected with a guidance message; attempts with > 5 tags are auto-trimmed to 5 by tier ranking with a warning (per plan 10-03 spec).
-5. `gsd-memory skb candidates` excludes any learning with `applied_count > 10` until manually reviewed, visible via the `needs_review` field in the output.
-6. Every agent in `agents/*.md` references `cli-variables.md` via runtime Read at start of RPETD protocol; `CLI=`/`RLM=`/`MEM=`/`RESEARCH=` variables no longer duplicated inline across agent files.
+**Files expected (preview, to be finalized per-task in PLAN.md):**
+- modify: `scripts/verify-v26.cjs`
+- create: `tests/17-audit-script-hardening.test.cjs` (or equivalent) plus any fixture files needed for npm output parsing
+- delete: []
 
-**Kill switch:** `GSD_D_STRUCTURED=false` — disables structured learning parser; `gsd-memory learn --structured` falls back to free-text storage; `--category`/`--tags` filters return all rows.
+**Success Criteria (what must be TRUE for users after Phase 17 ships):**
 
-**Pitfalls Prevented:**
-- **D1 — Cargo-cult template-filling** (PITFALLS.md): prevented by `applied_count` echo-chamber defense and manual SKB review gate.
-- **D2 — Tag inflation** (`best-practice,general,lesson` everywhere): prevented by 5-tag cap + banned-generic-tags rejection.
-- **D5 — Feedback-loop instability**: prevented by 2-week quarantine window before Phase 11 ships — learnings are additive/reversible during quarantine.
-- **AF3 — "Structured formats make retrieval better"**: accepted for human review, rejected for retrieval; format lives inside existing `tags jsonb`, free-text + embeddings remain primary retrieval path.
+1. **Phase 14's `14-VERIFICATION.md` is discoverable.** Re-running `node scripts/verify-v26.cjs` against the v2.6 codebase produces an audit report where DOGFOOD-05 marks Phase 14 as `present` instead of `missing`. The prefix-form probe (`<phase>-VERIFICATION.md`) wins when both forms exist; unprefixed `VERIFICATION.md` remains the fallback. Tests cover both naming conventions and the collision case where both files exist.
+2. **npm pre-existing failures are captured by name, not just count.** `pre_existing_failures_verified` in the audit JSON contains structured entries `{ test_file, test_name, reason }` for the four known v2.6 npm failures (`rlm-workflow-spec.test.cjs`, `agent-frontmatter.test.cjs`, `comprehensive-e2e.test.cjs`, `gsd-amauta.test.cjs`), matching the locked CONTEXT.md Q9 rule ("match by name, not count") on the npm side the same way the pytest side already does.
+3. **Tooling bugs have a place to land in the audit JSON.** `15-AUDIT-REPORT.json` has a new `tooling_bugs_observed: []` field distinct from `hygiene_debt_observed: []`. The generator function emits both sections in the Markdown report with separate headings, and a human reader of the rendered audit can tell "defect in the tooling the audit itself relies on" apart from "known accumulated debt that won't affect audit correctness."
+4. **The v2.6 ledger depths 7 and 8 are encoded in the JSON after re-running the audit post-Phase 17.** The audit run against the v2.6 codebase populates `tooling_bugs_observed` with at least the two resolver-bug entries, closing the schema-orphan gap for those two depths. Depths 8 and 9 are addressed structurally by Phase 19 (dynamic scan); here they finally have a machine-readable home at the report level.
+5. **Schema version is bumped.** `15-AUDIT-REPORT.json` gains a version field increment (or equivalent provenance marker) so downstream consumers of the report can tell Phase 17's schema apart from the Wave 1 schema.
 
-**Rollback Plan:** Set `GSD_D_STRUCTURED=false`. Structured-format reference files (`learning-format.md`, `cli-variables.md`) stay on disk as inert references. Agent file changes are small per-file diffs (runtime Read line + LEARNING block template) — reverted via single commit. `tags jsonb` GIN index stays (harmless). No schema migration to undo.
+**Pitfalls prevented:**
+- **Silent false negatives in the audit script itself.** Before Phase 17, the audit script's three bugs produced a report that looked clean but had three known gaps the Wave 2 executor had to document in a sidecar ledger. After Phase 17, the audit report is self-describing.
+- **"While I'm in the audit script" refactor temptation.** `verify-v26.cjs` is a single file with significant internal complexity. Manifest enforcement restricts edits to the three named functions. Divergence protocol catches any attempt to absorb a broader refactor.
 
-**Plans:**
-9/9 plans complete
-- [x] 10-02: Migration 008 — `applied_count` column + DOWN (LEARN-05) — wave 1 — DONE 2026-04-09 (6307d93 + 72ff620)
-- [x] 10-03: gsd-memory.cjs core — `parse-learning` + `learn --structured` + `normalizeTags` from tag-rules.json + distill guard (LEARN-02, LEARN-04) — wave 2 — DONE 2026-04-09 (b5e06de + 1eac6ab + 31088df)
-- [x] 10-04: pg_store.py + daemon API — tag validation + structured metadata + `/api/memory/:id/increment-applied` + `/api/memory/skb-candidates` + search `--tags`/`--category` (LEARN-02, LEARN-03, LEARN-04, LEARN-05) — wave 2 — DONE 2026-04-09 (ec22631 + ab713bc + 05ebb2f + 90e4aa5)
-- [x] 10-05: gsd-memory.cjs SKB commands — `skb candidates`, `skb-promote --reviewed`, `skb-remove`, `increment-applied`, search `--tags`/`--category` + structured card display (LEARN-03, LEARN-05) — wave 2 — DONE 2026-04-09 (7f515ca + 41139b7 + 6ee63ee + 1fac128); also added do_PATCH + do_DELETE daemon HTTP verbs + GET/PATCH /api/memory/mem- + GET/DELETE /api/skb/skb- routes + pg_store memory_get_by_id/memory_patch_metadata/skb_get_by_id/skb_delete
-- [x] 10-06: gsd-operator.md + gsd-validator.md — structured LEARNING detection + APPLIED_LEARNING citation scanner + Gate 2 dual-format acceptance (LEARN-02, LEARN-05, LEARN-06) — wave 3 — DONE 2026-04-09 (2264177 gsd-memory-learn-blocks.sh helper + dca5ada operator D-phase structured storage + 0d9d997 operator APPLIED_LEARNING scanner + 8ec1284 validator Gate 2 dual-format)
-- [x] 10-07: CLI variables dedup — cli-variables.md Read across 11 agents + 6 workflows (LEARN-07) — wave 3 — **SEPARATE COMMIT 1 of 2** — DONE 2026-04-09 (923510e refs(LEARN-07) dedup across 11 agents + 6 workflows)
-- [x] 10-08: LEARNING block template across 11 agents with per-agent examples (LEARN-06) — wave 3 — **SEPARATE COMMIT 2 of 2** — DONE 2026-04-09 (01d05f8 refs(LEARN-06) structured LEARNING block template across 11 agents)
-- [x] 10-09: Tests (unit + integration + regression) + README documentation (LEARN-01..LEARN-07) — wave 4 — DONE 2026-04-09 (232799b..8cf2d20: 4 CJS test files + 2 pytest files + README Phase 10 section + daemon query-param fix)
+**Rollback plan:** Revert the single modified file and delete the new test file. The audit JSON schema change is additive (`tooling_bugs_observed: []` defaults to empty list) so downstream consumers that haven't learned the new field continue to work. Clean rollback.
+
+**Plans:** To be atomized by `/amauta:plan-phase 17`. Expected 1-3 plans depending on whether the three AUDIT-* requirements split cleanly by file region or can be bundled into one plan.
 
 ---
 
-### Phase 11: E-Phase Research-Informed Execution Mandate
+### Phase 18: Sampling Pool Expansion
 
-**Goal:** Make executors retrieve and cite failure patterns, SKB best-practices, existing style, and a security checklist BEFORE writing code. Produces a structured `PRE_EXECUTION_EVIDENCE:` block inside E-phase RPETD content that `gsd-validator` parses. Advisory (warn + log) in v2.6; becomes a hard gate in v2.7 after measuring compliance.
+**Goal:** DOGFOOD-01 stops collapsing to n=1 because `sampleCompletedTasks()` queries authoritative task state (RPETD logs via the amauta daemon) instead of scraping SUMMARY.md text for `TK-\d+` pattern matches. Audits against v2.7 produce statistically meaningful sampling pools.
 
-**Depends on:** Phase 10 (uses tag schema for failure-pattern queries; reuses runtime Read pattern from `cli-variables.md`)
+**Depends on:** Phase 17 (audit script surface must be stable before changing how one of its functions consumes data; Phase 17 ships `verify-v26.cjs` changes first, then Phase 18 touches the same file)
 
-**Requirements:** EXEC-01, EXEC-02, EXEC-03, EXEC-04, EXEC-05, EXEC-06, EXEC-07, EXEC-08
+**Requirements:** SAMPLE-01
 
-**Deliverables:**
-| # | Deliverable | Requirement |
-|---|-------------|-------------|
-| 1 | `get-shit-done/references/pre-execution-checklist.md` with 4 query templates + 8-item security checklist | EXEC-01 |
-| 2 | All 4 executor agents gain 3-line `<pre_execution_mandate>` runtime Read block | EXEC-02 |
-| 3 | E-phase RPETD content includes structured `PRE_EXECUTION_EVIDENCE:` block (4 subfields) | EXEC-03 |
-| 4 | `gsd-validator` parses evidence block; logs advisory WARNING if missing/empty (no hard fail in v2.6) | EXEC-04 |
-| 5 | `gsd-memory search --source auto_learning,lesson-learned --tags "failure,<domain>"` wired into executor pre-code flow | EXEC-05 |
-| 6 | `gsd-rlm query "<title>" --path <dir> --top-k 5` wired into executor pre-code flow for style matching | EXEC-06 |
-| 7 | Security checklist items each marked `applied` (note), `n/a` (reason), or `skipped because <reason>` | EXEC-07 |
-| 8 | Executor D-phase learning cites `APPLIED_LEARNING:` OR explicitly notes "no applicable prior learnings" | EXEC-08 |
+**Scope ceiling:** ~30 LOC. One function in `scripts/verify-v26.cjs` (the `sampleCompletedTasks` rewrite) plus its tests. Not a full redesign of DOGFOOD-01's sampling methodology — that would be a v2.8 research question. The current fix is the minimum viable broadening: swap the input source, keep the downstream structure.
 
-**Success Criteria (what must be TRUE for users):**
-1. On any executor task, E-phase RPETD content contains a non-empty `PRE_EXECUTION_EVIDENCE:` block with the 4 subfields populated (verifiable via `amauta show TK-XXXX | grep PRE_EXECUTION_EVIDENCE`).
-2. `gsd-validator` logs an advisory WARNING (not a fail) in `validation` output when `PRE_EXECUTION_EVIDENCE:` is missing or empty; validation still passes if other gates are green.
-3. An operator reading a v2.6 executor task's E-phase content sees at least one of the 8 security checklist items with a concrete applied/n-a/skipped reason (not generic "checked").
-4. Gate 6 evidence parse rate across v2.6 executor tasks is > 80% after 1 week (measured by `gsd-tools audit-rpetd-intelligence` batch report).
-5. `pytest && npm test` pass rate is unchanged from Phase 10 baseline (no regression in executor task failure rate).
-6. Every completed executor task's D-phase content contains either an `APPLIED_LEARNING:` citation or an explicit "no applicable prior learnings" note.
+**Files expected (preview, to be finalized per-task in PLAN.md):**
+- modify: `scripts/verify-v26.cjs`
+- create: `tests/18-sampling-pool.test.cjs` (or equivalent)
+- delete: []
 
-**Kill switch:** `GSD_E_MANDATE=advisory` (default in v2.6) makes evidence block advisory only. `GSD_E_MANDATE=off` disables the mandate entirely — executors revert to v2.5 behavior.
+**Success Criteria (what must be TRUE for users after Phase 18 ships):**
 
-**Pitfalls Prevented:**
-- **E1 — Executors skip the mandate**: prevented by external validator parsing the evidence block (not self-validation), per v2.5 AGT-05 principle.
-- **E3 — Security checklist cargo-cult**: prevented by requiring concrete applied/n-a/skipped reasons per item — generic "checked" strings are flagged.
-- **E4 — Memory queries return task_event noise**: prevented by explicit `--source auto_learning,lesson-learned,best-practice` filter in EXEC-05.
-- **C1 — Prompt size explosion**: prevented by shared reference file + 3-line runtime Read (NOT `@` include, which doesn't work in agent .md), avoiding 4× duplication across executors.
+1. **Sampling pool reflects actual task population, not SUMMARY happenstance.** Running `verify-v26.cjs` against the v2.7 codebase with the amauta daemon available produces a DOGFOOD-01 verdict with a sampling pool of at least 5 tasks (v2.7 has 4 phases × ~3 plans each ≈ 12 tasks, plus sub-tasks). The n=1 collapse observed in v2.6 is structurally prevented because the sampler no longer depends on SUMMARY.md happening to cite a TK-ID.
+2. **RPETD-phase compliance rate is measurable.** The audit surfaces the percentage of sampled tasks that have all 5 RPETD intelligence checks firing (Layer 1 enrichment, creative research, PRE_EXECUTION_EVIDENCE, QA block, structured learning) across the sampled pool. Before Phase 18, DOGFOOD-01 could only report "1 task checked" with no statistical weight; after, it reports a percentage across a meaningful pool.
+3. **Graceful degradation when the daemon is unavailable.** When the amauta daemon is unreachable (wrong port, not running, permission denied), the function falls back to the old SUMMARY-scraping behavior and logs a `sampling_degraded: daemon_unavailable` observation in the audit report. The audit does not hard-fail because of infrastructure state; it reports the degradation and continues.
+4. **Small pools are evidence, not failures.** When the sampling pool is below 5 tasks (e.g., a hotfix milestone with only 2 tasks), DOGFOOD-01 records the pool size as part of the evidence and does NOT collapse to `gaps_found` automatically. Small pools are a finding about project scope, not an audit failure verdict. This matches how the other DOGFOOD-* criteria handle low-signal situations.
 
-**Rollback Plan:** Set `GSD_E_MANDATE=off`. 3-line runtime Read blocks in each executor agent revert via single commit per file. `pre-execution-checklist.md` stays on disk as inert reference. `gsd-validator` parser block guarded by the env var — no code revert needed beyond flipping the flag.
+**Pitfalls prevented:**
+- **Statistical theater.** An n=1 sampling pool masquerading as evidence of compliance across a 46-requirement milestone is not honest evidence. Phase 18 makes the sampling either statistically meaningful or honestly degraded.
+- **Infrastructure coupling absorbed silently.** The SUMMARY-scraping approach created an implicit coupling between "executor remembered to cite a TK-ID in SUMMARY text" and "audit sampling works." Phase 18 replaces this with the daemon query, which has an explicit degradation path.
 
-**Plans:**
-2/2 plans complete
-- [ ] 11-02: gsd-validator advisory PRE_EXECUTION_EVIDENCE parser — logs WARNING if missing, does NOT fail validation in v2.6 (EXEC-04) — wave 2
+**Rollback plan:** Revert the single modified file and delete the new test file. If rollback leaves the daemon-query path in other phases' code, the fallback behavior (SUMMARY scraping) continues to work. Clean rollback.
+
+**Plans:** To be atomized by `/amauta:plan-phase 18`. Expected 1 plan (single function rewrite, cohesive scope).
 
 ---
 
-### Phase 12: T-Phase QA Department + Spec Inheritance
+### Phase 19: Dynamic Ledger Schema
 
-**Goal:** Blocked on missing `_inherit_parent_spec()` helper at `amauta.py:2218`. Ships as commit 1 of this phase. Validator checks each parent G/W/T criterion individually. Edge cases, regression sweep, and RED-GREEN back-testing MANDATORY for bug-fix tasks.
+**Goal:** The `dogfood_ledger_depths_captured` field in `15-AUDIT-REPORT.json` reflects the state of the memory directory at audit run time, not the state at Wave 1 authoring time. Depths discovered during execution itself are automatically included in subsequent audit runs without any code change.
 
-**Depends on:** Phase 11 (T-phase checker validates E-phase's `PRE_EXECUTION_EVIDENCE:` block, so E must land first)
+**Depends on:** Phase 18 (same file, sequential edits; also, Phase 18's sampling fix and Phase 19's ledger scan both demonstrate the pattern of replacing static Wave-1 data with runtime queries, so Phase 19 builds conceptually on Phase 18's infrastructure)
 
-**Requirements:** QA-01, QA-02, QA-03, QA-04, QA-05, QA-06, QA-07, QA-08
+**Requirements:** SCHEMA-01
 
-**Deliverables:**
-| # | Deliverable | Requirement |
-|---|-------------|-------------|
-| 1 | `amauta.py _inherit_parent_spec(item)` helper called from `_enrich_task_context()` at line 2218 | QA-01 |
-| 2 | `amauta show TK-XXXX --json` adds `inherited_success_criteria` field; `--no-inherit` flag | QA-02 |
-| 3 | `gsd-checker.md` `<post_check_mode>` pulls parent `success_criteria`, logs per-criterion pass/fail in T-phase | QA-03 |
-| 4 | `gsd-validator.md` Gate 6 "parent-story criteria individually verified" (advisory in v2.6.2, hard gate in v2.6.3) | QA-04 |
-| 5 | Edge-case generation: checker requires 2+ edge cases per happy-path criterion in `EDGE_CASES:` block | QA-05 |
-| 6 | Regression sweep: `test-phase.md` instructs full `npm test && pytest` with before/after counts in `REGRESSION:` block | QA-06 |
-| 7 | Adversarial testing for code with `security-sensitive: true` metadata (path traversal, injection, etc.) | QA-07 |
-| 8 | RED-GREEN back-testing MANDATORY for bug-type tasks (RED commit before GREEN commit, verified via `git log --grep`) | QA-08 |
+**Scope ceiling:** ~40 LOC. One new function (`scanDogfoodLedgerDepths()`) in `scripts/verify-v26.cjs` plus its tests. The filesystem scan pattern is already used elsewhere in the script (for phase directory walks), so the addition is structurally straightforward.
 
-**Success Criteria (what must be TRUE for users):**
-1. `amauta show TK-XXXX --json` on any task with a parent story emits an `inherited_success_criteria` array containing the parent's G/W/T criteria (verifiable on any existing task with a parent in the test fixtures).
-2. Every v2.6 code task's T-phase RPETD content contains a non-empty `EDGE_CASES:` block with ≥ 2 edge cases per happy-path criterion (verifiable via `gsd-tools audit-rpetd-intelligence`).
-3. Every v2.6 code task's T-phase RPETD content contains a `REGRESSION:` block with `before:` and `after:` test counts (e.g., `before: 2479p/0f, after: 2479p/0f`).
-4. Every bug-type task's commit graph shows a RED commit (reproducing the bug) before a GREEN commit (fix), verifiable via `git log --grep="(T|E)" --reverse` against the task ID.
-5. Parent-story spec inheritance rate is > 90% on tasks with a parent after 1 week (measured by `gsd-tools audit-rpetd-intelligence` batch report).
-6. `gsd-validator` emits advisory Gate 6 warnings (NOT hard fails) when parent criteria are missing evidence in T-phase — validation still passes.
+**Files expected (preview, to be finalized per-task in PLAN.md):**
+- modify: `scripts/verify-v26.cjs`
+- create: `tests/19-ledger-scan.test.cjs` (or equivalent) plus memory directory fixture
+- delete: []
 
-**Kill switch:** `GSD_T_SPEC_INHERIT=false` — disables the `_inherit_parent_spec` walk; falls back to task-only `success_criteria` as in v2.5.
+**Success Criteria (what must be TRUE for users after Phase 19 ships):**
 
-**Pitfalls Prevented:**
-- **T1 — Parent story G/W/T too vague**: surfaced by `_inherit_parent_spec` which emits `[INHERITED SPEC from ST-XXXX]` block — empty criteria become visible immediately.
-- **T2 — Edge case bloat (20 useless tests)**: prevented by cap (2 edge cases per criterion, justification required); not 20.
-- **T5 — Back-testing on missing repro**: QA-08 applies ONLY to bug-type tasks (forward-testing remains the default for feature tasks).
-- **T6 — G/W/T inheritance breaks on rename**: prevented by snapshot-at-atomization-time; parent change triggers explicit `amauta task resync-criteria` (not auto).
-- **T7 — Trajectory evaluation theatre**: deliberately NOT added in v2.6 (deferred to v2.7 per research).
+1. **The audit report reflects reality at audit run time, not Wave 1 authoring time.** Running `verify-v26.cjs` during v2.7 closeout produces a `dogfood_ledger_depths_captured` field containing `[0, 1, 2, 4, 5, 6, 7, 8, 9]` with `gaps: [3]` — matching the actual state of the v2.6 ledger at the moment of the audit run. This closes the meta-finding from the v2.6 Limitations section (schema-orphaned depths 8 + 9) structurally.
+2. **Newly captured depths auto-include without code change.** If v2.7 execution itself captures a new depth — for example, Phase 16's executor catching depth 3 during the resolver fix, or a future milestone capturing depth 10+ — that depth appears in the subsequent audit run's JSON automatically. The audit script's depth list is never stale because it is never hard-coded.
+3. **Graceful degradation when memory is unreachable.** When the memory directory is unreachable (wrong path, permission denied, running outside a Claude Code context), the function logs a `ledger_scan_degraded: memory_unavailable` observation in the audit report and falls back to a static depth list for backward compatibility. The audit does not hard-fail because of infrastructure state.
+4. **Gap identification is structural, not manually maintained.** The function identifies the gap set (the list of missing depth numbers between 0 and the max observed depth) automatically by set difference. The "depth 3 still open" observation is no longer a hand-maintained note in the ledger prose — it is emitted by the audit script from the actual filesystem state.
+5. **The parser tolerates both YAML frontmatter and first-line-of-body depth annotations.** Memory entries use two conventions for depth annotation depending on when they were authored. The parser handles both so the historical ledger entries are not retroactively orphaned by the new scanner.
 
-**Rollback Plan:** Set `GSD_T_SPEC_INHERIT=false`. `_inherit_parent_spec()` helper stays on disk but is guarded. Agent `<spec_inheritance_protocol>` + `<qa_mandate>` blocks revert via commit per file. Gate 6 validator logic is env-var-guarded — flip the flag, no revert needed.
+**Pitfalls prevented:**
+- **Schema ossification.** A static list in a Wave-1 script forces every future depth to either retrofit the script or get orphaned. Phase 19 makes the schema self-healing against exactly the kind of meta-findings the dogfood discipline is designed to surface.
+- **"This audit is a snapshot" rationalization.** The v2.6 Limitations section documented the schema-orphan gap as a "we accept the JSON is a snapshot" rationalization. Phase 19 closes that rationalization by making the snapshot dynamic. The resistance-to-fix ratio flips: instead of 1 snapshot orphan, 0 dynamic scans, the new ratio is 0 orphans, 1 scan.
 
-**Plans:**
-- [x] 12-01: Python _inherit_parent_spec() helper + cmd_show --json inherited_success_criteria + --no-inherit (QA-01, QA-02) -- wave 1 -- DONE 2026-04-09 (commits 4ccd2dd, 05f5553, 77e699f)
-- [x] 12-02: qa-checklist.md reference + gsd-checker.md update + agent-capabilities security_patterns (QA-03, QA-04, QA-05) -- wave 2 -- DONE 2026-04-09 (commits 52d67ff, c781bfe, b9f887a, bbee0b1)
-- [x] 12-03: test-phase.md regression sweep + gsd-validator advisory + checkSpecInheritanceAdvisory + _checkQaBlocks + _checkRedGreenOrder (QA-04, QA-05, QA-06, QA-07, QA-08) -- wave 2 -- DONE 2026-04-09 (commits 1900dd5, 8f8d7ee, 47f32ac)
-- [x] 12-04: Tests (Python + CJS) + STATE.md baseline section (QA-01..QA-08) -- wave 3 -- DONE 2026-04-09 (commits e4cac87, cadef90, 3b4df58, 8a114ee)
+**Rollback plan:** Revert the single modified file and delete the new test file. The field name `dogfood_ledger_depths_captured` is unchanged, so downstream consumers that read the field continue to work against the pre-Phase-19 static output after rollback. Clean rollback.
 
----
-
-### Phase 13: R-Phase Creative Research (Narrowed)
-
-**Goal:** Creative query variants (lateral, inversion, anti-pattern, cross-domain) gated behind task-type classification. Run ONLY for research/exploration/architecture-review tasks. Implementation tasks (type=task|bug with code file patterns) continue using v2.5 conservative single-query cascade. Prevents JetBrains Junie 3x rollback rate documented for novel suggestions in code tasks.
-
-**Depends on:** Phase 11 (parallel with Phase 12 — R-creative and T-QA are architecturally independent; both depend on E-mandate being measurable before R/T land)
-
-**Requirements:** CREATIVE-01, CREATIVE-02, CREATIVE-03, CREATIVE-04, CREATIVE-05
-
-**Deliverables:**
-| # | Deliverable | Requirement |
-|---|-------------|-------------|
-| 1 | `get-shit-done/references/creative-research.md` with 5 query transformation techniques documented | CREATIVE-01 |
-| 2 | `gsd-research.cjs --creative` flag emits 3 variant queries per input, runs each through 5-step cascade, Jaccard dedups | CREATIVE-02 |
-| 3 | Task-type gating: auto-enable `--creative` only for `type in (epic, story)` OR `task_type in (research, exploration, architecture-review, pattern-search)` | CREATIVE-03 |
-| 4 | `gsd-researcher.md` `<creative_protocol>` section: when to use `--creative` vs conservative cascade | CREATIVE-04 |
-| 5 | Perplexity token budget monitoring: per-variant usage logged; total cost delta < 20% vs baseline on 10 comparable tasks | CREATIVE-05 |
-
-**Success Criteria (what must be TRUE for users):**
-1. Running `gsd-research search "topic" --creative` emits 3 distinct variant queries (labeled direct / inversion / anti-pattern) with deduped results, visible in the CLI output.
-2. Running `gsd-research search "topic"` (no `--creative`) against an implementation task (type=task with .py/.ts files) returns the v2.5 single-query cascade unchanged.
-3. `gsd-researcher` auto-enables `--creative` only for tasks matching the gating criteria; an operator reviewing R-phase content on a `type=bug` task sees a single-query cascade, not 3 variants.
-4. Perplexity token cost delta across 10 comparable v2.6 R-phase tasks is < 20% vs v2.5 baseline (measured by per-variant usage log).
-5. Zero new hallucinated API calls appear in creative-mode R-phase output compared to baseline (manual audit on 10 tasks).
-
-**Kill switch:** `GSD_R_CREATIVE=off` — disables creative variants entirely; all R-phase calls fall back to conservative single-query cascade regardless of task type.
-
-**Pitfalls Prevented:**
-- **R1 — Creative prompting adds noise, not lift, for codebase-grounded research**: prevented by task-type gating — only brainstorm/architecture/research tasks get variants; code tasks stay conservative.
-- **R2 — Perplexity token bloat 3-5x**: prevented by 3-variant cap (not 5) + per-variant 500-char response cap + Redis cache dedup + budget monitoring gate.
-- **R3 — Dedup failures (same finding 5 times)**: prevented by post-variant Jaccard dedup running AFTER all variants return.
-- **R5 — Overfitting to novelty (3x rollback rate)**: prevented by gating — creative mode never fires on implementation tasks where novelty is punished.
-
-**Rollback Plan:** Set `GSD_R_CREATIVE=off`. `--creative` flag in `gsd-research.cjs` stays but dormant. `gsd-researcher.md` `<creative_protocol>` block reverts via single commit. `creative-research.md` reference stays on disk as inert documentation.
-
-**Plans:**
-3/3 plans complete
-- [x] 13-02: Creative cascade wiring + agent updates -- cmdSearch creative loop + providerPerplexity._creative + creative log + JSON/human output + gsd-researcher.md creative_protocol + gsd-operator.md execution_type + execute-phase.md flags (CREATIVE-02, CREATIVE-03, CREATIVE-04, CREATIVE-05) -- wave 2, depends on 13-01 -- DONE 2026-04-10
-- [x] 13-03: Tests (30 CJS) + STATE.md baseline update (CREATIVE-01..05 coverage) -- wave 3, depends on 13-01 + 13-02 -- DONE 2026-04-10
-
----
-
-### Phase 13.1: Orchestrator Hardening & Divergence Protocol
-
-**Goal:** Install deterministic manifest-check utility + behavioral divergence protocol across executors and validator to prevent the Phase 13 silent scope-expansion failure mode. Ship the mechanical halt (HARDEN-01) paired with the behavioral decision tree (HARDEN-02) + agent .md updates (HARDEN-03) + validator `--gaps-found` third verdict (HARDEN-04) + synthetic divergence test suite (HARDEN-05).
-**Requirements:** HARDEN-01..05 (5)
-**Depends on:** Phase 13
-**Plans:** 5 plans, 18 commits total (3 Wave 1 + 1 amend + 8 Wave 2 + 1 amend + 5 Wave 3)
-**Status:** DONE — validator verdict `--pass`, all 5 requirements verified 2026-04-10
-
-Plans:
-- [x] 13.1-01: HARDEN-01 Manifest Enforcement — `manifestCheck` utility + `execute-phase.md` wiring + STATE/REQUIREMENTS docs (3 tasks) — DONE
-- [x] 13.1-02: HARDEN-02 Divergence Protocol Reference File — `references/divergence-protocol.md` v1.0.0 (1 task) — DONE
-- [x] 13.1-03: HARDEN-03+04 Agent .md Mechanical Updates — 4 executor .md files + validator .md vocabulary lock (5 tasks) — DONE
-- [x] 13.1-04: HARDEN-04 Validator `--gaps-found` CLI + Routing — `cmdValidate` + gaps-report + execute-phase routing (2 tasks) — DONE
-- [x] 13.1-05: HARDEN-05 Synthetic Divergence Test + Wave 1+2 fold-ins — deterministic + behavioral test suites, CI workflow, 4 folded fixes (5 tasks) — DONE
-
-Notable: 3 in-production dogfood moments captured at 3 recursion depths (Wave 1 first-invocation, Wave 2 meta-recursive protocol self-application during its own creation, Wave 3 near-miss at hard ceiling with explicit rationalization-naming). Phase 13 incident replay test present and passing. Hard ceiling on task 13.1-05-05 held against a Phase-13-shaped rationalization ("the helper is useless if nothing consumes it") — executor resisted, verified via `git diff`, flagged for Phase 14 cleanup. Validator bound by the vocabulary lock + pre-gate divergence scan + never-invent-req-IDs rules that this same phase installed, and returned clean.
-
-### Phase 14: P-Phase Task-Management Integration (LAST — highest blast radius)
-
-**Goal:** When the planner outputs tasks, they are AUTOMATICALLY registered in amauta with full metadata (title, description, deps, G/W/T criteria, parent story, agent assignment) via structured XML in PLAN.md + workflow tool for 2-pass dep linking. Ships LAST because it has the highest blast radius on task topology — every other phase must be measured-stable before this lands.
-
-**Depends on:** Phase 12 (uses Phase 12's `_inherit_parent_spec` helper to propagate inherited success criteria into emitted child tasks; also depends on Phases 10, 11, 13 being stable since P-phase touches task topology for all of them)
-
-**Requirements:** PLAN-01, PLAN-02, PLAN-03, PLAN-04, PLAN-05, PLAN-06, PLAN-07
-
-**Deliverables:**
-| # | Deliverable | Requirement |
-|---|-------------|-------------|
-| 1 | `gsd-planner.md` `<planning_protocol>` emits structured XML plan block with `<task>` elements | PLAN-01 |
-| 2 | `gsd-tools.cjs plan-to-tasks <plan-file>` subcommand parses XML, 2-pass walk (create, then link deps), idempotent | PLAN-02 |
-| 3 | Auto-agent-assignment via `agent-capabilities.json` file-pattern matching + performance tiebreaker | PLAN-03 |
-| 4 | Auto-dep-linking from explicit `depends_on` XML field + implicit ordering with `parallel: true` opt-out | PLAN-04 |
-| 5 | Runaway defense: 10-task hard cap per plan; plans exceeding cap error out with guidance | PLAN-05 |
-| 6 | `plan-phase.md` fails plan review if any sub-task lacks `--agent`, has dep cycle, or exceeds 10 tasks | PLAN-06 |
-| 7 | P-phase RPETD content includes structured output: task IDs, agent assignments, dep DAG text, inherited criteria | PLAN-07 |
-
-**Success Criteria (what must be TRUE for users):**
-1. Running `gsd-tools plan-to-tasks <plan-file>` on a valid PLAN.md emits N task IDs with agent assignments and dependency edges visible in `amauta board`.
-2. Re-running `gsd-tools plan-to-tasks <plan-file>` on the same plan is idempotent — no duplicate tasks created, exits with "N tasks already exist, skipping".
-3. Attempting to register a plan with > 10 sub-tasks fails with a clear guidance message ("plans over 10 tasks must be split — split boundary suggestion: …"); no partial task creation.
-4. Every auto-created task has a non-null `--agent` assignment visible via `amauta show TK-XXXX` (100% coverage — no defaults beyond `executor-general` for no-match cases).
-5. Attempting to register a plan with a circular dependency fails at plan time (not execution time) with the cycle printed.
-6. P-phase RPETD content on any plan shows the created task IDs, their agents, and a text DAG of dependencies, verifiable via `amauta show TK-XXXX` on the parent story.
-
-**Kill switch:** `GSD_P_AUTO_TASK=false` — disables `plan-to-tasks` parser; planner falls back to prose output and manual `amauta add task` calls as in v2.5.
-
-**Pitfalls Prevented:**
-- **P1 — Runaway sub-task creation (50 when 5 would do)**: prevented by 10-task hard cap + guidance-message error.
-- **P2 — Wrong agent assignment from file-pattern matching**: prevented by reusing v2.5 `routeExecutor` logic + performance tiebreaker (AGT-02 already shipped).
-- **P3 — Circular dependency linking**: prevented by DAG validation on plan save — cycles rejected at plan time, not execution time.
-- **P5 — Plans unreadable ("black-box planning")**: prevented by PLAN-07 structured RPETD output showing task IDs + agents + DAG in readable form.
-- **P8 — Spurious dependency inference**: prevented by requiring explicit `depends_on` fields; implicit ordering has explicit `parallel: true` opt-out.
-- **C5 — Solo-developer rollout risk**: prevented by shipping P-phase LAST, so all prior phases are measured-stable before task topology changes.
-
-**Rollback Plan:** Set `GSD_P_AUTO_TASK=false`. `plan-to-tasks` subcommand stays in `gsd-tools.cjs` but is never invoked. Planner prompt changes revert via single commit. Existing PLAN.md files are unaffected (they were never parsed for amauta registration before v2.6).
-
-**Plans:**
-4/4 plans complete
-- [x] 14-02: Dedup Bypass + Pass 0 Validation Engine — planToTasks() Pass 0 engine + scoped dedup bypass + 20 unit tests (PLAN-02/03/04/05) — Wave 2 — DONE 2026-04-10 (0965af3 + db50900 + eef17f2)
-- [x] 14-03: Pass 1+2 Registration + Integration Tests — Pass 0.5/1/2 real subprocess calls + amauta.py scoped dedup bypass + 8 integration tests with SIGKILL failure injection (PLAN-02/03/04) — Wave 3 — DONE 2026-04-10 (bfb7301 + bb94163)
-- [x] 14-04: Agent Wiring + Workflow Integration — operator PLAN_REGISTRATION parser + validator advisory + plan-phase PLAN-06 quality gate + execute-phase plan-to-tasks invocation + PLAN-04 errata (PLAN-04/06/07) — Wave 4 — DONE 2026-04-10 (0f3770c + a78fa18 + 06fe2cb)
-
----
-
-### Phase 15: End-to-End Dogfood Verification
-
-**Goal:** Observational verification that all 5 RPETD upgrades fired on a real task. Dedicated workflow + CLI tool for future regression detection. Not a hard gate — failure of any check reports to operator but does not block the milestone (except DOGFOOD-05 which requires 6/6 phases green as the ship criterion).
-
-**Depends on:** Phase 14 (dogfood verifies all 5 RPETD upgrades landed; cannot run until P-phase is stable)
-
-**Requirements:** DOGFOOD-01, DOGFOOD-02, DOGFOOD-03, DOGFOOD-04, DOGFOOD-05
-
-**Deliverables:**
-| # | Deliverable | Requirement |
-|---|-------------|-------------|
-| 1 | ~~`gsd-tools.cjs audit-rpetd-intelligence <task_id>` subcommand~~ standalone binary `get-shit-done/bin/audit-rpetd-intelligence.cjs` parses RPETD content and verifies D/E/T evidence blocks (errata 2026-04-10, see REQUIREMENTS.md closeout note) | DOGFOOD-01 |
-| 2 | `get-shit-done/workflows/verify-rpetd-intelligence.md` creates sample story, runs through 5 phases, invokes audit | DOGFOOD-02 |
-| 3 | ~~`scripts/verify-v26.sh` end-to-end shell script~~ `scripts/verify-v26.cjs` end-to-end Node script: dogfood flow + `amauta health` + `npm test` + `pytest`, emits PASS/FAIL per capability (errata 2026-04-10) | DOGFOOD-03 |
-| 4 | `commands/amauta/verify-v26.md` slash command exposes verification flow to users | DOGFOOD-04 |
-| 5 | Post-v2.6 regression: ~~`verify-v26.sh`~~ `verify-v26.cjs` must pass 6/6 capabilities green before milestone shipped | DOGFOOD-05 |
-
-**Success Criteria (what must be TRUE for users):**
-1. An operator running `gsd-tools audit-rpetd-intelligence TK-XXXX` on a completed v2.6 task sees a JSON report with pass/fail flags for D-phase structured learning, E-phase evidence block, T-phase inherited criteria + edge cases + regression sweep.
-2. An operator running `/amauta:verify-v26` slash command sees end-to-end verification: sample story created, 5 phases executed, audit report, `amauta health` output, test suite results — all in one session.
-3. ~~`scripts/verify-v26.sh`~~ `scripts/verify-v26.cjs` executed after Phase 14 ships reports 6/6 capabilities PASS (D-learning, E-mandate, T-spec-inherit, R-creative-gated, P-auto-task, baseline-tests-green).
-4. An operator regression-testing post-v2.6 can run ~~`verify-v26.sh`~~ `verify-v26.cjs` and get a single PASS/FAIL verdict with per-capability breakdown.
-5. At least 8 of 10 randomly-sampled completed v2.6 tasks have all 5 RPETD intelligence checks firing when audited via `audit-rpetd-intelligence`.
-
-**Kill switch:** None (observational only — doesn't affect running tasks). DOGFOOD-05 gate can be manually overridden via `--force-reason` on milestone close if 6/6 cannot be achieved.
-
-**Pitfalls Prevented:**
-- **AF7 — Trajectory evaluation theatre**: prevented by audit checking for SPECIFIC evidence markers (structured LEARNING fields, `PRE_EXECUTION_EVIDENCE:` block, `EDGE_CASES:` block) rather than tool-call presence.
-- **C5 — Solo-developer rollout risk**: verify-v26.sh provides a single regression harness for all 5 upgrades; one command to detect if any capability regressed post-ship.
-
-**Rollback Plan:** Delete ~~`audit-rpetd-intelligence` subcommand~~ `audit-rpetd-intelligence.cjs` standalone binary, `verify-rpetd-intelligence.md` workflow, ~~`verify-v26.sh` script~~ `verify-v26.cjs` script, and `commands/amauta/verify-v26.md` slash command. Zero operational impact on running tasks since dogfood is observational.
-
-**Plans:**
-3/3 plans complete
-- [x] 15-01: Tooling Creation — 4 new files: `audit-rpetd-intelligence.cjs` standalone binary, `verify-rpetd-intelligence.md` workflow, `verify-v26.cjs` end-to-end script, `verify-v26.md` slash command (DOGFOOD-01..04 structural) — Wave 1 — DONE 2026-04-10 (16513ed + 26ae849 + 36a2d2a + 447c9b5)
-- [x] 15-02: Run the audit — executed verify-v26.cjs ONCE, captured 15-AUDIT-REPORT.{json,md}, behavioral suite skipped via environment_missing (ANTHROPIC_API_KEY unset, CONTEXT.md Gap 3 clean path); 5/5 DOGFOOD criteria assessed, Phase 15 passes on audit completeness per Q14 — Wave 2 — DONE 2026-04-10 (5d2f1f8)
-- [x] 15-03: Publish ledger — `docs/v2.6-dogfood-ledger.md` (706 lines) transcribes 9 dogfood memory entries (depths 0-2, 4-9) with depth-3 honest placeholder; includes Limitations, Routed follow-ups, Expected shape, and Source authority sections — Wave 3 — DONE 2026-04-10 (89c6288)
+**Plans:** To be atomized by `/amauta:plan-phase 19`. Expected 1 plan (new function + parser + tests, cohesive scope).
 
 ---
 
 ## Phase Dependency Graph
 
 ```
-Phase 9 (Tech-Debt Sweep) ──> blocks all v2.6 work
-    │
+Phase 16 (Init Resolver Fix) ──> unlocks clean init surface for all downstream phases
+    │                             (Phases 17-19 all use gsd-tools init execute-phase
+    │                              to locate their own phase directory)
     ▼
-Phase 10 (D-Phase Structured Learning) ──> unlocks tag schema for Phases 11, 12, 13
-    │
+Phase 17 (Audit Script Hardening) ──> stabilizes verify-v26.cjs for Phase 18's sampling work
+    │                                  (three additive fixes land in one file before it
+    │                                   gets edited again in Phase 18)
     ▼
-Phase 11 (E-Phase Research-Informed Execution Mandate)
-    │
-    ├────► Phase 12 (T-Phase QA + Spec Inheritance)  [T validates E's evidence block]
-    │           │
-    │           ▼
-    ├────► Phase 13 (R-Phase Creative Research, Narrowed)  [independent of T, parallel with 12]
-    │           │
-    │           ▼
-    │      Phase 14 (P-Phase Task-Management Integration)  [uses 12's spec inheritance; highest blast radius, ships last]
-    │           │
-    │           ▼
-    └────> Phase 15 (End-to-End Dogfood Verification)  [terminal, observational]
+Phase 18 (Sampling Pool Expansion) ──> provides real sampling pool for DOGFOOD-01 re-audit
+    │                                   (daemon query replaces SUMMARY scrape; demonstrates
+    │                                    the runtime-query-over-static-data pattern that
+    │                                    Phase 19 generalizes)
+    ▼
+Phase 19 (Dynamic Ledger Schema) ──> final v2.7 deliverable, closes schema-orphan meta-finding
+                                     (runtime memory directory scan replaces Wave 1 static
+                                      depth list; audit JSON becomes self-describing)
 ```
 
-### Execution Waves (for parallel execution planner)
-
-| Wave | Phases | Mode |
-|------|--------|------|
-| 1 | Phase 9 | Sequential (blocks all) |
-| 2 | Phase 10 | Sequential (gates all downstream via tag schema) |
-| 3 | Phase 11 | Sequential (E-mandate lands before T validates it) |
-| 4 | Phase 12 + Phase 13 | **Parallel** (T and R are architecturally independent after E) |
-| 5 | Phase 14 | Sequential (uses Phase 12's spec inheritance; highest blast radius, last) |
-| 6 | Phase 15 | Sequential (terminal, verifies all prior phases) |
-
-**Critical path length:** 6 waves (Phase 9 → 10 → 11 → {12+13 parallel} → 14 → 15).
-**Parallelization opportunity:** 1 wave (Wave 4) can run two phases concurrently, reducing sequential phase count from 7 to 6.
-
----
-
-## Coverage
-
-| Category | Requirements | Phase | REQ-IDs |
-|----------|--------------|-------|---------|
-| Tech Debt | 6 | 9 | TECH-01..06 |
-| D-Phase Structured Learning | 7 | 10 | LEARN-01..07 |
-| E-Phase Research-Informed Execution | 8 | 11 | EXEC-01..08 |
-| T-Phase QA + Spec Inheritance | 8 | 12 | QA-01..08 |
-| R-Phase Creative Research (Narrowed) | 5 | 13 | CREATIVE-01..05 | Complete    | 2026-04-10 | 7 | 14 | PLAN-01..07 | Complete    | 2026-04-10 | 5 | 15 | DOGFOOD-01..05 |
-| **Total** | **46** | **7 phases** | — |
-
-**Mapped:** 46/46 ✓
-**Unmapped:** 0 ✓
-**Duplicates:** 0 ✓
-
----
-
-## Kill-Switch Summary
-
-| Phase | Env Var | Default | Effect |
-|-------|---------|---------|--------|
-| 9 | N/A | — | Tech debt cleanup; no feature to disable |
-| 10 | `GSD_D_STRUCTURED` | `true` | `false` = fall back to free-text storage |
-| 11 | `GSD_E_MANDATE` | `advisory` | `off` = revert to v2.5 executor behavior |
-| 12 | `GSD_T_SPEC_INHERIT` | `true` | `false` = fall back to task-only success_criteria |
-| 13 | `GSD_R_CREATIVE` | `off` (opt-in) | `on` = enable creative variants globally |
-| 14 | `GSD_P_AUTO_TASK` | `false` (opt-in) | `true` = enable auto plan-to-tasks |
-| 15 | N/A | — | Observational only |
-
-Note: Phases 13 and 14 are opt-in by default (kill switch off) per PITFALLS rollout strategy — ship the infrastructure, measure, then flip on.
+**Critical path:** 16 → 17 → 18 → 19 (strictly sequential). No parallelization possible because Phases 17-19 all edit `scripts/verify-v26.cjs`. Phase 16 is technically parallelizable with the others since it touches different files, but is sequenced first to unblock the clean init surface that downstream phases rely on for their own execute-phase invocations.
 
 ---
 
 ## Progress Table
 
 | Phase | Plans Complete | Status | Completed |
-|-------|----------------|--------|-----------|
-| 9. Tech-Debt Sweep | 1/6 | In progress | Plan 09-01 complete (TECH-01, commit 5cee8a9) |
-| 10. D-Phase Structured Learning + CLI Dedup | 7/9 | In progress | Plans 10-01..10-07 complete |
-| 11. E-Phase Research-Informed Execution Mandate | 2/2 | Awaiting verification | Plans 11-01 + 11-02 complete, EXEC-01..08 addressed |
-| 12. T-Phase QA Department + Spec Inheritance | 0/? | Not started | - |
-| 13. R-Phase Creative Research (Narrowed) | 0/? | Not started | - |
-| 14. P-Phase Task-Management Integration | 0/? | Not started | - |
-| 15. End-to-End Dogfood Verification | 3/3 | Complete | 2026-04-10 (VERIFICATION passed f52e13f) |
+|---|---|---|---|
+| 16. Init Resolver Fix | 0/? | Not started | - |
+| 17. Audit Script Hardening | 0/? | Not started | - |
+| 18. Sampling Pool Expansion | 0/? | Not started | - |
+| 19. Dynamic Ledger Schema | 0/? | Not started | - |
 
 ---
 
-*Roadmap created: 2026-04-09 after 4 parallel researcher agents (Stack, Features, Architecture, Pitfalls) validated the approved plan and flagged 5 course corrections.*
-*Research sources: STACK.md, FEATURES.md, ARCHITECTURE.md, PITFALLS.md, SUMMARY.md in `.planning/research/v2.6/`*
-*Ship order locked by research; coarse granularity per config.json*
+## Milestone Exit Criteria
+
+v2.7 "Steady Hands" ships when all of the following are TRUE:
+
+1. All 7 v2.7 requirements (RESOLVE-01..02, AUDIT-01..03, SAMPLE-01, SCHEMA-01) marked Done in REQUIREMENTS.md traceability table.
+2. All 4 phases (16, 17, 18, 19) pass their individual VERIFICATION.md gate.
+3. `npm test && pytest` passes with 0 new failures against the v2.6 baseline (pre-existing failures tolerated; new regressions not).
+4. Re-running `node scripts/verify-v26.cjs` against the v2.7 codebase produces an audit report where:
+   - Phase 14 is marked `present` (AUDIT-01)
+   - `pre_existing_failures_verified` contains npm entries matched by name (AUDIT-02)
+   - `tooling_bugs_observed` contains at least depths 7 and 8 (AUDIT-03)
+   - DOGFOOD-01 sampling pool is >= 5 tasks (SAMPLE-01)
+   - `dogfood_ledger_depths_captured` is populated via runtime scan, not a static list (SCHEMA-01)
+5. `gsd-tools init execute-phase 15` from a v2.7 context returns `phase_found: false` instead of a v2.3 ghost directory (RESOLVE-01).
+6. `gsd-tools init execute-phase 15 --phase-dir <path>` bypasses the resolver (RESOLVE-02).
+7. Dogfood ledger updated with any new depths captured during v2.7 execution (depth 3 candidate from Phase 16, plus any incidental captures from Phases 17-19).
+8. MILESTONES.md gains a `## Complete: v2.7` entry archiving the four phases.
+9. `.planning/ROADMAP.md` is either archived to `.planning/milestones/v2.7-ROADMAP.md` and replaced by the next milestone's ROADMAP, or marked with a `Status: COMPLETE` header and left in place until the next milestone begins.
+
+---
+
+*Roadmap created: 2026-04-11 for v2.7 Steady Hands milestone.*
+*Primary input: docs/v2.6-dogfood-ledger.md (9 captured depths, 7 routed follow-ups)*
+*Research: skipped (hardening milestone on code we wrote; no external domain)*
+*Previous milestone (v2.6 Sight Beyond Sight) archived to .planning/milestones/v2.6-ROADMAP.md*
