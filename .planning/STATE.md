@@ -223,6 +223,8 @@ Behavioral test suite (tests/13.1-divergence-protocol.integration.test.cjs, 15 i
 
 
 
+
+- [learning] 2026-04-10T18:20:06.394Z: Phase 15 Wave 2 dogfood depth-8: executor ran audit ONCE as-is, resisted 4 distinct fix temptations (VERIFICATION.md prefix probe, npm failure regex upgrade, adding tooling_bugs_observed schema category, hand-editing JSON to inject missing pre-locked findings). Surfaced all 4 as divergences in SUMMARY.md instead. The temptation pattern is 'the report says X and reality is Y therefore X is a reporter bug I should fix' — correct response is 'the delta is a finding, document it.' Phase 15 passes on audit completeness not cleanliness.
 - [learning] 2026-04-10T18:08:06.460Z: legacy regression test: free text learning
 - [learning] 2026-04-10T18:00:21.706Z: Phase 15-01 observational phase discipline: when plan says N new files, deliver exactly N — resisted helper refactor, 5th file, and ROADMAP errata ("fix while Im here"). Errata routed to phase closeout per CONTEXT.md gap resolutions, not execution. Hard-coded paths bypassed known init-resolver ghost-directory bug.
 - [learning] 2026-04-10T16:11:54.389Z: Plan 14-04 wiring pattern: when tasks 01+02 are already committed from a prior session, verify acceptance criteria before treating as done rather than re-doing work; execute-phase phase-gated branching uses PHASE_NUM_FLOAT >= 14 float comparison; REQUIREMENTS errata pattern uses ~~strikethrough~~ + replacement + PITFALLS footnote
