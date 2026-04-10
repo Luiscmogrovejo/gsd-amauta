@@ -73,7 +73,7 @@
 
 **Dogfood depth 3 candidate:** Phase 16 is the primary candidate to fill depth 3 in the dogfood ledger (currently open). Depth 3 is a sub-task-level rationalization catch — if the executor notices a temptation to refactor adjacent code "while here" and surfaces it as an observation instead of absorbing it, that's a depth-3 event. The resolver fix has a high density of "while I'm here" temptations (item 3 in the same file, item 4 in a neighbor), so the dogfood surface is rich.
 
-**Plans:** To be atomized by `/amauta:plan-phase 16`. Expected 1-2 plans (one for RESOLVE-01 milestone-scoped lookup, possibly one for RESOLVE-02 override flag, or both combined if disjoint files allow).
+**Plans:** 3/3 plans complete
 
 ---
 
@@ -204,7 +204,7 @@ Phase 19 (Dynamic Ledger Schema) ──> final v2.7 deliverable, closes schema-o
 
 | Phase | Plans Complete | Status | Completed |
 |---|---|---|---|
-| 16. Init Resolver Fix | 2/2 | Complete | 2026-04-10 |
+| 16. Init Resolver Fix | 2/2 | Complete    | 2026-04-10 |
 | 17. Audit Script Hardening | 0/? | Not started | - |
 | 18. Sampling Pool Expansion | 0/? | Not started | - |
 | 19. Dynamic Ledger Schema | 0/? | Not started | - |

@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
 milestone: v2.7
-milestone_name: Steady Hands
-status: phase_complete
-stopped_at: Phase 16 fully complete (all 3 plans). Plan 16-01 (RESOLVE-01, milestone-scoped resolver), Plan 16-02 (RESOLVE-02, --phase-dir override), and Plan 16-03 (regression tests) all shipped. 11-test suite (tests/16-init-resolver.test.cjs) covers depths 7/8/10 replays, RESOLVE-02 override, 5 edge cases, and live smoke test. All pass. Next step: plan-phase 17 (Audit Script Hardening).
-last_updated: "2026-04-10T01:30:00.000Z"
-last_activity: "2026-04-10 -- Phase 16 Plan 03 (Regression Tests) executed. Task 16-03-01 committed (5ffd1e6): tests/16-init-resolver.test.cjs, 11 tests, all pass. process.exit capture pattern used for hard-error edge cases. Live smoke test confirms real repo returns v2.7-phases/16-init-resolver-fix. No new npm failures. Phase 16 RESOLVE-01+02+tests fully complete."
+milestone_name: milestone
+status: completed
+stopped_at: Phase 15 SHIPPED, v2.6 milestone COMPLETE
+last_updated: "2026-04-10T21:54:49.184Z"
+last_activity: 2026-04-10 -- Phase 16 plan 16-03 executed. tests/16-init-resolver.test.cjs created with 11 tests (depths 7/8/10 replays, RESOLVE-02 override, 5 edge cases, live smoke). process.exit capture pattern handles hard-error testing. All 11 pass, no new npm failures.
 progress:
   total_phases: 4
-  completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
   percent: 25
 ---
 
