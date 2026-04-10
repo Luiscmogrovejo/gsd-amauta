@@ -412,3 +412,21 @@ fi
 **Phase-end summary:** When completing a phase, aggregate QA_REPORT lines from all tasks in the phase for an overall QA health summary (e.g., "8/10 tasks had QA blocks, 0 regressions detected").
 </qa_report_phase_end>
 
+<execution_type_classification>
+## Execution Type Classification (Phase 13)
+
+At task routing time, classify `metadata.execution_type` from task description keywords. This field drives creative research gating in R-phase.
+
+| Keywords in task description | execution_type |
+|-----------------------------|----------------|
+| research, investigate, study, analyze, compare | research |
+| explore, prototype, spike, POC | exploration |
+| design, architect, restructure, refactor (at architecture level) | architecture-review |
+| implement, build, create, add, wire | implementation |
+| fix, resolve, patch, BG- prefix | bug-fix |
+| document, write docs, update README | documentation |
+
+**Ambiguous cases** (e.g., "refactor auth module"): default to `implementation`. Conservative default is safe -- operator can override.
+**Storage:** Set via existing `metadata` jsonb field on the task. No schema change.
+</execution_type_classification>
+

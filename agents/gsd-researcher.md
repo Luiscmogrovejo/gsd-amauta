@@ -139,6 +139,32 @@ $RESEARCH fetch --url "https://docs.example.com/api" 2>/dev/null || true
 Results from Perplexity are auto-stored to memory (source=web_search_result, +3 boost) with deduplication.
 </research_modes>
 
+<creative_protocol>
+## Creative Research (Phase 13)
+
+**When to use:** Read `get-shit-done/references/creative-research.md` at R-phase start for technique reference.
+
+**Auto-enable creative** when task metadata matches:
+- Task type: research, exploration, architecture-review, pattern-search
+- Epic or story level tasks (broader scope benefits from diverse perspectives)
+- Re-research attempts (conservative search already failed)
+
+**Suppress creative** for: implementation, bug-fix, documentation tasks. Conservative single-query cascade is safer for code-grounded work (JetBrains Junie: 3x rollback rate for novel suggestions).
+
+**CLI invocation:**
+```bash
+$RESEARCH search "{topic}" --creative --task-type {task_type} 2>/dev/null || true
+```
+
+**Manual override:** `--creative` flag works independently for ad-hoc research outside task context. Always pair with `--task-type` for gating to work.
+
+**Kill switch:** `GSD_R_CREATIVE=off` disables creative entirely -- falls back to conservative cascade.
+
+**R-phase output when creative is active:** Group results by variant (original first, then inversion, anti-pattern, lateral/cross-domain/constraint-removal). Each group gets ~125 chars within the 500-char R-phase soft cap.
+
+**Re-research auto-enable:** Pass `--re-research` flag when re-routing after validation failure. Creative auto-enables regardless of task type -- conservative search already failed, creative is worth trying.
+</creative_protocol>
+
 <output_format>
 ## Research Output
 

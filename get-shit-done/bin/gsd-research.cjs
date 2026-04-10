@@ -697,6 +697,105 @@ const PROVIDERS = {
   webfetch: providerWebFetch,
 };
 
+/**
+ * Creative variant wrapper for Perplexity. Uses sonar (not sonar-pro),
+ * lower max_tokens (500), lower output cap (750 chars).
+ * Phase 13 CREATIVE-05: token budget monitoring.
+ */
+providerPerplexity._creative = async function(query, limit) {
+  if (!PERPLEXITY_API_KEY) return null;
+
+  // Always use sonar for creative variants (cheaper)
+  const selectedModel = 'sonar';
+
+  // Check cache (creative variants use same cache infra)
+  const noCache = providerPerplexity._noCache || false;
+  const cacheKey = _perplexityCacheKey(query, selectedModel);
+  if (!noCache) {
+    const daemonHit = await _checkDaemonCache(cacheKey);
+    if (daemonHit) {
+      process.stderr.write(`  [cache:redis] creative hit for ${query.slice(0, 40)}...\n`);
+      return { ...daemonHit, _tokens_used: 0 };
+    }
+    const cache = _loadPerplexityCache();
+    const cached = cache.get(cacheKey);
+    if (cached && cached.result) {
+      return { ...cached.result, cached: true, _tokens_used: 0 };
+    }
+  }
+
+  try {
+    const res = await perplexityWithRetry(
+      {
+        model: selectedModel,
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a technical research assistant. Provide concise, factual answers with sources. Focus on current best practices (2025+).',
+          },
+          { role: 'user', content: query },
+        ],
+        temperature: 0.2,
+        max_tokens: CREATIVE_PERPLEXITY_MAX_TOKENS,
+      },
+      { Authorization: `Bearer ${PERPLEXITY_API_KEY}` },
+    );
+
+    if (res.status !== 200) {
+      return { provider: 'perplexity', count: 0, results: [], error: `API error: ${res.status}`, _tokens_used: 0 };
+    }
+
+    const answer = res.data.choices?.[0]?.message?.content || '';
+    const citations = res.data.citations || [];
+    const cleanAnswer = answer.replace(/\[\d+\]/g, '').replace(/\s{2,}/g, ' ').trim();
+    if (!cleanAnswer) return null;
+
+    const tokensUsed = res.data.usage?.total_tokens || 0;
+
+    // Auto-store with creative_source metadata
+    try {
+      const cappedAnswer = cleanAnswer.slice(0, 2000);
+      const isDup = await isDuplicateMemory(cappedAnswer);
+      if (!isDup) {
+        await daemonRequest('POST', '/api/memory/store', {
+          text: cappedAnswer,
+          source: 'web_search_result',
+          tags: ['perplexity', selectedModel, 'creative'],
+          metadata: { query, citations, model: selectedModel, creative_source: true },
+        });
+      }
+    } catch { /* Silent fail */ }
+
+    const returnValue = {
+      provider: 'perplexity',
+      count: 1,
+      results: [{
+        text: stripPreamble(cleanAnswer).slice(0, CREATIVE_PERPLEXITY_OUTPUT_CAP),
+        citations,
+        model: selectedModel,
+      }],
+      _tokens_used: tokensUsed,
+    };
+
+    // Write to cache
+    try {
+      const cache = _loadPerplexityCache();
+      cache.set(cacheKey, { result: returnValue, storedAt: Date.now() });
+      _savePerplexityCache(cache);
+    } catch { /* ok */ }
+
+    // Write to daemon Redis cache
+    try {
+      await _writeDaemonCache(cacheKey, returnValue);
+    } catch { /* ok */ }
+
+    return returnValue;
+  } catch (err) {
+    process.stderr.write(`  [creative:perplexity] error: ${err.message}\n`);
+    return { provider: 'perplexity', count: 0, results: [], error: err.message, _tokens_used: 0 };
+  }
+};
+
 // ═══════════════════════════════════════════════════════
 // Argument Parsing
 // ═══════════════════════════════════════════════════════
@@ -1083,8 +1182,98 @@ async function cmdSearch(args) {
     }
   }
 
+  // ── Creative variant queries (Phase 13 CREATIVE-02) ──
+  let creativeEnabled = shouldEnableCreative(args);
+  const creativeResults = [];
+
+  if (creativeEnabled) {
+    const domain = detectDomain(query);
+    const variants = generateVariants(query, domain);
+    process.stderr.write(`[creative] domain=${domain} variants=${variants.length} query="${query.slice(0, 40)}"\n`);
+
+    let totalCreativeTokens = 0;
+
+    for (const variant of variants) {
+      const variantResults = [];
+      const variantLog = { type: variant.type, query: variant.query, results_count: 0, source_hits: { memory: 0, skb: 0, perplexity: 0 }, tokens_used: 0 };
+
+      // Reduced cascade: memory -> SKB -> Perplexity (skip context7, webfetch)
+      for (const name of CREATIVE_PROVIDER_ORDER) {
+        const providerFn = name === 'perplexity' ? providerPerplexity._creative : PROVIDERS[name];
+        if (!providerFn) continue;
+
+        const result = await providerFn(variant.query, CREATIVE_RESULT_CAP_PER_VARIANT);
+
+        if (result) {
+          variantResults.push(result);
+          // Track source hits
+          if (name === 'memory') variantLog.source_hits.memory = result.count || 0;
+          else if (name === 'skb') variantLog.source_hits.skb = result.count || 0;
+          else if (name === 'perplexity') {
+            variantLog.source_hits.perplexity = result.count || 0;
+            variantLog.tokens_used = result._tokens_used || 0;
+            totalCreativeTokens += variantLog.tokens_used;
+          }
+
+          // Stop cascade for this variant if we have enough results
+          if (!result.error && result.count >= RESEARCH_MIN_RESULTS) break;
+        }
+      }
+
+      // Tag results with creative source
+      for (const vr of variantResults) {
+        vr._creative_source = variant.type;
+      }
+
+      // Dedup against original results
+      const novel = deduplicateResults(allResults, variantResults);
+      variantLog.results_count = novel.reduce((sum, r) => sum + (r.count || 0), 0);
+
+      // Per-variant logging
+      process.stderr.write(`  [creative] variant=${variant.type} query="${variant.query}" results=${variantLog.results_count} tokens=${variantLog.tokens_used}\n`);
+
+      creativeResults.push(...novel);
+
+      // Delay between creative variant Perplexity calls (not after last variant)
+      if (variant !== variants[variants.length - 1]) {
+        await new Promise(r => setTimeout(r, CREATIVE_PERPLEXITY_DELAY_MS));
+      }
+    }
+
+    // No-novelty log
+    if (creativeResults.length === 0) {
+      process.stderr.write('[creative] Creative variants produced no novel results -- domain well-covered by direct search.\n');
+    }
+
+    // Cumulative cost tracking (Phase 13 CREATIVE-05)
+    const originalTokens = allResults.reduce((sum, r) => sum + (r._tokens_used || 0), 0);
+    if (originalTokens > 0) {
+      const delta = ((totalCreativeTokens / originalTokens) * 100).toFixed(1);
+      process.stderr.write(`[creative] cost_delta: +${delta}% (creative: ${totalCreativeTokens} tokens, baseline: ${originalTokens} tokens)\n`);
+    }
+
+    // Write creative research log (append-only)
+    const creativeLog = { timestamp: new Date().toISOString(), task_id: args['task-id'] || null, original_query: query, variants: [] };
+    for (const variant of variants) {
+      creativeLog.variants.push({ type: variant.type, query: variant.query, results_count: 0, source_hits: { memory: 0, skb: 0, perplexity: 0 }, tokens_used: 0 });
+    }
+    _appendCreativeLog(creativeLog);
+  }
+
   if (args.json) {
-    console.log(JSON.stringify({ query, results: allResults }, null, 2));
+    if (creativeEnabled && creativeResults.length > 0) {
+      // Nested creative JSON structure
+      const variantGroups = {};
+      for (const cr of creativeResults) {
+        const src = cr._creative_source || 'unknown';
+        const key = src.replace(/-/g, '_');
+        if (!variantGroups[key]) variantGroups[key] = [];
+        variantGroups[key].push(cr);
+      }
+      console.log(JSON.stringify({ query, results: allResults, variants: variantGroups }, null, 2));
+    } else {
+      console.log(JSON.stringify({ query, results: allResults }, null, 2));
+    }
     return;
   }
 
@@ -1096,6 +1285,23 @@ async function cmdSearch(args) {
 
   console.log(`\n\x1b[1mResearch: "${query}"\x1b[0m`);
   allResults.forEach((r) => process.stdout.write(formatResult(r)));
+
+  // Creative variant results (human-readable)
+  if (creativeEnabled && creativeResults.length > 0) {
+    console.log('\n\x1b[1m--- Creative Variants ---\x1b[0m');
+    for (const cr of creativeResults) {
+      const src = cr._creative_source || 'unknown';
+      const color = PROVIDER_COLORS[cr.provider] || '\x1b[37m';
+      process.stdout.write(`\n\x1b[36m[creative:${src}]\x1b[0m ${color}[${cr.provider.toUpperCase()}]\x1b[0m (${cr.count} results)\n`);
+      if (cr.results) {
+        for (const item of cr.results) {
+          const text = item.text || item.content || '';
+          process.stdout.write(`  ${text.slice(0, 200)}${text.length > 200 ? '...' : ''}\n`);
+        }
+      }
+    }
+  }
+
   console.log('');
 }
 

@@ -251,7 +251,10 @@ fi
             node ~/.claude/get-shit-done/bin/gsd-memory.cjs search '{plan_objective}' 2>/dev/null || true
 
          2b. Research chain — get current info (memory -> SKB -> Context7 -> Perplexity -> WebFetch):
-             node ~/.claude/get-shit-done/bin/gsd-research.cjs search '{plan_objective}' 2>/dev/null || true
+             # Phase 13: --creative + --task-type enable creative query variants for research/exploration tasks
+             # Creative is gated by task type -- implementation/bug-fix tasks use conservative cascade
+             # Kill switch: GSD_R_CREATIVE=off disables creative entirely
+             node ~/.claude/get-shit-done/bin/gsd-research.cjs search '{plan_objective}' --creative --task-type {execution_type} 2>/dev/null || true
 
          3. Amauta task ID for this plan: {plan_task_id}
             If non-empty, claim and log RPETD phases:
