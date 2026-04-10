@@ -1,7 +1,8 @@
-version: "1.0.0"
+version: "1.1.0"
 reference_type: runtime-read
 scope: executors (4) + gsd-validator
-protocol_version: 1.0.0
+protocol_version: 1.1.0
+# v1.1.0: +agent_assignment_conflict, +plan_amauta_drift (Phase 14)
 
 # Divergence Protocol
 
@@ -118,7 +119,7 @@ Every mandatory field, in order:
   "task_id": "13.1-XX-YY",
   "agent": "gsd-executor-<role>",
   "timestamp": "2026-04-10T14:32:05Z",
-  "protocol_version": "1.0.0",
+  "protocol_version": "1.1.0",
   "expected": "Verbatim or close paraphrase of the assumption from PLAN.md.",
   "found": "Concrete observation. No 'seems', 'looks like', 'probably'.",
   "divergence_type": "stale_prerequisite",
@@ -169,9 +170,13 @@ Every mandatory field, in order:
   yourself writing "seems", "looks like", "probably", "I think", delete the
   sentence and write what you literally observed on disk or in tool output.
 - **`divergence_type`** — enum, exactly one of:
-  `stale_prerequisite | unexpected_file_state | scope_overflow | manifest_violation | other`.
+  `stale_prerequisite | unexpected_file_state | scope_overflow | manifest_violation | agent_assignment_conflict | plan_amauta_drift | other`.
   Pick the tightest fit. `other` requires a one-line justification embedded in
-  `found`.
+  `found`. New values added in v1.1.0:
+  - `agent_assignment_conflict` — the planner-emitted `<agent>` field disagrees
+    with `routeExecutor()` computed from `<files_expected>`.
+  - `plan_amauta_drift` — structural fields in PLAN.md diverge from the
+    corresponding amauta task on re-run.
 - **`reconciliation_options`** — array of concrete options A–D. Each option
   names a specific action. "Fix it" is not an action. "Update file X line Y
   to value Z and re-run task 13.1-0N" is an action.
@@ -411,4 +416,4 @@ it is a divergence, full stop.
 
 ---
 
-Protocol version: 1.0.0
+Protocol version: 1.1.0
