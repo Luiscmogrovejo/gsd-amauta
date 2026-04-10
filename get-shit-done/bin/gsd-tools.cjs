@@ -237,6 +237,12 @@ const GLOBAL_ALLOWLIST = [
   'package-lock.json',
   '.planning/STATE.md',
   'coverage/**',
+  // Orchestrator-emitted audit artifacts — same bucket as coverage/**.
+  // Validator reads these as input; they must not count as manifest drift.
+  // Added in 13.1-05-05 (Wave 1 + Wave 2 fold-ins). See Observations #1
+  // in 13.1-01-SUMMARY.md and Observation #1 in 13.1-04-SUMMARY.md.
+  '.planning/milestones/**/manifest-violation-*.json',
+  '.planning/milestones/**/gaps-report-*.json',
 ];
 
 // Files that only the orchestrator may write. An executor diff touching any of
@@ -252,6 +258,35 @@ const ORCHESTRATOR_OWNED = [
 // containing one of these strings as a declared path is rejected before the
 // diff is compared.
 const MANIFEST_GLOB_BLOCKLIST = ['**/*.md', '**/*', '*'];
+
+/**
+ * Canonical phase-directory resolver. Resolution order:
+ *   1. opts.phase (explicit override) wins
+ *   2. else parse leading numeric segment from taskIdOrPhase
+ *      (e.g. "13.1-04-01" -> "13.1", "9-03-02" -> "9")
+ *   3. else fall back to literal "unknown"
+ *
+ * Returns the resolved phase identifier as a string. Callers compose
+ * full directory paths themselves (typically
+ * `.planning/milestones/<phase>/...`).
+ *
+ * Added in 13.1-05-05 (Wave 2 fold-in) to replace ad-hoc inline copies
+ * such as the one in `gsd-amauta.cjs` cmdValidate. Existing inline
+ * copies are NOT refactored in this task — refactoring is a separate
+ * concern and explicitly out of scope per plan 13.1-05-05 scope-guard.
+ */
+function resolvePhaseDir(taskIdOrPhase, opts = {}) {
+  if (opts && typeof opts.phase === 'string' && opts.phase.length > 0) {
+    return opts.phase;
+  }
+  if (typeof taskIdOrPhase === 'string' && taskIdOrPhase.length > 0) {
+    // Match leading numeric segment, optionally with a single dot
+    // (e.g. "13.1", "9", "13.1.2"). Stop at the first hyphen or EOS.
+    const m = taskIdOrPhase.match(/^(\d+(?:\.\d+)*)(?:-|$)/);
+    if (m) return m[1];
+  }
+  return 'unknown';
+}
 
 /**
  * Compile a glob (supports `*`, `**`, path-segment wildcards) into a RegExp
@@ -658,6 +693,7 @@ if (require.main !== module) {
     GLOBAL_ALLOWLIST,
     ORCHESTRATOR_OWNED,
     MANIFEST_GLOB_BLOCKLIST,
+    resolvePhaseDir,
     _parseFilesExpectedYaml,
     _globToRegExp,
     _diffNameStatus,

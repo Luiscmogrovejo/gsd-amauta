@@ -313,7 +313,9 @@ fi
       ```
       GIT_SHA_AFTER=$(git rev-parse HEAD)
       ```
-   3. **For orchestrator-owned `.planning/` files declared in `files_expected:`**, the orchestrator (not the executor) runs `git add -f <path>` before commit. Executors are FORBIDDEN from using `git add -f`.
+   3. **Staging `.planning/` files declared in `files_expected:`** — there are two cases:
+      - **already-tracked `.planning/` files** (e.g. `.planning/STATE.md`, `.planning/REQUIREMENTS.md`, `.planning/ROADMAP.md` — all tracked despite the `.planning/` gitignore rule because they were force-added once at project init): stage with `git add -u <path>`. The `-u` flag updates tracked files only and bypasses the gitignore rule without forcing. Both the orchestrator AND executors may use `-u` for paths declared in `files_expected:` — it is not a privileged operation. This is the common case.
+      - **Newly created `.planning/` files** (a path that is gitignored and not yet tracked — e.g. first-time creation of a new artifact under `.planning/`): only the orchestrator uses `git add -f <path>`. Executors are FORBIDDEN from using `git add -f` under any circumstance. An executor that encounters this case MUST surface a divergence via `get-shit-done/references/divergence-protocol.md` and return control to the orchestrator — do NOT force-add and do NOT silently skip.
    4. **Run the manifest check**:
       ```
       node get-shit-done/bin/gsd-tools.cjs manifest-check \
