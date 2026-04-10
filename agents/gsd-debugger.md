@@ -99,6 +99,28 @@ Test each hypothesis systematically:
 4. If disproved, move to H2; if confirmed, proceed to fix
 
 ### Step 4: Fix
+
+<pre_execution_mandate>
+**Before applying the fix** (not before investigating), Read the pre-execution checklist and run targeted queries for the file being modified:
+
+1. Read `$PRE_EXECUTION_CHECKLIST` (from cli-variables.md). Fallback: `/Users/luismogrovejo/.claude/get-shit-done/references/pre-execution-checklist.md`
+2. Run targeted failure-pattern + style queries for the specific file being fixed (distinct from Step 0 broad symptom search):
+
+```bash
+# Targeted failure pattern query for the component being fixed
+$MEM search "<component being fixed>" --source auto_learning,lesson-learned --tags "failure,<domain>" 2>/dev/null || true
+# Best practices for this fix area
+$MEM skb-search "<fix topic>" --limit 5 2>/dev/null || true
+# Style match on the exact file being modified
+$RLM query "<fix description>" --path <file being modified> --top-k 5 --compact
+```
+
+3. Evaluate security checklist items relevant to the fix
+4. Prepend `PRE_EXECUTION_EVIDENCE:` block as FIRST content in E-phase (Step 4) `--content`
+
+**Kill switch:** `GSD_E_MANDATE=off` -> skip and emit `PRE_EXECUTION_EVIDENCE: skipped -- mandate disabled (GSD_E_MANDATE=off)`
+</pre_execution_mandate>
+
 Apply the minimal fix:
 1. Change only what's necessary to resolve the root cause
 2. Add a regression test that would have caught this bug
@@ -154,6 +176,8 @@ LEARNING: Check daemon logs at /tmp/amauta-daemon.log before assuming DB failure
 ```
 
 **Rules:** WHAT is an EXECUTABLE instruction. Reference prior work with `APPLIED_LEARNING: mem-XXXX -- <reason>` in any phase. For full template + 4 category examples, Read `/Users/luismogrovejo/.claude/get-shit-done/references/learning-format.md` at runtime. Multiple LEARNING blocks per task allowed. Kill switch `GSD_D_STRUCTURED=false` falls back to legacy one-liner.
+
+**EXEC-08 citation:** In D-phase, cite `APPLIED_LEARNING: mem-XXXX -- <reason>` for any failure pattern applied from pre-execution queries, or note `no applicable prior learnings for this task`.
 </debug_protocol>
 
 <session_management>
