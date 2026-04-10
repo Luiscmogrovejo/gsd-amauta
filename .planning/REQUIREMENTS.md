@@ -221,19 +221,19 @@ v2.6 phase numbering continues from v2.5 (which ended at Phase 8). v2.6 uses Pha
 | EXEC-06 | Phase 11 | E-Phase Research-Informed Execution Mandate | `GSD_E_MANDATE` | Pending |
 | EXEC-07 | Phase 11 | E-Phase Research-Informed Execution Mandate | `GSD_E_MANDATE` | Pending |
 | EXEC-08 | Phase 11 | E-Phase Research-Informed Execution Mandate | `GSD_E_MANDATE` | Pending |
-| QA-01 | Phase 12 | T-Phase QA Department + Spec Inheritance | `GSD_T_SPEC_INHERIT` | Pending |
-| QA-02 | Phase 12 | T-Phase QA Department + Spec Inheritance | `GSD_T_SPEC_INHERIT` | Pending |
-| QA-03 | Phase 12 | T-Phase QA Department + Spec Inheritance | `GSD_T_SPEC_INHERIT` | Pending |
-| QA-04 | Phase 12 | T-Phase QA Department + Spec Inheritance | `GSD_T_SPEC_INHERIT` | Pending |
-| QA-05 | Phase 12 | T-Phase QA Department + Spec Inheritance | `GSD_T_SPEC_INHERIT` | Pending |
-| QA-06 | Phase 12 | T-Phase QA Department + Spec Inheritance | `GSD_T_SPEC_INHERIT` | Pending |
-| QA-07 | Phase 12 | T-Phase QA Department + Spec Inheritance | `GSD_T_SPEC_INHERIT` | Pending |
-| QA-08 | Phase 12 | T-Phase QA Department + Spec Inheritance | `GSD_T_SPEC_INHERIT` | Pending |
-| CREATIVE-01 | Phase 13 | R-Phase Creative Research (Narrowed) | `GSD_R_CREATIVE` | Pending |
-| CREATIVE-02 | Phase 13 | R-Phase Creative Research (Narrowed) | `GSD_R_CREATIVE` | Pending |
-| CREATIVE-03 | Phase 13 | R-Phase Creative Research (Narrowed) | `GSD_R_CREATIVE` | Pending |
-| CREATIVE-04 | Phase 13 | R-Phase Creative Research (Narrowed) | `GSD_R_CREATIVE` | Pending |
-| CREATIVE-05 | Phase 13 | R-Phase Creative Research (Narrowed) | `GSD_R_CREATIVE` | Pending |
+| QA-01 | Phase 12 | T-Phase QA Department + Spec Inheritance | `GSD_T_SPEC_INHERIT` | Done (4c57b53) |
+| QA-02 | Phase 12 | T-Phase QA Department + Spec Inheritance | `GSD_T_SPEC_INHERIT` | Done (4c57b53) |
+| QA-03 | Phase 12 | T-Phase QA Department + Spec Inheritance | `GSD_T_SPEC_INHERIT` | Done (4c57b53) |
+| QA-04 | Phase 12 | T-Phase QA Department + Spec Inheritance | `GSD_T_SPEC_INHERIT` | Done (4c57b53) |
+| QA-05 | Phase 12 | T-Phase QA Department + Spec Inheritance | `GSD_T_SPEC_INHERIT` | Done (4c57b53) |
+| QA-06 | Phase 12 | T-Phase QA Department + Spec Inheritance | `GSD_T_SPEC_INHERIT` | Done (4c57b53) |
+| QA-07 | Phase 12 | T-Phase QA Department + Spec Inheritance | `GSD_T_SPEC_INHERIT` | Done (4c57b53) |
+| QA-08 | Phase 12 | T-Phase QA Department + Spec Inheritance | `GSD_T_SPEC_INHERIT` | Done (4c57b53) |
+| CREATIVE-01 | Phase 13 | R-Phase Creative Research (Narrowed) | `GSD_R_CREATIVE` | Done (27a9514) |
+| CREATIVE-02 | Phase 13 | R-Phase Creative Research (Narrowed) | `GSD_R_CREATIVE` | Done (27a9514) |
+| CREATIVE-03 | Phase 13 | R-Phase Creative Research (Narrowed) | `GSD_R_CREATIVE` | Done (27a9514) |
+| CREATIVE-04 | Phase 13 | R-Phase Creative Research (Narrowed) | `GSD_R_CREATIVE` | Done (27a9514) |
+| CREATIVE-05 | Phase 13 | R-Phase Creative Research (Narrowed) | `GSD_R_CREATIVE` | Done (27a9514) |
 | HARDEN-01 | Phase 13.1 | Orchestrator Hardening & Divergence Protocol | `GSD_MANIFEST_CHECK` (01 only) | Done |
 | HARDEN-02 | Phase 13.1 | Orchestrator Hardening & Divergence Protocol | `GSD_MANIFEST_CHECK` (01 only) | Done |
 | HARDEN-03 | Phase 13.1 | Orchestrator Hardening & Divergence Protocol | `GSD_MANIFEST_CHECK` (01 only) | Done |

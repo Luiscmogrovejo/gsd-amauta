@@ -1,0 +1,13 @@
+# Phase 14: P-Phase Task-Management Integration
+#
+# This directory is the fresh slot for the v2.6 Phase 14.
+# It is intentionally empty — CONTEXT.md, PLAN.md, and VERIFICATION.md
+# will be created by /amauta:discuss-phase 14, /amauta:plan-phase 14,
+# and the Phase 14 validator respectively.
+#
+# The prior-milestone Phase 14 (Pipeline Integration, WIRE-01..04) was
+# archived to .planning/archive/v2.2-phase-14-pipeline-integration/ on
+# 2026-04-10 as part of the Phase 14 slot reconciliation.
+#
+# See project_phase13_1_discuss_phase_reconciliation_dogfood.md for the
+# depth-5 dogfood moment that triggered the reconciliation.
