@@ -62,6 +62,25 @@ const PHASE_DIR_OVERRIDES = {
 // Directory globs under v2.2-phases that match each audited phase number.
 const V22_PHASES_ROOT = path.join('.planning', 'milestones', 'v2.2-phases');
 
+// Tooling bugs observed during v2.6 dogfood (AUDIT-03).
+// These are defects in the audit tooling itself that produced silent drift.
+const TOOLING_BUGS_SEED = [
+  {
+    id: 'TOOL-01',
+    depth: 7,
+    description: 'Ghost directory detection -- discuss-phase init returned v2.3-phases/15-data-purge instead of phase_found: false when querying phase 15 from v2.7 context',
+    phase_detected: '15',
+    resolved_by: '16',
+  },
+  {
+    id: 'TOOL-02',
+    depth: 8,
+    description: 'Init resolver recurrence -- same bug fired at execute-phase init, confirming cross-surface reproduction (not a discuss-phase-only artifact)',
+    phase_detected: '15',
+    resolved_by: '16',
+  },
+];
+
 // ─── Pre-flight ───────────────────────────────────────────────────────────────
 
 function preflightEnvCheck() {
@@ -540,6 +559,7 @@ function buildReport(deterministic, behavioral, envCheck) {
 
   return {
     audit_timestamp: new Date().toISOString(),
+    schema_version: 2,
     milestone: 'v2.6',
     phases_audited: AUDITED_PHASES,
     phase_15_excluded_from_audit: true,
@@ -559,6 +579,7 @@ function buildReport(deterministic, behavioral, envCheck) {
       ...deterministic.pytest.new_failures,
     ],
     hygiene_debt_observed: hygieneDebt,
+    tooling_bugs_observed: TOOLING_BUGS_SEED,
     dogfood_ledger_depths_captured: [0, 1, 2, 4, 5, 6, 7],
     dogfood_ledger_gaps: [3],
     deterministic_summary: {
