@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: milestone
 status: completed
-stopped_at: Phase 10 Plan 10-08 complete — structured LEARNING block template across 11 agents (01d05f8). LEARN-06 complete. Commit 2 of 2 per CONTEXT.md two-commit constraint. Both LEARN-07 and LEARN-06 committed separately. 10-09 (tests + README) is next.
-last_updated: "2026-04-09T23:52:34.687Z"
+stopped_at: Phase 11 context gathered
+last_updated: "2026-04-10T00:12:07.780Z"
 last_activity: "2026-04-09 -- Plan 10-09: tests + README documentation (terminal plan for Phase 10)"
 progress:
   total_phases: 7
@@ -119,9 +119,9 @@ None. Part A blockers resolved pre-roadmap:
 
 ## Session Continuity
 
-Last session: 2026-04-09T23:50:00.000Z
-Stopped at: Phase 10 Plan 10-08 complete — structured LEARNING block template across 11 agents (01d05f8). LEARN-06 complete. Commit 2 of 2 per CONTEXT.md two-commit constraint. Both LEARN-07 and LEARN-06 committed separately. 10-09 (tests + README) is next.
-Resume file: .planning/milestones/v2.1-phases/10-d-phase-structured-learning/10-09-PLAN.md
+Last session: 2026-04-10T00:12:07.776Z
+Stopped at: Phase 11 context gathered
+Resume file: .planning/milestones/v2.2-phases/11-context-engine-activation/11-CONTEXT.md
 
 ## Previous Milestone: v2.5 -- Smarter Brain (COMPLETE)
 
@@ -140,6 +140,8 @@ Archive: `.planning/MILESTONES.md` + legacy v2.5 ROADMAP sections.
 
 
 
+
+- [learning] 2026-04-09T23:53:04.660Z: Phase 10 execution: validator caught GIN index missing from live DB despite being defined in migration 001-init.sql — always verify index existence on the LIVE database, not just migration file presence. Also: ROADMAP success criteria wording can diverge from plan must-haves; plan spec is the implementation authority.
 - [learning] 2026-04-09T23:44:46.710Z: legacy with agent
 - [learning] 2026-04-09T23:44:39.479Z: legacy regression test: free text learning
 - [learning] 2026-04-09T23:44:27.093Z: kill-switch-test — testing — now
