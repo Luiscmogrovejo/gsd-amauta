@@ -5,7 +5,7 @@
 **Milestone:** v2.7 "Steady Hands"
 **Phase ID:** 16-init-resolver-fix
 **Requirements:** RESOLVE-01, RESOLVE-02
-**Scope ceiling:** ~100 LOC across `get-shit-done/bin/lib/init.cjs` and `get-shit-done/bin/gsd-tools.cjs`
+**Scope ceiling:** ~100 LOC total across: (a) `get-shit-done/bin/lib/init.cjs` — the four resolver-consuming init subcommands (`cmdInitExecutePhase`, `cmdInitPlanPhase`, `cmdInitVerifyWork`, `cmdInitPhaseOp`) plus the `--phase-dir` override wiring on each; (b) `get-shit-done/bin/gsd-tools.cjs` — the `resolvePhaseDir` function itself plus the atomic write-to-temp+rename pattern on `config-set` if it's not already in place; (c) `get-shit-done/workflows/new-milestone.md` and `get-shit-done/workflows/complete-milestone.md` — integration of the atomic `current_milestone` field write; (d) the new test file `tests/16-init-resolver.test.cjs` — three primary test cases (depth-7/8 replay, depth-10 replay, RESOLVE-02 override bypass) plus the edge cases plus the live CI smoke test. The ~100 LOC total budget is load-bearing: any implementation that requires more than this is by definition out of scope and must be surfaced as a divergence observation, not absorbed into the phase.
 
 <domain>
 ## Phase Boundary
