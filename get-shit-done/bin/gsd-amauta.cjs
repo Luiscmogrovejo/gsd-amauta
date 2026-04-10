@@ -792,6 +792,117 @@ function _checkEvidenceBlock(eContent, taskType) {
   return { advisory: false, reason: 'evidence block present and complete' };
 }
 
+/**
+ * Pure logic function — testable without daemon access.
+ * Checks T-phase content for Phase 12 QA structural blocks.
+ * Returns { advisory: bool, reason: string, missing: string[] }
+ */
+function _checkQaBlocks(tContent, taskType, inheritedSpec, isSecurityTask, isBugTask) {
+  // Non-code task filter
+  if (NON_CODE_TYPES.has(taskType)) {
+    return { advisory: false, reason: 'non-code task', missing: [] };
+  }
+
+  // Empty T-phase
+  if (!tContent || !tContent.trim()) {
+    return { advisory: true, reason: 'T-phase is empty', missing: ['EDGE_CASES', 'REGRESSION'] };
+  }
+
+  const missing = [];
+
+  // TASK_CRITERIA block (required for all code tasks -- CONTEXT.md: "Two sections in T-phase")
+  const hasTaskCriteria = /^TASK_CRITERIA:/m.test(tContent);
+  if (!hasTaskCriteria) missing.push('TASK_CRITERIA');
+
+  // INHERITED_CRITERIA block (required when inherited spec present -- CONTEXT.md: source clarity)
+  const hasInheritedCriteria = inheritedSpec ? /^INHERITED_CRITERIA:/m.test(tContent) : false;
+  if (inheritedSpec && !hasInheritedCriteria) missing.push('INHERITED_CRITERIA');
+
+  // EDGE_CASES block (required for all code tasks)
+  const hasEdgeCases = /^EDGE_CASES:/m.test(tContent);
+  if (!hasEdgeCases) missing.push('EDGE_CASES');
+
+  // REGRESSION block (required for all code tasks)
+  const hasRegression = /^REGRESSION:/m.test(tContent);
+  if (!hasRegression) missing.push('REGRESSION');
+
+  // ADVERSARIAL block (only required if security_sensitive)
+  if (isSecurityTask) {
+    const hasAdversarial = /^ADVERSARIAL:/m.test(tContent);
+    if (!hasAdversarial) missing.push('ADVERSARIAL');
+  }
+
+  // QA_REPORT block (expected on all code tasks)
+  const hasQaReport = /^QA_REPORT:/m.test(tContent);
+  if (!hasQaReport) missing.push('QA_REPORT');
+
+  // Check criterion ID coverage if inherited spec present
+  const criterionWarnings = [];
+  if (inheritedSpec && inheritedSpec.criteria && Array.isArray(inheritedSpec.criteria)) {
+    const totalCriteria = inheritedSpec.criteria.length;
+    let referencedCount = 0;
+    for (const c of inheritedSpec.criteria) {
+      if (c.id && tContent.includes(c.id)) {
+        referencedCount++;
+      }
+    }
+    if (referencedCount < totalCriteria) {
+      criterionWarnings.push(`${referencedCount}/${totalCriteria} inherited criteria referenced`);
+    }
+  }
+
+  // Minimum edge case count check (2 per criterion)
+  if (hasEdgeCases) {
+    const edgeLines = (tContent.match(/^\s+edge_\d+:/gm) || []).length;
+    const criterionLines = (tContent.match(/^\s+criterion_\d+:/gm) || []).length;
+    if (criterionLines > 0 && edgeLines < criterionLines * 2) {
+      criterionWarnings.push(`edge cases: ${edgeLines} found, need >= ${criterionLines * 2} (2 per criterion)`);
+    }
+  }
+
+  const reasons = [];
+  if (missing.length > 0) reasons.push(`missing QA blocks: ${missing.join(', ')}`);
+  if (criterionWarnings.length > 0) reasons.push(criterionWarnings.join('; '));
+
+  if (reasons.length > 0) {
+    return { advisory: true, reason: reasons.join('; '), missing };
+  }
+  return { advisory: false, reason: 'QA blocks present and complete', missing: [] };
+}
+
+/**
+ * Pure logic function — testable without daemon access.
+ * Parses `git log --oneline --grep="BG-XXXX" --reverse` output.
+ * Returns { hasRed: bool, hasGreen: bool, correctOrder: bool, reason: string }
+ */
+function _checkRedGreenOrder(gitLogOutput, bugId) {
+  const lines = (gitLogOutput || '').split('\n').filter(Boolean);
+  let redIdx = -1, greenIdx = -1;
+
+  lines.forEach((line, i) => {
+    if (/test\(red\)/i.test(line)) redIdx = i;
+    if (/fix\(green\)/i.test(line)) greenIdx = i;
+  });
+
+  if (redIdx === -1 && greenIdx === -1) {
+    return { hasRed: false, hasGreen: false, correctOrder: false,
+             reason: `no red/green commits found for ${bugId}` };
+  }
+  if (redIdx === -1) {
+    return { hasRed: false, hasGreen: true, correctOrder: false,
+             reason: 'GREEN commit found but RED commit missing -- must write failing test first' };
+  }
+  if (greenIdx === -1) {
+    return { hasRed: true, hasGreen: false, correctOrder: false,
+             reason: 'RED commit found but GREEN commit missing -- fix not committed yet' };
+  }
+  return {
+    hasRed: true, hasGreen: true,
+    correctOrder: redIdx < greenIdx,
+    reason: redIdx < greenIdx ? 'RED before GREEN (correct)' : 'GREEN before RED (wrong order)',
+  };
+}
+
 async function checkEvidenceAdvisory(useDaemon, id, flags) {
   // Kill switch check first
   const mandateMode = (process.env.GSD_E_MANDATE || 'advisory').toLowerCase();
@@ -1723,5 +1834,5 @@ if (require.main === module) {
 
 // Test-only exports — not used in production flow
 if (typeof module !== 'undefined' && require.main !== module) {
-  module.exports = { _checkEvidenceBlock, checkEvidenceAdvisory };
+  module.exports = { _checkEvidenceBlock, checkEvidenceAdvisory, _checkQaBlocks, _checkRedGreenOrder };
 }
