@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: milestone
 status: completed
-stopped_at: Phase 11 context gathered
-last_updated: "2026-04-10T00:12:07.780Z"
-last_activity: "2026-04-09 -- Plan 10-09: tests + README documentation (terminal plan for Phase 10)"
+stopped_at: Phase 11 Plan 11-01 complete
+last_updated: "2026-04-09T00:00:00.000Z"
+last_activity: "2026-04-09 -- Plan 11-01: pre-execution-checklist.md + executor mandate prompts (8 tasks, 8 commits)"
 progress:
   total_phases: 7
   completed_phases: 1
@@ -25,10 +25,11 @@ See: .planning/PROJECT.md (updated 2026-04-09)
 
 ## Current Position
 
-Phase: 10 — D-Phase Structured Learning + CLI Dedup (COMPLETE)
-Plan: 10-09 DONE (62 new tests: 15 parse-learning + 11 tag-governance + 6 pipeline + 6 legacy-compat CJS + 19 tag-governance + 5 increment-applied pytest. README Phase 10 section. Daemon GET route fix 9ec4004. All tests green.) 10-08 DONE (LEARNING block template across 11 agents, 01d05f8). 10-07 DONE (cli-variables.md dedup across 17 files, 923510e). 10-06 DONE (operator D-phase handler + validator Gate 2). 10-05 DONE (gsd-memory.cjs SKB workflow + search filters). 10-04 DONE (pg_store.py defense-in-depth + daemon routes). 10-03 DONE (gsd-memory.cjs structured learn + parse-learning). 10-02 DONE (migration 008 applied_count). 10-01 DONE (tag-rules.json + learning-format.md + cli-variables.md).
-Status: Phase 9 complete. Phase 10 COMPLETE (all 9 plans, LEARN-01..07 satisfied). 2-week quarantine before Phase 11 starts.
-Last activity: 2026-04-09 -- Plan 10-09: tests + README documentation (terminal plan for Phase 10)
+Phase: 11 — E-Phase Research-Informed Execution Mandate (IN PROGRESS)
+Plan: 11-01 DONE (pre-execution-checklist.md 98 lines + PRE_EXECUTION_CHECKLIST in cli-variables.md (3 locations) + <pre_execution_mandate> block in 4 executor agents + debugger + PRE_EXECUTION_CHECKLIST fallback in all 6 agent files. 8 atomic commits. EXEC-01,02,03,05,06,07,08 addressed.)
+Previous: Phase 10 COMPLETE (all 9 plans, LEARN-01..07 satisfied). 10-09 DONE (62 new tests, README Phase 10 section). 10-08 DONE (LEARNING block template across 11 agents, 01d05f8). 10-07 DONE (cli-variables.md dedup across 17 files, 923510e).
+Status: Phase 11 started. Plan 11-01 complete. Next: Plan 11-02 (gsd-validator advisory PRE_EXECUTION_EVIDENCE parser).
+Last activity: 2026-04-09 -- Plan 11-01: pre-execution-checklist.md + executor mandate prompts (8 tasks, 8 commits)
 
 Progress: [###.......] 29%
 
@@ -119,9 +120,10 @@ None. Part A blockers resolved pre-roadmap:
 
 ## Session Continuity
 
-Last session: 2026-04-10T00:12:07.776Z
-Stopped at: Phase 11 context gathered
-Resume file: .planning/milestones/v2.2-phases/11-context-engine-activation/11-CONTEXT.md
+Last session: 2026-04-09
+Stopped at: Phase 11 Plan 11-01 complete (8 tasks, 8 commits)
+Resume file: .planning/milestones/v2.2-phases/11-context-engine-activation/11-01-SUMMARY.md
+Next: Plan 11-02 — gsd-validator advisory PRE_EXECUTION_EVIDENCE parser (EXEC-04)
 
 ## Previous Milestone: v2.5 -- Smarter Brain (COMPLETE)
 
