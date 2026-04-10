@@ -7,13 +7,103 @@ const path = require('path');
 const { execSync } = require('child_process');
 const { loadConfig, resolveModelInternal, findPhaseInternal, getRoadmapPhaseInternal, pathExistsInternal, generateSlugInternal, getMilestoneInfo, normalizePhaseName, toPosixPath, output, error } = require('./core.cjs');
 
-function cmdInitExecutePhase(cwd, phase, raw) {
+/**
+ * Validate and normalize a --phase-dir override path (RESOLVE-02).
+ * Returns a phaseInfo-compatible object or calls error() on failure.
+ */
+function validatePhaseDirOverride(cwd, phaseDirOverride) {
+  // Resolve to absolute for existence check
+  const absPath = path.isAbsolute(phaseDirOverride)
+    ? phaseDirOverride
+    : path.resolve(cwd, phaseDirOverride);
+
+  // Hard error: path must exist
+  if (!fs.existsSync(absPath)) {
+    error('--phase-dir: path does not exist: ' + phaseDirOverride);
+  }
+
+  // Hard error: must be a directory
+  if (!fs.statSync(absPath).isDirectory()) {
+    error('--phase-dir: path is not a directory: ' + phaseDirOverride);
+  }
+
+  // Check for PLAN.md files
+  let phaseFiles;
+  try {
+    phaseFiles = fs.readdirSync(absPath);
+  } catch (e) {
+    error('--phase-dir: cannot read directory: ' + phaseDirOverride + ' (' + e.message + ')');
+  }
+
+  const plans = phaseFiles.filter(f => f.endsWith('-PLAN.md') || f === 'PLAN.md').sort();
+
+  // Hard error: empty directory (no PLANs) — suggest siblings
+  if (plans.length === 0) {
+    let suggestion = '';
+    try {
+      const parentDir = path.dirname(absPath);
+      const siblings = fs.readdirSync(parentDir, { withFileTypes: true })
+        .filter(e => e.isDirectory() && e.name !== path.basename(absPath))
+        .filter(e => {
+          try {
+            return fs.readdirSync(path.join(parentDir, e.name)).some(f => f.endsWith('-PLAN.md') || f === 'PLAN.md');
+          } catch { return false; }
+        })
+        .map(e => e.name);
+      if (siblings.length > 0) {
+        suggestion = ' Did you mean: ' + siblings.slice(0, 3).join(', ') + '?';
+      }
+    } catch {}
+    error('--phase-dir: directory exists but contains no PLAN.md files: ' + phaseDirOverride + '.' + suggestion);
+  }
+
+  // Normalize to relative-from-cwd
+  const relPath = toPosixPath(path.relative(cwd, absPath));
+
+  // Extract phase number and name from directory basename
+  const basename = path.basename(absPath);
+  const dirMatch = basename.match(/^(\d+[A-Z]?(?:\.\d+)*)-?(.*)/i);
+  const phaseNumber = dirMatch ? dirMatch[1] : null;
+  const phaseName = dirMatch && dirMatch[2] ? dirMatch[2] : null;
+
+  const summaries = phaseFiles.filter(f => f.endsWith('-SUMMARY.md') || f === 'SUMMARY.md').sort();
+  const hasResearch = phaseFiles.some(f => f.endsWith('-RESEARCH.md') || f === 'RESEARCH.md');
+  const hasContext = phaseFiles.some(f => f.endsWith('-CONTEXT.md') || f === 'CONTEXT.md');
+  const hasVerification = phaseFiles.some(f => f.endsWith('-VERIFICATION.md') || f === 'VERIFICATION.md');
+
+  const completedPlanIds = new Set(
+    summaries.map(s => s.replace('-SUMMARY.md', '').replace('SUMMARY.md', ''))
+  );
+  const incompletePlans = plans.filter(p => {
+    const planId = p.replace('-PLAN.md', '').replace('PLAN.md', '');
+    return !completedPlanIds.has(planId);
+  });
+
+  return {
+    found: true,
+    directory: relPath,
+    phase_number: phaseNumber,
+    phase_name: phaseName,
+    phase_slug: phaseName ? phaseName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') : null,
+    plans,
+    summaries,
+    incomplete_plans: incompletePlans,
+    has_research: hasResearch,
+    has_context: hasContext,
+    has_verification: hasVerification,
+    override: true,
+  };
+}
+
+function cmdInitExecutePhase(cwd, phase, raw, phaseDirOverride) {
   if (!phase) {
     error('phase required for init execute-phase');
   }
 
   const config = loadConfig(cwd);
-  const phaseInfo = findPhaseInternal(cwd, phase);
+  const phaseInfo = phaseDirOverride
+    ? validatePhaseDirOverride(cwd, phaseDirOverride)
+    : findPhaseInternal(cwd, phase);
   const milestone = getMilestoneInfo(cwd);
 
   const roadmapPhase = getRoadmapPhaseInternal(cwd, phase);
@@ -80,13 +170,15 @@ function cmdInitExecutePhase(cwd, phase, raw) {
   output(result, raw);
 }
 
-function cmdInitPlanPhase(cwd, phase, raw) {
+function cmdInitPlanPhase(cwd, phase, raw, phaseDirOverride) {
   if (!phase) {
     error('phase required for init plan-phase');
   }
 
   const config = loadConfig(cwd);
-  const phaseInfo = findPhaseInternal(cwd, phase);
+  const phaseInfo = phaseDirOverride
+    ? validatePhaseDirOverride(cwd, phaseDirOverride)
+    : findPhaseInternal(cwd, phase);
 
   const roadmapPhase = getRoadmapPhaseInternal(cwd, phase);
   const reqMatch = roadmapPhase?.section?.match(/^\*\*Requirements\*\*:[^\S\n]*([^\n]*)$/m);
@@ -332,13 +424,15 @@ function cmdInitResume(cwd, raw) {
   output(result, raw);
 }
 
-function cmdInitVerifyWork(cwd, phase, raw) {
+function cmdInitVerifyWork(cwd, phase, raw, phaseDirOverride) {
   if (!phase) {
     error('phase required for init verify-work');
   }
 
   const config = loadConfig(cwd);
-  const phaseInfo = findPhaseInternal(cwd, phase);
+  const phaseInfo = phaseDirOverride
+    ? validatePhaseDirOverride(cwd, phaseDirOverride)
+    : findPhaseInternal(cwd, phase);
 
   const result = {
     // Models
@@ -361,9 +455,11 @@ function cmdInitVerifyWork(cwd, phase, raw) {
   output(result, raw);
 }
 
-function cmdInitPhaseOp(cwd, phase, raw) {
+function cmdInitPhaseOp(cwd, phase, raw, phaseDirOverride) {
   const config = loadConfig(cwd);
-  let phaseInfo = findPhaseInternal(cwd, phase);
+  let phaseInfo = phaseDirOverride
+    ? validatePhaseDirOverride(cwd, phaseDirOverride)
+    : findPhaseInternal(cwd, phase);
 
   // Fallback to ROADMAP.md if no directory exists (e.g., Plans: TBD)
   if (!phaseInfo) {
@@ -707,4 +803,5 @@ module.exports = {
   cmdInitMilestoneOp,
   cmdInitMapCodebase,
   cmdInitProgress,
+  validatePhaseDirOverride,
 };
