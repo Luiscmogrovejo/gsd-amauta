@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: milestone
-status: verifying
-stopped_at: Phase 12 context gathered
-last_updated: "2026-04-10T02:06:00.385Z"
-last_activity: "2026-04-10 -- Plan 11-02: checkEvidenceAdvisory() + 22 tests (EXEC-04)"
+status: in-progress
+stopped_at: Plan 12-01 complete -- _inherit_parent_spec() + --no-inherit + inherited_success_criteria JSON field
+last_updated: "2026-04-09T00:30:00.000Z"
+last_activity: "2026-04-09 -- Plan 12-01: _inherit_parent_spec() Python helper + --no-inherit CLI flag (QA-01, QA-02)"
 progress:
   total_phases: 7
   completed_phases: 1
@@ -25,11 +25,11 @@ See: .planning/PROJECT.md (updated 2026-04-09)
 
 ## Current Position
 
-Phase: 11 — E-Phase Research-Informed Execution Mandate (EXECUTION COMPLETE — AWAITING VERIFICATION)
-Plan: 11-02 DONE (checkEvidenceAdvisory() 123 lines + _checkEvidenceBlock() pure logic + cmdValidate integration + gsd-validator.md advisory section + 22 CJS tests. 4 commits. EXEC-04 addressed.) 11-01 DONE (pre-execution-checklist.md 98 lines + PRE_EXECUTION_CHECKLIST in cli-variables.md (3 locations) + <pre_execution_mandate> block in 4 executor agents + debugger + PRE_EXECUTION_CHECKLIST fallback in all 6 agent files. 9 commits. EXEC-01,02,03,05,06,07,08 addressed.)
-Previous: Phase 10 COMPLETE (all 9 plans, LEARN-01..07 satisfied).
-Status: Phase 11 both plans complete. All 8 EXEC requirements addressed. Awaiting phase verification.
-Last activity: 2026-04-10 -- Plan 11-02: checkEvidenceAdvisory() + 22 tests (EXEC-04)
+Phase: 12 -- T-Phase QA Department + Spec Inheritance (IN PROGRESS)
+Plan: 12-01 DONE (_inherit_parent_spec() 57 lines + claim-time caching to metadata.inherited_spec + SC-01..SC-N IDs + cap@10 + kill switch + inherited_success_criteria in show --json + --no-inherit flag end-to-end. 3 commits. QA-01, QA-02 addressed.)
+Previous: Phase 11 COMPLETE (all 2 plans, EXEC-01..08 satisfied, verified).
+Status: Phase 12 plan 12-01 complete. Awaiting plans 12-02..N and phase verification.
+Last activity: 2026-04-09 -- Plan 12-01: _inherit_parent_spec() Python helper + --no-inherit CLI flag (QA-01, QA-02)
 
 Progress: [###.......] 29%
 
@@ -87,6 +87,10 @@ v2.5 codebase docs in .planning/codebase/ (2,337 lines). v2.6 research in .plann
 - **Runtime Read, NOT `@` include**: `references/*.md` files are read by agents at runtime via `Read` tool, not via `@` include syntax (which doesn't work in agent .md files). Pattern applies to `cli-variables.md`, `pre-execution-checklist.md`, `learning-format.md`, etc.
 - **No new runtimes, no new schema**: v2.6 is 90% prompt engineering, 10% CLI flags (~425 LOC); zero `ALTER TABLE`, zero new runtime deps, pytest-bdd/fast-check/Hypothesis are opt-in per-project dev deps. **One exception (locked):** migration 008 adds `applied_count INTEGER NOT NULL DEFAULT 0` to `gsd_memory` (LEARN-05 echo-chamber defense). No other ALTER TABLE permitted in v2.6.
 - **Phase 12 unblocks Phase 14**: `_inherit_parent_spec` helper (Phase 12) is used by planner when emitting child tasks (Phase 14).
+- **_inherit_parent_spec shallow-copy in cmd_show** (Plan 12-01): `cmd_show` uses `out = dict(item)` before injecting `inherited_success_criteria` to avoid mutating the in-memory stored item. The field lives only in the show JSON output unless also cached at claim time.
+- **_inherit_parent_spec on-demand fallback** (Plan 12-01): If `metadata.inherited_spec` is missing at show time (task not yet claimed), `cmd_show` calls `_inherit_parent_spec()` on demand. Claim-time caching is the primary path but show-time resolution is the safe fallback.
+- **noInherit global flag extraction in CJS** (Plan 12-01): `--no-inherit` extracted from `rawArgs` in `main()` alongside `--json`, stripped before subcommand dispatch. Same pattern as `--json` extraction. Passed as 4th parameter to `cmdShow(useDaemon, id, jsonMode, noInherit)`.
+- **SC-ID assignment is position-based** (Plan 12-01): `f"SC-{i:02d}: {c}"` with `enumerate(capped, 1)`. Position-based IDs are grep-friendly and accept rare reorder edge case; `resync-criteria` (future) regenerates if parent criteria change.
 - **Migration 008 idempotency pattern** (Plan 10-02): BEGIN/COMMIT wrapper + `ADD COLUMN IF NOT EXISTS` + `CREATE INDEX IF NOT EXISTS` + COMMENT ON COLUMN. Partial index (`WHERE applied_count > 0`) minimizes maintenance cost because new learnings start at 0 — only cited entries get indexed. Re-run produces NOTICE skip messages but no error, safe for `init-db.sh` loops.
 - **FOR UPDATE row lock on metadata jsonb read-modify-write** (Plan 10-04): When concurrent mutations to a jsonb field need dedup that can't be expressed as a UNIQUE constraint (e.g., dedup key lives inside a nested array), SELECT ... FOR UPDATE inside a transaction is the least-invasive serialization mechanism. Advisory locks require namespacing; separate tables require a migration + join. FOR UPDATE scopes the lock to the exact row for the exact transaction duration.
 - **Idempotent HTTP mutations return 200, not 409** (Plan 10-04): Repeat citation endpoints (`/api/memory/:id/increment-applied`) return 200 + `{action: False, already_done: True}` on dedup hit. 409 would force callers to treat conflict-as-success, which is fragile. 200-with-flag lets callers treat idempotence as the expected case — the operator's APPLIED_LEARNING scanner runs on every D-phase and will re-hit the same keys legitimately.
