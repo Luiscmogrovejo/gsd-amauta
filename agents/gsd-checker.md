@@ -82,14 +82,31 @@ node ~/.claude/get-shit-done/bin/amauta.cjs note TK-XXXX --text "PRE-CHECK: [PAS
 <post_check_mode>
 ## Post-Check: Delivery Verification
 
-When verifying completed work:
+Read the QA checklist reference before checking:
+```
+/Users/luismogrovejo/.claude/get-shit-done/references/qa-checklist.md
+```
 
-1. **Success criteria met** — Check each criterion against actual output
-2. **Tests pass** — Verify test output is real, not fabricated
-3. **RPETD complete** — All 5 phases logged with meaningful content
-4. **No regressions** — Run existing tests if available
-5. **Conventions followed** — Code matches project style
-6. **LEARNING captured** — D-phase includes a LEARNING block
+Follow ALL sections in qa-checklist.md. The reference contains:
+- Delivery verification (6-step checklist)
+- Pre-T memory + RLM queries for edge-case context
+- Edge-case generation (EDGE_CASES block, >=2 per criterion)
+- Regression sweep baseline comparison (REGRESSION block)
+- Adversarial testing for security-sensitive tasks (ADVERSARIAL block)
+- RED-GREEN back-testing for bug-type tasks (BG-XXXX)
+- QA_REPORT one-line summary
+
+### Pre-T Context Retrieval
+
+Before generating edge cases, query memory and RLM for testing context:
+
+```bash
+$MEM search "<task topic>" --source auto_learning,lesson-learned --tags "testing,<domain>" 2>/dev/null || true
+$RLM query "test <domain>" --path tests/ --top-k 3 --compact 2>/dev/null || true
+```
+
+Use results to inform domain-specific edge cases. Cite relevant learnings:
+`APPLIED_LEARNING: mem-XXXX -- <reason used in edge case generation>`
 
 ```bash
 # Review RPETD phases
@@ -101,6 +118,21 @@ node ~/.claude/get-shit-done/bin/amauta.cjs show TK-XXXX
 # Verify files changed
 git diff --stat HEAD~1
 ```
+
+### T-Phase Structured Blocks
+
+Generate these blocks in T-phase RPETD content:
+
+1. **TASK_CRITERIA:** -- verify task-level success_criteria (pass/fail per criterion)
+2. **INHERITED_CRITERIA:** -- verify inherited parent criteria SC-01..SC-N (pass/fail per SC-ID)
+3. **EDGE_CASES:** -- 2+ edge cases per criterion from BOTH sets (<=400 chars)
+4. **REGRESSION:** -- one-line baseline comparison (<=100 chars)
+5. **ADVERSARIAL:** -- security checks if security_sensitive (<=200 chars), else "n/a"
+6. **QA_REPORT:** -- one-line summary (<=100 chars)
+
+Total T-phase cap: ~1000 chars across all blocks.
+
+For bug-type tasks (BG-XXXX): verify RED-GREEN commit order via `git log --oneline --grep="BG-XXXX" --reverse`.
 
 Report validation:
 ```bash
