@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: milestone
 status: verifying
-stopped_at: Phase 15 context gathered — 15 locked decisions, 4 gap resolutions, depth-7 dogfood stored
+stopped_at: Phase 15 Wave 1 complete — 4 new audit-infrastructure files created (audit-rpetd-intelligence.cjs, verify-rpetd-intelligence.md workflow, verify-v26.cjs, verify-v26.md slash command), zero existing files modified
 last_updated: "2026-04-10T16:32:10.670Z"
-last_activity: "2026-04-10 -- Phase 14 closeout: REQUIREMENTS.md PLAN-01..07 Done, VERIFICATION.md PASS, depth-6 dogfood moment captured (prior-session pre-commit verification)."
+last_activity: "2026-04-10 -- Phase 15 Plan 15-01 DONE: 4 new Phase 15 audit-infra files committed atomically (16513ed, 26ae849, 36a2d2a, 447c9b5); DOGFOOD-01..04 structural; Wave 2 (run audit) next."
 progress:
   total_phases: 8
   completed_phases: 1
-  total_plans: 9
-  completed_plans: 9
-  percent: 75
+  total_plans: 10
+  completed_plans: 10
+  percent: 78
 ---
 
 # GSD-Amauta -- Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-09)
 
 ## Current Position
 
-Phase: 14 -- P-Phase Task-Management Integration (SHIPPED)
-Status: Phase 14 verified PASS (f9016bd), PLAN-01..07 flipped to Done. Phase 15 unblocked.
-Previous: 14-04 DONE, 14-03 DONE, 14-02 DONE, 14-01 DONE. 4 waves, 4 plans, all verified by external validator.
-Last activity: 2026-04-10 -- Phase 14 closeout: REQUIREMENTS.md PLAN-01..07 Done, VERIFICATION.md PASS, depth-6 dogfood moment captured (prior-session pre-commit verification).
+Phase: 15 -- End-to-End Dogfood Verification (Wave 1 complete)
+Status: Plan 15-01 DONE — 4 new audit-infrastructure files created (audit-rpetd-intelligence.cjs, verify-rpetd-intelligence.md, verify-v26.cjs, verify-v26.md slash command). Zero existing files modified. Wave 2 (execute the audit) is next.
+Previous: 14-04 DONE, 14-03 DONE, 14-02 DONE, 14-01 DONE. Phase 14 verified PASS (f9016bd), PLAN-01..07 flipped to Done.
+Last activity: 2026-04-10 -- Phase 15 Plan 15-01 shipped: 4 atomic commits (16513ed + 26ae849 + 36a2d2a + 447c9b5). Awaiting validator.
 
-Progress: [########..] 75% (v2.6 milestone — phases 10, 11, 12, 13, 13.1, 14 done; phase 9 pending green baseline; phase 15 next)
+Progress: [########..] 78% (v2.6 milestone — phases 10, 11, 12, 13, 13.1, 14 done; phase 9 pending green baseline; phase 15 Wave 1 shipped, Waves 2-3 pending)
 
 ## v2.6 Phase Map
 
