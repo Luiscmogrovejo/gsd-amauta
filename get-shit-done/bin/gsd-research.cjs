@@ -80,6 +80,16 @@ const PERPLEXITY_CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours in ms
 const PERPLEXITY_CACHE_DIR = path.join(os.homedir(), '.amauta');
 const PERPLEXITY_CACHE_FILE = path.join(PERPLEXITY_CACHE_DIR, 'perplexity-cache.json');
 
+// ── Creative Research (Phase 13 CREATIVE-01..05) ──
+const CREATIVE_PROVIDER_ORDER = ['memory', 'skb', 'perplexity'];
+const CREATIVE_PERPLEXITY_OUTPUT_CAP = 750;
+const CREATIVE_PERPLEXITY_DELAY_MS = 500;
+const CREATIVE_PERPLEXITY_MAX_TOKENS = 500;
+const CREATIVE_RESULT_CAP_PER_VARIANT = 3;
+const CREATIVE_JACCARD_THRESHOLD = 0.7;
+const CREATIVE_QUERY_WORD_CAP = 8;
+const CREATIVE_TYPES = new Set(['research', 'exploration', 'architecture-review', 'pattern-search']);
+
 /**
  * Load Perplexity cache from disk, pruning expired entries.
  * Returns Map of { cacheKey: { result, storedAt } }.
@@ -696,7 +706,7 @@ function parseArgs(argv) {
   let i = 0;
   while (i < argv.length) {
     const arg = argv[i];
-    if (arg === '--json' || arg === '--all' || arg === '--no-cache') {
+    if (arg === '--json' || arg === '--all' || arg === '--no-cache' || arg === '--creative' || arg === '--re-research') {
       args[arg.slice(2)] = true;
     } else if (arg.startsWith('--')) {
       const key = arg.slice(2);
@@ -753,6 +763,212 @@ function stripPreamble(text) {
     result = result.trim();
   } while (result !== prev);
   return result;
+}
+
+// ═══════════════════════════════════════════════════════
+// Creative Research Functions (Phase 13 CREATIVE-01..05)
+// ═══════════════════════════════════════════════════════
+
+/**
+ * Jaccard word-overlap similarity between two texts.
+ * Returns 0.0-1.0 where 1.0 = identical word sets.
+ * Port of amauta.py:_jaccard_similarity (Phase 13 CREATIVE-02).
+ * Words: >= 3 chars, lowercased. Fallback: character trigrams for short texts.
+ */
+function _jaccardSimilarity(textA, textB) {
+  const wordsA = new Set((textA.toLowerCase().match(/\w{3,}/g) || []));
+  const wordsB = new Set((textB.toLowerCase().match(/\w{3,}/g) || []));
+  if (!wordsA.size || !wordsB.size) {
+    // Fallback: character trigram similarity for short-word texts
+    if (textA.length < 3 || textB.length < 3) return 0.0;
+    const triA = new Set();
+    const triB = new Set();
+    const a = textA.toLowerCase();
+    const b = textB.toLowerCase();
+    for (let i = 0; i <= a.length - 3; i++) triA.add(a.slice(i, i + 3));
+    for (let i = 0; i <= b.length - 3; i++) triB.add(b.slice(i, i + 3));
+    if (!triA.size || !triB.size) return 0.0;
+    const inter = new Set([...triA].filter(t => triB.has(t)));
+    const union = new Set([...triA, ...triB]);
+    return inter.size / union.size;
+  }
+  const intersection = new Set([...wordsA].filter(w => wordsB.has(w)));
+  const union = new Set([...wordsA, ...wordsB]);
+  return union.size ? intersection.size / union.size : 0.0;
+}
+
+/**
+ * Generate 3 creative query variants from an original query.
+ * Slots: inversion (always), anti-pattern (always), third rotates by domain.
+ * Each variant is capped at CREATIVE_QUERY_WORD_CAP words.
+ * Phase 13 CREATIVE-02. Domain detection uses tag-rules.json vocabulary.
+ */
+function generateVariants(query, domain) {
+  // Third-slot selection by domain
+  const THIRD_SLOT = {
+    'database': 'cross-domain',
+    'api': 'cross-domain',
+    'security': 'constraint-removal',
+    'frontend': 'lateral',
+    'backend': 'cross-domain',
+    'infrastructure': 'constraint-removal',
+    'performance': 'constraint-removal',
+    'authentication': 'constraint-removal',
+    'caching': 'cross-domain',
+    'deployment': 'constraint-removal',
+    'monitoring': 'constraint-removal',
+    'testing': 'lateral',
+  };
+
+  const thirdType = THIRD_SLOT[domain] || 'lateral';
+  const topic = query.replace(/^(how to |what is |why does )/i, '').trim();
+
+  // Build raw variant queries
+  const variants = [
+    { type: 'inversion', query: `${topic} failures common mistakes` },
+    { type: 'anti-pattern', query: `${topic} anti-patterns worst practices` },
+  ];
+
+  // Third slot
+  if (thirdType === 'lateral') {
+    variants.push({ type: 'lateral', query: `natural systems analogy ${topic}` });
+  } else if (thirdType === 'cross-domain') {
+    variants.push({ type: 'cross-domain', query: `alternative approaches ${topic} tradeoffs` });
+  } else {
+    variants.push({ type: 'constraint-removal', query: `unlimited resources approach ${topic}` });
+  }
+
+  // Enforce 8-word cap
+  for (const v of variants) {
+    const words = v.query.split(/\s+/);
+    if (words.length > CREATIVE_QUERY_WORD_CAP) {
+      process.stderr.write(`  [creative] truncated ${v.type} query from ${words.length} to ${CREATIVE_QUERY_WORD_CAP} words\n`);
+      v.query = words.slice(0, CREATIVE_QUERY_WORD_CAP).join(' ');
+    }
+  }
+
+  return variants;
+}
+
+/**
+ * Detect query domain by matching words against tag-rules.json vocabulary.
+ * Returns the domain name with highest word overlap, or 'unknown'.
+ */
+function detectDomain(query) {
+  let vocabulary;
+  try {
+    const rulesPath = path.join(__dirname, '..', 'config', 'tag-rules.json');
+    vocabulary = JSON.parse(fs.readFileSync(rulesPath, 'utf-8')).vocabulary;
+  } catch {
+    return 'unknown';
+  }
+  const queryWords = new Set((query.toLowerCase().match(/\w{3,}/g) || []));
+  if (!queryWords.size) return 'unknown';
+
+  let bestDomain = 'unknown';
+  let bestScore = 0;
+  const priority = ['database', 'api', 'security', 'frontend', 'backend', 'infrastructure'];
+
+  for (const [domain, keywords] of Object.entries(vocabulary)) {
+    const domainWords = new Set(keywords.map(k => k.toLowerCase()));
+    // Also include the domain name itself
+    domainWords.add(domain.toLowerCase());
+    const overlap = [...queryWords].filter(w => domainWords.has(w)).length;
+    if (overlap > bestScore || (overlap === bestScore && bestScore > 0 && priority.indexOf(domain) >= 0 && (priority.indexOf(bestDomain) < 0 || priority.indexOf(domain) < priority.indexOf(bestDomain)))) {
+      bestScore = overlap;
+      bestDomain = domain;
+    }
+  }
+  return bestScore > 0 ? bestDomain : 'unknown';
+}
+
+/**
+ * Determine if creative mode should be enabled based on parsed args.
+ * Rules (CONTEXT.md Decision 2):
+ *  - --creative flag must be present
+ *  - --task-type must be provided AND in CREATIVE_TYPES
+ *  - No --task-type -> creative does NOT fire even with --creative
+ *  - Unknown task type -> treated as implementation (suppressed) + warning
+ *  - --re-research overrides gating (auto-enable on re-research)
+ *  - GSD_R_CREATIVE=off kills creative entirely
+ */
+function shouldEnableCreative(args) {
+  // Kill switch check
+  if (process.env.GSD_R_CREATIVE === 'off') {
+    if (args.creative) {
+      process.stderr.write('[creative] disabled (GSD_R_CREATIVE=off) -- using conservative cascade\n');
+    }
+    return false;
+  }
+
+  // Re-research auto-enable overrides gating
+  if (args['re-research']) {
+    process.stderr.write('[creative] auto-enabled on re-research attempt.\n');
+    return true;
+  }
+
+  // --creative flag must be present
+  if (!args.creative) return false;
+
+  // --task-type must be provided
+  const taskType = args['task-type'];
+  if (!taskType) return false;
+
+  // Check against allowed types
+  if (CREATIVE_TYPES.has(taskType)) return true;
+
+  // Known non-creative types
+  const SUPPRESSED_TYPES = new Set(['implementation', 'bug-fix', 'documentation']);
+  if (SUPPRESSED_TYPES.has(taskType)) return false;
+
+  // Unknown type -> implementation (conservative default)
+  process.stderr.write(`[creative] Unknown task type '${taskType}', defaulting to implementation -- creative suppressed.\n`);
+  return false;
+}
+
+/**
+ * Deduplicate variant results against original results using Jaccard similarity.
+ * Returns variant results that are below the threshold (novel findings).
+ * @param {Array} originalResults - result objects from original query
+ * @param {Array} variantResults - result objects from a single variant
+ * @param {number} threshold - Jaccard threshold (default 0.7)
+ * @returns {Array} filtered variant results with duplicates removed
+ */
+function deduplicateResults(originalResults, variantResults, threshold = CREATIVE_JACCARD_THRESHOLD) {
+  const originalTexts = originalResults.flatMap(r =>
+    (r.results || []).map(item => item.text || item.content || '')
+  );
+
+  return variantResults.filter(vr => {
+    const variantTexts = (vr.results || []).map(item => item.text || item.content || '');
+    for (const vText of variantTexts) {
+      for (const oText of originalTexts) {
+        if (_jaccardSimilarity(vText, oText) >= threshold) return false;
+      }
+    }
+    return true;
+  });
+}
+
+/**
+ * Append a creative search log entry to data/creative-research-log.json.
+ * Append-only JSON array. Creates file with [] if not exists.
+ * Phase 13 CREATIVE-05.
+ */
+function _appendCreativeLog(entry) {
+  try {
+    const logPath = path.join(__dirname, '..', '..', 'data', 'creative-research-log.json');
+    let entries = [];
+    try {
+      entries = JSON.parse(fs.readFileSync(logPath, 'utf-8'));
+    } catch { /* file doesn't exist yet */ }
+    entries.push(entry);
+    const tmpPath = logPath + '.tmp';
+    fs.writeFileSync(tmpPath, JSON.stringify(entries, null, 2));
+    fs.renameSync(tmpPath, logPath);
+  } catch (err) {
+    process.stderr.write(`  [creative] log write failed: ${err.message}\n`);
+  }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -991,9 +1207,13 @@ function printUsage() {
   --model <model>        Perplexity model (default: sonar)
   --json                 Raw JSON output
   --no-cache             Skip Perplexity cache reads (still writes to cache)
+  --creative             Enable creative query variants (3 per input)
+  --task-type <type>     Task type for creative gating (research|exploration|architecture-review|implementation|bug-fix|documentation)
+  --re-research          Auto-enable creative on re-research
 
 \x1b[1mEnvironment:\x1b[0m
   PERPLEXITY_API_KEY     Required for Perplexity provider
+  GSD_R_CREATIVE         Set to 'off' to disable creative variants (kill switch)
 `);
 }
 
@@ -1034,4 +1254,20 @@ async function main() {
   }
 }
 
-main();
+// ── Test-only exports (Phase 13) ──
+if (typeof module !== 'undefined' && require.main !== module) {
+  module.exports = {
+    _jaccardSimilarity,
+    generateVariants,
+    detectDomain,
+    shouldEnableCreative,
+    deduplicateResults,
+    parseArgs,
+    CREATIVE_TYPES,
+    CREATIVE_JACCARD_THRESHOLD,
+    CREATIVE_QUERY_WORD_CAP,
+    CREATIVE_PROVIDER_ORDER,
+  };
+} else {
+  main();
+}
