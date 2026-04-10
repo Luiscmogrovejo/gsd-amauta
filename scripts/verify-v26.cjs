@@ -123,21 +123,62 @@ function checkVerificationFiles() {
 }
 
 function parseNpmFailures(stdout, stderr) {
-  // npm test produces per-file failure lines like:
-  //   FAIL tests/foo.test.cjs
-  // or (node --test style) "not ok" lines with file names.
   const combined = (stdout || '') + '\n' + (stderr || '');
-  const failures = new Set();
+  const structured = [];
+  const seen = new Set();
+
+  // Primary: node --test runner format
+  // Pattern: "test at <filepath>:<line>:<col>" followed by a line with
+  // the Unicode cross mark (U+2716) and test name, then error on next line.
+  const lines = combined.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const crossLine = lines[i].match(/^\s*\u2716\s+(.+?)\s+\([\d.]+m?s\)\s*$/);
+    if (!crossLine) continue;
+
+    const testName = crossLine[1];
+    let testFile = null;
+    let reason = null;
+
+    // Look backward for "test at <file>:<line>:<col>"
+    for (let j = i - 1; j >= Math.max(0, i - 5); j--) {
+      const atMatch = lines[j].match(/test at\s+([\w\-./]+\.test\.c?js):\d+:\d+/);
+      if (atMatch) {
+        testFile = path.basename(atMatch[1]);
+        break;
+      }
+    }
+
+    // Look forward for error reason (first indented non-empty line after the cross)
+    for (let k = i + 1; k < Math.min(lines.length, i + 5); k++) {
+      const trimmed = lines[k].trim();
+      if (trimmed && /^[A-Z]\w*Error:/.test(trimmed)) {
+        reason = trimmed;
+        break;
+      }
+      if (trimmed && !trimmed.startsWith('at ')) {
+        reason = trimmed;
+        break;
+      }
+    }
+
+    if (testFile && !seen.has(testFile + '::' + testName)) {
+      seen.add(testFile + '::' + testName);
+      structured.push({ test_file: testFile, test_name: testName, reason: reason || 'unknown' });
+    }
+  }
+
+  // Secondary fallback: legacy FAIL <filepath> format (for compatibility)
   const failLine = /FAIL\s+([\w\-./]+\.test\.c?js)/g;
   let m;
   while ((m = failLine.exec(combined)) !== null) {
-    failures.add(path.basename(m[1]));
+    const base = path.basename(m[1]);
+    if (!seen.has(base + '::legacy_match')) {
+      seen.add(base + '::legacy_match');
+      structured.push({ test_file: base, test_name: 'legacy_match', reason: 'matched FAIL line' });
+    }
   }
-  const notOk = /#\s*[\w./-]+\s+([\w\-]+\.test\.c?js)/g;
-  while ((m = notOk.exec(combined)) !== null) {
-    failures.add(path.basename(m[1]));
-  }
-  return Array.from(failures);
+
+  return structured;
 }
 
 function parsePytestFailures(stdout, stderr) {
@@ -190,17 +231,19 @@ function runPytest() {
 function classifyFailures(observed, preExistingNames, preExistingFile) {
   const preExistingObserved = [];
   const newFailures = [];
-  for (const f of observed) {
-    const base = path.basename(f);
-    if (preExistingNames && preExistingNames.some((name) => base === name || f.includes(name))) {
-      preExistingObserved.push(f);
+  for (const entry of observed) {
+    // Structured entries from parseNpmFailures already have test_file as a basename;
+    // the old includes() branch is intentionally dropped — exact match via === is correct.
+    const base = typeof entry === 'string' ? path.basename(entry) : entry.test_file;
+    if (preExistingNames && preExistingNames.some((name) => base === name)) {
+      preExistingObserved.push(entry);
       continue;
     }
-    if (preExistingFile && f.indexOf(preExistingFile) !== -1) {
-      preExistingObserved.push(f);
+    if (preExistingFile && base.indexOf(preExistingFile) !== -1) {
+      preExistingObserved.push(entry);
       continue;
     }
-    newFailures.push(f);
+    newFailures.push(entry);
   }
   return { preExistingObserved, newFailures };
 }
@@ -597,7 +640,13 @@ function generateMarkdown(report) {
   if (report.pre_existing_failures_verified.length === 0) {
     lines.push('- _none observed_');
   } else {
-    for (const f of report.pre_existing_failures_verified) lines.push(`- ${f}`);
+    for (const f of report.pre_existing_failures_verified) {
+      if (typeof f === 'string') {
+        lines.push('- ' + f);
+      } else {
+        lines.push('- `' + f.test_file + '` -- ' + (f.test_name || 'unknown') + ' (' + (f.reason || 'unknown') + ')');
+      }
+    }
   }
   lines.push('');
   lines.push('**New failures surfaced:**');
@@ -605,7 +654,13 @@ function generateMarkdown(report) {
   if (report.new_failures_surfaced.length === 0) {
     lines.push('- _none_');
   } else {
-    for (const f of report.new_failures_surfaced) lines.push(`- ${f}`);
+    for (const f of report.new_failures_surfaced) {
+      if (typeof f === 'string') {
+        lines.push('- ' + f);
+      } else {
+        lines.push('- `' + f.test_file + '` -- ' + (f.test_name || 'unknown') + ' (' + (f.reason || 'unknown') + ')');
+      }
+    }
   }
   lines.push('');
 
