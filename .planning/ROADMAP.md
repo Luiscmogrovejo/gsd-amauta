@@ -333,8 +333,8 @@ Notable: 3 in-production dogfood moments captured at 3 recursion depths (Wave 1 
 **Plans:**
 - [x] 14-01: Protocol & Schema Foundation — divergence-protocol v1.1.0 + plan-task-xml-schema.md + gsd-planner Read pointer (PLAN-01) — Wave 1 — DONE 2026-04-10 (7b8b887 + bfe0272)
 - [x] 14-02: Dedup Bypass + Pass 0 Validation Engine — planToTasks() Pass 0 engine + scoped dedup bypass + 20 unit tests (PLAN-02/03/04/05) — Wave 2 — DONE 2026-04-10 (0965af3 + db50900 + eef17f2)
-- [ ] 14-03: P-phase RPETD output block + validator advisory (PLAN-06, PLAN-07) — Wave 3
-- [ ] 14-04: Tests + integration + requirements errata (PLAN-04 errata, all) — Wave 4
+- [x] 14-03: Pass 1+2 Registration + Integration Tests — Pass 0.5/1/2 real subprocess calls + amauta.py scoped dedup bypass + 8 integration tests with SIGKILL failure injection (PLAN-02/03/04) — Wave 3 — DONE 2026-04-10 (bfb7301 + bb94163)
+- [ ] 14-04: Agent Wiring + Workflow Integration — operator PLAN_REGISTRATION parser + planner story block + execute-phase plan-to-tasks invocation + PLAN-04 errata (PLAN-04/06/07) — Wave 4
 
 ---
 

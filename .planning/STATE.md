@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: milestone
 status: verifying
-stopped_at: Phase 14 plan 14-02 DONE — planToTasks() Pass 0 engine + scoped dedup bypass + 20 unit tests
-last_updated: "2026-04-10T18:15:00.000Z"
-last_activity: "2026-04-10 -- Plan 14-02 complete: 3 tasks, 3 commits. PLAN-02/03/04/05 requirements addressed."
+stopped_at: Phase 14 plan 14-03 DONE — planToTasks() Pass 0.5/1/2 real subprocess calls + amauta.py dedup bypass + 8 integration tests
+last_updated: "2026-04-10T20:00:00.000Z"
+last_activity: "2026-04-10 -- Plan 14-03 complete: 2 tasks, 2 commits. spawnAmauta() helper added, Pass 0.5/1/2 implemented, integration test suite created."
 progress:
   total_phases: 8
   completed_phases: 1
@@ -26,10 +26,10 @@ See: .planning/PROJECT.md (updated 2026-04-09)
 ## Current Position
 
 Phase: 14 -- P-Phase Task-Management Integration (IN PROGRESS)
-Plan: 14-02 DONE (planToTasks() Pass 0 engine + scoped _dedup_check bypass + gsd-amauta.cjs CJS pass-through + 20 unit tests. 3 commits. PLAN-02/03/04/05 addressed.)
-Previous: 14-01 DONE (divergence-protocol v1.1.0 + plan-task-xml-schema.md + gsd-planner pointer). Phase 13.1 VERIFIED (HARDEN-01..05). Phase 13 VERIFIED (CREATIVE-01..05). Phase 12 COMPLETE (QA-01..08).
-Status: Phase 14 Wave 2 complete. Plans 14-03, 14-04 not started.
-Last activity: 2026-04-10 -- Plan 14-02 complete: planToTasks() Pass 0 validation engine + scoped dedup bypass + 20 unit tests all green. 3 atomic commits.
+Plan: 14-03 DONE (planToTasks() Pass 0.5/1/2 real subprocess calls + amauta.py scoped _dedup_check bypass + 8 integration tests. 2 commits.)
+Previous: 14-02 DONE (planToTasks() Pass 0 engine + scoped _dedup_check bypass + gsd-amauta.cjs CJS pass-through + 20 unit tests. 3 commits. PLAN-02/03/04/05 addressed.)
+Status: Phase 14 Wave 3 complete. Plan 14-04 not started.
+Last activity: 2026-04-10 -- Plan 14-03 complete: spawnAmauta() helper defined, Pass 0.5 story creation, Pass 1 task creation, Pass 2 dependency linking, PLAN_REGISTRATION block, idempotency via tags lookup, 8 integration tests with SIGKILL injection, 20 unit tests still green.
 
 Progress: [####......] 40% (v2.6 milestone — phases 10, 12, 13, 13.1 done; phase 9 pending green baseline; phases 11, 14, 15 not started)
 
@@ -126,7 +126,9 @@ v2.5 codebase docs in .planning/codebase/ (2,337 lines). v2.6 research in .plann
 - **planToTasks() Pass 0 engine (Plan 14-02)**: `gsd-tools.cjs` now exports `planToTasks()` and 6 helpers: `_validatePlanShape` (story, required fields, 10-task cap), `_detectCycles` (DFS), `_checkAgentConflicts` (routeExecutor comparison), `_filesDisjointSplit` (disjoint boundary finder), `_renderDagText` (500-char truncating DAG), `_diffPlanVsAmauta` (structural drift with plan_amauta_drift type). Kill switch: `GSD_P_AUTO_TASK=false`.
 - **_filesDisjointSplit boundary semantics (Plan 14-02)**: Returns the FIRST disjoint boundary (smallest valid cut index), not a midpoint suggestion. "Largest contiguous prefix" means the algorithm takes the first clean cut walking forward — if tasks[0] and tasks[1] have no shared files, the split is at index 1. Partial-overlap case returns least-overlap cut with `split_rationale: "least_overlap_at_N"`.
 - **_renderDagText 500-char contract (Plan 14-02)**: Total output (including `\n...(full DAG in sidecar file)` marker of 30 chars) must be <= 500 chars. Truncation point is `500 - marker.length`, not a fixed 490. Tests assert on the total length, not just the pre-marker portion.
-- **scoped _dedup_check bypass already in amauta.py (Plan 14-02 observation)**: The bypass, cmd_add stamping, and argparse flags were already present from a prior partial implementation. Only the CJS cmdAdd direct-CLI path was missing `--source`/`--from-plan` pass-through. Daemon path always passed flags through via `...flags` spread.
+- **scoped _dedup_check bypass in amauta.py (Plan 14-03)**: The bypass, cmd_add stamping, and argparse flags for `source`/`from_plan` were NOT committed with 14-02 — they were left as working-tree changes and committed with 14-03. STATE.md learning was incorrect when it said "already present from prior partial implementation."
+- **planToTasks() idempotency uses dual lookup (Plan 14-03)**: Primary: `metadata.plan_local_id`. Secondary: tags array entry `task:<plan_local_id>` (stamped at creation via `--tags plan:${planId},task:${task.id}`). `_diffPlanVsAmauta` also uses tag-based secondary fallback so drift detection works without a follow-up metadata write call.
+- **spawnAmauta() is a local helper inside planToTasks() (Plan 14-03)**: Thin wrapper over `spawnSync('node', [amautaCjs, ...args], _spawnOpts)`. Defined as a closure after `_spawnOpts` to share the env/timeout config. Note call for story uses `--content` not `--text` (amauta.py `nt.add_argument("--content", required=True)`).
 
 ### Pending Todos
 
@@ -215,6 +217,8 @@ Behavioral test suite (tests/13.1-divergence-protocol.integration.test.cjs, 15 i
 
 
 
+
+- [learning] 2026-04-10T15:47:24.783Z: planToTasks Pass 0 pattern: _filesDisjointSplit returns the FIRST disjoint boundary (smallest valid cut), not a midpoint — walking forward and taking the first clean cut matches 'largest contiguous prefix' semantics. _renderDagText total-output cap (including truncation marker) requires cut at 500-marker.length, not a fixed 490.
 - [learning] 2026-04-10T15:42:46.694Z: legacy regression test: free text learning
 - [learning] 2026-04-10T15:33:58.988Z: Plan 14-01 pattern: when two enum values in the same file require a version bump, land them in a single atomic edit to prevent version-field collision if fragmented across tasks.
 - [learning] 2026-04-10T04:26:03.843Z: Phase 13 creative research: when adding module.exports to a CLI script for CJS test imports, use require.main !== module guard with else { main() } pattern -- not just a guard block -- so CLI still executes when run directly. Also: npm_fail counts must be verified by running the full suite before stash/after, not assumed from prior baseline.
