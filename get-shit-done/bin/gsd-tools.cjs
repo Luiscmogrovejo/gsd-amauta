@@ -130,7 +130,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execSync, spawnSync } = require('child_process');
 const { error } = require('./lib/core.cjs');
 const state = require('./lib/state.cjs');
 const phase = require('./lib/phase.cjs');
@@ -990,7 +990,20 @@ function _diffPlanVsAmauta(planTasks, amautaTasks) {
   const diffs = [];
   const amautaById = {};
   for (const t of (amautaTasks || [])) {
-    const lid = (t.metadata && t.metadata.plan_local_id) ? t.metadata.plan_local_id : t.id;
+    // Primary: metadata.plan_local_id
+    let lid = (t.metadata && t.metadata.plan_local_id) ? t.metadata.plan_local_id : null;
+    // Secondary: tag "task:<plan_local_id>"
+    if (!lid) {
+      const tags = Array.isArray(t.tags) ? t.tags : [];
+      for (const tag of tags) {
+        if (typeof tag === 'string' && tag.startsWith('task:')) {
+          lid = tag.slice('task:'.length);
+          break;
+        }
+      }
+    }
+    // Fallback: use amauta item id
+    if (!lid) lid = t.id;
     amautaById[lid] = t;
   }
 
@@ -1097,16 +1110,319 @@ async function planToTasks(planFilePath, opts) {
     };
   }
 
-  // Pass 0 complete — stub for Pass 1+2 (Plan 14-03)
-  // Extract story block
+  // Pass 0 complete — proceed to Pass 0.5/1/2 (Plan 14-03)
+
+  // ── Resolve amautaCjs path ───────────────────────────────────────────────
+  const amautaCjs = path.join(__dirname, 'gsd-amauta.cjs');
+
+  // ── Helpers ─────────────────────────────────────────────────────────────
+  const _spawnOpts = { encoding: 'utf-8', timeout: 30000, env: { ...process.env } };
+
+  // spawnAmauta — thin wrapper: spawnSync('node', [amautaCjs, ...args])
+  function spawnAmauta(args) {
+    return spawnSync('node', [amautaCjs, ...args], _spawnOpts);
+  }
+
+  function stripAnsi(str) {
+    return (str || '').replace(/\x1b\[[0-9;]*m/g, '');
+  }
+
+  function extractId(stdout, prefix) {
+    // Matches ST-XXXX or TK-XXXX from "Created story ST-0012: ..." style output
+    const cleaned = stripAnsi(stdout || '');
+    const re = new RegExp(`${prefix}-[0-9]+`, 'i');
+    const m = cleaned.match(re);
+    return m ? m[0].toUpperCase() : null;
+  }
+
+  // ── Parse story block for Pass 0.5 ──────────────────────────────────────
   const storyMatch = planContent.match(/<story>([\s\S]*?)<\/story>/i);
-  const parsedStory = storyMatch ? storyMatch[1].trim() : null;
+  const storyBody = storyMatch ? storyMatch[1].trim() : '';
+  const storyTitleMatch = storyBody.match(/<title>([\s\S]*?)<\/title>/i);
+  const storyCriteriaMatch = storyBody.match(/<success_criteria>([\s\S]*?)<\/success_criteria>/i);
+  const storyTitle = storyTitleMatch ? storyTitleMatch[1].trim() : `Plan ${planId} Story`;
+  const storyCriteria = storyCriteriaMatch ? storyCriteriaMatch[1].trim() : 'Plan tasks complete.';
+
+  // ── Extract acceptance_criteria text for each task ───────────────────────
+  const taskCriteriaMap = {};
+  const taskBlockRe = /<task\s+id="([^"]+)">([\s\S]*?)<\/task>/gi;
+  let tmatch;
+  while ((tmatch = taskBlockRe.exec(planContent)) !== null) {
+    const tid = tmatch[1];
+    const tbody = tmatch[2];
+    const acMatch = tbody.match(/<acceptance_criteria>([\s\S]*?)<\/acceptance_criteria>/i);
+    if (acMatch) {
+      const lines = acMatch[1].split('\n')
+        .map(l => l.trim())
+        .filter(l => l.startsWith('-'))
+        .map(l => l.replace(/^-\s*/, '').trim())
+        .filter(Boolean);
+      taskCriteriaMap[tid] = lines.length > 0 ? lines : [acMatch[1].trim()];
+    } else {
+      taskCriteriaMap[tid] = [];
+    }
+  }
+
+  // ── Idempotency lookup: read tasks.json directly ────────────────────────
+  // DATA_DIR is discovered from env (same as gsd-amauta.cjs) or default
+  const pluginRoot = path.resolve(__dirname, '..', '..');
+  const dataDir = process.env.AMAUTA_DATA_DIR || path.join(pluginRoot, 'data');
+  const tasksFile = path.join(dataDir, 'tasks.json');
+
+  let allItems = [];
+  try {
+    const raw = fs.readFileSync(tasksFile, 'utf-8');
+    const parsed = JSON.parse(raw);
+    allItems = parsed.items || [];
+  } catch (_) {
+    // If tasks.json doesn't exist yet (fresh install), continue with empty list
+    allItems = [];
+  }
+
+  // Build plan-local-id -> amauta task mapping.
+  // Primary lookup: metadata.plan_local_id (set by post-creation note call).
+  // Secondary lookup: tags array containing "task:<plan_local_id>" (set at creation via --tags).
+  const existingByPlanLocalId = {};
+  for (const item of allItems) {
+    // Primary: metadata.plan_local_id
+    const plid = (item.metadata && item.metadata.plan_local_id) ? item.metadata.plan_local_id : null;
+    if (plid) {
+      existingByPlanLocalId[plid] = item;
+    }
+    // Secondary: tags array, e.g. ["plan:14-03", "task:14-03-01"]
+    const tags = Array.isArray(item.tags) ? item.tags : [];
+    for (const tag of tags) {
+      if (typeof tag === 'string' && tag.startsWith('task:')) {
+        const tagPlid = tag.slice('task:'.length);
+        if (tagPlid && !existingByPlanLocalId[tagPlid]) {
+          existingByPlanLocalId[tagPlid] = item;
+        }
+      }
+    }
+  }
+
+  // Check if a story already exists for this plan_id
+  const existingStory = allItems.find(item =>
+    item.type === 'story' &&
+    item.metadata &&
+    (item.metadata.plan_id === planId || item.metadata.plan_local_id === planId)
+  );
+
+  // Count how many plan tasks already exist
+  const planTaskIds = tasks.map(t => t.id);
+  const alreadyExistingTasks = planTaskIds.filter(id => !!existingByPlanLocalId[id]);
+
+  if (alreadyExistingTasks.length === tasks.length && tasks.length > 0) {
+    // ALL tasks exist — check for drift
+    const amautaTaskList = planTaskIds.map(id => existingByPlanLocalId[id]).filter(Boolean);
+    const driftResult = _diffPlanVsAmauta(tasks, amautaTaskList);
+    if (driftResult.drifted) {
+      return {
+        error: 'plan_amauta_drift',
+        divergence_type: 'plan_amauta_drift',
+        diffs: driftResult.diffs,
+        message: 'Plan has drifted from amauta task records. Reconcile before re-running.',
+      };
+    }
+    // No drift — idempotent skip
+    return {
+      skipped: true,
+      reason: 'already_registered',
+      story_id: existingStory ? existingStory.id : null,
+      task_ids: planTaskIds.map(id => ({
+        plan_local_id: id,
+        amauta_id: existingByPlanLocalId[id] ? existingByPlanLocalId[id].id : null,
+      })),
+    };
+  }
+
+  // ── Pass 0.5: Story creation ─────────────────────────────────────────────
+  let storyId;
+  if (existingStory) {
+    storyId = existingStory.id;
+  } else {
+    // Pass 0.5: story creation
+    const _storyRaw = spawnSync('node', [
+      amautaCjs, 'add', 'story', storyTitle,
+      '--agent', 'operator',
+      '--criteria', storyCriteria,
+    ], _spawnOpts);
+    storyId = extractId(_storyRaw.stdout, 'ST');
+    if (!storyId) {
+      return {
+        error: 'story_creation_failed',
+        message: `Pass 0.5: failed to extract ST-ID from stdout. Raw: ${(_storyRaw.stdout || '').slice(0, 200)}`,
+        stderr: (_storyRaw.stderr || '').slice(0, 200),
+      };
+    }
+    // Stamp plan_id on story metadata via note (best-effort)
+    spawnSync('node', [amautaCjs, 'note', storyId, '--content', `plan_id:${planId}`], _spawnOpts);
+  }
+
+  // ── Pass 1: Task creation ────────────────────────────────────────────────
+  const taskIdMap = {}; // plan_local_id -> amauta TK-ID
+  const createdTaskIds = [];
+  const skippedTaskIds = [];
+  const failedTasks = [];
+
+  for (const task of tasks) {
+    // Check if already exists
+    if (existingByPlanLocalId[task.id]) {
+      taskIdMap[task.id] = existingByPlanLocalId[task.id].id;
+      skippedTaskIds.push({ plan_local_id: task.id, amauta_id: existingByPlanLocalId[task.id].id });
+      continue;
+    }
+
+    const criteria = taskCriteriaMap[task.id] || [];
+    const criteriaStr = criteria.length > 0 ? criteria.join(' | ') : task.title;
+
+    const addResult = spawnAmauta([
+      'add', 'task', task.title,
+      '--parent', storyId,
+      '--agent', task.agent,
+      '--criteria', criteriaStr,
+      '--source', 'plan-to-tasks',
+      '--from-plan', planId,
+      '--tags', `plan:${planId},task:${task.id}`,
+    ]);
+
+    // Check for DEDUP BLOCKED in stdout
+    if (stripAnsi(addResult.stdout).includes('DEDUP BLOCKED')) {
+      process.stderr.write(`[plan-to-tasks] DEDUP BLOCKED for task ${task.id} — unexpected (--from-plan should bypass). Continuing.\n`);
+      failedTasks.push({ plan_local_id: task.id, reason: 'dedup_blocked', stdout: addResult.stdout.slice(0, 200) });
+      continue;
+    }
+
+    if (addResult.status !== 0) {
+      process.stderr.write(`[plan-to-tasks] Task creation failed for ${task.id}: exit ${addResult.status}\n`);
+      failedTasks.push({ plan_local_id: task.id, reason: 'creation_failed', exit_code: addResult.status, stderr: addResult.stderr.slice(0, 200) });
+      continue;
+    }
+
+    const tkId = extractId(addResult.stdout, 'TK');
+    if (!tkId) {
+      process.stderr.write(`[plan-to-tasks] Could not extract TK-ID for task ${task.id}. stdout: ${addResult.stdout.slice(0, 100)}\n`);
+      failedTasks.push({ plan_local_id: task.id, reason: 'id_extraction_failed', stdout: addResult.stdout.slice(0, 200) });
+      continue;
+    }
+
+    taskIdMap[task.id] = tkId;
+    createdTaskIds.push({ plan_local_id: task.id, amauta_id: tkId });
+  }
+
+  // ── Pass 2: Dependency linking ───────────────────────────────────────────
+  const createdLinks = [];
+  const skippedLinks = [];
+  const failedLinks = [];
+
+  for (const task of tasks) {
+    if (!task.dependsOn || task.dependsOn.length === 0) continue;
+    const taskAmautaId = taskIdMap[task.id];
+    if (!taskAmautaId) continue; // task wasn't created — skip linking
+
+    for (const depPlanId of task.dependsOn) {
+      const depAmautaId = taskIdMap[depPlanId];
+      if (!depAmautaId) {
+        process.stderr.write(`[plan-to-tasks] Dep ${depPlanId} has no amauta ID — skipping link from ${task.id}.\n`);
+        failedLinks.push({ from: task.id, to: depPlanId, reason: 'dep_not_found' });
+        continue;
+      }
+
+      const linkResult = spawnAmauta(['link', taskAmautaId, '--dep', depAmautaId]);
+
+      if (linkResult.status === 0) {
+        const out = stripAnsi(linkResult.stdout);
+        if (out.includes('already') || out.includes('exists')) {
+          skippedLinks.push({ from: task.id, to: depPlanId });
+        } else {
+          createdLinks.push({ from: task.id, to: depPlanId, from_id: taskAmautaId, to_id: depAmautaId });
+        }
+      } else {
+        const out = stripAnsi(linkResult.stdout + linkResult.stderr);
+        if (out.toLowerCase().includes('cycle')) {
+          process.stderr.write(`[plan-to-tasks] Cycle detected by daemon when linking ${taskAmautaId} -> ${depAmautaId}. Skipping.\n`);
+          failedLinks.push({ from: task.id, to: depPlanId, reason: 'cycle_detected_by_daemon' });
+        } else {
+          failedLinks.push({ from: task.id, to: depPlanId, reason: 'link_failed', exit_code: linkResult.status });
+        }
+      }
+    }
+  }
+
+  // ── PLAN_REGISTRATION block ──────────────────────────────────────────────
+  // Get inherited_criteria_count by calling show on the story
+  let inheritedCount = 0;
+  try {
+    const showResult = spawnAmauta(['show', storyId, '--json']);
+    if (showResult.status === 0) {
+      const parsed = JSON.parse(showResult.stdout);
+      const sc = parsed.success_criteria || parsed.inherited_success_criteria || [];
+      inheritedCount = Array.isArray(sc) ? sc.length : (typeof sc === 'string' && sc ? 1 : 0);
+    }
+  } catch (_) {
+    inheritedCount = 0;
+  }
+
+  // Build agent_assignments map
+  const agentMap = {};
+  for (const task of tasks) {
+    const tkId = taskIdMap[task.id];
+    if (tkId) {
+      const allFiles = [
+        ...(task.filesExpected.modify || []),
+        ...(task.filesExpected.create || []),
+      ];
+      const computed = routeExecutor(allFiles.join(','));
+      agentMap[tkId] = {
+        agent: task.agent,
+        reasoning: `routeExecutor(${allFiles.slice(0, 3).join(',')}) -> ${computed}`,
+      };
+    }
+  }
+
+  // Build edges list (plan-local IDs)
+  const edgeList = [];
+  for (const task of tasks) {
+    for (const dep of (task.dependsOn || [])) {
+      edgeList.push([dep, task.id]);
+    }
+  }
+
+  const dagText = _renderDagText(tasks);
+
+  const registration = {
+    plan_id: planId,
+    story_id: storyId,
+    task_count: tasks.length,
+    cap: 10,
+    task_ids: taskIdMap,
+    agent_assignments: agentMap,
+    edges: edgeList,
+    dag_text: dagText.length > 500 ? dagText.slice(0, 500) : dagText,
+    inherited_criteria_count: inheritedCount,
+  };
+
+  // Enforce 1500-char total limit — truncate dag_text first if needed
+  const regStr = JSON.stringify(registration);
+  if (regStr.length > 1500) {
+    const excess = regStr.length - 1500;
+    const currentDag = registration.dag_text;
+    const truncLen = Math.max(0, currentDag.length - excess - 10);
+    registration.dag_text = currentDag.slice(0, truncLen) + '...(truncated)';
+  }
 
   return {
+    success: failedTasks.length === 0 && failedLinks.length === 0,
     pass0: 'complete',
     plan_id: planId,
-    tasks,
-    story: parsedStory,
+    story_id: storyId,
+    tasks_created: createdTaskIds,
+    tasks_skipped: skippedTaskIds,
+    links_created: createdLinks,
+    links_skipped: skippedLinks,
+    failed_tasks: failedTasks,
+    failed_links: failedLinks,
+    registration,
   };
 }
 

@@ -2458,11 +2458,16 @@ def _enrich_task_context(item: dict, items: list) -> str:
 
 # ── Commands ───────────────────────────────────────────────────────────────────
 
-def _dedup_check(items, title, agent):
+def _dedup_check(items, title, agent, source=None, from_plan=None):
     """
     Check for existing pending/in-progress tasks with very similar titles
     assigned to the same agent. Returns the duplicate task ID if found, else None.
     Prevents agents from creating redundant blocker/escalation tasks.
+
+    source / from_plan: scoped bypass for plan-to-tasks idempotency (LOCK B).
+    When BOTH source == "plan-to-tasks" AND from_plan matches an existing task's
+    metadata.plan_id, the similarity check is skipped for that existing task.
+    Manual add calls (source=None) always run the full guard.
     """
     import difflib
     title_lower = title.lower().strip()
@@ -2479,6 +2484,14 @@ def _dedup_check(items, title, agent):
         existing_agent = (t.get("assigned_to") or "").lower()
         if agent and existing_agent != agent.lower():
             continue
+        # Scoped bypass for plan-to-tasks idempotency (LOCK B):
+        # Skip similarity check ONLY when BOTH conditions hold:
+        # 1. source == "plan-to-tasks" (new task is from plan registration)
+        # 2. from_plan matches existing task's metadata.plan_id (same plan)
+        if source == "plan-to-tasks" and from_plan:
+            existing_plan_id = (t.get("metadata") or {}).get("plan_id", "")
+            if existing_plan_id == from_plan:
+                continue
         existing_title = (t.get("title") or "").lower().strip()
         ratio = difflib.SequenceMatcher(None, title_lower, existing_title).ratio()
         if ratio >= 0.70:
@@ -2498,7 +2511,9 @@ def cmd_add(args):
 
         # ── Dedup guard: reject if a very similar task already exists ──
         agent_hint = args.agent if hasattr(args, 'agent') and args.agent else None
-        dup_id = _dedup_check(items, args.title, agent_hint)
+        source_hint = getattr(args, 'source', None)
+        from_plan_hint = getattr(args, 'from_plan', None)
+        dup_id = _dedup_check(items, args.title, agent_hint, source=source_hint, from_plan=from_plan_hint)
         if dup_id:
             print(c(f"DEDUP BLOCKED: similar task {dup_id} already exists for @{agent_hint or '?'}. "
                      f"Add a note to {dup_id} instead of creating a duplicate.", YELLOW))
@@ -2562,6 +2577,12 @@ def cmd_add(args):
         for dep_id in item["dependencies"]:
             if not _find(items, dep_id):
                 print(c(f"Dependency {dep_id} not found.", RED)); sys.exit(1)
+
+        # Source and plan_id stamping for plan-to-tasks idempotency (LOCK B)
+        if source_hint:
+            item["source"] = source_hint
+        if from_plan_hint:
+            item.setdefault("metadata", {})["plan_id"] = from_plan_hint
 
         _augment_task_metadata(item)
 
@@ -5579,6 +5600,8 @@ AGENT WORKFLOW (heartbeat cycle):
     a.add_argument("--deliverables",       help="Deliverables, pipe-separated")
     a.add_argument("--checklist",          help="Validation checklist, pipe-separated")
     a.add_argument("--force",              action="store_true", help="Override hierarchy constraint check")
+    a.add_argument("--source",             default=None, help="Creation source identifier (e.g. plan-to-tasks)")
+    a.add_argument("--from-plan",          default=None, dest="from_plan", help="Plan ID for dedup bypass scoping")
 
     # ── show ──────────────────────────────────────────────────────────────────
     sh = sub.add_parser("show", help="Full detail of one item")
