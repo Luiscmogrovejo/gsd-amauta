@@ -605,6 +605,7 @@ function generateMarkdown(report) {
   lines.push('| Field | Value |');
   lines.push('|-------|-------|');
   lines.push(`| Audit timestamp | ${report.audit_timestamp} |`);
+  lines.push(`| Schema version | ${report.schema_version || 1} |`);
   lines.push(`| Milestone | ${report.milestone} |`);
   lines.push(`| Phases audited | ${report.phases_audited.join(', ')} |`);
   lines.push(`| Phase 15 excluded | ${report.phase_15_excluded_from_audit} |`);
@@ -681,6 +682,20 @@ function generateMarkdown(report) {
       } else {
         lines.push('- `' + f.test_file + '` -- ' + (f.test_name || 'unknown') + ' (' + (f.reason || 'unknown') + ')');
       }
+    }
+  }
+  lines.push('');
+
+  lines.push('## Tooling Bugs Observed');
+  lines.push('');
+  if ((report.tooling_bugs_observed || []).length === 0) {
+    lines.push('_No tooling bugs observed._');
+  } else {
+    lines.push('| ID | Depth | Description | Detected | Resolved |');
+    lines.push('|----|-------|-------------|----------|----------|');
+    for (const bug of report.tooling_bugs_observed) {
+      const desc = (bug.description || '').replace(/\|/g, '\\|');
+      lines.push(`| ${bug.id} | ${bug.depth} | ${desc} | Phase ${bug.phase_detected} | Phase ${bug.resolved_by} |`);
     }
   }
   lines.push('');
