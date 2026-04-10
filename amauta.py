@@ -2585,7 +2585,20 @@ def cmd_show(args):
         if not item:
             print(c(f"{args.id} not found.", RED)); sys.exit(1)
     if args.json:
-        print(json.dumps(item, indent=2))
+        out = dict(item)  # shallow copy -- don't mutate stored item
+        if not getattr(args, "no_inherit", False):
+            # Ensure _inherit_parent_spec has run (it runs at claim time, but show may be called before claim)
+            if "metadata" not in out or "inherited_spec" not in (out.get("metadata") or {}):
+                _inherit_parent_spec(out, data["items"])
+            meta = out.get("metadata") or {}
+            inherited = meta.get("inherited_spec")
+            if inherited is not None:
+                out["inherited_success_criteria"] = inherited
+            else:
+                out["inherited_success_criteria"] = "none -- root task, no parent criteria"
+        else:
+            out["inherited_success_criteria"] = "none -- inheritance skipped"
+        print(json.dumps(out, indent=2))
     else:
         _print_item_full(item, data["items"])
 
@@ -5572,6 +5585,7 @@ AGENT WORKFLOW (heartbeat cycle):
     sh.add_argument("id")
     sh.add_argument("--json", action="store_true")
     sh.add_argument("--archive", action="store_true", help="Also search archive for task")
+    sh.add_argument("--no-inherit", action="store_true", help="Skip inherited spec resolution")
 
     # ── list ──────────────────────────────────────────────────────────────────
     ls = sub.add_parser("list", aliases=["ls"], help="List items")
