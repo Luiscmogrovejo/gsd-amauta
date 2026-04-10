@@ -950,6 +950,77 @@ async function checkEvidenceAdvisory(useDaemon, id, flags) {
   return _checkEvidenceBlock(eContent, taskType);
 }
 
+/**
+ * Spec Inheritance + RED-GREEN Advisory (Phase 12 QA-04, QA-05, QA-07, QA-08).
+ * Non-blocking: runs after checkEvidenceAdvisory, logs advisory warnings.
+ * Same daemon/direct pattern as checkEvidenceAdvisory.
+ */
+async function checkSpecInheritanceAdvisory(useDaemon, id, flags) {
+  // Kill switch check
+  const specInherit = (process.env.GSD_T_SPEC_INHERIT || '').toLowerCase();
+  if (specInherit === 'false') return { advisory: false, reason: 'spec inheritance disabled' };
+
+  let taskType = 'task';
+  let phases = {};
+  let inheritedSpec = null;
+  let isBugTask = false;
+  let isSecurityTask = false;
+  let taskId = id;
+
+  try {
+    let parsed;
+    if (useDaemon) {
+      const { data } = await httpRequest('POST', '/api/exec', { args: ['show', id, '--json'] });
+      const jsonStr = data.output || '';
+      if (jsonStr) parsed = JSON.parse(jsonStr);
+    } else {
+      const jsonResult = runDirect(['show', id, '--json']);
+      const jsonStr = jsonResult.output || '';
+      if (jsonStr) parsed = JSON.parse(jsonStr);
+    }
+    if (parsed) {
+      taskType = parsed.type || 'task';
+      phases = parsed.rpetd_phases || {};
+      inheritedSpec = parsed.inherited_success_criteria || null;
+      if (typeof inheritedSpec === 'string') inheritedSpec = null; // "none -- root task" case
+      isBugTask = taskType === 'bug' || (taskId || '').startsWith('BG-');
+      isSecurityTask = !!(parsed.metadata && parsed.metadata.security_sensitive);
+    }
+  } catch {
+    return { advisory: false, reason: 'task fetch failed' };
+  }
+
+  const tContent = (phases.T || '').trim();
+  const results = [];
+
+  // 1. Check QA structural blocks
+  const qaResult = _checkQaBlocks(tContent, taskType, inheritedSpec, isSecurityTask, isBugTask);
+  if (qaResult.advisory) {
+    results.push(`QA_BLOCKS: ${qaResult.reason}`);
+  }
+
+  // 2. Check RED-GREEN for bug tasks
+  if (isBugTask && !flags.force_reason) {
+    try {
+      const { spawnSync } = require('child_process');
+      const gitResult = spawnSync('git', ['log', '--oneline', '--grep=' + taskId, '--reverse'],
+        { encoding: 'utf8', timeout: 5000 });
+      const gitLog = gitResult.stdout || '';
+      const rgResult = _checkRedGreenOrder(gitLog, taskId);
+      if (!rgResult.correctOrder) {
+        results.push(`RED_GREEN: ${rgResult.reason}`);
+      }
+    } catch {
+      // git log failure is non-fatal for advisory
+    }
+  }
+
+  if (results.length > 0) {
+    return { advisory: true, reason: results.join('; ') };
+  }
+  return { advisory: false, reason: 'spec inheritance advisory passed' };
+}
+
 async function cmdValidate(useDaemon, id, flags, jsonMode) {
   if (!id) die('Usage: amauta validate <id> --pass/--fail [--validator V] [--notes N] [--force-reason "justification"]');
   if (flags.pass_result === undefined) die('--pass or --fail is required');
@@ -977,6 +1048,18 @@ async function cmdValidate(useDaemon, id, flags, jsonMode) {
       const evidenceResult = await checkEvidenceAdvisory(useDaemon, id, flags);
       if (evidenceResult.advisory) {
         console.log(`[ADVISORY] PRE_EXECUTION_EVIDENCE: ${evidenceResult.reason}`);
+      }
+    } catch {
+      // Advisory is best-effort -- never block validation
+    }
+  }
+
+  // Spec Inheritance + RED-GREEN Advisory (Phase 12 QA-04, QA-05, QA-07, QA-08) -- non-blocking
+  if (flags.pass_result && !flags.force_reason) {
+    try {
+      const specResult = await checkSpecInheritanceAdvisory(useDaemon, id, flags);
+      if (specResult.advisory) {
+        console.log(`[ADVISORY] SPEC_INHERITANCE: ${specResult.reason}`);
       }
     } catch {
       // Advisory is best-effort -- never block validation
@@ -1834,5 +1917,5 @@ if (require.main === module) {
 
 // Test-only exports — not used in production flow
 if (typeof module !== 'undefined' && require.main !== module) {
-  module.exports = { _checkEvidenceBlock, checkEvidenceAdvisory, _checkQaBlocks, _checkRedGreenOrder };
+  module.exports = { _checkEvidenceBlock, checkEvidenceAdvisory, _checkQaBlocks, _checkRedGreenOrder, checkSpecInheritanceAdvisory };
 }
