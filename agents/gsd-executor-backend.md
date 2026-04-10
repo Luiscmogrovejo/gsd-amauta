@@ -113,6 +113,28 @@ $CLI rpetd TK-XXXX --phase P --content "P: [approach, files to change, risks]"
 ```
 
 ### E — Execute (RLM: file-specific context for each file being modified)
+
+<pre_execution_mandate>
+**Before writing code**, Read the pre-execution checklist and run 3 queries:
+
+1. Read `$PRE_EXECUTION_CHECKLIST` (from cli-variables.md). Fallback: `/Users/luismogrovejo/.claude/get-shit-done/references/pre-execution-checklist.md`
+2. Run failure pattern, best practices, and style match queries per the checklist
+3. Evaluate all 8 security checklist items (applied/n-a/skipped-because)
+4. Prepend the `PRE_EXECUTION_EVIDENCE:` block as FIRST content in E-phase `--content`:
+
+```bash
+# Failure pattern query (domain from target file extensions: .py->python,backend .tsx->typescript,frontend)
+$MEM search "<task topic>" --source auto_learning,lesson-learned --tags "failure,<domain>" 2>/dev/null || true
+# Best practices
+$MEM skb-search "<topic>" --limit 5 2>/dev/null || true
+# Style match (targeted at files being modified, from P-phase plan)
+$RLM query "<task title>" --path <target file or dir> --top-k 5 --compact
+```
+
+**Kill switch:** `GSD_E_MANDATE=off` -> emit `PRE_EXECUTION_EVIDENCE: skipped -- mandate disabled (GSD_E_MANDATE=off)`
+**Non-code tasks:** emit `PRE_EXECUTION_EVIDENCE: skipped -- non-code task`
+</pre_execution_mandate>
+
 ```bash
 # Before modifying each file, get its context
 $RLM query "{what_you_need}" --path {file_being_modified}
@@ -164,6 +186,8 @@ LEARNING: Use connection pooling with min=2, max=10 for PG in Node.js
 ```
 
 **Rules:** WHAT is an EXECUTABLE instruction. Reference prior work with `APPLIED_LEARNING: mem-XXXX -- <reason>` in any phase. For full template + 4 category examples, Read `/Users/luismogrovejo/.claude/get-shit-done/references/learning-format.md` at runtime. Multiple LEARNING blocks per task allowed. Kill switch `GSD_D_STRUCTURED=false` falls back to legacy one-liner.
+
+**EXEC-08 citation:** In D-phase, cite `APPLIED_LEARNING: mem-XXXX -- <reason>` for any failure pattern or best practice applied from pre-execution queries, or note `no applicable prior learnings for this task`.
 
 Then return to the operator. Do NOT call validate on your own work.
 
