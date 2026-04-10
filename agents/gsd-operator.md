@@ -394,3 +394,21 @@ done
 ```
 </applied_learning_citation_scan>
 
+<qa_report_phase_end>
+### Post-Task: QA_REPORT Summary (Phase 12)
+
+After RPETD phases are logged, grep T-phase content for `QA_REPORT:` one-line summary. Surface at phase-end alongside LEARNING/APPLIED_LEARNING/SKB candidates.
+
+```bash
+# Extract QA_REPORT from T-phase content (Phase 12 QA-04)
+QA_REPORT_LINE=$(printf '%s' "$TASK_CONTENT" | grep -oE '^QA_REPORT:.*' | head -1 || echo "")
+if [ -n "$QA_REPORT_LINE" ]; then
+  printf '[QA] %s\n' "$QA_REPORT_LINE"
+fi
+```
+
+**Non-code tasks:** Expect `QA_REPORT: non-code task -- standard review only` or no QA_REPORT line (both are valid).
+
+**Phase-end summary:** When completing a phase, aggregate QA_REPORT lines from all tasks in the phase for an overall QA health summary (e.g., "8/10 tasks had QA blocks, 0 regressions detected").
+</qa_report_phase_end>
+
