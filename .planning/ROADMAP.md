@@ -35,7 +35,7 @@
 - [x] **Phase 9: Tech-Debt Sweep** — Green baseline (`npm test && pytest` = 0 failures) before any v2.6 mandate lands — DONE (all 6 TECH + 4 GAP plans complete)
 - [x] **Phase 10: D-Phase Structured Learning + CLI Dedup** — WHAT/WHY/WHEN/TAGS format, `gsd-memory learn --structured`, cli-variables.md reference, 2-week quarantine — DONE (9 plans, 62 new tests, LEARN-01..07 complete)
 - [x] **Phase 11: E-Phase Research-Informed Execution Mandate** — Pre-exec checklist reference, `PRE_EXECUTION_EVIDENCE` block, security checklist, advisory validation in v2.6 (Plan 11-01 DONE) (completed 2026-04-10)
-- [ ] **Phase 12: T-Phase QA Department + Spec Inheritance** — `_inherit_parent_spec()` helper, parent G/W/T verification, edge cases, regression sweep, RED-GREEN back-testing [Plans 12-01, 12-02 DONE]
+- [ ] **Phase 12: T-Phase QA Department + Spec Inheritance** — `_inherit_parent_spec()` helper, parent G/W/T verification, edge cases, regression sweep, RED-GREEN back-testing [Plans 12-01, 12-02, 12-03 DONE]
 - [ ] **Phase 13: R-Phase Creative Research (Narrowed)** — Task-type gated creative variants, `gsd-research --creative` flag, conservative default for implementation tasks
 - [ ] **Phase 14: P-Phase Task-Management Integration** — Structured XML plan blocks, `gsd-tools plan-to-tasks`, auto-agent-assign, dep-linking, 10-task cap
 - [ ] **Phase 15: End-to-End Dogfood Verification** — `audit-rpetd-intelligence`, `verify-v26.sh`, 6/6 phases green observational report
@@ -227,7 +227,7 @@
 **Plans:**
 - [x] 12-01: Python _inherit_parent_spec() helper + cmd_show --json inherited_success_criteria + --no-inherit (QA-01, QA-02) -- wave 1 -- DONE 2026-04-09 (commits 4ccd2dd, 05f5553, 77e699f)
 - [x] 12-02: qa-checklist.md reference + gsd-checker.md update + agent-capabilities security_patterns (QA-03, QA-04, QA-05) -- wave 2 -- DONE 2026-04-09 (commits 52d67ff, c781bfe, b9f887a, bbee0b1)
-- [ ] 12-03: test-phase.md regression sweep + gsd-validator advisory + checkSpecInheritanceAdvisory + _checkQaBlocks + _checkRedGreenOrder (QA-04, QA-05, QA-06, QA-07, QA-08) -- wave 2
+- [x] 12-03: test-phase.md regression sweep + gsd-validator advisory + checkSpecInheritanceAdvisory + _checkQaBlocks + _checkRedGreenOrder (QA-04, QA-05, QA-06, QA-07, QA-08) -- wave 2 -- DONE 2026-04-09 (commits 1900dd5, 8f8d7ee, 47f32ac)
 - [ ] 12-04: Tests (Python + CJS) + STATE.md baseline section (QA-01..QA-08) -- wave 3
 
 ---
