@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: milestone
 status: in-progress
-stopped_at: Plan 12-03 complete -- checkSpecInheritanceAdvisory + _checkQaBlocks/_checkRedGreenOrder module.exports + gsd-validator.md Phase 12 advisory section
-last_updated: "2026-04-09T22:30:00.000Z"
-last_activity: "2026-04-09 -- Plan 12-03: checkSpecInheritanceAdvisory() async advisory wired into cmdValidate + _checkQaBlocks/_checkRedGreenOrder exported + gsd-validator.md Phase 12 Spec Inheritance advisory (QA-04..QA-08)"
+stopped_at: Plan 12-04 complete -- all Phase 12 tests passing, TEST BASELINE added to STATE.md
+last_updated: "2026-04-09T23:00:00.000Z"
+last_activity: "2026-04-09 -- Plan 12-04: Python tests (8), CJS qa-blocks tests (17), CJS red-green tests (8) + STATE.md test baseline section"
 progress:
   total_phases: 7
   completed_phases: 1
@@ -29,9 +29,10 @@ Phase: 12 -- T-Phase QA Department + Spec Inheritance (IN PROGRESS)
 Plan: 12-03 DONE (checkSpecInheritanceAdvisory() wired into cmdValidate + _checkQaBlocks/_checkRedGreenOrder in module.exports + gsd-validator.md Phase 12 advisory section. 3 commits. QA-04, QA-05, QA-06, QA-07, QA-08 addressed.)
 Plan: 12-02 DONE (qa-checklist.md reference file with 7 sections + gsd-checker.md runtime Read pattern + Pre-T Context Retrieval + T-Phase Structured Blocks + agent-capabilities.json security_patterns 9 globs + gsd-operator.md qa_report_phase_end parser. 4 commits. QA-03, QA-04, QA-05 addressed.)
 Plan: 12-01 DONE (_inherit_parent_spec() 57 lines + claim-time caching to metadata.inherited_spec + SC-01..SC-N IDs + cap@10 + kill switch + inherited_success_criteria in show --json + --no-inherit flag end-to-end. 3 commits. QA-01, QA-02 addressed.)
+Plan: 12-04 DONE (Python tests 8 scenarios + CJS qa-blocks 17 scenarios + CJS red-green 8 scenarios + STATE.md test baseline. 3 commits.)
 Previous: Phase 11 COMPLETE (all 2 plans, EXEC-01..08 satisfied, verified).
-Status: Phase 12 plans 12-01, 12-02, 12-03 complete. Awaiting plan 12-04 (Tests + STATE.md baseline) and phase verification.
-Last activity: 2026-04-09 -- Plan 12-03: checkSpecInheritanceAdvisory() + _checkQaBlocks/_checkRedGreenOrder exports + gsd-validator.md Phase 12 advisory (QA-04..QA-08)
+Status: Phase 12 all 4 plans complete. Awaiting phase verification.
+Last activity: 2026-04-09 -- Plan 12-04: tests + STATE.md baseline (QA-01..QA-08 test coverage)
 
 Progress: [###.......] 29%
 
@@ -143,6 +144,18 @@ Shipped 2026-04-06. 8 phases (1..8), 26 plans, 49/49 requirements, 39.4% Layer 2
 Archive: `.planning/MILESTONES.md` + legacy v2.5 ROADMAP sections.
 
 
+## Test Baseline (auto-updated at phase completion)
+
+npm_pass: 2006
+npm_fail: 3
+pytest_pass: 466
+pytest_fail: 3
+last_updated: 2026-04-09
+phase: 12
+
+Baseline includes Phase 12 tests: test_phase12_inherit_spec.py (8 tests), 12-qa-blocks.test.cjs (17 tests), 12-red-green.test.cjs (8 tests).
+Pre-existing failures: npm 3 (rlm-workflow-spec.test.cjs), pytest 3 (test_pg_integration.py) — not Phase 12 regressions.
+
 ## Learnings
 
 
@@ -161,6 +174,14 @@ Archive: `.planning/MILESTONES.md` + legacy v2.5 ROADMAP sections.
 
 
 
+
+
+
+
+- [learning] 2026-04-10T03:15:44.790Z: legacy regression test: free text learning
+- [learning] 2026-04-10T03:15:01.241Z: E2E test learning — cleanup after test
+- [learning] 2026-04-10T03:12:54.629Z: legacy regression test: free text learning
+- [learning] 2026-04-10T03:07:10.883Z: checkSpecInheritanceAdvisory pattern: pure check fns (_checkQaBlocks, _checkRedGreenOrder) separate from async advisory wrapper; advisory uses spawnSync('git') for RED-GREEN; all advisory blocks in cmdValidate use if(pass_result && !force_reason){try{...}catch{}} for non-blocking best-effort behavior
 - [learning] 2026-04-10T03:05:49.613Z: Plan 12-02: operator block parsers are always per-type (LEARNING, APPLIED_LEARNING, QA_REPORT each have their own section in gsd-operator.md); no generic catch-all scanner. When adding a new structured block type, add a dedicated parser section after applied_learning_citation_scan.
 - [learning] 2026-04-10T02:52:56.868Z: Phase 12 _inherit_parent_spec pattern: parent-chain walk stops at first non-empty success_criteria (first-wins semantics); cmd_show uses shallow dict copy (dict(item)) to inject inherited_success_criteria without mutating stored item; CJS --no-inherit extracted as global flag in main() alongside --json using same rawArgs.indexOf+splice pattern
 - [learning] 2026-04-10T01:44:59.926Z: legacy regression test: free text learning
