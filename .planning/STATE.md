@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: milestone
 status: verifying
-stopped_at: Phase 14 plan 14-03 DONE — planToTasks() Pass 0.5/1/2 real subprocess calls + amauta.py dedup bypass + 8 integration tests
-last_updated: "2026-04-10T20:00:00.000Z"
-last_activity: "2026-04-10 -- Plan 14-03 complete: 2 tasks, 2 commits. spawnAmauta() helper added, Pass 0.5/1/2 implemented, integration test suite created."
+stopped_at: Phase 14 plan 14-04 DONE — agent wiring + workflow integration complete (operator parser, validator advisory, plan-phase quality gate, execute-phase plan-to-tasks)
+last_updated: "2026-04-10T21:00:00.000Z"
+last_activity: "2026-04-10 -- Plan 14-04 complete: 3 tasks, 3 commits. PLAN_REGISTRATION parser in operator, advisory in validator, plan-phase PLAN-06 quality gate, execute-phase phase-gated plan-to-tasks, PLAN-04 errata applied."
 progress:
   total_phases: 8
   completed_phases: 1
@@ -25,11 +25,11 @@ See: .planning/PROJECT.md (updated 2026-04-09)
 
 ## Current Position
 
-Phase: 14 -- P-Phase Task-Management Integration (IN PROGRESS)
-Plan: 14-03 DONE (planToTasks() Pass 0.5/1/2 real subprocess calls + amauta.py scoped _dedup_check bypass + 8 integration tests. 2 commits.)
-Previous: 14-02 DONE (planToTasks() Pass 0 engine + scoped _dedup_check bypass + gsd-amauta.cjs CJS pass-through + 20 unit tests. 3 commits. PLAN-02/03/04/05 addressed.)
-Status: Phase 14 Wave 3 complete. Plan 14-04 not started.
-Last activity: 2026-04-10 -- Plan 14-03 complete: spawnAmauta() helper defined, Pass 0.5 story creation, Pass 1 task creation, Pass 2 dependency linking, PLAN_REGISTRATION block, idempotency via tags lookup, 8 integration tests with SIGKILL injection, 20 unit tests still green.
+Phase: 14 -- P-Phase Task-Management Integration (DONE)
+Plan: 14-04 DONE (operator PLAN_REGISTRATION parser, validator advisory, plan-phase PLAN-06 quality gate, execute-phase phase-gated plan-to-tasks, PLAN-04 errata. 3 commits.)
+Previous: 14-03 DONE (planToTasks() Pass 0.5/1/2 real subprocess calls + amauta.py scoped _dedup_check bypass + 8 integration tests. 2 commits.)
+Status: Phase 14 ALL WAVES COMPLETE. All 4 plans done (14-01 through 14-04). Phase 15 unblocked.
+Last activity: 2026-04-10 -- Plan 14-04 complete: PLAN_REGISTRATION parser in gsd-operator.md, Plan Registration Advisory in gsd-validator.md, PLAN-06 quality gate items in plan-phase.md, phase-gated plan-to-tasks in execute-phase.md, PLAN-04 errata in REQUIREMENTS.md, cutoff documentation in STATE.md.
 
 Progress: [####......] 40% (v2.6 milestone — phases 10, 12, 13, 13.1 done; phase 9 pending green baseline; phases 11, 14, 15 not started)
 
