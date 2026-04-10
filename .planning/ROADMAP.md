@@ -37,6 +37,7 @@
 - [x] **Phase 11: E-Phase Research-Informed Execution Mandate** — Pre-exec checklist reference, `PRE_EXECUTION_EVIDENCE` block, security checklist, advisory validation in v2.6 (Plan 11-01 DONE) (completed 2026-04-10)
 - [x] **Phase 12: T-Phase QA Department + Spec Inheritance** — `_inherit_parent_spec()` helper, parent G/W/T verification, edge cases, regression sweep, RED-GREEN back-testing — DONE (4 plans, QA-01..08 complete)
 - [x] **Phase 13: R-Phase Creative Research (Narrowed)** — Task-type gated creative variants, `gsd-research --creative` flag, conservative default for implementation tasks — DONE (3 plans, CREATIVE-01..05 complete) 2026-04-10
+- [x] **Phase 13.1: Orchestrator Hardening & Divergence Protocol** — Deterministic manifest check + behavioral divergence protocol + agent .md updates + validator `--gaps-found` verdict + synthetic divergence test — DONE (5 plans, HARDEN-01..05 complete, 3 dogfood moments captured, validator `--pass`) 2026-04-10
 - [ ] **Phase 14: P-Phase Task-Management Integration** — Structured XML plan blocks, `gsd-tools plan-to-tasks`, auto-agent-assign, dep-linking, 10-task cap
 - [ ] **Phase 15: End-to-End Dogfood Verification** — `audit-rpetd-intelligence`, `verify-v26.sh`, 6/6 phases green observational report
 
@@ -272,6 +273,23 @@
 - [x] 13-03: Tests (30 CJS) + STATE.md baseline update (CREATIVE-01..05 coverage) -- wave 3, depends on 13-01 + 13-02 -- DONE 2026-04-10
 
 ---
+
+### Phase 13.1: Orchestrator Hardening & Divergence Protocol
+
+**Goal:** Install deterministic manifest-check utility + behavioral divergence protocol across executors and validator to prevent the Phase 13 silent scope-expansion failure mode. Ship the mechanical halt (HARDEN-01) paired with the behavioral decision tree (HARDEN-02) + agent .md updates (HARDEN-03) + validator `--gaps-found` third verdict (HARDEN-04) + synthetic divergence test suite (HARDEN-05).
+**Requirements:** HARDEN-01..05 (5)
+**Depends on:** Phase 13
+**Plans:** 5 plans, 18 commits total (3 Wave 1 + 1 amend + 8 Wave 2 + 1 amend + 5 Wave 3)
+**Status:** DONE — validator verdict `--pass`, all 5 requirements verified 2026-04-10
+
+Plans:
+- [x] 13.1-01: HARDEN-01 Manifest Enforcement — `manifestCheck` utility + `execute-phase.md` wiring + STATE/REQUIREMENTS docs (3 tasks) — DONE
+- [x] 13.1-02: HARDEN-02 Divergence Protocol Reference File — `references/divergence-protocol.md` v1.0.0 (1 task) — DONE
+- [x] 13.1-03: HARDEN-03+04 Agent .md Mechanical Updates — 4 executor .md files + validator .md vocabulary lock (5 tasks) — DONE
+- [x] 13.1-04: HARDEN-04 Validator `--gaps-found` CLI + Routing — `cmdValidate` + gaps-report + execute-phase routing (2 tasks) — DONE
+- [x] 13.1-05: HARDEN-05 Synthetic Divergence Test + Wave 1+2 fold-ins — deterministic + behavioral test suites, CI workflow, 4 folded fixes (5 tasks) — DONE
+
+Notable: 3 in-production dogfood moments captured at 3 recursion depths (Wave 1 first-invocation, Wave 2 meta-recursive protocol self-application during its own creation, Wave 3 near-miss at hard ceiling with explicit rationalization-naming). Phase 13 incident replay test present and passing. Hard ceiling on task 13.1-05-05 held against a Phase-13-shaped rationalization ("the helper is useless if nothing consumes it") — executor resisted, verified via `git diff`, flagged for Phase 14 cleanup. Validator bound by the vocabulary lock + pre-gate divergence scan + never-invent-req-IDs rules that this same phase installed, and returned clean.
 
 ### Phase 14: P-Phase Task-Management Integration (LAST — highest blast radius)
 

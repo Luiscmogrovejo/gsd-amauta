@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: milestone
-status: verifying
-stopped_at: Phase 13.1 context gathered
-last_updated: "2026-04-10T05:20:01.558Z"
-last_activity: "2026-04-10 -- Plan 13-03: 30 unit tests + test baseline (CREATIVE-01..05 test coverage)"
+status: ready_for_next_phase
+stopped_at: Phase 13.1 COMPLETE — validator --pass, HARDEN-01..05 all Done
+last_updated: "2026-04-10T07:45:00.000Z"
+last_activity: "2026-04-10 -- Phase 13.1: 18 commits across 3 waves + 2 amendments, 3 in-production dogfood moments captured, validator --pass"
 progress:
   total_phases: 8
   completed_phases: 1
@@ -25,15 +25,18 @@ See: .planning/PROJECT.md (updated 2026-04-09)
 
 ## Current Position
 
-Phase: 13 -- R-Phase Creative Research (Narrowed) (IN PROGRESS)
-Plan: 13-01 DONE (_jaccardSimilarity + generateVariants + detectDomain + shouldEnableCreative + deduplicateResults + module.exports guard + CREATIVE_* constants + parseArgs boolean flags. 1 commit. CREATIVE-01..03 addressed.)
-Plan: 13-02 DONE (creative cascade loop in cmdSearch + providerPerplexity._creative wrapper + _appendCreativeLog + creative-research.md reference + gsd-researcher.md creative_protocol + gsd-operator.md execution_type_classification + execute-phase.md --creative flags. 1 commit. CREATIVE-02..05 addressed.)
-Plan: 13-03 DONE (30 CJS unit tests in 13-creative-research.test.cjs + full test suite run + STATE.md baseline update. 1 commit.)
-Previous: Phase 12 COMPLETE (all 4 plans, QA-01..QA-08 satisfied, verified 2026-04-09).
-Status: Phase 13 all 3 plans complete. Awaiting phase verification.
-Last activity: 2026-04-10 -- Plan 13-03: 30 unit tests + test baseline (CREATIVE-01..05 test coverage)
+Phase: 13.1 -- Orchestrator Hardening & Divergence Protocol (COMPLETE)
+Plan: 13.1-01 DONE (manifestCheck utility in gsd-tools.cjs + execute-phase.md wiring + STATE.md + REQUIREMENTS.md traceability. 3 commits. HARDEN-01 addressed.)
+Plan: 13.1-02 DONE (divergence-protocol.md reference file, 414 lines, version 1.0.0, 4-option decision tree, mandatory rationalization_check, validator variant with verdict_ambiguity. 1 commit. HARDEN-02 addressed.)
+Plan: 13.1-03 DONE (4 executor .md files + validator .md vocabulary lock + req-ID rule + divergence pre-gate scan. 5 commits. HARDEN-03 addressed.)
+Plan: 13.1-04 DONE (cmdValidate --gaps-found flag exit code 2 + writeGapsReport + execute-phase.md routing branches pass/gaps_found/fail. 2 commits. HARDEN-04 addressed.)
+Plan: 13.1-05 DONE (behavioral test runner + deterministic test suite 13/13 pass + behavioral integration test with Phase 13 incident replay + CI workflow + Wave 1+2 fold-ins in task 05-05. 5 commits. HARDEN-05 addressed.)
+Plus 2 wave-boundary amendments (849471d, 0e4077c) — explicit orchestrator decisions at review gates, not executor scope expansion.
+Previous: Phase 13 VERIFIED (3 plans, CREATIVE-01..05 complete). Phase 12 COMPLETE (4 plans, QA-01..08).
+Status: Phase 13.1 VERIFIED. Validator verdict --pass. All 5 HARDEN requirements verified. Hard ceiling on 13.1-05-05 held. 3 dogfood moments captured in SKB at 3 recursion depths. Ready for Phase 14.
+Last activity: 2026-04-10 -- Phase 13.1 closeout: validator --pass, ROADMAP/REQUIREMENTS/STATE updated, behavioral test run pending.
 
-Progress: [###.......] 29%
+Progress: [####......] 40% (v2.6 milestone — phases 10, 12, 13, 13.1 done; phase 9 pending green baseline; phases 11, 14, 15 not started)
 
 ## v2.6 Phase Map
 
@@ -138,10 +141,16 @@ None. Part A blockers resolved pre-roadmap:
 
 ## Session Continuity
 
-Last session: 2026-04-10T05:20:01.555Z
-Stopped at: Phase 13.1 context gathered
-Resume file: .planning/milestones/v2.2-phases/13.1-orchestrator-hardening-divergence-protocol/13.1-CONTEXT.md
-Next: /amauta:plan-phase 13 — R-Phase Creative Research planning
+Last session: 2026-04-10T07:45:00.000Z
+Stopped at: Phase 13.1 COMPLETE (validator --pass, all 5 HARDEN requirements verified)
+Resume file: .planning/milestones/v2.2-phases/13.1-orchestrator-hardening-divergence-protocol/13.1-05-SUMMARY.md
+Next: /amauta:discuss-phase 14 — P-Phase Task-Management Integration (unblocked by Phase 13.1, blocked by Phase 12 which is already done)
+
+Memory entries from Phase 13.1 (researcher recall during Phase 14 planning should surface these):
+- project_phase13_1_wave1_dogfood.md — first-invocation positive example (depth 0)
+- project_phase13_1_meta_recursive_dogfood.md — 13.1-02 executor applied protocol to its own creation (depth 1)
+- project_phase13_1_wave3_near_miss.md — 13.1-05 executor resisted Phase-13-shaped rationalization at hard ceiling (depth 2)
+- project_phase13_1_postmortem_followups.md — 5 operational follow-ups for Phase 14 (amauta pre-registration, gsd-amauta.cjs inline resolver refactor, etc.)
 
 ## Previous Milestone: v2.5 -- Smarter Brain (COMPLETE)
 
@@ -151,16 +160,18 @@ Archive: `.planning/MILESTONES.md` + legacy v2.5 ROADMAP sections.
 
 ## Test Baseline (auto-updated at phase completion)
 
-npm_pass: 2058
+npm_pass: 2071
 npm_fail: 4
 pytest_pass: 466
 pytest_fail: 3
 last_updated: 2026-04-10
-phase: 13
+phase: 13.1
 
-Baseline includes Phase 13 tests: 13-creative-research.test.cjs (30 tests).
+Baseline includes Phase 13.1 tests: 13.1-manifest-check.test.cjs (13 deterministic tests, validator-verified 13/13 pass).
+Also includes Phase 13 tests: 13-creative-research.test.cjs (30 tests).
 Previous: Phase 12 tests: test_phase12_inherit_spec.py (8 tests), 12-qa-blocks.test.cjs (17 tests), 12-red-green.test.cjs (8 tests).
-Pre-existing failures: npm 4 (rlm-workflow-spec.test.cjs, agent-frontmatter.test.cjs gsd-planner, comprehensive-e2e.test.cjs 6.12 migration count, gsd-amauta.test.cjs daemon not running), pytest 3 (test_pg_integration.py) — not Phase 13 regressions.
+Pre-existing failures: npm 4 (rlm-workflow-spec.test.cjs, agent-frontmatter.test.cjs gsd-planner, comprehensive-e2e.test.cjs 6.12 migration count, gsd-amauta.test.cjs daemon not running), pytest 3 (test_pg_integration.py) — not Phase 13 or 13.1 regressions.
+Behavioral test suite (tests/13.1-divergence-protocol.integration.test.cjs, 15 invocations + Phase 13 incident replay) is run via `npm run test:behavioral` — NOT in `npm test`. Real-LLM execution; triggers via CI on PRs touching sensitive path globs OR run manually. Phase 13 incident replay test verified in isolation at phase close (76s runtime, PASS).
 
 ## Learnings
 
