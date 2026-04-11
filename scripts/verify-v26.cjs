@@ -687,7 +687,7 @@ function buildReport(deterministic, behavioral, envCheck) {
 
   return {
     audit_timestamp: new Date().toISOString(),
-    schema_version: 2,
+    schema_version: 3,
     milestone: 'v2.6',
     phases_audited: AUDITED_PHASES,
     phase_15_excluded_from_audit: true,
@@ -707,6 +707,7 @@ function buildReport(deterministic, behavioral, envCheck) {
       ...deterministic.pytest.new_failures,
     ],
     hygiene_debt_observed: hygieneDebt,
+    sampling_health: _lastSamplingHealth,
     tooling_bugs_observed: TOOLING_BUGS_SEED,
     dogfood_ledger_depths_captured: [0, 1, 2, 4, 5, 6, 7],
     dogfood_ledger_gaps: [3],
@@ -781,6 +782,28 @@ function generateMarkdown(report) {
     lines.push('');
     for (const l of b.harness_limitations_observed) lines.push(`- ${l}`);
     lines.push('');
+  }
+
+  // Phase 18: Sampling Health — audit methodology, not verdict evidence.
+  lines.push('## Sampling Health');
+  lines.push('');
+  const sh = report.sampling_health || null;
+  if (!sh) {
+    lines.push('_No sampling_health field present (schema_version < 3)._');
+  } else {
+    lines.push('| Field | Value |');
+    lines.push('|-------|-------|');
+    lines.push(`| daemon_available | ${sh.daemon_available} |`);
+    lines.push(`| pool_source | ${sh.pool_source} |`);
+    lines.push(`| fallback_used | ${sh.fallback_used === null ? '_(none)_' : sh.fallback_used} |`);
+    lines.push(`| pool_size | ${sh.pool_size} |`);
+    lines.push('');
+    if ((sh.limitations_observed || []).length > 0) {
+      lines.push('**Limitations observed:**');
+      lines.push('');
+      for (const l of sh.limitations_observed) lines.push('- ' + l);
+      lines.push('');
+    }
   }
 
   lines.push('## Pre-Existing vs New Failures');
