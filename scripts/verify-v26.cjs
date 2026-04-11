@@ -59,6 +59,16 @@ const PHASE_DIR_OVERRIDES = {
   '10': path.join('.planning', 'milestones', 'v2.1-phases', '10-d-phase-structured-learning'),
 };
 
+// Phase 18: sampling_health state set by sampleCompletedTasks() and read by
+// buildReport(). Module-scoped to avoid changing assessDogfood01()'s signature.
+let _lastSamplingHealth = {
+  daemon_available: false,
+  pool_source: 'summary_md',
+  fallback_used: null,
+  pool_size: 0,
+  limitations_observed: ['not_yet_sampled: sampleCompletedTasks has not run'],
+};
+
 // Directory globs under v2.2-phases that match each audited phase number.
 const V22_PHASES_ROOT = path.join('.planning', 'milestones', 'v2.2-phases');
 
@@ -373,8 +383,117 @@ function runBehavioralTests() {
 
 // ─── DOGFOOD criterion assessments ────────────────────────────────────────────
 
+/**
+ * Query the amauta daemon for completed task IDs in the current milestone scope.
+ *
+ * Uses the `gsd-amauta.cjs` CLI directly (NOT the `amauta.cjs` HTTP wrapper — the
+ * wrapper routes commands through /api/exec and rejects `exec list`). The `--json`
+ * flag returns a `{"output": "<ANSI text>"}` envelope, not a structured task list,
+ * so we regex TK-IDs out of the output field (same pattern the SUMMARY.md scraper
+ * uses, applied to daemon output instead of SUMMARY text).
+ *
+ * Returns an object: { success: boolean, ids: string[], reason: string | null }.
+ * On any failure (spawn error, non-zero exit, empty output, parse failure),
+ * success=false and reason names the failure mode. Callers fall back on failure.
+ *
+ * Phase 18 / SAMPLE-01 / GA1+GA4.
+ */
+function queryDaemonTaskIds() {
+  const gsdAmautaCjs = path.join('get-shit-done', 'bin', 'gsd-amauta.cjs');
+  try {
+    const result = spawnSync('node', [gsdAmautaCjs, 'exec', 'list', '--status', 'done', '--json'], {
+      encoding: 'utf8',
+      timeout: 15000,
+    });
+    if (result.error) {
+      return { success: false, ids: [], reason: 'spawn_error:' + result.error.code };
+    }
+    if (result.status !== 0) {
+      return { success: false, ids: [], reason: 'nonzero_exit:' + result.status };
+    }
+    const stdout = (result.stdout || '').trim();
+    if (!stdout) {
+      return { success: false, ids: [], reason: 'empty_output' };
+    }
+    // Parse the { "output": "<ANSI text>" } envelope.
+    let envelope;
+    try {
+      envelope = JSON.parse(stdout);
+    } catch (_e) {
+      return { success: false, ids: [], reason: 'envelope_parse_error' };
+    }
+    const text = envelope && typeof envelope.output === 'string' ? envelope.output : '';
+    if (!text) {
+      return { success: false, ids: [], reason: 'empty_envelope_output' };
+    }
+    // Extract TK-\d+ IDs. ANSI escape codes don't interfere with this regex.
+    const matches = text.match(/TK-\d+/g) || [];
+    const unique = Array.from(new Set(matches));
+    return { success: true, ids: unique, reason: null };
+  } catch (err) {
+    return { success: false, ids: [], reason: 'exception:' + err.message };
+  }
+}
+
+/**
+ * Sample completed tasks for DOGFOOD-01 auditing.
+ *
+ * PRIMARY path: query the amauta daemon for `status=done` tasks via
+ *   `get-shit-done/bin/gsd-amauta.cjs exec list --status done --json`
+ * and return a flat list of TK-IDs.
+ *
+ * FALLBACK path: scrape phase SUMMARY.md files for `TK-\d+` matches.
+ *
+ * Fallback triggers on: daemon spawn failure, non-zero exit, envelope parse
+ * failure, empty result, or an empty post-filter pool (the expected state when
+ * plan-to-tasks auto-registration has not yet populated v2.7 tasks).
+ *
+ * The return shape is a FLAT array of task ID strings. The consumer
+ * (`assessDogfood01`) continues to call `auditTask(tk)` lazily per GA3 lock —
+ * RPETD content is NOT pre-loaded here.
+ *
+ * Side effect: mutates the module-scoped `_lastSamplingHealth` record so
+ * `buildReport()` can emit the `sampling_health` top-level field. This is the
+ * minimum-diff way to thread degradation state into the report without
+ * changing `assessDogfood01()`'s signature.
+ *
+ * Phase 18 / SAMPLE-01 / GA1+GA2+GA3+GA4.
+ */
 function sampleCompletedTasks() {
-  // Scan phase dirs for SUMMARY.md files and extract TK-XXXX references.
+  const limitations = [];
+  const daemonResult = queryDaemonTaskIds();
+
+  if (daemonResult.success && daemonResult.ids.length > 0) {
+    // Daemon path: the raw ID list is not yet milestone-scoped. Since the
+    // current repo state (per 18-CONTEXT.md <code_context>) contains no v2.7
+    // tasks in the daemon database and a per-task tag inspection would
+    // require an O(N) show --json fan-out, we accept the raw daemon IDs as
+    // the pool when any are returned. Milestone-scope filtering is deferred
+    // to v2.8 (tracked as 18-CONTEXT.md deferred item "plan-to-tasks
+    // auto-registration not running for v2.7 phases").
+    //
+    // If the raw daemon result is non-empty but no downstream TK-ID is
+    // recognizable to auditTask, assessDogfood01 will record per-task gaps
+    // as its usual evidence — that path is unchanged.
+    _lastSamplingHealth = {
+      daemon_available: true,
+      pool_source: 'daemon_query',
+      fallback_used: null,
+      pool_size: daemonResult.ids.length,
+      limitations_observed: limitations,
+    };
+    return daemonResult.ids;
+  }
+
+  // Daemon path failed or returned empty — record the reason and fall back.
+  if (!daemonResult.success) {
+    limitations.push('daemon_unavailable: ' + (daemonResult.reason || 'unknown'));
+  } else {
+    // success=true but ids=[] — daemon reachable, no tasks matched.
+    limitations.push('no_v2.7_tasks_registered: daemon returned 0 done tasks');
+  }
+
+  // Fallback: scan phase SUMMARY.md files for TK-\d+ references.
   const tasks = new Set();
   for (const phase of AUDITED_PHASES) {
     const dir = findPhaseDir(phase);
@@ -391,7 +510,16 @@ function sampleCompletedTasks() {
       for (const tk of matches) tasks.add(tk);
     }
   }
-  return Array.from(tasks);
+  const fallbackIds = Array.from(tasks);
+
+  _lastSamplingHealth = {
+    daemon_available: daemonResult.success,
+    pool_source: 'summary_md',
+    fallback_used: 'summary_md_scraping',
+    pool_size: fallbackIds.length,
+    limitations_observed: limitations,
+  };
+  return fallbackIds;
 }
 
 function assessDogfood01() {
@@ -761,6 +889,8 @@ module.exports = {
   checkVerificationFiles,
   findPhaseDir,
   classifyFailures,
+  sampleCompletedTasks,
+  queryDaemonTaskIds,
   AUDITED_PHASES,
   SELF_EXCLUSION,
   BEHAVIORAL_TIMEOUT_MS,
