@@ -4,14 +4,14 @@ milestone: v2.7
 milestone_name: milestone
 status: completed
 stopped_at: Phase 15 SHIPPED, v2.6 milestone COMPLETE
-last_updated: "2026-04-10T23:11:16.397Z"
-last_activity: 2026-04-10 -- Plan 17-02 executed. 3 serial tasks (17-02-01 AUDIT-01 tests, 17-02-02 AUDIT-02 tests, 17-02-03 AUDIT-03 tests). 15/15 tests pass. 3 atomic commits (d24d0d2, 98450b3, b36aa82). SUMMARY.md, STATE.md, ROADMAP.md updated. Phase 18 is next.
+last_updated: "2026-04-10T00:25:00.000Z"
+last_activity: 2026-04-10 -- Plan 18-01 executed. 2 serial tasks (18-01-01 queryDaemonTaskIds+sampleCompletedTasks rewrite, 18-01-02 sampling_health schema+buildReport+generateMarkdown). 2 atomic commits (de2d1ff, f8cde5b). SUMMARY.md, STATE.md, ROADMAP.md updated. Plan 18-02 (tests) is next.
 progress:
   total_phases: 4
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 50
+  completed_phases: 2
+  total_plans: 1
+  completed_plans: 1
+  percent: 62
 ---
 
 # GSD-Amauta -- Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-11 for v2.7)
 
 ## Current Position
 
-Phase: 18 (pending — Phase 17 complete)
-Plan: 18-01 (sampling pool expansion via daemon RPETD logs) — next
-Status: Phase 17 COMPLETE. 15 regression tests (AUDIT-01/02/03) pass in tests/17-audit-script-hardening.test.cjs. Phase 18 is unblocked.
-Last activity: 2026-04-10 -- Plan 17-02 executed. 3 serial tasks (17-02-01 AUDIT-01 tests, 17-02-02 AUDIT-02 tests, 17-02-03 AUDIT-03 tests). 15/15 tests pass. 3 atomic commits (d24d0d2, 98450b3, b36aa82). SUMMARY.md, STATE.md, ROADMAP.md updated. Phase 18 is next.
+Phase: 18 (in progress — Plan 18-01 complete, Plan 18-02 next)
+Plan: 18-02 (sampling pool tests — dual-path daemon + fallback coverage) — next
+Status: Plan 18-01 COMPLETE. queryDaemonTaskIds helper + sampleCompletedTasks rewrite + sampling_health schema v3 shipped. 2 atomic commits (de2d1ff, f8cde5b). Plan 18-02 tests are unblocked.
+Last activity: 2026-04-10 -- Plan 18-01 executed. 2 serial tasks (18-01-01 queryDaemonTaskIds+sampleCompletedTasks rewrite, 18-01-02 sampling_health schema+buildReport+generateMarkdown). 2 atomic commits (de2d1ff, f8cde5b). SUMMARY.md, STATE.md, ROADMAP.md updated. Plan 18-02 (tests) is next.
 
-Progress: [#####·····] 50% (Phases 16-17 done, Phases 18-19 pending)
+Progress: [######····] 62% (Phases 16-17 done, Phase 18 Plan 01 done, Plan 02 + Phase 19 pending)
 
 ## v2.7 Phase Map (locked per ROADMAP.md)
 
