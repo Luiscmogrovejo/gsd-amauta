@@ -4,14 +4,14 @@ milestone: v2.7
 milestone_name: milestone
 status: completed
 stopped_at: Phase 15 SHIPPED, v2.6 milestone COMPLETE
-last_updated: "2026-04-10T00:25:00.000Z"
-last_activity: 2026-04-10 -- Plan 18-01 executed. 2 serial tasks (18-01-01 queryDaemonTaskIds+sampleCompletedTasks rewrite, 18-01-02 sampling_health schema+buildReport+generateMarkdown). 2 atomic commits (de2d1ff, f8cde5b). SUMMARY.md, STATE.md, ROADMAP.md updated. Plan 18-02 (tests) is next.
+last_updated: "2026-04-10T00:45:00.000Z"
+last_activity: 2026-04-10 -- Plan 18-02 executed. 2 serial tasks (18-02-01 Path A tests, 18-02-02 Path B+schema+Markdown+GA3 tests). 2 atomic commits (a9d5e9d, 8908139). 13 tests total, all passing. SUMMARY.md, STATE.md, ROADMAP.md updated. Phase 18 COMPLETE (2/2 plans). Phase 19 is next.
 progress:
   total_phases: 4
-  completed_phases: 2
-  total_plans: 1
-  completed_plans: 1
-  percent: 62
+  completed_phases: 3
+  total_plans: 2
+  completed_plans: 2
+  percent: 75
 ---
 
 # GSD-Amauta -- Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-11 for v2.7)
 
 ## Current Position
 
-Phase: 18 (in progress — Plan 18-01 complete, Plan 18-02 next)
-Plan: 18-02 (sampling pool tests — dual-path daemon + fallback coverage) — next
-Status: Plan 18-01 COMPLETE. queryDaemonTaskIds helper + sampleCompletedTasks rewrite + sampling_health schema v3 shipped. 2 atomic commits (de2d1ff, f8cde5b). Plan 18-02 tests are unblocked.
-Last activity: 2026-04-10 -- Plan 18-01 executed. 2 serial tasks (18-01-01 queryDaemonTaskIds+sampleCompletedTasks rewrite, 18-01-02 sampling_health schema+buildReport+generateMarkdown). 2 atomic commits (de2d1ff, f8cde5b). SUMMARY.md, STATE.md, ROADMAP.md updated. Plan 18-02 (tests) is next.
+Phase: 19 (next — Phase 18 COMPLETE)
+Plan: 19-01 (dynamic ledger schema) — next
+Status: Phase 18 COMPLETE. 2/2 plans done. Plan 18-01: queryDaemonTaskIds+sampleCompletedTasks+sampling_health schema v3 (de2d1ff, f8cde5b). Plan 18-02: 13 dual-path regression tests (a9d5e9d, 8908139). Phase 19 (Dynamic Ledger Schema) is next and unblocked.
+Last activity: 2026-04-10 -- Plan 18-02 executed. 2 serial tasks (18-02-01 Path A tests, 18-02-02 Path B+schema+Markdown+GA3 tests). 2 atomic commits (a9d5e9d, 8908139). 13 tests total, all passing. SUMMARY.md, STATE.md, ROADMAP.md updated. Phase 18 COMPLETE.
 
-Progress: [######····] 62% (Phases 16-17 done, Phase 18 Plan 01 done, Plan 02 + Phase 19 pending)
+Progress: [#######···] 75% (Phases 16-18 done, Phase 19 pending)
 
 ## v2.7 Phase Map (locked per ROADMAP.md)
 
@@ -260,6 +260,8 @@ Behavioral test suite (tests/13.1-divergence-protocol.integration.test.cjs, 15 i
 
 
 
+
+- [learning] 2026-04-11T00:09:06.163Z: When gsd-amauta.cjs exec list --json returns a {"output": "<ANSI text>"} envelope (not structured JSON), regex TK-\\d+ directly on the output field — ANSI escape codes do not interfere; module-scoped mutable state (_lastSamplingHealth pattern) is the minimum-diff way to thread side-effect degradation data from a sampler function into buildReport() without changing the consumer signature
 - [learning] 2026-04-10T23:08:30.642Z: legacy regression test: free text learning
 - [learning] 2026-04-10T23:05:54.768Z: legacy regression test: free text learning
 - [learning] 2026-04-10T23:04:12.052Z: verify-v26.cjs exports all test-target functions (parseNpmFailures, checkVerificationFiles, findPhaseDir, classifyFailures, TOOLING_BUGS_SEED, PRE_EXISTING_NPM_FAILURES) via module.exports -- live-repo filesystem tests are valid for checkVerificationFiles because real phase directories are the authoritative fixture; buildReport(deterministic, null, envCheck) is safe with behavioral=null due to explicit null guard at lines 529-547

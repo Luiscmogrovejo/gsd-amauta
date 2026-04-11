@@ -36,7 +36,7 @@
 
 - [x] **Phase 16: Init Resolver Fix** — milestone-scoped resolver + `--phase-dir` override so cross-milestone phase-number collisions stop returning ghost directories (RESOLVE-01..02) — COMPLETE 2026-04-10
 - [x] **Phase 17: Audit Script Hardening** — `verify-v26.cjs` prefix-form probe, npm failure parser, and `tooling_bugs_observed` schema category so the audit script stops producing silent false negatives (AUDIT-01..03) — COMPLETE 2026-04-10
-- [ ] **Phase 18: Sampling Pool Expansion** — `sampleCompletedTasks()` queries the amauta daemon's RPETD logs instead of scraping SUMMARY text so DOGFOOD-01 stops collapsing to n=1 (SAMPLE-01) — Plan 18-01 COMPLETE 2026-04-10 (queryDaemonTaskIds + sampling_health schema v3); Plan 18-02 (tests) pending
+- [x] **Phase 18: Sampling Pool Expansion** — `sampleCompletedTasks()` queries the amauta daemon's RPETD logs instead of scraping SUMMARY text so DOGFOOD-01 stops collapsing to n=1 (SAMPLE-01) — COMPLETE 2026-04-10 (Plan 18-01: queryDaemonTaskIds + sampling_health schema v3; Plan 18-02: 13 dual-path regression tests)
 - [ ] **Phase 19: Dynamic Ledger Schema** — runtime filesystem scan of memory directory populates `dogfood_ledger_depths_captured` so depths discovered during execution stop getting orphaned from the audit JSON (SCHEMA-01)
 
 ---
@@ -138,7 +138,7 @@
 
 **Rollback plan:** Revert the single modified file and delete the new test file. If rollback leaves the daemon-query path in other phases' code, the fallback behavior (SUMMARY scraping) continues to work. Clean rollback.
 
-**Plans:** To be atomized by `/amauta:plan-phase 18`. Expected 1 plan (single function rewrite, cohesive scope).
+**Plans:** 2/2 plans complete
 
 ---
 
@@ -206,7 +206,7 @@ Phase 19 (Dynamic Ledger Schema) ──> final v2.7 deliverable, closes schema-o
 |---|---|---|---|
 | 16. Init Resolver Fix | 2/2 | Complete    | 2026-04-10 |
 | 17. Audit Script Hardening | 2/2 | Complete    | 2026-04-10 |
-| 18. Sampling Pool Expansion | 0/? | Not started | - |
+| 18. Sampling Pool Expansion | 2/2 | Complete    | 2026-04-10 |
 | 19. Dynamic Ledger Schema | 0/? | Not started | - |
 
 ---
