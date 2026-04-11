@@ -1,5 +1,6 @@
 {
-  "audit_timestamp": "2026-04-10T18:14:02.328Z",
+  "audit_timestamp": "2026-04-11T00:30:43.054Z",
+  "schema_version": 3,
   "milestone": "v2.6",
   "phases_audited": [
     "10",
@@ -72,15 +73,15 @@
       "category": "deterministic",
       "verdict": "gaps_found",
       "evidence": [
-        "phases_with_verification=4/6",
+        "phases_with_verification=5/6",
         "10:present",
         "11:present",
         "12:present",
         "13:present",
         "13.1:missing",
-        "14:missing"
+        "14:present"
       ],
-      "details": "Missing VERIFICATION.md for phases: 13.1, 14. Phase 13.1 missing is expected (known hygiene debt)."
+      "details": "Missing VERIFICATION.md for phases: 13.1. Phase 13.1 missing is expected (known hygiene debt)."
     }
   ],
   "behavioral_test_results": {
@@ -93,15 +94,106 @@
     ]
   },
   "pre_existing_failures_verified": [
+    {
+      "test_file": "agent-frontmatter.test.cjs",
+      "test_name": "gsd-planner has anti-heredoc instruction",
+      "reason": "AssertionError [ERR_ASSERTION]: gsd-planner missing anti-heredoc instruction"
+    },
+    {
+      "test_file": "comprehensive-e2e.test.cjs",
+      "test_name": "6.12 7 UP + 7 DOWN migration files exist",
+      "reason": "AssertionError [ERR_ASSERTION]: Expected 7 UP migrations, got 8"
+    },
+    {
+      "test_file": "rlm-workflow-spec.test.cjs",
+      "test_name": "8.6 _auto_write_learning writes to both memory and SKB",
+      "reason": "AssertionError [ERR_ASSERTION]: Should write to memory"
+    },
     "tests/test_pg_integration.py"
   ],
-  "new_failures_surfaced": [],
+  "new_failures_surfaced": [
+    {
+      "test_file": "10-structured-learn-pipeline.test.cjs",
+      "test_name": "tests/10-structured-learn-pipeline.test.cjs",
+      "reason": "'test failed'"
+    },
+    {
+      "test_file": "13.1-divergence-protocol.integration.test.cjs",
+      "test_name": "behavioral: stale_prerequisite x5 runs",
+      "reason": "AssertionError [ERR_ASSERTION]: executor silently modified files:"
+    },
+    {
+      "test_file": "13.1-divergence-protocol.integration.test.cjs",
+      "test_name": "behavioral: unexpected_file_state x5 runs",
+      "reason": "AssertionError [ERR_ASSERTION]: divergence_type mismatch: expected unexpected_file_state, got stale_prerequisite"
+    },
+    {
+      "test_file": "13.1-divergence-protocol.integration.test.cjs",
+      "test_name": "behavioral: manifest_violation x5 runs",
+      "reason": "AssertionError [ERR_ASSERTION]: expected at least one divergence_report, got none. executor exit=0. temp=/var/folders/3p/3hvhr84j0yg7rxz58sm1czph0000gn/T/gsd-13.1-manifest-Cu3Dmv"
+    },
+    {
+      "test_file": "14-plan-to-tasks.integration.test.cjs",
+      "test_name": "Re-run idempotency: fresh run + re-run = zero new creates",
+      "reason": "AssertionError [ERR_ASSERTION]: second run should be idempotent; got: {\"error\":\"plan_amauta_drift\",\"divergence_type\":\"plan_amauta_drift\",\"diffs\":[{\"taskId\":\"14-test-idem-01-01\",\"field\":\"files_expected.modify\",\"planValue\":[\"services/test-14-test-idem-01-01.py\"],\"amautaValue\":[]},{\"taskId\":\"14-test-idem-01-02\",\"field\":\"files_expected.modify\",\"planValue\":[\"services/test-"
+    },
+    {
+      "test_file": "14-plan-to-tasks.integration.test.cjs",
+      "test_name": "Re-run idempotency: Pass 2 partial failure + re-run completes links",
+      "reason": "AssertionError [ERR_ASSERTION]: re-run after Pass 2 partial failure should succeed; got: {\"error\":\"plan_amauta_drift\",\"divergence_type\":\"plan_amauta_drift\",\"diffs\":[{\"taskId\":\"14-test-partial-p2-01\",\"field\":\"files_expected.modify\",\"planValue\":[\"services/test-14-test-partial-p2-01.py\"],\"am"
+    },
+    {
+      "test_file": "14-plan-to-tasks.integration.test.cjs",
+      "test_name": "Drift detection: re-run with unchanged plan is silent skip",
+      "reason": "AssertionError [ERR_ASSERTION]: unchanged plan re-run should return skipped:true"
+    },
+    {
+      "test_file": "14-plan-to-tasks.integration.test.cjs",
+      "test_name": "Dedup bypass: same plan_id + 90% similar titles both create",
+      "reason": "AssertionError [ERR_ASSERTION]: both tasks should be created via dedup bypass; got 1"
+    },
+    {
+      "test_file": "17-audit-script-hardening.test.cjs",
+      "test_name": "AUDIT-03: buildReport includes schema_version and tooling_bugs_observed",
+      "reason": "AssertionError [ERR_ASSERTION]: schema_version must be 2"
+    },
+    {
+      "test_file": "core.test.cjs",
+      "test_name": "searches archived milestones when not in current",
+      "reason": "TypeError: Cannot read properties of null (reading 'found')"
+    }
+  ],
   "hygiene_debt_observed": [
     "Phase 10 VERIFICATION.md is under v2.1-phases/, not v2.2-phases/ (cross-milestone directory split)",
     "Phase 13.1 has no VERIFICATION.md (only .gitkeep and divergence-reports/)",
     "Nyquist gate CONTEXT.md-as-source pattern: workflow should formalize CONTEXT.md as a valid validation source (3rd instance in v2.6: 13.1, 14, 15)",
     "discuss-phase init is a recurring drift-detection surface (3 instances: Phase 14, Phase 15, Phase 13.1 reconciliation); consider formalizing the cross-reference check as part of init itself",
     "environment_missing: ANTHROPIC_API_KEY"
+  ],
+  "sampling_health": {
+    "daemon_available": false,
+    "pool_source": "summary_md",
+    "fallback_used": "summary_md_scraping",
+    "pool_size": 1,
+    "limitations_observed": [
+      "daemon_unavailable: envelope_parse_error"
+    ]
+  },
+  "tooling_bugs_observed": [
+    {
+      "id": "TOOL-01",
+      "depth": 7,
+      "description": "Ghost directory detection -- discuss-phase init returned v2.3-phases/15-data-purge instead of phase_found: false when querying phase 15 from v2.7 context",
+      "phase_detected": "15",
+      "resolved_by": "16"
+    },
+    {
+      "id": "TOOL-02",
+      "depth": 8,
+      "description": "Init resolver recurrence -- same bug fired at execute-phase init, confirming cross-surface reproduction (not a discuss-phase-only artifact)",
+      "phase_detected": "15",
+      "resolved_by": "16"
+    }
   ],
   "dogfood_ledger_depths_captured": [
     0,

@@ -206,7 +206,7 @@ Phase 19 (Dynamic Ledger Schema) ──> final v2.7 deliverable, closes schema-o
 |---|---|---|---|
 | 16. Init Resolver Fix | 2/2 | Complete    | 2026-04-10 |
 | 17. Audit Script Hardening | 2/2 | Complete    | 2026-04-10 |
-| 18. Sampling Pool Expansion | 2/2 | Complete    | 2026-04-10 |
+| 18. Sampling Pool Expansion | 2/2 | Complete    | 2026-04-11 |
 | 19. Dynamic Ledger Schema | 0/? | Not started | - |
 
 ---

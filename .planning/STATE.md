@@ -4,13 +4,13 @@ milestone: v2.7
 milestone_name: milestone
 status: completed
 stopped_at: Phase 15 SHIPPED, v2.6 milestone COMPLETE
-last_updated: "2026-04-10T00:45:00.000Z"
-last_activity: 2026-04-10 -- Plan 18-02 executed. 2 serial tasks (18-02-01 Path A tests, 18-02-02 Path B+schema+Markdown+GA3 tests). 2 atomic commits (a9d5e9d, 8908139). 13 tests total, all passing. SUMMARY.md, STATE.md, ROADMAP.md updated. Phase 18 COMPLETE (2/2 plans). Phase 19 is next.
+last_updated: "2026-04-11T00:32:16.036Z"
+last_activity: 2026-04-10 -- Plan 18-02 executed. 2 serial tasks (18-02-01 Path A tests, 18-02-02 Path B+schema+Markdown+GA3 tests). 2 atomic commits (a9d5e9d, 8908139). 13 tests total, all passing. SUMMARY.md, STATE.md, ROADMAP.md updated. Phase 18 COMPLETE.
 progress:
   total_phases: 4
-  completed_phases: 3
-  total_plans: 2
-  completed_plans: 2
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
   percent: 75
 ---
 
@@ -261,6 +261,14 @@ Behavioral test suite (tests/13.1-divergence-protocol.integration.test.cjs, 15 i
 
 
 
+
+
+
+
+- [learning] 2026-04-11T00:27:27.391Z: legacy regression test: free text learning
+- [learning] 2026-04-11T00:25:24.524Z: legacy regression test: free text learning
+- [learning] 2026-04-11T00:23:06.913Z: legacy regression test: free text learning
+- [learning] 2026-04-11T00:20:45.161Z: In Node.js, hijacking child_process.spawnSync on the live object BEFORE require()-ing a module that does 'const { spawnSync } = require(child_process)' causes the module's destructured variable to capture the stub value at require time — the stub persists for all that module instance's calls even after the property is restored on the original object
 - [learning] 2026-04-11T00:09:06.163Z: When gsd-amauta.cjs exec list --json returns a {"output": "<ANSI text>"} envelope (not structured JSON), regex TK-\\d+ directly on the output field — ANSI escape codes do not interfere; module-scoped mutable state (_lastSamplingHealth pattern) is the minimum-diff way to thread side-effect degradation data from a sampler function into buildReport() without changing the consumer signature
 - [learning] 2026-04-10T23:08:30.642Z: legacy regression test: free text learning
 - [learning] 2026-04-10T23:05:54.768Z: legacy regression test: free text learning
