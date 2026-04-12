@@ -233,7 +233,7 @@ test('Path B: empty daemon pool triggers no_v2.7_tasks_registered limitation and
 
 // ─── Schema + Markdown coverage ────────────────────────────────────────────
 
-test('Schema: buildReport emits schema_version === 3', () => {
+test('Schema: buildReport emits schema_version === 4 (Phase 19 final)', () => {
   const envelope = buildDaemonEnvelope(['TK-0001']);
   const stub = buildDaemonStub(envelope);
   const mod = freshRequireVerify(stub);
@@ -245,7 +245,7 @@ test('Schema: buildReport emits schema_version === 3', () => {
     gsd_amauta_exports: { all_present: true },
   };
   const report = mod.buildReport(fakeDeterministic, null, { available: true, missing: [] });
-  assert.strictEqual(report.schema_version, 3, 'schema_version must be 3');
+  assert.strictEqual(report.schema_version, 4, 'schema_version must be 4 (Phase 19 final)');
 });
 
 test('Schema: sampling_health has all five documented subkeys', () => {

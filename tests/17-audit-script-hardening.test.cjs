@@ -205,7 +205,7 @@ test('AUDIT-03: buildReport includes schema_version and tooling_bugs_observed', 
   };
   const envCheck = { available: false, missing: ['ANTHROPIC_API_KEY'], required: ['ANTHROPIC_API_KEY'] };
   const report = buildReport(deterministic, null, envCheck);
-  assert.strictEqual(report.schema_version, 2, 'schema_version must be 2');
+  assert.strictEqual(report.schema_version, 4, 'schema_version must be 4 (Phase 19 final)');
   assert.ok(Array.isArray(report.tooling_bugs_observed), 'tooling_bugs_observed must be an array');
   assert.ok(report.tooling_bugs_observed.length >= 2, 'Must have at least 2 tooling bugs');
 });
@@ -213,7 +213,7 @@ test('AUDIT-03: buildReport includes schema_version and tooling_bugs_observed', 
 test('AUDIT-03: generateMarkdown renders Tooling Bugs table before Hygiene Debt', () => {
   const mockReport = {
     audit_timestamp: '2026-04-10T00:00:00Z',
-    schema_version: 2,
+    schema_version: 4,
     milestone: 'v2.6',
     phases_audited: ['10', '11', '12', '13', '13.1', '14'],
     phase_15_excluded_from_audit: true,
@@ -249,7 +249,7 @@ test('AUDIT-03: generateMarkdown renders Tooling Bugs table before Hygiene Debt'
 test('AUDIT-03: generateMarkdown includes Schema version in Summary table', () => {
   const mockReport = {
     audit_timestamp: '2026-04-10T00:00:00Z',
-    schema_version: 2,
+    schema_version: 4,
     milestone: 'v2.6',
     phases_audited: [],
     phase_15_excluded_from_audit: true,
@@ -273,5 +273,5 @@ test('AUDIT-03: generateMarkdown includes Schema version in Summary table', () =
   };
   const md = generateMarkdown(mockReport);
   assert.ok(md.includes('Schema version'), 'Markdown must include Schema version row');
-  assert.ok(md.includes('| Schema version | 2 |'), 'Schema version must show value 2');
+  assert.ok(md.includes('| Schema version | 4 |'), 'Schema version must show value 4');
 });
