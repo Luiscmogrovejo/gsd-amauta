@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v2.7
 milestone_name: milestone
-status: complete
-stopped_at: Phase 19 SHIPPED, v2.7 milestone COMPLETE
-last_updated: "2026-04-12T00:00:00.000Z"
+status: completed
+stopped_at: Phase 15 SHIPPED, v2.6 milestone COMPLETE
+last_updated: "2026-04-12T15:33:20.602Z"
 last_activity: 2026-04-12 -- Plan 19-01 executed. 2 serial tasks (19-01-01 scanDogfoodLedgerDepths+schema v4, 19-01-02 8 regression tests). 2 atomic commits (bd3dc93, 56482bd). 8 tests total, all passing. SUMMARY.md, STATE.md, ROADMAP.md updated. Phase 19 COMPLETE. v2.7 milestone COMPLETE.
 progress:
   total_phases: 4
-  completed_phases: 4
+  completed_phases: 0
   total_plans: 0
   completed_plans: 0
   percent: 100
@@ -265,6 +265,18 @@ Behavioral test suite (tests/13.1-divergence-protocol.integration.test.cjs, 15 i
 
 
 
+
+
+
+
+
+
+- [learning] 2026-04-12T15:31:49.043Z: legacy regression test: free text learning
+- [learning] 2026-04-12T15:29:09.916Z: legacy regression test: free text learning
+- [learning] 2026-04-12T15:28:07.166Z: legacy regression test: free text learning
+- [learning] 2026-04-12T15:26:01.758Z: legacy regression test: free text learning
+- [learning] 2026-04-12T15:24:46.794Z: legacy regression test: free text learning
+- [learning] 2026-04-12T15:23:21.370Z: scanDogfoodLedgerDepths gap computation covers {0..max}\\union — a gap-row test fixture must include a captured depth ABOVE the gap or the gap never appears in the output set
 - [learning] 2026-04-11T00:27:27.391Z: legacy regression test: free text learning
 - [learning] 2026-04-11T00:25:24.524Z: legacy regression test: free text learning
 - [learning] 2026-04-11T00:23:06.913Z: legacy regression test: free text learning

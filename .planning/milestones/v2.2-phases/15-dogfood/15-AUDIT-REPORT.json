@@ -1,6 +1,6 @@
 {
-  "audit_timestamp": "2026-04-11T00:30:43.054Z",
-  "schema_version": 3,
+  "audit_timestamp": "2026-04-12T15:31:48.286Z",
+  "schema_version": 4,
   "milestone": "v2.6",
   "phases_audited": [
     "10",
@@ -95,11 +95,6 @@
   },
   "pre_existing_failures_verified": [
     {
-      "test_file": "agent-frontmatter.test.cjs",
-      "test_name": "gsd-planner has anti-heredoc instruction",
-      "reason": "AssertionError [ERR_ASSERTION]: gsd-planner missing anti-heredoc instruction"
-    },
-    {
       "test_file": "comprehensive-e2e.test.cjs",
       "test_name": "6.12 7 UP + 7 DOWN migration files exist",
       "reason": "AssertionError [ERR_ASSERTION]: Expected 7 UP migrations, got 8"
@@ -120,17 +115,22 @@
     {
       "test_file": "13.1-divergence-protocol.integration.test.cjs",
       "test_name": "behavioral: stale_prerequisite x5 runs",
-      "reason": "AssertionError [ERR_ASSERTION]: executor silently modified files:"
+      "reason": "AssertionError [ERR_ASSERTION]: divergence_report missing mandatory field: task_id"
     },
     {
       "test_file": "13.1-divergence-protocol.integration.test.cjs",
       "test_name": "behavioral: unexpected_file_state x5 runs",
-      "reason": "AssertionError [ERR_ASSERTION]: divergence_type mismatch: expected unexpected_file_state, got stale_prerequisite"
+      "reason": "AssertionError [ERR_ASSERTION]: divergence_report missing mandatory field: task_id"
     },
     {
       "test_file": "13.1-divergence-protocol.integration.test.cjs",
       "test_name": "behavioral: manifest_violation x5 runs",
-      "reason": "AssertionError [ERR_ASSERTION]: expected at least one divergence_report, got none. executor exit=0. temp=/var/folders/3p/3hvhr84j0yg7rxz58sm1czph0000gn/T/gsd-13.1-manifest-Cu3Dmv"
+      "reason": "AssertionError [ERR_ASSERTION]: expected at least one divergence_report, got none. executor exit=0. temp=/var/folders/3p/3hvhr84j0yg7rxz58sm1czph0000gn/T/gsd-13.1-manifest-rB5HD9"
+    },
+    {
+      "test_file": "13.1-divergence-protocol.integration.test.cjs",
+      "test_name": "Phase 13 incident replay: silent re-implementation is now caught",
+      "reason": "AssertionError [ERR_ASSERTION]: Phase 13 incident replay: no divergence report filed. executor exit=0"
     },
     {
       "test_file": "14-plan-to-tasks.integration.test.cjs",
@@ -158,9 +158,9 @@
       "reason": "AssertionError [ERR_ASSERTION]: schema_version must be 2"
     },
     {
-      "test_file": "core.test.cjs",
-      "test_name": "searches archived milestones when not in current",
-      "reason": "TypeError: Cannot read properties of null (reading 'found')"
+      "test_file": "18-sampling-pool.test.cjs",
+      "test_name": "Schema: buildReport emits schema_version === 3",
+      "reason": "AssertionError [ERR_ASSERTION]: schema_version must be 3"
     }
   ],
   "hygiene_debt_observed": [
@@ -202,11 +202,17 @@
     4,
     5,
     6,
-    7
+    7,
+    8,
+    9,
+    10,
+    11
   ],
   "dogfood_ledger_gaps": [
     3
   ],
+  "dogfood_ledger_source": "ledger + memory",
+  "dogfood_ledger_observations": [],
   "deterministic_summary": {
     "gsd_tools_exports_ok": {
       "manifestCheck": true,

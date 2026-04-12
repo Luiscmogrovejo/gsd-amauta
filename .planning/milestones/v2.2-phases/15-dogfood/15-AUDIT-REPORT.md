@@ -7,8 +7,8 @@ _Do not hand-edit — re-run the script to regenerate._
 
 | Field | Value |
 |-------|-------|
-| Audit timestamp | 2026-04-11T00:30:43.054Z |
-| Schema version | 3 |
+| Audit timestamp | 2026-04-12T15:31:48.286Z |
+| Schema version | 4 |
 | Milestone | v2.6 |
 | Phases audited | 10, 11, 12, 13, 13.1, 14 |
 | Phase 15 excluded | true |
@@ -79,7 +79,6 @@ _Do not hand-edit — re-run the script to regenerate._
 
 **Pre-existing failures verified (matched by name, CONTEXT.md Q9):**
 
-- `agent-frontmatter.test.cjs` -- gsd-planner has anti-heredoc instruction (AssertionError [ERR_ASSERTION]: gsd-planner missing anti-heredoc instruction)
 - `comprehensive-e2e.test.cjs` -- 6.12 7 UP + 7 DOWN migration files exist (AssertionError [ERR_ASSERTION]: Expected 7 UP migrations, got 8)
 - `rlm-workflow-spec.test.cjs` -- 8.6 _auto_write_learning writes to both memory and SKB (AssertionError [ERR_ASSERTION]: Should write to memory)
 - tests/test_pg_integration.py
@@ -87,15 +86,16 @@ _Do not hand-edit — re-run the script to regenerate._
 **New failures surfaced:**
 
 - `10-structured-learn-pipeline.test.cjs` -- tests/10-structured-learn-pipeline.test.cjs ('test failed')
-- `13.1-divergence-protocol.integration.test.cjs` -- behavioral: stale_prerequisite x5 runs (AssertionError [ERR_ASSERTION]: executor silently modified files:)
-- `13.1-divergence-protocol.integration.test.cjs` -- behavioral: unexpected_file_state x5 runs (AssertionError [ERR_ASSERTION]: divergence_type mismatch: expected unexpected_file_state, got stale_prerequisite)
-- `13.1-divergence-protocol.integration.test.cjs` -- behavioral: manifest_violation x5 runs (AssertionError [ERR_ASSERTION]: expected at least one divergence_report, got none. executor exit=0. temp=/var/folders/3p/3hvhr84j0yg7rxz58sm1czph0000gn/T/gsd-13.1-manifest-Cu3Dmv)
+- `13.1-divergence-protocol.integration.test.cjs` -- behavioral: stale_prerequisite x5 runs (AssertionError [ERR_ASSERTION]: divergence_report missing mandatory field: task_id)
+- `13.1-divergence-protocol.integration.test.cjs` -- behavioral: unexpected_file_state x5 runs (AssertionError [ERR_ASSERTION]: divergence_report missing mandatory field: task_id)
+- `13.1-divergence-protocol.integration.test.cjs` -- behavioral: manifest_violation x5 runs (AssertionError [ERR_ASSERTION]: expected at least one divergence_report, got none. executor exit=0. temp=/var/folders/3p/3hvhr84j0yg7rxz58sm1czph0000gn/T/gsd-13.1-manifest-rB5HD9)
+- `13.1-divergence-protocol.integration.test.cjs` -- Phase 13 incident replay: silent re-implementation is now caught (AssertionError [ERR_ASSERTION]: Phase 13 incident replay: no divergence report filed. executor exit=0)
 - `14-plan-to-tasks.integration.test.cjs` -- Re-run idempotency: fresh run + re-run = zero new creates (AssertionError [ERR_ASSERTION]: second run should be idempotent; got: {"error":"plan_amauta_drift","divergence_type":"plan_amauta_drift","diffs":[{"taskId":"14-test-idem-01-01","field":"files_expected.modify","planValue":["services/test-14-test-idem-01-01.py"],"amautaValue":[]},{"taskId":"14-test-idem-01-02","field":"files_expected.modify","planValue":["services/test-)
 - `14-plan-to-tasks.integration.test.cjs` -- Re-run idempotency: Pass 2 partial failure + re-run completes links (AssertionError [ERR_ASSERTION]: re-run after Pass 2 partial failure should succeed; got: {"error":"plan_amauta_drift","divergence_type":"plan_amauta_drift","diffs":[{"taskId":"14-test-partial-p2-01","field":"files_expected.modify","planValue":["services/test-14-test-partial-p2-01.py"],"am)
 - `14-plan-to-tasks.integration.test.cjs` -- Drift detection: re-run with unchanged plan is silent skip (AssertionError [ERR_ASSERTION]: unchanged plan re-run should return skipped:true)
 - `14-plan-to-tasks.integration.test.cjs` -- Dedup bypass: same plan_id + 90% similar titles both create (AssertionError [ERR_ASSERTION]: both tasks should be created via dedup bypass; got 1)
 - `17-audit-script-hardening.test.cjs` -- AUDIT-03: buildReport includes schema_version and tooling_bugs_observed (AssertionError [ERR_ASSERTION]: schema_version must be 2)
-- `core.test.cjs` -- searches archived milestones when not in current (TypeError: Cannot read properties of null (reading 'found'))
+- `18-sampling-pool.test.cjs` -- Schema: buildReport emits schema_version === 3 (AssertionError [ERR_ASSERTION]: schema_version must be 3)
 
 ## Tooling Bugs Observed
 
@@ -114,8 +114,9 @@ _Do not hand-edit — re-run the script to regenerate._
 
 ## Dogfood Ledger Status
 
-- Depths captured: 0, 1, 2, 4, 5, 6, 7
+- Depths captured: 0, 1, 2, 4, 5, 6, 7, 8, 9, 10, 11
 - Depths still open: 3
+- Scan source: ledger + memory
 
 ---
 

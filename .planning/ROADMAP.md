@@ -171,7 +171,7 @@
 
 **Rollback plan:** Revert the single modified file and delete the new test file. The field name `dogfood_ledger_depths_captured` is unchanged, so downstream consumers that read the field continue to work against the pre-Phase-19 static output after rollback. Clean rollback.
 
-**Plans:** To be atomized by `/amauta:plan-phase 19`. Expected 1 plan (new function + parser + tests, cohesive scope).
+**Plans:** 1/1 plans complete
 
 ---
 
