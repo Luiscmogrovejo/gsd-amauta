@@ -8,17 +8,25 @@ GSD-Amauta is a quality-enforced AI development harness for Claude Code: persist
 
 Every RPETD phase must *see* what the other phases have already learned — past failures, validated best-practices, existing codebase style, parent-story acceptance criteria — so the system makes better decisions with each task it runs, not worse as context bloats. The brain synthesizes, not accumulates.
 
-## Current State
+## Current Milestone: v2.8 Token Optimization
 
 **Shipped:** v2.7 "Steady Hands" (2026-04-12) — 4 phases, 8 plans, 21 tasks, 47 tests
-**Next:** Planning next milestone (`/amauta:new-milestone`)
 
-v2.7 closed the loops that the v2.6 audit phase opened: milestone-scoped init resolver (depths 7/8/10 structurally eliminated), hardened audit script (prefix probe + structured npm parser + tooling_bugs_observed schema), daemon-sourced sampling pool (SUMMARY.md fallback when daemon unavailable), and dynamic ledger depth scan (runtime scan replaces static Wave-1 list). The body-metaphor sequence is brain → sight → hands: v2.7 is the milestone where the tooling stopped shaking.
+**Goal:** Reduce effective token cost per RPETD cycle by 75-90% through prompt prefix caching, structured context handoffs, hash-based staleness detection, caveman-style description compression, semantic caching, and tiered model routing. The body-metaphor sequence: brain (v2.5) → sight (v2.6) → hands (v2.7) → metabolism (v2.8). v2.8 is the milestone where the system becomes lean — doing the same quality work at a fraction of the token cost.
 
-**Known tech debt for v2.8:**
-- `cmdInitPhaseOp` residual ghost fallback (Phase 16 shipped findPhaseInternal fix but init subcommand wrappers retain secondary search)
-- Daemon has zero v2.7 tasks (plan-to-tasks auto-registration gap)
-- `amauta.cjs` wrapper HTTP routing bug (use `gsd-amauta.cjs` directly)
+**Research:** `.planning/research/v2.8-token-optimization-research.md` — comprehensive analysis correcting two misidentifications (Attention Residuals paper, caveman repo), mapping 6 optimization layers to GSD-Amauta's architecture.
+
+**Target upgrades (6 optimization layers, ordered by impact-to-effort ratio):**
+1. **Prompt prefix caching** — Restructure agent prompts for Claude API cache hits (90% cost reduction on repeated prefixes)
+2. **Structured context handoffs** — RPETDContext typed object (~400 tokens) replaces full forwarding (~10K+) between phases
+3. **Hash-based staleness detection** — SHA-256 + git diff; skip unchanged files (60-80% typical)
+4. **Caveman-compressed descriptions** — 40-60% more info per 500-char budget via grammar stripping
+5. **Semantic cache layer** — pgvector cosine >= 0.90 for cached LLM responses (up to 68% fewer calls)
+6. **Tiered model routing** — Haiku for T/D phases ($1/MTok), Sonnet for R/P/E
+
+**Also addresses v2.7 tech debt:** cmdInitPhaseOp residual ghost, plan-to-tasks registration gap, amauta.cjs wrapper.
+
+**Primary input:** User-provided research brief (arXiv:2603.15031 Attention Residuals analysis + JuliusBrussee/caveman evaluation + Claude API caching docs + Google ADK/Microsoft Semantic Kernel/OpenAI Agents SDK context handoff patterns)
 
 ## Requirements
 
@@ -145,4 +153,4 @@ v2.7 closed the loops that the v2.6 audit phase opened: milestone-scoped init re
 | sonar-pro for Perplexity | Better quality research results, currently PERPLEXITY_MODEL unset | -- Pending |
 
 ---
-*Last updated: 2026-04-12 after v2.7 "Steady Hands" milestone completion*
+*Last updated: 2026-04-12 after v2.8 "Metabolism" milestone kickoff*
