@@ -643,9 +643,67 @@ function assessDogfood05(verificationFiles) {
   };
 }
 
+// ─── Dynamic dogfood ledger scan (Phase 19 / SCHEMA-01) ──────────────────────
+
+/**
+ * Scan the v2.6 dogfood ledger table AND the memory directory to produce
+ * a dynamic depth set + gap set.  Replaces the static Wave 1 arrays.
+ *
+ * @param {string} [memoryDir] Override for memory directory path (testability).
+ * @param {string} [ledgerPath] Override for ledger file path (testability).
+ * @returns {{ depths: number[], gaps: number[], source: string, observations: string[] }}
+ */
+function scanDogfoodLedgerDepths(memoryDir, ledgerPath) {
+  const FALLBACK = { depths: [0,1,2,4,5,6,7,8,9,10,11], gaps: [3], source: 'static fallback', observations: ['ledger_scan_degraded: both_sources_unavailable'] };
+
+  // Source 1: Parse ledger table
+  const ledgerFile = ledgerPath || path.join(__dirname, '..', 'docs', 'v2.6-dogfood-ledger.md');
+  let ledgerDepths = null;
+  const observations = [];
+  try {
+    const text = fs.readFileSync(ledgerFile, 'utf8');
+    const captured = new Set();
+    for (const line of text.split('\n')) {
+      const m = line.match(/^\|\s*(\d+)\s*\|/);
+      if (!m) continue;
+      const cells = line.split('|').map(c => c.trim());
+      if (cells[2] === '\u2014' || cells[2] === '—' || (cells[6] || '').includes('Not yet observed')) continue;
+      captured.add(parseInt(m[1], 10));
+    }
+    ledgerDepths = captured;
+  } catch (_e) { observations.push('ledger_scan_degraded: ledger_unavailable'); }
+
+  // Source 2: Scan memory directory
+  const memDir = memoryDir || path.join(process.env.HOME || '/tmp', '.claude', 'projects', '-Users-luismogrovejo-Code-gsd-amauta', 'memory');
+  let memoryDepths = null;
+  try {
+    const depthRe = /[Dd]epth[-:\s]+(\d+)/;
+    const found = new Set();
+    for (const f of fs.readdirSync(memDir).filter(f => /^project_.*dogfood.*\.md$/.test(f))) {
+      try { const dm = fs.readFileSync(path.join(memDir, f), 'utf8').slice(0, 500).match(depthRe); if (dm) found.add(parseInt(dm[1], 10)); } catch (_e) { /* skip */ }
+    }
+    memoryDepths = found;
+  } catch (_e) { observations.push('ledger_scan_degraded: memory_unavailable'); }
+
+  if (ledgerDepths === null && memoryDepths === null) return FALLBACK;
+
+  const union = new Set();
+  let source;
+  if (ledgerDepths !== null && memoryDepths !== null) { for (const d of ledgerDepths) union.add(d); for (const d of memoryDepths) union.add(d); source = 'ledger + memory'; }
+  else if (ledgerDepths !== null) { for (const d of ledgerDepths) union.add(d); source = 'ledger only'; }
+  else { for (const d of memoryDepths) union.add(d); source = 'memory only'; }
+
+  const depths = Array.from(union).sort((a, b) => a - b);
+  const max = depths.length > 0 ? depths[depths.length - 1] : 0;
+  const gaps = [];
+  for (let i = 0; i <= max; i++) { if (!union.has(i)) gaps.push(i); }
+  return { depths, gaps, source, observations };
+}
+
 // ─── Report assembly ──────────────────────────────────────────────────────────
 
 function buildReport(deterministic, behavioral, envCheck) {
+  const _ledgerScan = scanDogfoodLedgerDepths();
   const criteria = [
     assessDogfood01(),
     assessDogfood02(),
@@ -687,7 +745,7 @@ function buildReport(deterministic, behavioral, envCheck) {
 
   return {
     audit_timestamp: new Date().toISOString(),
-    schema_version: 3,
+    schema_version: 4,
     milestone: 'v2.6',
     phases_audited: AUDITED_PHASES,
     phase_15_excluded_from_audit: true,
@@ -709,8 +767,10 @@ function buildReport(deterministic, behavioral, envCheck) {
     hygiene_debt_observed: hygieneDebt,
     sampling_health: _lastSamplingHealth,
     tooling_bugs_observed: TOOLING_BUGS_SEED,
-    dogfood_ledger_depths_captured: [0, 1, 2, 4, 5, 6, 7],
-    dogfood_ledger_gaps: [3],
+    dogfood_ledger_depths_captured: _ledgerScan.depths,
+    dogfood_ledger_gaps: _ledgerScan.gaps,
+    dogfood_ledger_source: _ledgerScan.source,
+    dogfood_ledger_observations: _ledgerScan.observations,
     deterministic_summary: {
       gsd_tools_exports_ok: deterministic.gsd_tools_exports,
       gsd_amauta_exports_ok: deterministic.gsd_amauta_exports.all_present,
@@ -860,6 +920,7 @@ function generateMarkdown(report) {
   lines.push('');
   lines.push(`- Depths captured: ${report.dogfood_ledger_depths_captured.join(', ')}`);
   lines.push(`- Depths still open: ${report.dogfood_ledger_gaps.join(', ')}`);
+  lines.push(`- Scan source: ${report.dogfood_ledger_source || 'static (pre-Phase 19)'}`);
   lines.push('');
   lines.push('---');
   lines.push('');
@@ -914,6 +975,7 @@ module.exports = {
   classifyFailures,
   sampleCompletedTasks,
   queryDaemonTaskIds,
+  scanDogfoodLedgerDepths,
   AUDITED_PHASES,
   SELF_EXCLUSION,
   BEHAVIORAL_TIMEOUT_MS,
