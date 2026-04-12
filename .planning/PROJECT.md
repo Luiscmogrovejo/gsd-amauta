@@ -8,19 +8,17 @@ GSD-Amauta is a quality-enforced AI development harness for Claude Code: persist
 
 Every RPETD phase must *see* what the other phases have already learned — past failures, validated best-practices, existing codebase style, parent-story acceptance criteria — so the system makes better decisions with each task it runs, not worse as context bloats. The brain synthesizes, not accumulates.
 
-## Current Milestone: v2.7 Steady Hands
+## Current State
 
-**Goal:** Close the loops that the v2.6 audit phase opened. Fix the tooling bugs that caused the most real-world friction during v2.6, harden the audit script that Phase 15 trusted to produce its own verdict, and modernize the schema layer so depths discovered during execution no longer get orphaned from the machine-readable audit trail. The body-metaphor sequence is brain → sight → hands: v2.7 is the milestone where the tooling stops shaking.
+**Shipped:** v2.7 "Steady Hands" (2026-04-12) — 4 phases, 8 plans, 21 tasks, 47 tests
+**Next:** Planning next milestone (`/amauta:new-milestone`)
 
-**Target upgrades (4 hardening clusters, one per phase):**
-- **Phase 16 — Init Resolver Fix (RESOLVE-01..02):** `gsd-tools init` resolver gets milestone-scoped lookup via ROADMAP.md cross-reference instead of first-match-by-numeric-prefix; `cmdInitExecutePhase` gains a `--phase-dir <path>` override. Closes depths 7 + 8 from the v2.6 dogfood ledger (the same bug fired at discuss-phase init, execute-phase init, and tonight's closeout — three strikes).
-- **Phase 17 — Audit Script Hardening (AUDIT-01..03):** `verify-v26.cjs::checkVerificationFiles()` prefix-form probe, `verify-v26.cjs::parseNpmFailures()` regex upgrade to match real npm runner output, `15-AUDIT-REPORT.json` schema extension adding `tooling_bugs_observed` category. Closes the three Wave-2 patches that the Phase 15 executor resisted in-scope and routed as findings (depth 9).
-- **Phase 18 — Sampling Pool Expansion (SAMPLE-01):** DOGFOOD-01's n=1 sampling pool gets fixed by broadening `sampleCompletedTasks()` to scan RPETD logs instead of SUMMARY text (preferred) or formalizing the sampling floor as a documented limitation. Makes future audits statistically meaningful.
-- **Phase 19 — Dynamic Ledger Schema (SCHEMA-01):** Extend `dogfood_ledger_depths_captured` from a static Wave-1-authoring-time list to a runtime filesystem scan of `memory/*dogfood*.md` entries, so future depths 10+ are not orphaned from the JSON the way depths 8 + 9 were in v2.6. The meta-finding from the v2.6 ledger's Limitations section.
+v2.7 closed the loops that the v2.6 audit phase opened: milestone-scoped init resolver (depths 7/8/10 structurally eliminated), hardened audit script (prefix probe + structured npm parser + tooling_bugs_observed schema), daemon-sourced sampling pool (SUMMARY.md fallback when daemon unavailable), and dynamic ledger depth scan (runtime scan replaces static Wave-1 list). The body-metaphor sequence is brain → sight → hands: v2.7 is the milestone where the tooling stopped shaking.
 
-Primary input for v2.7: `docs/v2.6-dogfood-ledger.md` § "Routed follow-ups (Phase 16 / v2.7)" — 7 items, clustered by the above phase plan.
-
-v2.7 is a **hardening milestone**, not a mandate-expansion milestone. No new RPETD intelligence upgrades, no new kill switches, no new D-phase formats — the bar for v2.7 is "the tooling the operator and agents relied on during v2.6 stops producing recurring divergence events." Success is measurable by: depth-7+8 class bugs never firing again across milestone boundaries, Wave-2-style resisted-script-patches dropping to zero in the next audit phase, and audit JSON becoming the canonical machine-readable record of dogfood depths (no more schema orphans).
+**Known tech debt for v2.8:**
+- `cmdInitPhaseOp` residual ghost fallback (Phase 16 shipped findPhaseInternal fix but init subcommand wrappers retain secondary search)
+- Daemon has zero v2.7 tasks (plan-to-tasks auto-registration gap)
+- `amauta.cjs` wrapper HTTP routing bug (use `gsd-amauta.cjs` directly)
 
 ## Requirements
 
@@ -37,10 +35,22 @@ v2.7 is a **hardening milestone**, not a mandate-expansion milestone. No new RPE
 
 ### Active
 
-#### v2.6 Sight Beyond Sight — RPETD Intelligence Upgrade (in progress)
-See `.planning/REQUIREMENTS.md` for scoped REQ-IDs.
+#### v2.6 Sight Beyond Sight — Shipped 2026-04-10 (46/46 requirements)
+- ✓ **LEARN-01..07**: Structured D-phase learning, category/tag taxonomy, GIN index search
+- ✓ **EXEC-01..08**: PRE_EXECUTION_EVIDENCE mandate, research-informed execution
+- ✓ **QA-01..08**: Spec inheritance, EDGE_CASES + REGRESSION blocks, parent verification
+- ✓ **CREATIVE-01..05**: Task-type-gated creative research variants
+- ✓ **HARDEN-01..05**: Manifest check, divergence protocol v1.1.0, validator vocabulary lock
+- ✓ **PLAN-01..07**: plan-to-tasks auto-registration, story blocks, Pass 0 cycle detection
+- ✓ **DOGFOOD-01..05**: verify-v26.cjs structural audit, audit-rpetd-intelligence.cjs, dogfood ledger
 
-#### Legacy (archive after v2.6 closes)
+#### v2.7 Steady Hands — Shipped 2026-04-12 (7/7 requirements)
+- ✓ **RESOLVE-01..02**: Milestone-scoped init resolver + --phase-dir override
+- ✓ **AUDIT-01..03**: Prefix probe + npm parser + tooling_bugs_observed schema
+- ✓ **SAMPLE-01**: Daemon-sourced sampling pool with SUMMARY.md fallback
+- ✓ **SCHEMA-01**: Dynamic ledger depth scan (ledger table + memory dir union)
+
+#### Legacy (carried forward — all validated in v2.5)
 ##### Memory & Embeddings Audit
 - [ ] **MEM-01**: Audit PG memory store (pg_store.py) — connection pooling, query patterns, error handling
 - [ ] **MEM-02**: Audit pgvector usage — HNSW index config, embedding dimensions, similarity thresholds
@@ -135,4 +145,4 @@ See `.planning/REQUIREMENTS.md` for scoped REQ-IDs.
 | sonar-pro for Perplexity | Better quality research results, currently PERPLEXITY_MODEL unset | -- Pending |
 
 ---
-*Last updated: 2026-04-09 after v2.6 "Sight Beyond Sight" milestone kickoff*
+*Last updated: 2026-04-12 after v2.7 "Steady Hands" milestone completion*

@@ -1,5 +1,32 @@
 # Milestones
 
+## Complete: v2.7 — Steady Hands (Shipped: 2026-04-12)
+
+**Phases:** 16-19 (4 phases, 8 plans, 21 tasks) | **Tests:** 47 new (all pass) | **Duration:** 2 days (2026-04-10 → 2026-04-12)
+**Requirements:** 7/7 satisfied (RESOLVE-01/02, AUDIT-01/02/03, SAMPLE-01, SCHEMA-01)
+**Verification:** PASSED (v2.7-MILESTONE-AUDIT.md, 5/5 integration points clean)
+
+**Key accomplishments:**
+1. **Init Resolver Fix (Phase 16, RESOLVE-01/02):** `findPhaseInternal()` milestone-scoped via `config.json::current_milestone` field — ghost directory bug (depths 7, 8, 10) structurally eliminated. `--phase-dir <path>` override on all 4 init subcommands for bootstrap/escape-hatch scenarios. Atomic config writes via temp+rename. 11 regression tests replaying exact v2.6 dogfood firings.
+2. **Audit Script Hardening (Phase 17, AUDIT-01/02/03):** `checkVerificationFiles()` dual-probe for prefixed + unprefixed VERIFICATION.md — Phase 14 false-negative resolved. `parseNpmFailures()` rewritten for `node --test` output format returning structured `{test_file, test_name, reason}` objects. `tooling_bugs_observed` field with TOOL-01 (depth 7) + TOOL-02 (depth 8) seed entries. `schema_version: 2`. 15 regression tests.
+3. **Sampling Pool Expansion (Phase 18, SAMPLE-01):** `sampleCompletedTasks()` rewritten to query amauta daemon via `queryDaemonTaskIds()` shell-out to `gsd-amauta.cjs` with SUMMARY.md fallback. New top-level `sampling_health` field with `{daemon_available, pool_source, fallback_used, pool_size, limitations_observed}`. `schema_version: 3`. 13 dual-path regression tests via `spawnSync` destructured-binding hijack.
+4. **Dynamic Ledger Schema (Phase 19, SCHEMA-01):** `scanDogfoodLedgerDepths()` replaces static depth list with runtime ledger-table parse (depths 0-9) + memory-directory scan (depths 10-11). Three-tier degradation cascade. Live scan: `[0,1,2,4,5,6,7,8,9,10,11]`, `gaps: [3]`. `schema_version: 4`. 8 regression tests.
+
+**Dogfood observations during v2.7:**
+- Depth 10: init resolver ghost fired on the phase designed to fix it (self-referential, caught via pre-warning)
+- Depth 11: `cmdInitPhaseOp` residual fallback (Phase 16 gap — findPhaseInternal fixed but init subcommand wrappers retain secondary search). Fired at Phases 17, 18, 19 discuss-phase.
+- Phase 17 executor surfaced prior-session pre-commit at R-phase (positive divergence protocol application)
+
+**Tech debt carried to v2.8:**
+- `cmdInitPhaseOp` residual ghost fallback (Phase 16 gap — route to 16.1 or v2.8)
+- Daemon has zero v2.7 tasks (`plan-to-tasks` auto-registration gap)
+- `amauta.cjs` wrapper HTTP routing bug (must use `gsd-amauta.cjs` directly)
+- `core.test.cjs` test expects old resolver behavior (pre-existing failure baseline update)
+
+**Archive:** `.planning/milestones/v2.7-ROADMAP.md`, `.planning/milestones/v2.7-REQUIREMENTS.md`, `.planning/milestones/v2.7-MILESTONE-AUDIT.md`, `.planning/milestones/v2.7-phases/`
+
+---
+
 ## Complete: v2.6 — Sight Beyond Sight (Shipped: 2026-04-10)
 
 **Phases:** 9-15 (7 phases, 13 plans) | **Tests:** ~150 new (~2544 total passing) | **Duration:** ~4 days
