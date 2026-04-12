@@ -4,6 +4,73 @@ All changes from vanilla GSD to GSD-Amauta.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.7.0] — 2026-04-12 — "Steady Hands"
+
+4 phases, 7 requirements, 47 new tests. Hardening milestone closing loops from v2.6 dogfood audit.
+
+### Added
+
+#### Init Resolver Fix (Phase 16, RESOLVE-01/02)
+- `config.json::current_milestone` field — single source of truth for milestone identity
+- `findPhaseInternal()` scoped to current milestone only (was first-match across all `v*-phases/` dirs)
+- `--phase-dir <path>` override on all 4 phase-aware init subcommands (`execute-phase`, `plan-phase`, `verify-work`, `phase-op`)
+- `validatePhaseDirOverride()` with existence check, empty-dir detection, sibling suggestion
+- Atomic config writes via temp+rename in `cmdConfigSet`
+- `getMilestoneInfo()` reads `config.json` as primary source, ROADMAP.md as fallback
+- `tests/16-init-resolver.test.cjs` — 11 tests replaying dogfood depths 7/8/10
+
+#### Audit Script Hardening (Phase 17, AUDIT-01/02/03)
+- `checkVerificationFiles()` dual-probe: `<phase>-VERIFICATION.md` (prefixed) + `VERIFICATION.md` (fallback), prefixed wins
+- `parseNpmFailures()` rewritten for `node --test` format (`test at <file>` + Unicode cross mark), returns `{ test_file, test_name, reason }`
+- `classifyFailures()` handles structured objects with backward-compat string guard
+- `TOOLING_BUGS_SEED` constant: TOOL-01 (depth 7, ghost directory) + TOOL-02 (depth 8, resolver recurrence)
+- `buildReport()` emits `tooling_bugs_observed` (structured) and `schema_version: 2`
+- `generateMarkdown()` renders Tooling Bugs Observed table before Hygiene Debt, Schema version in Summary
+- `tests/17-audit-script-hardening.test.cjs` — 15 tests
+
+#### Sampling Pool Expansion (Phase 18, SAMPLE-01)
+- `queryDaemonTaskIds()` — shell-out to `gsd-amauta.cjs`, parses `{"output": "<ANSI>"}` envelope via JSON.parse + regex
+- `sampleCompletedTasks()` rewritten: daemon query primary, SUMMARY.md scraping fallback
+- Module-scoped `_lastSamplingHealth` state captured in `buildReport()`
+- `sampling_health` top-level field: `{daemon_available, pool_source, fallback_used, pool_size, limitations_observed}`
+- `schema_version` bumped to 3
+- `generateMarkdown()` renders `## Sampling Health` section
+- `tests/18-sampling-pool.test.cjs` — 13 tests (dual-path: daemon-available + daemon-unavailable via spawnSync hijack)
+
+#### Dynamic Ledger Schema (Phase 19, SCHEMA-01)
+- `scanDogfoodLedgerDepths(memoryDir, ledgerPath)` — two-source union: ledger table parse + memory dir scan
+- Three-tier degradation cascade: full union → ledger-only → memory-only → static fallback
+- Gap identification via set difference `{0..max} \ captured`
+- Static fallback updated to `[0,1,2,4,5,6,7,8,9,10,11]`
+- `schema_version` bumped to 4
+- `generateMarkdown()` adds "Scan source:" line to Dogfood Ledger Status
+- `tests/19-ledger-scan.test.cjs` — 8 tests
+
+### Changed
+- `schema_version` field now present in audit JSON (absent = v1, Phase 17 set 2, Phase 18 set 3, Phase 19 set 4)
+- `pre_existing_failures_verified` entries are structured objects (was flat strings)
+- `dogfood_ledger_depths_captured` dynamically populated at audit runtime (was static Wave-1 list)
+
+---
+
+## [2.6.0] — 2026-04-10 — "Sight Beyond Sight"
+
+7 phases, 46 requirements, ~150 new tests. RPETD intelligence upgrade — every phase sees what other phases learned.
+
+### Added
+- D-Phase Structured Learning (Phase 10, LEARN-01..07): WHAT/WHY/WHEN/CATEGORY/TAGS format, 9 categories, curated tag vocabulary, GIN index
+- E-Phase Research-Informed Execution (Phase 11, EXEC-01..08): PRE_EXECUTION_EVIDENCE block, Gate 6 advisory
+- T-Phase QA + Spec Inheritance (Phase 12, QA-01..08): EDGE_CASES + REGRESSION blocks, parent verification
+- R-Phase Creative Research (Phase 13, CREATIVE-01..05): task-type-gated creative variants
+- HARDEN-01 Manifest Enforcement (Phase 13.1): deterministic `files_expected` check via `git diff --name-status`
+- Divergence Protocol v1.1.0 (HARDEN-02): detect → STOP → `divergence_report` JSON → exit 87
+- Validator Vocabulary Lock (HARDEN-04): `--pass`/`--fail`/`--gaps-found` exit 0/1/2
+- Plan-to-Tasks Auto-Registration (Phase 14, PLAN-01..07): `gsd-tools plan-to-tasks`, `metadata.plan_local_id`
+- End-to-End Dogfood Verification (Phase 15, DOGFOOD-01..05): `scripts/verify-v26.cjs`, `audit-rpetd-intelligence.cjs`
+- Dogfood Ledger: `docs/v2.6-dogfood-ledger.md` — 9 captured depths, 706 lines
+
+---
+
 ## [2.5.0] — 2026-04-06 — "Smarter Brain"
 
 8 phases, 49 requirements, ~479 new tests. Total test count: ~2479 (61 CJS + 31 Python files).

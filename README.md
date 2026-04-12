@@ -5,7 +5,7 @@
 GSD-Amauta extends the [GSD](https://github.com/get-shit-done/get-shit-done) framework with a behaviorally-enforced 5-phase development pipeline (RPETD), a BM25 code context engine, a PostgreSQL + pgvector persistent memory system with automatic distillation, 11 specialist agents with file-pattern routing, a 5-step research chain, deterministic per-task manifest enforcement, a formal divergence protocol that turns plan-vs-reality mismatches from silent scope expansion into first-class observations, and a complete downgrade path where every feature has a graceful fallback when its infrastructure is unavailable.
 
 ```
-v2.6.0 "Sight Beyond Sight" -- 7 phases shipped -- ~2544 tests passing -- 11 agents -- 5 CLI tools -- 4 services -- 8 SQL migrations -- 9 specs -- 20 AI design patterns -- divergence protocol v1.1.0 -- 9 dogfood ledger depths captured
+v2.7.0 "Steady Hands" -- 11 phases shipped (v2.6+v2.7) -- ~2591 tests passing -- 11 agents -- 5 CLI tools -- 4 services -- 8 SQL migrations -- 9 specs -- 20 AI design patterns -- divergence protocol v1.1.0 -- 11 dogfood ledger depths captured -- schema v4 audit reports
 ```
 
 ---
@@ -41,6 +41,23 @@ v2.6.0 "Sight Beyond Sight" -- 7 phases shipped -- ~2544 tests passing -- 11 age
 27. [Project Structure](#project-structure)
 28. [Contributing](#contributing)
 29. [License](#license)
+
+---
+
+## What v2.7 Adds Over v2.6
+
+v2.7 "Steady Hands" is a hardening milestone — no new RPETD intelligence upgrades, no new kill switches. It closes the loops that the v2.6 dogfood audit opened: the tooling bugs that fired repeatedly during v2.6 execution.
+
+| Capability | v2.6 | v2.7 |
+|---|---|---|
+| Phase directory resolution | First-match-by-numeric-prefix across all `v*-phases/` dirs — ghost directories from archived milestones returned for current-milestone queries (depths 7, 8, 10) | Milestone-scoped via `config.json::current_milestone` — searches only the active milestone's dir. `--phase-dir` override for bootstrap/escape scenarios (RESOLVE-01/02, Phase 16) |
+| Verification file discovery | Hard-coded `VERIFICATION.md` — Phase 14's `14-VERIFICATION.md` missed (false negative) | Dual-probe: `<phase>-VERIFICATION.md` first, `VERIFICATION.md` fallback. Prefixed form wins on collision (AUDIT-01, Phase 17) |
+| npm failure parsing | Regex for `FAIL tests/foo.test.cjs` — doesn't match `node --test` runner's `test at` + Unicode cross mark format | Structured `{ test_file, test_name, reason }` objects parsed from actual `node --test` output. Legacy `FAIL` regex retained as fallback (AUDIT-02, Phase 17) |
+| Audit report schema | `hygiene_debt_observed` only. No field for tooling-level bugs. Schema version implicit. | `tooling_bugs_observed` (structured objects with provenance: id, depth, description, phase_detected, resolved_by). `schema_version` field (bumped per phase: 2→3→4). `sampling_health` field with degradation tracking (AUDIT-03 + SAMPLE-01 + SCHEMA-01, Phases 17-19) |
+| DOGFOOD-01 sampling | Scraped `TK-\d+` from SUMMARY.md text — collapsed to n=1 because only Phase 10's SUMMARY happened to cite a task ID | Queries amauta daemon for `status=done` tasks via `gsd-amauta.cjs` shell-out, with SUMMARY.md scraping as graceful fallback. `sampling_health` reports data source and limitations (SAMPLE-01, Phase 18) |
+| Dogfood depth tracking | Static `[0,1,2,4,5,6,7]` array authored at Wave 1 time — depths 8+9 discovered during execution orphaned from JSON | Runtime `scanDogfoodLedgerDepths()`: parses dogfood ledger table (depths 0-9) + memory dir scan (depths 10+), computes gaps via set difference. Three-tier degradation cascade (SCHEMA-01, Phase 19) |
+
+**4 phases | 8 plans | 21 tasks | 47 new tests | 7/7 requirements**
 
 ---
 
