@@ -32,7 +32,7 @@
 
 - [x] **Phase 31: Format Standard** — All 11 existing agents restructured to standardized 10-section format; shared security rules; behavioral regression suite (FORMAT-01..07) (FOUNDATION — everything depends on this) — COMPLETE 2026-04-13
 - [ ] **Phase 32: Frontend Rebuild** — gsd-executor-frontend rebuilt with v0-inspired composite pipeline; React 19 + TypeScript + Tailwind + shadcn/ui; Playwright screenshots (FRONT-01..07)
-- [ ] **Phase 33: Testing Pipeline** — Two new agents: gsd-tester (generates) and gsd-qa (evaluates); CoverUp coverage-guided iteration; mutation testing; Pact contracts (TEST-01..08)
+- [~] **Phase 33: Testing Pipeline** — Two new agents: gsd-tester (generates) and gsd-qa (evaluates); CoverUp coverage-guided iteration; mutation testing; Pact contracts (TEST-01..08) — Wave 1 COMPLETE 2026-04-13 (gsd-tester, gsd-qa, coverage-ratchet, test-pyramid); Wave 2 pending
 - [ ] **Phase 34: Security Pipeline** — New gsd-security agent; Semgrep SAST, Gitleaks, npm/pip audit, supply chain rules, Rule of Two audit, Trivy container scan (SEC-01..06)
 - [ ] **Phase 35: Code Review Agent** — New gsd-reviewer; style/pattern review, SOLID check, structured output schema (REVIEW-01..04)
 - [ ] **Phase 36: Data Engineering Agent** — New gsd-executor-data; expand-and-contract migrations, query analysis, data quality checks (DATA-01..04)
@@ -86,7 +86,7 @@ Rationale:
   3. `agents/shared/security-rules.md` exists and its contents are byte-identical in the Security Rules section of all 11 agent files; no agent has a custom security rules section.
   4. All 11 agent files and all 4 executor agents contain the exact anti-over-engineering and read-before-edit mandate strings; `grep` finds them verbatim.
   5. Behavioral regression suite runs and returns 0 failures; all test cases that passed in v2.9 pass unchanged.
-**Plans:** TBD (estimated 2 plans: 31-01 restructure all 11 agents + shared rules, 31-02 behavioral regression suite)
+**Plans:** 2/2 plans complete
 
 Plans:
 - [x] 31-01: Restructure 4 executor agents to 10-section format; create agents/shared/security-rules.md; embed anti-over-engineering + read-before-edit mandates; FORMAT-01..05 tests green (FORMAT-01..05) — 2026-04-13
@@ -271,7 +271,7 @@ Phase 31: Format Standard (FOUNDATION)
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 31. Format Standard | 1/2 | In progress | plan 31-01: 2026-04-13 |
+| 31. Format Standard | 1/2 | Complete    | 2026-04-13 |
 | 32. Frontend Rebuild | 0/2 | Not started | - |
 | 33. Testing Pipeline | 0/2 | Not started | - |
 | 34. Security Pipeline | 0/2 | Not started | - |

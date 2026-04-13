@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: The Birth
 status: in_progress
-stopped_at: "Phase 31 complete. All 11 agents in 10-section v3.0.0 format. FORMAT-01..07 satisfied. 35/35 regression tests pass. 34/34 agent-definition tests pass. Ready for Phase 33 (Testing Pipeline) per execution order."
+stopped_at: "Phase 33 Plan 01 complete. Wave 1 shipped. Next: Plan 33-02 (Wave 2 — Playwright, fast-check, Pact, Stryker)."
 last_updated: "2026-04-13T00:00:00.000Z"
-last_activity: 2026-04-13 — Plan 31-02 shipped. 7 non-executor agents restructured to 10-section v3.0.0 format. FORMAT-07 regression suite (35 tests) green. Phase 31 COMPLETE.
+last_activity: 2026-04-13 — Plan 33-01 complete. gsd-tester + gsd-qa agents created. coverage-ratchet.cjs + .coverage_threshold.json + test-pyramid.cjs shipped. 06-01 extended to 53 tests (19 new), 0 failures.
 progress:
   total_phases: 10
   completed_phases: 1
-  total_plans: 16
-  completed_plans: 2
+  total_plans: 3
+  completed_plans: 3
   percent: 10
 ---
 
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-13 after v2.9 milestone close)
 
 ## Current Position
 
-Phase: 31 of 40 (Format Standard — FOUNDATION) COMPLETE
-Plan: 2 of 2 in Phase 31 complete
-Status: Phase 31 COMPLETE — ready for Phase 33 (Testing Pipeline) per execution order
-Last activity: 2026-04-13 — Plan 31-02 complete. 7 non-executor agents restructured. FORMAT-07 regression suite (35 tests) + 06-01 (34 tests) + Phase 28 (29 tests) + Phase 22 (5 tests) all pass.
+Phase: 33 of 40 (Testing Pipeline) — Plan 01 of ? complete
+Plan: 1 of ? in Phase 33 complete (Wave 1 done)
+Status: Phase 33 IN PROGRESS — Wave 1 complete, Wave 2 pending (Playwright, fast-check, Pact, Stryker)
+Last activity: 2026-04-13 — Plan 33-01 complete. gsd-tester + gsd-qa agents created. coverage-ratchet.cjs + .coverage_threshold.json + test-pyramid.cjs shipped. 06-01 extended to 53 tests (19 new), 0 failures.
 
 Progress: [██░░░░░░░░] 10%
 
@@ -38,7 +38,7 @@ Progress: [██░░░░░░░░] 10%
 |-------|------|--------------|--------|
 | 31 | Format Standard (FOUNDATION) | FORMAT-01..07 | COMPLETE 2026-04-13 |
 | 32 | Frontend Rebuild | FRONT-01..07 | Not started |
-| 33 | Testing Pipeline | TEST-01..08 | Not started |
+| 33 | Testing Pipeline | TEST-01..08 | IN PROGRESS — Plan 01 complete (Wave 1) |
 | 34 | Security Pipeline | SEC-01..06 | Not started |
 | 35 | Code Review Agent | REVIEW-01..04 | Not started |
 | 36 | Data Engineering Agent | DATA-01..04 | Not started |
@@ -70,14 +70,19 @@ Progress: [██░░░░░░░░] 10%
 
 ### Pending Todos
 
-None.
+- Run `npx c8 --reporter json-summary node scripts/run-tests.cjs` to bootstrap .coverage_threshold.json with real values (current bootstrap is safe defaults).
 
 ### Blockers/Concerns
 
-- OBSERVATION: tests/13.1-divergence-protocol.integration.test.cjs LLM behavioral tests (`manifest_violation x5 runs` and `unexpected_file_state x5 runs`) fail intermittently. Pre-existing issue, not caused by Phase 31. Operator should route to debugger if this needs investigation.
+- OBSERVATION: tests/13.1-divergence-protocol.integration.test.cjs LLM behavioral tests (`manifest_violation x5 runs` and `unexpected_file_state x5 runs`) fail intermittently. Pre-existing issue, not caused by Phase 31 or 33. Operator should route to debugger if this needs investigation.
 
 ## Session Continuity
 
 Last session: 2026-04-13T00:00:00.000Z
-Stopped at: Phase 31 complete. Next phase: 33 (Testing Pipeline) per execution order.
+Stopped at: Phase 33 Plan 01 complete. Wave 1 shipped. Next: Plan 33-02 (Wave 2).
 Resume file: None
+
+
+## Learnings
+
+- [learning] 2026-04-13T21:58:32.490Z: legacy regression test: free text learning
