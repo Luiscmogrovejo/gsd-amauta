@@ -471,6 +471,30 @@ async function providerPerplexity(query, limit) {
     }
   }
 
+  // Phase 24 SEMANTIC-01: Check daemon semantic cache (pgvector cosine >= 0.90)
+  if (!noCache) {
+    try {
+      const semRes = await daemonRequest('POST', '/api/semantic-cache/search', { query }, 3000);
+      if (semRes && semRes.data && semRes.data.hit && semRes.data.data) {
+        process.stderr.write(`  [cache:semantic] hit (similarity=${semRes.data.data.similarity}) for ${query.slice(0, 40)}...\n`);
+        return {
+          provider: 'perplexity',
+          count: 1,
+          results: [{
+            text: semRes.data.data.response,
+            citations: [],
+            model: 'cached',
+          }],
+          cached: true,
+          cache_type: 'semantic',
+          similarity: semRes.data.data.similarity,
+        };
+      }
+    } catch {
+      // Semantic cache check is best-effort — proceed to Perplexity on failure
+    }
+  }
+
   try {
     const res = await perplexityWithRetry(
       {
@@ -554,6 +578,19 @@ async function providerPerplexity(query, limit) {
 
     // TOK-06: Also write to daemon Redis cache (cross-invocation persistence)
     await _writeDaemonCache(cacheKey, returnValue);
+
+    // Phase 24 SEMANTIC-01: Store in semantic cache for future paraphrased queries
+    try {
+      const tokenEstimate = Math.ceil(cleanAnswer.length / 4);
+      await daemonRequest('POST', '/api/semantic-cache/store', {
+        query,
+        response: stripPreamble(cleanAnswer).slice(0, PERPLEXITY_OUTPUT_CAP),
+        response_tokens: tokenEstimate,
+        provider: 'perplexity',
+      }, 3000);
+    } catch {
+      // Semantic cache store is best-effort
+    }
 
     return returnValue;
   } catch (err) {
@@ -724,6 +761,31 @@ providerPerplexity._creative = async function(query, limit) {
     }
   }
 
+  // Phase 24 SEMANTIC-01: Check daemon semantic cache (pgvector cosine >= 0.90)
+  if (!noCache) {
+    try {
+      const semRes = await daemonRequest('POST', '/api/semantic-cache/search', { query }, 3000);
+      if (semRes && semRes.data && semRes.data.hit && semRes.data.data) {
+        process.stderr.write(`  [cache:semantic] creative hit (similarity=${semRes.data.data.similarity}) for ${query.slice(0, 40)}...\n`);
+        return {
+          provider: 'perplexity',
+          count: 1,
+          results: [{
+            text: semRes.data.data.response,
+            citations: [],
+            model: 'cached',
+          }],
+          cached: true,
+          cache_type: 'semantic',
+          similarity: semRes.data.data.similarity,
+          _tokens_used: 0,
+        };
+      }
+    } catch {
+      // Semantic cache check is best-effort — proceed to Perplexity on failure
+    }
+  }
+
   try {
     const res = await perplexityWithRetry(
       {
@@ -788,6 +850,19 @@ providerPerplexity._creative = async function(query, limit) {
     try {
       await _writeDaemonCache(cacheKey, returnValue);
     } catch { /* ok */ }
+
+    // Phase 24 SEMANTIC-01: Store in semantic cache for future paraphrased queries
+    try {
+      const tokenEstimate = Math.ceil(cleanAnswer.length / 4);
+      await daemonRequest('POST', '/api/semantic-cache/store', {
+        query,
+        response: stripPreamble(cleanAnswer).slice(0, CREATIVE_PERPLEXITY_OUTPUT_CAP),
+        response_tokens: tokenEstimate,
+        provider: 'perplexity',
+      }, 3000);
+    } catch {
+      // Semantic cache store is best-effort
+    }
 
     return returnValue;
   } catch (err) {
