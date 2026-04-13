@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: The Birth
 status: in_progress
-stopped_at: "Phase 33 Plan 02 complete. Wave 2 shipped. Phase 33 pending Wave 3 (integration tests for RPETD pipeline). Next: Plan 33-03 or Phase 34."
-last_updated: "2026-04-13T22:15:00.000Z"
-last_activity: 2026-04-13 — Plan 33-02 complete. stryker.config.json, 3 Pact contracts, Playwright POM E2E skeleton, fast-check property tests, quality-audit.cjs shipped. All 6 tasks committed atomically, 0 test failures.
+stopped_at: "Phase 33 complete. All 3 plans done (Wave 1+2+3). 111-assertion regression suite covers TEST-01..08. Next: Phase 34 (Security Pipeline)."
+last_updated: "2026-04-13T22:50:00.000Z"
+last_activity: 2026-04-13 — Plan 33-03 complete. 4 regression test files created (111 assertions, 0 failures). Full regression gate passed. Phase 33 COMPLETE.
 progress:
   total_phases: 10
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 3
   completed_plans: 3
-  percent: 10
+  percent: 20
 ---
 
 # GSD-Amauta -- Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-13 after v2.9 milestone close)
 
 ## Current Position
 
-Phase: 33 of 40 (Testing Pipeline) — Plans 01+02 complete
-Plan: 2 of ? in Phase 33 complete (Wave 1 + Wave 2 done)
-Status: Phase 33 IN PROGRESS — Waves 1 and 2 complete; Wave 3 (pipeline integration tests) pending
-Last activity: 2026-04-13 — Plan 33-02 complete. stryker.config.json, 3 Pact contracts, Playwright POM, fast-check property tests, quality-audit.cjs shipped.
+Phase: 34 of 40 (Security Pipeline) — not started
+Plan: Phase 33 COMPLETE — all 3 plans done
+Status: Phase 33 COMPLETE. Phase 34 (Security Pipeline) is next.
+Last activity: 2026-04-13 — Plan 33-03 complete. 111-assertion regression suite shipped. Phase 33 closed.
 
 Progress: [██░░░░░░░░] 10%
 
@@ -38,7 +38,7 @@ Progress: [██░░░░░░░░] 10%
 |-------|------|--------------|--------|
 | 31 | Format Standard (FOUNDATION) | FORMAT-01..07 | COMPLETE 2026-04-13 |
 | 32 | Frontend Rebuild | FRONT-01..07 | Not started |
-| 33 | Testing Pipeline | TEST-01..08 | IN PROGRESS — Plan 01 complete (Wave 1) |
+| 33 | Testing Pipeline | TEST-01..08 | COMPLETE 2026-04-13 |
 | 34 | Security Pipeline | SEC-01..06 | Not started |
 | 35 | Code Review Agent | REVIEW-01..04 | Not started |
 | 36 | Data Engineering Agent | DATA-01..04 | Not started |
@@ -72,6 +72,9 @@ Progress: [██░░░░░░░░] 10%
 - Plan 33-02: Flaky-marker detection uses describe/it/test.skip() pattern (not raw .skip() regex) — ctx.skip()/t.skip() are valid programmatic Node test runner skips, not flaky markers.
 - Plan 33-02: rlm-search Pact contract is a forward contract for Phase 38 daemon proxy endpoint (gsd-rlm.cjs currently calls separate RLM service port directly).
 - Plan 33-02: E2E conditional skip pattern — guard with E2E_BASE_URL env var + empty it() body (NOT .skip() flaky marker); no-assertion heuristic must NOT scan *.e2e.test.cjs files.
+- Plan 33-03: CoverUp BOUNDARY test must exclude prohibition lines — gsd-qa.md has "Never run CoverUp iterations" as a constraint. Filter uses isProhibition flag to avoid false positives.
+- Plan 33-03: test-pyramid.cjs output schema includes unitPct/integrationPct/e2ePct string fields alongside unit/integration/e2e counts; pyramidTotal is the sum of the three typed categories.
+- Plan 33-03: PACT_DIR in 33-pact-contracts.integration.test.cjs uses path.resolve(__dirname, 'pact') since the test IS in tests/ directory.
 
 ### Pending Todos
 
@@ -83,11 +86,14 @@ Progress: [██░░░░░░░░] 10%
 
 ## Session Continuity
 
-Last session: 2026-04-13T22:15:00.000Z
-Stopped at: Phase 33 Plan 02 complete. Waves 1+2 shipped. Next: Plan 33-03 (Wave 3 — integration tests for RPETD pipeline) or Phase 34.
+Last session: 2026-04-13T22:50:00.000Z
+Stopped at: Phase 33 COMPLETE. All 3 plans done. 111-assertion regression suite shipped. Next: Phase 34 (Security Pipeline — SEC-01..06).
 Resume file: None
 
 
 ## Learnings
 
+
+- [learning] 2026-04-13T22:14:38.548Z: LEARNING: Pact FFI panics on matcher objects in Content-Type header — use plain string 'application/json' not like('application/json') WHAT: Pact willRespondWith headers must use plain strings for Content-Type, not MatchersV3.like() CATEGORY: pitfall TAGS: pact, contract-testing, pact-foundation
 - [learning] 2026-04-13T21:58:32.490Z: legacy regression test: free text learning
+- [learning] 2026-04-13T22:50:00.000Z: LEARNING: Prohibition-aware boundary test — when testing "agent X does not do Y", a line saying "Never do Y" is a prohibition constraint (allowed), not an instruction. Use isProhibition flag (looks for "never", "not", "do not") to distinguish. CATEGORY: test-pattern TAGS: boundary-testing, agent-format, regression
