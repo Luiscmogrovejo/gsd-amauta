@@ -112,7 +112,7 @@
 4. `/metrics/cache` endpoint returns `{hit_rate, total_tokens_saved, cost_savings_estimate}` and counters update correctly after each API call.
 
 **Plans:**
-- [ ] Plan 23-01: Prefix Restructuring — audit script + 11 agent CACHE_BREAKPOINT markers + stability tests (Wave 1, CACHE-01/03)
+- [x] Plan 23-01: Prefix Restructuring — audit script + 11 agent CACHE_BREAKPOINT markers + stability tests (Wave 1, CACHE-01/03) — COMPLETE 2026-04-12
 - [ ] Plan 23-02: Cache Infrastructure — annotate_cache_control utility + /metrics/cache endpoint + CLI stats + tests (Wave 2, CACHE-02/04)
 
 ### Phase 24: Semantic Cache + Tiered Routing
@@ -187,7 +187,7 @@ Phase 25 (Tech Debt Sweep) — no v2.8 dependencies, runs anytime
 | 20. Structured Context Handoffs | 3/3 | Complete    | 2026-04-12 |
 | 21. Hash-Based Staleness Detection | 1/2 | Complete    | 2026-04-13 |
 | 22. Caveman-Compressed Descriptions | 2/2 | Complete    | 2026-04-13 |
-| 23. Prompt Prefix Caching | 0/TBD | Not started | - |
+| 23. Prompt Prefix Caching | 1/2 | In progress | - |
 | 24. Semantic Cache + Tiered Routing | 0/TBD | Not started | - |
 | 25. Tech Debt Sweep | 0/TBD | Not started | - |
 

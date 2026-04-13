@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.8
 milestone_name: milestone
-status: verifying
-stopped_at: phase_23_planned
-last_updated: "2026-04-13"
-last_activity: 2026-04-13 — Phase 23 planned (2 plans, 11 tasks, 2 waves)
+status: executing
+stopped_at: phase_23_plan_01_complete
+last_updated: "2026-04-12"
+last_activity: 2026-04-12 — Phase 23 Plan 23-01 complete (CACHE_BREAKPOINT in all 11 agents, audit script, 10-test suite)
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 9
-  completed_plans: 7
-  percent: 33
+  completed_plans: 8
+  percent: 38
 ---
 
 # GSD-Amauta -- Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-12 for v2.8)
 
 ## Current Position
 
-Phase: 23 of 25 (Prompt Prefix Caching — planned)
-Plan: 23-01 (Wave 1, ready for execution)
-Status: Phase 23 planned — 2 plans, 11 tasks, 2 waves
-Last activity: 2026-04-13 — Phase 23 planning complete
+Phase: 23 of 25 (Prompt Prefix Caching — in progress)
+Plan: 23-02 (Wave 2, ready for execution)
+Status: Plan 23-01 complete — CACHE_BREAKPOINT markers in all 11 agents, audit script, 10-test stability suite
+Last activity: 2026-04-12 — Plan 23-01 complete (CACHE-01+CACHE-03 met)
 
 Progress: [███░░░░░░░] 33%
 
@@ -48,9 +48,9 @@ Critical path: 20 → 22 → 23 → 24. Phase 21 parallel with 22. Phase 25 inde
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 7 (20-01, 20-02, 20-03, 21-01, 21-02, 22-01, 22-02)
+- Total plans completed: 8 (20-01, 20-02, 20-03, 21-01, 21-02, 22-01, 22-02, 23-01)
 - Average duration: ~25 min
-- Total execution time: ~2.9 hours
+- Total execution time: ~3.3 hours
 
 **By Phase:**
 
@@ -59,6 +59,7 @@ Critical path: 20 → 22 → 23 → 24. Phase 21 parallel with 22. Phase 25 inde
 | 20 | 3/3 | ~75 min | ~25 min |
 | 21 | 2/2 | ~50 min | ~25 min |
 | 22 | 2/2 | ~70 min | ~35 min |
+| 23 | 1/2 | ~25 min | ~25 min |
 
 *Updated after each plan completion*
 
@@ -102,14 +103,18 @@ None.
 - Plan 22-02: Fact density fixture must use absolutely-counted (subject,predicate,object) triples — first-500-chars original descriptions are information-sparse (mostly shebang/docstring/imports), while compressed descriptions pack deps list, test refs, LOC count, export count in every entry.
 - Plan 22-02: `os.path.dirname(os.path.dirname(FIXTURE_PATH))` only goes to `tests/` not project root — need three dirname() calls since fixture is at `tests/fixtures/<file>`.
 
+- Plan 23-01: CACHE_BREAKPOINT placement rule — all static sections (frontmatter, role, patterns, domain, rpetd, prerequisites) above the marker; any <runtime_read> blocks below. For agents without runtime_read, breakpoint appended at end of file.
+- Plan 23-01: 4 executor agents (backend/frontend/infra/general) had CACHE_BREAKPOINT and runtime_read relocation already done in a prior session; tasks 23-01-01/02 partial required only verification and commit, not re-implementation.
+- Plan 23-01: audit-prefix-stability.cjs checks 6 properties per agent: breakpoint count=1, no volatile patterns in prefix, YAML frontmatter before breakpoint, <role> before breakpoint, <patterns> before breakpoint, no runtime_read/enrichment/dynamic tags in prefix.
+
 ### Blockers/Concerns
 
 CAVE-02 divergence (open): 30% compression ratio target is not achievable with article/filler/hedging removal alone on dense technical agent .md files (actual: ~1.5%). 5 tests in test_grammar_strip.py remain failing with detailed root-cause messages. This does NOT block Phase 23 (CAVE-01 pipe-delimited descriptions are live and verified). Resolution options: expand vocabulary, revise metric, or change threshold — Phase 22.1 scope.
 
 ## Session Continuity
 
-Last session: 2026-04-13
-Stopped at: Phase 22 complete. Plan 22-01 CAVE-01/02 done (CAVE-02 divergence documented). Plan 22-02 CAVE-01 wiring/CAVE-03 BM25/CAVE-04 fact density all verified. Phase 23 unblocked.
+Last session: 2026-04-12
+Stopped at: Plan 23-01 complete. CACHE_BREAKPOINT in all 11 agents, audit script verified (11/11 pass), 10 stability tests passing. Plan 23-02 (CACHE-02/04) ready for execution.
 Resume file: None
 
 
