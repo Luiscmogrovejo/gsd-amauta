@@ -222,3 +222,109 @@ class ContextValidator:
             if h is not None:
                 hashes[path] = h
         return hashes
+
+
+def validate_context(task_id: str, phase: str, project_dir: str = ".",
+                     pg_store=None, description_fn=None) -> dict:
+    """Orchestrate full staleness validation before an RPETD phase start.
+
+    Phase 21 / STALE-04: Called by the RPETD orchestrator before each phase.
+    Chains: get stored context -> changed_since -> selective_refresh.
+
+    Args:
+        task_id: Task identifier (e.g., "TK-0051").
+        phase: RPETD phase letter to validate against (previous phase's context).
+        project_dir: Git repository root for diff operations.
+        pg_store: PGStore instance (or None). If None, returns empty result.
+        description_fn: callable(path) -> str for generating file descriptions.
+
+    Returns:
+        dict with keys:
+            - "changed_files": list[str] — files that changed since last phase
+            - "file_hashes": dict[str, str] — updated {path: hash} after refresh
+            - "file_descriptions": dict[str, str] — updated {path: description}
+            - "refreshed_count": int — files whose descriptions were regenerated
+            - "cached_count": int — files whose descriptions were served from cache
+            - "commit_ref": str — current HEAD commit SHA
+            - "had_prior_context": bool — whether a stored context was found
+    """
+    # Phase sequence for looking up prior context
+    phase_order = ["R", "P", "E", "T", "D"]
+    phase_upper = phase.upper()
+
+    # Determine which prior phase to look up
+    prior_phase = None
+    if phase_upper in phase_order:
+        idx = phase_order.index(phase_upper)
+        if idx > 0:
+            prior_phase = phase_order[idx - 1]
+
+    # Default empty result
+    empty_result = {
+        "changed_files": [],
+        "file_hashes": {},
+        "file_descriptions": {},
+        "refreshed_count": 0,
+        "cached_count": 0,
+        "commit_ref": ContextValidator.get_current_commit(project_dir) or "",
+        "had_prior_context": False,
+    }
+
+    if pg_store is None or prior_phase is None:
+        log.debug("validate_context skip — pg_store=%s prior_phase=%s",
+                  "present" if pg_store else "none", prior_phase)
+        return empty_result
+
+    # Fetch prior phase's stored context
+    try:
+        stored = pg_store.rpetd_context_get(task_id, prior_phase)
+    except Exception as e:
+        log.warning("validate_context pg_get_failed error=%s", str(e)[:200])
+        return empty_result
+
+    if not stored:
+        log.debug("validate_context no_prior_context task=%s phase=%s", task_id, prior_phase)
+        return empty_result
+
+    # Build context dict from stored data
+    file_hashes = stored.get("file_hashes", {}) or {}
+    compiled_view = stored.get("compiled_view", {}) or {}
+
+    # file_descriptions may be stored in compiled_view or alongside file_hashes
+    file_descriptions = compiled_view.get("file_descriptions", {}) if isinstance(compiled_view, dict) else {}
+    commit_ref = file_hashes.pop("__commit_ref__", "") if "__commit_ref__" in file_hashes else ""
+
+    context = {
+        "file_hashes": file_hashes,
+        "file_descriptions": file_descriptions,
+        "commit_ref": commit_ref,
+    }
+
+    # Step 1: Determine changed files
+    changed = ContextValidator.changed_since(context, project_dir)
+
+    if not changed and file_hashes:
+        # No changes — all cached
+        log.info("[STALE] 0 files refreshed, %d cached", len(file_hashes))
+        return {
+            "changed_files": [],
+            "file_hashes": file_hashes,
+            "file_descriptions": file_descriptions,
+            "refreshed_count": 0,
+            "cached_count": len(file_hashes),
+            "commit_ref": ContextValidator.get_current_commit(project_dir) or "",
+            "had_prior_context": True,
+        }
+
+    # Step 2: Selective refresh for changed files
+    refresh_result = ContextValidator.selective_refresh(context, changed, description_fn)
+
+    return {
+        "changed_files": changed,
+        "file_hashes": refresh_result["file_hashes"],
+        "file_descriptions": refresh_result["file_descriptions"],
+        "refreshed_count": refresh_result["refreshed_count"],
+        "cached_count": refresh_result["cached_count"],
+        "commit_ref": refresh_result["commit_ref"],
+        "had_prior_context": True,
+    }
