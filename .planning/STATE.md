@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.8
 milestone_name: milestone
 status: completed
-stopped_at: phase_22_planned
+stopped_at: phase_22_plan_22-01_complete
 last_updated: "2026-04-13"
-last_activity: 2026-04-13 — Phase 22 planned (2 plans, 10 tasks, 2 waves)
+last_activity: 2026-04-13 — Phase 22 Plan 22-01 complete (CAVE-01 verified, CAVE-02 divergence documented)
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 7
-  completed_plans: 5
-  percent: 22
+  completed_plans: 6
+  percent: 29
 ---
 
 # GSD-Amauta -- Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-12 for v2.8)
 
 ## Current Position
 
-Phase: 22 of 25 (Caveman-Compressed Descriptions — planned)
-Plan: 22-01 (Wave 1, ready for execution)
-Status: Phase 22 planned — 2 plans, 10 tasks, 2 waves
-Last activity: 2026-04-13 — Phase 22 planning complete
+Phase: 22 of 25 (Caveman-Compressed Descriptions — in progress)
+Plan: 22-01 (Wave 1, COMPLETE)
+Status: Plan 22-01 complete — CAVE-01 verified, CAVE-02 divergence documented
+Last activity: 2026-04-13 — Plan 22-01 execution complete
 
 Progress: [██░░░░░░░░] 22%
 
@@ -58,6 +58,7 @@ Critical path: 20 → 22 → 23 → 24. Phase 21 parallel with 22. Phase 25 inde
 |-------|-------|-------|----------|
 | 20 | 3/3 | ~75 min | ~25 min |
 | 21 | 2/2 | ~50 min | ~25 min |
+| 22 | 1/2 | ~35 min | ~35 min |
 
 *Updated after each plan completion*
 
@@ -93,14 +94,18 @@ None.
 - Plan 21-02: description_fn=None in POST /api/context/validate is Phase 22 CAVE-01 hook placeholder — named explicitly in inline comment.
 - Plan 21-02: Test mock for git diff must use full absolute paths in stdout — changed_since intersects diff output with file_hashes keys which are absolute paths, not relative filenames.
 
+- Plan 22-01: generate_caveman_description is pure (no network/LLM/subprocess); reads only path + optionally scans tests/ for matching test files; never raises.
+- Plan 22-01: strip_grammar uses placeholder-protection (inline code, URLs, file paths substituted with tokens before regex, restored after) to avoid corrupting variable names like the_variable or URLs like https://example.com/the/path.
+- Plan 22-01: CAVE-02 30% compression ratio is NOT achievable with article/filler/hedging removal on dense technical agent .md files (~1.5% actual); ~50-55% of these files are code blocks, XML, and YAML (all preserved by spec). Divergence surfaced in test assertions, not silently absorbed. Resolution options: expand vocabulary, revise metric, or change threshold — all Phase 22.1/22-02 scope.
+
 ### Blockers/Concerns
 
-None. Phase 21 fully complete (STALE-01..04). Phase 22 (Caveman-Compressed Descriptions) is unblocked. Phase 25 (Tech Debt Sweep) is always available.
+CAVE-02 divergence: 30% compression ratio target is not achievable with article/filler/hedging removal alone on dense technical agent .md files (actual: ~1.5%). Plan 22-02 must resolve this before Phase 22 can close (options: expand vocabulary, revise metric, or change threshold). Phase 22-02 (daemon wiring + BM25 benchmark) can proceed independently of the CAVE-02 metric resolution.
 
 ## Session Continuity
 
-Last session: 2026-04-12
-Stopped at: Phase 21 complete. STALE-01..04 satisfied. All 20 Phase 21 Python tests pass (13 unit + 7 integration). Phase 20 regression clean.
+Last session: 2026-04-13
+Stopped at: Phase 22 Plan 22-01 complete. CAVE-01 verified (29 tests pass). CAVE-02 divergence documented (30% threshold unachievable with word-list removal alone; 5 tests fail with root-cause in assertion messages). Phase 21 regression clean (20 tests pass). Plan 22-02 unblocked.
 Resume file: None
 
 

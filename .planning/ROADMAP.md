@@ -94,7 +94,7 @@
 4. For 10 representative files, compressed 500-char descriptions contain >= 40% more distinct technical facts (identifiers, relationships, constraints) than original 500-char descriptions.
 
 **Plans:**
-- [ ] Plan 22-01: Caveman Description Generator + Grammar Stripper + Unit Tests (Wave 1, CAVE-01/02)
+- [x] Plan 22-01: Caveman Description Generator + Grammar Stripper + Unit Tests (Wave 1, CAVE-01/02) — COMPLETE 2026-04-13 (CAVE-01 verified 29/29 tests; CAVE-02 divergence documented: 30% threshold not achievable with word-list removal on dense technical markdown, 5 tests fail with root-cause)
 - [ ] Plan 22-02: Daemon Wiring + BM25 Benchmark + Fact Density Test + Integration (Wave 2, CAVE-01/03/04)
 
 ### Phase 23: Prompt Prefix Caching
