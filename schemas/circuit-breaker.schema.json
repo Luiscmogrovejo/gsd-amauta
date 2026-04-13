@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://gsd-amauta/schemas/circuit-breaker.schema.json",
+  "title": "CircuitBreakerState",
+  "description": "Valkey value for cb:{agent_name} key (BEHAV-02). Tracks circuit breaker state per specialist agent. gsd-executor-general is exempt.",
+  "type": "object",
+  "required": ["state", "failures"],
+  "properties": {
+    "state": {
+      "type": "string",
+      "enum": ["closed", "open", "half_open"],
+      "description": "closed: agent operating normally. open: 3+ consecutive failures, routing to gsd-executor-general. half_open: TTL expired, next task is a probe."
+    },
+    "failures": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of consecutive failures since last success. Reset to 0 on success."
+    },
+    "last_failure": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "ISO8601 UTC timestamp of the most recent failure. Used to compute half-open window (60s TTL)."
+    }
+  },
+  "additionalProperties": false
+}

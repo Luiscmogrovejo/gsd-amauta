@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://gsd-amauta/schemas/divergence-memory.schema.json",
+  "title": "DivergenceMemoryFile",
+  "description": "Contents of .planning/divergence-memory.json — array of Reflexion entries (BEHAV-03). Written by gsd-debugger post-divergence. Never written by the failed executor.",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["task_id", "timestamp", "agent", "divergence_type", "what_failed", "why", "what_to_try_next"],
+    "properties": {
+      "task_id": {
+        "type": "string",
+        "description": "Matches the plan's task ID exactly (e.g. '28-01-03')."
+      },
+      "timestamp": {
+        "type": "string",
+        "format": "date-time",
+        "description": "ISO8601 UTC timestamp when the reflection was written."
+      },
+      "agent": {
+        "type": "string",
+        "description": "The executor agent that fired the divergence (e.g. 'gsd-executor-backend')."
+      },
+      "divergence_type": {
+        "type": "string",
+        "enum": ["manifest_violation", "plan_amauta_drift", "scope_expansion", "rationalization_detected"],
+        "description": "Divergence type from the divergence_report. Only these four trigger automatic Reflexion."
+      },
+      "what_failed": {
+        "type": "string",
+        "description": "One concrete sentence: what the executor did or failed to do. No hedging vocabulary."
+      },
+      "why": {
+        "type": "string",
+        "description": "One concrete sentence: root cause. No hedging vocabulary."
+      },
+      "what_to_try_next": {
+        "type": "string",
+        "description": "One concrete sentence: the corrective action for the next attempt."
+      }
+    },
+    "additionalProperties": false
+  }
+}
