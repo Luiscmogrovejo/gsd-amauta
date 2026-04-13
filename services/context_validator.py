@@ -52,3 +52,78 @@ class ContextValidator:
             return h.hexdigest()
         except (OSError, IOError):
             return None
+
+    @staticmethod
+    def get_current_commit(project_dir: str = ".") -> Optional[str]:
+        """Get the current HEAD commit SHA for the project directory.
+
+        Args:
+            project_dir: Path to the git repository root.
+
+        Returns:
+            40-char commit SHA hex string, or None if not a git repo.
+        """
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                capture_output=True, text=True, timeout=10,
+                cwd=project_dir,
+            )
+            if result.returncode == 0:
+                return result.stdout.strip()
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            pass
+        return None
+
+    @staticmethod
+    def changed_since(context: dict, project_dir: str = ".") -> list[str]:
+        """Determine which tracked files have changed since the stored commit.
+
+        Uses `git diff --name-only` between the stored commit_ref and HEAD
+        to find changed files, then intersects with the context's file_hashes
+        keys. Files not in file_hashes are always considered changed.
+
+        This avoids filesystem reads for unchanged files — only git's index
+        is consulted.
+
+        Args:
+            context: dict with keys:
+                - "file_hashes": dict[str, str] — {path: sha256_hash} from prior phase
+                - "commit_ref": str — git commit SHA from when hashes were computed
+            project_dir: Path to the git repository root (default ".").
+
+        Returns:
+            list[str]: File paths that have changed and need description refresh.
+                Empty list if no changes detected or if commit_ref is missing.
+        """
+        file_hashes = context.get("file_hashes", {})
+        commit_ref = context.get("commit_ref")
+
+        if not commit_ref or not file_hashes:
+            # No prior commit ref or no hashes stored — all files are "changed"
+            return list(file_hashes.keys()) if file_hashes else []
+
+        try:
+            result = subprocess.run(
+                ["git", "diff", "--name-only", commit_ref, "HEAD"],
+                capture_output=True, text=True, timeout=30,
+                cwd=project_dir,
+            )
+            if result.returncode != 0:
+                log.warning("git_diff_failed returncode=%d stderr=%s",
+                            result.returncode, result.stderr.strip()[:200])
+                return list(file_hashes.keys())
+
+            git_changed = set(result.stdout.strip().split("\n")) if result.stdout.strip() else set()
+
+            # Intersect git-changed files with our tracked file_hashes
+            changed = [fp for fp in file_hashes if fp in git_changed]
+
+            log.debug("changed_since commit_ref=%s changed=%d total=%d",
+                      commit_ref[:8], len(changed), len(file_hashes))
+            return changed
+
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+            log.warning("git_diff_error error=%s", str(e)[:200])
+            # On error, treat all files as changed (safe fallback)
+            return list(file_hashes.keys())
