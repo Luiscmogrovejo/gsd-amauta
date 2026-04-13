@@ -69,12 +69,13 @@ const PORT = parseInt(process.env.GSD_AMAUTA_PORT || '18799', 10);
 
 // PLUGIN_ROOT resolution:
 // - In source repo (~/Code/gsd-amauta/get-shit-done/bin/), `../..` = repo root (has amauta.py + services/) ✓
-// - When installed (~/.claude/get-shit-done/bin/), `../..` = ~/.claude (no amauta.py). Fall back to known
+// - When installed (~/.config/opencode/get-shit-done/bin/ or ./.opencode/get-shit-done/bin/), `../..` = runtime root.
+//   If amauta.py is not present there, fall back to known source-repo locations.
 //   source-repo locations so the CLI's `python3 amauta.py` fallback path remains valid even after install.
 function _resolvePluginRoot() {
   const candidates = [
     path.resolve(__dirname, '..', '..'),                     // source repo layout
-    path.resolve(__dirname, '..'),                           // installed layout (~/.claude/get-shit-done)
+    path.resolve(__dirname, '..'),                           // installed layout (.../get-shit-done)
   ];
   // Prefer the one that actually contains amauta.py
   for (const c of candidates) {
@@ -85,7 +86,8 @@ function _resolvePluginRoot() {
   const fallbacks = [
     path.join(home, 'Code', 'gsd-amauta'),
     path.join(home, 'gsd-amauta'),
-    path.join(home, '.claude', 'get-shit-done'),
+    path.join(home, '.config', 'opencode', 'get-shit-done'),
+    path.join(home, '.opencode', 'get-shit-done'),
   ];
   for (const c of fallbacks) {
     if (fs.existsSync(path.join(c, 'amauta.py'))) return c;
@@ -96,6 +98,17 @@ function _resolvePluginRoot() {
 const PLUGIN_ROOT = _resolvePluginRoot();
 const AMAUTA_PY = process.env.GSD_AMAUTA_PY || path.join(PLUGIN_ROOT, 'amauta.py');
 const DATA_DIR = process.env.AMAUTA_DATA_DIR || path.join(PLUGIN_ROOT, 'data');
+
+function resolveReferencePath(relPath) {
+  const candidates = [
+    path.join(PLUGIN_ROOT, 'get-shit-done', relPath),
+    path.join(PLUGIN_ROOT, relPath),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return candidates[0];
+}
 // Daemon script may live in the source repo even when this CLI is installed; check there first.
 const DAEMON_SCRIPT = (function() {
   const local = path.join(PLUGIN_ROOT, 'services', 'amauta-daemon.py');
@@ -510,6 +523,11 @@ async function cmdRpetd(useDaemon, id, flags, jsonMode) {
     await autoLearnFromRpetd(useDaemon, id, flags);
   }
 
+  // Phase 20 HANDOFF-05: Store structured context after each phase (best-effort)
+  if (exitCode === 0 && useDaemon) {
+    await compactRpetdContext(id, flags);
+  }
+
   return exitCode;
 }
 
@@ -561,6 +579,45 @@ async function autoLearnFromRpetd(useDaemon, taskId, flags) {
     }
   } catch {
     // Best-effort — don't fail the rpetd command if memory store fails
+  }
+}
+
+/**
+ * Phase 20 HANDOFF-05: After each RPETD phase, compact the conversation into
+ * a structured RPETDContext and store it via the daemon.
+ *
+ * Best-effort — silent fail if daemon endpoint is unavailable.
+ * The compact endpoint accepts {messages, task_id, phase} and returns
+ * {compiled_view, context_version, stored, stored_id}.
+ *
+ * In v1, messages is a minimal representation (just the phase content),
+ * because full conversation history is not available in the CJS tool.
+ * Phase 24 ROUTE-02 will wire LLM-backed compaction.
+ */
+async function compactRpetdContext(taskId, flags) {
+  const phase = (flags.phase || '').toUpperCase();
+  const content = flags.content || '';
+
+  try {
+    // Build a minimal message representation from the phase content.
+    // Full conversation is not available in the CLI path; the daemon
+    // fallback extractor will produce a best-effort RPETDContext.
+    const messages = [
+      { role: 'user', content: `Task ${taskId}: RPETD phase ${phase}` },
+      { role: 'assistant', content: content.substring(0, 2000) },
+    ];
+
+    const { data } = await httpRequest('POST', '/api/context/compact', {
+      messages,
+      task_id: taskId,
+      phase,
+    });
+
+    if (data && data.stored) {
+      // Context stored successfully — no output needed (best-effort)
+    }
+  } catch {
+    // Best-effort — don't fail the rpetd command if context compact fails
   }
 }
 
@@ -939,7 +996,7 @@ async function checkEvidenceAdvisory(useDaemon, id, flags) {
   // (Read attempted but result not used to gate — _checkEvidenceBlock uses regex on the block)
   try {
     const refPath = process.env.PRE_EXECUTION_CHECKLIST ||
-      '/Users/luismogrovejo/.claude/get-shit-done/references/pre-execution-checklist.md';
+      resolveReferencePath(path.join('references', 'pre-execution-checklist.md'));
     if (fs.existsSync(refPath)) {
       // Parse checklist item names dynamically from reference file
       // Pattern: lines like "- `input_validation` -- ..."
