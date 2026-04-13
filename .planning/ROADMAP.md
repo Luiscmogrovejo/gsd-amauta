@@ -111,7 +111,9 @@
 3. Two sequential prompts for the same agent produce byte-identical prefixes up to the breakpoint (no `datetime.now()`, `time.time()`, or `Date.now()` in prefix construction; tool definitions sorted and frozen).
 4. `/metrics/cache` endpoint returns `{hit_rate, total_tokens_saved, cost_savings_estimate}` and counters update correctly after each API call.
 
-**Plans:** TBD
+**Plans:**
+- [ ] Plan 23-01: Prefix Restructuring — audit script + 11 agent CACHE_BREAKPOINT markers + stability tests (Wave 1, CACHE-01/03)
+- [ ] Plan 23-02: Cache Infrastructure — annotate_cache_control utility + /metrics/cache endpoint + CLI stats + tests (Wave 2, CACHE-02/04)
 
 ### Phase 24: Semantic Cache + Tiered Routing
 

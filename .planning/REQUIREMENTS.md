@@ -32,7 +32,7 @@ Requirements for token optimization milestone. Each maps to roadmap phases.
 ### Prompt Prefix Caching
 
 - [ ] **CACHE-01**: All 11 specialist agent prompts restructured so stable content (system instructions, tool definitions, file descriptions) precedes variable content (phase-specific instructions, latest outputs); diff shows no variable content before the `cache_control` breakpoint; audit script verifies ordering for all 11 agents
-- [ ] **CACHE-02**: Every Claude API call in the RPETD pipeline includes `cache_control: {"type": "ephemeral"}` on the last message of the stable prefix; grep for `cache_control` finds annotations in all API call sites; test verifies annotation present in request payload
+- [ ] **CACHE-02**: `annotate_cache_control()` utility returns correct `cache_control: {"type": "ephemeral"}` metadata for the stable prefix breakpoint; utility is available for any future direct API integration; test verifies annotation logic returns correct structure (note: GSD-Amauta delegates API calls to Claude Code, which handles cache_control internally — the utility documents intent and provides infrastructure for direct-call paths)
 - [ ] **CACHE-03**: Prefix stability lint: no `datetime.now()`, `time.time()`, or `Date.now()` in system prompt construction; tool definitions sorted alphabetically and frozen; test generates two sequential prompts for the same agent and asserts byte-identical prefixes up to the breakpoint
 - [ ] **CACHE-04**: After each Claude API call, `cache_read_input_tokens` and `cache_creation_input_tokens` logged to structured metrics; `/metrics/cache` endpoint returns cumulative hit rate, total tokens saved, and cost savings estimate; test verifies metrics update after API call
 
