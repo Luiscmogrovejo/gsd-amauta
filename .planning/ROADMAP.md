@@ -131,7 +131,7 @@
 5. Compaction LLM call (HANDOFF-02) uses `config.json::model_routing.compaction` (default: "haiku"), not the phase's primary model.
 
 **Plans:**
-- [x] Plan 24-01: Semantic Cache Infrastructure + Model Routing Config (Wave 1, SEMANTIC-01/02/03 + ROUTE-01) — 7 tasks COMPLETE
+1/2 plans complete
 - [x] Plan 24-02: Research Chain Integration + ROUTE-02 Compaction Wiring (Wave 2, SEMANTIC-01 + ROUTE-02) — 4 tasks COMPLETE
 
 ### Phase 25: Tech Debt Sweep
@@ -190,7 +190,7 @@ Phase 25 (Tech Debt Sweep) — no v2.8 dependencies, runs anytime
 | 21. Hash-Based Staleness Detection | 1/2 | Complete    | 2026-04-13 |
 | 22. Caveman-Compressed Descriptions | 2/2 | Complete    | 2026-04-13 |
 | 23. Prompt Prefix Caching | 1/2 | Complete    | 2026-04-13 |
-| 24. Semantic Cache + Tiered Routing | 0/2 | Planned    | - |
+| 24. Semantic Cache + Tiered Routing | 0/2 | Complete    | 2026-04-13 |
 | 25. Tech Debt Sweep | 0/TBD | Not started | - |
 
 ---
