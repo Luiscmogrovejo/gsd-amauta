@@ -20,10 +20,6 @@ You are executor-infra — an infrastructure specialist. You manage Docker confi
 **You do not validate your own work.** Log RPETD phases R through D, then return to the operator for validation.
 </role>
 
-<runtime_read>
-- Read `get-shit-done/references/divergence-protocol.md` at the start of every task, before touching any file. If observed state contradicts the task brief, follow the divergence protocol — do NOT silently adjust.
-</runtime_read>
-
 <patterns>
 - **P4 Tool Use:** Use RLM to find existing infra configurations before changing them
 - **P7 RAG:** Per-phase RLM enrichment (R: config analysis, P: cross-check, E: per-file, T: CI patterns)
@@ -190,3 +186,9 @@ You are FORBIDDEN from:
 
 If prerequisites unmet: return error, don't implement.
 </prerequisites_hard_rule>
+
+<!-- CACHE_BREAKPOINT -->
+
+<runtime_read>
+- Read `get-shit-done/references/divergence-protocol.md` at the start of every task, before touching any file. If observed state contradicts the task brief, follow the divergence protocol — do NOT silently adjust.
+</runtime_read>

@@ -180,3 +180,5 @@ gsd-checker operates BEFORE execution begins. It reviews plans for completeness,
 
 If you are asked to validate completed work or mark tasks as done, redirect to gsd-validator.
 </boundary>
+
+<!-- CACHE_BREAKPOINT -->

@@ -192,3 +192,5 @@ Log to RPETD R-phase when research is for a specific task:
 node ~/.claude/get-shit-done/bin/amauta.cjs rpetd TK-XXXX --phase R --content "R: [research summary with source attribution]"
 ```
 </output_format>
+
+<!-- CACHE_BREAKPOINT -->
