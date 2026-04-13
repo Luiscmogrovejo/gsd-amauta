@@ -106,6 +106,34 @@ All subsequent commits go to this branch. User handles merging.
 From init JSON: `phase_dir`, `plan_count`, `incomplete_count`.
 
 Report: "Found {plan_count} plans in {phase_dir} ({incomplete_count} incomplete)"
+
+**Feature List Gate (BEHAV-05 — blocks --pass):**
+Before issuing any --pass verdict, check all feature_list.json files in the
+current phase directory:
+```bash
+PHASE_DIR=".planning/phases/${PHASE_SLUG}"
+ANY_FAILING=false
+for fl in ${PHASE_DIR}/*-feature_list.json; do
+  [ -f "$fl" ] || continue
+  FAILING=$(python3 -c "
+import json, sys
+d = json.load(open('$fl'))
+failing = [f['feature_id'] for f in d.get('features', []) if f.get('status') == 'failing']
+print(','.join(failing))
+" 2>/dev/null || echo "")
+  if [ -n "$FAILING" ]; then
+    echo "[FEATURE_LIST] BLOCKING --pass: failing features in $fl: $FAILING"
+    ANY_FAILING=true
+  fi
+done
+if [ "$ANY_FAILING" = "true" ]; then
+  echo "Cannot issue --pass verdict: one or more features are failing."
+  echo "Run 'gsd-tools feature-list-update <feature_list_file>' to re-verify."
+  exit 1
+fi
+```
+A phase with any `status: "failing"` feature CANNOT be marked complete.
+Premature victory (marking pass before all features verified) is a divergence.
 </step>
 
 <step name="discover_and_group_plans">

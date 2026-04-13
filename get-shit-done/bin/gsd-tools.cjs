@@ -505,6 +505,123 @@ function lintAfterEdit(filePath, options = {}) {
   };
 }
 
+// ─── Feature List (BEHAV-05) ─────────────────────────────────────────────────
+//
+// One feature_list.json per PLAN.md, stored alongside it in .planning/phases/XX-name/.
+// Filename: {plan_id}-feature_list.json (e.g. 28-01-feature_list.json).
+//
+// Schema: { plan_id, generated_at, features: [ {feature_id, task_id, description, status, test_file, last_verified} ] }
+// status: "pending" | "passing" | "failing"
+//
+// featureListGenerate: reads PLAN.md acceptance_criteria blocks → generates feature_list.json
+// featureListUpdate: runs tests → overwrites status fields (not appended — overwrite is the current snapshot)
+
+/**
+ * featureListGenerate(planFile) — parse PLAN.md acceptance_criteria blocks
+ * and generate the corresponding {plan_id}-feature_list.json.
+ *
+ * Each <task> block becomes one feature entry.
+ * feature_id: "{plan_id}-F{N}" (e.g. "28-01-F01")
+ * description: first acceptance_criteria bullet point (trimmed)
+ * status: "pending" (initial; updated by featureListUpdate)
+ * test_file: inferred from files_expected create[] entries matching tests/
+ * last_verified: null (initial)
+ */
+function featureListGenerate(planFile) {
+  const fs = require('fs');
+  const path = require('path');
+
+  const content = fs.readFileSync(planFile, 'utf8');
+
+  // Extract plan_id from frontmatter
+  const planIdMatch = content.match(/^plan_id:\s*(.+)$/m);
+  const planId = planIdMatch ? planIdMatch[1].trim() : path.basename(planFile, '-PLAN.md');
+
+  // Extract task blocks with their acceptance_criteria and files_expected
+  const taskPattern = /<task\s+id="([^"]+)"[\s\S]*?<\/task>/g;
+  const acPattern = /<acceptance_criteria>([\s\S]*?)<\/acceptance_criteria>/;
+  const filesPattern = /<files_expected>([\s\S]*?)<\/files_expected>/;
+  const testFilePattern = /tests\/[^\s'"<>]+/g;
+
+  const features = [];
+  let taskMatch;
+  let featureN = 1;
+
+  while ((taskMatch = taskPattern.exec(content)) !== null) {
+    const taskBlock = taskMatch[0];
+    const taskId = taskMatch[1];
+
+    const acMatch = taskBlock.match(acPattern);
+    const firstBullet = acMatch
+      ? (acMatch[1].trim().split('\n').find(l => l.trim().startsWith('-')) || '').replace(/^-\s*/, '').trim()
+      : `Task ${taskId} acceptance criteria`;
+
+    const filesMatch = taskBlock.match(filesPattern);
+    const filesContent = filesMatch ? filesMatch[1] : '';
+    const testFiles = [...filesContent.matchAll(testFilePattern)].map(m => m[0]);
+    const testFile = testFiles.length > 0 ? testFiles[0] : null;
+
+    features.push({
+      feature_id: `${planId}-F${String(featureN).padStart(2, '0')}`,
+      task_id: taskId,
+      description: firstBullet.slice(0, 200), // cap at 200 chars for token budget
+      status: 'pending',
+      test_file: testFile,
+      last_verified: null,
+    });
+    featureN++;
+  }
+
+  const outDir = path.dirname(planFile);
+  const outFile = path.join(outDir, `${planId}-feature_list.json`);
+  const payload = {
+    plan_id: planId,
+    generated_at: new Date().toISOString(),
+    features,
+  };
+  fs.writeFileSync(outFile, JSON.stringify(payload, null, 2) + '\n');
+  return { plan_id: planId, feature_count: features.length, output_file: outFile };
+}
+
+/**
+ * featureListUpdate(featureListFile) — run tests associated with each feature
+ * and overwrite status fields.
+ *
+ * For each feature with a test_file: run `node --test {test_file}` (CJS)
+ * or `python3 -m pytest {test_file}` (Python). Update status based on exit code.
+ * Overwrites the file (not append) — the file is the current state snapshot.
+ */
+function featureListUpdate(featureListFile) {
+  const fs = require('fs');
+  const { execSync } = require('child_process');
+
+  const payload = JSON.parse(fs.readFileSync(featureListFile, 'utf8'));
+  let anyFailing = false;
+
+  for (const feature of payload.features) {
+    if (!feature.test_file) {
+      // No test file — leave as pending (cannot auto-verify)
+      continue;
+    }
+    try {
+      const isJs = feature.test_file.endsWith('.test.cjs') || feature.test_file.endsWith('.test.js');
+      const cmd = isJs
+        ? `node --test "${feature.test_file}" 2>&1`
+        : `python3 -m pytest "${feature.test_file}" -q 2>&1`;
+      execSync(cmd, { stdio: 'ignore', timeout: 60000 });
+      feature.status = 'passing';
+    } catch {
+      feature.status = 'failing';
+      anyFailing = true;
+    }
+    feature.last_verified = new Date().toISOString();
+  }
+
+  payload.last_updated = new Date().toISOString();
+  fs.writeFileSync(featureListFile, JSON.stringify(payload, null, 2) + '\n');
+  return { plan_id: payload.plan_id, any_failing: anyFailing, feature_count: payload.features.length };
+}
+
 // ─── Manifest Check (HARDEN-01) ──────────────────────────────────────────────
 
 // Global allowlist for orchestrator-generated files that are permitted to drift
@@ -1720,6 +1837,8 @@ if (require.main !== module) {
     circuitBreakerRecord,
     lintAfterEdit,
     _detectLinter,
+    featureListGenerate,
+    featureListUpdate,
     planToTasks,
     _validatePlanShape,
     _detectCycles,
@@ -2205,6 +2324,23 @@ async function main() {
       const report = lintAfterEdit(filePath);
       process.stdout.write(JSON.stringify(report, null, 2) + '\n');
       process.exit(report.exit_code); // exit non-zero if findings — caller decides to block or not
+      break;
+    }
+
+    case 'feature-list-generate': {
+      const planFile = args[1];
+      if (!planFile) { process.stderr.write('Usage: gsd-tools feature-list-generate <plan_file>\n'); process.exit(1); }
+      const result = featureListGenerate(planFile);
+      process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+      break;
+    }
+
+    case 'feature-list-update': {
+      const flFile = args[1];
+      if (!flFile) { process.stderr.write('Usage: gsd-tools feature-list-update <feature_list_file>\n'); process.exit(1); }
+      const result = featureListUpdate(flFile);
+      process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+      process.exit(result.any_failing ? 2 : 0); // exit 2 if any failing
       break;
     }
 
