@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.8
 milestone_name: milestone
 status: completed
-stopped_at: phase_21_complete
-last_updated: "2026-04-12"
-last_activity: 2026-04-12 — Plan 21-02 complete (STALE-04, 5 tasks, 1 new file, 7 integration tests)
+stopped_at: Phase 21 complete. STALE-01..04 satisfied. All 20 Phase 21 Python tests pass (13 unit + 7 integration). Phase 20 regression clean.
+last_updated: "2026-04-13T01:55:51.161Z"
+last_activity: 2026-04-12 — Plan 21-02 executed (validate_context + daemon endpoint + file_hashes + 7 integration tests)
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 5
   completed_plans: 5
-  percent: 38
+  percent: 22
 ---
 
 # GSD-Amauta -- Project State
@@ -116,6 +116,8 @@ Resume file: None
 
 
 
+
+- [learning] 2026-04-13T01:49:44.208Z: validate_context() is module-level (not a ContextValidator method) to keep the class PG-free; __commit_ref__ is embedded as a key inside file_hashes JSONB dict — avoids new PG column; test mocks for changed_since must use absolute paths in git diff stdout output, not relative filenames
 - [learning] 2026-04-13T01:43:44.280Z: legacy regression test: free text learning
 - [learning] 2026-04-13T01:35:22.005Z: ContextValidator uses @staticmethod-only class with binary-mode chunked reads for SHA-256 hashing; changed_since intersects git diff --name-only output with file_hashes keys (not filesystem); selective_refresh captures get_current_commit() in result dict so orchestrator stores it once; [STALE] log line emitted inside selective_refresh, not at call site
 - [learning] 2026-04-13T01:30:55.773Z: legacy regression test: free text learning
