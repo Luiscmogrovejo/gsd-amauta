@@ -31,7 +31,7 @@
 
 ## Phases
 
-- [ ] **Phase 26: The Substrate** — Valkey 8.x replaces Redis, pgvector upgraded to >= 0.8.0, ParadeDB pg_search installed, tree-sitter parsers available for JS/Python/TS/CJS — all with zero application code changes (INFRA-01..04)
+- [x] **Phase 26: The Substrate** — Valkey 8.x replaces Redis, pgvector upgraded to >= 0.8.0, ParadeDB pg_search installed, tree-sitter parsers available for JS/Python/TS/CJS — all with zero application code changes (INFRA-01..04) (completed 2026-04-13)
 - [ ] **Phase 27: The Retrieval Rewrite** — AST-aware chunking, ParadeDB BM25 in PG, code-specific embeddings, RRF hybrid search, cross-encoder reranking, dependency graph — standalone rlm-service.py rebuilt as thin PG wrapper (RLM-01..06)
 - [ ] **Phase 28: The Behavioral Upgrade** — AGENTS.md discovery, circuit breakers on all 11 agents, Reflexion memory, lint guardrails, feature-level progress tracking, get-bearings ritual — all sharing behavioral test infrastructure (BEHAV-01..06)
 - [ ] **Phase 29: The MCP Interface** — Daemon gains MCP server (stdio + SSE), exposing code search, memory, RPETD context, and research as protocol-native tools and resources (MCP-01..05)
@@ -55,7 +55,7 @@
 3. [ ] `SELECT extversion FROM pg_extension WHERE extname='pg_search'` returns non-null; a BM25 query against a test table returns ranked results — migration 011-paradedb-setup.sql delivered.
 4. [x] `tree-sitter parse <file>` produces an AST with node count > 0 for one sample file of each target language (JS, Python, TypeScript, CJS); parser import succeeds in both Python and Node test scripts. *(26-01 done)*
 
-**Plans:** TBD
+**Plans:** 2/2 plans complete
 
 ### Phase 27: The Retrieval Rewrite
 
@@ -155,7 +155,7 @@ Phase 29 and Phase 30 can run in PARALLEL (both need 27+28; 29 needs only 27)
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 26. The Substrate | 1/TBD | In progress | - |
+| 26. The Substrate | 2/2 | Complete   | 2026-04-13 |
 | 27. The Retrieval Rewrite | 0/TBD | Not started | - |
 | 28. The Behavioral Upgrade | 0/TBD | Not started | - |
 | 29. The MCP Interface | 0/TBD | Not started | - |
