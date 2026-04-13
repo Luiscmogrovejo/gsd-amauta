@@ -144,6 +144,8 @@ Resume file: None
 
 
 
+
+- [learning] 2026-04-13T04:58:49.326Z: ROUTE-02 _make_compaction_llm_call stores compaction_model on llm_call._compaction_model as a test hook; returns None to trigger fallback because GSD-Amauta delegates Claude API calls to Claude Code not the Python daemon. Integration tests for amauta-daemon.py must use importlib.util.spec_from_file_location (hyphen in filename blocks standard import) and patch builtins.open to inject temp config paths.
 - [learning] 2026-04-13T04:45:40.213Z: semantic_cache_store and semantic_cache_lookup must both use input_type='query' for cosine parity — using 'document' for store causes embedding space mismatch and silent cache misses; MockPGStore test fixtures need distinct embedding vectors per entry to avoid accidental cross-query cosine hits in invalidation assertions
 - [learning] 2026-04-12T00:00:00.000Z: ROUTE-02 _make_compaction_llm_call returns None to trigger compact_conversation fallback — GSD-Amauta delegates Claude API calls to Claude Code, not the Python daemon. Model is RESOLVED from config.json and stored on llm_call._compaction_model for test verification; actual execution is no-op.
 - [learning] 2026-04-12T00:00:00.000Z: creative path semantic cache hit must include _tokens_used: 0 — the creative path normally returns _tokens_used from Perplexity usage data and callers rely on its presence; semantic hit bypasses the API call so must inject zero explicitly.
