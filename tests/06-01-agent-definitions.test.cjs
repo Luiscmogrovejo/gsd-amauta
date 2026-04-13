@@ -141,3 +141,86 @@ describe('PATTERNS-02: Pattern label consistency', () => {
     assert.ok(validatorPatterns.length >= 3, `Validator should have >=3 labeled patterns, found ${validatorPatterns.length}`);
   });
 });
+
+describe('FORMAT-01: 10-section structure in executor agents', () => {
+  const EXECUTOR_NAMES = [
+    'gsd-executor-backend', 'gsd-executor-frontend',
+    'gsd-executor-infra', 'gsd-executor-general'
+  ];
+  const REQUIRED_SECTIONS = [
+    '## Role & identity', '## Domain knowledge', '## Behavioral rules',
+    '## Tool access & guidance', '## Task management', '## Examples',
+    '## Error handling', '## Security rules', '## Preconditions & constraints'
+  ];
+
+  it('21. each executor agent has exactly 10 ## sections', () => {
+    for (const name of EXECUTOR_NAMES) {
+      const content = agents[name];
+      const count = (content.match(/^## /gm) || []).length;
+      assert.strictEqual(count, 10, `${name} has ${count} ## sections, expected 10`);
+    }
+  });
+
+  it('22. each executor agent has version: 3.0.0 header', () => {
+    for (const name of EXECUTOR_NAMES) {
+      assert.ok(agents[name].includes('version: 3.0.0'), `${name} missing version: 3.0.0`);
+    }
+  });
+
+  for (const section of REQUIRED_SECTIONS) {
+    it(`23-31. executor agents have section "${section}"`, () => {
+      for (const name of EXECUTOR_NAMES) {
+        assert.ok(agents[name].includes(section), `${name} missing section "${section}"`);
+      }
+    });
+  }
+});
+
+describe('FORMAT-04: Anti-over-engineering guardrail in executor agents', () => {
+  const EXECUTOR_NAMES = [
+    'gsd-executor-backend', 'gsd-executor-frontend',
+    'gsd-executor-infra', 'gsd-executor-general'
+  ];
+  it('32. all 4 executor agents contain anti-over-engineering string', () => {
+    for (const name of EXECUTOR_NAMES) {
+      assert.ok(
+        agents[name].includes('Do not add features, refactor code, or make improvements beyond what was explicitly requested.'),
+        `${name} missing anti-over-engineering guardrail`
+      );
+    }
+  });
+});
+
+describe('FORMAT-05: Read-before-edit mandate in executor agents', () => {
+  const EXECUTOR_NAMES = [
+    'gsd-executor-backend', 'gsd-executor-frontend',
+    'gsd-executor-infra', 'gsd-executor-general'
+  ];
+  it('33. all 4 executor agents contain read-before-edit mandate', () => {
+    for (const name of EXECUTOR_NAMES) {
+      assert.ok(
+        agents[name].includes('Always read a file completely before modifying it. Never edit a file based on assumptions about its contents.'),
+        `${name} missing read-before-edit mandate`
+      );
+    }
+  });
+});
+
+describe('FORMAT-03: Security rules identical in executor agents', () => {
+  const EXECUTOR_NAMES = [
+    'gsd-executor-backend', 'gsd-executor-frontend',
+    'gsd-executor-infra', 'gsd-executor-general'
+  ];
+  const SECURITY_RULES = [
+    'Parameterized SQL', 'Sanitize and validate ALL user input',
+    'Never hardcode secrets', 'HTTPS', 'never expose stack traces',
+    'XSS prevention', 'least privilege'
+  ];
+  it('34. all executor agents contain all 7 security rules', () => {
+    for (const name of EXECUTOR_NAMES) {
+      for (const rule of SECURITY_RULES) {
+        assert.ok(agents[name].includes(rule), `${name} missing security rule: "${rule}"`);
+      }
+    }
+  });
+});
