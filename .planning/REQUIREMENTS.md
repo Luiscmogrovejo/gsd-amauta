@@ -75,7 +75,7 @@ The daemon gains protocol-native MCP server capabilities alongside its existing 
   - *Acceptance:* claude mcp list shows amauta server. MCP initialize handshake completes. HTTP API continues responding on all existing endpoints. 4 tests.
 
 - [ ] **MCP-02**: RLM retrieval exposed as MCP tool amauta/search-code. Parameters: {query: string, top_k?: number, file_filter?: string}. Returns ranked chunks with metadata. Uses the Phase 27 hybrid pipeline internally.
-  - *Acceptance:* MCP tool call with query returns >= 1 result. Results match HTTP /api/rlm/search output for same query. 3 tests.
+  - *Acceptance:* MCP tool call with query returns >= 1 result. Results match RLM service /query output (port 18798) for same query — daemon has no /api/rlm/search proxy. 3 tests.
 
 - [ ] **MCP-03**: Memory system exposed as MCP tools: amauta/memory-store (store a memory), amauta/memory-search (semantic search), amauta/memory-distill (trigger distillation). Parameters follow existing daemon API contracts.
   - *Acceptance:* Store -> search round-trip returns the stored memory. Distill trigger completes without error. 4 tests.
@@ -83,8 +83,8 @@ The daemon gains protocol-native MCP server capabilities alongside its existing 
 - [ ] **MCP-04**: RPETD context exposed as MCP resources. amauta://context/{task_id}/{phase} returns the RPETDContext for a given task and phase. Resource list includes all active tasks.
   - *Acceptance:* MCP resource read returns valid JSON matching RPETDContext schema. Resource list is non-empty when tasks exist. 3 tests.
 
-- [ ] **MCP-05**: Research chain exposed as MCP tool amauta/research. Parameters: {query: string, creative?: boolean}. Runs the 5-step chain (Memory -> SKB -> Context7 -> Perplexity -> WebFetch) and returns consolidated results. Semantic cache checked before execution.
-  - *Acceptance:* Research tool call returns results. Cache hit on identical query returns cached response without API calls. 3 tests.
+- [ ] **MCP-05**: Research chain exposed as MCP tool amauta/research. Parameters: {query: string, creative?: boolean}. Runs the implementable subset (Memory -> SKB -> WebFetch); Context7 and Perplexity are Claude-side MCP tools the daemon cannot call — full 5-step chain remains available via gsd-researcher agent. Semantic cache checked before execution; cache key = sha256(query).
+  - *Acceptance:* Research tool call returns results with {memory_results, skb_results, web_results, from_cache} shape. Cache hit on identical query returns cached response with from_cache=true without re-running the chain. 3 tests.
 
 ### Operations — Observability + Security (Phase 30)
 
