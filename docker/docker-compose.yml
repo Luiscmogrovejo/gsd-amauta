@@ -1,6 +1,7 @@
 services:
   postgres:
-    image: pgvector/pgvector:pg16
+    # paradedb/paradedb:pg16 ships pgvector >= 0.8.0 + pg_search (BM25) — INFRA-02, INFRA-03
+    image: paradedb/paradedb:pg16
     container_name: gsd-postgres
     restart: unless-stopped
     environment:
@@ -24,14 +25,15 @@ services:
       start_period: 30s
 
   redis:
-    image: redis:7-alpine
+    # Valkey 8.x — BSD 3-Clause license (drop-in Redis 7 replacement, INFRA-01)
+    image: valkey/valkey:8-alpine
     container_name: gsd-redis
     restart: unless-stopped
     command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --save ""
     ports:
       - "127.0.0.1:6379:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "valkey-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5

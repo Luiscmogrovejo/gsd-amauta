@@ -4,7 +4,7 @@
   "parallelization": true,
   "commit_docs": false,
   "model_profile": "balanced",
-  "current_milestone": "v2.8",
+  "current_milestone": "v2.9",
   "model_routing": {
     "R": "sonnet",
     "P": "sonnet",

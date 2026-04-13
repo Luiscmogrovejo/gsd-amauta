@@ -2,31 +2,28 @@
 
 ## What This Is
 
-GSD-Amauta is a quality-enforced AI development harness for Claude Code: persistent PostgreSQL memory with pgvector semantic search, BM25 RLM code context retrieval, 11 specialist agents, a 5-phase RPETD pipeline with external validation, a 5-step research chain, and a Redis L2 caching layer. v2.5 "Smarter Brain" proved the plumbing works (every subsystem audited against MIT RLM/REPL paper, Google agentic patterns, industry best practices, 49/49 requirements shipped, 39.4% Layer 2 token reduction). v2.6 "Sight Beyond Sight" makes the agent prompts that drive the plumbing see more — creative research, task-integrated planning, research-informed execution, QA-grade testing, and a structured learning feedback loop.
+GSD-Amauta is a quality-enforced AI development harness for Claude Code: persistent PostgreSQL memory with pgvector semantic search, BM25 RLM code context retrieval, 11 specialist agents, a 5-phase RPETD pipeline with external validation, a 5-step research chain, and a Redis L2 caching layer. v2.5 "Smarter Brain" proved the plumbing works (49/49 requirements, 39.4% Layer 2 token reduction). v2.6 "Sight Beyond Sight" added creative research, task-integrated planning, research-informed execution, QA-grade testing, and structured learning. v2.7 "Steady Hands" fixed the init resolver, audit scripts, sampling pool, and dynamic ledger schema. v2.8 "Metabolism" delivered structured context handoffs, hash-based staleness detection, caveman compression, prompt prefix caching, semantic cache + tiered routing, and tech debt sweep — 75-90% token cost reduction per RPETD cycle.
 
 ## Core Value
 
 Every RPETD phase must *see* what the other phases have already learned — past failures, validated best-practices, existing codebase style, parent-story acceptance criteria — so the system makes better decisions with each task it runs, not worse as context bloats. The brain synthesizes, not accumulates.
 
-## Current Milestone: v2.8 Token Optimization
+## Current Milestone: v2.9 "Nervous System"
 
-**Shipped:** v2.7 "Steady Hands" (2026-04-12) — 4 phases, 8 plans, 21 tasks, 47 tests
+**Shipped:** v2.8 "Metabolism" (2026-04-13) — 6 phases, 13 plans, 9 tasks
 
-**Goal:** Reduce effective token cost per RPETD cycle by 75-90% through prompt prefix caching, structured context handoffs, hash-based staleness detection, caveman-style description compression, semantic caching, and tiered model routing. The body-metaphor sequence: brain (v2.5) → sight (v2.6) → hands (v2.7) → metabolism (v2.8). v2.8 is the milestone where the system becomes lean — doing the same quality work at a fraction of the token cost.
+**Goal:** Five infrastructure layers that compose into a unified upgrade. Tree-sitter feeds retrieval and graphs, ParadeDB consolidates BM25 into PG, Valkey replaces Redis, MCP exposes everything as protocol-native services, observability + security wrap it all. Target: 3x retrieval precision (MRR), native MCP interoperability, self-correcting execution, full-stack observability, kernel-level isolation.
 
-**Research:** `.planning/research/v2.8-token-optimization-research.md` — comprehensive analysis correcting two misidentifications (Attention Residuals paper, caveman repo), mapping 6 optimization layers to GSD-Amauta's architecture.
+**Body metaphor sequence:** brain (v2.5) → sight (v2.6) → hands (v2.7) → metabolism (v2.8) → nervous system (v2.9)
 
-**Target upgrades (6 optimization layers, ordered by impact-to-effort ratio):**
-1. **Prompt prefix caching** — Restructure agent prompts for Claude API cache hits (90% cost reduction on repeated prefixes)
-2. **Structured context handoffs** — RPETDContext typed object (~400 tokens) replaces full forwarding (~10K+) between phases
-3. **Hash-based staleness detection** — SHA-256 + git diff; skip unchanged files (60-80% typical)
-4. **Caveman-compressed descriptions** — 40-60% more info per 500-char budget via grammar stripping
-5. **Semantic cache layer** — pgvector cosine >= 0.90 for cached LLM responses (up to 68% fewer calls)
-6. **Tiered model routing** — Haiku for T/D phases ($1/MTok), Sonnet for R/P/E
+**Research:** 35 findings across 7 investigation tracks — multi-agent orchestration, context engineering, retrieval pipeline improvements, self-correction patterns, observability, security architecture, infrastructure optimizations. Key: tree-sitter AST chunking + ParadeDB hybrid search + cross-encoder reranking for 3x retrieval precision; Valkey swap for 37% throughput; AGENTS.md for ecosystem alignment; gVisor for kernel-level isolation.
 
-**Also addresses v2.7 tech debt:** cmdInitPhaseOp residual ghost, plan-to-tasks registration gap, amauta.cjs wrapper.
-
-**Primary input:** User-provided research brief (arXiv:2603.15031 Attention Residuals analysis + JuliusBrussee/caveman evaluation + Claude API caching docs + Google ADK/Microsoft Semantic Kernel/OpenAI Agents SDK context handoff patterns)
+**Target upgrades (5 layers):**
+1. **The Substrate** — Valkey 8.x, pgvector upgrade, ParadeDB pg_search, tree-sitter parsers
+2. **The Retrieval Rewrite** — AST-aware chunking, ParadeDB BM25, code-specific embeddings, RRF hybrid search, cross-encoder reranking, dependency graph
+3. **The Behavioral Upgrade** — AGENTS.md, circuit breakers, Reflexion memory, lint guardrails, feature-level tracking, get-bearings ritual
+4. **The MCP Interface** — Daemon as MCP server (stdio + SSE), tools/resources/prompts for RLM, memory, RPETD, research
+5. **Observability + Security** — Langfuse tracing, model canary, Rule of Two audit, gVisor sandbox, tool integrity checking
 
 ## Requirements
 
@@ -40,8 +37,6 @@ Every RPETD phase must *see* what the other phases have already learned — past
 - ✓ **TSK-01..05**: Task lifecycle, priority scoring, archive/reconcile, stale watchdog, PG dual-write (39-field migration 007)
 - ✓ **RSC-01..04**: Research chain 5-step cascade, R-phase auto-invoke, Perplexity preamble stripping, Jaccard dedup
 - ✓ **INF-01..05**: API key validation, Redis docker-compose, graceful degradation, RLM auto-restart, daemon health monitoring
-
-### Active
 
 #### v2.6 Sight Beyond Sight — Shipped 2026-04-10 (46/46 requirements)
 - ✓ **LEARN-01..07**: Structured D-phase learning, category/tag taxonomy, GIN index search
@@ -57,6 +52,24 @@ Every RPETD phase must *see* what the other phases have already learned — past
 - ✓ **AUDIT-01..03**: Prefix probe + npm parser + tooling_bugs_observed schema
 - ✓ **SAMPLE-01**: Daemon-sourced sampling pool with SUMMARY.md fallback
 - ✓ **SCHEMA-01**: Dynamic ledger depth scan (ledger table + memory dir union)
+
+#### v2.8 Metabolism — Shipped 2026-04-13 (26/26 requirements)
+- ✓ **HANDOFF-01..05**: RPETDContext typed object, compact_conversation, CJS integration, context version hashing, phase-specific views
+- ✓ **STALE-01..04**: SHA-256 file hashing, git diff change detection, selective refresh, staleness logging
+- ✓ **CAVE-01..04**: Pipe-delimited descriptions, grammar stripping, BM25 benchmark, fact density validation
+- ✓ **CACHE-01..04**: CACHE_BREAKPOINT markers, prefix stability audit, annotate_cache_control, /metrics/cache endpoint
+- ✓ **SEMANTIC-01..03, ROUTE-01..02**: Semantic cache store/lookup/invalidation, model routing config, compaction model routing
+- ✓ **DEBT-01..04**: Ghost fallback regression, plan-to-tasks default fix, amauta.cjs delegation, routeExecutor specificity
+
+### Active
+
+#### v2.9 Nervous System — In Progress
+- [ ] **INFRA-01..04**: Valkey 8.x, pgvector upgrade, ParadeDB pg_search, tree-sitter parsers
+- [ ] **RLM-01..06**: AST-aware chunking, ParadeDB BM25, code-specific embeddings, RRF hybrid search, cross-encoder reranking, dependency graph
+- [ ] **BEHAV-01..06**: AGENTS.md, circuit breakers, Reflexion memory, lint guardrails, feature-level tracking, get-bearings ritual
+- [ ] **MCP-01..05**: MCP server (stdio+SSE), search-code tool, memory tools, RPETD resources, research tool
+- [ ] **OBS-01..02**: Langfuse tracing, model canary test suite
+- [ ] **SEC-01..03**: Rule of Two audit, gVisor sandbox, tool integrity checking
 
 #### Legacy (carried forward — all validated in v2.5)
 ##### Memory & Embeddings Audit
@@ -153,4 +166,4 @@ Every RPETD phase must *see* what the other phases have already learned — past
 | sonar-pro for Perplexity | Better quality research results, currently PERPLEXITY_MODEL unset | -- Pending |
 
 ---
-*Last updated: 2026-04-12 after v2.8 "Metabolism" milestone kickoff*
+*Last updated: 2026-04-13 after v2.9 "Nervous System" milestone kickoff*

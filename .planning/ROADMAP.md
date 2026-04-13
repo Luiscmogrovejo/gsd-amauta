@@ -1,19 +1,19 @@
-# Roadmap: GSD-Amauta v2.8 "Metabolism"
+# Roadmap: GSD-Amauta v2.9 "Nervous System"
 
-**Milestone:** v2.8 — Metabolism (Token Optimization)
-**Starting phase number:** 20 (v2.7 ended at Phase 19)
-**Phases:** 6 (Phase 20..25)
-**Requirements:** 23 total (v2.8 scope)
+**Milestone:** v2.9 — Nervous System (Infrastructure Upgrade)
+**Starting phase number:** 26 (v2.8 ended at Phase 25)
+**Phases:** 5 (Phase 26..30)
+**Requirements:** 26 total (v2.9 scope)
 **Granularity:** coarse (per config.json)
-**Status:** Defined 2026-04-12 — awaiting `/amauta:plan-phase 20`
+**Status:** Defined 2026-04-13 — awaiting `/amauta:plan-phase 26`
 
 **Core value:** Every RPETD phase must see what other phases have already learned — past failures, validated best-practices, existing codebase style, parent-story acceptance criteria — so the system makes better decisions with each task it runs, not worse as context bloats. The brain synthesizes, not accumulates.
 
-**Body-metaphor sequence:** v2.5 "Smarter Brain" (cognition) → v2.6 "Sight Beyond Sight" (perception) → v2.7 "Steady Hands" (action/tooling) → v2.8 "Metabolism" (efficiency). v2.8 is the milestone where the system becomes lean — doing the same quality work at a fraction of the token cost. The brain thinks. The eyes see. The hands act. The metabolism determines whether that process is cheap or ruinous.
+**Body-metaphor sequence:** v2.5 "Smarter Brain" (cognition) → v2.6 "Sight Beyond Sight" (perception) → v2.7 "Steady Hands" (action/tooling) → v2.8 "Metabolism" (efficiency) → v2.9 "Nervous System" (integration). v2.9 is the milestone where the five substrate layers wire together: the substrate installs, retrieval rebuilds on top of it, behavior and MCP both build on retrieval, and observability + security wrap the whole stack. Everything fires together like a nervous system — sensing, routing, enforcing.
 
-**Goal:** Reduce effective token cost per RPETD cycle by 75-90% through six layered optimizations: structured context handoffs, hash-based staleness detection, caveman-compressed descriptions, prompt prefix caching, semantic cache + tiered routing, and a tech debt sweep clearing the residual v2.7 carry-forward items.
+**Goal:** Five infrastructure layers composing into a unified upgrade. Tree-sitter feeds retrieval and graphs, ParadeDB consolidates BM25 into PG, Valkey replaces Redis, MCP exposes everything as protocol-native services, observability + security wrap it all. Target: 3x retrieval precision (MRR), native MCP interoperability, self-correcting execution, full-stack observability, kernel-level isolation.
 
-**Research:** `.planning/research/v2.8-token-optimization-research.md` — comprehensive analysis correcting two misidentifications (Attention Residuals paper, caveman repo), mapping 6 optimization layers to GSD-Amauta's architecture.
+**Research:** 35 findings across 7 investigation tracks — multi-agent orchestration, context engineering, retrieval pipeline improvements, self-correction patterns, observability, security architecture, infrastructure optimizations. Key findings: tree-sitter AST chunking + ParadeDB hybrid search + cross-encoder reranking for 3x retrieval precision; Valkey swap for 37% throughput; AGENTS.md for ecosystem alignment; gVisor for kernel-level isolation.
 
 ---
 
@@ -24,163 +24,130 @@
 3. **Post-14:** `gsd-tools plan-to-tasks` auto-registration is mandatory for every phase. Every PLAN.md must have `<story>` and `<task>` XML blocks.
 4. **Divergence protocol v1.1.0 active.** Surface mismatches; never silently absorb them.
 5. **Backward compatible.** All existing data, configs, and workflows must continue working.
-6. **Research-backed.** Every improvement must cite its source (Claude API docs, Google ADK patterns, or prior research brief).
+6. **Research-backed.** Every improvement must cite its source (research findings, academic papers, or prior research brief).
 7. **Test coverage maintained.** `node --test tests/` and `pytest` must pass with 0 new failures before each phase is marked complete.
 
 ---
 
 ## Phases
 
-- [x] **Phase 20: Structured Context Handoffs** — RPETDContext typed object replaces full conversation forwarding; each phase boundary compacts to <= 600 tokens stored in PostgreSQL (HANDOFF-01..05) — COMPLETE 2026-04-12
-- [x] **Phase 21: Hash-Based Staleness Detection** — SHA-256 file hashing + git diff selectively refreshes only changed files, skipping unchanged file descriptions (STALE-01..04) — COMPLETE 2026-04-12
-- [x] **Phase 22: Caveman-Compressed Descriptions** — grammar-stripped agent definitions and structured file descriptions deliver >= 40% more facts per 500-char budget (CAVE-01..04) — COMPLETE 2026-04-13 (CAVE-01/03/04 verified; CAVE-02 divergence open: 1.5% actual vs 30% target)
-- [x] **Phase 23: Prompt Prefix Caching** — all 11 agent prompts restructured for stable prefix / variable suffix split with `cache_control` annotation; prefix stability lint added (CACHE-01..04) — COMPLETE 2026-04-12
-- [x] **Phase 24: Semantic Cache + Tiered Routing** — pgvector cosine >= 0.90 semantic cache for research calls; config-driven model routing (haiku T/D, sonnet R/P/E) (SEMANTIC-01..03, ROUTE-01..02) — COMPLETE 2026-04-12
-- [x] **Phase 25: Tech Debt Sweep** — cmdInitPhaseOp ghost fallback eliminated; plan-to-tasks registration for phases >= 20; amauta.cjs delegation fix (require.main guard); routeExecutor specificity-wins determinism (DEBT-01..04) — COMPLETE 2026-04-12
+- [ ] **Phase 26: The Substrate** — Valkey 8.x replaces Redis, pgvector upgraded to >= 0.8.0, ParadeDB pg_search installed, tree-sitter parsers available for JS/Python/TS/CJS — all with zero application code changes (INFRA-01..04)
+- [ ] **Phase 27: The Retrieval Rewrite** — AST-aware chunking, ParadeDB BM25 in PG, code-specific embeddings, RRF hybrid search, cross-encoder reranking, dependency graph — standalone rlm-service.py rebuilt as thin PG wrapper (RLM-01..06)
+- [ ] **Phase 28: The Behavioral Upgrade** — AGENTS.md discovery, circuit breakers on all 11 agents, Reflexion memory, lint guardrails, feature-level progress tracking, get-bearings ritual — all sharing behavioral test infrastructure (BEHAV-01..06)
+- [ ] **Phase 29: The MCP Interface** — Daemon gains MCP server (stdio + SSE), exposing code search, memory, RPETD context, and research as protocol-native tools and resources (MCP-01..05)
+- [ ] **Phase 30: Observability + Security** — Langfuse tracing on K3s, model canary suite, Rule of Two audit, gVisor sandbox, tool integrity checking (OBS-01..02, SEC-01..03)
 
 ---
 
 ## Phase Details
 
-### Phase 20: Structured Context Handoffs
+### Phase 26: The Substrate
 
-**Goal:** RPETD phases stop forwarding full conversation history. Each phase boundary produces a typed RPETDContext object (8 fields, <= 600 tokens) that is stored in PostgreSQL and used as the sole input to the next phase.
+**Goal:** Infrastructure installs with zero application code changes. Four platform components land: Valkey replaces Redis as the cache layer, pgvector upgrades to enable iterative scans, ParadeDB pg_search is installed and ready for BM25 indexing, and tree-sitter parsers are available to both Python and Node processes. Phases 27, 28, 29, and 30 all depend on this foundation.
 
-**Depends on:** Nothing (v2.7 complete; this is the foundation for Phases 21-24)
+**Depends on:** Nothing (v2.8 complete; this is the foundation for Phases 27-30)
 
-**Requirements:** HANDOFF-01, HANDOFF-02, HANDOFF-03, HANDOFF-04, HANDOFF-05
-
-**Success Criteria** (what must be TRUE):
-1. `RPETDContext.model_dump()` round-trips all 8 required fields without loss — `SELECT * FROM rpetd_context WHERE task_id = X` returns one row per completed phase.
-2. A 15K-token conversation compacts to a single RPETDContext instance (verified by test).
-3. The compiled view passed to any downstream phase measures < 600 tokens via `tiktoken cl100k_base` — full conversation history is never forwarded.
-4. All 5 phase runners (R, P, E, T, D) execute successfully with RPETDContext as input; `node --test tests/` exits 0 with no regressions.
-
-**Plans:**
-3/3 plans complete
-- [x] Plan 20-02: prune_messages + compact_conversation + daemon endpoints POST /api/context/compact + GET /api/context/:task_id/:phase (complete 2026-04-12)
-- [x] Plan 20-03: Phase runner integration + regression tests (complete 2026-04-12)
-
-### Phase 21: Hash-Based Staleness Detection
-
-**Goal:** Unchanged files are never re-described. SHA-256 hashes stored in `rpetd_context.relevant_files` and `git diff --name-only` drive selective refresh: only stale files incur description cost; the rest are served from cache verbatim.
-
-**Depends on:** Phase 20 (RPETDContext must exist as the hash storage carrier)
-
-**Requirements:** STALE-01, STALE-02, STALE-03, STALE-04
+**Requirements:** INFRA-01, INFRA-02, INFRA-03, INFRA-04
 
 **Success Criteria** (what must be TRUE):
-1. `ContextValidator.compute_file_hash(path)` returns a stable SHA-256 hex digest that changes when and only when file content changes (verified by test).
-2. `ContextValidator.changed_since(context)` returns the correct changed-files list via `git diff --name-only` with zero additional filesystem reads for unchanged files.
-3. In a 10-file test where 2 files changed, `selective_refresh()` regenerates exactly 2 descriptions; the 8 unchanged files retain their prior cached descriptions verbatim.
-4. `[STALE] N files refreshed, M cached` log line appears on every phase transition where the staleness hook fires.
+1. `valkey-cli ping` returns PONG; all 2750 existing tests pass unchanged — zero application-code modifications required for the Redis-to-Valkey migration.
+2. `SELECT extversion FROM pg_extension WHERE extname='vector'` returns >= 0.8.0; filtered vector queries on semantic_cache show >= 3x speedup on 10-query benchmark vs prior version.
+3. `SELECT extversion FROM pg_extension WHERE extname='pg_search'` returns non-null; a BM25 query against a test table returns ranked results — migration 011-paradedb-setup.sql delivered.
+4. `tree-sitter parse <file>` produces an AST with node count > 0 for one sample file of each target language (JS, Python, TypeScript, CJS); parser import succeeds in both Python and Node test scripts.
 
-**Plans:**
-2/2 plans complete
-- [x] Plan 21-02: Orchestrator Integration — validate_context + daemon endpoint + file_hashes population + Integration Tests (Wave 2, STALE-04) — COMPLETE 2026-04-12
+**Plans:** TBD
 
-### Phase 22: Caveman-Compressed Descriptions
+### Phase 27: The Retrieval Rewrite
 
-**Goal:** File descriptions and agent definitions deliver more signal per character. Structured `pipe-delimited` file descriptions and grammar-stripped agent markdown cut character counts by >= 30% while increasing distinct technical fact density by >= 40%.
+**Goal:** The standalone rlm-service.py BM25 engine is rebuilt on top of the Phase 26 substrate. Six capabilities collapse into one coherent pipeline: AST-aware chunking replaces fixed-character splits, ParadeDB moves BM25 inside PostgreSQL, code-specific embeddings replace general-purpose ones, RRF fuses BM25 + vector in a single SQL query, cross-encoder reranking improves top-k precision, and a dependency graph expands retrieved functions with their callers and callees.
 
-**Depends on:** Phase 20 (compressed descriptions are stored in and served from RPETDContext; the Phase 20 storage layer must exist first)
+**Depends on:** Phase 26 (Valkey for reranker cache TTL; pgvector + ParadeDB for BM25 + vector indexes; tree-sitter for AST chunking)
 
-**Requirements:** CAVE-01, CAVE-02, CAVE-03, CAVE-04
+**Requirements:** RLM-01, RLM-02, RLM-03, RLM-04, RLM-05, RLM-06
 
 **Success Criteria** (what must be TRUE):
-1. All 10 sample file descriptions match the regex `^.+\|.deps:.+\|.touches:.+\|.tests:.+\|.+$` (parseable pipe-delimited format).
-2. Running the grammar-stripping pass on 5 agent files produces valid markdown with character count reduced >= 30% vs original.
-3. BM25 retrieval MRR on compressed descriptions is >= 95% of original MRR across 20 queries; no single query drops more than 2 rank positions.
-4. For 10 representative files, compressed 500-char descriptions contain >= 40% more distinct technical facts (identifiers, relationships, constraints) than original 500-char descriptions.
+1. Given 10 sample files totaling 5000+ lines, zero chunks contain partial function definitions; `EXPLAIN` on a BM25 query shows pg_search index scan; response latency <= 50ms at 95th percentile on a 20-query benchmark.
+2. Code retrieval MRR on a 20-query golden set improves >= 15% vs current general embeddings; hybrid RRF MRR >= 95% of max(BM25-only, vector-only) across the same 20 queries.
+3. Reranked MRR >= 10% improvement over hybrid-only on 20 golden queries; reranker failure does not crash the pipeline; cache hit rate is logged.
+4. Dependency graph covers >= 90% of function-level symbols; given a retrieved function, >= 1 caller and >= 1 callee are included in expanded context (when they exist); hub files list is non-empty.
 
-**Plans:**
-2/2 plans complete
-- [x] Plan 22-02: Daemon Wiring + BM25 Benchmark + Fact Density Test + Integration (Wave 2, CAVE-01/03/04) — COMPLETE 2026-04-13 (CAVE-01 wired, CAVE-03 BM25 5/5 pass, CAVE-04 1.4x all 10 entries)
+**Plans:** TBD
 
-### Phase 23: Prompt Prefix Caching
+### Phase 28: The Behavioral Upgrade
 
-**Goal:** Every Claude API call in the RPETD pipeline is structured for prefix caching — stable content precedes variable content, `cache_control: {"type": "ephemeral"}` is annotated, no volatile timestamps pollute the stable prefix, and cache hit/miss metrics are surfaced at `/metrics/cache`.
+**Goal:** Prompt, workflow, and protocol changes that share the same behavioral test infrastructure. Six behavioral capabilities land independently of the retrieval rewrite: AGENTS.md discovery, circuit breakers protecting each specialist agent, Reflexion memory persisting divergence reflections across sessions, lint-after-edit guardrails flagging syntax errors, feature-level progress tracking blocking premature phase closure, and a get-bearings ritual that orients resumed sessions.
 
-**Depends on:** Phase 20 (structured handoffs establish stable context shape); Phase 22 (caveman descriptions must be in place so the stable prefix contains compressed, not verbose, descriptions — maximizes cache hit rate)
+**Depends on:** Phase 26 (Valkey for circuit breaker state TTL and Reflexion memory storage)
 
-**Requirements:** CACHE-01, CACHE-02, CACHE-03, CACHE-04
+**Requirements:** BEHAV-01, BEHAV-02, BEHAV-03, BEHAV-04, BEHAV-05, BEHAV-06
 
 **Success Criteria** (what must be TRUE):
-1. All 11 agent prompts have zero variable content before the `cache_control` breakpoint — verified by the audit script for all 11 agents.
-2. `grep cache_control` finds annotations at all API call sites; test verifies annotation present in actual request payload.
-3. Two sequential prompts for the same agent produce byte-identical prefixes up to the breakpoint (no `datetime.now()`, `time.time()`, or `Date.now()` in prefix construction; tool definitions sorted and frozen).
-4. `/metrics/cache` endpoint returns `{hit_rate, total_tokens_saved, cost_savings_estimate}` and counters update correctly after each API call.
+1. An AGENTS.md placed in `services/` is applied when an executor operates on files in that directory; agent definitions in `agents/` remain in effect when no AGENTS.md exists — 5 discovery hierarchy tests pass.
+2. Simulated 3 consecutive failures on gsd-executor-backend triggers automatic fallback to gsd-executor-general; recovery re-enables the original agent after TTL — 4 tests covering open/closed/half-open states.
+3. After a divergence event, divergence-memory.json contains the new reflection entry; on retry, executor's PRE_EXECUTION_EVIDENCE block includes past reflections (max 3 most recent) — JSON schema validated, 6 tests pass.
+4. A commit introducing a syntax error produces a lint_report with >= 1 finding; a clean commit produces an empty lint_report; plan 27-01 produces a feature_list.json with >= 3 features; validator refuses --pass verdict when any feature is failing.
 
-**Plans:**
-2/2 plans complete
-- [x] Plan 23-02: Cache Infrastructure — annotate_cache_control utility + /metrics/cache endpoint + CLI stats + tests (Wave 2, CACHE-02/04) — COMPLETE 2026-04-12
+**Plans:** TBD
 
-### Phase 24: Semantic Cache + Tiered Routing
+### Phase 29: The MCP Interface
 
-**Goal:** Research-chain LLM calls that are semantically equivalent to prior calls return cached responses without an LLM round-trip. T and D phases route to Haiku by default; R, P, E use Sonnet. Both behaviors are config-driven and observable via HTTP endpoints.
+**Goal:** The daemon gains protocol-native MCP server capabilities alongside its existing HTTP API — additive, not replacing. Claude Code connects via stdio transport; remote clients connect via SSE. Four capabilities are exposed as MCP tools and resources: code search (backed by Phase 27 hybrid pipeline), memory store/search/distill, RPETD context per task+phase, and the 5-step research chain.
 
-**Depends on:** Phase 23 (prefix caching must be live — semantic cache sits on top of a pipeline that is already prefix-cached; stacking in correct order prevents double-spending on cache infra); Phase 20 (RPETDContext provides the source-file hash used to invalidate stale semantic cache entries)
+**Depends on:** Phase 27 (MCP-02 search-code tool routes through the Phase 27 hybrid pipeline; requires AST chunking, ParadeDB BM25, RRF, and reranking to be operational)
 
-**Requirements:** SEMANTIC-01, SEMANTIC-02, SEMANTIC-03, ROUTE-01, ROUTE-02
+**Requirements:** MCP-01, MCP-02, MCP-03, MCP-04, MCP-05
 
 **Success Criteria** (what must be TRUE):
-1. A paraphrased query ("how to parse JSON in Python" / "Python JSON parsing") returns the cached response without an LLM call — cosine similarity >= 0.90 threshold enforced.
-2. Modifying the source file referenced by a cached response flips `semantic_cache.valid = false`; the next query for that context is a cache miss (verified by test).
-3. `/cache/stats` returns `{hits, misses, hit_rate, entries, total_tokens_saved, estimated_cost_saved}`; after 5 hits + 3 misses, `hit_rate` = 0.625 exactly.
-4. `config.json::model_routing` default `{R: "sonnet", P: "sonnet", E: "sonnet", T: "haiku", D: "haiku"}` is read by the orchestrator; overriding to all-haiku in tests verifies T/D phases use haiku.
-5. Compaction LLM call (HANDOFF-02) uses `config.json::model_routing.compaction` (default: "haiku"), not the phase's primary model.
+1. `claude mcp list` shows the amauta server; MCP initialize handshake completes; HTTP API continues responding on all existing endpoints — 4 tests pass.
+2. MCP tool call `amauta/search-code` with a query returns >= 1 ranked result matching the HTTP `/api/rlm/search` output for the same query — 3 tests pass.
+3. Memory store → search round-trip via MCP returns the stored memory; distill trigger completes without error — 4 tests pass.
+4. MCP resource read `amauta://context/{task_id}/{phase}` returns valid JSON matching RPETDContext schema; research tool call returns results and cache hit on identical query skips API calls — 3+3 tests pass.
 
-**Plans:**
-1/2 plans complete
-- [x] Plan 24-02: Research Chain Integration + ROUTE-02 Compaction Wiring (Wave 2, SEMANTIC-01 + ROUTE-02) — 4 tasks COMPLETE
+**Plans:** TBD
 
-### Phase 25: Tech Debt Sweep
+### Phase 30: Observability + Security
 
-**Goal:** Four v2.7 carry-forward items are closed: the cmdInitPhaseOp ghost fallback eliminated, plan-to-tasks registration working for phases >= 20, amauta.cjs HTTP routing producing correct output, and routeExecutor selecting agents deterministically by specificity.
+**Goal:** Full-stack tracing, kernel-level isolation, and policy enforcement wrap the completed stack. Langfuse on K3s makes every RPETD trace visible with per-phase token costs. A model canary suite detects regressions when models change. A Rule of Two audit surfaces capability violations across all 11 agents. gVisor sandboxes executor bash commands at the kernel level. Tool integrity checking blocks tampered tool definitions.
 
-**Depends on:** Nothing in v2.8 (these are self-contained fixes independent of the optimization chain). Can run before, during, or after Phases 20-24 — sequenced last here to keep the optimization chain uninterrupted.
+**Depends on:** Phase 27 (Langfuse spans cover the retrieval pipeline built in Phase 27; canary suite validates retrieval quality as a key regression signal) and Phase 28 (Rule of Two audit covers the behavioral capabilities added in Phase 28; SEC-03 tool integrity applies to MCP tools added in Phase 29)
 
-**Requirements:** DEBT-01, DEBT-02, DEBT-03, DEBT-04
+**Requirements:** OBS-01, OBS-02, SEC-01, SEC-02, SEC-03
 
 **Success Criteria** (what must be TRUE):
-1. `gsd-tools init discuss-phase 20` from a v2.8 context returns an error (not a v2.3/v2.6 ghost directory) — the Depth-11 scenario replayed by test produces no ghost.
-2. After plan execution for Phase 20, `GET /tasks?phase=20` on the daemon returns registered tasks — daemon task list is non-empty for v2.8 phases.
-3. `amauta.cjs task list` produces the same output as `gsd-amauta.cjs task list` — the wrapper routes correctly.
-4. Given two agents with overlapping file patterns, the agent with the longer (more specific) glob wins deterministically — verified by test with overlapping patterns.
+1. Langfuse UI shows traces for a complete RPETD cycle with >= 3 span levels (phase → agent → tool); token cost per phase is visible; agents continue operating without errors if Langfuse is down — 4 tests pass.
+2. Canary suite of 50 tasks runs in < 5 minutes; baseline scores are stored in PG; comparison function returns `{degraded, p_value, delta}` — 3 tests pass.
+3. Rule of Two audit script produces a JSON report covering all 11 agents; >= 1 violation is identified and documented with remediation plan — 3 tests pass.
+4. `kubectl get runtimeclass` shows gvisor; a test command runs inside the sandbox and produces output; network egress is blocked from sandbox by default; modifying a tool definition between startup and invocation produces a TOOL_INTEGRITY_VIOLATION warning — 4+3 tests pass.
 
-**Plans:**
-2/2 plans complete
-- [x] Plan 25-02: Wrapper Parity + routeExecutor Specificity (Wave 2, DEBT-03/04) — 3 tasks — COMPLETE 2026-04-12
+**Plans:** TBD
 
 ---
 
 ## Phase Dependency Graph
 
 ```
-Phase 20 (Structured Context Handoffs)
-    │   Foundation: RPETDContext storage + compaction
+Phase 26 (The Substrate)
+    │   Foundation: Valkey, pgvector 0.8+, ParadeDB, tree-sitter
     │
-    ├──> Phase 21 (Hash-Based Staleness Detection)
-    │        Depends on Phase 20 (hash storage in RPETDContext)
+    ├──> Phase 27 (The Retrieval Rewrite)
+    │        Depends on Phase 26 (all four substrate components)
+    │        │
+    │        └──> Phase 29 (The MCP Interface)
+    │                 Depends on Phase 27 (search-code uses hybrid pipeline)
     │
-    └──> Phase 22 (Caveman-Compressed Descriptions)
-             Depends on Phase 20 (descriptions stored in RPETDContext)
-             Can run in parallel with Phase 21
+    └──> Phase 28 (The Behavioral Upgrade)
+             Depends on Phase 26 (Valkey for circuit breaker + Reflexion state)
+             Runs PARALLEL with Phase 27
              │
-             └──> Phase 23 (Prompt Prefix Caching)
-                      Depends on Phase 20 (stable context shape)
-                      Depends on Phase 22 (compressed descriptions in stable prefix)
-                      │
-                      └──> Phase 24 (Semantic Cache + Tiered Routing)
-                               Depends on Phase 23 (prefix caching live)
-                               Depends on Phase 20 (source-file hashes for invalidation)
+             └──> Phase 30 (Observability + Security)
+                      Depends on Phase 27 + Phase 28
 
-Phase 25 (Tech Debt Sweep) — no v2.8 dependencies, runs anytime
+Phase 29 and Phase 30 can run in PARALLEL (both need 27+28; 29 needs only 27)
 ```
 
-**Critical path:** 20 → 22 → 23 → 24 (linear spine)
-**Parallel opportunity:** Phase 21 can run concurrently with Phase 22 (both depend only on Phase 20)
-**Independent:** Phase 25 has no deps on 20-24; sequenced last to avoid interrupting the optimization chain
+**Serial chain:** 26 → 27 → 29
+**Parallel opportunity:** Phase 28 runs concurrently with Phase 27 (both depend only on Phase 26)
+**Terminal phases:** Phase 29 and Phase 30 can run concurrently once 27 and 28 are both complete
 
 ---
 
@@ -188,16 +155,15 @@ Phase 25 (Tech Debt Sweep) — no v2.8 dependencies, runs anytime
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 20. Structured Context Handoffs | 3/3 | Complete    | 2026-04-12 |
-| 21. Hash-Based Staleness Detection | 1/2 | Complete    | 2026-04-13 |
-| 22. Caveman-Compressed Descriptions | 2/2 | Complete    | 2026-04-13 |
-| 23. Prompt Prefix Caching | 1/2 | Complete    | 2026-04-13 |
-| 24. Semantic Cache + Tiered Routing | 0/2 | Complete    | 2026-04-13 |
-| 25. Tech Debt Sweep | 0/TBD | Complete    | 2026-04-13 |
+| 26. The Substrate | 0/TBD | Not started | - |
+| 27. The Retrieval Rewrite | 0/TBD | Not started | - |
+| 28. The Behavioral Upgrade | 0/TBD | Not started | - |
+| 29. The MCP Interface | 0/TBD | Not started | - |
+| 30. Observability + Security | 0/TBD | Not started | - |
 
 ---
 
-*Roadmap created: 2026-04-12 for v2.8 Metabolism milestone.*
-*Primary input: .planning/REQUIREMENTS.md (23 requirements across 6 categories), .planning/research/v2.8-token-optimization-research.md*
-*Phase structure: user-defined dependency chain ordering (20 → 21/22 parallel → 23 → 24, 25 anytime)*
-*Previous milestone (v2.7 Steady Hands) archived to .planning/milestones/v2.7-ROADMAP.md*
+*Roadmap created: 2026-04-13 for v2.9 Nervous System milestone.*
+*Primary input: .planning/REQUIREMENTS.md (26 requirements across 5 categories), PROJECT.md (v2.9 goal + research summary)*
+*Phase structure: user-specified dependency graph (26 serial foundation → 27/28 parallel → 29/30 parallel terminal)*
+*Previous milestone (v2.8 Metabolism) complete: 6 phases, 13 plans, 26 requirements, all shipped 2026-04-12/13*

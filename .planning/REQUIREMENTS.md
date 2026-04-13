@@ -1,117 +1,169 @@
-# Requirements: GSD-Amauta v2.8 "Metabolism"
+# Requirements: GSD-Amauta v2.9 "Nervous System"
 
-**Defined:** 2026-04-12
-**Core Value:** Every RPETD phase must see what other phases have learned. The brain synthesizes, not accumulates.
+**Defined:** 2026-04-13
+**Core Value:** Every RPETD phase must *see* what the other phases have already learned — the brain synthesizes, not accumulates.
 
-## v2.8 Requirements
+## v2.9 Requirements
 
-Requirements for token optimization milestone. Each maps to roadmap phases.
+Five infrastructure layers composing into a unified upgrade. Target: 3x retrieval precision (MRR), native MCP interoperability, self-correcting execution, full-stack observability, kernel-level isolation.
 
-### Structured Context Handoffs
+### Infrastructure — The Substrate (Phase 26)
 
-- [x] **HANDOFF-01**: RPETDContext Pydantic model exists with exactly 8 typed fields (task_id, original_intent, completed_work, current_state, active_constraints, relevant_files, next_actions, context_version); model validates on construction; unit test creates instance with all fields and asserts `.model_dump()` round-trips without loss
-- [x] **HANDOFF-02**: Compaction function at each RPETD phase boundary produces RPETDContext from raw conversation; prune step removes tool outputs older than the last 40K tokens; compact step LLM-summarizes remainder into structured object; test verifies a 15K-token conversation compacts to an RPETDContext instance
-- [x] **HANDOFF-03**: RPETDContext serialized to `rpetd_context` PostgreSQL table after each phase; table has `task_id`, `phase`, `context_json`, `created_at` columns; `SELECT * FROM rpetd_context WHERE task_id = X` returns one row per completed phase
-- [x] **HANDOFF-04**: Downstream phase input contains compiled view at <= 600 tokens (measured via `tiktoken cl100k_base`); full conversation history is NOT forwarded; test asserts compiled view token count < 600 for a representative 5-phase RPETD cycle
-- [x] **HANDOFF-05**: All 5 existing RPETD phase runners (R, P, E, T, D) execute successfully with RPETDContext as input; no existing test regressions; `node --test tests/` exit code 0
+Infrastructure installs with zero application code changes. Everything downstream depends on this.
 
-### Hash-Based Staleness Detection
+- [ ] **INFRA-01**: Redis replaced by Valkey 8.x. All existing Redis clients work unchanged. Throughput measured via redis-benchmark shows >= 30% improvement on SET operations. BSD 3-Clause license confirmed in docker-compose.yml.
+  - *Acceptance:* valkey-cli ping returns PONG. All 2750 existing tests pass. Benchmark delta logged.
 
-- [ ] **STALE-01**: `ContextValidator.compute_file_hash(path)` returns SHA-256 hex digest; hashes stored in `rpetd_context.relevant_files` as `{path: hash}` dict; test verifies hash changes when file content changes and stays stable when file is unchanged
-- [ ] **STALE-02**: `ContextValidator.changed_since(context)` calls `git diff --name-only` against stored commit ref; returns list of changed file paths; zero additional filesystem reads for unchanged files; test verifies correct diff detection after a commit
-- [ ] **STALE-03**: `ContextValidator.selective_refresh(context, stale_files)` re-generates descriptions only for stale files; unchanged files retain their cached descriptions verbatim; test with 10 files where 2 changed verifies only 2 descriptions regenerated
-- [ ] **STALE-04**: RPETD orchestrator calls `ContextValidator.validate_context()` before each phase start; if stale files found, `selective_refresh()` runs before phase begins; log line emitted: `[STALE] N files refreshed, M cached`; test verifies hook fires on phase transition
+- [ ] **INFRA-02**: pgvector upgraded to >= 0.8.0. Iterative index scans enabled (SET ivfflat.iterative_scan = relaxed_order). Filtered vector queries on semantic_cache table show >= 3x speedup on 10-query benchmark vs current.
+  - *Acceptance:* SELECT extversion FROM pg_extension WHERE extname='vector' returns >= 0.8.0. Benchmark results logged.
 
-### Caveman-Compressed Descriptions
+- [ ] **INFRA-03**: ParadeDB pg_search extension installed alongside pgvector. BM25 index created on a test table. SELECT * FROM test_table WHERE test_table @@@ 'query' returns results. Migration 011-paradedb-setup.sql delivered.
+  - *Acceptance:* SELECT extversion FROM pg_extension WHERE extname='pg_search' returns non-null. BM25 query returns ranked results.
 
-- [ ] **CAVE-01**: File description generator outputs structured format: `[function 10w max] | deps: [list] | touches: [file patterns] | tests: [file(count)] | [quality signal]`; format parseable by regex `^.+\|.deps:.+\|.touches:.+\|.tests:.+\|.+$`; test verifies 10 sample files produce parseable descriptions
-- [ ] **CAVE-02**: Grammar stripping applied to CLAUDE.md and agent definition files; articles (a, an, the), filler words, and hedging removed; output is valid markdown; achieves >= 5% total-file character reduction on files with < 30% code block density, or documents the irreducible floor for dense technical markdown (files with >= 50% code blocks/XML/YAML achieve ~1-2% — this is the honest ceiling, not a failure); test verifies stripping runs and preserves structure
-- [ ] **CAVE-03**: BM25 retrieval benchmark: run 20 queries against both original and compressed descriptions; mean reciprocal rank (MRR) of compressed >= 95% of original MRR; no query drops more than 2 rank positions; test suite with golden queries and expected top-3 results
-- [ ] **CAVE-04**: Side-by-side measurement: for 10 representative files, count distinct technical facts (identifiers, relationships, constraints) in 500-char original vs 500-char compressed description; compressed contains >= 40% more facts; test with manual fact annotations as ground truth
+- [ ] **INFRA-04**: Tree-sitter parsers installed for JavaScript, Python, TypeScript, and CJS. tree-sitter parse <file> produces valid AST for one sample file of each language. Parser binaries available to Python and Node processes.
+  - *Acceptance:* 4 sample files parsed, AST node count > 0 for each. Parser import succeeds in both Python and CJS test files.
 
-### Prompt Prefix Caching
+### Retrieval — The Retrieval Rewrite (Phase 27)
 
-- [ ] **CACHE-01**: All 11 specialist agent prompts restructured so stable content (system instructions, tool definitions, file descriptions) precedes variable content (phase-specific instructions, latest outputs); diff shows no variable content before the `cache_control` breakpoint; audit script verifies ordering for all 11 agents
-- [ ] **CACHE-02**: `annotate_cache_control()` utility returns correct `cache_control: {"type": "ephemeral"}` metadata for the stable prefix breakpoint; utility is available for any future direct API integration; test verifies annotation logic returns correct structure (note: GSD-Amauta delegates API calls to Claude Code, which handles cache_control internally — the utility documents intent and provides infrastructure for direct-call paths)
-- [ ] **CACHE-03**: Prefix stability lint: no `datetime.now()`, `time.time()`, or `Date.now()` in system prompt construction; tool definitions sorted alphabetically and frozen; test generates two sequential prompts for the same agent and asserts byte-identical prefixes up to the breakpoint
-- [ ] **CACHE-04**: After each Claude API call, `cache_read_input_tokens` and `cache_creation_input_tokens` logged to structured metrics; `/metrics/cache` endpoint returns cumulative hit rate, total tokens saved, and cost savings estimate; test verifies metrics update after API call
+The standalone rlm-service.py BM25 engine rebuilt on top of the substrate. Six capabilities collapse into one coherent pipeline.
 
-### Semantic Cache Layer
+- [ ] **RLM-01**: Tree-sitter AST-aware chunking replaces fixed-character chunking. Each chunk is a complete function, class, or method. Chunk metadata includes: {file_path, symbol_name, symbol_type, start_line, end_line, dependencies[], dependents[]}. Chunk boundary never splits a function.
+  - *Acceptance:* Given 10 sample files totaling 5000+ lines, zero chunks contain partial function definitions. Chunk count within 20% of function/class count.
 
-- [ ] **SEMANTIC-01**: Before any research-chain LLM call, query is embedded and checked against `semantic_cache` table (pgvector cosine similarity >= 0.90); cache hit returns stored response without LLM call; cache miss stores response after LLM call; test verifies paraphrased query ("how to parse JSON in Python" / "Python JSON parsing") returns cached response
-- [ ] **SEMANTIC-02**: When source file referenced by cached response changes (SHA-256 mismatch), cached entry marked stale and excluded from future hits; `semantic_cache.valid` column flipped to false; test modifies source file, verifies cache miss on next query for that context
-- [ ] **SEMANTIC-03**: `/cache/stats` HTTP endpoint returns JSON: `{hits, misses, hit_rate, entries, total_tokens_saved, estimated_cost_saved}`; all counters increment correctly; test makes 5 cache hits + 3 misses and verifies `hit_rate` = 0.625
+- [ ] **RLM-02**: ParadeDB BM25 indexes RLM chunks inside PostgreSQL. Migration 012-rlm-paradedb.sql creates rlm_chunks table with BM25 index. All BM25 queries route through PG instead of the standalone Python engine. rlm-service.py becomes a thin HTTP wrapper over PG queries.
+  - *Acceptance:* EXPLAIN on BM25 query shows pg_search index scan. Response latency <= 50ms on 95th percentile for 20-query benchmark. Standalone BM25 scoring code marked deprecated.
 
-### Tiered Model Routing
+- [ ] **RLM-03**: Code-specific embeddings replace general-purpose embeddings for RLM chunks. Voyage Code 3 API (primary) or Qodo-Embed-1-1.5B (local fallback). Matryoshka dimensionality: 1024-dim stored, 256-dim for fast lookup. Migration 013-code-embeddings.sql adds embedding_code column.
+  - *Acceptance:* Code retrieval MRR on 20-query golden set improves >= 15% vs current general embeddings. Embedding generation gracefully falls back from API to local model.
 
-- [ ] **ROUTE-01**: `config.json::model_routing` map defines model per RPETD phase; default: `{R: "sonnet", P: "sonnet", E: "sonnet", T: "haiku", D: "haiku"}`; orchestrator reads config and passes correct model to each phase; test overrides config to all-haiku and verifies T/D phases use haiku
-- [ ] **ROUTE-02**: Compaction summarization (HANDOFF-02's LLM call) uses model from `config.json::model_routing.compaction` (default: "haiku"); test verifies compaction call uses configured model, not the phase's primary model
+- [ ] **RLM-04**: Hybrid search via Reciprocal Rank Fusion combines BM25 + vector similarity in a single SQL query. RRF formula: 1/(k + rank_bm25) + 1/(k + rank_vector) with k=60. Both indexes queried in parallel within one PG transaction.
+  - *Acceptance:* Hybrid MRR >= 95% of max(BM25-only, vector-only) across 20 golden queries. Single SQL query, no application-level fusion.
 
-### Tech Debt Sweep
+- [ ] **RLM-05**: Cross-encoder reranking after hybrid retrieval. Hybrid top-20 -> Jina Reranker v2 (or compatible cross-encoder) -> return top-5. Reranker scores cached in Valkey by (query_hash, chunk_id) with 10-minute TTL. Graceful fallback: if reranker unavailable, return hybrid top-5 unranked.
+  - *Acceptance:* Reranked MRR >= 10% improvement over hybrid-only on 20 golden queries. Reranker failure does not crash the pipeline. Cache hit rate logged.
 
-- [ ] **DEBT-01**: `cmdInitPhaseOp` no longer falls back to archived milestone directories; calling `init discuss-phase` for a phase with no v2.8 directory returns error (not a v2.3/v2.6 ghost); test replays Depth-11 scenario and verifies no ghost returned
-- [ ] **DEBT-02**: `plan-to-tasks` auto-registration succeeds for phases >= 20; daemon task list contains entries for v2.8 phases after plan execution; test creates phase 20 plan and verifies daemon `GET /tasks?phase=20` returns registered tasks
-- [ ] **DEBT-03**: `amauta.cjs` wrapper routes HTTP requests correctly to daemon endpoints; `amauta.cjs task list` returns same output as `gsd-amauta.cjs task list`; test compares outputs of both wrappers
-- [ ] **DEBT-04**: `routeExecutor` selects agent via deterministic first-match on file patterns; given two agents matching the same file, the one with higher specificity wins (longer glob); test with overlapping patterns verifies deterministic selection
+- [ ] **RLM-06**: Dependency graph built from tree-sitter AST. Nodes = functions/classes/modules. Edges = imports, calls, inheritance. Stored as adjacency lists in Valkey. When retrieval finds a function, 1-hop graph neighbors included in context. PageRank identifies architectural hub files.
+  - *Acceptance:* Graph covers >= 90% of function-level symbols in the codebase. Given a retrieved function, >= 1 caller and >= 1 callee included in expanded context (when they exist). Hub files list non-empty.
+
+### Behavioral — The Behavioral Upgrade (Phase 28)
+
+Prompt, workflow, and protocol changes sharing the same behavioral test infrastructure.
+
+- [ ] **BEHAV-01**: AGENTS.md adopted as native format for per-directory agent instructions. Discovery follows "closest file wins" (existing specificity-wins pattern). Existing agent .md files in agents/ remain the system-level definitions; AGENTS.md files in project directories override per-directory behavior.
+  - *Acceptance:* An AGENTS.md file placed in services/ directory is read and applied when an executor operates on files in services/. Agent definitions in agents/ still apply when no AGENTS.md exists. 5 tests covering discovery hierarchy.
+
+- [ ] **BEHAV-02**: Circuit breaker on all 11 specialist agents. Track consecutive failures per agent. After 3 consecutive failures, agent enters OPEN state (auto-fallback to gsd-executor-general). Half-open recovery test after 60 seconds. State stored in Valkey with TTL.
+  - *Acceptance:* Simulated 3 consecutive failures on gsd-executor-backend triggers fallback to gsd-executor-general. Recovery test after TTL re-enables the original agent. 4 tests covering open/closed/half-open states.
+
+- [ ] **BEHAV-03**: Reflexion memory persists across sessions. When Divergence Protocol fires, gsd-debugger generates a verbal reflection stored in divergence-memory.json ({task_id, timestamp, what_failed, why, what_to_try_next}). Past reflections for the same task injected into executor context on retries (max 3 most recent).
+  - *Acceptance:* After a divergence event, divergence-memory.json contains the new entry. On retry, executor's PRE_EXECUTION_EVIDENCE block includes past reflections. File format validated by JSON schema. 6 tests.
+
+- [ ] **BEHAV-04**: Lint-after-edit guardrail in Manifest Enforcement. After each executor commit, run language-appropriate linter (eslint for JS/CJS, ruff for Python). If linter reports errors, commit is flagged (not rejected -- advisory in v2.9) with structured lint_report in commit metadata. Exit code from lint logged but does not block.
+  - *Acceptance:* A commit introducing a syntax error produces a lint_report with >= 1 finding. A clean commit produces an empty lint_report. Linter failure (tool not found) gracefully degrades to no-op. 5 tests.
+
+- [ ] **BEHAV-05**: Feature-level progress tracking via feature_list.json. Each plan generates a feature list ({feature_id, description, status: pending|passing|failing, test_file, last_verified}). Validator updates feature status after each test run. Prevents "premature victory" -- phase cannot be marked complete while any feature has status failing.
+  - *Acceptance:* Plan 27-01 produces a feature_list.json with >= 3 features. Validator refuses --pass verdict when any feature is failing. Feature status updates after test execution. 5 tests.
+
+- [ ] **BEHAV-06**: "Get bearings" ritual at session start. When a phase resumes after context window clear, the first action reads: feature_list.json + last 3 git log entries + divergence-memory.json + STATE.md current position. This context is assembled into a <= 400-token "bearings block" prepended to the phase's system prompt.
+  - *Acceptance:* After /clear, resumed phase execution includes bearings block in first message. Bearings block <= 400 tokens (tiktoken measured). 3 tests.
+
+### Interoperability — The MCP Interface (Phase 29)
+
+The daemon gains protocol-native MCP server capabilities alongside its existing HTTP API.
+
+- [ ] **MCP-01**: Amauta daemon exposes an MCP server via stdio transport (for Claude Code) and SSE transport (for remote clients). Server advertises capabilities: tools, resources, prompts. Existing HTTP API remains unchanged -- MCP is additive.
+  - *Acceptance:* claude mcp list shows amauta server. MCP initialize handshake completes. HTTP API continues responding on all existing endpoints. 4 tests.
+
+- [ ] **MCP-02**: RLM retrieval exposed as MCP tool amauta/search-code. Parameters: {query: string, top_k?: number, file_filter?: string}. Returns ranked chunks with metadata. Uses the Phase 27 hybrid pipeline internally.
+  - *Acceptance:* MCP tool call with query returns >= 1 result. Results match HTTP /api/rlm/search output for same query. 3 tests.
+
+- [ ] **MCP-03**: Memory system exposed as MCP tools: amauta/memory-store (store a memory), amauta/memory-search (semantic search), amauta/memory-distill (trigger distillation). Parameters follow existing daemon API contracts.
+  - *Acceptance:* Store -> search round-trip returns the stored memory. Distill trigger completes without error. 4 tests.
+
+- [ ] **MCP-04**: RPETD context exposed as MCP resources. amauta://context/{task_id}/{phase} returns the RPETDContext for a given task and phase. Resource list includes all active tasks.
+  - *Acceptance:* MCP resource read returns valid JSON matching RPETDContext schema. Resource list is non-empty when tasks exist. 3 tests.
+
+- [ ] **MCP-05**: Research chain exposed as MCP tool amauta/research. Parameters: {query: string, creative?: boolean}. Runs the 5-step chain (Memory -> SKB -> Context7 -> Perplexity -> WebFetch) and returns consolidated results. Semantic cache checked before execution.
+  - *Acceptance:* Research tool call returns results. Cache hit on identical query returns cached response without API calls. 3 tests.
+
+### Operations — Observability + Security (Phase 30)
+
+Full-stack tracing, kernel-level isolation, and policy enforcement.
+
+- [ ] **OBS-01**: Langfuse deployed on K3s via Helm chart. All 11 agents instrumented with OpenTelemetry spans. Each RPETD phase is a trace, each agent invocation is a span, each tool call is a sub-span. Token costs tracked per trace.
+  - *Acceptance:* Langfuse UI shows traces for a complete RPETD cycle. Token cost per phase visible. Trace includes >= 3 span levels (phase -> agent -> tool). Graceful degradation: if Langfuse is down, agents continue operating without tracing. 4 tests.
+
+- [ ] **OBS-02**: Model canary test suite. 50 representative tasks selected from existing 2750 tests. Run against current model on milestone start to establish baseline scores. After any model change, re-run and compare via McNemar's test. Alert if degradation > 1% with p < 0.05.
+  - *Acceptance:* Canary suite runs in < 5 minutes. Baseline scores stored in PG. Comparison function returns {degraded: bool, p_value: float, delta: float}. 3 tests.
+
+- [ ] **SEC-01**: Rule of Two audit across all 11 agents. Each agent annotated with capabilities: {reads_untrusted: bool, accesses_sensitive: bool, modifies_state: bool}. Any agent satisfying all three flagged with RULE_OF_TWO_VIOLATION in audit report. Remediation plan documented per violation.
+  - *Acceptance:* Audit script produces JSON report. >= 1 violation identified and documented with remediation. Report includes all 11 agents. 3 tests.
+
+- [ ] **SEC-02**: gVisor RuntimeClass installed on K3s nodes. New SandboxProfile CRD defines execution boundaries for code execution tasks. Executor agents' bash commands run inside gVisor sandbox when AMAUTA_SANDBOX=gvisor is set. Fallback to standard container when gVisor unavailable.
+  - *Acceptance:* kubectl get runtimeclass shows gvisor. A test command runs inside sandbox and produces output. Network egress blocked from sandbox by default. Fallback path tested. 4 tests.
+
+- [ ] **SEC-03**: Tool definition integrity checking. All MCP tool definitions hashed at startup. Runtime hash comparison before each tool invocation. Hash mismatch logs a TOOL_INTEGRITY_VIOLATION warning and blocks the call. Covers both built-in tools and external MCP servers.
+  - *Acceptance:* Modifying a tool definition between startup and invocation produces a violation warning. Unmodified tools pass integrity check silently. 3 tests.
 
 ## Future Requirements
 
-Deferred to v2.9+. Tracked but not in current roadmap.
+Deferred beyond v2.9:
 
-### Advanced Optimization
-
-- **ADV-01**: LLMLingua-2 token-level compression for file analysis before truncation
-- **ADV-02**: Batch API integration (50% off) for non-interactive RPETD phases
-- **ADV-03**: Cross-session context persistence via RPETDContext serialization
-- **ADV-04**: Adaptive model routing based on task complexity scoring
+- **A2A Agent Cards** — Agent-to-agent discovery protocol (v0.3, not production-ready)
+- **RouteLLM dynamic routing** — Replace static model routing with learned routing (requires training data)
+- **Local LLM tier** — Qwen3.5 35B-A3B via Ollama for zero-cost T/D phases (requires GPU node)
+- **libSQL fallback** — DiskANN vector search for PG-down degraded mode
+- **Sleep-time agents** — Async memory consolidation (Letta/MemGPT pattern)
+- **SAGE plan-induction** — Analyze failed trajectories to produce corrective plans
+- **pass^k behavioral testing** — Multi-trial policy adherence measurement
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| Model weight access / Attention Residuals implementation | Requires model internals — paper insight applied at application layer only |
-| OpenAI API caching integration | GSD-Amauta uses Claude API exclusively; dual-API deferred |
-| Real-time KV cache management | Claude API handles cache lifecycle; no client-side KV needed |
-| Full LLMLingua-2 pipeline | Adds Python ML dependency; deferred to v2.9 after measuring caveman approach |
+| A2A protocol support | v0.3 spec, not stable enough for production |
+| GPU-dependent features | No GPU node in current K3s cluster |
+| Full Kubernetes migration | Daemon stays as Python process; K3s for observability/security only |
+| SPLADE/ColBERT retrieval | Storage overhead disproportionate for ~100K-line codebase |
+| Agent rewriting/replacement | Optimize existing 11 agents, not rebuild |
+| Real-time streaming MCP | SSE transport sufficient; WebSocket deferred |
 
 ## Traceability
 
-Which phases cover which requirements. Updated during roadmap creation.
-
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| HANDOFF-01 | Phase 20 | Complete |
-| HANDOFF-02 | Phase 20 | Complete |
-| HANDOFF-03 | Phase 20 | Complete |
-| HANDOFF-04 | Phase 20 | Complete |
-| HANDOFF-05 | Phase 20 | Complete |
-| STALE-01 | Phase 21 | Pending |
-| STALE-02 | Phase 21 | Pending |
-| STALE-03 | Phase 21 | Pending |
-| STALE-04 | Phase 21 | Pending |
-| CAVE-01 | Phase 22 | Pending |
-| CAVE-02 | Phase 22 | Revised (threshold updated per divergence) |
-| CAVE-03 | Phase 22 | Pending |
-| CAVE-04 | Phase 22 | Pending |
-| CACHE-01 | Phase 23 | Pending |
-| CACHE-02 | Phase 23 | Pending |
-| CACHE-03 | Phase 23 | Pending |
-| CACHE-04 | Phase 23 | Pending |
-| SEMANTIC-01 | Phase 24 | Pending |
-| SEMANTIC-02 | Phase 24 | Pending |
-| SEMANTIC-03 | Phase 24 | Pending |
-| ROUTE-01 | Phase 24 | Pending |
-| ROUTE-02 | Phase 24 | Pending |
-| DEBT-01 | Phase 25 | Pending |
-| DEBT-02 | Phase 25 | Pending |
-| DEBT-03 | Phase 25 | Pending |
-| DEBT-04 | Phase 25 | Pending |
+| INFRA-01 | Phase 26 | Pending |
+| INFRA-02 | Phase 26 | Pending |
+| INFRA-03 | Phase 26 | Pending |
+| INFRA-04 | Phase 26 | Pending |
+| RLM-01 | Phase 27 | Pending |
+| RLM-02 | Phase 27 | Pending |
+| RLM-03 | Phase 27 | Pending |
+| RLM-04 | Phase 27 | Pending |
+| RLM-05 | Phase 27 | Pending |
+| RLM-06 | Phase 27 | Pending |
+| BEHAV-01 | Phase 28 | Pending |
+| BEHAV-02 | Phase 28 | Pending |
+| BEHAV-03 | Phase 28 | Pending |
+| BEHAV-04 | Phase 28 | Pending |
+| BEHAV-05 | Phase 28 | Pending |
+| BEHAV-06 | Phase 28 | Pending |
+| MCP-01 | Phase 29 | Pending |
+| MCP-02 | Phase 29 | Pending |
+| MCP-03 | Phase 29 | Pending |
+| MCP-04 | Phase 29 | Pending |
+| MCP-05 | Phase 29 | Pending |
+| OBS-01 | Phase 30 | Pending |
+| OBS-02 | Phase 30 | Pending |
+| SEC-01 | Phase 30 | Pending |
+| SEC-02 | Phase 30 | Pending |
+| SEC-03 | Phase 30 | Pending |
 
 **Coverage:**
-- v2.8 requirements: 23 total
-- Mapped to phases: 23
-- Unmapped: 0
+- v2.9 requirements: 26 total
+- Mapped to phases: 26
+- Unmapped: 0 ✓
 
 ---
-*Requirements defined: 2026-04-12*
-*Last updated: 2026-04-12 after initial definition*
+*Requirements defined: 2026-04-13*
+*Last updated: 2026-04-13 after initial definition*
