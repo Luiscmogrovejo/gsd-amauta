@@ -1,0 +1,31 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "packageManager": "npm",
+  "reporters": ["html", "clear-text", "progress", "json"],
+  "testRunner": "command",
+  "testRunnerNodeArgs": [],
+  "commandRunner": {
+    "command": "node scripts/run-tests.cjs"
+  },
+  "coverageAnalysis": "off",
+  "mutate": [
+    "get-shit-done/bin/lib/*.cjs",
+    "!get-shit-done/bin/lib/*.test.cjs"
+  ],
+  "thresholds": {
+    "high": 80,
+    "low": 70,
+    "break": 60
+  },
+  "incremental": true,
+  "incrementalFile": ".stryker-incremental.json",
+  "timeoutMS": 30000,
+  "timeoutFactor": 1.5,
+  "concurrency": 2,
+  "htmlReporter": {
+    "fileName": "reports/mutation/report.html"
+  },
+  "jsonReporter": {
+    "fileName": "reports/mutation/report.json"
+  }
+}

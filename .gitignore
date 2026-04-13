@@ -46,3 +46,10 @@ credentials.json
 *.secret
 *.bak
 backups/
+
+# Stryker mutation testing artifacts
+.stryker-incremental.json
+reports/mutation/
+
+# Pact generated contract files
+pacts/
