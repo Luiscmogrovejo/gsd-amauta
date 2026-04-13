@@ -128,3 +128,67 @@ test('MCP-03: store->search round-trip uses _call_daemon for both store and sear
   assert.ok(matches.length >= 5,
     `Expected >= 5 _call_daemon calls, found ${matches.length}`);
 });
+
+// ─── MCP-04 Tests ─────────────────────────────────────────────────────────────
+
+// Test 12: context resource URI pattern is correctly defined
+test('MCP-04: context resource URI amauta://context/{task_id}/{phase} is registered', () => {
+  const content = fs.readFileSync(path.join(ROOT, 'services', 'amauta-mcp.py'), 'utf8');
+  assert.match(content, /amauta:\/\/context/, 'context resource URI scheme must be present');
+  assert.match(content, /list_resources/, '@server.list_resources decorator must be present');
+  assert.match(content, /read_resource/, '@server.read_resource decorator must be present');
+});
+
+// Test 13: read_resource parses URI and calls correct daemon path
+test('MCP-04: read_resource parses amauta://context URI and calls /api/context/{task_id}/{phase}', () => {
+  const content = fs.readFileSync(path.join(ROOT, 'services', 'amauta-mcp.py'), 'utf8');
+  // URI regex: amauta://context/([^/]+)/([RPETD])
+  assert.match(content, /amauta:\/\/context.*\[RPETD\]|RPETD.*amauta:\/\/context/,
+    'read_resource must validate phase in [RPETD]');
+  assert.match(content, /\/api\/context/, '/api/context delegation must be present');
+  // Phase validation: must check for invalid URIs
+  assert.match(content, /ValueError.*Unsupported resource URI|unsupported.*URI/i,
+    'read_resource must raise ValueError for unsupported URI');
+});
+
+// Test 14: list_resources fetches tasks and builds resource list
+test('MCP-04: list_resources fetches /api/list and builds amauta://context resources', () => {
+  const content = fs.readFileSync(path.join(ROOT, 'services', 'amauta-mcp.py'), 'utf8');
+  assert.match(content, /\/api\/list/, 'list_resources must call /api/list');
+  assert.match(content, /TK-\d{4}|re\.findall.*TK/, 'list_resources must extract TK-XXXX task IDs');
+  assert.match(content, /mimeType.*application\/json/, 'resources must set mimeType=application/json');
+});
+
+// ─── MCP-05 Tests ─────────────────────────────────────────────────────────────
+
+// Test 15: research tool defined with correct schema
+test('MCP-05: research tool defined with query required, creative optional', () => {
+  const content = fs.readFileSync(path.join(ROOT, 'services', 'amauta-mcp.py'), 'utf8');
+  assert.match(content, /amauta\/research/, 'research tool name must be present');
+  assert.match(content, /implementable.*subset|Memory.*SKB.*WebFetch/,
+    'tool description must mention implementable subset');
+  assert.match(content, /"creative"/, 'creative param must be in inputSchema');
+});
+
+// Test 16: research chain checks cache first
+test('MCP-05: research chain checks /api/research-cache before executing Memory->SKB->WebFetch', () => {
+  const content = fs.readFileSync(path.join(ROOT, 'services', 'amauta-mcp.py'), 'utf8');
+  assert.match(content, /api\/research-cache/, 'research-cache endpoint must be checked');
+  assert.match(content, /hashlib\.sha256/, 'cache key must be sha256 of query');
+  // Cache hit path: from_cache = True
+  assert.match(content, /from_cache.*True|"from_cache".*True/, 'cache hit sets from_cache=True');
+});
+
+// Test 17: research result shape (read-through cache — no POST write, daemon has no POST /api/research-cache)
+test('MCP-05: research result has {memory_results, skb_results, web_results, from_cache} shape', () => {
+  const content = fs.readFileSync(path.join(ROOT, 'services', 'amauta-mcp.py'), 'utf8');
+  assert.match(content, /memory_results/, 'result must have memory_results key');
+  assert.match(content, /skb_results/, 'result must have skb_results key');
+  assert.match(content, /web_results/, 'result must have web_results key');
+  assert.match(content, /from_cache.*False|"from_cache".*False/, 'cache miss sets from_cache=False');
+  // Verify no POST cache-write — daemon has no POST /api/research-cache route.
+  // Pattern targets code calls only (_call_daemon("POST", ...) or requests.post(... research-cache)),
+  // not comments (which mention POST /api/research-cache in plain text).
+  assert.doesNotMatch(content, /_call_daemon\("POST".*research-cache|requests\.post.*research-cache/,
+    'research chain must NOT call _call_daemon("POST", ...) targeting research-cache (endpoint does not exist in daemon)');
+});
