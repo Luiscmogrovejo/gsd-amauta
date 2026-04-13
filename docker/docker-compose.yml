@@ -1,7 +1,8 @@
 services:
   postgres:
-    # paradedb/paradedb:pg16 ships pgvector >= 0.8.0 + pg_search (BM25) — INFRA-02, INFRA-03
-    image: paradedb/paradedb:pg16
+    # paradedb/paradedb:latest-pg16 ships pgvector >= 0.8.0 + pg_search (BM25) — INFRA-02, INFRA-03
+    # Note: tag is latest-pg16 (not pg16) — ParadeDB tagging convention
+    image: paradedb/paradedb:latest-pg16
     container_name: gsd-postgres
     restart: unless-stopped
     environment:
