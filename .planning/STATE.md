@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v2.9
 milestone_name: Nervous System
 status: in_progress
-stopped_at: Phase 28 Plan 28-02 complete
-last_updated: "2026-04-13T20:45:00.000Z"
-last_activity: 2026-04-13 — Plan 28-02 complete (6 atomic commits, BEHAV-04/05/06 done, 29 CJS + 11 Python tests passing, lint guardrail + feature_list.json lifecycle + get-bearings ritual live)
+stopped_at: Phase 29 Plan 29-01 complete
+last_updated: "2026-04-13T21:25:00.000Z"
+last_activity: 2026-04-13 — Plan 29-01 complete (4 atomic commits, MCP-01 done, amauta-mcp.py scaffold + .mcp.json + install.js update + docker-compose port 18800)
 progress:
   total_phases: 5
   completed_phases: 2
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-13 for v2.9)
 
 ## Current Position
 
-Phase: 28 — The Behavioral Upgrade (COMPLETE)
-Plan: 28-02 complete — lint-after-edit advisory guardrail (BEHAV-04) + feature_list.json per-plan lifecycle (BEHAV-05) + get-bearings 400-token auto-block (BEHAV-06)
-Status: All 6 BEHAV requirements delivered. 13 total atomic commits, 29 CJS + 11 Python tests passing.
-Last activity: 2026-04-13 — Plan 28-02 complete (6 atomic commits, BEHAV-04/05/06 done, 29 CJS + 11 Python tests passing, lint guardrail + feature_list.json lifecycle + get-bearings ritual live)
+Phase: 29 — The MCP Interface (IN PROGRESS)
+Plan: 29-01 complete — MCP server scaffold (MCP-01): amauta-mcp.py dual transport (stdio+SSE), .mcp.json discovery, mcp>=1.0, docker-compose port 18800
+Status: MCP-01 delivered. 4 atomic commits. Stub handlers in place; tool implementations land in 29-02.
+Last activity: 2026-04-13 — Plan 29-01 complete (4 atomic commits, MCP-01 done, amauta-mcp.py scaffold + .mcp.json + install.js update + docker-compose port 18800)
 
 Progress: [██████████] 96%
 
@@ -39,7 +39,7 @@ Progress: [██████████] 96%
 | 26 | The Substrate | INFRA-01..04 (4) | Nothing | Complete (2026-04-13) |
 | 27 | The Retrieval Rewrite | RLM-01..06 (6) | Phase 26 | Complete (2026-04-13) |
 | 28 | The Behavioral Upgrade | BEHAV-01..06 (6) | Phase 26 | Complete (2026-04-13) |
-| 29 | The MCP Interface | MCP-01..05 (5) | Phase 27 | Not started |
+| 29 | The MCP Interface | MCP-01..05 (5) | Phase 27 | In progress (MCP-01 done) |
 | 30 | Observability + Security | OBS-01..02, SEC-01..03 (5) | Phases 27+28 | Not started |
 
 **Execution order:**
@@ -84,6 +84,10 @@ Progress: [██████████] 96%
     - Plan 28-02: feature_list.json is overwrite-not-append — it is the current-state snapshot. featureListGenerate reads PLAN.md task XML, first acceptance_criteria bullet is description (truncated at 200 chars).
     - Plan 28-02: get-bearings trigger is presence of any *-feature_list.json in PHASE_DIR — signals work has started. 400-token budget: feature_list(150) → git log(50) → divergence-memory(100) → STATE.md(100). Truncate STATE.md first on overflow.
     - Plan 28-02: feature-list-update exits 2 when any feature failing (exit 2, not 1, to distinguish from fatal errors). CLI exits 0 for clean, 2 for failing — caller (gsd-validator) checks exit code.
+    - Plan 29-01: amauta-mcp.py is a standalone process (~177 lines); never imports from daemon. All tool handlers delegate via _call_daemon(method, path, body) or _call_rlm(query, top_k, ...) stdlib-only helpers.
+    - Plan 29-01: Transport detection: --sse flag or sys.stdin.isatty() → SSE on port 18800; else stdio (for Claude Code via .mcp.json). SSE uses stdlib http.server + ThreadingMixIn (no new async framework deps).
+    - Plan 29-01: .mcp.json at repo root: command=python3, args=[services/amauta-mcp.py], cwd=. — Claude Code auto-discovers. bin/install.js generates it for runtime==='claude' (gated, not all !isCodex && !isOpencode).
+    - Plan 29-01: docker-compose amauta-mcp service uses host.docker.internal:18799/18798 for daemon/RLM (both run as host processes). Port 18800 exposed on 127.0.0.1.
 
 ### Pending Todos
 
@@ -95,15 +99,17 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-13T20:45:00.000Z
-Stopped at: Phase 28 Plan 28-02 complete (Phase 28 DONE — all 6 BEHAV requirements)
-Resume file: .planning/phases/28-the-behavioral-upgrade/28-02-SUMMARY.md
+Last session: 2026-04-13T21:25:00.000Z
+Stopped at: Phase 29 Plan 29-01 complete (MCP-01 scaffold done; next: 29-02 tool handlers)
+Resume file: .planning/phases/29-the-mcp-interface/29-01-SUMMARY.md
 
 ## Learnings
 
 
 
 
+
+- [learning] 2026-04-13T18:46:41.418Z: featureListGenerate reads PLAN.md XML task blocks to extract first acceptance_criteria bullet as description; feature_list.json is overwrite-not-append (current-state snapshot); get-bearings block triggers on feature_list.json presence in PHASE_DIR — silent no-op on fresh phase; lint-after-edit is advisory (exits non-zero but never blocks); all three added to execute-phase.md in single file without conflict by anchoring insertions to unique text markers
 - [learning] 2026-04-13T17:22:15.838Z: RRF fusion in single SQL: FULL OUTER JOIN bm25_leg + vector_leg inside PostgreSQL with k=60 constant. pg_search BM25 alias syntax: WHERE c @@@ param (not c.table @@@). Matryoshka truncation: ::vector(256) cast on stored 1024-dim. MRR baseline=1.0 by construction when expected_top3 derived from engine output — use non-regression floor (80%) not impossible >1.0 targets. NetworkX+Valkey graph is ephemeral (TTL 1h), rebuild on /reindex. DEPRECATED comment pattern for keeping fallback code alive.
 - [learning] 2026-04-13T17:09:58.138Z: voyageai 0.2.x does not accept output_dimension kwarg in embed() — try/except TypeError to fall back. psycopg2 pgvector without adapter: pass embedding as '[f1,f2,...fN]' string with ::vector cast. rlm-service.py _load_dotenv skips vars already in os.environ — shell env takes priority over .env file.
 - [learning] 2026-04-13T16:59:59.885Z: tree-sitter 0.23.x Python API: Parser(Language(ts_lang.language())) constructor — no .set_language(). TypeScript: language_typescript() / language_tsx() sub-exports. pg_search 0.22.6: b= and position_decay= are NOT valid index WITH params — document in migration comments, apply at query time.
