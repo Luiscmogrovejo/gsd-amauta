@@ -1,0 +1,54 @@
+{
+  "plan_id": "28-02",
+  "generated_at": "2026-04-13T18:41:36.616Z",
+  "features": [
+    {
+      "feature_id": "28-02-F01",
+      "task_id": "28-02-01",
+      "description": "grep -n \"lintAfterEdit\\|lint-after-edit\" get-shit-done/bin/gsd-tools.cjs | wc -l | tr -d ' ' outputs >= \"6\"",
+      "status": "pending",
+      "test_file": null,
+      "last_verified": null
+    },
+    {
+      "feature_id": "28-02-F02",
+      "task_id": "28-02-02",
+      "description": "- get-shit-done/workflows/execute-phase.md (validate-phase step — locate the existing quality gate logic to find where to add the failing-feature block)",
+      "status": "pending",
+      "test_file": null,
+      "last_verified": null
+    },
+    {
+      "feature_id": "28-02-F03",
+      "task_id": "28-02-03",
+      "description": "python3 -c \"import json; json.load(open('schemas/lint-report.schema.json'))\" exits 0",
+      "status": "pending",
+      "test_file": null,
+      "last_verified": null
+    },
+    {
+      "feature_id": "28-02-F04",
+      "task_id": "28-02-04",
+      "description": "grep -n \"Get-Bearings\\|get-bearings\" get-shit-done/workflows/execute-phase.md returns >= 3 matches",
+      "status": "pending",
+      "test_file": null,
+      "last_verified": null
+    },
+    {
+      "feature_id": "28-02-F05",
+      "task_id": "28-02-05",
+      "description": "ls .planning/phases/27-the-retrieval-rewrite/27-01-feature_list.json exits 0",
+      "status": "pending",
+      "test_file": null,
+      "last_verified": null
+    },
+    {
+      "feature_id": "28-02-F06",
+      "task_id": "28-02-06",
+      "description": "node --test tests/28-behavioral-upgrade.test.cjs 2>&1 | grep \"pass:\" | grep -oE \"[0-9]+\" outputs >= \"29\"",
+      "status": "pending",
+      "test_file": "tests/28-behavioral-upgrade.test.cjs",
+      "last_verified": null
+    }
+  ]
+}

@@ -1,0 +1,62 @@
+{
+  "plan_id": "28-01",
+  "generated_at": "2026-04-13T18:41:35.977Z",
+  "features": [
+    {
+      "feature_id": "28-01-F01",
+      "task_id": "28-01-01",
+      "description": "grep -n \"AGENTS.md Discovery\" get-shit-done/workflows/execute-phase.md returns >= 1 match",
+      "status": "pending",
+      "test_file": null,
+      "last_verified": null
+    },
+    {
+      "feature_id": "28-01-F02",
+      "task_id": "28-01-02",
+      "description": "grep -l \"Directory Override (AGENTS.md)\" agents/gsd-executor-backend.md agents/gsd-executor-frontend.md agents/gsd-executor-infra.md agents/gsd-executor-general.md | wc -l | tr -d ' ' outputs \"4\"",
+      "status": "pending",
+      "test_file": null,
+      "last_verified": null
+    },
+    {
+      "feature_id": "28-01-F03",
+      "task_id": "28-01-03",
+      "description": "grep -n \"circuitBreakerCheck\\|circuitBreakerRecord\" get-shit-done/bin/gsd-tools.cjs | wc -l | tr -d ' ' outputs >= \"8\" (function definitions + exports + CLI cases)",
+      "status": "pending",
+      "test_file": null,
+      "last_verified": null
+    },
+    {
+      "feature_id": "28-01-F04",
+      "task_id": "28-01-04",
+      "description": "grep -n \"circuit-breaker/record\\|circuit_breaker.*record\" services/amauta-daemon.py returns >= 1 match",
+      "status": "pending",
+      "test_file": null,
+      "last_verified": null
+    },
+    {
+      "feature_id": "28-01-F05",
+      "task_id": "28-01-05",
+      "description": "grep -n \"Reflexion Memory Hook\" get-shit-done/references/divergence-protocol.md returns >= 1 match",
+      "status": "pending",
+      "test_file": null,
+      "last_verified": null
+    },
+    {
+      "feature_id": "28-01-F06",
+      "task_id": "28-01-06",
+      "description": "python3 -c \"import json; json.load(open('schemas/circuit-breaker.schema.json'))\" exits 0 (valid JSON)",
+      "status": "pending",
+      "test_file": null,
+      "last_verified": null
+    },
+    {
+      "feature_id": "28-01-F07",
+      "task_id": "28-01-07",
+      "description": "node --test tests/28-behavioral-upgrade.test.cjs 2>&1 | grep \"pass:\" | grep -oE \"[0-9]+\" outputs >= \"15\"",
+      "status": "pending",
+      "test_file": "tests/28-behavioral-upgrade.test.cjs",
+      "last_verified": null
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "plan_id": "27-01",
+  "generated_at": "2026-04-13T18:41:34.547Z",
+  "features": [
+    {
+      "feature_id": "27-01-F01",
+      "task_id": "27-01-01",
+      "description": "tests/fixtures/27-golden-queries.json exists",
+      "status": "pending",
+      "test_file": "tests/fixtures/27-golden-queries.json",
+      "last_verified": null
+    },
+    {
+      "feature_id": "27-01-F02",
+      "task_id": "27-01-02",
+      "description": "migrations/012-rlm-chunks.sql exists",
+      "status": "pending",
+      "test_file": null,
+      "last_verified": null
+    },
+    {
+      "feature_id": "27-01-F03",
+      "task_id": "27-01-03",
+      "description": "migrations/013-code-embeddings.sql exists",
+      "status": "pending",
+      "test_file": null,
+      "last_verified": null
+    },
+    {
+      "feature_id": "27-01-F04",
+      "task_id": "27-01-04",
+      "description": "services/ast_chunker.py exists",
+      "status": "pending",
+      "test_file": null,
+      "last_verified": null
+    },
+    {
+      "feature_id": "27-01-F05",
+      "task_id": "27-01-05",
+      "description": "tests/27-01-golden-baseline.test.cjs exists",
+      "status": "pending",
+      "test_file": "tests/27-01-golden-baseline.test.cjs",
+      "last_verified": null
+    }
+  ]
+}
