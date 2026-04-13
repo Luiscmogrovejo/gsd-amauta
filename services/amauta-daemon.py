@@ -2215,13 +2215,21 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             try:
                 from services.context_validator import validate_context
 
+                # Phase 22 CAVE-01: wire caveman description generator
+                cave_description_fn = None
+                try:
+                    from services.caveman_descriptions import generate_caveman_description
+                    cave_description_fn = generate_caveman_description
+                except ImportError:
+                    log.warning("caveman_descriptions not available — descriptions disabled")
+
                 store = _get_store()
                 result = validate_context(
                     task_id=ctx_task_id,
                     phase=ctx_phase,
                     project_dir=ctx_project_dir,
                     pg_store=store,
-                    description_fn=None,  # Phase 22 CAVE-01 will wire compressed description_fn
+                    description_fn=cave_description_fn,
                 )
 
                 # If we got updated hashes, store them back for next phase
