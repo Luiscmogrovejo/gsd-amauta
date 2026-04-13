@@ -253,6 +253,8 @@ def _trigger_lazy_ingestion(paths: list):
 # Persistent Mtime Index (cross-restart incremental indexing)
 # ═══════════════════════════════════════════════════════
 
+# DEPRECATED Phase 27: MtimeIndex replaced by SHA-256 in rlm_chunks (rlm_ingestion.py).
+# Kept as fallback when PG is unavailable. Do not use for new code.
 class MtimeIndex:
     """Persistent file modification time index.
 
@@ -707,7 +709,8 @@ def _tokenize_list(text):
     return re.findall(r"\b[a-zA-Z]\w{2,}\b", text.lower())
 
 
-# BM25 parameters
+# DEPRECATED Phase 27: Standalone BM25 scorer replaced by ParadeDB pg_search in rlm_search.py.
+# Kept as in-memory fallback when PG is unavailable.
 BM25_K1 = 1.5   # Term frequency saturation — higher = more weight to repeated terms
 BM25_B = 0.6    # Length normalization — reduced from 0.75 for code (less penalty on large classes)
 
@@ -833,6 +836,21 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
         path = self.path.rstrip("/")
 
         if path == "/health":
+            # Phase 27: Add pg_chunks_count to health response
+            pg_count = 0
+            pg_conn = _get_pg_conn()
+            if pg_conn is not None:
+                try:
+                    with pg_conn.cursor() as cur:
+                        cur.execute("SELECT COUNT(*) FROM rlm_chunks")
+                        pg_count = cur.fetchone()[0] or 0
+                except Exception:
+                    pass
+                finally:
+                    try:
+                        pg_conn.close()
+                    except Exception:
+                        pass
             self._send_json({
                 "status": "ok",
                 "service": "rlm-service",
@@ -842,6 +860,7 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
                 "max_chunk_chars": MAX_CHUNK_CHARS,
                 "pid": os.getpid(),
                 "index_size": MTIME_INDEX.size,
+                "pg_chunks_count": pg_count,
             })
             return
 
@@ -901,6 +920,18 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
             return
 
         max_chars = body.get("max_chars", MAX_CHUNK_CHARS)
+
+        # Phase 27: Try AST chunker first
+        try:
+            from services.ast_chunker import chunk_file_ast, is_code_file
+            if is_code_file(filepath):
+                ast_chunks = chunk_file_ast(filepath)
+                if ast_chunks:
+                    self._send_json({"ok": True, "filepath": filepath, "chunks": ast_chunks, "total": len(ast_chunks)})
+                    return
+        except Exception:
+            pass
+        # Fallback to legacy chunker
         chunks = chunk_file(filepath, max_chars)
 
         self._send_json({
@@ -912,14 +943,17 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
 
     def _handle_search(self, body):
         """
-        POST /search
+        POST /search — unchanged contract (callers see identical JSON).
+        Phase 27: Uses hybrid RRF + reranker + graph when PG available.
+        Falls back to in-memory BM25 when PG unavailable.
+
         Body: {
             "query": "search terms",
             "paths": ["/path/to/file1", "/path/to/file2"],
             "top_k": 10,
             "max_chars": 8000
         }
-        Returns: { "results": [...], "total_chunks": N, "query": "..." }
+        Returns: { "results": [...], "total_chunks": N, "query": "...", "engine": "..." }
         """
         query = body.get("query")
         paths = body.get("paths", [])
@@ -935,31 +969,71 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
             return
 
         t0 = time.time()
-        if fresh:
-            for p in paths:
-                CHUNK_CACHE.clear_file(os.path.expanduser(p))
-            log.debug("rlm_fresh_bypass_search cleared=%d paths", len(paths))
 
-        # Phase 27 lazy ingestion: trigger AST chunking + PG indexing for each path on first touch
+        # Phase 27: Lazy ingestion trigger (also wired in 27-02-04)
         _trigger_lazy_ingestion(paths)
 
-        all_chunks = []
-        for p in paths:
-            if not _is_safe_path(p):
-                continue
-            p = os.path.expanduser(p)
-            if os.path.isfile(p):
-                all_chunks.extend(chunk_file(p, max_chars))
+        # Try hybrid PG pipeline first
+        pg_conn = _get_pg_conn()
+        results = []
+        used_engine = "in_memory_bm25"
 
-        results = score_chunks(all_chunks, query, top_k)
+        if pg_conn is not None:
+            try:
+                # Determine file filter from paths (use first path as prefix)
+                file_filter = None
+                if paths and len(paths) == 1:
+                    file_filter = os.path.abspath(paths[0])
+
+                from services.rlm_search import hybrid_search
+                hybrid_results = hybrid_search(query, pg_conn, top_k=20, file_filter=file_filter)
+
+                if hybrid_results:
+                    from services.rlm_reranker import rerank
+                    reranked = rerank(query, hybrid_results, top_k=top_k)
+
+                    from services.rlm_graph import expand_chunks_with_graph, _get_cache_client
+                    cache_client = _get_cache_client()
+                    results = expand_chunks_with_graph(reranked, cache_client)
+
+                    used_engine = "hybrid_rrf_reranked"
+            except Exception as e:
+                log.warning("pg_pipeline_failed error=%s — falling back to BM25", str(e))
+                results = []
+            finally:
+                try:
+                    pg_conn.close()
+                except Exception:
+                    pass
+
+        # Fallback: in-memory BM25 (existing behavior, unchanged)
+        if not results:
+            if fresh:
+                for p in paths:
+                    CHUNK_CACHE.clear_file(os.path.expanduser(p))
+            all_chunks = []
+            for p in paths:
+                if not _is_safe_path(p):
+                    continue
+                p = os.path.expanduser(p)
+                if os.path.isfile(p):
+                    all_chunks.extend(chunk_file(p, max_chars))
+                elif os.path.isdir(p):
+                    for fp in scan_directory(p):
+                        all_chunks.extend(chunk_file(fp, max_chars))
+            results = score_chunks(all_chunks, query, top_k)
+            used_engine = "in_memory_bm25"
+
         elapsed_ms = round((time.time() - t0) * 1000, 1)
+        log.info("search_done query=%s engine=%s results=%d elapsed_ms=%.1f",
+                 query[:50], used_engine, len(results), elapsed_ms)
 
         self._send_json({
             "ok": True,
             "query": query,
             "results": results,
-            "total_chunks": len(all_chunks),
-            "returned": len(results),
+            "total_chunks": len(results),
+            "engine": used_engine,
             "elapsed_ms": elapsed_ms,
         })
 
