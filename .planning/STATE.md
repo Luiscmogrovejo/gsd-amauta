@@ -129,6 +129,8 @@ Resume file: None
 
 
 
+
+- [learning] 2026-04-13T02:55:23.974Z: BM25 inline benchmark: tokenize+IDF+score (no external npm). Fact density fixtures at tests/fixtures/ need 3 dirname() calls to reach project root from test file. Original 500-char file descriptions are sparse (shebang+docstring+imports), compressed pipe-delimited are dense (deps/tests/loc/exports) — 1.4x fact density ratios are achievable even for small files.
 - [learning] 2026-04-13T02:48:41.975Z: legacy regression test: free text learning
 - [learning] 2026-04-13T02:46:27.820Z: legacy regression test: free text learning
 - [learning] 2026-04-13T02:33:13.313Z: When grammar-stripping dense technical markdown (agent .md files with 50%+ code blocks, XML, and YAML), article/filler/hedging removal yields only ~1.5% char reduction — not 30%. Measure processable fraction early and surface as divergence before writing compression-ratio tests. Resolution: expand vocabulary, change metric to processable-text-only, or revise threshold.
