@@ -8,7 +8,7 @@ last_updated: "2026-04-13T23:05:00.000Z"
 last_activity: 2026-04-13 — Plan 29-03 complete (3 atomic commits, 17 behavioral tests for MCP-01..05 in tests/29-mcp-interface.test.cjs, all pass)
 progress:
   total_phases: 5
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 7
   completed_plans: 7
   percent: 99
@@ -39,7 +39,7 @@ Progress: [██████████] 96%
 | 26 | The Substrate | INFRA-01..04 (4) | Nothing | Complete (2026-04-13) |
 | 27 | The Retrieval Rewrite | RLM-01..06 (6) | Phase 26 | Complete (2026-04-13) |
 | 28 | The Behavioral Upgrade | BEHAV-01..06 (6) | Phase 26 | Complete (2026-04-13) |
-| 29 | The MCP Interface | MCP-01..05 (5) | Phase 27 | In progress (MCP-01 done) |
+| 29 | The MCP Interface | MCP-01..05 (5) | Phase 27 | Complete (2026-04-13) |
 | 30 | Observability + Security | OBS-01..02, SEC-01..03 (5) | Phases 27+28 | Not started |
 
 **Execution order:**
@@ -117,6 +117,10 @@ Resume file: .planning/phases/29-the-mcp-interface/29-03-SUMMARY.md
 
 
 
+
+
+- [learning] 2026-04-13T19:47:31.224Z: Phase 29 MCP Interface pattern: amauta-mcp.py is a thin delegating wrapper (no shared imports with daemon). All tool handlers use _call_daemon() or _call_rlm(); research cache is read-through GET only (no POST write-back); memory-distill is status-only; resource list_resources extracts TK-XXXX via re.findall from daemon text output. doesNotMatch tests for absence-of-code must target function-call syntax not bare HTTP-verb+path strings to avoid matching comments.
+- [learning] 2026-04-13T19:43:34.789Z: Structural file-content tests for MCP (or any Python service): read the .py file with fs.readFileSync and assert.match/doesNotMatch on key patterns. For doesNotMatch "no POST to X" tests, scope the pattern to function-call syntax (_call_daemon("POST",...)) not bare HTTP-verb+path — comments mentioning the restriction will falsely match. Split cross-line patterns into two separate assert.match calls.
 - [learning] 2026-04-13T19:36:34.288Z: MCP tool delegation pattern: all handlers use _call_daemon(method, path, body) or _call_rlm(); read-through cache with GET only (no POST write-back); memory-distill is status-only (CLI triggers distill); resource list_resources extracts task IDs via re.findall from daemon text output; URI validation with explicit regex before delegating
 - [learning] 2026-04-13T18:46:41.418Z: featureListGenerate reads PLAN.md XML task blocks to extract first acceptance_criteria bullet as description; feature_list.json is overwrite-not-append (current-state snapshot); get-bearings block triggers on feature_list.json presence in PHASE_DIR — silent no-op on fresh phase; lint-after-edit is advisory (exits non-zero but never blocks); all three added to execute-phase.md in single file without conflict by anchoring insertions to unique text markers
 - [learning] 2026-04-13T17:22:15.838Z: RRF fusion in single SQL: FULL OUTER JOIN bm25_leg + vector_leg inside PostgreSQL with k=60 constant. pg_search BM25 alias syntax: WHERE c @@@ param (not c.table @@@). Matryoshka truncation: ::vector(256) cast on stored 1024-dim. MRR baseline=1.0 by construction when expected_top3 derived from engine output — use non-regression floor (80%) not impossible >1.0 targets. NetworkX+Valkey graph is ephemeral (TTL 1h), rebuild on /reindex. DEPRECATED comment pattern for keeping fallback code alive.

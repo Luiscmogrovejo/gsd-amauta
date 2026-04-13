@@ -99,7 +99,7 @@
 
 **Success Criteria** (what must be TRUE):
 1. `claude mcp list` shows the amauta server; MCP initialize handshake completes; HTTP API continues responding on all existing endpoints — 4 tests pass.
-2. MCP tool call `amauta/search-code` with a query returns >= 1 ranked result matching the HTTP `/api/rlm/search` output for the same query — 3 tests pass.
+2. MCP tool call `amauta/search-code` with a query returns >= 1 ranked result matching the RLM service `/query` output (port 18798) for the same query — daemon has no `/api/rlm/search` proxy — 3 tests pass.
 3. Memory store → search round-trip via MCP returns the stored memory; distill trigger completes without error — 4 tests pass.
 4. MCP resource read `amauta://context/{task_id}/{phase}` returns valid JSON matching RPETDContext schema; research tool call returns results and cache hit on identical query skips API calls — 3+3 tests pass.
 
