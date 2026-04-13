@@ -5,6 +5,8 @@ services:
     image: paradedb/paradedb:latest-pg16
     container_name: gsd-postgres
     restart: unless-stopped
+    # INFRA-03: pg_search requires shared_preload_libraries — set via postgres command args
+    command: postgres -c shared_preload_libraries=pg_search
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-gsd}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gsd}
