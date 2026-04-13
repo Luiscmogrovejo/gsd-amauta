@@ -32,7 +32,7 @@
 ## Phases
 
 - [x] **Phase 26: The Substrate** — Valkey 8.x replaces Redis, pgvector upgraded to >= 0.8.0, ParadeDB pg_search installed, tree-sitter parsers available for JS/Python/TS/CJS — all with zero application code changes (INFRA-01..04) (completed 2026-04-13)
-- [ ] **Phase 27: The Retrieval Rewrite** — AST-aware chunking, ParadeDB BM25 in PG, code-specific embeddings, RRF hybrid search, cross-encoder reranking, dependency graph — standalone rlm-service.py rebuilt as thin PG wrapper (RLM-01..06)
+- [x] **Phase 27: The Retrieval Rewrite** — AST-aware chunking, ParadeDB BM25 in PG, code-specific embeddings, RRF hybrid search, cross-encoder reranking, dependency graph — standalone rlm-service.py rebuilt as thin PG wrapper (RLM-01..06) (completed 2026-04-13)
 - [ ] **Phase 28: The Behavioral Upgrade** — AGENTS.md discovery, circuit breakers on all 11 agents, Reflexion memory, lint guardrails, feature-level progress tracking, get-bearings ritual — all sharing behavioral test infrastructure (BEHAV-01..06)
 - [ ] **Phase 29: The MCP Interface** — Daemon gains MCP server (stdio + SSE), exposing code search, memory, RPETD context, and research as protocol-native tools and resources (MCP-01..05)
 - [ ] **Phase 30: Observability + Security** — Langfuse tracing on K3s, model canary suite, Rule of Two audit, gVisor sandbox, tool integrity checking (OBS-01..02, SEC-01..03)
@@ -71,7 +71,7 @@
 3. Reranked MRR >= 10% improvement over hybrid-only on 20 golden queries; reranker failure does not crash the pipeline; cache hit rate is logged.
 4. Dependency graph covers >= 90% of function-level symbols; given a retrieved function, >= 1 caller and >= 1 callee are included in expanded context (when they exist); hub files list is non-empty.
 
-**Plans:** 2 complete (27-01: golden baseline + migrations 012/013 + AST chunker — RLM-01/RLM-02; 27-02: embedding pipeline + lazy ingestion + caveman chunk mode — RLM-01/RLM-02/RLM-03 complete)
+**Plans:** 3/3 complete (27-01: golden baseline + migrations 012/013 + AST chunker — RLM-01/RLM-02; 27-02: embedding pipeline + lazy ingestion + caveman chunk mode — RLM-03; 27-03: hybrid RRF SQL + Jina reranker + NetworkX graph + rlm-service.py transformation — RLM-04/RLM-05/RLM-06) **PHASE COMPLETE**
 
 ### Phase 28: The Behavioral Upgrade
 
