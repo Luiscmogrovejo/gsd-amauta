@@ -2160,6 +2160,20 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 )
                 compiled_view = context.to_compiled_view()
 
+                # Compute file hashes for staleness detection (Phase 21 STALE-01)
+                ctx_file_hashes = {}
+                try:
+                    from services.context_validator import ContextValidator
+                    relevant = context.relevant_files if hasattr(context, 'relevant_files') else []
+                    if relevant:
+                        ctx_file_hashes = ContextValidator.compute_file_hashes(relevant)
+                        # Embed commit ref for next cycle's changed_since
+                        commit_ref = ContextValidator.get_current_commit()
+                        if commit_ref:
+                            ctx_file_hashes["__commit_ref__"] = commit_ref
+                except Exception as e:
+                    log.warning("file_hash_computation_failed error=%s", str(e)[:200])
+
                 # Store to PG if available
                 store = _get_store()
                 stored_id = None
@@ -2169,7 +2183,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                         phase=ctx_phase,
                         compiled_view=compiled_view,
                         context_version=context.context_version,
-                        file_hashes={},
+                        file_hashes=ctx_file_hashes,
                     )
 
                 self._send_json({
