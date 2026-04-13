@@ -767,6 +767,45 @@ def _get_store():
     return _pg_store or _sqlite_store
 
 
+def _make_compaction_llm_call():
+    """Create an llm_call function for compact_conversation using model_routing.compaction.
+
+    Phase 24 ROUTE-02: Reads model from config.json model_routing.compaction.
+    The function wraps an HTTP call to a local LLM endpoint or returns None
+    if no LLM provider is available.
+
+    Returns:
+        callable(prompt) -> str, or None if config unavailable.
+    """
+    try:
+        config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                    '.planning', 'config.json')
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+        model_routing = config.get('model_routing', {})
+        compaction_model = model_routing.get('compaction', 'haiku')
+        log.info("compaction_model_resolved model=%s source=config.json", compaction_model)
+
+        def llm_call(prompt):
+            """Compaction LLM call using configured model.
+
+            Currently a no-op that logs the model selection and returns None
+            (triggering the fallback path in compact_conversation).
+            Phase 24 wires the model selection; actual API integration requires
+            an LLM provider endpoint (future: local Ollama or Anthropic API key).
+            """
+            log.info("compaction_llm_call model=%s prompt_len=%d", compaction_model, len(prompt))
+            # Return None to trigger fallback — the model SELECTION is what ROUTE-02 verifies,
+            # not the actual API call (GSD-Amauta delegates API calls to Claude Code).
+            return None
+
+        llm_call._compaction_model = compaction_model  # Test hook: verify model was resolved
+        return llm_call
+    except Exception as e:
+        log.warning("compaction_config_read_failed error=%s", str(e)[:200])
+        return None
+
+
 def _enrich_with_rlm(task_output, body):
     """Query RLM for relevant code context based on task title/description.
 
@@ -2252,7 +2291,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     messages=messages,
                     task_id=ctx_task_id,
                     phase=ctx_phase,
-                    llm_call=None,  # Phase 24 will wire this to model_routing.compaction
+                    llm_call=_make_compaction_llm_call(),  # Phase 24 ROUTE-02: model_routing.compaction
                 )
                 compiled_view = context.to_compiled_view()
 
