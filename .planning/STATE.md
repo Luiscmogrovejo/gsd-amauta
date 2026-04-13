@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.8
 milestone_name: Metabolism
-status: planned
-stopped_at: phase_20_plan_02_complete
+status: phase_20_complete
+stopped_at: phase_20_plan_03_complete
 last_updated: "2026-04-12"
-last_activity: 2026-04-12 — Plan 20-02 complete (prune_messages, compact_conversation, daemon endpoints POST /api/context/compact + GET /api/context/:task_id/:phase, 10 tests)
+last_activity: 2026-04-12 — Plan 20-03 complete (compactRpetdContext wired into cmdRpetd, 10 CJS + 8 Python integration tests, full regression green)
 progress:
   total_phases: 6
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
-  completed_plans: 2
-  percent: 7
+  completed_plans: 3
+  percent: 17
 ---
 
 # GSD-Amauta -- Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-12 for v2.8)
 
 ## Current Position
 
-Phase: 20 of 25 (Structured Context Handoffs — in progress)
-Plan: 20-03 (Wave 3, next)
-Status: Plan 20-02 complete — prune_messages, compact_conversation, daemon endpoints, 10 tests passing
-Last activity: 2026-04-12 — Plan 20-02 executed (3 tasks, 3 commits, 1 fixture deviation auto-fixed)
+Phase: 20 of 25 (Structured Context Handoffs — COMPLETE)
+Plan: 20-03 complete (Wave 3, final plan of Phase 20)
+Status: Phase 20 complete — all 3 plans done, all 5 HANDOFF requirements delivered
+Last activity: 2026-04-12 — Plan 20-03 executed (4 tasks, 3 commits; compactRpetdContext wired, 10 CJS + 8 Python integration tests passing)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█░░░░░░░░░] 17%
 
 ## v2.8 Phase Map
 
@@ -74,6 +74,8 @@ Critical path: 20 → 22 → 23 → 24. Phase 21 parallel with 22. Phase 25 inde
 - Plan 20-02: POST /api/context/compact uses llm_call=None in v1 (fallback path only); LLM wiring deferred to Phase 24 ROUTE-02.
 - Plan 20-02: PG storage in compact endpoint is best-effort — compiled_view returned even when store unavailable.
 - Plan 20-02: Conversation text truncated to 3000 chars before compaction prompt to bound compaction call cost.
+- Plan 20-03: compactRpetdContext uses minimal 2-message representation (user: task+phase, assistant: content) because full conversation history is unavailable in the CJS CLI path. Phase 24 ROUTE-02 will wire LLM-backed compaction without changing this call site.
+- Plan 20-03: CJS regression baseline: 2168 tests, ~11 pre-existing failures (rlm-workflow-spec, behavioral, opencode-config). Zero new failures introduced.
 
 ### Pending Todos
 
@@ -81,12 +83,12 @@ None.
 
 ### Blockers/Concerns
 
-None. v2.7 shipped cleanly. v2.8 Phase 20 is unblocked.
+None. Phase 20 shipped cleanly. Phase 21 and Phase 22 are now unblocked (can run in parallel).
 
 ## Session Continuity
 
 Last session: 2026-04-12
-Stopped at: Plan 20-02 complete. services/rpetd_context.py (compaction functions), services/amauta-daemon.py (context endpoints), tests/test_rpetd_compaction.py all committed. Ready for plan 20-03 execution.
+Stopped at: Phase 20 complete (Plans 20-01, 20-02, 20-03 all done). All HANDOFF-01..05 requirements satisfied. Ready for Phase 21 or Phase 22.
 Resume file: None
 
 
@@ -94,6 +96,14 @@ Resume file: None
 
 
 
+
+
+
+
+- [learning] 2026-04-13T00:52:07.931Z: legacy regression test: free text learning
+- [learning] 2026-04-13T00:42:14.221Z: legacy regression test: free text learning
+- [learning] 2026-04-13T00:39:01.825Z: legacy regression test: free text learning
+- [learning] 2026-04-13T00:36:50.801Z: legacy regression test: free text learning
 - [learning] 2026-04-13T00:27:00.814Z: legacy regression test: free text learning
 - [learning] 2026-04-13T00:24:57.175Z: legacy regression test: free text learning
 - [learning] 2026-04-13T00:15:18.995Z: Pydantic model_validator(mode='after') auto-computes derived fields like SHA-256 context versions; callers never set them manually. Pre-adding future columns (e.g., file_hashes for Phase 21) in the current migration avoids a second ALTER TABLE. PGStore new method groups belong between domain-matching section dividers.

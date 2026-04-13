@@ -31,7 +31,7 @@
 
 ## Phases
 
-- [ ] **Phase 20: Structured Context Handoffs** — RPETDContext typed object replaces full conversation forwarding; each phase boundary compacts to <= 600 tokens stored in PostgreSQL (HANDOFF-01..05)
+- [x] **Phase 20: Structured Context Handoffs** — RPETDContext typed object replaces full conversation forwarding; each phase boundary compacts to <= 600 tokens stored in PostgreSQL (HANDOFF-01..05) — COMPLETE 2026-04-12
 - [ ] **Phase 21: Hash-Based Staleness Detection** — SHA-256 file hashing + git diff selectively refreshes only changed files, skipping unchanged file descriptions (STALE-01..04)
 - [ ] **Phase 22: Caveman-Compressed Descriptions** — grammar-stripped agent definitions and structured file descriptions deliver >= 40% more facts per 500-char budget (CAVE-01..04)
 - [ ] **Phase 23: Prompt Prefix Caching** — all 11 agent prompts restructured for stable prefix / variable suffix split with `cache_control` annotation; prefix stability lint added (CACHE-01..04)
@@ -59,7 +59,7 @@
 **Plans:**
 - [x] Plan 20-01: RPETDContext model + migration 009 + PGStore CRUD (complete 2026-04-12)
 - [x] Plan 20-02: prune_messages + compact_conversation + daemon endpoints POST /api/context/compact + GET /api/context/:task_id/:phase (complete 2026-04-12)
-- [ ] Plan 20-03: Compaction function + phase runner integration
+- [x] Plan 20-03: Phase runner integration + regression tests (complete 2026-04-12)
 
 ### Phase 21: Hash-Based Staleness Detection
 
