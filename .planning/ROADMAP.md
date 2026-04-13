@@ -149,7 +149,7 @@
 4. Given two agents with overlapping file patterns, the agent with the longer (more specific) glob wins deterministically — verified by test with overlapping patterns.
 
 **Plans:**
-- [x] Plan 25-01: Ghost Elimination + Plan-to-Tasks Fix (Wave 1, DEBT-01/02) — 3 tasks — COMPLETE 2026-04-12
+2/2 plans complete
 - [x] Plan 25-02: Wrapper Parity + routeExecutor Specificity (Wave 2, DEBT-03/04) — 3 tasks — COMPLETE 2026-04-12
 
 ---
@@ -193,7 +193,7 @@ Phase 25 (Tech Debt Sweep) — no v2.8 dependencies, runs anytime
 | 22. Caveman-Compressed Descriptions | 2/2 | Complete    | 2026-04-13 |
 | 23. Prompt Prefix Caching | 1/2 | Complete    | 2026-04-13 |
 | 24. Semantic Cache + Tiered Routing | 0/2 | Complete    | 2026-04-13 |
-| 25. Tech Debt Sweep | 0/TBD | Not started | - |
+| 25. Tech Debt Sweep | 0/TBD | Complete    | 2026-04-13 |
 
 ---
 

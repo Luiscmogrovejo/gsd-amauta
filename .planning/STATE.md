@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
 milestone: v2.8
-milestone_name: Metabolism
+milestone_name: milestone
 status: completed
-stopped_at: phase_25_plan_02_complete
-last_updated: "2026-04-12"
-last_activity: 2026-04-12 — Plan 25-02 complete (DEBT-03 wrapper parity + delegation fix, DEBT-04 specificity-wins routing, 2 commits)
+stopped_at: "Plan 25-02 complete. MILESTONE COMPLETE. DEBT-03: amauta.cjs delegation fixed (require.main guard extended for wrapper entry), parity confirmed. DEBT-04: routeExecutor specificity-wins scoring added (patternSpecificityScore + collect-all-matches approach). 15 regression tests in 25-debt-sweep.test.cjs, 27 routing tests pass. Next: v2.8 Metabolism milestone closeout."
+last_updated: "2026-04-13T11:53:52.214Z"
+last_activity: 2026-04-12 — Plan 25-02 complete (DEBT-03 wrapper fix + DEBT-04 specificity routing, 2 commits, 15 tests pass)
 progress:
   total_phases: 6
-  completed_phases: 6
+  completed_phases: 5
   total_plans: 13
-  completed_plans: 13
+  completed_plans: 12
   percent: 100
 ---
 
@@ -151,6 +151,8 @@ Resume file: None
 
 
 
+
+- [learning] 2026-04-13T11:50:33.758Z: DEBT-04 routeExecutor specificity: collect ALL (agent,pattern) matches then sort by score (exact+1000, dir/*+100, prefix*+50, *.ext+len); existing priority as tiebreaker preserves backward compat with all 27 routing tests. DEBT-03 delegation: require() of a module with require.main guard silently skips main() — extend guard with process.argv[1] suffix check for wrapper entry points.
 - [learning] 2026-04-13T11:42:42.767Z: legacy regression test: free text learning
 - [learning] 2026-04-13T11:36:02.313Z: DEBT-02: GSD_P_AUTO_TASK bash default was inverted (:-false instead of :-true) in execute-phase.md — plan-to-tasks was silently skipped for all phases >= 14 unless env var explicitly set. captureOutput helper (intercept stdout + process.exit) needed to test any function calling output() in node:test
 - [learning] 2026-04-13T11:30:45.715Z: E2E test learning — cleanup after test
