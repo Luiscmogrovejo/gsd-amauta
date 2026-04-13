@@ -33,7 +33,7 @@
 
 - [x] **Phase 26: The Substrate** — Valkey 8.x replaces Redis, pgvector upgraded to >= 0.8.0, ParadeDB pg_search installed, tree-sitter parsers available for JS/Python/TS/CJS — all with zero application code changes (INFRA-01..04) (completed 2026-04-13)
 - [x] **Phase 27: The Retrieval Rewrite** — AST-aware chunking, ParadeDB BM25 in PG, code-specific embeddings, RRF hybrid search, cross-encoder reranking, dependency graph — standalone rlm-service.py rebuilt as thin PG wrapper (RLM-01..06) (completed 2026-04-13)
-- [ ] **Phase 28: The Behavioral Upgrade** — AGENTS.md discovery, circuit breakers on all 11 agents, Reflexion memory, lint guardrails, feature-level progress tracking, get-bearings ritual — all sharing behavioral test infrastructure (BEHAV-01..06)
+- [x] **Phase 28: The Behavioral Upgrade** — AGENTS.md discovery, circuit breakers on all 11 agents, Reflexion memory, lint guardrails, feature-level progress tracking, get-bearings ritual — all sharing behavioral test infrastructure (BEHAV-01..06) (completed 2026-04-13)
 - [ ] **Phase 29: The MCP Interface** — Daemon gains MCP server (stdio + SSE), exposing code search, memory, RPETD context, and research as protocol-native tools and resources (MCP-01..05)
 - [ ] **Phase 30: Observability + Security** — Langfuse tracing on K3s, model canary suite, Rule of Two audit, gVisor sandbox, tool integrity checking (OBS-01..02, SEC-01..03)
 
@@ -87,7 +87,7 @@
 3. After a divergence event, divergence-memory.json contains the new reflection entry; on retry, executor's PRE_EXECUTION_EVIDENCE block includes past reflections (max 3 most recent) — JSON schema validated, 6 tests pass.
 4. A commit introducing a syntax error produces a lint_report with >= 1 finding; a clean commit produces an empty lint_report; plan 27-01 produces a feature_list.json with >= 3 features; validator refuses --pass verdict when any feature is failing.
 
-**Plans:** 1/TBD complete (28-01: AGENTS.md discovery + circuit breaker + Reflexion memory — BEHAV-01/02/03 done, Wave 1 complete 2026-04-13)
+**Plans:** 2/2 complete (28-01: AGENTS.md discovery + circuit breaker + Reflexion memory — BEHAV-01/02/03 done; 28-02: lint guardrail + feature_list.json lifecycle + get-bearings ritual — BEHAV-04/05/06 done; Phase 28 COMPLETE 2026-04-13)
 
 ### Phase 29: The MCP Interface
 

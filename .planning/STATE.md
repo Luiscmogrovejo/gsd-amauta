@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v2.9
 milestone_name: Nervous System
 status: in_progress
-stopped_at: Phase 28 Plan 28-01 complete
-last_updated: "2026-04-13T19:15:00.000Z"
-last_activity: 2026-04-13 — Plan 28-01 complete (7 atomic commits, BEHAV-01/02/03 done, 15 CJS + 6 Python tests passing, AGENTS.md discovery + circuit breaker + Reflexion memory live)
+stopped_at: Phase 28 Plan 28-02 complete
+last_updated: "2026-04-13T20:45:00.000Z"
+last_activity: 2026-04-13 — Plan 28-02 complete (6 atomic commits, BEHAV-04/05/06 done, 29 CJS + 11 Python tests passing, lint guardrail + feature_list.json lifecycle + get-bearings ritual live)
 progress:
   total_phases: 5
   completed_phases: 2
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-13 for v2.9)
 
 ## Current Position
 
-Phase: 28 — The Behavioral Upgrade (IN PROGRESS — Wave 1 done)
-Plan: 28-01 complete — AGENTS.md discovery + circuit breaker (gsd-tools.cjs + amauta-daemon.py) + Reflexion Memory Hook (divergence-protocol.md v1.2.0)
-Status: Wave 1 (BEHAV-01/02/03) delivered. 7 atomic commits, 15 CJS + 6 Python tests passing. Wave 2 (BEHAV-04/05/06) pending.
-Last activity: 2026-04-13 — Plan 28-01 complete (7 atomic commits, BEHAV-01/02/03 done, 15 CJS + 6 Python tests passing, AGENTS.md discovery + circuit breaker + Reflexion memory live)
+Phase: 28 — The Behavioral Upgrade (COMPLETE)
+Plan: 28-02 complete — lint-after-edit advisory guardrail (BEHAV-04) + feature_list.json per-plan lifecycle (BEHAV-05) + get-bearings 400-token auto-block (BEHAV-06)
+Status: All 6 BEHAV requirements delivered. 13 total atomic commits, 29 CJS + 11 Python tests passing.
+Last activity: 2026-04-13 — Plan 28-02 complete (6 atomic commits, BEHAV-04/05/06 done, 29 CJS + 11 Python tests passing, lint guardrail + feature_list.json lifecycle + get-bearings ritual live)
 
 Progress: [██████████] 96%
 
@@ -38,7 +38,7 @@ Progress: [██████████] 96%
 |-------|------|--------------|------------|--------|
 | 26 | The Substrate | INFRA-01..04 (4) | Nothing | Complete (2026-04-13) |
 | 27 | The Retrieval Rewrite | RLM-01..06 (6) | Phase 26 | Complete (2026-04-13) |
-| 28 | The Behavioral Upgrade | BEHAV-01..06 (6) | Phase 26 | In progress (Wave 1 done) |
+| 28 | The Behavioral Upgrade | BEHAV-01..06 (6) | Phase 26 | Complete (2026-04-13) |
 | 29 | The MCP Interface | MCP-01..05 (5) | Phase 27 | Not started |
 | 30 | Observability + Security | OBS-01..02, SEC-01..03 (5) | Phases 27+28 | Not started |
 
@@ -80,6 +80,10 @@ Progress: [██████████] 96%
     - Plan 28-01: Circuit breaker state stored in Valkey at cb:{agent_name}. CB_FAILURE_THRESHOLD=3, CB_OPEN_TTL_SECONDS=60. gsd-executor-general and executor-general are hardcoded CB_EXEMPT (last-resort fallback — adding CB creates unroutable loop).
     - Plan 28-01: Reflexion memory written exclusively by gsd-debugger post-divergence. Failed executor never writes divergence-memory.json. gsd-debugger exits 87 if asked to reflect on its own divergence report. Protocol bumped to v1.2.0.
     - Plan 28-01: circuit-breaker CLI subcommands exit 0 (allowed) or 2 (CB open) — bash callers check exit code, not JSON. valkey_unavailable returns fail-open in Node, 503 in daemon.
+    - Plan 28-02: lint-after-edit is advisory in v2.9 — exits non-zero (for caller info) but NEVER blocks commit execution. lint_report goes in VERIFICATION block, not a separate file.
+    - Plan 28-02: feature_list.json is overwrite-not-append — it is the current-state snapshot. featureListGenerate reads PLAN.md task XML, first acceptance_criteria bullet is description (truncated at 200 chars).
+    - Plan 28-02: get-bearings trigger is presence of any *-feature_list.json in PHASE_DIR — signals work has started. 400-token budget: feature_list(150) → git log(50) → divergence-memory(100) → STATE.md(100). Truncate STATE.md first on overflow.
+    - Plan 28-02: feature-list-update exits 2 when any feature failing (exit 2, not 1, to distinguish from fatal errors). CLI exits 0 for clean, 2 for failing — caller (gsd-validator) checks exit code.
 
 ### Pending Todos
 
@@ -91,9 +95,9 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-13T19:15:00.000Z
-Stopped at: Phase 28 Plan 28-01 complete (Wave 1 done)
-Resume file: .planning/phases/28-the-behavioral-upgrade/28-01-SUMMARY.md
+Last session: 2026-04-13T20:45:00.000Z
+Stopped at: Phase 28 Plan 28-02 complete (Phase 28 DONE — all 6 BEHAV requirements)
+Resume file: .planning/phases/28-the-behavioral-upgrade/28-02-SUMMARY.md
 
 ## Learnings
 
