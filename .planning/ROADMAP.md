@@ -30,7 +30,7 @@
 
 ## Phases
 
-- [ ] **Phase 31: Format Standard** — All 11 existing agents restructured to standardized 10-section format; shared security rules; behavioral regression suite (FORMAT-01..07) (FOUNDATION — everything depends on this)
+- [x] **Phase 31: Format Standard** — All 11 existing agents restructured to standardized 10-section format; shared security rules; behavioral regression suite (FORMAT-01..07) (FOUNDATION — everything depends on this) — COMPLETE 2026-04-13
 - [ ] **Phase 32: Frontend Rebuild** — gsd-executor-frontend rebuilt with v0-inspired composite pipeline; React 19 + TypeScript + Tailwind + shadcn/ui; Playwright screenshots (FRONT-01..07)
 - [ ] **Phase 33: Testing Pipeline** — Two new agents: gsd-tester (generates) and gsd-qa (evaluates); CoverUp coverage-guided iteration; mutation testing; Pact contracts (TEST-01..08)
 - [ ] **Phase 34: Security Pipeline** — New gsd-security agent; Semgrep SAST, Gitleaks, npm/pip audit, supply chain rules, Rule of Two audit, Trivy container scan (SEC-01..06)
@@ -89,8 +89,8 @@ Rationale:
 **Plans:** TBD (estimated 2 plans: 31-01 restructure all 11 agents + shared rules, 31-02 behavioral regression suite)
 
 Plans:
-- [ ] 31-01: Restructure all 11 agent .md files to 10-section format; create agents/shared/security-rules.md; embed anti-over-engineering + read-before-edit mandates (FORMAT-01..06)
-- [ ] 31-02: Behavioral regression suite covering FORMAT-07 — zero regressions from v2.9
+- [x] 31-01: Restructure 4 executor agents to 10-section format; create agents/shared/security-rules.md; embed anti-over-engineering + read-before-edit mandates; FORMAT-01..05 tests green (FORMAT-01..05) — 2026-04-13
+- [x] 31-02: Restructure remaining 7 agents; AGENTS.md integration; behavioral regression suite (FORMAT-06..07) — 2026-04-13
 
 ### Phase 32: Frontend Rebuild
 **Goal:** gsd-executor-frontend delivers React 19 + TypeScript + Tailwind + shadcn/ui frontends via a progressive generation pipeline. Post-generation validation catches type errors and accessibility violations. Playwright screenshots prove responsive behavior across breakpoints.
@@ -271,7 +271,7 @@ Phase 31: Format Standard (FOUNDATION)
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 31. Format Standard | 0/2 | Not started | - |
+| 31. Format Standard | 1/2 | In progress | plan 31-01: 2026-04-13 |
 | 32. Frontend Rebuild | 0/2 | Not started | - |
 | 33. Testing Pipeline | 0/2 | Not started | - |
 | 34. Security Pipeline | 0/2 | Not started | - |
