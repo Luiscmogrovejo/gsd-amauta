@@ -171,9 +171,15 @@ function getCapabilityIndex() {
  * Input: comma-separated file paths (from plan files_modified)
  * Output: one of: executor-frontend, executor-backend, executor-infra, executor-general
  *
- * Priority order: frontend > infra > backend > general
- * File patterns are read from agent-capabilities.json (AGT-07 single source of truth).
- * Routing behavior is identical to the previous hardcoded implementation.
+ * Specificity-wins selection (DEBT-04): collects ALL matching (agent, pattern) pairs,
+ * then selects the winner by highest specificity score. On tie, falls back to the
+ * established priority order: frontend (0) > infra (1) > backend (2) > general (3).
+ *
+ * Specificity scoring:
+ *   Exact match (no wildcard):          pattern.length + 1000
+ *   Directory prefix match (dir/*):     pattern.length + 100
+ *   Filename prefix match (Prefix*):    pattern.length + 50
+ *   Extension match (*.ext):            pattern.length
  *
  * Infra patterns are path-prefix anchored: only known infra file patterns
  * (Dockerfile*, docker-compose*, .github/workflows/*, terraform/*, k8s/*,
@@ -181,6 +187,46 @@ function getCapabilityIndex() {
  * "infra" as substrings. This eliminates false positives like src/config.ts and
  * src/deploy-utils.ts being routed to executor-infra.
  */
+
+/**
+ * Classify a glob pattern and return its specificity score.
+ * Longer/more-specific patterns score higher; exact matches score highest.
+ */
+function patternSpecificityScore(pattern) {
+  if (pattern.startsWith('*.')) {
+    // Extension match: *.tsx — base score only (pattern length)
+    return pattern.length;
+  } else if (pattern.endsWith('/*')) {
+    // Directory prefix match: k8s/*, .github/workflows/*
+    return pattern.length + 100;
+  } else if (pattern.endsWith('*')) {
+    // Filename prefix match: Dockerfile*, docker-compose*
+    return pattern.length + 50;
+  } else {
+    // Exact match: nginx.conf
+    return pattern.length + 1000;
+  }
+}
+
+/**
+ * Build a regex for a glob pattern using the same rules as before.
+ */
+function patternToRegex(pattern) {
+  if (pattern.startsWith('*.')) {
+    const ext = pattern.slice(1).replace('.', '\\.');
+    return new RegExp(`${ext}$`, 'im');
+  } else if (pattern.endsWith('/*')) {
+    const dir = pattern.slice(0, -2).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`(?:^|\\/)${dir}\\/`, 'im');
+  } else if (pattern.endsWith('*')) {
+    const prefix = pattern.slice(0, -1).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`(?:^|\\/)${prefix}`, 'im');
+  } else {
+    const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`(?:^|\\/)${escaped}$`, 'im');
+  }
+}
+
 function routeExecutor(filesStr) {
   const files = (filesStr || '').split(',').map(f => f.trim()).filter(Boolean);
   if (!files.length) return 'executor-general';
@@ -188,43 +234,39 @@ function routeExecutor(filesStr) {
   const caps = getCapabilityIndex();
   const joined = files.join('\n');
 
-  // Priority order: frontend > infra > backend > general
-  // This order ensures .tsx routes to frontend (not backend via .ts)
+  // Priority order as tiebreaker: frontend (0) > infra (1) > backend (2)
   const routingOrder = ['gsd-executor-frontend', 'gsd-executor-infra', 'gsd-executor-backend'];
+  const priorityMap = Object.fromEntries(routingOrder.map((id, i) => [id, i]));
+
+  // Collect ALL matching (agentId, pattern, specificityScore) across all agents
+  const matches = [];
 
   for (const agentId of routingOrder) {
     const agent = caps.agents.find(a => a.id === agentId);
     if (!agent || !agent.file_patterns.length) continue;
 
     for (const pattern of agent.file_patterns) {
-      // Convert glob-style pattern to regex
-      // *.tsx -> /\.tsx$/i, Dockerfile* -> /(?:^|\/)Dockerfile/i, .github/workflows/* -> /\.github\/workflows\//i
-      let regex;
-      if (pattern.startsWith('*.')) {
-        // Extension match: *.tsx -> match files ending in .tsx
-        const ext = pattern.slice(1).replace('.', '\\.');
-        regex = new RegExp(`${ext}$`, 'im');
-      } else if (pattern.endsWith('/*')) {
-        // Directory match: terraform/* -> match paths containing terraform/
-        const dir = pattern.slice(0, -2).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        regex = new RegExp(`(?:^|\\/)${dir}\\/`, 'im');
-      } else if (pattern.endsWith('*')) {
-        // Prefix match: Dockerfile* -> match filenames starting with Dockerfile
-        const prefix = pattern.slice(0, -1).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        regex = new RegExp(`(?:^|\\/)${prefix}`, 'im');
-      } else {
-        // Exact match: nginx.conf
-        const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        regex = new RegExp(`(?:^|\\/)${escaped}$`, 'im');
-      }
-
+      const regex = patternToRegex(pattern);
       if (regex.test(joined)) {
-        return agentId.replace('gsd-', '');
+        matches.push({
+          agentId,
+          pattern,
+          score: patternSpecificityScore(pattern),
+          priority: priorityMap[agentId],
+        });
       }
     }
   }
 
-  return 'executor-general';
+  if (!matches.length) return 'executor-general';
+
+  // Sort: highest specificity score first; on tie, lowest priority index (frontend wins)
+  matches.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return a.priority - b.priority;
+  });
+
+  return matches[0].agentId.replace('gsd-', '');
 }
 
 // ─── Manifest Check (HARDEN-01) ──────────────────────────────────────────────
