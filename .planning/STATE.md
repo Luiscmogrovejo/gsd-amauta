@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v2.8
 milestone_name: milestone
 status: completed
-stopped_at: Phase 20 complete (Plans 20-01, 20-02, 20-03 all done). All HANDOFF-01..05 requirements satisfied. Ready for Phase 21 or Phase 22.
-last_updated: "2026-04-13T01:05:40.633Z"
-last_activity: 2026-04-12 — Plan 20-03 executed (4 tasks, 3 commits; compactRpetdContext wired, 10 CJS + 8 Python integration tests passing)
+stopped_at: phase_21_planned
+last_updated: "2026-04-13"
+last_activity: 2026-04-12 — Phase 21 planned (2 plans, 9 tasks, 2 waves)
 progress:
   total_phases: 6
   completed_phases: 1
-  total_plans: 3
+  total_plans: 5
   completed_plans: 3
   percent: 17
 ---
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-12 for v2.8)
 
 ## Current Position
 
-Phase: 20 of 25 (Structured Context Handoffs — COMPLETE)
-Plan: 20-03 complete (Wave 3, final plan of Phase 20)
-Status: Phase 20 complete — all 3 plans done, all 5 HANDOFF requirements delivered
-Last activity: 2026-04-12 — Plan 20-03 executed (4 tasks, 3 commits; compactRpetdContext wired, 10 CJS + 8 Python integration tests passing)
+Phase: 21 of 25 (Hash-Based Staleness Detection — planned)
+Plan: 21-01 (Wave 1, ready for execution)
+Status: Phase 21 planned — 2 plans, 9 tasks, 2 waves
+Last activity: 2026-04-12 — Phase 21 planning complete
 
 Progress: [█░░░░░░░░░] 17%
 

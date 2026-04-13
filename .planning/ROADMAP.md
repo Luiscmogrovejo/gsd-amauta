@@ -75,7 +75,9 @@
 3. In a 10-file test where 2 files changed, `selective_refresh()` regenerates exactly 2 descriptions; the 8 unchanged files retain their prior cached descriptions verbatim.
 4. `[STALE] N files refreshed, M cached` log line appears on every phase transition where the staleness hook fires.
 
-**Plans:** TBD
+**Plans:**
+- [ ] Plan 21-01: ContextValidator Core — compute_file_hash + changed_since + selective_refresh + Unit Tests (Wave 1, STALE-01/02/03)
+- [ ] Plan 21-02: Orchestrator Integration — validate_context + daemon endpoint + file_hashes population + Integration Tests (Wave 2, STALE-04)
 
 ### Phase 22: Caveman-Compressed Descriptions
 
