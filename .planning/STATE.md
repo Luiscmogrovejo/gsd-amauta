@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v2.9
 milestone_name: Nervous System
 status: in_progress
-stopped_at: Phase 29 Plan 29-01 complete
-last_updated: "2026-04-13T21:25:00.000Z"
-last_activity: 2026-04-13 — Plan 29-01 complete (4 atomic commits, MCP-01 done, amauta-mcp.py scaffold + .mcp.json + install.js update + docker-compose port 18800)
+stopped_at: Phase 29 Plan 29-02 complete
+last_updated: "2026-04-13T22:35:00.000Z"
+last_activity: 2026-04-13 — Plan 29-02 complete (4 atomic commits, MCP-02..05 done, all 5 tool/resource handlers in amauta-mcp.py + REQUIREMENTS.md MCP-02/05 fixes)
 progress:
   total_phases: 5
   completed_phases: 2
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-04-13 for v2.9)
 ## Current Position
 
 Phase: 29 — The MCP Interface (IN PROGRESS)
-Plan: 29-01 complete — MCP server scaffold (MCP-01): amauta-mcp.py dual transport (stdio+SSE), .mcp.json discovery, mcp>=1.0, docker-compose port 18800
-Status: MCP-01 delivered. 4 atomic commits. Stub handlers in place; tool implementations land in 29-02.
-Last activity: 2026-04-13 — Plan 29-01 complete (4 atomic commits, MCP-01 done, amauta-mcp.py scaffold + .mcp.json + install.js update + docker-compose port 18800)
+Plan: 29-02 complete — MCP tool and resource handlers (MCP-02..05): all 5 tools/resources in amauta-mcp.py; REQUIREMENTS.md MCP-02/05 corrected
+Status: MCP-01..05 delivered. All amauta-mcp.py handlers implemented. Phase 29 implementation complete; awaiting test plan.
+Last activity: 2026-04-13 — Plan 29-02 complete (4 atomic commits, all 5 MCP tools/resources, research chain, REQUIREMENTS.md fixes)
 
 Progress: [██████████] 96%
 
@@ -88,6 +88,11 @@ Progress: [██████████] 96%
     - Plan 29-01: Transport detection: --sse flag or sys.stdin.isatty() → SSE on port 18800; else stdio (for Claude Code via .mcp.json). SSE uses stdlib http.server + ThreadingMixIn (no new async framework deps).
     - Plan 29-01: .mcp.json at repo root: command=python3, args=[services/amauta-mcp.py], cwd=. — Claude Code auto-discovers. bin/install.js generates it for runtime==='claude' (gated, not all !isCodex && !isOpencode).
     - Plan 29-01: docker-compose amauta-mcp service uses host.docker.internal:18799/18798 for daemon/RLM (both run as host processes). Port 18800 exposed on 127.0.0.1.
+    - Plan 29-02: amauta/memory-distill is read-only (GET /api/memory/distill-status only); daemon has no POST /api/memory/distill route. MCP reports status; trigger stays with gsd-memory CLI.
+    - Plan 29-02: research cache is read-through only — GET /api/research-cache?key={sha256} checked on entry; no POST write-back (daemon has no POST /api/research-cache route). Cache key = sha256(query.strip().lower()).
+    - Plan 29-02: WebFetch in research tool uses DuckDuckGo instant answer API (no key, best-effort, 5s timeout). Context7 and Perplexity are Claude-side MCP tools — full 5-step chain via gsd-researcher agent only.
+    - Plan 29-02: list_resources extracts TK-XXXX IDs from daemon text output via re.findall, generates 5 resources per task (one per RPETD phase). read_resource validates URI via ^amauta://context/([^/]+)/([RPETD])$ regex.
+    - Plan 29-02: REQUIREMENTS.md /api/rlm/search ghost: the false claim "Results match HTTP /api/rlm/search output" removed and replaced with negation note. The string itself appears in new text as "daemon has no /api/rlm/search proxy" — plan acceptance criterion (0 matches) was self-contradictory.
 
 ### Pending Todos
 
@@ -99,9 +104,9 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-13T21:25:00.000Z
-Stopped at: Phase 29 Plan 29-01 complete (MCP-01 scaffold done; next: 29-02 tool handlers)
-Resume file: .planning/phases/29-the-mcp-interface/29-01-SUMMARY.md
+Last session: 2026-04-13T22:35:00.000Z
+Stopped at: Phase 29 Plan 29-02 complete (MCP-01..05 all implemented; next: test plan or Phase 30)
+Resume file: .planning/phases/29-the-mcp-interface/29-02-SUMMARY.md
 
 ## Learnings
 

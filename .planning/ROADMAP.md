@@ -103,7 +103,7 @@
 3. Memory store → search round-trip via MCP returns the stored memory; distill trigger completes without error — 4 tests pass.
 4. MCP resource read `amauta://context/{task_id}/{phase}` returns valid JSON matching RPETDContext schema; research tool call returns results and cache hit on identical query skips API calls — 3+3 tests pass.
 
-**Plans:** 1/TBD complete (29-01: MCP server scaffold, .mcp.json, install.js update, mcp>=1.0, docker-compose port 18800 — MCP-01 done 2026-04-13)
+**Plans:** 2/TBD complete (29-01: MCP server scaffold, .mcp.json, install.js update, mcp>=1.0, docker-compose port 18800 — MCP-01 done 2026-04-13; 29-02: all 5 tool/resource handlers in amauta-mcp.py, REQUIREMENTS.md MCP-02/05 fixes — MCP-02..05 done 2026-04-13)
 
 ### Phase 30: Observability + Security
 
@@ -158,7 +158,7 @@ Phase 29 and Phase 30 can run in PARALLEL (both need 27+28; 29 needs only 27)
 | 26. The Substrate | 2/2 | Complete   | 2026-04-13 |
 | 27. The Retrieval Rewrite | 3/3 | Complete | 2026-04-13 |
 | 28. The Behavioral Upgrade | 2/2 | Complete | 2026-04-13 |
-| 29. The MCP Interface | 1/TBD | In progress (29-01 done) | - |
+| 29. The MCP Interface | 2/TBD | In progress (29-01+29-02 done; MCP-01..05 implemented) | - |
 | 30. Observability + Security | 0/TBD | Not started | - |
 
 ---
