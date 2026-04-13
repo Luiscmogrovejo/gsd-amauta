@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.8
 milestone_name: milestone
 status: completed
-stopped_at: phase_25_planned
-last_updated: "2026-04-13"
-last_activity: 2026-04-13 — Phase 25 planned (2 plans, 6 tasks, 2 waves)
+stopped_at: phase_25_plan_01_complete
+last_updated: "2026-04-12"
+last_activity: 2026-04-12 — Plan 25-01 complete (DEBT-01 regression tests + DEBT-02 default fix, 2 commits)
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 13
-  completed_plans: 11
-  percent: 55
+  completed_plans: 12
+  percent: 60
 ---
 
 # GSD-Amauta -- Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-12 for v2.8)
 
 ## Current Position
 
-Phase: 24 of 25 (Semantic Cache + Tiered Routing — COMPLETE)
-Plan: 24-01 complete (Wave 1 — 7 tasks), 24-02 complete (Wave 2 — 4 tasks)
-Status: Phase 24 complete — all 5 requirements met (SEMANTIC-01..03 + ROUTE-01..02). Next: Phase 25 (Tech Debt Sweep).
-Last activity: 2026-04-12 — Plan 24-02 complete (creative path cache, ROUTE-02 compaction, 8 integration tests)
+Phase: 25 of 25 (Tech Debt Sweep — IN PROGRESS)
+Plan: 25-01 complete (Wave 1 — 3 tasks). 25-02 pending (Wave 2).
+Status: Plan 25-01 complete — DEBT-01 regression tests + DEBT-02 default fix. Next: Plan 25-02 (DEBT-03 amauta.cjs routing + DEBT-04 routeExecutor specificity).
+Last activity: 2026-04-12 — Plan 25-01 complete (GSD_P_AUTO_TASK default fix, 7 regression tests, 2 commits)
 
-Progress: [█████░░░░░] 55%
+Progress: [██████░░░░] 60%
 
 ## v2.8 Phase Map
 
@@ -68,6 +68,7 @@ Critical path: 20 → 22 → 23 → 24. Phase 21 parallel with 22. Phase 25 inde
 ### Decisions
 
 - v2.7 carry-forward: cmdInitPhaseOp ghost, plan-to-tasks gap, amauta.cjs routing, routeExecutor specificity — all routed to Phase 25.
+- Plan 25-01: GSD_P_AUTO_TASK bash default changed from :-false to :-true (execute-phase.md line 133). captureOutput helper pattern used to test cmdInitPhaseOp in node:test (intercepts stdout + process.exit). DEBT-01 ghost already fixed in Phase 16; regression tests added through v2.8 context confirming strict milestone scoping.
 - Phase 21 and 22 may run in parallel (both depend only on Phase 20).
 - Phase 25 (tech debt) sequenced last to avoid interrupting optimization chain.
 - Plan 20-01: model_validator(mode="after") auto-computes context_version — callers never compute SHA-256 manually.
@@ -120,7 +121,7 @@ CAVE-02 divergence (open): 30% compression ratio target is not achievable with a
 ## Session Continuity
 
 Last session: 2026-04-12
-Stopped at: Phase 24 complete. Plan 24-02 done — semantic cache creative path wired, ROUTE-02 compaction llm_call wired, 8 integration tests, 22 Python + 76 CJS tests total, 0 regressions. Next: Phase 25 (Tech Debt Sweep).
+Stopped at: Plan 25-01 complete. DEBT-02 fixed (GSD_P_AUTO_TASK:-true in execute-phase.md). DEBT-01 regression tests (4 ghost + 3 default) in tests/25-debt-sweep.test.cjs. 2207 CJS tests, 13 pre-existing failures, 0 new. Next: Plan 25-02 (DEBT-03 amauta.cjs routing + DEBT-04 routeExecutor specificity).
 Resume file: None
 
 
@@ -145,6 +146,12 @@ Resume file: None
 
 
 
+
+
+
+- [learning] 2026-04-13T11:30:45.715Z: E2E test learning — cleanup after test
+- [learning] 2026-04-13T11:29:44.810Z: legacy regression test: free text learning
+- [learning] 2026-04-13T11:26:07.878Z: legacy regression test: free text learning
 - [learning] 2026-04-13T04:58:49.326Z: ROUTE-02 _make_compaction_llm_call stores compaction_model on llm_call._compaction_model as a test hook; returns None to trigger fallback because GSD-Amauta delegates Claude API calls to Claude Code not the Python daemon. Integration tests for amauta-daemon.py must use importlib.util.spec_from_file_location (hyphen in filename blocks standard import) and patch builtins.open to inject temp config paths.
 - [learning] 2026-04-13T04:45:40.213Z: semantic_cache_store and semantic_cache_lookup must both use input_type='query' for cosine parity — using 'document' for store causes embedding space mismatch and silent cache misses; MockPGStore test fixtures need distinct embedding vectors per entry to avoid accidental cross-query cosine hits in invalidation assertions
 - [learning] 2026-04-12T00:00:00.000Z: ROUTE-02 _make_compaction_llm_call returns None to trigger compact_conversation fallback — GSD-Amauta delegates Claude API calls to Claude Code, not the Python daemon. Model is RESOLVED from config.json and stored on llm_call._compaction_model for test verification; actual execution is no-op.

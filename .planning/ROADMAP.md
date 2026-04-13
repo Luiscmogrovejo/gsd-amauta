@@ -36,7 +36,7 @@
 - [x] **Phase 22: Caveman-Compressed Descriptions** — grammar-stripped agent definitions and structured file descriptions deliver >= 40% more facts per 500-char budget (CAVE-01..04) — COMPLETE 2026-04-13 (CAVE-01/03/04 verified; CAVE-02 divergence open: 1.5% actual vs 30% target)
 - [x] **Phase 23: Prompt Prefix Caching** — all 11 agent prompts restructured for stable prefix / variable suffix split with `cache_control` annotation; prefix stability lint added (CACHE-01..04) — COMPLETE 2026-04-12
 - [x] **Phase 24: Semantic Cache + Tiered Routing** — pgvector cosine >= 0.90 semantic cache for research calls; config-driven model routing (haiku T/D, sonnet R/P/E) (SEMANTIC-01..03, ROUTE-01..02) — COMPLETE 2026-04-12
-- [ ] **Phase 25: Tech Debt Sweep** — cmdInitPhaseOp ghost fallback eliminated; plan-to-tasks registration for phases >= 20; amauta.cjs HTTP routing fixed; routeExecutor specificity-wins determinism (DEBT-01..04)
+- [ ] **Phase 25: Tech Debt Sweep** — cmdInitPhaseOp ghost fallback eliminated; plan-to-tasks registration for phases >= 20; amauta.cjs HTTP routing fixed; routeExecutor specificity-wins determinism (DEBT-01..04) — IN PROGRESS (25-01 COMPLETE)
 
 ---
 
@@ -149,7 +149,7 @@
 4. Given two agents with overlapping file patterns, the agent with the longer (more specific) glob wins deterministically — verified by test with overlapping patterns.
 
 **Plans:**
-- [ ] Plan 25-01: Ghost Elimination + Plan-to-Tasks Fix (Wave 1, DEBT-01/02) — 3 tasks
+- [x] Plan 25-01: Ghost Elimination + Plan-to-Tasks Fix (Wave 1, DEBT-01/02) — 3 tasks — COMPLETE 2026-04-12
 - [ ] Plan 25-02: Wrapper Parity + routeExecutor Specificity (Wave 2, DEBT-03/04) — 3 tasks
 
 ---
