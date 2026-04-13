@@ -1604,6 +1604,113 @@ class PGStore:
             return None
 
     # ═══════════════════════════════════════════════════════
+    # RPETD Context Operations (Phase 20 HANDOFF-03)
+    # ═══════════════════════════════════════════════════════
+
+    def rpetd_context_store(self, task_id, phase, compiled_view, full_context=None,
+                            context_version=None, file_hashes=None):
+        """Store or update an RPETDContext for a task+phase.
+
+        Uses INSERT ... ON CONFLICT (task_id, phase) DO UPDATE to upsert.
+        This ensures exactly one context row per task per phase.
+
+        Args:
+            task_id: Task identifier (e.g., 'TK-0051').
+            phase: RPETD phase letter ('R', 'P', 'E', 'T', or 'D').
+            compiled_view: dict — the RPETDContext.model_dump() output (<= 600 tokens).
+            full_context: dict or None — optional raw conversation backup.
+            context_version: str or None — SHA-256 hex digest for staleness detection.
+            file_hashes: dict or None — {path: sha256_hash} for Phase 21 STALE-01.
+
+        Returns:
+            int: The row id of the upserted row.
+        """
+        phase = phase.upper()
+        if phase not in ('R', 'P', 'E', 'T', 'D'):
+            raise ValueError(f"Invalid RPETD phase: {phase}. Must be one of: R, P, E, T, D")
+
+        with self._get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO rpetd_context (task_id, phase, compiled_view, full_context,
+                                                context_version, file_hashes)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (task_id, phase)
+                    DO UPDATE SET
+                        compiled_view = EXCLUDED.compiled_view,
+                        full_context = EXCLUDED.full_context,
+                        context_version = EXCLUDED.context_version,
+                        file_hashes = EXCLUDED.file_hashes,
+                        created_at = NOW()
+                    RETURNING id
+                """, (
+                    task_id,
+                    phase,
+                    json.dumps(compiled_view) if isinstance(compiled_view, dict) else compiled_view,
+                    json.dumps(full_context) if isinstance(full_context, dict) else full_context,
+                    context_version,
+                    json.dumps(file_hashes or {}),
+                ))
+                row = cur.fetchone()
+                return row[0] if row else None
+
+    def rpetd_context_get(self, task_id, phase):
+        """Retrieve the stored RPETDContext for a specific task+phase.
+
+        Args:
+            task_id: Task identifier.
+            phase: RPETD phase letter ('R', 'P', 'E', 'T', or 'D').
+
+        Returns:
+            dict or None: Row as dict with keys {id, task_id, phase, compiled_view,
+            full_context, context_version, file_hashes, created_at}, or None if not found.
+        """
+        phase = phase.upper()
+        with self._get_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT id, task_id, phase, compiled_view, full_context,
+                           context_version, file_hashes, created_at
+                    FROM rpetd_context
+                    WHERE task_id = %s AND phase = %s
+                """, (task_id, phase))
+                row = cur.fetchone()
+                if row:
+                    result = dict(row)
+                    # Ensure created_at is ISO string for JSON serialization
+                    if result.get("created_at"):
+                        result["created_at"] = result["created_at"].isoformat()
+                    return result
+                return None
+
+    def rpetd_context_list(self, task_id):
+        """List all stored RPETDContext entries for a task, ordered by created_at.
+
+        Args:
+            task_id: Task identifier.
+
+        Returns:
+            list[dict]: List of rows as dicts, ordered by created_at ascending.
+        """
+        with self._get_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT id, task_id, phase, compiled_view, full_context,
+                           context_version, file_hashes, created_at
+                    FROM rpetd_context
+                    WHERE task_id = %s
+                    ORDER BY created_at ASC
+                """, (task_id,))
+                rows = cur.fetchall()
+                results = []
+                for row in rows:
+                    r = dict(row)
+                    if r.get("created_at"):
+                        r["created_at"] = r["created_at"].isoformat()
+                    results.append(r)
+                return results
+
+    # ═══════════════════════════════════════════════════════
     # Embedding / Semantic Search Operations
     # ═══════════════════════════════════════════════════════
 
