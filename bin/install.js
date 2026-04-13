@@ -452,6 +452,159 @@ function extractFrontmatterField(frontmatter, fieldName) {
   return match[1].trim().replace(/^['"]|['"]$/g, '');
 }
 
+function getOpencodeDefaultModel() {
+  return process.env.GSD_OPENCODE_MODEL || 'openai/gpt-5.4';
+}
+
+function getOpencodeSmallModel() {
+  return process.env.GSD_OPENCODE_SMALL_MODEL || 'openai/gpt-5-mini';
+}
+
+function getOpencodeConfigPath(isGlobal = true) {
+  return isGlobal
+    ? path.join(getGlobalDir('opencode', explicitConfigDir), 'opencode.json')
+    : path.join(process.cwd(), 'opencode.json');
+}
+
+function replaceClaudePathReferences(content, pathPrefix, runtime) {
+  const dirName = getDirName(runtime);
+  const normalizedPrefix = pathPrefix.replace(/\\/g, '/').replace(/\/$/, '');
+  const homePrefix = toHomePrefix(normalizedPrefix);
+
+  return content
+    .replace(/~\/\.claude\b/g, normalizedPrefix)
+    .replace(/\$HOME\/\.claude\b/g, homePrefix)
+    .replace(/\.\/\.claude\b/g, `./${dirName}`)
+    .replace(/(?:\/Users|\/home)\/[^/\s]+\/\.claude\b/g, normalizedPrefix)
+    .replace(/~\/\.opencode\b/g, normalizedPrefix)
+    .replace(/\$HOME\/\.config\/opencode\b/g, homePrefix)
+    .replace(/\.\/\.opencode\b/g, `./${dirName}`);
+}
+
+function convertClaudeCommandsToOpencodeSyntax(content) {
+  return content
+    .replace(/\/(amauta|gsd):([a-z0-9-]+)/gi, '/$1-$2')
+    .replace(/\bAskUserQuestion\(/g, 'question(')
+    .replace(/\bTodoWrite\(/g, 'todowrite(')
+    .replace(/\bTask\(/g, 'task(')
+    .replace(/\bWebFetch\(/g, 'webfetch(')
+    .replace(/\bSlashCommand\((['"])([^'"]+)\1\)/g, 'run $1$2$1')
+    .replace(/\bAskUserQuestion\b/g, 'question')
+    .replace(/\bTodoWrite\b/g, 'todowrite')
+    .replace(/\bWebFetch\b/g, 'webfetch')
+    .replace(/\bSlashCommand\b/g, 'command');
+}
+
+function convertClaudeToOpencodeMarkdown(content, pathPrefix, runtime) {
+  let converted = replaceClaudePathReferences(content, pathPrefix, runtime);
+  converted = convertClaudeCommandsToOpencodeSyntax(converted);
+  converted = converted.replace(/subagent_type="general-purpose"/g, 'subagent_type="general"');
+  return converted;
+}
+
+function inferOpencodeCommandAgent(commandName, explicitAgent) {
+  if (explicitAgent) return explicitAgent;
+
+  const overrides = {
+    'plan-phase': 'gsd-planner',
+    'research-phase': 'gsd-researcher',
+    'debug': 'gsd-debugger',
+  };
+
+  const overrideName = Object.keys(overrides).find(name => commandName.endsWith(name));
+  if (overrideName) {
+    return overrides[overrideName];
+  }
+
+  return 'gsd-operator';
+}
+
+function convertClaudeCommandToOpencodeCommand(content, commandName, pathPrefix, runtime) {
+  const converted = convertClaudeToOpencodeMarkdown(content, pathPrefix, runtime);
+  const { frontmatter, body } = extractFrontmatterAndBody(converted);
+  const description = frontmatter
+    ? (extractFrontmatterField(frontmatter, 'description') || `Run ${commandName.replace(/-/g, ' ')}.`)
+    : `Run ${commandName.replace(/-/g, ' ')}.`;
+  const explicitAgent = frontmatter ? extractFrontmatterField(frontmatter, 'agent') : null;
+  const agent = inferOpencodeCommandAgent(commandName, explicitAgent);
+
+  return [
+    '---',
+    `description: ${yamlQuote(toSingleLine(description))}`,
+    `agent: ${agent}`,
+    'subtask: true',
+    `model: ${getOpencodeDefaultModel()}`,
+    '---',
+    '',
+    body.trimStart(),
+  ].join('\n');
+}
+
+function buildOpencodePermissionLines(toolList) {
+  const tools = new Set(toolList.map(tool => tool.trim()).filter(Boolean));
+  const lines = ['permission:'];
+  const addLine = (line) => lines.push(`  ${line}`);
+
+  if (!tools.has('Write') && !tools.has('Edit')) addLine('edit: deny');
+  if (!tools.has('Task')) addLine('task: deny');
+  if (!tools.has('WebFetch')) addLine('webfetch: deny');
+  if (!tools.has('AskUserQuestion')) addLine('question: deny');
+  addLine('skill: allow');
+
+  return lines;
+}
+
+function convertClaudeAgentToOpencodeAgent(content, agentName, pathPrefix, runtime, hasSkill) {
+  const converted = convertClaudeToOpencodeMarkdown(content, pathPrefix, runtime);
+  const { frontmatter, body } = extractFrontmatterAndBody(converted);
+  if (!frontmatter) return converted;
+
+  const description = extractFrontmatterField(frontmatter, 'description') || `Amauta agent ${agentName}.`;
+  const toolsValue = extractFrontmatterField(frontmatter, 'tools') || '';
+  const tools = toolsValue.split(',').map(tool => tool.trim()).filter(Boolean);
+  const color = extractFrontmatterField(frontmatter, 'color');
+  const colorHex = color && colorNameToHex[String(color).toLowerCase()]
+    ? colorNameToHex[String(color).toLowerCase()]
+    : (color && color.startsWith('#') ? color : null);
+  const skillName = `${agentName}-workflow`;
+  const skillPrelude = hasSkill
+    ? `Load the \`${skillName}\` skill with the \`skill\` tool before starting when you need the reusable workflow supplement.\n\n`
+    : '';
+
+  const frontmatterLines = [
+    '---',
+    `description: ${yamlQuote(toSingleLine(description))}`,
+    'mode: subagent',
+    `model: ${getOpencodeDefaultModel()}`,
+  ];
+
+  if (colorHex) {
+    frontmatterLines.push(`color: ${yamlQuote(colorHex)}`);
+  }
+
+  frontmatterLines.push(...buildOpencodePermissionLines(tools));
+  frontmatterLines.push('---', '', `${skillPrelude}${body.trimStart()}`);
+
+  return frontmatterLines.join('\n');
+}
+
+function convertClaudeSkillToOpencodeSkill(content, skillName, pathPrefix, runtime) {
+  const converted = convertClaudeToOpencodeMarkdown(content, pathPrefix, runtime).trim();
+  const headingMatch = converted.match(/^#\s+(.+)$/m);
+  const heading = headingMatch ? headingMatch[1].trim() : skillName.replace(/-/g, ' ');
+  const description = `Reusable workflow for ${heading}.`;
+
+  return [
+    '---',
+    `name: ${skillName}`,
+    `description: ${yamlQuote(description)}`,
+    'compatibility: opencode',
+    '---',
+    '',
+    converted,
+  ].join('\n');
+}
+
 function convertSlashCommandsToCodexSkillMentions(content) {
   let converted = content.replace(/\/gsd:([a-z0-9-]+)/gi, (_, commandName) => {
     return `$gsd-${String(commandName).toLowerCase()}`;
@@ -1003,14 +1156,14 @@ function convertClaudeToGeminiToml(content) {
 
 /**
  * Copy commands to a flat structure for OpenCode
- * OpenCode expects: command/gsd-help.md (invoked as /gsd-help)
+ * OpenCode expects: commands/gsd-help.md (invoked as /gsd-help)
  * Source structure: commands/gsd/help.md
  * 
  * @param {string} srcDir - Source directory (e.g., commands/gsd/)
- * @param {string} destDir - Destination directory (e.g., command/)
+ * @param {string} destDir - Destination directory (e.g., commands/)
  * @param {string} prefix - Prefix for filenames (e.g., 'gsd')
  * @param {string} pathPrefix - Path prefix for file references
- * @param {string} runtime - Target runtime ('claude' or 'opencode')
+ * @param {string} runtime - Target runtime ('opencode')
  */
 function copyFlattenedCommands(srcDir, destDir, prefix, pathPrefix, runtime) {
   if (!fs.existsSync(srcDir)) {
@@ -1035,7 +1188,7 @@ function copyFlattenedCommands(srcDir, destDir, prefix, pathPrefix, runtime) {
     
     if (entry.isDirectory()) {
       // Recurse into subdirectories, adding to prefix
-      // e.g., commands/gsd/debug/start.md -> command/gsd-debug-start.md
+      // e.g., commands/gsd/debug/start.md -> commands/gsd-debug-start.md
       copyFlattenedCommands(srcPath, destDir, `${prefix}-${entry.name}`, pathPrefix, runtime);
     } else if (entry.name.endsWith('.md')) {
       // Flatten: help.md -> gsd-help.md
@@ -1044,19 +1197,43 @@ function copyFlattenedCommands(srcDir, destDir, prefix, pathPrefix, runtime) {
       const destPath = path.join(destDir, destName);
 
       let content = fs.readFileSync(srcPath, 'utf8');
-      const globalClaudeRegex = /~\/\.claude\//g;
-      const globalClaudeHomeRegex = /\$HOME\/\.claude\//g;
-      const localClaudeRegex = /\.\/\.claude\//g;
-      const opencodeDirRegex = /~\/\.opencode\//g;
-      content = content.replace(globalClaudeRegex, pathPrefix);
-      content = content.replace(globalClaudeHomeRegex, toHomePrefix(pathPrefix));
-      content = content.replace(localClaudeRegex, `./${getDirName(runtime)}/`);
-      content = content.replace(opencodeDirRegex, pathPrefix);
       content = processAttribution(content, getCommitAttribution(runtime));
-      content = convertClaudeToOpencodeFrontmatter(content);
+      content = convertClaudeCommandToOpencodeCommand(content, destName.replace(/\.md$/, ''), pathPrefix, runtime);
 
       fs.writeFileSync(destPath, content);
     }
+  }
+}
+
+function copyOpencodeSkills(srcDir, destDir, pathPrefix, runtime) {
+  if (!fs.existsSync(srcDir)) {
+    return;
+  }
+
+  fs.mkdirSync(destDir, { recursive: true });
+
+  const existing = fs.readdirSync(destDir, { withFileTypes: true });
+  for (const entry of existing) {
+    if (entry.isDirectory() && entry.name.startsWith('gsd-')) {
+      fs.rmSync(path.join(destDir, entry.name), { recursive: true, force: true });
+    }
+  }
+
+  const skillEntries = fs.readdirSync(srcDir, { withFileTypes: true });
+  for (const entry of skillEntries) {
+    if (!entry.isDirectory()) continue;
+
+    const skillName = entry.name;
+    const skillMdPath = path.join(srcDir, skillName, 'SKILL.md');
+    if (!fs.existsSync(skillMdPath)) continue;
+
+    const skillDestDir = path.join(destDir, skillName);
+    fs.mkdirSync(skillDestDir, { recursive: true });
+
+    let skillContent = fs.readFileSync(skillMdPath, 'utf8');
+    skillContent = processAttribution(skillContent, getCommitAttribution(runtime));
+    skillContent = convertClaudeSkillToOpencodeSkill(skillContent, skillName, pathPrefix, runtime);
+    fs.writeFileSync(path.join(skillDestDir, 'SKILL.md'), skillContent);
   }
 }
 
@@ -1153,17 +1330,12 @@ function copyWithPathReplacement(srcDir, destDir, pathPrefix, runtime, isCommand
     } else if (entry.name.endsWith('.md')) {
       // Replace ~/.claude/ and $HOME/.claude/ and ./.claude/ with runtime-appropriate paths
       let content = fs.readFileSync(srcPath, 'utf8');
-      const globalClaudeRegex = /~\/\.claude\//g;
-      const globalClaudeHomeRegex = /\$HOME\/\.claude\//g;
-      const localClaudeRegex = /\.\/\.claude\//g;
-      content = content.replace(globalClaudeRegex, pathPrefix);
-      content = content.replace(globalClaudeHomeRegex, toHomePrefix(pathPrefix));
-      content = content.replace(localClaudeRegex, `./${dirName}/`);
+      content = replaceClaudePathReferences(content, pathPrefix, runtime);
       content = processAttribution(content, getCommitAttribution(runtime));
 
-      // Convert frontmatter for opencode compatibility
+      // Convert markdown syntax for opencode compatibility
       if (isOpencode) {
-        content = convertClaudeToOpencodeFrontmatter(content);
+        content = convertClaudeToOpencodeMarkdown(content, pathPrefix, runtime);
         fs.writeFileSync(destPath, content);
       } else if (runtime === 'gemini') {
         if (isCommand) {
@@ -1301,17 +1473,36 @@ function uninstall(isGlobal, runtime = 'claude') {
 
   // 1. Remove GSD commands/skills
   if (isOpencode) {
-    // OpenCode: remove command/gsd-*.md files
-    const commandDir = path.join(targetDir, 'command');
-    if (fs.existsSync(commandDir)) {
+    const commandDirs = [path.join(targetDir, 'commands'), path.join(targetDir, 'command')];
+    let removedCommands = 0;
+    for (const commandDir of commandDirs) {
+      if (!fs.existsSync(commandDir)) continue;
       const files = fs.readdirSync(commandDir);
       for (const file of files) {
-        if (file.startsWith('gsd-') && file.endsWith('.md')) {
+        if ((file.startsWith('gsd-') || file.startsWith('amauta-')) && file.endsWith('.md')) {
           fs.unlinkSync(path.join(commandDir, file));
-          removedCount++;
+          removedCommands++;
         }
       }
-      console.log(`  ${green}✓${reset} Removed GSD commands from command/`);
+    }
+      if (removedCommands > 0) {
+        removedCount++;
+        console.log(`  ${green}✓${reset} Removed ${removedCommands} OpenCode commands`);
+      }
+    const skillsDir = path.join(targetDir, 'skills');
+    if (fs.existsSync(skillsDir)) {
+      let skillCount = 0;
+      const entries = fs.readdirSync(skillsDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory() && entry.name.startsWith('gsd-')) {
+          fs.rmSync(path.join(skillsDir, entry.name), { recursive: true, force: true });
+          skillCount++;
+        }
+      }
+      if (skillCount > 0) {
+        removedCount++;
+        console.log(`  ${green}✓${reset} Removed ${skillCount} OpenCode skills`);
+      }
     }
   } else if (isCodex) {
     // Codex: remove skills/gsd-*/SKILL.md skill directories
@@ -1521,17 +1712,12 @@ function uninstall(isGlobal, runtime = 'claude') {
     }
   }
 
-  // 6. For OpenCode, clean up permissions from opencode.json
+  // 6. For OpenCode, clean up managed entries from opencode.json
   if (isOpencode) {
-    // For local uninstalls, clean up ./.opencode/opencode.json
-    // For global uninstalls, clean up ~/.config/opencode/opencode.json
-    const opencodeConfigDir = isGlobal
-      ? getOpencodeGlobalDir()
-      : path.join(process.cwd(), '.opencode');
-    const configPath = path.join(opencodeConfigDir, 'opencode.json');
+    const configPath = getOpencodeConfigPath(isGlobal);
     if (fs.existsSync(configPath)) {
       try {
-        const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        const config = parseJsonc(fs.readFileSync(configPath, 'utf8'));
         let modified = false;
 
         // Remove GSD permission entries
@@ -1556,10 +1742,42 @@ function uninstall(isGlobal, runtime = 'claude') {
           }
         }
 
+        if (Array.isArray(config.enabled_providers) &&
+            config.enabled_providers.length === 1 &&
+            config.enabled_providers[0] === 'openai') {
+          delete config.enabled_providers;
+          modified = true;
+        }
+
+        if (config.model === getOpencodeDefaultModel()) {
+          delete config.model;
+          modified = true;
+        }
+
+        if (config.small_model === getOpencodeSmallModel()) {
+          delete config.small_model;
+          modified = true;
+        }
+
+        if (config.agent && typeof config.agent === 'object') {
+          for (const primaryAgent of ['build', 'plan']) {
+            if (config.agent[primaryAgent] && config.agent[primaryAgent].model === getOpencodeDefaultModel()) {
+              delete config.agent[primaryAgent].model;
+              modified = true;
+              if (Object.keys(config.agent[primaryAgent]).length === 0) {
+                delete config.agent[primaryAgent];
+              }
+            }
+          }
+          if (Object.keys(config.agent).length === 0) {
+            delete config.agent;
+          }
+        }
+
         if (modified) {
           fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
           removedCount++;
-          console.log(`  ${green}✓${reset} Removed GSD permissions from opencode.json`);
+          console.log(`  ${green}✓${reset} Removed GSD-managed OpenCode config from opencode.json`);
         }
       } catch (e) {
         // Ignore JSON parse errors
@@ -1639,75 +1857,104 @@ function parseJsonc(content) {
 }
 
 /**
- * Configure OpenCode permissions to allow reading GSD reference docs
- * This prevents permission prompts when GSD accesses the get-shit-done directory
+ * Configure OpenCode to use Amauta with OpenAI-only defaults.
+ * Global installs use ~/.config/opencode/opencode.json.
+ * Local installs use ./opencode.json in the project root.
+ *
  * @param {boolean} isGlobal - Whether this is a global or local install
  */
-function configureOpencodePermissions(isGlobal = true) {
-  // For local installs, use ./.opencode/opencode.json
-  // For global installs, use ~/.config/opencode/opencode.json
+function configureOpencodeConfig(isGlobal = true) {
+  const configPath = getOpencodeConfigPath(isGlobal);
   const opencodeConfigDir = isGlobal
-    ? getOpencodeGlobalDir()
+    ? getGlobalDir('opencode', explicitConfigDir)
     : path.join(process.cwd(), '.opencode');
-  const configPath = path.join(opencodeConfigDir, 'opencode.json');
 
-  // Ensure config directory exists
-  fs.mkdirSync(opencodeConfigDir, { recursive: true });
+  if (isGlobal) {
+    fs.mkdirSync(opencodeConfigDir, { recursive: true });
+  }
 
-  // Read existing config or create empty object
   let config = {};
   if (fs.existsSync(configPath)) {
     try {
       const content = fs.readFileSync(configPath, 'utf8');
       config = parseJsonc(content);
     } catch (e) {
-      // Cannot parse - DO NOT overwrite user's config
-      console.log(`  ${yellow}⚠${reset} Could not parse opencode.json - skipping permission config`);
+      console.log(`  ${yellow}⚠${reset} Could not parse opencode.json - skipping OpenCode config`);
       console.log(`    ${dim}Reason: ${e.message}${reset}`);
       console.log(`    ${dim}Your config was NOT modified. Fix the syntax manually if needed.${reset}`);
       return;
     }
   }
 
-  // Ensure permission structure exists
-  if (!config.permission) {
-    config.permission = {};
-  }
-
-  // Build the GSD path using the actual config directory
-  // Use ~ shorthand if it's in the default location, otherwise use full path
-  const defaultConfigDir = path.join(os.homedir(), '.config', 'opencode');
-  const gsdPath = opencodeConfigDir === defaultConfigDir
-    ? '~/.config/opencode/get-shit-done/*'
-    : `${opencodeConfigDir.replace(/\\/g, '/')}/get-shit-done/*`;
-  
   let modified = false;
+  const defaultModel = getOpencodeDefaultModel();
+  const smallModel = getOpencodeSmallModel();
 
-  // Configure read permission
-  if (!config.permission.read || typeof config.permission.read !== 'object') {
-    config.permission.read = {};
-  }
-  if (config.permission.read[gsdPath] !== 'allow') {
-    config.permission.read[gsdPath] = 'allow';
+  const setValue = (obj, key, value) => {
+    const current = obj[key];
+    if (JSON.stringify(current) !== JSON.stringify(value)) {
+      obj[key] = value;
+      modified = true;
+    }
+  };
+
+  setValue(config, 'enabled_providers', ['openai']);
+  setValue(config, 'model', defaultModel);
+  setValue(config, 'small_model', smallModel);
+
+  if (!config.agent || typeof config.agent !== 'object') {
+    config.agent = {};
     modified = true;
   }
 
-  // Configure external_directory permission (the safety guard for paths outside project)
-  if (!config.permission.external_directory || typeof config.permission.external_directory !== 'object') {
-    config.permission.external_directory = {};
+  for (const primaryAgent of ['build', 'plan']) {
+    if (!config.agent[primaryAgent] || typeof config.agent[primaryAgent] !== 'object') {
+      config.agent[primaryAgent] = {};
+      modified = true;
+    }
+    if (config.agent[primaryAgent].model !== defaultModel) {
+      config.agent[primaryAgent].model = defaultModel;
+      modified = true;
+    }
   }
-  if (config.permission.external_directory[gsdPath] !== 'allow') {
-    config.permission.external_directory[gsdPath] = 'allow';
-    modified = true;
+
+  if (isGlobal) {
+    if (!config.permission || typeof config.permission !== 'object') {
+      config.permission = {};
+      modified = true;
+    }
+
+    const defaultConfigDir = path.join(os.homedir(), '.config', 'opencode');
+    const gsdPath = opencodeConfigDir === defaultConfigDir
+      ? '~/.config/opencode/get-shit-done/*'
+      : `${opencodeConfigDir.replace(/\\/g, '/')}/get-shit-done/*`;
+
+    if (!config.permission.read || typeof config.permission.read !== 'object') {
+      config.permission.read = {};
+      modified = true;
+    }
+    if (!config.permission.external_directory || typeof config.permission.external_directory !== 'object') {
+      config.permission.external_directory = {};
+      modified = true;
+    }
+
+    if (config.permission.read[gsdPath] !== 'allow') {
+      config.permission.read[gsdPath] = 'allow';
+      modified = true;
+    }
+    if (config.permission.external_directory[gsdPath] !== 'allow') {
+      config.permission.external_directory[gsdPath] = 'allow';
+      modified = true;
+    }
   }
 
   if (!modified) {
-    return; // Already configured
+    return;
   }
 
-  // Write config back
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
-  console.log(`  ${green}✓${reset} Configured read permission for GSD docs`);
+  console.log(`  ${green}✓${reset} Configured OpenCode for OpenAI-only Amauta workflows`);
+  console.log(`  ${green}✓${reset} Default model: ${defaultModel}`);
 }
 
 /**
@@ -1791,7 +2038,7 @@ function writeManifest(configDir, runtime = 'claude') {
   const isCodex = runtime === 'codex';
   const gsdDir = path.join(configDir, 'get-shit-done');
   const commandsDir = path.join(configDir, 'commands', 'gsd');
-  const opencodeCommandDir = path.join(configDir, 'command');
+  const opencodeCommandsDir = path.join(configDir, 'commands');
   const codexSkillsDir = path.join(configDir, 'skills');
   const agentsDir = path.join(configDir, 'agents');
   const manifest = { version: pkg.version, timestamp: new Date().toISOString(), files: {} };
@@ -1813,10 +2060,21 @@ function writeManifest(configDir, runtime = 'claude') {
       manifest.files['commands/amauta/' + rel] = hash;
     }
   }
-  if (isOpencode && fs.existsSync(opencodeCommandDir)) {
-    for (const file of fs.readdirSync(opencodeCommandDir)) {
-      if (file.startsWith('gsd-') && file.endsWith('.md')) {
-        manifest.files['command/' + file] = fileHash(path.join(opencodeCommandDir, file));
+  if (isOpencode && fs.existsSync(opencodeCommandsDir)) {
+    for (const file of fs.readdirSync(opencodeCommandsDir)) {
+      if ((file.startsWith('gsd-') || file.startsWith('amauta-')) && file.endsWith('.md')) {
+        manifest.files['commands/' + file] = fileHash(path.join(opencodeCommandsDir, file));
+      }
+    }
+  }
+  if (isOpencode && fs.existsSync(codexSkillsDir)) {
+    const opencodeSkillEntries = fs.readdirSync(codexSkillsDir, { withFileTypes: true });
+    for (const entry of opencodeSkillEntries) {
+      if (!entry.isDirectory() || !entry.name.startsWith('gsd-')) continue;
+      const skillRoot = path.join(codexSkillsDir, entry.name);
+      const skillHashes = generateManifest(skillRoot);
+      for (const [rel, hash] of Object.entries(skillHashes)) {
+        manifest.files[`skills/${entry.name}/${rel}`] = hash;
       }
     }
   }
@@ -1878,6 +2136,10 @@ function saveLocalPatches(configDir) {
     for (const f of modified) {
       console.log('     ' + dim + f + reset);
     }
+  } else {
+    if (fs.existsSync(patchesDir)) {
+      fs.rmSync(patchesDir, { recursive: true, force: true });
+    }
   }
   return modified;
 }
@@ -1895,7 +2157,7 @@ function reportLocalPatches(configDir, runtime = 'claude') {
 
   if (meta.files && meta.files.length > 0) {
     const reapplyCommand = runtime === 'opencode'
-      ? '/gsd-reapply-patches'
+      ? '/amauta-reapply-patches'
       : runtime === 'codex'
         ? '$gsd-reapply-patches'
         : '/amauta:reapply-patches';
@@ -1952,12 +2214,17 @@ function install(isGlobal, runtime = 'claude') {
   // Clean up orphaned files from previous versions
   cleanupOrphanedFiles(targetDir);
 
-  // OpenCode uses command/ (flat), Codex uses skills/, Claude/Gemini use commands/{prefix}/
+  // OpenCode uses commands/ (flat), Codex uses skills/, Claude/Gemini use commands/{prefix}/
   // Install both /gsd: and /amauta: command sets for backward compatibility
   if (isOpencode) {
-    // OpenCode: flat structure in command/ directory
-    const commandDir = path.join(targetDir, 'command');
+    // OpenCode: flat structure in commands/ directory
+    const commandDir = path.join(targetDir, 'commands');
     fs.mkdirSync(commandDir, { recursive: true });
+
+    const legacyCommandDir = path.join(targetDir, 'command');
+    if (fs.existsSync(legacyCommandDir)) {
+      fs.rmSync(legacyCommandDir, { recursive: true, force: true });
+    }
     
     // Install /gsd: commands (backward compat)
     const gsdSrc = path.join(src, 'commands', 'gsd');
@@ -1972,9 +2239,9 @@ function install(isGlobal, runtime = 'claude') {
     const gsdCount = fs.readdirSync(commandDir).filter(f => f.startsWith('gsd-')).length;
     const amautaCount = fs.readdirSync(commandDir).filter(f => f.startsWith('amauta-')).length;
     if (gsdCount > 0 || amautaCount > 0) {
-      console.log(`  ${green}✓${reset} Installed ${gsdCount + amautaCount} commands to command/`);
+      console.log(`  ${green}✓${reset} Installed ${gsdCount + amautaCount} commands to commands/`);
     } else {
-      failures.push('command/*');
+      failures.push('commands/*');
     }
   } else if (isCodex) {
     const skillsDir = path.join(targetDir, 'skills');
@@ -2043,7 +2310,7 @@ function install(isGlobal, runtime = 'claude') {
       }
     }
 
-    // Skills source dir — needed here for non-Claude runtimes to embed SKILL.md in agent body
+    // Skills source dir — used for native skill installation or agent hints
     const skillsSrcDir = path.join(src, 'skills');
 
     // Copy new agents
@@ -2051,15 +2318,13 @@ function install(isGlobal, runtime = 'claude') {
     for (const entry of agentEntries) {
       if (entry.isFile() && entry.name.endsWith('.md')) {
         let content = fs.readFileSync(path.join(agentsSrc, entry.name), 'utf8');
-        // Replace ~/.claude/ and $HOME/.claude/ as they are the source of truth in the repo
-        const dirRegex = /~\/\.claude\//g;
-        const homeDirRegex = /\$HOME\/\.claude\//g;
-        content = content.replace(dirRegex, pathPrefix);
-        content = content.replace(homeDirRegex, toHomePrefix(pathPrefix));
+        content = replaceClaudePathReferences(content, pathPrefix, runtime);
         content = processAttribution(content, getCommitAttribution(runtime));
         // Convert frontmatter for runtime compatibility
         if (isOpencode) {
-          content = convertClaudeToOpencodeFrontmatter(content);
+          const agentBase = entry.name.replace('.md', '');
+          const skillMdPath = path.join(skillsSrcDir, `${agentBase}-workflow`, 'SKILL.md');
+          content = convertClaudeAgentToOpencodeAgent(content, agentBase, pathPrefix, runtime, fs.existsSync(skillMdPath));
         } else if (isGemini) {
           content = convertClaudeToGeminiAgent(content);
         } else if (isCodex) {
@@ -2067,14 +2332,13 @@ function install(isGlobal, runtime = 'claude') {
         }
         // For non-Claude runtimes, embed skill content in agent body
         // (Claude Code loads skills via skills: frontmatter; other runtimes don't support this)
-        if (isOpencode || isGemini || isCodex) {
+        if ((isGemini || isCodex) && !isOpencode) {
           const agentBase = entry.name.replace('.md', '');
           const skillDir = path.join(skillsSrcDir, `${agentBase}-workflow`);
           const skillMdPath = path.join(skillDir, 'SKILL.md');
           if (fs.existsSync(skillMdPath)) {
             let skillContent = fs.readFileSync(skillMdPath, 'utf8');
-            skillContent = skillContent.replace(/~\/\.claude\//g, pathPrefix);
-            skillContent = skillContent.replace(/\$HOME\/\.claude\//g, toHomePrefix(pathPrefix));
+            skillContent = replaceClaudePathReferences(skillContent, pathPrefix, runtime);
             content += '\n\n---\n\n' + skillContent;
           }
         }
@@ -2091,7 +2355,15 @@ function install(isGlobal, runtime = 'claude') {
   // Copy skills for Claude Code (skills/ dir — referenced by agents' skills: frontmatter field)
   // Each skill is a directory with SKILL.md; content is injected into agent context at startup.
   const _skillsSrcDir = path.join(src, 'skills');
-  if (fs.existsSync(_skillsSrcDir) && !isCodex && !isOpencode && !isGemini) {
+  if (fs.existsSync(_skillsSrcDir) && isOpencode) {
+    const skillsDestDir = path.join(targetDir, 'skills');
+    copyOpencodeSkills(_skillsSrcDir, skillsDestDir, pathPrefix, runtime);
+    if (verifyInstalled(skillsDestDir, 'skills')) {
+      console.log(`  ${green}✓${reset} Installed OpenCode skills`);
+    } else {
+      failures.push('skills');
+    }
+  } else if (fs.existsSync(_skillsSrcDir) && !isCodex && !isGemini) {
     const skillsDestDir = path.join(targetDir, 'skills');
     fs.mkdirSync(skillsDestDir, { recursive: true });
 
@@ -2149,7 +2421,7 @@ function install(isGlobal, runtime = 'claude') {
     failures.push('VERSION');
   }
 
-  if (!isCodex) {
+  if (!isCodex && !isOpencode) {
     // Write package.json to force CommonJS mode for GSD scripts
     // Prevents "require is not defined" errors when project has "type": "module"
     // Node.js walks up looking for package.json - this stops inheritance from project
@@ -2185,6 +2457,22 @@ function install(isGlobal, runtime = 'claude') {
         failures.push('hooks');
       }
     }
+
+    // Phase 29 MCP-01: write .mcp.json for Claude Code MCP auto-discovery
+    // Only for Claude runtime — Claude Code reads .mcp.json from project root
+    if (runtime === 'claude') {
+      const mcpJsonContent = JSON.stringify({
+        mcpServers: {
+          amauta: {
+            command: 'python3',
+            args: ['services/amauta-mcp.py'],
+            cwd: '.'
+          }
+        }
+      }, null, 2);
+      fs.writeFileSync(path.join(process.cwd(), '.mcp.json'), mcpJsonContent + '\n', 'utf8');
+      console.log(`  ${green}✓${reset} .mcp.json written (MCP auto-discovery for Claude Code)`);
+    }
   }
 
   if (failures.length > 0) {
@@ -2209,9 +2497,9 @@ function install(isGlobal, runtime = 'claude') {
         const fullPath = path.join(dir, entry.name);
         if (entry.isDirectory()) {
           scanForLeakedPaths(fullPath);
-        } else if ((entry.name.endsWith('.md') || entry.name.endsWith('.toml')) && entry.name !== 'CHANGELOG.md') {
+        } else if ((entry.name.endsWith('.md') || entry.name.endsWith('.toml') || entry.name.endsWith('.cjs') || entry.name.endsWith('.js')) && entry.name !== 'CHANGELOG.md') {
           const content = fs.readFileSync(fullPath, 'utf8');
-          const matches = content.match(/(?:~|\$HOME)\/\.claude\b/g);
+          const matches = content.match(/(?:(?:~|\$HOME)\/\.claude\b|(?:\/Users|\/home)\/[^/\s]+\/\.claude\b)/g);
           if (matches) {
             leakedPaths.push({ file: fullPath.replace(targetDir + '/', ''), count: matches.length });
           }
@@ -2237,6 +2525,10 @@ function install(isGlobal, runtime = 'claude') {
     const agentCount = installCodexConfig(targetDir, agentsSrc);
     console.log(`  ${green}✓${reset} Generated config.toml with ${agentCount} agent roles`);
     console.log(`  ${green}✓${reset} Generated ${agentCount} agent .toml config files`);
+    return { settingsPath: null, settings: null, statuslineCommand: null, runtime };
+  }
+
+  if (isOpencode) {
     return { settingsPath: null, settings: null, statuslineCommand: null, runtime };
   }
 
@@ -2346,13 +2638,13 @@ function finishInstall(settingsPath, settings, statuslineCommand, shouldInstallS
   }
 
   // Write settings when runtime supports settings.json
-  if (!isCodex) {
+  if (!isCodex && !isOpencode) {
     writeSettings(settingsPath, settings);
   }
 
-  // Configure OpenCode permissions
+  // Configure OpenCode config and permissions
   if (isOpencode) {
-    configureOpencodePermissions(isGlobal);
+    configureOpencodeConfig(isGlobal);
   }
 
   let program = 'Claude Code';
@@ -2361,7 +2653,7 @@ function finishInstall(settingsPath, settings, statuslineCommand, shouldInstallS
   if (runtime === 'codex') program = 'Codex';
 
   let command = '/amauta:new-project';
-  if (runtime === 'opencode') command = '/gsd-new-project';
+  if (runtime === 'opencode') command = '/amauta-new-project';
   if (runtime === 'codex') command = '$gsd-new-project';
   console.log(`
   ${green}Done!${reset} Amauta v${pkg.version} installed for ${program}.
@@ -2854,7 +3146,11 @@ function installAllRuntimes(runtimes, isGlobal, isInteractive) {
       const targetDir = isGlobal
         ? getGlobalDir(claudeResult.runtime, explicitConfigDir)
         : path.join(process.cwd(), getDirName(claudeResult.runtime));
-      installAmauta(targetDir).catch(err => console.log(`  ${yellow}⚠${reset} Amauta setup error: ${err.message}`));
+      installAmauta(targetDir)
+        .then(() => {
+          writeManifest(targetDir, claudeResult.runtime);
+        })
+        .catch(err => console.log(`  ${yellow}⚠${reset} Amauta setup error: ${err.message}`));
     }
   };
 
@@ -2868,6 +3164,16 @@ function installAllRuntimes(runtimes, isGlobal, isInteractive) {
 // Test-only exports — skip main logic when loaded as a module for testing
 if (process.env.GSD_TEST_MODE) {
   module.exports = {
+    getOpencodeConfigPath,
+    getOpencodeDefaultModel,
+    getOpencodeSmallModel,
+    configureOpencodeConfig,
+    convertClaudeCommandToOpencodeCommand,
+    convertClaudeAgentToOpencodeAgent,
+    convertClaudeSkillToOpencodeSkill,
+    replaceClaudePathReferences,
+    convertClaudeToOpencodeMarkdown,
+    install,
     getCodexSkillAdapterHeader,
     convertClaudeToGeminiAgent,
     convertClaudeAgentToCodexAgent,
