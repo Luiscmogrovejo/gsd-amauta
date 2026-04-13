@@ -1426,6 +1426,31 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": _safe_error(e)}, 500)
             return
 
+        # ─── RPETD Context GET route (Phase 20 HANDOFF-02) ────────────────────
+        if path.startswith("/api/context/"):
+            parts = path.split("/")
+            # Expected: /api/context/<task_id>/<phase>
+            # parts: ['', 'api', 'context', task_id, phase] — 5 elements
+            if len(parts) == 5 and parts[4] in ('R', 'P', 'E', 'T', 'D'):
+                ctx_task_id = parts[3]
+                ctx_phase = parts[4]
+                store = _get_store()
+                if not store or not hasattr(store, 'rpetd_context_get'):
+                    self._send_json({"error": "PG store not available for context retrieval"}, 503)
+                    return
+                try:
+                    result = store.rpetd_context_get(ctx_task_id, ctx_phase)
+                    if result:
+                        self._send_json(result)
+                    else:
+                        self._send_json({"error": f"No context found for {ctx_task_id} phase {ctx_phase}"}, 404)
+                except Exception as e:
+                    self._send_json({"error": _safe_error(e)}, 500)
+                return
+            else:
+                self._send_json({"error": "Invalid context path. Use /api/context/<task_id>/<phase> where phase is R, P, E, T, or D"}, 400)
+                return
+
         # ─── Research Cache GET route (TOK-06: Redis-backed Perplexity cache) ──
         if path == "/api/research-cache" or path.startswith("/api/research-cache?"):
             from urllib.parse import urlparse as _urlparse, parse_qs as _parse_qs
@@ -2101,6 +2126,60 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             except ValueError as e:
                 self._send_json({"error": str(e)}, 422)
             except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
+        # ─── RPETD Context Compact route (Phase 20 HANDOFF-02/04) ───────────
+        if path == "/api/context/compact":
+            messages = body.get("messages")
+            ctx_task_id = body.get("task_id")
+            ctx_phase = body.get("phase", "R")
+
+            if not messages or not isinstance(messages, list):
+                self._send_json({"error": "messages (list) is required"}, 400)
+                return
+            if not ctx_task_id:
+                self._send_json({"error": "task_id is required"}, 400)
+                return
+
+            ctx_phase = ctx_phase.upper()
+            if ctx_phase not in ('R', 'P', 'E', 'T', 'D'):
+                self._send_json({"error": f"Invalid phase: {ctx_phase}. Must be R, P, E, T, or D"}, 400)
+                return
+
+            try:
+                from services.rpetd_context import compact_conversation
+
+                # Compaction uses no LLM call in v1 — fallback extraction only.
+                # LLM-backed compaction will be wired when model routing is available (Phase 24 ROUTE-02).
+                context = compact_conversation(
+                    messages=messages,
+                    task_id=ctx_task_id,
+                    phase=ctx_phase,
+                    llm_call=None,  # Phase 24 will wire this to model_routing.compaction
+                )
+                compiled_view = context.to_compiled_view()
+
+                # Store to PG if available
+                store = _get_store()
+                stored_id = None
+                if store and hasattr(store, 'rpetd_context_store'):
+                    stored_id = store.rpetd_context_store(
+                        task_id=ctx_task_id,
+                        phase=ctx_phase,
+                        compiled_view=compiled_view,
+                        context_version=context.context_version,
+                        file_hashes={},
+                    )
+
+                self._send_json({
+                    "compiled_view": compiled_view,
+                    "context_version": context.context_version,
+                    "stored": stored_id is not None,
+                    "stored_id": stored_id,
+                })
+            except Exception as e:
+                log.error(f"Context compaction failed: {e}")
                 self._send_json({"error": _safe_error(e)}, 500)
             return
 
