@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
 milestone: v2.8
-milestone_name: milestone
+milestone_name: Metabolism
 status: completed
-stopped_at: phase_25_plan_01_complete
+stopped_at: phase_25_plan_02_complete
 last_updated: "2026-04-12"
-last_activity: 2026-04-12 — Plan 25-01 complete (DEBT-01 regression tests + DEBT-02 default fix, 2 commits)
+last_activity: 2026-04-12 — Plan 25-02 complete (DEBT-03 wrapper parity + delegation fix, DEBT-04 specificity-wins routing, 2 commits)
 progress:
   total_phases: 6
-  completed_phases: 4
+  completed_phases: 6
   total_plans: 13
-  completed_plans: 12
-  percent: 60
+  completed_plans: 13
+  percent: 100
 ---
 
 # GSD-Amauta -- Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-12 for v2.8)
 
 ## Current Position
 
-Phase: 25 of 25 (Tech Debt Sweep — IN PROGRESS)
-Plan: 25-01 complete (Wave 1 — 3 tasks). 25-02 pending (Wave 2).
-Status: Plan 25-01 complete — DEBT-01 regression tests + DEBT-02 default fix. Next: Plan 25-02 (DEBT-03 amauta.cjs routing + DEBT-04 routeExecutor specificity).
-Last activity: 2026-04-12 — Plan 25-01 complete (GSD_P_AUTO_TASK default fix, 7 regression tests, 2 commits)
+Phase: 25 of 25 (Tech Debt Sweep — COMPLETE)
+Plan: 25-01 complete (Wave 1). 25-02 complete (Wave 2).
+Status: MILESTONE COMPLETE — all 4 DEBT items closed. v2.8 Metabolism milestone ready for closeout.
+Last activity: 2026-04-12 — Plan 25-02 complete (DEBT-03 wrapper fix + DEBT-04 specificity routing, 2 commits, 15 tests pass)
 
-Progress: [██████░░░░] 60%
+Progress: [██████████] 100%
 
 ## v2.8 Phase Map
 
@@ -121,7 +121,7 @@ CAVE-02 divergence (open): 30% compression ratio target is not achievable with a
 ## Session Continuity
 
 Last session: 2026-04-12
-Stopped at: Plan 25-01 complete. DEBT-02 fixed (GSD_P_AUTO_TASK:-true in execute-phase.md). DEBT-01 regression tests (4 ghost + 3 default) in tests/25-debt-sweep.test.cjs. 2207 CJS tests, 13 pre-existing failures, 0 new. Next: Plan 25-02 (DEBT-03 amauta.cjs routing + DEBT-04 routeExecutor specificity).
+Stopped at: Plan 25-02 complete. MILESTONE COMPLETE. DEBT-03: amauta.cjs delegation fixed (require.main guard extended for wrapper entry), parity confirmed. DEBT-04: routeExecutor specificity-wins scoring added (patternSpecificityScore + collect-all-matches approach). 15 regression tests in 25-debt-sweep.test.cjs, 27 routing tests pass. Next: v2.8 Metabolism milestone closeout.
 Resume file: None
 
 
@@ -149,6 +149,10 @@ Resume file: None
 
 
 
+
+
+- [learning] 2026-04-13T11:42:42.767Z: legacy regression test: free text learning
+- [learning] 2026-04-13T11:36:02.313Z: DEBT-02: GSD_P_AUTO_TASK bash default was inverted (:-false instead of :-true) in execute-phase.md — plan-to-tasks was silently skipped for all phases >= 14 unless env var explicitly set. captureOutput helper (intercept stdout + process.exit) needed to test any function calling output() in node:test
 - [learning] 2026-04-13T11:30:45.715Z: E2E test learning — cleanup after test
 - [learning] 2026-04-13T11:29:44.810Z: legacy regression test: free text learning
 - [learning] 2026-04-13T11:26:07.878Z: legacy regression test: free text learning
