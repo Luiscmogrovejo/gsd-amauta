@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "amauta": {
+      "command": "python3",
+      "args": [
+        "services/amauta-mcp.py"
+      ],
+      "cwd": "."
+    }
+  }
+}
