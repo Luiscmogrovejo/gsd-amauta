@@ -93,7 +93,9 @@
 3. BM25 retrieval MRR on compressed descriptions is >= 95% of original MRR across 20 queries; no single query drops more than 2 rank positions.
 4. For 10 representative files, compressed 500-char descriptions contain >= 40% more distinct technical facts (identifiers, relationships, constraints) than original 500-char descriptions.
 
-**Plans:** TBD
+**Plans:**
+- [ ] Plan 22-01: Caveman Description Generator + Grammar Stripper + Unit Tests (Wave 1, CAVE-01/02)
+- [ ] Plan 22-02: Daemon Wiring + BM25 Benchmark + Fact Density Test + Integration (Wave 2, CAVE-01/03/04)
 
 ### Phase 23: Prompt Prefix Caching
 

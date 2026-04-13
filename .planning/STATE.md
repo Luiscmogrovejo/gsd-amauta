@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v2.8
 milestone_name: milestone
 status: completed
-stopped_at: Phase 21 complete. STALE-01..04 satisfied. All 20 Phase 21 Python tests pass (13 unit + 7 integration). Phase 20 regression clean.
-last_updated: "2026-04-13T01:55:51.161Z"
-last_activity: 2026-04-12 — Plan 21-02 executed (validate_context + daemon endpoint + file_hashes + 7 integration tests)
+stopped_at: phase_22_planned
+last_updated: "2026-04-13"
+last_activity: 2026-04-13 — Phase 22 planned (2 plans, 10 tasks, 2 waves)
 progress:
   total_phases: 6
   completed_phases: 2
-  total_plans: 5
+  total_plans: 7
   completed_plans: 5
   percent: 22
 ---
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-12 for v2.8)
 
 ## Current Position
 
-Phase: 21 of 25 (Hash-Based Staleness Detection — COMPLETE)
-Plan: 21-02 complete. Phase 21 fully complete (STALE-01..04 all satisfied).
-Status: Phase 21 done. Next: Phase 22 (Caveman-Compressed Descriptions) or Phase 25 (Tech Debt Sweep).
-Last activity: 2026-04-12 — Plan 21-02 executed (validate_context + daemon endpoint + file_hashes + 7 integration tests)
+Phase: 22 of 25 (Caveman-Compressed Descriptions — planned)
+Plan: 22-01 (Wave 1, ready for execution)
+Status: Phase 22 planned — 2 plans, 10 tasks, 2 waves
+Last activity: 2026-04-13 — Phase 22 planning complete
 
 Progress: [██░░░░░░░░] 22%
 
