@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: The Birth
-status: in_progress
-stopped_at: "Phase 33 complete. All 3 plans done (Wave 1+2+3). 111-assertion regression suite covers TEST-01..08. Next: Phase 34 (Security Pipeline)."
-last_updated: "2026-04-13T22:50:00.000Z"
-last_activity: 2026-04-13 — Plan 33-03 complete. 4 regression test files created (111 assertions, 0 failures). Full regression gate passed. Phase 33 COMPLETE.
+status: completed
+stopped_at: "Phase 34 plan 34-01 COMPLETE. gsd-security agent + SAST/Gitleaks infrastructure shipped. Next: Plan 34-02 (supply chain rules, Rule of Two, Trivy, unified orchestrator)."
+last_updated: "2026-04-13T23:15:00.000Z"
+last_activity: 2026-04-13 — Plan 34-01 complete. gsd-security agent, Semgrep rules, Gitleaks config, installer, test fixtures shipped.
 progress:
   total_phases: 10
   completed_phases: 2
-  total_plans: 3
-  completed_plans: 3
-  percent: 20
+  total_plans: 5
+  completed_plans: 5
+  percent: 10
 ---
 
 # GSD-Amauta -- Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-13 after v2.9 milestone close)
 
 ## Current Position
 
-Phase: 34 of 40 (Security Pipeline) — not started
-Plan: Phase 33 COMPLETE — all 3 plans done
-Status: Phase 33 COMPLETE. Phase 34 (Security Pipeline) is next.
-Last activity: 2026-04-13 — Plan 33-03 complete. 111-assertion regression suite shipped. Phase 33 closed.
+Phase: 34 of 40 (Security Pipeline) — in progress (1/3 plans complete)
+Plan: 34-01 COMPLETE — gsd-security agent + SAST/Gitleaks infra shipped
+Status: Phase 34 IN PROGRESS. Plan 34-01 done. Next: Plan 34-02 (supply chain rules, Trivy, orchestrator).
+Last activity: 2026-04-13 — Plan 34-01 complete. gsd-security agent, Semgrep rules, Gitleaks config, installer, test fixtures shipped.
 
 Progress: [██░░░░░░░░] 10%
 
@@ -39,7 +39,7 @@ Progress: [██░░░░░░░░] 10%
 | 31 | Format Standard (FOUNDATION) | FORMAT-01..07 | COMPLETE 2026-04-13 |
 | 32 | Frontend Rebuild | FRONT-01..07 | Not started |
 | 33 | Testing Pipeline | TEST-01..08 | COMPLETE 2026-04-13 |
-| 34 | Security Pipeline | SEC-01..06 | Not started |
+| 34 | Security Pipeline | SEC-01..06 | In progress (34-01 done) |
 | 35 | Code Review Agent | REVIEW-01..04 | Not started |
 | 36 | Data Engineering Agent | DATA-01..04 | Not started |
 | 37 | Architect Agent | ARCH-01..03 | Not started |
@@ -75,6 +75,10 @@ Progress: [██░░░░░░░░] 10%
 - Plan 33-03: CoverUp BOUNDARY test must exclude prohibition lines — gsd-qa.md has "Never run CoverUp iterations" as a constraint. Filter uses isProhibition flag to avoid false positives.
 - Plan 33-03: test-pyramid.cjs output schema includes unitPct/integrationPct/e2ePct string fields alongside unit/integration/e2e counts; pyramidTotal is the sum of the three typed categories.
 - Plan 33-03: PACT_DIR in 33-pact-contracts.integration.test.cjs uses path.resolve(__dirname, 'pact') since the test IS in tests/ directory.
+- Plan 34-01: gsd-security.md boundary verbatim locked: "You scan and report. You do not fix code — that's the executor's job." Agent mirrors gsd-validator's no-fix discipline.
+- Plan 34-01: 7 security rules copied verbatim (not expanded) — supply chain rules (4 new) deferred to Plan 34-02 per Wave structure.
+- Plan 34-01: install-gitleaks.cjs pinned to v8.18.4, exits 0 on all failure paths — supply chain discipline for the installer itself; gitleaks binary placed at node_modules/.bin/gitleaks.
+- Plan 34-01: .gitleaks.toml allowlist covers tests/fixtures/.* path regex — fixture secrets don't block CI; Wave 3 tests bypass allowlist by scanning fixture files directly.
 
 ### Pending Todos
 
@@ -86,14 +90,20 @@ Progress: [██░░░░░░░░] 10%
 
 ## Session Continuity
 
-Last session: 2026-04-13T22:50:00.000Z
-Stopped at: Phase 33 COMPLETE. All 3 plans done. 111-assertion regression suite shipped. Next: Phase 34 (Security Pipeline — SEC-01..06).
+Last session: 2026-04-13T23:15:00.000Z
+Stopped at: Phase 34 plan 34-01 COMPLETE. gsd-security agent + SAST/Gitleaks infrastructure shipped. Next: Plan 34-02 (supply chain rules, Rule of Two, Trivy, unified orchestrator).
 Resume file: None
 
 
 ## Learnings
 
 
+
+
+
+- [learning] 2026-04-13T22:59:59.127Z: E2E test learning — cleanup after test
+- [learning] 2026-04-13T22:58:33.021Z: legacy regression test: free text learning
+- [learning] 2026-04-13T22:56:30.394Z: legacy regression test: free text learning
 - [learning] 2026-04-13T22:14:38.548Z: LEARNING: Pact FFI panics on matcher objects in Content-Type header — use plain string 'application/json' not like('application/json') WHAT: Pact willRespondWith headers must use plain strings for Content-Type, not MatchersV3.like() CATEGORY: pitfall TAGS: pact, contract-testing, pact-foundation
 - [learning] 2026-04-13T21:58:32.490Z: legacy regression test: free text learning
 - [learning] 2026-04-13T22:50:00.000Z: LEARNING: Prohibition-aware boundary test — when testing "agent X does not do Y", a line saying "Never do Y" is a prohibition constraint (allowed), not an instruction. Use isProhibition flag (looks for "never", "not", "do not") to distinguish. CATEGORY: test-pattern TAGS: boundary-testing, agent-format, regression

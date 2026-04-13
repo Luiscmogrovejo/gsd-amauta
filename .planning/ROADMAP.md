@@ -33,7 +33,7 @@
 - [x] **Phase 31: Format Standard** — All 11 existing agents restructured to standardized 10-section format; shared security rules; behavioral regression suite (FORMAT-01..07) (FOUNDATION — everything depends on this) — COMPLETE 2026-04-13
 - [ ] **Phase 32: Frontend Rebuild** — gsd-executor-frontend rebuilt with v0-inspired composite pipeline; React 19 + TypeScript + Tailwind + shadcn/ui; Playwright screenshots (FRONT-01..07)
 - [x] **Phase 33: Testing Pipeline** — Two new agents: gsd-tester (generates) and gsd-qa (evaluates); CoverUp coverage-guided iteration; mutation testing; Pact contracts (TEST-01..08) — COMPLETE 2026-04-13 (Wave 1: agents + scripts; Wave 2: stryker, Pact contracts, Playwright POM, fast-check, quality-audit; Wave 3: 111-assertion regression suite TEST-01..08)
-- [ ] **Phase 34: Security Pipeline** — New gsd-security agent; Semgrep SAST, Gitleaks, npm/pip audit, supply chain rules, Rule of Two audit, Trivy container scan (SEC-01..06)
+- [ ] **Phase 34: Security Pipeline** — New gsd-security agent; Semgrep SAST, Gitleaks, npm/pip audit, supply chain rules, Rule of Two audit, Trivy container scan (SEC-01..06) — IN PROGRESS (34-01 done: gsd-security agent + Semgrep rules + Gitleaks config + installer + fixtures)
 - [ ] **Phase 35: Code Review Agent** — New gsd-reviewer; style/pattern review, SOLID check, structured output schema (REVIEW-01..04)
 - [ ] **Phase 36: Data Engineering Agent** — New gsd-executor-data; expand-and-contract migrations, query analysis, data quality checks (DATA-01..04)
 - [ ] **Phase 37: Architect Agent** — New gsd-architect; ADR management, API design review, N+1 detection (ARCH-01..03)
@@ -119,7 +119,7 @@ Plans:
   4. Stryker mutation score for changed files is >= 70% as reported by gsd-qa; mutation testing runs only on files modified in the current task (not full repo).
   5. gsd-qa test pyramid audit reports unit >= 60%, integration >= 20%, E2E <= 20% by naming convention; audits flag tests with no assertions, implementation-testing patterns, and flaky test markers.
   6. Pact consumer contracts exist for >= 3 daemon endpoints; provider verification passes against the running daemon.
-**Plans:** TBD (estimated 2 plans: 33-01 gsd-tester agent, 33-02 gsd-qa agent + Pact contracts)
+**Plans:** 3/3 plans complete
 
 Plans:
 - [ ] 33-01: Create gsd-tester agent with CoverUp pattern, Playwright E2E, fast-check property-based tests (TEST-01..03)
@@ -136,11 +136,12 @@ Plans:
   4. All executor agent files contain supply chain rules: `npm ci` (not npm install), exact version pinning, lockfile commits, 7-day waiting period for new packages.
   5. Rule of Two audit produces a JSON report annotating all 17 agents with `{reads_untrusted, accesses_sensitive, modifies_state}` booleans; >= 1 violation is documented with remediation.
   6. Trivy container scan runs against all images in `docker-compose.yml`; findings are structured JSON; scan completes without error.
-**Plans:** TBD (estimated 2 plans: 34-01 gsd-security agent + Semgrep/Gitleaks/npm-audit, 34-02 supply chain rules + Rule of Two + Trivy)
+**Plans:** 3 plans (34-01 done)
 
 Plans:
-- [ ] 34-01: Create gsd-security agent with Semgrep SAST, Gitleaks secret scanning, npm/pip dependency audit (SEC-01..03)
-- [ ] 34-02: Supply chain rules in all executor agents; Rule of Two audit for 17 agents; Trivy container scan (SEC-04..06)
+- [x] 34-01: Create gsd-security agent with Semgrep SAST, Gitleaks secret scanning; test fixtures; install-gitleaks.cjs (SEC-01..02) — 2026-04-13
+- [ ] 34-02: Supply chain rules in all executor agents; Rule of Two audit for 17 agents; Trivy container scan; unified orchestrator scripts/security-scan.cjs (SEC-03..06)
+- [ ] 34-03: Integration tests and regression suite covering SEC-01..06
 
 ### Phase 35: Code Review Agent
 **Goal:** A new gsd-reviewer agent provides the "always-available second pair of eyes" capability for a solo developer. It detects style violations, duplication, SOLID violations, and produces structured output that is distinct from and complementary to gsd-validator.
@@ -273,8 +274,8 @@ Phase 31: Format Standard (FOUNDATION)
 |-------|----------------|--------|-----------|
 | 31. Format Standard | 1/2 | Complete    | 2026-04-13 |
 | 32. Frontend Rebuild | 0/2 | Not started | - |
-| 33. Testing Pipeline | 0/2 | Not started | - |
-| 34. Security Pipeline | 0/2 | Not started | - |
+| 33. Testing Pipeline | 0/2 | Complete    | 2026-04-13 |
+| 34. Security Pipeline | 1/3 | In progress | 34-01: 2026-04-13 |
 | 35. Code Review Agent | 0/1 | Not started | - |
 | 36. Data Engineering Agent | 0/1 | Not started | - |
 | 37. Architect Agent | 0/1 | Not started | - |
