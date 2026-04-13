@@ -216,11 +216,44 @@ async def call_tool(name: str, arguments: dict) -> CallToolResult:
 
 @server.list_resources()
 async def list_resources() -> ListResourcesResult:
-    return ListResourcesResult(resources=[])  # populated in 29-02
+    """List active tasks as context resources. Fetches active task IDs from daemon."""
+    import re
+    result = _call_daemon("GET", "/api/list?status=in_progress&type=task")
+    resources = []
+    phases = ["R", "P", "E", "T", "D"]
+    # Parse task IDs from output (the daemon returns {"output": "...", "exit_code": 0})
+    output = result.get("output", "")
+    # Extract TK-XXXX IDs from text output
+    task_ids = re.findall(r'TK-\d{4}', output)
+    seen = set()
+    for tid in task_ids:
+        if tid in seen:
+            continue
+        seen.add(tid)
+        for phase in phases:
+            resources.append(Resource(
+                uri=f"amauta://context/{tid}/{phase}",
+                name=f"{tid} — Phase {phase} context",
+                description=f"RPETDContext for task {tid}, phase {phase}",
+                mimeType="application/json",
+            ))
+    return ListResourcesResult(resources=resources)
 
 @server.read_resource()
 async def read_resource(uri: str) -> ReadResourceResult:
-    return ReadResourceResult(contents=[TextContent(type="text", text=json.dumps({"error": "not implemented"}))])
+    """Read RPETDContext JSON for amauta://context/{task_id}/{phase} URI."""
+    import re
+    m = re.match(r'^amauta://context/([^/]+)/([RPETD])$', uri)
+    if not m:
+        raise ValueError(f"Unsupported resource URI: {uri!r}. Expected amauta://context/{{task_id}}/{{phase}}")
+    task_id, phase = m.group(1), m.group(2)
+    result = _call_daemon("GET", f"/api/context/{task_id}/{phase}")
+    if "error" in result:
+        raise ValueError(f"Context not found: {result['error']}")
+    return ReadResourceResult(contents=[TextContent(
+        type="text",
+        text=json.dumps(result),
+    )])
 
 # ── Daemon health guard ───────────────────────────────────────────────────────
 
