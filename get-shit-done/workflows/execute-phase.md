@@ -375,6 +375,25 @@ fi
 
 3. **Wait for all agents in wave to complete.**
 
+   #### Circuit Breaker Check (BEHAV-02)
+
+   After each task completes (success or failure), record the outcome:
+   ```bash
+   # Record outcome (success|failure) — gsd-executor-general is exempt (no-op)
+   node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" circuit-breaker-record "${EXECUTOR_AGENT}" "${TASK_OUTCOME}"
+   ```
+   Before spawning the next task, check if the agent's circuit breaker is open:
+   ```bash
+   CB_RESULT=$(node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" circuit-breaker-check "${EXECUTOR_AGENT}")
+   CB_ALLOWED=$(echo "$CB_RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('allowed', True))" 2>/dev/null || echo "True")
+   if [ "$CB_ALLOWED" = "False" ]; then
+     echo "[CB] ${EXECUTOR_AGENT} circuit breaker OPEN — routing task to gsd-executor-general"
+     EXECUTOR_AGENT="gsd-executor-general"
+   fi
+   ```
+   Note: gsd-executor-general has NO circuit breaker. If gsd-executor-general fails,
+   that is an unrecoverable error — surface to the user, do not re-route further.
+
    #### Per-task manifest check (HARDEN-01)
 
    The `manifest-check` subcommand from `get-shit-done/bin/gsd-tools.cjs` runs once per task and compares the git diff between the before/after shas against the task's declared `files_expected:` block.

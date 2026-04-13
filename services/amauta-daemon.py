@@ -1592,6 +1592,38 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": _safe_error(e)}, 500)
             return
 
+        # GET /api/circuit-breaker/{agent_name} — Read circuit breaker state (BEHAV-02)
+        # Returns: {"state": "closed"|"open"|"half_open", "failures": N, "last_failure": ISO8601|null}
+        # If key not found: returns {"state": "closed", "failures": 0, "last_failure": null}
+        # gsd-executor-general: returns {"state": "exempt", "failures": 0}
+        if path.startswith("/api/circuit-breaker/"):
+            _CB_EXEMPT = {"gsd-executor-general", "executor-general"}
+            agent_name = path[len("/api/circuit-breaker/"):]
+            if not agent_name:
+                self._send_json({"error": "agent_name required in path"}, 400)
+                return
+            if agent_name in _CB_EXEMPT:
+                self._send_json({"state": "exempt", "failures": 0})
+                return
+            if not _redis_client or not _check_redis_health():
+                self._send_json({"error": "valkey_unavailable"}, 503)
+                return
+            try:
+                key = f"cb:{agent_name}"
+                raw = _redis_client.get(key)
+                if not raw:
+                    self._send_json({"state": "closed", "failures": 0, "last_failure": None})
+                    return
+                state = json.loads(raw)
+                self._send_json({
+                    "state": state.get("state", "closed"),
+                    "failures": state.get("failures", 0),
+                    "last_failure": state.get("last_failure"),
+                })
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
         self._send_json({"error": f"Unknown GET route: {path}"}, 404)
 
     # ─── POST routes ─────────────────────────────────
@@ -2391,6 +2423,49 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 })
             except Exception as e:
                 log.error("Context validation failed: %s", str(e))
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
+        # ── POST /api/circuit-breaker/record — Record agent task outcome (BEHAV-02) ──
+        # Body: {"agent_name": "gsd-executor-backend", "outcome": "success"|"failure"}
+        # Writes cb:{agent_name} key to Valkey.
+        # Returns: {"agent_name": str, "outcome": str, "new_state": str, "failures": int}
+        # gsd-executor-general: returns {"exempt": true} with 200.
+        if path == "/api/circuit-breaker/record":
+            _CB_EXEMPT = {"gsd-executor-general", "executor-general"}
+            agent_name = body.get("agent_name", "")
+            outcome = body.get("outcome", "")
+            if not agent_name or outcome not in ("success", "failure"):
+                self._send_json({"error": "agent_name and outcome (success|failure) required"}, 400)
+                return
+            if agent_name in _CB_EXEMPT:
+                self._send_json({"exempt": True}, 200)
+                return
+            if not _redis_client or not _check_redis_health():
+                self._send_json({"error": "valkey_unavailable"}, 503)
+                return
+            try:
+                key = f"cb:{agent_name}"
+                raw = _redis_client.get(key)
+                current = json.loads(raw) if raw else {"state": "closed", "failures": 0, "last_failure": None}
+                CB_FAILURE_THRESHOLD = 3
+                if outcome == "success":
+                    next_state = {"state": "closed", "failures": 0, "last_failure": current.get("last_failure")}
+                else:
+                    new_failures = (current.get("failures") or 0) + 1
+                    next_state = {
+                        "state": "open" if new_failures >= CB_FAILURE_THRESHOLD else "closed",
+                        "failures": new_failures,
+                        "last_failure": __import__("datetime").datetime.utcnow().isoformat() + "Z",
+                    }
+                _redis_client.set(key, json.dumps(next_state))
+                self._send_json({
+                    "agent_name": agent_name,
+                    "outcome": outcome,
+                    "new_state": next_state["state"],
+                    "failures": next_state["failures"],
+                })
+            except Exception as e:
                 self._send_json({"error": _safe_error(e)}, 500)
             return
 
