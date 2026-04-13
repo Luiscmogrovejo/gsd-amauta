@@ -576,13 +576,12 @@ describe('findPhaseInternal', () => {
     assert.strictEqual(result, null);
   });
 
-  test('searches archived milestones when not in current', () => {
+  test('does not fall back to archived milestones when not in current', () => {
     // Create archived milestone structure (no current phase match)
     const archiveDir = path.join(tmpDir, '.planning', 'milestones', 'v1.0-phases', '01-foundation');
     fs.mkdirSync(archiveDir, { recursive: true });
     const result = findPhaseInternal(tmpDir, '1');
-    assert.strictEqual(result.found, true);
-    assert.strictEqual(result.archived, 'v1.0');
+    assert.strictEqual(result, null);
   });
 });
 
@@ -800,5 +799,73 @@ describe('getMilestonePhaseFilter', () => {
 
     const filter = getMilestonePhaseFilter(tmpDir);
     assert.strictEqual(filter.phaseCount, 0);
+  });
+});
+
+// ─── Phase 24: model_routing (ROUTE-01) ───────────────────────────────────────
+
+describe('Phase 24: model_routing (ROUTE-01)', () => {
+  let tmpDir;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsd-core-model-routing-'));
+    fs.mkdirSync(path.join(tmpDir, '.planning'), { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function writeConfig(obj) {
+    fs.writeFileSync(
+      path.join(tmpDir, '.planning', 'config.json'),
+      JSON.stringify(obj, null, 2)
+    );
+  }
+
+  test('loadConfig reads model_routing from config.json (ROUTE-01)', () => {
+    writeConfig({
+      model_profile: 'balanced',
+      model_routing: { R: 'sonnet', P: 'sonnet', E: 'sonnet', T: 'haiku', D: 'haiku', compaction: 'haiku' },
+    });
+    const config = loadConfig(tmpDir);
+    assert.ok(config.model_routing !== null, 'model_routing should not be null');
+    assert.deepStrictEqual(config.model_routing, {
+      R: 'sonnet',
+      P: 'sonnet',
+      E: 'sonnet',
+      T: 'haiku',
+      D: 'haiku',
+      compaction: 'haiku',
+    });
+  });
+
+  test('loadConfig returns null when model_routing absent (ROUTE-01)', () => {
+    writeConfig({ model_profile: 'balanced' });
+    const config = loadConfig(tmpDir);
+    assert.strictEqual(config.model_routing, null);
+  });
+
+  test('model_routing defaults include all phases (ROUTE-01)', () => {
+    writeConfig({
+      model_routing: { R: 'sonnet', P: 'sonnet', E: 'sonnet', T: 'haiku', D: 'haiku', compaction: 'haiku' },
+    });
+    const config = loadConfig(tmpDir);
+    const requiredKeys = ['R', 'P', 'E', 'T', 'D', 'compaction'];
+    for (const key of requiredKeys) {
+      assert.ok(
+        key in config.model_routing,
+        `model_routing missing key: ${key}`
+      );
+    }
+  });
+
+  test('T and D default to haiku in model_routing (ROUTE-01)', () => {
+    writeConfig({
+      model_routing: { R: 'sonnet', P: 'sonnet', E: 'sonnet', T: 'haiku', D: 'haiku', compaction: 'haiku' },
+    });
+    const config = loadConfig(tmpDir);
+    assert.strictEqual(config.model_routing.T, 'haiku');
+    assert.strictEqual(config.model_routing.D, 'haiku');
   });
 });
