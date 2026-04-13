@@ -5,14 +5,15 @@
 GSD-Amauta extends the [GSD](https://github.com/get-shit-done/get-shit-done) framework with a behaviorally-enforced 5-phase development pipeline (RPETD), a BM25 code context engine, a PostgreSQL + pgvector persistent memory system with automatic distillation, 11 specialist agents with file-pattern routing, a 5-step research chain, deterministic per-task manifest enforcement, a formal divergence protocol that turns plan-vs-reality mismatches from silent scope expansion into first-class observations, and a complete downgrade path where every feature has a graceful fallback when its infrastructure is unavailable.
 
 ```
-v2.7.0 "Steady Hands" -- 11 phases shipped (v2.6+v2.7) -- ~2591 tests passing -- 11 agents -- 5 CLI tools -- 4 services -- 8 SQL migrations -- 9 specs -- 20 AI design patterns -- divergence protocol v1.1.0 -- 11 dogfood ledger depths captured -- schema v4 audit reports
+v2.8.0 "Metabolism" -- 17 phases shipped (v2.6+v2.7+v2.8) -- ~2750 tests passing -- 11 agents -- 6 CLI tools -- 6 services -- 10 SQL migrations -- 9 specs -- 20 AI design patterns -- divergence protocol v1.1.0 -- 5 optimization layers -- config-driven model routing
 ```
 
 ---
 
 ## Table of Contents
 
-1. [What v2.6 Adds Over v2.5](#what-v26-adds-over-v25)
+1. [What v2.8 Adds Over v2.7](#what-v28-adds-over-v27)
+2. [What v2.6 Adds Over v2.5](#what-v26-adds-over-v25)
 2. [What Amauta Adds Over GSD](#what-amauta-adds-over-gsd)
 3. [System Architecture](#system-architecture)
 4. [Installation](#installation)
@@ -41,6 +42,27 @@ v2.7.0 "Steady Hands" -- 11 phases shipped (v2.6+v2.7) -- ~2591 tests passing --
 27. [Project Structure](#project-structure)
 28. [Contributing](#contributing)
 29. [License](#license)
+
+---
+
+## What v2.8 Adds Over v2.7
+
+v2.8 "Metabolism" is the efficiency milestone — the system does the same quality work at a fraction of the token cost. Five layered optimizations reduce effective token cost per RPETD cycle by 75-90%, plus a tech debt sweep closing four v2.7 carry-forward items.
+
+| Capability | v2.7 | v2.8 |
+|---|---|---|
+| RPETD context forwarding | Full conversation history forwarded between phases — unbounded token cost per handoff | Typed RPETDContext object (8 fields, <= 600 tokens) compacted at each phase boundary and stored in PostgreSQL. `compact_conversation` prunes tool outputs, LLM-summarizes remainder (HANDOFF-01..05, Phase 20) |
+| File staleness detection | Every file re-described on every phase transition regardless of changes | SHA-256 file hashing + `git diff --name-only` selective refresh — unchanged files served from cache verbatim, zero filesystem reads. `[STALE] N files refreshed, M cached` log line (STALE-01..04, Phase 21) |
+| File descriptions | Prose descriptions (~500 chars of shebang + docstring + imports) | Pipe-delimited structured format: `function \| deps: \| touches: \| tests: \| quality` — 40% more distinct technical facts per 500-char budget. BM25 MRR >= 95% of original (CAVE-01/03/04, Phase 22) |
+| Prompt prefix caching | Agent prompts mixed stable and variable content — no prefix cache optimization | All 11 agent `.md` files restructured with `<!-- CACHE_BREAKPOINT -->` marker. Stable content (role, patterns, domain) before breakpoint, variable content (runtime_read) after. Audit script verifies 66/66 checks. `annotate_cache_control` utility + `/metrics/cache` endpoint (CACHE-01..04, Phase 23) |
+| Research call caching | Every research query hits the LLM — identical and paraphrased queries re-incur full cost | pgvector cosine similarity >= 0.90 semantic cache — paraphrased queries return cached responses without LLM round-trip. File-change invalidation via SHA-256 hash mismatch. `/cache/stats` endpoint with hit rate tracking (SEMANTIC-01..03, Phase 24) |
+| Model routing | Single model for all RPETD phases | Config-driven `model_routing`: `{R: "sonnet", P: "sonnet", E: "sonnet", T: "haiku", D: "haiku", compaction: "haiku"}`. Orchestrator reads config and passes correct model per phase (ROUTE-01..02, Phase 24) |
+| Phase directory resolution | Ghost fallback fixed but not regression-locked | 4 regression tests lock the Phase 16 fix through `cmdInitPhaseOp` with v2.8 context (DEBT-01, Phase 25) |
+| Plan-to-tasks registration | `GSD_P_AUTO_TASK` default inverted — registration silently skipped | Default changed from `:-false` to `:-true` — plan-to-tasks runs by default for phases >= 14 (DEBT-02, Phase 25) |
+| Wrapper delegation | `amauta.cjs` delegation silently broken (`require.main === module` false through wrapper) | `_isDelegatedEntry` guard added — both direct and delegated entry produce identical output (DEBT-03, Phase 25) |
+| routeExecutor determinism | Hardcoded priority ordering (frontend > infra > backend > general) | Specificity-wins scoring: exact+1000, dir/*+100, prefix*+50, *.ext+length. Existing priority as tiebreaker. All 27 existing tests preserved (DEBT-04, Phase 25) |
+
+**6 phases | 13 plans | ~70 tasks | ~150 new tests | 23/23 requirements (CAVE-02 revised)**
 
 ---
 

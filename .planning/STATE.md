@@ -4,7 +4,7 @@ milestone: v2.8
 milestone_name: milestone
 status: completed
 stopped_at: "Plan 25-02 complete. MILESTONE COMPLETE. DEBT-03: amauta.cjs delegation fixed (require.main guard extended for wrapper entry), parity confirmed. DEBT-04: routeExecutor specificity-wins scoring added (patternSpecificityScore + collect-all-matches approach). 15 regression tests in 25-debt-sweep.test.cjs, 27 routing tests pass. Next: v2.8 Metabolism milestone closeout."
-last_updated: "2026-04-13T11:53:52.214Z"
+last_updated: "2026-04-13T13:32:50.178Z"
 last_activity: 2026-04-12 — Plan 25-02 complete (DEBT-03 wrapper fix + DEBT-04 specificity routing, 2 commits, 15 tests pass)
 progress:
   total_phases: 6

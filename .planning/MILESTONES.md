@@ -1,5 +1,14 @@
 # Milestones
 
+## v2.8 Metabolism (Shipped: 2026-04-13)
+
+**Phases completed:** 6 phases, 13 plans, 9 tasks
+
+**Key accomplishments:**
+- (none recorded)
+
+---
+
 ## Complete: v2.7 — Steady Hands (Shipped: 2026-04-12)
 
 **Phases:** 16-19 (4 phases, 8 plans, 21 tasks) | **Tests:** 47 new (all pass) | **Duration:** 2 days (2026-04-10 → 2026-04-12)

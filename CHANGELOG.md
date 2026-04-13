@@ -4,6 +4,62 @@ All changes from vanilla GSD to GSD-Amauta.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.8.0] — 2026-04-13 — "Metabolism"
+
+6 phases, 23 requirements (CAVE-02 revised), ~150 new tests. Token optimization milestone — 5 layered optimizations reduce effective token cost per RPETD cycle.
+
+### Added
+
+#### Structured Context Handoffs (Phase 20, HANDOFF-01..05)
+- `services/rpetd_context.py` — RPETDContext Pydantic model (8 typed fields, SHA-256 auto-versioning)
+- `migrations/009-rpetd-context.sql` — `rpetd_context` table with JSONB, phase CHECK constraint, file_hashes column
+- PGStore `rpetd_context_store/get/list` methods with upsert semantics
+- `compact_conversation()` — two-step prune (tool output removal) + LLM-summarize with fallback extraction
+- `POST /api/context/compact` and `GET /api/context/:task_id/:phase` daemon endpoints
+- `compactRpetdContext()` in `gsd-amauta.cjs` — best-effort context storage after each RPETD phase
+
+#### Hash-Based Staleness Detection (Phase 21, STALE-01..04)
+- `services/context_validator.py` — ContextValidator class with `compute_file_hash`, `changed_since`, `selective_refresh`, `validate_context`
+- SHA-256 file hashing via chunked binary reads; git diff intersection for zero-FS-read change detection
+- `POST /api/context/validate` daemon endpoint with `[STALE] N files refreshed, M cached` logging
+- `file_hashes` populated in compact route (replaces empty `{}`)
+
+#### Caveman-Compressed Descriptions (Phase 22, CAVE-01..04)
+- `services/caveman_descriptions.py` — `generate_caveman_description(path)` producing pipe-delimited structured format
+- `services/grammar_strip.py` — `strip_grammar(text)` removing articles, filler words, hedging from markdown
+- BM25 retrieval benchmark (`tests/22-caveman-bm25.test.cjs`) — 20 golden queries, inline BM25, MRR >= 95%
+- Fact-density fixture (`tests/fixtures/cave-04-fact-annotations.json`) — 10 files with (subject, predicate, object) triple annotations
+- `description_fn` wired into daemon validate endpoint
+
+#### Prompt Prefix Caching (Phase 23, CACHE-01..04)
+- `scripts/audit-prefix-stability.cjs` — 6 checks per agent, 66/66 total
+- All 11 agent `.md` files restructured with `<!-- CACHE_BREAKPOINT -->` markers
+- `services/prompt_cache.py` — `annotate_cache_control()` utility + thread-safe `PromptCacheMetrics` class
+- `GET/POST /metrics/cache` daemon endpoints with dual auth bypass
+- `cache-stats` CLI subcommand in `gsd-amauta.cjs`
+
+#### Semantic Cache + Tiered Routing (Phase 24, SEMANTIC-01..03, ROUTE-01..02)
+- `migrations/010-semantic-cache.sql` — `semantic_cache` table with pgvector HNSW cosine index
+- `services/semantic_cache.py` — `SemanticCacheManager` with thread-safe counters, cosine >= 0.90 threshold
+- PGStore `semantic_cache_lookup/store/invalidate/stats` methods
+- `/api/semantic-cache/search`, `/api/semantic-cache/store`, `/cache/stats` daemon endpoints
+- `model_routing` in `config.json`: `{R: "sonnet", P: "sonnet", E: "sonnet", T: "haiku", D: "haiku", compaction: "haiku"}`
+- `_make_compaction_llm_call()` reads `model_routing.compaction` from config
+- Semantic cache wired into both regular and creative research paths in `gsd-research.cjs`
+
+### Fixed
+
+#### Tech Debt Sweep (Phase 25, DEBT-01..04)
+- `GSD_P_AUTO_TASK` default inverted from `:-false` to `:-true` — plan-to-tasks registration now runs by default
+- `amauta.cjs` delegation fixed — `_isDelegatedEntry` guard ensures both direct and wrapper entry produce identical output
+- `routeExecutor` specificity-wins scoring: exact+1000, dir/*+100, prefix*+50, *.ext+length (all 27 existing tests preserved)
+- Ghost fallback regression-locked with 4 tests through `cmdInitPhaseOp` with v2.8 context
+
+### Changed
+- CAVE-02 requirement revised: 30% threshold was a category error (conversational compression ratio applied to dense technical markdown). Revised to >= 5% on files with < 30% code block density, or documented irreducible floor
+
+---
+
 ## [2.7.0] — 2026-04-12 — "Steady Hands"
 
 4 phases, 7 requirements, 47 new tests. Hardening milestone closing loops from v2.6 dogfood audit.
