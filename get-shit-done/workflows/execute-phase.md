@@ -424,6 +424,26 @@ fi
       - Exit 1 with `orchestrator_action: "halt_orchestrator_owned"` → HARD HALT always. This override ignores `GSD_MANIFEST_CHECK=warn`.
       - `GSD_MANIFEST_CHECK=warn` → exit 0, but the violation report is still written with `orchestrator_action: "warn"`. Log the warning inline. This override is removed in v2.7.
 
+   #### Lint-After-Edit (BEHAV-04 — advisory)
+
+   After manifest-check passes, run the linter on each modified/created file:
+   ```bash
+   for f in ${MODIFIED_FILES} ${CREATED_FILES}; do
+     LINT_REPORT=$(node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" lint-after-edit "$f" 2>/dev/null || echo '{"linter":"none","exit_code":0,"findings":[],"fallback_used":false}')
+     FINDINGS_COUNT=$(echo "$LINT_REPORT" | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('findings',[])))" 2>/dev/null || echo "0")
+     if [ "$FINDINGS_COUNT" -gt 0 ]; then
+       echo "[LINT] $f: $FINDINGS_COUNT finding(s) — advisory, does not block"
+       echo "$LINT_REPORT" | python3 -c "import sys,json; d=json.load(sys.stdin); [print(f'  [{f[\"severity\"]}] line {f[\"line\"]}: {f[\"message\"]} ({f[\"rule\"]})') for f in d.get('findings',[])]"
+     fi
+   done
+   ```
+   Add the lint_report(s) to the wave's VERIFICATION block in SUMMARY.md:
+   ```
+   lint_report: <JSON from lintAfterEdit> (one entry per modified file)
+   ```
+   Lint findings are ADVISORY in v2.9. They flag the commit but do not block execution.
+   Linter tool-not-found degrades gracefully to linter: "none", findings: [].
+
    #### Migration note
 
    The `manifest-check` step is MANDATORY for phases 13.1 and later. Phases 9-13 are grandfathered; the orchestrator skips `manifest-check` if the PLAN.md lacks a `files_expected:` block. See `.planning/STATE.md` for the migration cutoff note.

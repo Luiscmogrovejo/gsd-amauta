@@ -380,6 +380,131 @@ async function circuitBreakerRecord(agentName, outcome) {
   }
 }
 
+// ─── Lint After Edit (BEHAV-04) ─────────────────────────────────────────────
+//
+// Advisory lint check after each executor commit. Does NOT block — findings
+// are logged to VERIFICATION block in SUMMARY.md as lint_report JSON.
+//
+// JS/CJS detection order: npx eslint → eslint → node --check (syntax-only)
+// Python detection order: ruff check → python3 -m py_compile (syntax-only)
+//
+// lint_report schema: { linter, exit_code, findings[], fallback_used }
+// findings[]: { file, line, rule, message, severity }
+
+function _detectLinter(fileExt) {
+  const { execSync } = require('child_process');
+  const _try = (cmd) => { try { execSync(cmd, { stdio: 'ignore' }); return true; } catch { return false; } };
+
+  if (['.js', '.cjs', '.mjs', '.ts', '.tsx'].includes(fileExt)) {
+    if (_try('npx eslint --version')) return { linter: 'eslint', cmd: 'npx eslint', fallback: false };
+    if (_try('eslint --version')) return { linter: 'eslint', cmd: 'eslint', fallback: true };
+    return { linter: 'node-check', cmd: 'node --check', fallback: true };
+  }
+  if (fileExt === '.py') {
+    if (_try('ruff --version')) return { linter: 'ruff', cmd: 'ruff check', fallback: false };
+    return { linter: 'py_compile', cmd: 'python3 -m py_compile', fallback: true };
+  }
+  return null; // No linter for this file type
+}
+
+/**
+ * lintAfterEdit(filePath, options?) — run language-appropriate linter on a file.
+ *
+ * Returns lint_report object:
+ * {
+ *   linter: "eslint"|"ruff"|"node-check"|"py_compile"|"none",
+ *   exit_code: 0,
+ *   findings: [{ file, line, rule, message, severity }],
+ *   fallback_used: bool
+ * }
+ *
+ * Always returns a lint_report — never throws. Empty findings[] on clean file.
+ * Returns linter: "none" if no linter detected for this file type.
+ */
+function lintAfterEdit(filePath, options = {}) {
+  const path = require('path');
+  const { execSync } = require('child_process');
+  const fs = require('fs');
+
+  // Graceful no-op for non-existent files
+  if (!filePath || !fs.existsSync(filePath)) {
+    return { linter: 'none', exit_code: 0, findings: [], fallback_used: false };
+  }
+
+  const ext = path.extname(filePath).toLowerCase();
+  const detected = _detectLinter(ext);
+
+  if (!detected) {
+    return { linter: 'none', exit_code: 0, findings: [], fallback_used: false };
+  }
+
+  let exit_code = 0;
+  let findings = [];
+  let rawOutput = '';
+
+  try {
+    if (detected.linter === 'eslint') {
+      // eslint --format json for structured output
+      try {
+        rawOutput = execSync(`${detected.cmd} --format json "${filePath}" 2>/dev/null || true`,
+          { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+        const parsed = JSON.parse(rawOutput);
+        findings = (parsed[0]?.messages || []).map(m => ({
+          file: filePath,
+          line: m.line || 0,
+          rule: m.ruleId || 'unknown',
+          message: m.message,
+          severity: m.severity === 2 ? 'error' : 'warning',
+        }));
+        exit_code = findings.some(f => f.severity === 'error') ? 1 : 0;
+      } catch { findings = []; exit_code = 0; }
+
+    } else if (detected.linter === 'node-check') {
+      try {
+        execSync(`node --check "${filePath}"`, { stdio: 'pipe' });
+        exit_code = 0;
+      } catch (e) {
+        exit_code = 1;
+        const stderr = (e.stderr || '').toString();
+        const match = stderr.match(/^.*:(\d+).*$/m);
+        findings = [{ file: filePath, line: match ? parseInt(match[1]) : 0, rule: 'syntax', message: stderr.trim().split('\n')[0], severity: 'error' }];
+      }
+
+    } else if (detected.linter === 'ruff') {
+      try {
+        rawOutput = execSync(`${detected.cmd} --output-format json "${filePath}" 2>/dev/null`,
+          { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+        const parsed = JSON.parse(rawOutput || '[]');
+        findings = parsed.map(r => ({
+          file: filePath, line: r.location?.row || 0, rule: r.code || 'unknown',
+          message: r.message, severity: 'error',
+        }));
+        exit_code = findings.length > 0 ? 1 : 0;
+      } catch { findings = []; exit_code = 0; }
+
+    } else if (detected.linter === 'py_compile') {
+      try {
+        execSync(`python3 -m py_compile "${filePath}"`, { stdio: 'pipe' });
+        exit_code = 0;
+      } catch (e) {
+        exit_code = 1;
+        const stderr = (e.stderr || '').toString();
+        findings = [{ file: filePath, line: 0, rule: 'syntax', message: stderr.trim().split('\n')[0], severity: 'error' }];
+      }
+    }
+  } catch (outer) {
+    // Total failure — return empty findings, not an error
+    return { linter: detected.linter, exit_code: 0, findings: [], fallback_used: detected.fallback };
+  }
+
+  return {
+    linter: detected.linter,
+    exit_code,
+    findings,
+    fallback_used: detected.fallback,
+  };
+}
+
 // ─── Manifest Check (HARDEN-01) ──────────────────────────────────────────────
 
 // Global allowlist for orchestrator-generated files that are permitted to drift
@@ -1593,6 +1718,8 @@ if (require.main !== module) {
     routeExecutor,
     circuitBreakerCheck,
     circuitBreakerRecord,
+    lintAfterEdit,
+    _detectLinter,
     planToTasks,
     _validatePlanShape,
     _detectCycles,
@@ -2069,6 +2196,15 @@ async function main() {
       // Output: JSON {"executor": "executor-backend"} etc.
       const executor = routeExecutor(args[1]);
       process.stdout.write(JSON.stringify({ executor }) + '\n');
+      break;
+    }
+
+    case 'lint-after-edit': {
+      const filePath = args[1];
+      if (!filePath) { process.stderr.write('Usage: gsd-tools lint-after-edit <file_path>\n'); process.exit(1); }
+      const report = lintAfterEdit(filePath);
+      process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+      process.exit(report.exit_code); // exit non-zero if findings — caller decides to block or not
       break;
     }
 
