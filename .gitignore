@@ -18,8 +18,9 @@ coverage/
 animation/
 *.gif
 
-# Internal planning documents
+# Internal planning documents — reports are runtime artifacts, but .gitkeep anchors the directory
 reports/
+!reports/.gitkeep
 RAILROAD_ARCHITECTURE.md
 .planning/
 analysis/
