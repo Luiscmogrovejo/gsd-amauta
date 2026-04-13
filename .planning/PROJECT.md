@@ -2,28 +2,27 @@
 
 ## What This Is
 
-GSD-Amauta is a quality-enforced AI development harness for Claude Code: persistent PostgreSQL memory with pgvector semantic search, BM25 RLM code context retrieval, 11 specialist agents, a 5-phase RPETD pipeline with external validation, a 5-step research chain, and a Redis L2 caching layer. v2.5 "Smarter Brain" proved the plumbing works (49/49 requirements, 39.4% Layer 2 token reduction). v2.6 "Sight Beyond Sight" added creative research, task-integrated planning, research-informed execution, QA-grade testing, and structured learning. v2.7 "Steady Hands" fixed the init resolver, audit scripts, sampling pool, and dynamic ledger schema. v2.8 "Metabolism" delivered structured context handoffs, hash-based staleness detection, caveman compression, prompt prefix caching, semantic cache + tiered routing, and tech debt sweep — 75-90% token cost reduction per RPETD cycle.
+GSD-Amauta is a portable, quality-enforced AI development harness for Claude Code — and any MCP-compatible AI coding agent. v2.9 "Nervous System" delivered the five infrastructure layers that compose into a unified upgrade: Valkey replaces Redis (+35.7% throughput), ParadeDB BM25 + pgvector HNSW consolidate retrieval inside PostgreSQL, tree-sitter AST-aware chunking replaces fixed-character splits, hybrid RRF search fuses BM25 + vector in a single SQL query, circuit breakers and Reflexion memory add self-correction, and amauta-mcp.py exposes the full stack as protocol-native MCP tools and resources. Any tool that speaks MCP — Claude Code, Cursor, Gemini CLI, OpenCode — can now consume Amauta's retrieval, memory, and RPETD context without knowing GSD-Amauta exists.
 
 ## Core Value
 
 Every RPETD phase must *see* what the other phases have already learned — past failures, validated best-practices, existing codebase style, parent-story acceptance criteria — so the system makes better decisions with each task it runs, not worse as context bloats. The brain synthesizes, not accumulates.
 
-## Current Milestone: v2.9 "Nervous System"
+## Shipped: v2.9 "Nervous System" (2026-04-13)
 
-**Shipped:** v2.8 "Metabolism" (2026-04-13) — 6 phases, 13 plans, 9 tasks
+**4 phases, 10 plans.** Phase 30 cancelled — K3s-dependent infrastructure not portable.
 
-**Goal:** Five infrastructure layers that compose into a unified upgrade. Tree-sitter feeds retrieval and graphs, ParadeDB consolidates BM25 into PG, Valkey replaces Redis, MCP exposes everything as protocol-native services, observability + security wrap it all. Target: 3x retrieval precision (MRR), native MCP interoperability, self-correcting execution, full-stack observability, kernel-level isolation.
+**Shipped:**
+1. The Substrate — Valkey 8.x, pgvector 0.8.2, ParadeDB pg_search, tree-sitter parsers
+2. The Retrieval Rewrite — AST chunking, ParadeDB BM25, Voyage Code 3 embeddings, RRF hybrid search, Jina reranking, NetworkX dependency graph
+3. The Behavioral Upgrade — AGENTS.md discovery, circuit breakers, Reflexion memory, lint guardrails, feature-list lifecycle, get-bearings ritual
+4. The MCP Interface — amauta-mcp.py (stdio + SSE :18800), search-code/memory/context/research as MCP tools and resources
 
-**Body metaphor sequence:** brain (v2.5) → sight (v2.6) → hands (v2.7) → metabolism (v2.8) → nervous system (v2.9)
+## Current Milestone: v3.0 "The Birth"
 
-**Research:** 35 findings across 7 investigation tracks — multi-agent orchestration, context engineering, retrieval pipeline improvements, self-correction patterns, observability, security architecture, infrastructure optimizations. Key: tree-sitter AST chunking + ParadeDB hybrid search + cross-encoder reranking for 3x retrieval precision; Valkey swap for 37% throughput; AGENTS.md for ecosystem alignment; gVisor for kernel-level isolation.
+**Goal:** Make GSD-Amauta ecosystem infrastructure — any AI coding agent that speaks MCP can consume it without installation. The MCP server becomes a standalone service with direct PG/Valkey connections (not daemon wrapper). One-command setup via npx. Public npm release. Portable security and observability as agent capabilities (no K3s dependency).
 
-**Target upgrades (5 layers):**
-1. **The Substrate** — Valkey 8.x, pgvector upgrade, ParadeDB pg_search, tree-sitter parsers
-2. **The Retrieval Rewrite** — AST-aware chunking, ParadeDB BM25, code-specific embeddings, RRF hybrid search, cross-encoder reranking, dependency graph
-3. **The Behavioral Upgrade** — AGENTS.md, circuit breakers, Reflexion memory, lint guardrails, feature-level tracking, get-bearings ritual
-4. **The MCP Interface** — Daemon as MCP server (stdio + SSE), tools/resources/prompts for RLM, memory, RPETD, research
-5. **Observability + Security** — Langfuse tracing, model canary, Rule of Two audit, gVisor sandbox, tool integrity checking
+**Body metaphor sequence:** brain (v2.5) → sight (v2.6) → hands (v2.7) → metabolism (v2.8) → nervous system (v2.9) → **birth (v3.0)**
 
 ## Requirements
 
@@ -63,13 +62,16 @@ Every RPETD phase must *see* what the other phases have already learned — past
 
 ### Active
 
-#### v2.9 Nervous System — In Progress
-- [ ] **INFRA-01..04**: Valkey 8.x, pgvector upgrade, ParadeDB pg_search, tree-sitter parsers
-- [ ] **RLM-01..06**: AST-aware chunking, ParadeDB BM25, code-specific embeddings, RRF hybrid search, cross-encoder reranking, dependency graph
-- [ ] **BEHAV-01..06**: AGENTS.md, circuit breakers, Reflexion memory, lint guardrails, feature-level tracking, get-bearings ritual
-- [ ] **MCP-01..05**: MCP server (stdio+SSE), search-code tool, memory tools, RPETD resources, research tool
-- [ ] **OBS-01..02**: Langfuse tracing, model canary test suite
-- [ ] **SEC-01..03**: Rule of Two audit, gVisor sandbox, tool integrity checking
+#### v2.9 Nervous System — Shipped 2026-04-13 (21/26 requirements; 5 deferred)
+- ✓ **INFRA-01..04**: Valkey 8.x, pgvector 0.8.2, ParadeDB pg_search, tree-sitter parsers — v2.9
+- ✓ **RLM-01..06**: AST-aware chunking, ParadeDB BM25, Voyage Code 3 embeddings, RRF hybrid search, Jina reranking, NetworkX dependency graph — v2.9
+- ✓ **BEHAV-01..06**: AGENTS.md discovery, circuit breakers, Reflexion memory, lint guardrails, feature-list lifecycle, get-bearings ritual — v2.9
+- ✓ **MCP-01..05**: amauta-mcp.py (stdio+SSE), search-code, memory, RPETD context resources, research chain — v2.9
+- ~ **OBS-01**: Langfuse/K3s tracing — deferred to v3.0 (portable OTel optional integration)
+- ~ **OBS-02**: Model canary suite — deferred to v3.0 (portable agent capability)
+- ~ **SEC-01**: Rule of Two audit — deferred to v3.0 (portable agent capability)
+- ~ **SEC-02**: gVisor K3s sandbox — deferred indefinitely (K3s-only infrastructure)
+- ~ **SEC-03**: Tool integrity checking — deferred to v3.0 (MCP startup check)
 
 #### Legacy (carried forward — all validated in v2.5)
 ##### Memory & Embeddings Audit

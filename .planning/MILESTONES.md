@@ -1,5 +1,22 @@
 # Milestones
 
+## v2.9 Nervous System (Shipped: 2026-04-13)
+
+**Phases:** 26-29 (4 completed + Phase 30 cancelled — K3s non-portable) | **Plans:** 10 | **Commits:** 144
+**Timeline:** 2026-04-13 (single session) | **Services:** ~12,748 Python LOC
+
+**Key accomplishments:**
+1. Valkey 8.x replaces Redis (+35.7% SET throughput); ParadeDB pg_search + pgvector 0.8.2 + tree-sitter — zero application-code changes (Phase 26)
+2. AST-aware chunking (function-boundary); hybrid RRF search (BM25 + vector, single PG query); Jina cross-encoder reranker + Valkey cache; NetworkX dependency graph (Phase 27)
+3. AGENTS.md discovery; circuit breakers (3-failure/60s Valkey TTL); Reflexion memory; lint-after-edit; feature_list.json lifecycle; get-bearings ritual (Phase 28)
+4. amauta-mcp.py — standalone MCP server, stdio + SSE :18800, exposes search-code, memory, RPETD context, research as protocol-native tools/resources (Phase 29)
+
+**Known gaps (Phase 30 cancelled):** OBS-01 Langfuse, OBS-02 canary suite, SEC-01 Rule of Two audit, SEC-02 gVisor, SEC-03 tool integrity — deferred to v3.0 as portable capabilities.
+
+**Archive:** milestones/v2.9-ROADMAP.md | milestones/v2.9-REQUIREMENTS.md
+
+---
+
 ## v2.8 Metabolism (Shipped: 2026-04-13)
 
 **Phases completed:** 6 phases, 13 plans, 9 tasks

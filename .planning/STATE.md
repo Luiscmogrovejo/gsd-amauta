@@ -1,46 +1,44 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.9
-milestone_name: Nervous System
-status: in_progress
-stopped_at: Phase 29 Plan 29-03 complete
-last_updated: "2026-04-13T23:05:00.000Z"
-last_activity: 2026-04-13 — Plan 29-03 complete (3 atomic commits, 17 behavioral tests for MCP-01..05 in tests/29-mcp-interface.test.cjs, all pass)
+milestone: v3.0
+milestone_name: The Birth
+status: planning
+stopped_at: "v2.9 closed. Phase 30 cancelled (K3s non-portable). Ready for v3.0 milestone definition."
+last_updated: "2026-04-13T00:00:00.000Z"
+last_activity: 2026-04-13 — v2.9 milestone complete. 4 phases shipped (26-29). Phase 30 cancelled. v3.0 planning begins.
 progress:
-  total_phases: 5
-  completed_phases: 3
-  total_plans: 7
-  completed_plans: 7
-  percent: 99
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # GSD-Amauta -- Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-13 for v2.9)
+See: .planning/PROJECT.md (updated 2026-04-13 after v2.9 milestone close)
 
 **Core value:** Every RPETD phase must see what other phases have learned. The brain synthesizes, not accumulates.
-**Current focus:** Milestone v2.9 -- Nervous System. Five infrastructure layers composing into a unified upgrade: substrate (Valkey, pgvector, ParadeDB, tree-sitter), retrieval rewrite, behavioral upgrade, MCP interface, observability + security.
+**Current focus:** Milestone v3.0 — The Birth. Make GSD-Amauta ecosystem infrastructure: standalone MCP server with direct PG/Valkey, one-command setup, npm public release, portable security/observability as agent capabilities.
 
 ## Current Position
 
-Phase: 29 — The MCP Interface (COMPLETE)
-Plan: 29-03 complete — 17 behavioral tests in tests/29-mcp-interface.test.cjs covering MCP-01..05 (structural file-content, no daemon required, 17/17 pass)
-Status: MCP-01..05 implemented and tested. Phase 29 complete pending validator sign-off. Phase 30 can begin.
-Last activity: 2026-04-13 — Plan 29-03 complete (3 atomic commits, 17 structural behavioral tests, all pass)
+Status: v2.9 COMPLETE (2026-04-13). Phase 30 cancelled (K3s non-portable). v3.0 planning begins.
+Next: `/amauta:new-milestone` to define v3.0 "The Birth"
 
-Progress: [██████████] 96%
+## v2.9 Final Phase Map
 
-## v2.9 Phase Map
+| Phase | Name | Requirements | Status |
+|-------|------|--------------|--------|
+| 26 | The Substrate | INFRA-01..04 | Complete (2026-04-13) |
+| 27 | The Retrieval Rewrite | RLM-01..06 | Complete (2026-04-13) |
+| 28 | The Behavioral Upgrade | BEHAV-01..06 | Complete (2026-04-13) |
+| 29 | The MCP Interface | MCP-01..05 | Complete (2026-04-13) |
+| 30 | Observability + Security | OBS-01..02, SEC-01..03 | CANCELLED — non-portable |
 
-| Phase | Name | Requirements | Depends On | Status |
-|-------|------|--------------|------------|--------|
-| 26 | The Substrate | INFRA-01..04 (4) | Nothing | Complete (2026-04-13) |
-| 27 | The Retrieval Rewrite | RLM-01..06 (6) | Phase 26 | Complete (2026-04-13) |
-| 28 | The Behavioral Upgrade | BEHAV-01..06 (6) | Phase 26 | Complete (2026-04-13) |
-| 29 | The MCP Interface | MCP-01..05 (5) | Phase 27 | Complete (2026-04-13) |
-| 30 | Observability + Security | OBS-01..02, SEC-01..03 (5) | Phases 27+28 | Not started |
+**v2.9 complete:** 4 phases shipped, 10 plans, 21/26 requirements. 5 deferred to v3.0.
 
 **Execution order:**
 - Phase 26 first (foundation)
