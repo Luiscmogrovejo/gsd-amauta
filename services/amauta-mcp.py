@@ -40,8 +40,10 @@ _load_dotenv()
 import sys
 import json
 import asyncio
+import hashlib
 import urllib.request
 import urllib.error
+import urllib.parse
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import (
@@ -159,6 +161,22 @@ async def list_tools() -> ListToolsResult:
                 },
             },
         ),
+        Tool(
+            name="amauta/research",
+            description=(
+                "Run the implementable research chain: Memory -> SKB -> WebFetch. "
+                "Checks semantic cache first; returns cached result on hit. "
+                "Full 5-step chain (Context7, Perplexity) requires gsd-researcher agent invocation."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query":    {"type": "string", "description": "Research query"},
+                    "creative": {"type": "boolean", "default": False, "description": "Enable creative/exploratory mode"},
+                },
+                "required": ["query"],
+            },
+        ),
     ])
 
 @server.call_tool()
@@ -210,6 +228,58 @@ async def call_tool(name: str, arguments: dict) -> CallToolResult:
             "threshold": status.get("distill_threshold", 500),
             "message": "Run 'gsd-memory distill' CLI to trigger distillation.",
         }
+        return CallToolResult(content=[TextContent(type="text", text=json.dumps(result))])
+
+    elif name == "amauta/research":
+        query = arguments.get("query", "")
+        if not query:
+            return CallToolResult(content=[TextContent(type="text",
+                text=json.dumps({"error": "query is required"}))])
+
+        # 1. Check semantic cache first (key = sha256 of normalized query)
+        cache_key = hashlib.sha256(query.strip().lower().encode()).hexdigest()
+        cache_result = _call_daemon("GET", f"/api/research-cache?key={cache_key}")
+        if cache_result.get("hit"):
+            payload = cache_result.get("data", {})
+            payload["from_cache"] = True
+            return CallToolResult(content=[TextContent(type="text", text=json.dumps(payload))])
+
+        # 2. Memory search
+        mem_result = _call_daemon("POST", "/api/memory/semantic-search",
+                                  {"query": query, "limit": 10})
+        memory_results = mem_result.get("results", [])
+
+        # 3. SKB search
+        skb_result = _call_daemon("POST", "/api/skb/search",
+                                  {"query": query, "limit": 10})
+        skb_results = skb_result.get("results", [])
+
+        # 4. WebFetch — lightweight: attempt to fetch top DuckDuckGo result for the query
+        # Implementation: best-effort; on error or timeout, web_results = []
+        web_results = []
+        try:
+            ddg_url = "https://api.duckduckgo.com/?q=" + urllib.parse.quote(query) + "&format=json&no_html=1&skip_disambig=1"
+            ddg_req = urllib.request.Request(ddg_url, headers={"User-Agent": "amauta-mcp/1.0"})
+            with urllib.request.urlopen(ddg_req, timeout=5) as resp:
+                ddg_data = json.loads(resp.read().decode("utf-8"))
+            abstract = ddg_data.get("AbstractText", "")
+            source_url = ddg_data.get("AbstractURL", "")
+            if abstract:
+                web_results = [{"text": abstract, "url": source_url, "source": "duckduckgo"}]
+        except Exception:
+            web_results = []
+
+        result = {
+            "memory_results": memory_results,
+            "skb_results":    skb_results,
+            "web_results":    web_results,
+            "from_cache":     False,
+        }
+
+        # 5. No cache write — daemon has no POST /api/research-cache route.
+        # The GET check at the start is the only cache operation (read-through only).
+        # Cache writes are handled by the daemon's own internal path; do not add one here.
+
         return CallToolResult(content=[TextContent(type="text", text=json.dumps(result))])
 
     return CallToolResult(content=[TextContent(type="text", text=json.dumps({"error": f"unknown tool: {name}"}))])
