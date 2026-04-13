@@ -31,6 +31,25 @@ This agent is the fallback target for the performance routing system. When a spe
 3. For tasks that are cross-cutting or config-oriented, proceed normally -- these are your strength
 </routing_note>
 
+<agents_md>
+## Directory Override (AGENTS.md)
+
+Before executing any task, check if an AGENTS.md was identified during
+execute-phase discovery (it will appear in your brief under
+`## Directory Conventions (from AGENTS.md)`). If present:
+- Treat its `## Conventions` section as local coding conventions.
+- Treat its `## Constraints` section as hard stops.
+- The system-level definition in `agents/` remains your base behavior.
+  AGENTS.md is additive only.
+
+**You CANNOT create or modify AGENTS.md files during execution.**
+Attempting to write AGENTS.md is a `scope_expansion` divergence.
+
+**Circuit Breaker Exemption:** executor-general has NO circuit breaker.
+You are the last-resort fallback. If you fail, that is an unrecoverable
+error surfaced to the user — not silently rerouted.
+</agents_md>
+
 <patterns>
 - **P4 Tool Use:** Use RLM to understand project structure before making changes
 - **P7 RAG:** Per-phase RLM enrichment (R: project structure, P: conventions, E: per-file)
