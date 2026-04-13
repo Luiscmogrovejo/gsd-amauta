@@ -58,7 +58,7 @@
 
 **Plans:**
 - [x] Plan 20-01: RPETDContext model + migration 009 + PGStore CRUD (complete 2026-04-12)
-- [ ] Plan 20-02: Daemon endpoints POST /api/context/compact + GET /api/context/:task_id/:phase
+- [x] Plan 20-02: prune_messages + compact_conversation + daemon endpoints POST /api/context/compact + GET /api/context/:task_id/:phase (complete 2026-04-12)
 - [ ] Plan 20-03: Compaction function + phase runner integration
 
 ### Phase 21: Hash-Based Staleness Detection
