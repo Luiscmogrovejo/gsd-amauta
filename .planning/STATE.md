@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.8
 milestone_name: milestone
 status: planning
-stopped_at: "Phase 24 planned. 2 plans (24-01 Wave 1: 7 tasks, 24-02 Wave 2: 4 tasks). SEMANTIC-01..03 + ROUTE-01..02 all covered. Next: execute plan 24-01."
-last_updated: "2026-04-13T05:00:00.000Z"
-last_activity: 2026-04-12 — Phase 24 planned (2 plans, 11 tasks)
+stopped_at: "Plan 24-01 complete. Migration 010, PGStore 4 methods, SemanticCacheManager, 3 daemon endpoints, model_routing config plumbing, 14 Python + 4 CJS tests. Next: plan 24-02 (Wave 2: ROUTE-02 model router + research-chain integration)."
+last_updated: "2026-04-13T06:00:00.000Z"
+last_activity: 2026-04-13 — Plan 24-01 complete (7 tasks, SEMANTIC-01..03 + ROUTE-01 met)
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 11
-  completed_plans: 9
-  percent: 55
+  completed_plans: 10
+  percent: 65
 ---
 
 # GSD-Amauta -- Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-12 for v2.8)
 
 ## Current Position
 
-Phase: 24 of 25 (Semantic Cache + Tiered Routing — PLANNING)
-Plan: 24-01 planned (Wave 1), 24-02 planned (Wave 2)
-Status: Phase 24 planned — 2 plans, 11 tasks, 5 requirements (SEMANTIC-01..03, ROUTE-01..02)
-Last activity: 2026-04-12 — Plan 23-02 complete (CACHE-02+CACHE-04 met)
+Phase: 24 of 25 (Semantic Cache + Tiered Routing — IN PROGRESS)
+Plan: 24-01 complete (Wave 1 — 7 tasks done), 24-02 pending (Wave 2)
+Status: Plan 24-01 complete — SEMANTIC-01..03 + ROUTE-01 met. 24-02 next (ROUTE-02).
+Last activity: 2026-04-13 — Plan 24-01 complete (migration 010, SemanticCacheManager, daemon endpoints, model_routing)
 
 Progress: [█████░░░░░] 55%
 
@@ -143,6 +143,9 @@ Resume file: None
 
 
 
+- [learning] 2026-04-13T06:00:00.000Z: semantic_cache_store and semantic_cache_lookup BOTH use input_type="query" for cosine parity — using "document" for store causes embedding space mismatch and silent cache misses on lookup. Phase 24 SEMANTIC-01 checker note.
+- [learning] 2026-04-13T06:00:00.000Z: MockPGStore for semantic cache tests must use distinct query embeddings per entry when testing selective invalidation; generic hash-based embeddings can accidentally be cosine-similar to each other, causing cross-query hits in assertions.
+- [learning] 2026-04-13T06:00:00.000Z: model_routing added to loadConfig follows same null-coalesce pattern as model_overrides (parsed.model_routing || null). init.cjs hardcoded fallback {R: "sonnet", T: "haiku", ...} ensures output is never undefined even when config.json lacks the key.
 - [learning] 2026-04-13T03:54:22.356Z: amauta-daemon.py has TWO auth bypass locations that must BOTH be updated for new unauth endpoints: (1) _check_oidc OIDC bypass set literal (around line 188) and (2) do_GET basic auth not-in check (around line 979). Missing either causes partial auth block. Pattern established in Phase 23 /metrics/cache.
 - [learning] 2026-04-13T03:43:32.046Z: CACHE_BREAKPOINT placement rule for GSD-Amauta agent .md files: frontmatter+role+patterns+domain+rpetd above the marker; runtime_read blocks below. For agents without runtime_read, append at end of file. Audit script checks 6 properties per agent.
 - [learning] 2026-04-13T02:55:23.974Z: BM25 inline benchmark: tokenize+IDF+score (no external npm). Fact density fixtures at tests/fixtures/ need 3 dirname() calls to reach project root from test file. Original 500-char file descriptions are sparse (shebang+docstring+imports), compressed pipe-delimited are dense (deps/tests/loc/exports) — 1.4x fact density ratios are achievable even for small files.

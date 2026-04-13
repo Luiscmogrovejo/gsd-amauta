@@ -131,7 +131,7 @@
 5. Compaction LLM call (HANDOFF-02) uses `config.json::model_routing.compaction` (default: "haiku"), not the phase's primary model.
 
 **Plans:**
-- [ ] Plan 24-01: Semantic Cache Infrastructure + Model Routing Config (Wave 1, SEMANTIC-01/02/03 + ROUTE-01) — 7 tasks
+- [x] Plan 24-01: Semantic Cache Infrastructure + Model Routing Config (Wave 1, SEMANTIC-01/02/03 + ROUTE-01) — 7 tasks COMPLETE
 - [ ] Plan 24-02: Research Chain Integration + ROUTE-02 Compaction Wiring (Wave 2, SEMANTIC-01 + ROUTE-02) — 4 tasks
 
 ### Phase 25: Tech Debt Sweep
