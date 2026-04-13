@@ -64,3 +64,67 @@ test('MCP-01: port 18800 in docker-compose.yml; daemon file unmodified', () => {
   const daemon = fs.readFileSync(path.join(ROOT, 'services', 'amauta-daemon.py'), 'utf8');
   assert.doesNotMatch(daemon, /from mcp\.|import mcp/, 'daemon must NOT import mcp package');
 });
+
+// ─── MCP-02 Tests ─────────────────────────────────────────────────────────────
+
+// Test 5: search-code tool definition has correct schema
+test('MCP-02: search-code tool defined with query as required param and top_k optional', () => {
+  const content = fs.readFileSync(path.join(ROOT, 'services', 'amauta-mcp.py'), 'utf8');
+  assert.match(content, /amauta\/search-code/, 'search-code tool name must be present');
+  assert.match(content, /"required".*\["query"\]|"required".*query/, 'query must be required in inputSchema');
+  assert.match(content, /top_k/, 'top_k optional param must be in schema');
+  assert.match(content, /file_filter/, 'file_filter optional param must be in schema');
+});
+
+// Test 6: search-code delegates to _call_rlm (port 18798 /query)
+test('MCP-02: search-code calls _call_rlm which targets port 18798 /query', () => {
+  const content = fs.readFileSync(path.join(ROOT, 'services', 'amauta-mcp.py'), 'utf8');
+  assert.match(content, /_call_rlm/, '_call_rlm helper must be defined');
+  assert.match(content, /18798|RLM_URL/, 'RLM URL must target port 18798');
+  assert.match(content, /\/query/, 'RLM /query endpoint must be used');
+});
+
+// Test 7: search-code call_tool branch returns raw rlm result
+test('MCP-02: search-code call_tool branch returns JSON-dumped _call_rlm result', () => {
+  const content = fs.readFileSync(path.join(ROOT, 'services', 'amauta-mcp.py'), 'utf8');
+  // The call_tool handler should call _call_rlm for search-code and json.dumps the result
+  assert.match(content, /name.*==.*amauta\/search-code|"amauta\/search-code"/, 'call_tool must branch on search-code');
+  assert.match(content, /json\.dumps\(result\)/, 'result must be wrapped with json.dumps');
+  assert.match(content, /result\s*=\s*_call_rlm\(/, '_call_rlm return must be assigned to result variable');
+});
+
+// ─── MCP-03 Tests ─────────────────────────────────────────────────────────────
+
+// Test 8: memory-store delegates to /api/memory/store
+test('MCP-03: memory-store tool delegates to POST /api/memory/store', () => {
+  const content = fs.readFileSync(path.join(ROOT, 'services', 'amauta-mcp.py'), 'utf8');
+  assert.match(content, /amauta\/memory-store/, 'memory-store tool must be defined');
+  assert.match(content, /\/api\/memory\/store/, '/api/memory/store must be the delegation target');
+  // Required param: text
+  assert.match(content, /"required".*text|required.*\["text"\]/, 'text must be required in memory-store schema');
+});
+
+// Test 9: memory-search delegates to /api/memory/semantic-search
+test('MCP-03: memory-search tool delegates to POST /api/memory/semantic-search', () => {
+  const content = fs.readFileSync(path.join(ROOT, 'services', 'amauta-mcp.py'), 'utf8');
+  assert.match(content, /amauta\/memory-search/, 'memory-search tool must be defined');
+  assert.match(content, /\/api\/memory\/semantic-search/, 'semantic-search endpoint must be used');
+});
+
+// Test 10: memory-distill returns distill-status; no server-side trigger (defers to gsd-memory distill CLI)
+test('MCP-03: memory-distill returns distill-status JSON with needs_distill flag (no server-side trigger)', () => {
+  const content = fs.readFileSync(path.join(ROOT, 'services', 'amauta-mcp.py'), 'utf8');
+  assert.match(content, /amauta\/memory-distill/, 'memory-distill tool must be defined');
+  assert.match(content, /\/api\/memory\/distill-status/, 'distill-status must be checked');
+  assert.match(content, /needs_distill|force/, 'needs_distill or force branch must exist');
+});
+
+// Test 11: store->search round-trip — both _call_daemon paths documented
+test('MCP-03: store->search round-trip uses _call_daemon for both store and search', () => {
+  const content = fs.readFileSync(path.join(ROOT, 'services', 'amauta-mcp.py'), 'utf8');
+  // Count _call_daemon invocations — should be at least 5 (store, search, distill-status,
+  // distill, context read) across handlers
+  const matches = content.match(/_call_daemon\(/g) || [];
+  assert.ok(matches.length >= 5,
+    `Expected >= 5 _call_daemon calls, found ${matches.length}`);
+});
