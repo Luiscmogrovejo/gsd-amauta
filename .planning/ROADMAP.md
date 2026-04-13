@@ -71,7 +71,7 @@
 3. Reranked MRR >= 10% improvement over hybrid-only on 20 golden queries; reranker failure does not crash the pipeline; cache hit rate is logged.
 4. Dependency graph covers >= 90% of function-level symbols; given a retrieved function, >= 1 caller and >= 1 callee are included in expanded context (when they exist); hub files list is non-empty.
 
-**Plans:** 1 complete (27-01: golden baseline + migrations 012/013 + AST chunker — RLM-01, RLM-02 delivered)
+**Plans:** 2 complete (27-01: golden baseline + migrations 012/013 + AST chunker — RLM-01/RLM-02; 27-02: embedding pipeline + lazy ingestion + caveman chunk mode — RLM-01/RLM-02/RLM-03 complete)
 
 ### Phase 28: The Behavioral Upgrade
 

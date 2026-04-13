@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v2.9
 milestone_name: Nervous System
 status: in_progress
-stopped_at: Plan 27-01 complete
-last_updated: "2026-04-13T17:30:00.000Z"
-last_activity: 2026-04-13 — Plan 27-01 complete (5 atomic commits, 13 CJS + 12 Python tests passing)
+stopped_at: Plan 27-02 complete
+last_updated: "2026-04-13T18:15:00.000Z"
+last_activity: 2026-04-13 — Plan 27-02 complete (5 atomic commits, 8 CJS + 11 Python tests passing, 52 chunks in rlm_chunks)
 progress:
   total_phases: 5
   completed_phases: 1
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-13 for v2.9)
 
 ## Current Position
 
-Phase: 27 — The Retrieval Rewrite (in progress — 1 of N plans done)
-Plan: 27-01 complete — Golden baseline + schema migrations 012/013 + AST chunker
-Status: Wave 1 delivered. rlm_chunks table live in PG with BM25 + HNSW indexes. AST chunker ready.
-Last activity: 2026-04-13 — Plan 27-01 complete (5 atomic commits, 13 CJS + 12 Python tests passing)
+Phase: 27 — The Retrieval Rewrite (in progress — 2 of N plans done)
+Plan: 27-02 complete — Embedding pipeline + lazy ingestion engine + caveman chunk mode
+Status: Wave 2 delivered. 52 chunks in rlm_chunks. Voyage Code 3 embeddings stored. /reindex endpoint live. Lazy trigger in /search.
+Last activity: 2026-04-13 — Plan 27-02 complete (5 atomic commits, 8 CJS + 11 Python tests passing, 52 chunks in rlm_chunks)
 
 Progress: [██████████] 96%
 
@@ -37,7 +37,7 @@ Progress: [██████████] 96%
 | Phase | Name | Requirements | Depends On | Status |
 |-------|------|--------------|------------|--------|
 | 26 | The Substrate | INFRA-01..04 (4) | Nothing | Complete (2026-04-13) |
-| 27 | The Retrieval Rewrite | RLM-01..06 (6) | Phase 26 | In progress (27-01 done) |
+| 27 | The Retrieval Rewrite | RLM-01..06 (6) | Phase 26 | In progress (27-01, 27-02 done) |
 | 28 | The Behavioral Upgrade | BEHAV-01..06 (6) | Phase 26 | Not started |
 | 29 | The MCP Interface | MCP-01..05 (5) | Phase 27 | Not started |
 | 30 | Observability + Security | OBS-01..02, SEC-01..03 (5) | Phases 27+28 | Not started |
@@ -67,6 +67,10 @@ Progress: [██████████] 96%
 - Plan 27-01: pg_search 0.22.6 does not accept b= or position_decay= as index WITH parameters. BM25 tuning (b=0.6, position_decay=0.05) documented in migration comments; applied at query time in Wave 3 RRF SQL.
 - Plan 27-01: baseline_mrr=1.0 correct by construction — expected_top3 from current engine output; rank always 1. Real deltas measured in Wave 2/3.
 - Plan 27-01: HNSW for rlm_chunks MUST be isolated from semantic_cache HNSW — different embedding model, different vector space (idx_rlm_chunks_embedding_hnsw vs idx_semantic_cache_embedding_hnsw).
+- Plan 27-02: voyageai 0.2.3 does not accept output_dimension kwarg — try/except TypeError to fall back; voyage-code-3 default is 1024-dim so both paths produce correct dimensionality.
+- Plan 27-02: psycopg2 without pgvector adapter: pass embedding as '[f1,...fN]' string with ::vector cast in SQL.
+- Plan 27-02: rlm-service.py _load_dotenv skips vars already in os.environ — shell GSD_POSTGRES_URL takes priority over .env. Port mismatch (5432 vs 5433) is env issue, not code issue.
+- Plan 27-02: Project root must be in sys.path for 'from services.X' imports to work when rlm-service.py runs from services/ directory.
 
 ### Pending Todos
 
@@ -78,9 +82,13 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-13T16:20:52.565Z
-Stopped at: Phase 27 context gathered
-Resume file: .planning/phases/27-the-retrieval-rewrite/27-CONTEXT.md
+Last session: 2026-04-13T18:15:00.000Z
+Stopped at: Plan 27-02 complete
+Resume file: .planning/phases/27-the-retrieval-rewrite/27-02-SUMMARY.md
 
 ## Learnings
 
+
+
+- [learning] 2026-04-13T17:09:58.138Z: voyageai 0.2.x does not accept output_dimension kwarg in embed() — try/except TypeError to fall back. psycopg2 pgvector without adapter: pass embedding as '[f1,f2,...fN]' string with ::vector cast. rlm-service.py _load_dotenv skips vars already in os.environ — shell env takes priority over .env file.
+- [learning] 2026-04-13T16:59:59.885Z: tree-sitter 0.23.x Python API: Parser(Language(ts_lang.language())) constructor — no .set_language(). TypeScript: language_typescript() / language_tsx() sub-exports. pg_search 0.22.6: b= and position_decay= are NOT valid index WITH params — document in migration comments, apply at query time.
