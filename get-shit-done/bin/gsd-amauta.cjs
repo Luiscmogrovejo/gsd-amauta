@@ -1855,6 +1855,32 @@ async function cmdBackup(useDaemon, rest, jsonMode) {
   return 1;
 }
 
+// ── cache-stats: Prompt cache performance (Phase 23 / CACHE-04) ──────────────
+
+async function cmdCacheStats(useDaemon) {
+  if (!useDaemon) {
+    process.stderr.write('cache-stats requires the daemon to be running.\n');
+    return 1;
+  }
+  const { statusCode, data } = await httpRequest('GET', '/metrics/cache');
+  if (data.error) {
+    process.stderr.write(`Cache metrics unavailable: ${data.error}\n`);
+    return 1;
+  }
+  const lines = [
+    'Prompt Cache Metrics',
+    '====================',
+    `Hit Rate:           ${(data.hit_rate * 100).toFixed(1)}%`,
+    `Tokens Saved:       ${data.total_tokens_saved.toLocaleString()}`,
+    `Cost Savings:       $${data.cost_savings_estimate.toFixed(4)}`,
+    `Cache Read Tokens:  ${data.cache_read_tokens.toLocaleString()}`,
+    `Cache Write Tokens: ${data.cache_creation_tokens.toLocaleString()}`,
+    `Total Requests:     ${data.total_requests}`,
+  ];
+  process.stdout.write(lines.join('\n') + '\n');
+  return statusCode === 200 ? 0 : 1;
+}
+
 // ═══════════════════════════════════════════════════════
 // CLI Router
 // ═══════════════════════════════════════════════════════
@@ -1925,6 +1951,9 @@ async function main() {
       '    backup restore <file> [--mode merge|replace]\n' +
       '    backup verify [file]                    Check integrity\n' +
       '    backup list                             List backups\n' +
+      '\n' +
+      '  \x1b[33mCache:\x1b[0m\n' +
+      '    cache-stats                 Show prompt cache hit rate and cost savings\n' +
       '\n' +
       '  \x1b[33mDaemon:\x1b[0m\n' +
       '    daemon start|stop|status|run\n' +
@@ -2093,6 +2122,10 @@ async function main() {
 
     case 'backup':
       exitCode = await cmdBackup(useDaemon, rest, jsonMode);
+      break;
+
+    case 'cache-stats':
+      exitCode = await cmdCacheStats(useDaemon);
       break;
 
     default:
