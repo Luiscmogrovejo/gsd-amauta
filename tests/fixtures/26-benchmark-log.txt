@@ -1,0 +1,15 @@
+INFRA-01 Benchmark: Redis 7-alpine vs Valkey 8-alpine
+Date: 2026-04-13T00:00:00.000Z
+Test: redis-benchmark -q -n 10000 -c 10 -t SET
+
+Redis 7-alpine (baseline):
+N/A — gsd-redis container (redis:7-alpine) was not running at swap time.
+Comparison reference: redis:8-alpine (fact-machine container, same host):
+  SET: 175438.59 requests per second, p50=0.039 msec
+
+Valkey 8-alpine (post-swap):
+  SET: 238095.23 requests per second, p50=0.023 msec
+
+Delta: +35.7% throughput vs redis:8-alpine reference (238095 vs 175439 rps)
+Note: Direct redis:7 baseline unavailable (container was not running pre-swap).
+Delta vs redis:8 provided as best available comparison on same hardware.
