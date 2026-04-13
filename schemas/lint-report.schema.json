@@ -1,0 +1,40 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://gsd-amauta/schemas/lint-report.schema.json",
+  "title": "LintReport",
+  "description": "Advisory lint report produced by lintAfterEdit (BEHAV-04). Stored in VERIFICATION block of SUMMARY.md — NOT as a separate file.",
+  "type": "object",
+  "required": ["linter", "exit_code", "findings", "fallback_used"],
+  "properties": {
+    "linter": {
+      "type": "string",
+      "enum": ["eslint", "ruff", "node-check", "py_compile", "none"],
+      "description": "Tool used. 'none' means no linter detected for this file type. Detection order: JS/CJS: npx eslint → eslint → node --check. Python: ruff check → python3 -m py_compile."
+    },
+    "exit_code": {
+      "type": "integer",
+      "description": "Exit code from the linter. 0 = clean. Non-zero = findings present. Advisory only — does not block commit."
+    },
+    "findings": {
+      "type": "array",
+      "description": "Structured lint findings. Empty array [] for a clean file.",
+      "items": {
+        "type": "object",
+        "required": ["file", "line", "rule", "message", "severity"],
+        "properties": {
+          "file": { "type": "string", "description": "Absolute or relative file path." },
+          "line": { "type": "integer", "minimum": 0 },
+          "rule": { "type": "string", "description": "Linter rule ID (e.g. 'no-unused-vars', 'E501'). 'syntax' for syntax-only fallback." },
+          "message": { "type": "string" },
+          "severity": { "type": "string", "enum": ["error", "warning"] }
+        },
+        "additionalProperties": false
+      }
+    },
+    "fallback_used": {
+      "type": "boolean",
+      "description": "true if project-local linter not found and a fallback (eslint global / node --check / py_compile) was used."
+    }
+  },
+  "additionalProperties": false
+}

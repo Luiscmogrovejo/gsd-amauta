@@ -1,0 +1,64 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://gsd-amauta/schemas/feature-list.schema.json",
+  "title": "FeatureList",
+  "description": "Per-plan feature tracking file (BEHAV-05). One file per PLAN.md stored alongside it in .planning/phases/XX-name/. Filename: {plan_id}-feature_list.json. Validator overwrites this file after each test run — it is the current state snapshot, not a history log.",
+  "type": "object",
+  "required": ["plan_id", "generated_at", "features"],
+  "properties": {
+    "plan_id": {
+      "type": "string",
+      "description": "Matches the plan_id frontmatter field (e.g. '28-01')."
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO8601 UTC when the file was first generated (by planner at plan-write time)."
+    },
+    "last_updated": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "ISO8601 UTC of last featureListUpdate() run. Null on initial generation."
+    },
+    "features": {
+      "type": "array",
+      "minItems": 1,
+      "description": "One entry per task in the plan.",
+      "items": {
+        "type": "object",
+        "required": ["feature_id", "task_id", "description", "status"],
+        "properties": {
+          "feature_id": {
+            "type": "string",
+            "description": "Unique ID within the plan (e.g. '28-01-F01')."
+          },
+          "task_id": {
+            "type": "string",
+            "description": "The task XML id attribute this feature corresponds to."
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "First acceptance criteria bullet (truncated at 200 chars for token budget)."
+          },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "passing", "failing"],
+            "description": "pending: not yet verified. passing: last test run succeeded. failing: last test run failed. Blocks --pass verdict when any feature is 'failing'."
+          },
+          "test_file": {
+            "type": ["string", "null"],
+            "description": "Path to the test file that verifies this feature. Null if no test file declared in files_expected."
+          },
+          "last_verified": {
+            "type": ["string", "null"],
+            "format": "date-time",
+            "description": "ISO8601 UTC of the last verification run. Null if never run."
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
