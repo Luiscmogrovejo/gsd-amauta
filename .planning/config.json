@@ -5,6 +5,14 @@
   "commit_docs": false,
   "model_profile": "balanced",
   "current_milestone": "v2.8",
+  "model_routing": {
+    "R": "sonnet",
+    "P": "sonnet",
+    "E": "sonnet",
+    "T": "haiku",
+    "D": "haiku",
+    "compaction": "haiku"
+  },
   "workflow": {
     "research": false,
     "plan_check": true,

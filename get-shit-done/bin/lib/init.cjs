@@ -117,6 +117,8 @@ function cmdInitExecutePhase(cwd, phase, raw, phaseDirOverride) {
     // Models
     executor_model: resolveModelInternal(cwd, 'gsd-executor-general'),
     verifier_model: resolveModelInternal(cwd, 'gsd-validator'),
+    // Phase 24 ROUTE-01: Tiered model routing per RPETD phase
+    model_routing: config.model_routing || {R: "sonnet", P: "sonnet", E: "sonnet", T: "haiku", D: "haiku", compaction: "haiku"},
 
     // Config flags
     commit_docs: config.commit_docs,

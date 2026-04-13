@@ -29,6 +29,27 @@ const MODEL_PROFILES = {
   'gsd-debugger':             { quality: 'opus', balanced: 'sonnet', budget: 'sonnet' },
 };
 
+function detectInstalledRuntime() {
+  const normalizedDir = __dirname.replace(/\\/g, '/');
+  if (normalizedDir.includes('/.config/opencode/') || normalizedDir.includes('/.opencode/')) {
+    return 'opencode';
+  }
+  if (normalizedDir.includes('/.gemini/')) {
+    return 'gemini';
+  }
+  if (normalizedDir.includes('/.codex/')) {
+    return 'codex';
+  }
+  if (normalizedDir.includes('/.claude/')) {
+    return 'claude';
+  }
+  return 'source';
+}
+
+function getOpencodeDefaultModel() {
+  return process.env.GSD_OPENCODE_MODEL || 'openai/gpt-5.4';
+}
+
 // ─── Output helpers ───────────────────────────────────────────────────────────
 
 function output(result, raw, rawValue) {
@@ -122,6 +143,7 @@ function loadConfig(cwd) {
       parallelization,
       brave_search: get('brave_search') ?? defaults.brave_search,
       model_overrides: parsed.model_overrides || null,
+      model_routing: parsed.model_routing || null,
     };
   } catch {
     return defaults;
@@ -382,6 +404,11 @@ function getRoadmapPhaseInternal(cwd, phaseNum) {
 
 function resolveModelInternal(cwd, agentType) {
   const config = loadConfig(cwd);
+  const runtime = process.env.GSD_RUNTIME || detectInstalledRuntime();
+
+  if (runtime === 'opencode') {
+    return getOpencodeDefaultModel();
+  }
 
   // Check per-agent override first
   const override = config.model_overrides?.[agentType];
