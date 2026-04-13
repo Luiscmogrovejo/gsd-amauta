@@ -7,3 +7,4 @@ tree-sitter-typescript>=0.21.0
 networkx>=3.0
 voyageai>=0.3.0
 sentence-transformers>=3.0.0
+mcp>=1.0

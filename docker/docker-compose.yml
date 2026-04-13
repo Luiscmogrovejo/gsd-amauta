@@ -42,6 +42,26 @@ services:
       retries: 5
       start_period: 10s
 
+  amauta-mcp:
+    # Phase 29 MCP-01: MCP server — stdio (Claude Code) + SSE (port 18800)
+    image: python:3.12-slim
+    container_name: gsd-mcp
+    restart: unless-stopped
+    working_dir: /app
+    command: >
+      sh -c "pip install mcp>=1.0 --quiet &&
+             python3 services/amauta-mcp.py --sse"
+    environment:
+      AMAUTA_DAEMON_URL: "http://host.docker.internal:18799"
+      AMAUTA_RLM_URL: "http://host.docker.internal:18798"
+      AMAUTA_MCP_PORT: "18800"
+    ports:
+      - "127.0.0.1:18800:18800"
+    volumes:
+      - .:/app:ro
+    depends_on:
+      - postgres
+
 volumes:
   gsd-pg-data:
     name: gsd-pg-data
