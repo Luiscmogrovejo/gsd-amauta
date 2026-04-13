@@ -32,7 +32,7 @@
 ## Phases
 
 - [x] **Phase 20: Structured Context Handoffs** — RPETDContext typed object replaces full conversation forwarding; each phase boundary compacts to <= 600 tokens stored in PostgreSQL (HANDOFF-01..05) — COMPLETE 2026-04-12
-- [ ] **Phase 21: Hash-Based Staleness Detection** — SHA-256 file hashing + git diff selectively refreshes only changed files, skipping unchanged file descriptions (STALE-01..04)
+- [x] **Phase 21: Hash-Based Staleness Detection** — SHA-256 file hashing + git diff selectively refreshes only changed files, skipping unchanged file descriptions (STALE-01..04) — COMPLETE 2026-04-12
 - [ ] **Phase 22: Caveman-Compressed Descriptions** — grammar-stripped agent definitions and structured file descriptions deliver >= 40% more facts per 500-char budget (CAVE-01..04)
 - [ ] **Phase 23: Prompt Prefix Caching** — all 11 agent prompts restructured for stable prefix / variable suffix split with `cache_control` annotation; prefix stability lint added (CACHE-01..04)
 - [ ] **Phase 24: Semantic Cache + Tiered Routing** — pgvector cosine >= 0.90 semantic cache for research calls; config-driven model routing (haiku T/D, sonnet R/P/E) (SEMANTIC-01..03, ROUTE-01..02)
@@ -77,7 +77,7 @@
 
 **Plans:**
 - [x] Plan 21-01: ContextValidator Core — compute_file_hash + changed_since + selective_refresh + Unit Tests (Wave 1, STALE-01/02/03) — COMPLETE 2026-04-12
-- [ ] Plan 21-02: Orchestrator Integration — validate_context + daemon endpoint + file_hashes population + Integration Tests (Wave 2, STALE-04)
+- [x] Plan 21-02: Orchestrator Integration — validate_context + daemon endpoint + file_hashes population + Integration Tests (Wave 2, STALE-04) — COMPLETE 2026-04-12
 
 ### Phase 22: Caveman-Compressed Descriptions
 

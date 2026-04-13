@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.8
 milestone_name: milestone
 status: completed
-stopped_at: phase_21_plan_01_complete
+stopped_at: phase_21_complete
 last_updated: "2026-04-12"
-last_activity: 2026-04-12 — Plan 21-01 complete (STALE-01/02/03, 4 tasks, 2 new files, 13 tests)
+last_activity: 2026-04-12 — Plan 21-02 complete (STALE-04, 5 tasks, 1 new file, 7 integration tests)
 progress:
   total_phases: 6
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 5
-  completed_plans: 4
-  percent: 22
+  completed_plans: 5
+  percent: 38
 ---
 
 # GSD-Amauta -- Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-12 for v2.8)
 
 ## Current Position
 
-Phase: 21 of 25 (Hash-Based Staleness Detection — in progress)
-Plan: 21-02 (Wave 2, ready for execution)
-Status: Plan 21-01 complete (STALE-01/02/03 satisfied). Plan 21-02 next (STALE-04: orchestrator wiring).
-Last activity: 2026-04-12 — Plan 21-01 executed (ContextValidator class + 13 unit tests)
+Phase: 21 of 25 (Hash-Based Staleness Detection — COMPLETE)
+Plan: 21-02 complete. Phase 21 fully complete (STALE-01..04 all satisfied).
+Status: Phase 21 done. Next: Phase 22 (Caveman-Compressed Descriptions) or Phase 25 (Tech Debt Sweep).
+Last activity: 2026-04-12 — Plan 21-02 executed (validate_context + daemon endpoint + file_hashes + 7 integration tests)
 
 Progress: [██░░░░░░░░] 22%
 
@@ -57,7 +57,7 @@ Critical path: 20 → 22 → 23 → 24. Phase 21 parallel with 22. Phase 25 inde
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 20 | 3/3 | ~75 min | ~25 min |
-| 21 | 1/2 | ~25 min | ~25 min |
+| 21 | 2/2 | ~50 min | ~25 min |
 
 *Updated after each plan completion*
 
@@ -88,14 +88,19 @@ None.
 - Plan 21-01: [STALE] log line emitted via log.info inside selective_refresh — STALE-04 verification can grep it.
 - Plan 21-01: test count 13 (plan estimated 12); test_compute_file_hashes_batch is the 6th STALE-01 test, consistent with plan's listed coverage table.
 
+- Plan 21-02: validate_context() is module-level (not a ContextValidator method) — keeps class PG-free; PGStore dependency only at orchestration level.
+- Plan 21-02: __commit_ref__ embedded as a key in file_hashes JSONB — avoids adding new PG column; extracted by validate_context() before calling changed_since().
+- Plan 21-02: description_fn=None in POST /api/context/validate is Phase 22 CAVE-01 hook placeholder — named explicitly in inline comment.
+- Plan 21-02: Test mock for git diff must use full absolute paths in stdout — changed_since intersects diff output with file_hashes keys which are absolute paths, not relative filenames.
+
 ### Blockers/Concerns
 
-None. Plan 21-01 shipped cleanly. Plan 21-02 (STALE-04: orchestrator wiring) is unblocked. Phase 22 can proceed in parallel.
+None. Phase 21 fully complete (STALE-01..04). Phase 22 (Caveman-Compressed Descriptions) is unblocked. Phase 25 (Tech Debt Sweep) is always available.
 
 ## Session Continuity
 
 Last session: 2026-04-12
-Stopped at: Plan 21-01 complete. STALE-01/02/03 satisfied. services/context_validator.py and tests/test_context_validator.py created and committed.
+Stopped at: Phase 21 complete. STALE-01..04 satisfied. All 20 Phase 21 Python tests pass (13 unit + 7 integration). Phase 20 regression clean.
 Resume file: None
 
 
@@ -109,6 +114,10 @@ Resume file: None
 
 
 
+
+
+- [learning] 2026-04-13T01:43:44.280Z: legacy regression test: free text learning
+- [learning] 2026-04-13T01:35:22.005Z: ContextValidator uses @staticmethod-only class with binary-mode chunked reads for SHA-256 hashing; changed_since intersects git diff --name-only output with file_hashes keys (not filesystem); selective_refresh captures get_current_commit() in result dict so orchestrator stores it once; [STALE] log line emitted inside selective_refresh, not at call site
 - [learning] 2026-04-13T01:30:55.773Z: legacy regression test: free text learning
 - [learning] 2026-04-13T00:58:43.023Z: compactRpetdContext in gsd-amauta.cjs uses minimal 2-message array (user: task+phase, assistant: content[:2000]) because full conversation is unavailable in the CJS CLI path; daemon fallback extractor handles this gracefully; Phase 24 ROUTE-02 will wire LLM compaction without changing the call site
 - [learning] 2026-04-13T00:52:07.931Z: legacy regression test: free text learning
