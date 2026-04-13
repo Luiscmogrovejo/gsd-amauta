@@ -185,7 +185,7 @@ def _check_oidc(handler):
 
     # Health and metrics endpoints bypass OIDC
     path = handler.path.split("?")[0].rstrip("/")
-    if path in ("/health", "/metrics", "/metrics/cache"):
+    if path in ("/health", "/metrics", "/metrics/cache", "/cache/stats"):
         return {"valid": True, "sub": "health-check"}
 
     auth_header = handler.headers.get("Authorization", "")
@@ -983,7 +983,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         log.debug("request method=%s path=%s", self.command, self.path)
-        if self.path not in ("/health", "/metrics", "/metrics/cache") and not _check_auth(self):
+        if self.path not in ("/health", "/metrics", "/metrics/cache", "/cache/stats") and not _check_auth(self):
             return
         # OIDC validation (SSO-03: all endpoints except /health, /metrics)
         oidc_result = _check_oidc(self)
@@ -1015,6 +1015,22 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json(_prompt_cache_metrics.stats())
             else:
                 self._send_json({"error": "prompt_cache module not available"}, 503)
+            return
+
+        # ── GET /cache/stats — Semantic cache performance (Phase 24 / SEMANTIC-03) ──
+        if path == "/cache/stats":
+            try:
+                from services.semantic_cache import _semantic_cache_manager
+                if _semantic_cache_manager:
+                    store = _get_store()
+                    db_stats = store.semantic_cache_stats() if store and hasattr(store, "semantic_cache_stats") else {"entries": 0, "valid_entries": 0}
+                    stats = _semantic_cache_manager.stats()
+                    stats["entries"] = db_stats.get("valid_entries", 0)
+                    self._send_json(stats)
+                else:
+                    self._send_json({"error": "semantic_cache module not available"}, 503)
+            except Exception as e:
+                self._send_json({"error": str(e)}, 500)
             return
 
         if path == "/health":
@@ -1597,6 +1613,52 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"stored": True, "key": cache_key, "ttl": ttl})
             except Exception as e:
                 self._send_json({"stored": False, "reason": str(e)})
+            return
+
+        # ── POST /api/semantic-cache/search — Semantic cache lookup (Phase 24 / SEMANTIC-01) ──
+        if path == "/api/semantic-cache/search":
+            query = body.get("query", "")
+            if not query:
+                self._send_json({"error": "query is required"}, 400)
+                return
+            try:
+                from services.semantic_cache import _semantic_cache_manager
+                store = _get_store()
+                if not store or not _semantic_cache_manager:
+                    self._send_json({"hit": False, "reason": "cache_unavailable"})
+                    return
+                result = _semantic_cache_manager.lookup(query, store)
+                if result:
+                    self._send_json({"hit": True, "data": result})
+                else:
+                    self._send_json({"hit": False})
+            except Exception as e:
+                self._send_json({"hit": False, "error": str(e)})
+            return
+
+        # ── POST /api/semantic-cache/store — Store response in semantic cache (Phase 24 / SEMANTIC-01) ──
+        if path == "/api/semantic-cache/store":
+            query = body.get("query", "")
+            response_text = body.get("response", "")
+            response_tokens = body.get("response_tokens", 0)
+            source_file_hashes = body.get("source_file_hashes", {})
+            provider = body.get("provider", "perplexity")
+            if not query or not response_text:
+                self._send_json({"error": "query and response are required"}, 400)
+                return
+            try:
+                from services.semantic_cache import _semantic_cache_manager
+                store = _get_store()
+                if not store or not _semantic_cache_manager:
+                    self._send_json({"stored": False, "reason": "cache_unavailable"})
+                    return
+                entry_id = _semantic_cache_manager.store(
+                    query, response_text, response_tokens,
+                    source_file_hashes, store, provider
+                )
+                self._send_json({"stored": entry_id is not None, "id": entry_id})
+            except Exception as e:
+                self._send_json({"stored": False, "error": str(e)})
             return
 
         # Generic command executor — limited to safe read/query operations
