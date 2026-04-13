@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.8
 milestone_name: milestone
 status: completed
-stopped_at: phase_21_planned
-last_updated: "2026-04-13"
-last_activity: 2026-04-12 — Phase 21 planned (2 plans, 9 tasks, 2 waves)
+stopped_at: phase_21_plan_01_complete
+last_updated: "2026-04-12"
+last_activity: 2026-04-12 — Plan 21-01 complete (STALE-01/02/03, 4 tasks, 2 new files, 13 tests)
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 5
-  completed_plans: 3
-  percent: 17
+  completed_plans: 4
+  percent: 22
 ---
 
 # GSD-Amauta -- Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-12 for v2.8)
 
 ## Current Position
 
-Phase: 21 of 25 (Hash-Based Staleness Detection — planned)
-Plan: 21-01 (Wave 1, ready for execution)
-Status: Phase 21 planned — 2 plans, 9 tasks, 2 waves
-Last activity: 2026-04-12 — Phase 21 planning complete
+Phase: 21 of 25 (Hash-Based Staleness Detection — in progress)
+Plan: 21-02 (Wave 2, ready for execution)
+Status: Plan 21-01 complete (STALE-01/02/03 satisfied). Plan 21-02 next (STALE-04: orchestrator wiring).
+Last activity: 2026-04-12 — Plan 21-01 executed (ContextValidator class + 13 unit tests)
 
-Progress: [█░░░░░░░░░] 17%
+Progress: [██░░░░░░░░] 22%
 
 ## v2.8 Phase Map
 
@@ -48,15 +48,16 @@ Critical path: 20 → 22 → 23 → 24. Phase 21 parallel with 22. Phase 25 inde
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 0
-- Average duration: —
-- Total execution time: 0 hours
+- Total plans completed: 4 (20-01, 20-02, 20-03, 21-01)
+- Average duration: ~25 min
+- Total execution time: ~1.7 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 20 | 3/3 | ~75 min | ~25 min |
+| 21 | 1/2 | ~25 min | ~25 min |
 
 *Updated after each plan completion*
 
@@ -81,14 +82,20 @@ Critical path: 20 → 22 → 23 → 24. Phase 21 parallel with 22. Phase 25 inde
 
 None.
 
+- Plan 21-01: ContextValidator.compute_file_hash reads in binary mode to avoid platform line-ending differences; returns None (not raises) for missing files.
+- Plan 21-01: changed_since without commit_ref returns all file_hashes keys as safe first-run fallback.
+- Plan 21-01: selective_refresh captures get_current_commit() in result dict so orchestrator stores it once without a second subprocess call.
+- Plan 21-01: [STALE] log line emitted via log.info inside selective_refresh — STALE-04 verification can grep it.
+- Plan 21-01: test count 13 (plan estimated 12); test_compute_file_hashes_batch is the 6th STALE-01 test, consistent with plan's listed coverage table.
+
 ### Blockers/Concerns
 
-None. Phase 20 shipped cleanly. Phase 21 and Phase 22 are now unblocked (can run in parallel).
+None. Plan 21-01 shipped cleanly. Plan 21-02 (STALE-04: orchestrator wiring) is unblocked. Phase 22 can proceed in parallel.
 
 ## Session Continuity
 
 Last session: 2026-04-12
-Stopped at: Phase 20 complete (Plans 20-01, 20-02, 20-03 all done). All HANDOFF-01..05 requirements satisfied. Ready for Phase 21 or Phase 22.
+Stopped at: Plan 21-01 complete. STALE-01/02/03 satisfied. services/context_validator.py and tests/test_context_validator.py created and committed.
 Resume file: None
 
 
@@ -101,6 +108,8 @@ Resume file: None
 
 
 
+
+- [learning] 2026-04-13T01:30:55.773Z: legacy regression test: free text learning
 - [learning] 2026-04-13T00:58:43.023Z: compactRpetdContext in gsd-amauta.cjs uses minimal 2-message array (user: task+phase, assistant: content[:2000]) because full conversation is unavailable in the CJS CLI path; daemon fallback extractor handles this gracefully; Phase 24 ROUTE-02 will wire LLM compaction without changing the call site
 - [learning] 2026-04-13T00:52:07.931Z: legacy regression test: free text learning
 - [learning] 2026-04-13T00:42:14.221Z: legacy regression test: free text learning

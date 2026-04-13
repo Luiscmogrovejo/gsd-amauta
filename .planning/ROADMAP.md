@@ -76,7 +76,7 @@
 4. `[STALE] N files refreshed, M cached` log line appears on every phase transition where the staleness hook fires.
 
 **Plans:**
-- [ ] Plan 21-01: ContextValidator Core — compute_file_hash + changed_since + selective_refresh + Unit Tests (Wave 1, STALE-01/02/03)
+- [x] Plan 21-01: ContextValidator Core — compute_file_hash + changed_since + selective_refresh + Unit Tests (Wave 1, STALE-01/02/03) — COMPLETE 2026-04-12
 - [ ] Plan 21-02: Orchestrator Integration — validate_context + daemon endpoint + file_hashes population + Integration Tests (Wave 2, STALE-04)
 
 ### Phase 22: Caveman-Compressed Descriptions
@@ -180,8 +180,8 @@ Phase 25 (Tech Debt Sweep) — no v2.8 dependencies, runs anytime
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 20. Structured Context Handoffs | 1/3 | Complete    | 2026-04-13 |
-| 21. Hash-Based Staleness Detection | 0/TBD | Not started | - |
+| 20. Structured Context Handoffs | 3/3 | Complete    | 2026-04-12 |
+| 21. Hash-Based Staleness Detection | 1/2 | In progress | - |
 | 22. Caveman-Compressed Descriptions | 0/TBD | Not started | - |
 | 23. Prompt Prefix Caching | 0/TBD | Not started | - |
 | 24. Semantic Cache + Tiered Routing | 0/TBD | Not started | - |
