@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: The Birth
 status: completed
-stopped_at: "Phase 34 plan 34-01 COMPLETE. gsd-security agent + SAST/Gitleaks infrastructure shipped. Next: Plan 34-02 (supply chain rules, Rule of Two, Trivy, unified orchestrator)."
-last_updated: "2026-04-13T23:15:00.000Z"
-last_activity: 2026-04-13 — Plan 34-01 complete. gsd-security agent, Semgrep rules, Gitleaks config, installer, test fixtures shipped.
+stopped_at: "Phase 34 plan 34-02 COMPLETE. Supply chain rules (7→12), all 14 agents updated, rule-of-two-audit.cjs, install-trivy.cjs, security-scan.cjs shipped. Next: Plan 34-03 (integration tests, regression suite SEC-01..06)."
+last_updated: "2026-04-13T23:25:00.000Z"
+last_activity: 2026-04-13 — Plan 34-02 complete. 12-rule supply chain security propagated to 14 agents. Rule of Two auditor, Trivy installer, unified security orchestrator shipped.
 progress:
   total_phases: 10
   completed_phases: 2
   total_plans: 5
-  completed_plans: 5
+  completed_plans: 6
   percent: 10
 ---
 
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-13 after v2.9 milestone close)
 
 ## Current Position
 
-Phase: 34 of 40 (Security Pipeline) — in progress (1/3 plans complete)
-Plan: 34-01 COMPLETE — gsd-security agent + SAST/Gitleaks infra shipped
-Status: Phase 34 IN PROGRESS. Plan 34-01 done. Next: Plan 34-02 (supply chain rules, Trivy, orchestrator).
-Last activity: 2026-04-13 — Plan 34-01 complete. gsd-security agent, Semgrep rules, Gitleaks config, installer, test fixtures shipped.
+Phase: 34 of 40 (Security Pipeline) — in progress (2/3 plans complete)
+Plan: 34-02 COMPLETE — supply chain rules, Rule of Two audit, Trivy installer, unified orchestrator shipped
+Status: Phase 34 IN PROGRESS. Plans 34-01 and 34-02 done. Next: Plan 34-03 (integration tests, regression suite SEC-01..06).
+Last activity: 2026-04-13 — Plan 34-02 complete. 12-rule security section propagated to 14 agents. rule-of-two-audit.cjs, install-trivy.cjs, security-scan.cjs shipped.
 
 Progress: [██░░░░░░░░] 10%
 
@@ -39,7 +39,7 @@ Progress: [██░░░░░░░░] 10%
 | 31 | Format Standard (FOUNDATION) | FORMAT-01..07 | COMPLETE 2026-04-13 |
 | 32 | Frontend Rebuild | FRONT-01..07 | Not started |
 | 33 | Testing Pipeline | TEST-01..08 | COMPLETE 2026-04-13 |
-| 34 | Security Pipeline | SEC-01..06 | In progress (34-01 done) |
+| 34 | Security Pipeline | SEC-01..06 | In progress (34-01, 34-02 done) |
 | 35 | Code Review Agent | REVIEW-01..04 | Not started |
 | 36 | Data Engineering Agent | DATA-01..04 | Not started |
 | 37 | Architect Agent | ARCH-01..03 | Not started |
@@ -79,6 +79,10 @@ Progress: [██░░░░░░░░] 10%
 - Plan 34-01: 7 security rules copied verbatim (not expanded) — supply chain rules (4 new) deferred to Plan 34-02 per Wave structure.
 - Plan 34-01: install-gitleaks.cjs pinned to v8.18.4, exits 0 on all failure paths — supply chain discipline for the installer itself; gitleaks binary placed at node_modules/.bin/gitleaks.
 - Plan 34-01: .gitleaks.toml allowlist covers tests/fixtures/.* path regex — fixture secrets don't block CI; Wave 3 tests bypass allowlist by scanning fixture files directly.
+- Plan 34-02: 5 supply chain rules appended verbatim to agents/shared/security-rules.md (7→12 rules). All 14 agent files updated with the full 12-rule set via Edit tool. Zero section drift (all still 10 sections).
+- Plan 34-02: reports/ is gitignored; added !reports/.gitkeep negation + git add -f to track directory anchor. Runtime JSON reports remain untracked.
+- Plan 34-02: Rule of Two audit uses keyword heuristics — all 14 current agents match all three dimensions because agent definition files reference all three capability types in their behavioral spec text.
+- Plan 34-02: security-scan.cjs exits 0 unless npm-audit/pip-audit returns critical+high with no fix. Trivy graceful degradation exits 0 on network/404 errors.
 
 ### Pending Todos
 
@@ -90,8 +94,8 @@ Progress: [██░░░░░░░░] 10%
 
 ## Session Continuity
 
-Last session: 2026-04-13T23:15:00.000Z
-Stopped at: Phase 34 plan 34-01 COMPLETE. gsd-security agent + SAST/Gitleaks infrastructure shipped. Next: Plan 34-02 (supply chain rules, Rule of Two, Trivy, unified orchestrator).
+Last session: 2026-04-13T23:25:00.000Z
+Stopped at: Phase 34 plan 34-02 COMPLETE. Supply chain rules (7→12), all 14 agents updated, rule-of-two-audit.cjs, install-trivy.cjs, security-scan.cjs shipped. Next: Plan 34-03 (integration tests, regression suite SEC-01..06).
 Resume file: None
 
 
@@ -101,6 +105,8 @@ Resume file: None
 
 
 
+
+- [learning] 2026-04-13T23:04:17.447Z: Plan 34-01 pattern: gsd-security agent boundary is scan-and-report only (never fix). tools_skipped[] schema makes graceful degradation observable. install-gitleaks.cjs pattern: pin version constant at top, exit 0 on all error paths. .gitleaks.toml allowlist covers tests/fixtures/.* for CI safety while Wave 3 tests verify detection directly against fixture files.
 - [learning] 2026-04-13T22:59:59.127Z: E2E test learning — cleanup after test
 - [learning] 2026-04-13T22:58:33.021Z: legacy regression test: free text learning
 - [learning] 2026-04-13T22:56:30.394Z: legacy regression test: free text learning
