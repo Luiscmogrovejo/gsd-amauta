@@ -397,6 +397,89 @@ def _truncate_to_limit(summary: str, deps: list, touches: list, test_ref: str, q
     return result[:MAX_CHARS]
 
 
+def describe_chunk(chunk: dict) -> str:
+    """
+    Generate a pipe-delimited caveman description for an AST chunk dict.
+    Format: symbol_name|type:symbol_type|params:p1,p2|returns:r|deps:d1,d2|touches:file_stem
+
+    Compatible with RLM ingestion pipeline (Phase 27 / RLM-01).
+    Chunk dict must have: symbol_name, symbol_type, content, dependencies, file_path.
+    """
+    symbol_name = chunk.get("symbol_name", "<unknown>")
+    symbol_type = chunk.get("symbol_type", "function")
+    content = chunk.get("content", "")
+    deps = chunk.get("dependencies", [])
+    file_path = chunk.get("file_path", chunk.get("filepath", ""))
+
+    parts = [symbol_name, f"type:{symbol_type}"]
+
+    # Extract parameter names from first line (def/function signature)
+    params = _extract_chunk_params(content)
+    if params:
+        parts.append(f"params:{','.join(params[:5])}")
+
+    # Infer return type
+    return_hint = _extract_chunk_return(content)
+    if return_hint:
+        parts.append(f"returns:{return_hint}")
+
+    # First 5 dependencies
+    if deps:
+        dep_str = ",".join(str(d)[:20] for d in deps[:5])
+        parts.append(f"deps:{dep_str}")
+
+    # File stem (e.g., "rlm-service" from "services/rlm-service.py")
+    if file_path:
+        stem = os.path.splitext(os.path.basename(file_path))[0]
+        parts.append(f"touches:{stem}")
+
+    result = "|".join(parts)
+    if len(result) > MAX_CHARS:
+        result = result[:MAX_CHARS]
+    return result
+
+
+def _extract_chunk_params(content: str) -> list:
+    """Extract parameter names from a function/method signature (first non-empty line)."""
+    first_line = ""
+    for line in content.split("\n"):
+        stripped = line.strip()
+        if stripped:
+            first_line = stripped
+            break
+    if not first_line:
+        return []
+    # Match Python: def foo(a, b, c=1) or async def foo(...)
+    py_match = re.search(r'def\s+\w+\s*\(([^)]*)\)', first_line)
+    if py_match:
+        raw = py_match.group(1)
+        params = []
+        for p in raw.split(","):
+            p = p.strip().split(":")[0].split("=")[0].strip().lstrip("*")
+            if p and p not in ("self", "cls", ""):
+                params.append(p)
+        return params
+    # Match JS/TS: function foo(a, b) or (a, b) => or constructor(a, b)
+    js_match = re.search(r'(?:function\s+\w+|constructor|\w+)\s*\(([^)]*)\)', first_line)
+    if js_match:
+        raw = js_match.group(1)
+        params = [p.strip().split(":")[0].strip() for p in raw.split(",") if p.strip()]
+        return [p for p in params if p]
+    return []
+
+
+def _extract_chunk_return(content: str) -> str:
+    """Infer return type from content."""
+    # Python type annotation: -> ReturnType
+    ann_match = re.search(r'->\s*([\w\[\], ]+?)(?:\s*:|$)', content[:500])
+    if ann_match:
+        return ann_match.group(1).strip()[:20]
+    # Has return statement
+    if re.search(r'\breturn\b', content):
+        return "inferred"
+    return ""
+
+
 def generate_caveman_description(path: str) -> str:
     """Generate a pipe-delimited structured file description.
 
