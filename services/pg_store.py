@@ -2627,6 +2627,138 @@ class PGStore:
             return 0
 
     # ═══════════════════════════════════════════════════════
+    # Semantic Cache Operations (Phase 24 / SEMANTIC-01..03)
+    # ═══════════════════════════════════════════════════════
+
+    def semantic_cache_lookup(self, query_text, threshold=0.90):
+        """Look up a semantically similar cached response.
+
+        Uses pgvector cosine similarity. Returns the cached response if
+        similarity >= threshold, otherwise None.
+
+        Args:
+            query_text: The research query to look up.
+            threshold: Minimum cosine similarity (default 0.90).
+
+        Returns:
+            dict with {id, query_text, response, response_tokens, similarity, source_file_hashes}
+            or None if no match above threshold.
+        """
+        query_embedding = self.generate_embedding(query_text, input_type="query")
+        if query_embedding is None:
+            return None
+
+        with self._get_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                # cosine distance <= (1 - threshold) means similarity >= threshold
+                max_distance = 1.0 - threshold
+                cur.execute("""
+                    SELECT id, query_text, response, response_tokens,
+                           source_file_hashes,
+                           (1 - (query_embedding <=> %s::vector)) as similarity
+                    FROM semantic_cache
+                    WHERE valid = TRUE
+                      AND (query_embedding <=> %s::vector) <= %s
+                    ORDER BY query_embedding <=> %s::vector
+                    LIMIT 1
+                """, (str(query_embedding), str(query_embedding),
+                      max_distance, str(query_embedding)))
+                row = cur.fetchone()
+                if row:
+                    return {
+                        "id": row["id"],
+                        "query_text": row["query_text"],
+                        "response": row["response"],
+                        "response_tokens": row["response_tokens"],
+                        "similarity": round(float(row["similarity"]), 4),
+                        "source_file_hashes": row["source_file_hashes"] or {},
+                    }
+        return None
+
+    def semantic_cache_store(self, query_text, response, response_tokens=0,
+                             source_file_hashes=None, provider="perplexity"):
+        """Store a research response in the semantic cache.
+
+        Args:
+            query_text: The original query.
+            response: The LLM/API response text.
+            response_tokens: Estimated token count of the response.
+            source_file_hashes: dict of {file_path: sha256_hash} for staleness.
+            provider: Source provider name (default: "perplexity").
+
+        Returns:
+            The new cache entry ID, or None on failure.
+        """
+        # Must match lookup's input_type for cosine parity (SEMANTIC-01 checker note)
+        query_embedding = self.generate_embedding(query_text, input_type="query")
+        if query_embedding is None:
+            return None
+
+        with self._get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO semantic_cache
+                        (query_text, query_embedding, response, response_tokens,
+                         source_file_hashes, provider)
+                    VALUES (%s, %s::vector, %s, %s, %s::jsonb, %s)
+                    RETURNING id
+                """, (
+                    query_text,
+                    str(query_embedding),
+                    response,
+                    response_tokens,
+                    json.dumps(source_file_hashes or {}),
+                    provider,
+                ))
+                return cur.fetchone()[0]
+
+    def semantic_cache_invalidate(self, file_path, new_hash):
+        """Invalidate cache entries where a source file hash has changed.
+
+        Sets valid=false for entries whose source_file_hashes contains the
+        given file_path with a different hash than new_hash.
+
+        Args:
+            file_path: The file that changed.
+            new_hash: The new SHA-256 hash of the file.
+
+        Returns:
+            Number of entries invalidated.
+        """
+        with self._get_conn() as conn:
+            with conn.cursor() as cur:
+                # Find entries that reference this file with a different hash
+                cur.execute("""
+                    UPDATE semantic_cache
+                    SET valid = FALSE
+                    WHERE valid = TRUE
+                      AND source_file_hashes ? %s
+                      AND source_file_hashes ->> %s != %s
+                    RETURNING id
+                """, (file_path, file_path, new_hash))
+                return cur.rowcount
+
+    def semantic_cache_stats(self):
+        """Get cache statistics.
+
+        Returns:
+            dict with {entries, valid_entries} counts.
+        """
+        with self._get_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT
+                        COUNT(*) as total_entries,
+                        COUNT(*) FILTER (WHERE valid = TRUE) as valid_entries
+                    FROM semantic_cache
+                """)
+                row = cur.fetchone()
+                return {
+                    "entries": row["total_entries"],
+                    "valid_entries": row["valid_entries"],
+                }
+
+    # ═══════════════════════════════════════════════════════
     # Cleanup
     # ═══════════════════════════════════════════════════════
 
