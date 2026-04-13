@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: The Birth
 status: in_progress
-stopped_at: "Phase 33 Plan 01 complete. Wave 1 shipped. Next: Plan 33-02 (Wave 2 — Playwright, fast-check, Pact, Stryker)."
-last_updated: "2026-04-13T00:00:00.000Z"
-last_activity: 2026-04-13 — Plan 33-01 complete. gsd-tester + gsd-qa agents created. coverage-ratchet.cjs + .coverage_threshold.json + test-pyramid.cjs shipped. 06-01 extended to 53 tests (19 new), 0 failures.
+stopped_at: "Phase 33 Plan 02 complete. Wave 2 shipped. Phase 33 pending Wave 3 (integration tests for RPETD pipeline). Next: Plan 33-03 or Phase 34."
+last_updated: "2026-04-13T22:15:00.000Z"
+last_activity: 2026-04-13 — Plan 33-02 complete. stryker.config.json, 3 Pact contracts, Playwright POM E2E skeleton, fast-check property tests, quality-audit.cjs shipped. All 6 tasks committed atomically, 0 test failures.
 progress:
   total_phases: 10
   completed_phases: 1
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-13 after v2.9 milestone close)
 
 ## Current Position
 
-Phase: 33 of 40 (Testing Pipeline) — Plan 01 of ? complete
-Plan: 1 of ? in Phase 33 complete (Wave 1 done)
-Status: Phase 33 IN PROGRESS — Wave 1 complete, Wave 2 pending (Playwright, fast-check, Pact, Stryker)
-Last activity: 2026-04-13 — Plan 33-01 complete. gsd-tester + gsd-qa agents created. coverage-ratchet.cjs + .coverage_threshold.json + test-pyramid.cjs shipped. 06-01 extended to 53 tests (19 new), 0 failures.
+Phase: 33 of 40 (Testing Pipeline) — Plans 01+02 complete
+Plan: 2 of ? in Phase 33 complete (Wave 1 + Wave 2 done)
+Status: Phase 33 IN PROGRESS — Waves 1 and 2 complete; Wave 3 (pipeline integration tests) pending
+Last activity: 2026-04-13 — Plan 33-02 complete. stryker.config.json, 3 Pact contracts, Playwright POM, fast-check property tests, quality-audit.cjs shipped.
 
 Progress: [██░░░░░░░░] 10%
 
@@ -67,6 +67,11 @@ Progress: [██░░░░░░░░] 10%
 - Plan 31-02: 31-02-04 (AGENTS.md constraint) required no additional commits — all 7 Wave 2 agents already had the constraint embedded during restructuring in 31-02-01..03. Executor agents from Wave 1 used "CANNOT create or modify AGENTS.md" phrasing (grep-compatible with acceptance criteria).
 - Plan 31-02: OBSERVATION — tests/13.1-divergence-protocol.integration.test.cjs has pre-existing LLM behavioral failures (manifest_violation + unexpected_file_state scenarios). Failure confirmed to predate plan 31-02 (reproduced at commit 9b61816). Not caused by format changes. Not a blocker.
 - Plan 31-02: gsd-roadmapper.md reduced from 681 to 436 lines via section consolidation — no behavioral content dropped.
+- Plan 33-02: Pact Content-Type header must use plain string 'application/json' (not like() matcher) — Pact FFI panics on matcher objects in header position.
+- Plan 33-02: quality-audit.cjs coverage ratchet is a soft check when coverage-summary.json absent — avoids blocking fresh checkouts without c8 pre-run.
+- Plan 33-02: Flaky-marker detection uses describe/it/test.skip() pattern (not raw .skip() regex) — ctx.skip()/t.skip() are valid programmatic Node test runner skips, not flaky markers.
+- Plan 33-02: rlm-search Pact contract is a forward contract for Phase 38 daemon proxy endpoint (gsd-rlm.cjs currently calls separate RLM service port directly).
+- Plan 33-02: E2E conditional skip pattern — guard with E2E_BASE_URL env var + empty it() body (NOT .skip() flaky marker); no-assertion heuristic must NOT scan *.e2e.test.cjs files.
 
 ### Pending Todos
 
@@ -78,8 +83,8 @@ Progress: [██░░░░░░░░] 10%
 
 ## Session Continuity
 
-Last session: 2026-04-13T00:00:00.000Z
-Stopped at: Phase 33 Plan 01 complete. Wave 1 shipped. Next: Plan 33-02 (Wave 2).
+Last session: 2026-04-13T22:15:00.000Z
+Stopped at: Phase 33 Plan 02 complete. Waves 1+2 shipped. Next: Plan 33-03 (Wave 3 — integration tests for RPETD pipeline) or Phase 34.
 Resume file: None
 
 
