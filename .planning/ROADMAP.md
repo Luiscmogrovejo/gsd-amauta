@@ -1,169 +1,290 @@
-# Roadmap: GSD-Amauta v2.9 "Nervous System"
+# Roadmap: GSD-Amauta v3.0 "The Birth"
 
-**Milestone:** v2.9 — Nervous System (Infrastructure Upgrade)
-**Starting phase number:** 26 (v2.8 ended at Phase 25)
-**Phases:** 5 (Phase 26..30)
-**Requirements:** 26 total (v2.9 scope)
+**Milestone:** v3.0 — The Birth (Agent Quality + Ecosystem Infrastructure)
+**Starting phase number:** 31 (v2.9 ended at Phase 29; Phase 30 cancelled)
+**Phases:** 10 (Phases 31..40)
+**Requirements:** 55 total (v3.0 scope)
 **Granularity:** coarse (per config.json)
-**Status:** Defined 2026-04-13 — awaiting `/amauta:plan-phase 26`
+**Status:** Defined 2026-04-13
 
-**Core value:** Every RPETD phase must see what other phases have already learned — past failures, validated best-practices, existing codebase style, parent-story acceptance criteria — so the system makes better decisions with each task it runs, not worse as context bloats. The brain synthesizes, not accumulates.
+**Core value:** The discipline has shifted from prompt engineering to context engineering — find the smallest set of high-signal tokens that maximizes agent behavior quality. Every RPETD phase must see what other phases have learned. The brain synthesizes, not accumulates.
 
-**Body-metaphor sequence:** v2.5 "Smarter Brain" (cognition) → v2.6 "Sight Beyond Sight" (perception) → v2.7 "Steady Hands" (action/tooling) → v2.8 "Metabolism" (efficiency) → v2.9 "Nervous System" (integration). v2.9 is the milestone where the five substrate layers wire together: the substrate installs, retrieval rebuilds on top of it, behavior and MCP both build on retrieval, and observability + security wrap the whole stack. Everything fires together like a nervous system — sensing, routing, enforcing.
+**Body-metaphor sequence:** brain (v2.5) → sight (v2.6) → hands (v2.7) → metabolism (v2.8) → nervous system (v2.9) → **birth (v3.0)**. Birth is when the organism becomes viable on its own: a standardized body, a hardened immune system, and the ability to communicate across organs. The 17 agents get a shared skeletal structure (Phase 31), specialized new agents for every discipline (Phases 32-37), blackboard-based inter-agent communication replacing hub-spoke messaging (Phase 38), and a lifecycle management system that versions, evaluates, and continuously improves every agent (Phase 39). Engineering standards embed best practices in agent DNA (Phase 40).
 
-**Goal:** Five infrastructure layers composing into a unified upgrade. Tree-sitter feeds retrieval and graphs, ParadeDB consolidates BM25 into PG, Valkey replaces Redis, MCP exposes everything as protocol-native services, observability + security wrap it all. Target: 3x retrieval precision (MRR), native MCP interoperability, self-correcting execution, full-stack observability, kernel-level isolation.
-
-**Research:** 35 findings across 7 investigation tracks — multi-agent orchestration, context engineering, retrieval pipeline improvements, self-correction patterns, observability, security architecture, infrastructure optimizations. Key findings: tree-sitter AST chunking + ParadeDB hybrid search + cross-encoder reranking for 3x retrieval precision; Valkey swap for 37% throughput; AGENTS.md for ecosystem alignment; gVisor for kernel-level isolation.
+**Goal:** 17 agents operating with standardized format, specialized capabilities, and blackboard communication. Every agent versioned, metriced, and evaluated. Engineering best practices embedded in agent behavior. The GSD-Amauta ecosystem is born as a coherent, maintainable multi-agent system.
 
 ---
 
 ## Hard Constraints (apply to every phase)
 
 1. **Scope ceilings are load-bearing.** Exceeding the declared LOC ceiling without a divergence report is a Phase 13 fingerprint and triggers halt-phase.
-2. **Post-13.1:** HARDEN-01 manifest enforcement is active. `files_expected` blocks are mandatory per task.
-3. **Post-14:** `gsd-tools plan-to-tasks` auto-registration is mandatory for every phase. Every PLAN.md must have `<story>` and `<task>` XML blocks.
+2. **HARDEN-01 manifest enforcement is active.** `files_expected` blocks are mandatory per task.
+3. **`gsd-tools plan-to-tasks` auto-registration is mandatory** for every phase. Every PLAN.md must have `<story>` and `<task>` XML blocks.
 4. **Divergence protocol v1.1.0 active.** Surface mismatches; never silently absorb them.
-5. **Backward compatible.** All existing data, configs, and workflows must continue working.
+5. **Backward compatible.** All existing data, configs, and workflows must continue working after `npm install -g . && docker compose up`.
 6. **Research-backed.** Every improvement must cite its source (research findings, academic papers, or prior research brief).
 7. **Test coverage maintained.** `node --test tests/` and `pytest` must pass with 0 new failures before each phase is marked complete.
+8. **No new runtimes.** Python + Node.js only. No K3s, no Langfuse, no gVisor.
 
 ---
 
 ## Phases
 
-- [x] **Phase 26: The Substrate** — Valkey 8.x replaces Redis, pgvector upgraded to >= 0.8.0, ParadeDB pg_search installed, tree-sitter parsers available for JS/Python/TS/CJS — all with zero application code changes (INFRA-01..04) (completed 2026-04-13)
-- [x] **Phase 27: The Retrieval Rewrite** — AST-aware chunking, ParadeDB BM25 in PG, code-specific embeddings, RRF hybrid search, cross-encoder reranking, dependency graph — standalone rlm-service.py rebuilt as thin PG wrapper (RLM-01..06) (completed 2026-04-13)
-- [x] **Phase 28: The Behavioral Upgrade** — AGENTS.md discovery, circuit breakers on all 11 agents, Reflexion memory, lint guardrails, feature-level progress tracking, get-bearings ritual — all sharing behavioral test infrastructure (BEHAV-01..06) (completed 2026-04-13)
-- [x] **Phase 29: The MCP Interface** — Daemon gains MCP server (stdio + SSE), exposing code search, memory, RPETD context, and research as protocol-native tools and resources (MCP-01..05) (implementation + 17 behavioral tests complete 2026-04-13; awaiting validator)
-- [~] **Phase 30: Observability + Security** — CANCELLED (2026-04-13). K3s-dependent features (Langfuse, gVisor) are not portable and contradict the v3.0 portability mandate. Portable subsets (canary suite OBS-02, Rule of Two audit SEC-01, tool integrity SEC-03) reframed as agent capabilities for v3.0 "The Birth".
-
----
-
-## Phase Details
-
-### Phase 26: The Substrate
-
-**Goal:** Infrastructure installs with zero application code changes. Four platform components land: Valkey replaces Redis as the cache layer, pgvector upgrades to enable iterative scans, ParadeDB pg_search is installed and ready for BM25 indexing, and tree-sitter parsers are available to both Python and Node processes. Phases 27, 28, 29, and 30 all depend on this foundation.
-
-**Depends on:** Nothing (v2.8 complete; this is the foundation for Phases 27-30)
-
-**Requirements:** INFRA-01, INFRA-02, INFRA-03, INFRA-04
-
-**Success Criteria** (what must be TRUE):
-1. [x] `valkey-cli ping` returns PONG; all 2750 existing tests pass unchanged — zero application-code modifications required for the Redis-to-Valkey migration. *(26-01 done)*
-2. [ ] `SELECT extversion FROM pg_extension WHERE extname='vector'` returns >= 0.8.0; filtered vector queries on semantic_cache show >= 3x speedup on 10-query benchmark vs prior version.
-3. [x] `SELECT extversion FROM pg_extension WHERE extname='pg_search'` returns non-null; a BM25 query against a test table returns ranked results — migration 011-paradedb-setup.sql delivered.
-4. [x] `tree-sitter parse <file>` produces an AST with node count > 0 for one sample file of each target language (JS, Python, TypeScript, CJS); parser import succeeds in both Python and Node test scripts. *(26-01 done)*
-
-**Plans:** 2/2 plans complete
-
-### Phase 27: The Retrieval Rewrite
-
-**Goal:** The standalone rlm-service.py BM25 engine is rebuilt on top of the Phase 26 substrate. Six capabilities collapse into one coherent pipeline: AST-aware chunking replaces fixed-character splits, ParadeDB moves BM25 inside PostgreSQL, code-specific embeddings replace general-purpose ones, RRF fuses BM25 + vector in a single SQL query, cross-encoder reranking improves top-k precision, and a dependency graph expands retrieved functions with their callers and callees.
-
-**Depends on:** Phase 26 (Valkey for reranker cache TTL; pgvector + ParadeDB for BM25 + vector indexes; tree-sitter for AST chunking)
-
-**Requirements:** RLM-01, RLM-02, RLM-03, RLM-04, RLM-05, RLM-06
-
-**Success Criteria** (what must be TRUE):
-1. Given 10 sample files totaling 5000+ lines, zero chunks contain partial function definitions; `EXPLAIN` on a BM25 query shows pg_search index scan; response latency <= 50ms at 95th percentile on a 20-query benchmark.
-2. Code retrieval MRR on a 20-query golden set improves >= 15% vs current general embeddings; hybrid RRF MRR >= 95% of max(BM25-only, vector-only) across the same 20 queries.
-3. Reranked MRR >= 10% improvement over hybrid-only on 20 golden queries; reranker failure does not crash the pipeline; cache hit rate is logged.
-4. Dependency graph covers >= 90% of function-level symbols; given a retrieved function, >= 1 caller and >= 1 callee are included in expanded context (when they exist); hub files list is non-empty.
-
-**Plans:** 3/3 complete (27-01: golden baseline + migrations 012/013 + AST chunker — RLM-01/RLM-02; 27-02: embedding pipeline + lazy ingestion + caveman chunk mode — RLM-03; 27-03: hybrid RRF SQL + Jina reranker + NetworkX graph + rlm-service.py transformation — RLM-04/RLM-05/RLM-06) **PHASE COMPLETE**
-
-### Phase 28: The Behavioral Upgrade
-
-**Goal:** Prompt, workflow, and protocol changes that share the same behavioral test infrastructure. Six behavioral capabilities land independently of the retrieval rewrite: AGENTS.md discovery, circuit breakers protecting each specialist agent, Reflexion memory persisting divergence reflections across sessions, lint-after-edit guardrails flagging syntax errors, feature-level progress tracking blocking premature phase closure, and a get-bearings ritual that orients resumed sessions.
-
-**Depends on:** Phase 26 (Valkey for circuit breaker state TTL and Reflexion memory storage)
-
-**Requirements:** BEHAV-01, BEHAV-02, BEHAV-03, BEHAV-04, BEHAV-05, BEHAV-06
-
-**Success Criteria** (what must be TRUE):
-1. An AGENTS.md placed in `services/` is applied when an executor operates on files in that directory; agent definitions in `agents/` remain in effect when no AGENTS.md exists — 5 discovery hierarchy tests pass.
-2. Simulated 3 consecutive failures on gsd-executor-backend triggers automatic fallback to gsd-executor-general; recovery re-enables the original agent after TTL — 4 tests covering open/closed/half-open states.
-3. After a divergence event, divergence-memory.json contains the new reflection entry; on retry, executor's PRE_EXECUTION_EVIDENCE block includes past reflections (max 3 most recent) — JSON schema validated, 6 tests pass.
-4. A commit introducing a syntax error produces a lint_report with >= 1 finding; a clean commit produces an empty lint_report; plan 27-01 produces a feature_list.json with >= 3 features; validator refuses --pass verdict when any feature is failing.
-
-**Plans:** 2/2 complete (28-01: AGENTS.md discovery + circuit breaker + Reflexion memory — BEHAV-01/02/03 done; 28-02: lint guardrail + feature_list.json lifecycle + get-bearings ritual — BEHAV-04/05/06 done; Phase 28 COMPLETE 2026-04-13)
-
-### Phase 29: The MCP Interface
-
-**Goal:** The daemon gains protocol-native MCP server capabilities alongside its existing HTTP API — additive, not replacing. Claude Code connects via stdio transport; remote clients connect via SSE. Four capabilities are exposed as MCP tools and resources: code search (backed by Phase 27 hybrid pipeline), memory store/search/distill, RPETD context per task+phase, and the 5-step research chain.
-
-**Depends on:** Phase 27 (MCP-02 search-code tool routes through the Phase 27 hybrid pipeline; requires AST chunking, ParadeDB BM25, RRF, and reranking to be operational)
-
-**Requirements:** MCP-01, MCP-02, MCP-03, MCP-04, MCP-05
-
-**Success Criteria** (what must be TRUE):
-1. `claude mcp list` shows the amauta server; MCP initialize handshake completes; HTTP API continues responding on all existing endpoints — 4 tests pass.
-2. MCP tool call `amauta/search-code` with a query returns >= 1 ranked result matching the RLM service `/query` output (port 18798) for the same query — daemon has no `/api/rlm/search` proxy — 3 tests pass.
-3. Memory store → search round-trip via MCP returns the stored memory; distill trigger completes without error — 4 tests pass.
-4. MCP resource read `amauta://context/{task_id}/{phase}` returns valid JSON matching RPETDContext schema; research tool call returns results and cache hit on identical query skips API calls — 3+3 tests pass.
-
-**Plans:** 3/3 complete (29-01: MCP server scaffold, .mcp.json, install.js update, mcp>=1.0, docker-compose port 18800 — MCP-01 done 2026-04-13; 29-02: all 5 tool/resource handlers in amauta-mcp.py, REQUIREMENTS.md MCP-02/05 fixes — MCP-02..05 done 2026-04-13; 29-03: 17 behavioral tests in tests/29-mcp-interface.test.cjs covering MCP-01..05 — 17/17 pass 2026-04-13) **PHASE COMPLETE (pending validator)**
-
-### Phase 30: Observability + Security
-
-**Goal:** Full-stack tracing, kernel-level isolation, and policy enforcement wrap the completed stack. Langfuse on K3s makes every RPETD trace visible with per-phase token costs. A model canary suite detects regressions when models change. A Rule of Two audit surfaces capability violations across all 11 agents. gVisor sandboxes executor bash commands at the kernel level. Tool integrity checking blocks tampered tool definitions.
-
-**Depends on:** Phase 27 (Langfuse spans cover the retrieval pipeline built in Phase 27; canary suite validates retrieval quality as a key regression signal) and Phase 28 (Rule of Two audit covers the behavioral capabilities added in Phase 28; SEC-03 tool integrity applies to MCP tools added in Phase 29)
-
-**Requirements:** OBS-01, OBS-02, SEC-01, SEC-02, SEC-03
-
-**Success Criteria** (what must be TRUE):
-1. Langfuse UI shows traces for a complete RPETD cycle with >= 3 span levels (phase → agent → tool); token cost per phase is visible; agents continue operating without errors if Langfuse is down — 4 tests pass.
-2. Canary suite of 50 tasks runs in < 5 minutes; baseline scores are stored in PG; comparison function returns `{degraded, p_value, delta}` — 3 tests pass.
-3. Rule of Two audit script produces a JSON report covering all 11 agents; >= 1 violation is identified and documented with remediation plan — 3 tests pass.
-4. `kubectl get runtimeclass` shows gvisor; a test command runs inside the sandbox and produces output; network egress is blocked from sandbox by default; modifying a tool definition between startup and invocation produces a TOOL_INTEGRITY_VIOLATION warning — 4+3 tests pass.
-
-**Plans:** TBD
+- [ ] **Phase 31: Format Standard** — All 11 existing agents restructured to standardized 10-section format; shared security rules; behavioral regression suite (FORMAT-01..07) (FOUNDATION — everything depends on this)
+- [ ] **Phase 32: Frontend Rebuild** — gsd-executor-frontend rebuilt with v0-inspired composite pipeline; React 19 + TypeScript + Tailwind + shadcn/ui; Playwright screenshots (FRONT-01..07)
+- [ ] **Phase 33: Testing Pipeline** — Two new agents: gsd-tester (generates) and gsd-qa (evaluates); CoverUp coverage-guided iteration; mutation testing; Pact contracts (TEST-01..08)
+- [ ] **Phase 34: Security Pipeline** — New gsd-security agent; Semgrep SAST, Gitleaks, npm/pip audit, supply chain rules, Rule of Two audit, Trivy container scan (SEC-01..06)
+- [ ] **Phase 35: Code Review Agent** — New gsd-reviewer; style/pattern review, SOLID check, structured output schema (REVIEW-01..04)
+- [ ] **Phase 36: Data Engineering Agent** — New gsd-executor-data; expand-and-contract migrations, query analysis, data quality checks (DATA-01..04)
+- [ ] **Phase 37: Architect Agent** — New gsd-architect; ADR management, API design review, N+1 detection (ARCH-01..03)
+- [ ] **Phase 38: Blackboard Communication** — `agent_findings` + `agent_messages` PG tables; operator supervision; structured handoff JSON; conflict resolution (COMM-01..05)
+- [ ] **Phase 39: Agent Lifecycle** — SemVer versioning, `agent_metrics` PG table, 50-test canary suite, eval framework, tool integrity checking (LIFE-01..05) (CAPSTONE — needs all others)
+- [ ] **Phase 40: Engineering Standards** — Git workflow, error handling, documentation, configuration management, structured logging standards embedded in all agents (ENG-01..05)
 
 ---
 
 ## Phase Dependency Graph
 
 ```
-Phase 26 (The Substrate)
-    │   Foundation: Valkey, pgvector 0.8+, ParadeDB, tree-sitter
+Phase 31 (Format Standard) — FOUNDATION
+    │   All 11 agents on standardized 10-section format
     │
-    ├──> Phase 27 (The Retrieval Rewrite)
-    │        Depends on Phase 26 (all four substrate components)
+    ├──> Phase 32 (Frontend Rebuild)          — parallel after 31
+    ├──> Phase 33 (Testing Pipeline)          — parallel after 31
     │        │
-    │        └──> Phase 29 (The MCP Interface)
-    │                 Depends on Phase 27 (search-code uses hybrid pipeline)
-    │
-    └──> Phase 28 (The Behavioral Upgrade)
-             Depends on Phase 26 (Valkey for circuit breaker + Reflexion state)
-             Runs PARALLEL with Phase 27
-             │
-             └──> Phase 30 (Observability + Security)
-                      Depends on Phase 27 + Phase 28
-
-Phase 29 and Phase 30 can run in PARALLEL (both need 27+28; 29 needs only 27)
+    │        └──────────────────────────────> Phase 38 (Blackboard)
+    ├──> Phase 34 (Security Pipeline)         — parallel after 31
+    ├──> Phase 35 (Code Review Agent)         — parallel after 31
+    ├──> Phase 36 (Data Engineering Agent)    — parallel after 31
+    ├──> Phase 37 (Architect Agent)           — parallel after 31
+    └──> Phase 40 (Engineering Standards)     — parallel after 31
+              │
+              └──> all above feed into ──────> Phase 39 (Agent Lifecycle) — CAPSTONE
 ```
 
-**Serial chain:** 26 → 27 → 29
-**Parallel opportunity:** Phase 28 runs concurrently with Phase 27 (both depend only on Phase 26)
-**Terminal phases:** Phase 29 and Phase 30 can run concurrently once 27 and 28 are both complete
+**Recommended execution order:** 31 → 33 → 34 → 40 → 32 → 35 → 36 → 37 → 38 → 39
+
+Rationale:
+- Phase 31 first: format standard makes all subsequent agent-creation phases consistent
+- Phase 33 next: testing pipeline needed before Phase 38 (Pact contracts test blackboard endpoints)
+- Phase 34 + 40 early: security + engineering standards embed into every new agent created after them
+- Phases 32, 35, 36, 37 in any order: independent new agents
+- Phase 38 after Phase 33: blackboard communication tested with Pact contracts
+- Phase 39 last: lifecycle management wraps the completed 17-agent ecosystem
+
+---
+
+## Phase Details
+
+### Phase 31: Format Standard
+**Goal:** All 11 existing agents operate with a standardized, consistent 10-section structure. Shared security rules have a single source of truth. Anti-over-engineering and read-before-edit mandates are embedded in every relevant agent. Behavioral regression suite confirms zero regressions from v2.9.
+**Depends on:** Nothing (v2.9 complete; this is the foundation for all v3.0 phases)
+**Requirements:** FORMAT-01, FORMAT-02, FORMAT-03, FORMAT-04, FORMAT-05, FORMAT-06, FORMAT-07
+**Success Criteria** (what must be TRUE):
+  1. `grep -c "^## " agents/*.md` returns exactly 10 for all 11 agent files; all 10 required sections (Role & Identity, Domain Knowledge, Behavioral Rules, Tool Access & Guidance, Task Management, Examples, Error Handling, Security Rules, Preconditions & Constraints, version header) are present in each file.
+  2. Every agent file contains 2-4 few-shot examples showing input → reasoning → output; examples are diverse and canonical (not edge cases).
+  3. `agents/shared/security-rules.md` exists and its contents are byte-identical in the Security Rules section of all 11 agent files; no agent has a custom security rules section.
+  4. All 11 agent files and all 4 executor agents contain the exact anti-over-engineering and read-before-edit mandate strings; `grep` finds them verbatim.
+  5. Behavioral regression suite runs and returns 0 failures; all test cases that passed in v2.9 pass unchanged.
+**Plans:** TBD (estimated 2 plans: 31-01 restructure all 11 agents + shared rules, 31-02 behavioral regression suite)
+
+Plans:
+- [ ] 31-01: Restructure all 11 agent .md files to 10-section format; create agents/shared/security-rules.md; embed anti-over-engineering + read-before-edit mandates (FORMAT-01..06)
+- [ ] 31-02: Behavioral regression suite covering FORMAT-07 — zero regressions from v2.9
+
+### Phase 32: Frontend Rebuild
+**Goal:** gsd-executor-frontend delivers React 19 + TypeScript + Tailwind + shadcn/ui frontends via a progressive generation pipeline. Post-generation validation catches type errors and accessibility violations. Playwright screenshots prove responsive behavior across breakpoints.
+**Depends on:** Phase 31 (gsd-executor-frontend must be in standardized 10-section format before being rebuilt)
+**Requirements:** FRONT-01, FRONT-02, FRONT-03, FRONT-04, FRONT-05, FRONT-06, FRONT-07
+**Success Criteria** (what must be TRUE):
+  1. gsd-executor-frontend generates a sample component in 4 sequential passes (layout → sections → components → interactivity) and refuses to generate a full page in a single pass.
+  2. A generated frontend uses React 19, TypeScript strict mode, Tailwind CSS 4, and shadcn/ui primitives; the agent refuses a task that specifies vanilla CSS or untyped JavaScript.
+  3. Generated output has no component exceeding 200 lines; components are organized into `components/ui/`, `components/`, and `app/` directories per the mandated structure.
+  4. `tsc --noEmit` and ESLint + eslint-plugin-jsx-a11y produce 0 errors on all generated code; agent self-corrects within 3 iterations.
+  5. Playwright screenshots are stored in `tests/screenshots/` at 375px, 768px, and 1440px breakpoints for every generated page component.
+**Plans:** TBD (estimated 2 plans: 32-01 agent rebuild + stack enforcement, 32-02 validation pipeline + Playwright)
+
+Plans:
+- [ ] 32-01: Rebuild gsd-executor-frontend with progressive pipeline; enforce mandatory stack; component structure rules; state decision tree (FRONT-01..05)
+- [ ] 32-02: Post-generation validation (tsc, ESLint, a11y); Playwright screenshots at 3 breakpoints (FRONT-06..07)
+
+### Phase 33: Testing Pipeline
+**Goal:** Two new agents — gsd-tester and gsd-qa — operate under the "no self-assessment" principle. gsd-tester generates coverage-guided unit tests, E2E Playwright tests, and property-based tests. gsd-qa enforces coverage ratchet, mutation scoring, test pyramid, and quality audits. Pact contracts verify daemon endpoint stability.
+**Depends on:** Phase 31 (both new agents must be created in standardized 10-section format from the start)
+**Requirements:** TEST-01, TEST-02, TEST-03, TEST-04, TEST-05, TEST-06, TEST-07, TEST-08
+**Success Criteria** (what must be TRUE):
+  1. gsd-tester given a module at 60% coverage produces passing tests that reach >= 80% coverage within 5 CoverUp iterations; all generated tests pass on first run.
+  2. gsd-tester generates Playwright E2E tests with Page Object Model; each test covers a complete user journey (not a single click).
+  3. `.coverage_threshold.json` exists and is enforced by gsd-qa; threshold values never decrease between runs; gsd-qa auto-increments on improvement.
+  4. Stryker mutation score for changed files is >= 70% as reported by gsd-qa; mutation testing runs only on files modified in the current task (not full repo).
+  5. gsd-qa test pyramid audit reports unit >= 60%, integration >= 20%, E2E <= 20% by naming convention; audits flag tests with no assertions, implementation-testing patterns, and flaky test markers.
+  6. Pact consumer contracts exist for >= 3 daemon endpoints; provider verification passes against the running daemon.
+**Plans:** TBD (estimated 2 plans: 33-01 gsd-tester agent, 33-02 gsd-qa agent + Pact contracts)
+
+Plans:
+- [ ] 33-01: Create gsd-tester agent with CoverUp pattern, Playwright E2E, fast-check property-based tests (TEST-01..03)
+- [ ] 33-02: Create gsd-qa agent with coverage ratchet, Stryker mutation, test pyramid, quality audit; add Pact contracts for 3+ daemon endpoints (TEST-04..08)
+
+### Phase 34: Security Pipeline
+**Goal:** A new gsd-security agent runs SAST, secret scanning, dependency auditing, and supply chain enforcement across the RPETD pipeline. All executor agents carry supply chain rules. Rule of Two audit covers all 17 agents. Trivy scans container images.
+**Depends on:** Phase 31 (gsd-security created in standardized 10-section format; supply chain rules added to existing agents after Phase 31 standardization)
+**Requirements:** SEC-01, SEC-02, SEC-03, SEC-04, SEC-05, SEC-06
+**Success Criteria** (what must be TRUE):
+  1. gsd-security runs Semgrep with OWASP Top 10 rules on JS and Python files; scan completes in < 30 seconds; findings are structured JSON with file, line, rule, severity.
+  2. gsd-security runs Gitleaks on full git history on first invocation and pre-commit on subsequent runs; entropy scores are logged per secret finding.
+  3. gsd-security runs `npm audit` and `pip-audit`; the agent blocks (exits non-zero) on any critical or high finding with no available fix.
+  4. All executor agent files contain supply chain rules: `npm ci` (not npm install), exact version pinning, lockfile commits, 7-day waiting period for new packages.
+  5. Rule of Two audit produces a JSON report annotating all 17 agents with `{reads_untrusted, accesses_sensitive, modifies_state}` booleans; >= 1 violation is documented with remediation.
+  6. Trivy container scan runs against all images in `docker-compose.yml`; findings are structured JSON; scan completes without error.
+**Plans:** TBD (estimated 2 plans: 34-01 gsd-security agent + Semgrep/Gitleaks/npm-audit, 34-02 supply chain rules + Rule of Two + Trivy)
+
+Plans:
+- [ ] 34-01: Create gsd-security agent with Semgrep SAST, Gitleaks secret scanning, npm/pip dependency audit (SEC-01..03)
+- [ ] 34-02: Supply chain rules in all executor agents; Rule of Two audit for 17 agents; Trivy container scan (SEC-04..06)
+
+### Phase 35: Code Review Agent
+**Goal:** A new gsd-reviewer agent provides the "always-available second pair of eyes" capability for a solo developer. It detects style violations, duplication, SOLID violations, and produces structured output that is distinct from and complementary to gsd-validator.
+**Depends on:** Phase 31 (gsd-reviewer created in standardized 10-section format)
+**Requirements:** REVIEW-01, REVIEW-02, REVIEW-03, REVIEW-04
+**Success Criteria** (what must be TRUE):
+  1. gsd-reviewer identifies naming violations, dead code, duplication > 10 lines, and functions > 50 lines in a test file containing known violations; report includes file, line, category, severity, message, and suggestion for each finding.
+  2. gsd-reviewer identifies god classes (> 500 lines), functions with > 5 parameters, and circular dependencies in a test module; findings are distinct from validator findings on the same code.
+  3. gsd-reviewer and gsd-validator can both run on the same code without conflict; their output schemas are different; a finding in one does not imply a finding in the other.
+  4. gsd-reviewer produces structured output matching schema `{findings: [{file, line, category, severity, message, suggestion}], summary, approval: "approve"|"request_changes"|"comment_only"}`.
+**Plans:** TBD (estimated 1 plan: 35-01 full gsd-reviewer agent)
+
+Plans:
+- [ ] 35-01: Create gsd-reviewer with style/pattern review, SOLID check, structured output schema; confirm independence from gsd-validator (REVIEW-01..04)
+
+### Phase 36: Data Engineering Agent
+**Goal:** A new gsd-executor-data owns the data layer: it writes safe expand-and-contract migrations, analyzes query performance, generates data quality checks, and understands the GSD-Amauta schema well enough to produce the next migration in sequence.
+**Depends on:** Phase 31 (gsd-executor-data created in standardized 10-section format)
+**Requirements:** DATA-01, DATA-02, DATA-03, DATA-04
+**Success Criteria** (what must be TRUE):
+  1. gsd-executor-data generates a migration that adds a column (additive), then a backfill step, then removal of the old column — three separate migration files; it refuses to execute a destructive schema change without explicit user confirmation.
+  2. gsd-executor-data runs EXPLAIN ANALYZE on any query touching > 1 table; findings flag sequential scans on > 10K rows, missing indexes, and N+1 patterns with file and line reference.
+  3. Every migration generated by gsd-executor-data is accompanied by data quality check queries covering NOT NULL, FK integrity, enum validation, and uniqueness constraints.
+  4. gsd-executor-data correctly identifies migrations 001-013 in sequence and generates migration 014 with the next sequential number and correct filename format.
+**Plans:** TBD (estimated 1 plan: 36-01 full gsd-executor-data agent)
+
+Plans:
+- [ ] 36-01: Create gsd-executor-data with expand-and-contract migrations, EXPLAIN ANALYZE, data quality checks, schema awareness (DATA-01..04)
+
+### Phase 37: Architect Agent
+**Goal:** A new gsd-architect provides strategic design review: ADRs for significant decisions, API consistency review, and N+1 pattern detection in proposed designs.
+**Depends on:** Phase 31 (gsd-architect created in standardized 10-section format)
+**Requirements:** ARCH-01, ARCH-02, ARCH-03
+**Success Criteria** (what must be TRUE):
+  1. gsd-architect generates an ADR for a sample design decision containing context, decision, consequences, and alternatives sections; the file is stored in `docs/adr/` with a sequential number and descriptive slug.
+  2. gsd-architect reviews an API design and flags inconsistent naming, wrong HTTP methods, missing pagination, non-standard error format, or missing versioning — at least 3 of these checks are exercised in the test case.
+  3. gsd-architect identifies an N+1 query pattern in a proposed design and suggests eager loading, batching, or DataLoader as the resolution.
+**Plans:** TBD (estimated 1 plan: 37-01 full gsd-architect agent)
+
+Plans:
+- [ ] 37-01: Create gsd-architect with ADR management, API design review, N+1 detection (ARCH-01..03)
+
+### Phase 38: Blackboard Communication
+**Goal:** Inter-agent communication upgrades from hub-spoke to blackboard architecture. Two PG tables enable agents to share findings and ask questions. Operator supervision gates message types. Structured handoff JSON replaces ad-hoc context passing. Conflict resolution rules prevent deadlock.
+**Depends on:** Phase 31 (all 17 agents must be on standardized format before blackboard is added) and Phase 33 (Pact contracts test the new PG endpoints)
+**Requirements:** COMM-01, COMM-02, COMM-03, COMM-04, COMM-05
+**Success Criteria** (what must be TRUE):
+  1. `agent_findings` table exists in PG with schema `{id, agent_name, task_id, finding_type, content, confidence, created_at}`; a pgvector semantic search over findings returns the closest finding to a test query.
+  2. `agent_messages` table exists with message types `ASK_QUESTION`, `SHARE_FINDING`, `REQUEST_REVIEW`, `DELEGATE_SUBTASK`; a `SHARE_FINDING` message is auto-approved; a `DELEGATE_SUBTASK` message requires operator approval (`operator_approved: true`) before the target agent acts on it.
+  3. A complete agent handoff produces structured JSON matching schema `{task_id, from_agent, handoff_type, summary, key_findings[], decisions_made[], open_questions[], artifacts[], confidence}` in <= 800 tokens.
+  4. Conflict resolution rules are exercised: security finding wins over style finding on the same file; test results win on correctness disputes; ambiguous conflicts escalate rather than auto-resolve.
+**Plans:** TBD (estimated 2 plans: 38-01 PG tables + pgvector search, 38-02 operator supervision + handoff JSON + conflict resolution)
+
+Plans:
+- [ ] 38-01: Create agent_findings + agent_messages PG tables with pgvector semantic search; message type enforcement (COMM-01..02)
+- [ ] 38-02: Operator supervision logic; structured handoff JSON; conflict resolution rules (COMM-03..05)
+
+### Phase 39: Agent Lifecycle
+**Goal:** All 17 agents are versioned with SemVer, metriced in PG, evaluated with a canary suite, and assessed with a three-grader eval framework. Tool integrity checking at startup detects tampered tool definitions.
+**Depends on:** All other phases (lifecycle management wraps the complete 17-agent ecosystem; canary suite and eval framework need all agents to exist and be functional)
+**Requirements:** LIFE-01, LIFE-02, LIFE-03, LIFE-04, LIFE-05
+**Success Criteria** (what must be TRUE):
+  1. All 17 agent `.md` files have a SemVer version header; `agents/changelog/` exists with at least one entry per agent; version is incremented when agent behavior changes.
+  2. `agent_metrics` PG table exists with schema `{agent_name, task_id, completion_time_ms, token_usage, error_count, outcome}`; `gsd-tools agent-stats` command produces a summary report.
+  3. 50-test canary suite runs in < 5 minutes; McNemar's test is applied; suite alerts (exit non-zero) when degradation > 1% with p < 0.05.
+  4. Eval framework exists in `tests/evals/`; >= 5 scenarios per agent for at least 3 agents; grader types include code-based (deterministic), model-based, and human-review placeholders.
+  5. Startup tool integrity check computes SHA hash of tool definitions; any mismatch between startup hash and current hash produces a `TOOL_INTEGRITY_VIOLATION` log event and blocks the affected tool.
+**Plans:** TBD (estimated 2 plans: 39-01 SemVer headers + agent_metrics + canary suite, 39-02 eval framework + tool integrity)
+
+Plans:
+- [ ] 39-01: SemVer version headers in all 17 agents; agents/changelog/; agent_metrics PG table; gsd-tools agent-stats command; canary suite (LIFE-01..03)
+- [ ] 39-02: Eval framework in tests/evals/ with 3 grader types; tool integrity SHA checking at startup (LIFE-04..05)
+
+### Phase 40: Engineering Standards
+**Goal:** Git workflow conventions, error handling patterns, documentation standards, configuration management, and structured logging are embedded in agent behavior — not just documented, but enforced by what agents generate and refuse to generate.
+**Depends on:** Phase 31 (engineering standards applied to the already-standardized agent format; agents updated after Phase 31 restructuring)
+**Requirements:** ENG-01, ENG-02, ENG-03, ENG-04, ENG-05
+**Success Criteria** (what must be TRUE):
+  1. All executor agents reject a branch name that does not follow `feat/`, `fix/`, `refactor/`, `test/` convention; agents generate commit messages in conventional commit format; PR templates exist in `.github/`.
+  2. All executor agents generate try-catch blocks at service boundaries returning structured `{code, message, details}` error objects; agents flag any exception caught and discarded (swallowed) in generated code.
+  3. All executor agents generate JSDoc (TypeScript) or Python docstrings on public functions with @param, @returns, @throws, and usage examples; agents flag undocumented public API functions in reviewed code.
+  4. All executor agents use environment variables with defaults for any URL, port, or timeout; agents refuse to hardcode values when asked to write configuration.
+  5. All executor agents generate structured log statements `{timestamp, level, service, message, context}` with appropriate log levels; agents flag any `console.log` in production code during review.
+**Plans:** TBD (estimated 1 plan: 40-01 engineering standards embedded in all executor agents)
+
+Plans:
+- [ ] 40-01: Embed git workflow, error handling, documentation, configuration management, and structured logging standards into all executor agents (ENG-01..05)
+
+---
+
+## Phase Dependency Graph (Detailed)
+
+```
+Phase 31: Format Standard (FOUNDATION)
+    All 11 existing agents on standardized 10-section format
+    Blocks: everything below
+    │
+    ├──> Phase 32: Frontend Rebuild       — independent, parallel
+    ├──> Phase 33: Testing Pipeline       ─────────────────────────────┐
+    ├──> Phase 34: Security Pipeline      — independent, parallel       │
+    ├──> Phase 35: Code Review Agent      — independent, parallel       │
+    ├──> Phase 36: Data Engineering Agent — independent, parallel       │
+    ├──> Phase 37: Architect Agent        — independent, parallel       │
+    ├──> Phase 40: Engineering Standards  — independent, parallel       │
+    │                                                                   │
+    │   (Phase 33 Testing Pipeline also feeds Phase 38)                 │
+    │                                                                   ▼
+    └──────────────────────────────────────> Phase 38: Blackboard Communication
+                                                needs Phase 31 + Phase 33
+                                                │
+                                                └──> Phase 39: Agent Lifecycle (CAPSTONE)
+                                                         needs ALL prior phases
+```
+
+**Recommended execution order:** 31 → 33 → 34 → 40 → 32 → 35 → 36 → 37 → 38 → 39
+
+**Parallelizable blocks:**
+- Block A (after 31): Phases 33, 34, 40 can run concurrently
+- Block B (after Block A): Phases 32, 35, 36, 37 can run concurrently
+- Phase 38 runs after Phase 33 completes
+- Phase 39 runs after all others complete
 
 ---
 
 ## Progress
 
+**Execution Order:** 31 → 33 → 34 → 40 → 32 → 35 → 36 → 37 → 38 → 39
+
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 26. The Substrate | 2/2 | Complete   | 2026-04-13 |
-| 27. The Retrieval Rewrite | 3/3 | Complete | 2026-04-13 |
-| 28. The Behavioral Upgrade | 2/2 | Complete | 2026-04-13 |
-| 29. The MCP Interface | 3/3 | Complete — MCP-01..05 implemented + 17 tests passing | 2026-04-13 |
-| 30. Observability + Security | 0/0 | CANCELLED — K3s-dependent, not portable. Deferred to v3.0. | 2026-04-13 |
+| 31. Format Standard | 0/2 | Not started | - |
+| 32. Frontend Rebuild | 0/2 | Not started | - |
+| 33. Testing Pipeline | 0/2 | Not started | - |
+| 34. Security Pipeline | 0/2 | Not started | - |
+| 35. Code Review Agent | 0/1 | Not started | - |
+| 36. Data Engineering Agent | 0/1 | Not started | - |
+| 37. Architect Agent | 0/1 | Not started | - |
+| 38. Blackboard Communication | 0/2 | Not started | - |
+| 39. Agent Lifecycle | 0/2 | Not started | - |
+| 40. Engineering Standards | 0/1 | Not started | - |
 
 ---
 
-*Roadmap created: 2026-04-13 for v2.9 Nervous System milestone.*
-*Primary input: .planning/REQUIREMENTS.md (26 requirements across 5 categories), PROJECT.md (v2.9 goal + research summary)*
-*Phase structure: user-specified dependency graph (26 serial foundation → 27/28 parallel → 29/30 parallel terminal)*
-*Previous milestone (v2.8 Metabolism) complete: 6 phases, 13 plans, 26 requirements, all shipped 2026-04-12/13*
+*Roadmap created: 2026-04-13 for v3.0 "The Birth" milestone.*
+*Primary input: .planning/REQUIREMENTS.md (55 requirements across 10 phases), PROJECT.md (v3.0 goal)*
+*Phase structure: user-specified dependency graph (31 serial foundation → 32-37+40 parallel → 38 needs 31+33 → 39 capstone)*
+*Previous milestone (v2.9 Nervous System): 4 phases shipped (26-29), Phase 30 cancelled (K3s non-portable)*
