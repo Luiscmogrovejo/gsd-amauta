@@ -1,11 +1,11 @@
 ---
 gsd_state_version: 1.0
 milestone: v2.8
-milestone_name: Metabolism
-status: phase_20_complete
-stopped_at: phase_20_plan_03_complete
-last_updated: "2026-04-12"
-last_activity: 2026-04-12 — Plan 20-03 complete (compactRpetdContext wired into cmdRpetd, 10 CJS + 8 Python integration tests, full regression green)
+milestone_name: milestone
+status: completed
+stopped_at: Phase 20 complete (Plans 20-01, 20-02, 20-03 all done). All HANDOFF-01..05 requirements satisfied. Ready for Phase 21 or Phase 22.
+last_updated: "2026-04-13T01:05:40.633Z"
+last_activity: 2026-04-12 — Plan 20-03 executed (4 tasks, 3 commits; compactRpetdContext wired, 10 CJS + 8 Python integration tests passing)
 progress:
   total_phases: 6
   completed_phases: 1
@@ -100,6 +100,8 @@ Resume file: None
 
 
 
+
+- [learning] 2026-04-13T00:58:43.023Z: compactRpetdContext in gsd-amauta.cjs uses minimal 2-message array (user: task+phase, assistant: content[:2000]) because full conversation is unavailable in the CJS CLI path; daemon fallback extractor handles this gracefully; Phase 24 ROUTE-02 will wire LLM compaction without changing the call site
 - [learning] 2026-04-13T00:52:07.931Z: legacy regression test: free text learning
 - [learning] 2026-04-13T00:42:14.221Z: legacy regression test: free text learning
 - [learning] 2026-04-13T00:39:01.825Z: legacy regression test: free text learning

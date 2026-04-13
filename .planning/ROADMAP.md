@@ -57,7 +57,7 @@
 4. All 5 phase runners (R, P, E, T, D) execute successfully with RPETDContext as input; `node --test tests/` exits 0 with no regressions.
 
 **Plans:**
-- [x] Plan 20-01: RPETDContext model + migration 009 + PGStore CRUD (complete 2026-04-12)
+3/3 plans complete
 - [x] Plan 20-02: prune_messages + compact_conversation + daemon endpoints POST /api/context/compact + GET /api/context/:task_id/:phase (complete 2026-04-12)
 - [x] Plan 20-03: Phase runner integration + regression tests (complete 2026-04-12)
 
@@ -178,7 +178,7 @@ Phase 25 (Tech Debt Sweep) — no v2.8 dependencies, runs anytime
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 20. Structured Context Handoffs | 1/3 | In progress (Plan 20-01 done) | - |
+| 20. Structured Context Handoffs | 1/3 | Complete    | 2026-04-13 |
 | 21. Hash-Based Staleness Detection | 0/TBD | Not started | - |
 | 22. Caveman-Compressed Descriptions | 0/TBD | Not started | - |
 | 23. Prompt Prefix Caching | 0/TBD | Not started | - |
