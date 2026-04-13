@@ -2137,8 +2137,14 @@ async function main() {
   process.exit(exitCode);
 }
 
-// Guard: only run main() when executed directly (not when require()'d by tests)
-if (require.main === module) {
+// Guard: only run main() when executed directly (not when require()'d by tests).
+// Also runs when delegated via amauta.cjs wrapper (process.argv[1] ends with /amauta.cjs).
+const _isDelegatedEntry = process.argv[1] &&
+  (process.argv[1].endsWith('/amauta.cjs') || process.argv[1].endsWith('\\amauta.cjs')) &&
+  !process.argv[1].endsWith('/gsd-amauta.cjs') &&
+  !process.argv[1].endsWith('\\gsd-amauta.cjs');
+
+if (require.main === module || _isDelegatedEntry) {
   main().catch((err) => {
     process.stderr.write(`FATAL: ${err.message}\n`);
     process.exit(1);

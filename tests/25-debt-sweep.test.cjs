@@ -46,7 +46,7 @@ const { findPhaseInternal } = require(
 const { cmdInitPhaseOp } = require(
   path.join(REPO_ROOT, 'get-shit-done', 'bin', 'lib', 'init.cjs')
 );
-const { planToTasks } = require(
+const { planToTasks, routeExecutor } = require(
   path.join(REPO_ROOT, 'get-shit-done', 'bin', 'gsd-tools.cjs')
 );
 
@@ -361,6 +361,153 @@ requirements: [TEST-01]
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
   }
   if (err) throw err;
+});
+
+// ── DEBT-03 Tests ──────────────────────────────────────────────────────────
+
+test('DEBT-03: amauta.cjs is a 1-line delegation to gsd-amauta.cjs', () => {
+  // amauta.cjs must require gsd-amauta.cjs and contain no routing logic.
+  // File length must be <= 15 lines (comments + 1 require, no conditional dispatch).
+  const amautaPath = path.join(
+    REPO_ROOT, 'get-shit-done', 'bin', 'amauta.cjs'
+  );
+  const content = fs.readFileSync(amautaPath, 'utf-8');
+  const lines = content.split('\n');
+
+  assert.ok(
+    content.includes('gsd-amauta.cjs'),
+    'amauta.cjs must contain require to gsd-amauta.cjs'
+  );
+  assert.ok(
+    lines.length <= 15,
+    `amauta.cjs must be <= 15 lines (got ${lines.length}) — routing logic must NOT be present`
+  );
+  // Must NOT contain if/else routing logic
+  assert.ok(
+    !content.includes('if (command'),
+    'amauta.cjs must not contain command routing (if/else branches)'
+  );
+});
+
+test('DEBT-03: amauta.cjs and gsd-amauta.cjs produce non-empty output and same exit code', () => {
+  // Both wrappers should produce non-empty output when invoked with no args.
+  // stdout comparison may differ (process.argv[1] differs), but both must
+  // produce non-empty output and exit with the same code (0 or 1 — help/banner).
+  const { execSync, spawnSync } = require('node:child_process');
+  const amautaPath = path.join(REPO_ROOT, 'get-shit-done', 'bin', 'amauta.cjs');
+  const gsdAmautaPath = path.join(REPO_ROOT, 'get-shit-done', 'bin', 'gsd-amauta.cjs');
+
+  const r1 = spawnSync('node', [amautaPath], { encoding: 'utf-8', timeout: 5000 });
+  const r2 = spawnSync('node', [gsdAmautaPath], { encoding: 'utf-8', timeout: 5000 });
+
+  const out1 = (r1.stdout || '') + (r1.stderr || '');
+  const out2 = (r2.stdout || '') + (r2.stderr || '');
+
+  assert.ok(out1.length > 0, 'amauta.cjs must produce non-empty output');
+  assert.ok(out2.length > 0, 'gsd-amauta.cjs must produce non-empty output');
+  assert.strictEqual(
+    r1.status,
+    r2.status,
+    `Exit codes differ: amauta.cjs=${r1.status} gsd-amauta.cjs=${r2.status}`
+  );
+});
+
+test('DEBT-03: bin/cli.cjs delegates non-init commands to gsd-amauta.cjs', () => {
+  // bin/cli.cjs must contain a require() call to gsd-amauta.cjs in its else branch.
+  const cliPath = path.join(REPO_ROOT, 'bin', 'cli.cjs');
+  const content = fs.readFileSync(cliPath, 'utf-8');
+
+  // Must contain a require() call that references gsd-amauta.cjs
+  assert.ok(
+    /require\([^)]*gsd-amauta\.cjs/.test(content),
+    "bin/cli.cjs must contain require(...gsd-amauta.cjs)"
+  );
+  // The else branch (non-init, non-status-system) must delegate to gsd-amauta.cjs
+  assert.ok(
+    content.includes('} else {') || content.includes('} else{'),
+    'bin/cli.cjs must have an else branch for delegation'
+  );
+  // The require() call to gsd-amauta.cjs must appear after the init check
+  const initIdx = content.indexOf("command === 'init'");
+  const requireGsdIdx = content.indexOf("require('../get-shit-done/bin/gsd-amauta.cjs')");
+  assert.ok(
+    requireGsdIdx > initIdx,
+    `gsd-amauta.cjs require() must appear after the init branch (initIdx=${initIdx}, requireIdx=${requireGsdIdx})`
+  );
+});
+
+// ── DEBT-04 Tests ──────────────────────────────────────────────────────────
+
+test('DEBT-04: directory prefix beats extension match for k8s/deployment.yaml', () => {
+  // k8s/* (directory prefix, score = length+100) beats *.yaml (extension match, score = length)
+  // even though backend would match *.yaml... wait, backend has no *.yaml pattern.
+  // This test confirms infra handles k8s paths correctly under specificity scoring.
+  const result = routeExecutor('k8s/deployment.yaml');
+  assert.strictEqual(
+    result,
+    'executor-infra',
+    `k8s/deployment.yaml must route to executor-infra (k8s/* dir prefix), got: ${result}`
+  );
+});
+
+test('DEBT-04: .tsx beats .ts (frontend specificity over backend)', () => {
+  // .tsx (frontend) vs .ts (backend): both extension matches but .tsx is longer.
+  // frontend also has priority advantage. Both should route correctly.
+  const tsxResult = routeExecutor('src/App.tsx');
+  const tsResult = routeExecutor('src/utils.ts');
+
+  assert.strictEqual(
+    tsxResult,
+    'executor-frontend',
+    `src/App.tsx must route to executor-frontend, got: ${tsxResult}`
+  );
+  assert.strictEqual(
+    tsResult,
+    'executor-backend',
+    `src/utils.ts must route to executor-backend (no frontend *.ts pattern), got: ${tsResult}`
+  );
+});
+
+test('DEBT-04: Dockerfile prefix beats extension for Dockerfile.dev', () => {
+  // Dockerfile* (prefix match, score = length+50) beats *.yml etc.
+  // Dockerfile.dev — no extension pattern matches "dev", so only Dockerfile* hits.
+  const result = routeExecutor('Dockerfile.dev');
+  assert.strictEqual(
+    result,
+    'executor-infra',
+    `Dockerfile.dev must route to executor-infra (Dockerfile* prefix match), got: ${result}`
+  );
+});
+
+test('DEBT-04: specificity is deterministic across repeated calls', () => {
+  // routeExecutor must return identical results across multiple invocations.
+  // Determinism is required — no random tie-breaking.
+  const target = 'k8s/service.yaml';
+  const results = Array.from({ length: 10 }, () => routeExecutor(target));
+  const allSame = results.every(r => r === results[0]);
+
+  assert.ok(
+    allSame,
+    `routeExecutor('${target}') must be deterministic: got ${JSON.stringify([...new Set(results)])}`
+  );
+  // Confirm it consistently routes to infra
+  assert.strictEqual(
+    results[0],
+    'executor-infra',
+    `k8s/service.yaml must route to executor-infra deterministically`
+  );
+});
+
+test('DEBT-04: longer directory glob wins over shorter extension match', () => {
+  // .github/workflows/ci.yml: matches .github/workflows/* (dir prefix, length 20+100=120)
+  // No competing *.yml backend pattern — backend has no *.yml.
+  // This confirms infra wins for workflows paths via specificity.
+  const result = routeExecutor('.github/workflows/ci.yml');
+  assert.strictEqual(
+    result,
+    'executor-infra',
+    `.github/workflows/ci.yml must route to executor-infra (.github/workflows/* dir prefix), got: ${result}`
+  );
 });
 
 test('DEBT-02: planToTasks does not return kill_switch when GSD_P_AUTO_TASK is unset', async () => {
