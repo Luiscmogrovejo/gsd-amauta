@@ -270,6 +270,116 @@ function routeExecutor(filesStr) {
   return matches[0].agentId.replace('gsd-', '');
 }
 
+// ─── Circuit Breaker (BEHAV-02) ─────────────────────────────────────────────
+//
+// State stored in Valkey at key `cb:{agent_name}`.
+// Value JSON: { state: "closed"|"open"|"half_open", failures: N, last_failure: ISO8601 }
+// Thresholds: 3 consecutive failures → OPEN; 60s TTL → HALF_OPEN probe.
+// EXEMPT: gsd-executor-general has NO circuit breaker — it is the last resort.
+//         If gsd-executor-general fails, surface to the user; do not reroute.
+
+const CB_FAILURE_THRESHOLD = 3;
+const CB_OPEN_TTL_SECONDS = 60;
+const CB_EXEMPT_AGENTS = new Set(['gsd-executor-general', 'executor-general']);
+
+/**
+ * circuitBreakerCheck(agentName) — check if an agent's circuit breaker is OPEN.
+ *
+ * Returns: { allowed: bool, state: "closed"|"open"|"half_open", failures: N }
+ *   allowed: true  → agent may proceed (state is closed or half_open probe)
+ *   allowed: false → agent is in OPEN state; caller must route to executor-general
+ *
+ * gsd-executor-general is always allowed (CB exempt).
+ */
+async function circuitBreakerCheck(agentName) {
+  if (CB_EXEMPT_AGENTS.has(agentName)) {
+    return { allowed: true, state: 'exempt', failures: 0, exempt: true };
+  }
+
+  const redisUrl = process.env.GSD_REDIS_URL || 'redis://127.0.0.1:6379/0';
+  const key = `cb:${agentName}`;
+
+  try {
+    // Dynamic import to avoid hard dependency when redis unavailable
+    const redis = require('redis');
+    const client = redis.createClient({ url: redisUrl });
+    await client.connect().catch(() => null);
+
+    const raw = await client.get(key).catch(() => null);
+    await client.quit().catch(() => null);
+
+    if (!raw) {
+      // No state stored → closed (fresh start)
+      return { allowed: true, state: 'closed', failures: 0 };
+    }
+
+    const cb = JSON.parse(raw);
+
+    if (cb.state === 'open') {
+      // Check if TTL has expired (half-open probe window)
+      const lastFailureMs = new Date(cb.last_failure).getTime();
+      const elapsedSeconds = (Date.now() - lastFailureMs) / 1000;
+      if (elapsedSeconds >= CB_OPEN_TTL_SECONDS) {
+        // Transition to half_open — allow one probe attempt
+        return { allowed: true, state: 'half_open', failures: cb.failures };
+      }
+      // Still OPEN — block
+      return { allowed: false, state: 'open', failures: cb.failures };
+    }
+
+    return { allowed: true, state: cb.state || 'closed', failures: cb.failures || 0 };
+  } catch (err) {
+    // Valkey unavailable → fail open (allow, but log)
+    process.stderr.write(`[circuit-breaker] Valkey unavailable: ${err.message} — failing open\n`);
+    return { allowed: true, state: 'unknown', failures: 0, failOpen: true };
+  }
+}
+
+/**
+ * circuitBreakerRecord(agentName, outcome) — record a task outcome.
+ * outcome: "success" | "failure"
+ *
+ * success → reset failures to 0, state to "closed"
+ * failure → increment failures; if >= CB_FAILURE_THRESHOLD, state to "open"
+ *
+ * gsd-executor-general is always exempt — this is a no-op for that agent.
+ */
+async function circuitBreakerRecord(agentName, outcome) {
+  if (CB_EXEMPT_AGENTS.has(agentName)) return { exempt: true };
+
+  const redisUrl = process.env.GSD_REDIS_URL || 'redis://127.0.0.1:6379/0';
+  const key = `cb:${agentName}`;
+
+  try {
+    const redis = require('redis');
+    const client = redis.createClient({ url: redisUrl });
+    await client.connect().catch(() => null);
+
+    const raw = await client.get(key).catch(() => null);
+    const current = raw ? JSON.parse(raw) : { state: 'closed', failures: 0, last_failure: null };
+
+    let next;
+    if (outcome === 'success') {
+      next = { state: 'closed', failures: 0, last_failure: current.last_failure };
+    } else {
+      const newFailures = (current.failures || 0) + 1;
+      next = {
+        state: newFailures >= CB_FAILURE_THRESHOLD ? 'open' : 'closed',
+        failures: newFailures,
+        last_failure: new Date().toISOString(),
+      };
+    }
+
+    await client.set(key, JSON.stringify(next)).catch(() => null);
+    await client.quit().catch(() => null);
+
+    return { agentName, outcome, newState: next.state, failures: next.failures };
+  } catch (err) {
+    process.stderr.write(`[circuit-breaker] Valkey unavailable: ${err.message} — skipping record\n`);
+    return { error: err.message, skipped: true };
+  }
+}
+
 // ─── Manifest Check (HARDEN-01) ──────────────────────────────────────────────
 
 // Global allowlist for orchestrator-generated files that are permitted to drift
@@ -1481,6 +1591,8 @@ if (require.main !== module) {
     _globToRegExp,
     _diffNameStatus,
     routeExecutor,
+    circuitBreakerCheck,
+    circuitBreakerRecord,
     planToTasks,
     _validatePlanShape,
     _detectCycles,
@@ -1957,6 +2069,27 @@ async function main() {
       // Output: JSON {"executor": "executor-backend"} etc.
       const executor = routeExecutor(args[1]);
       process.stdout.write(JSON.stringify({ executor }) + '\n');
+      break;
+    }
+
+    case 'circuit-breaker-check': {
+      const agentName = args[1];
+      if (!agentName) { process.stderr.write('Usage: gsd-tools circuit-breaker-check <agent_name>\n'); process.exit(1); }
+      const result = await circuitBreakerCheck(agentName);
+      process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+      process.exit(result.allowed ? 0 : 2); // exit 2 = CB open (caller can check)
+      break;
+    }
+
+    case 'circuit-breaker-record': {
+      const agentName = args[1];
+      const outcome = args[2]; // "success" or "failure"
+      if (!agentName || !['success', 'failure'].includes(outcome)) {
+        process.stderr.write('Usage: gsd-tools circuit-breaker-record <agent_name> success|failure\n');
+        process.exit(1);
+      }
+      const result = await circuitBreakerRecord(agentName, outcome);
+      process.stdout.write(JSON.stringify(result, null, 2) + '\n');
       break;
     }
 
