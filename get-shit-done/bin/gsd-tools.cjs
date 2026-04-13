@@ -31,6 +31,7 @@
  *     [--limit N] [--freshness day|week|month]
  *   route-executor <files>             Determine executor agent for comma-separated file list
  *                                      Output: {"executor": "executor-backend"} etc.
+ *   reindex [path] [--force]           Trigger rlm-service /reindex for code files in path
  *
  * Phase Operations:
  *   phase next-decimal <phase>         Calculate next decimal phase number
@@ -1973,6 +1974,35 @@ async function main() {
       const result = await planToTasks(planFile, { cwd });
       process.stdout.write(JSON.stringify(result, null, 2) + '\n');
       process.exit(result.error ? 1 : 0);
+      break;
+    }
+
+    case 'reindex': {
+      // Phase 27 RLM-02: trigger explicit full re-index of code files via rlm-service /reindex endpoint
+      const targetDir = args[1] || '.';
+      const forceFlag = args.includes('--force');
+      const body = JSON.stringify({ path: targetDir, force: forceFlag });
+      const http = require('http');
+      await new Promise((resolve, reject) => {
+        const req = http.request({
+          hostname: '127.0.0.1',
+          port: parseInt(process.env.GSD_RLM_PORT || '18798'),
+          path: '/reindex',
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+        }, (res) => {
+          let data = '';
+          res.on('data', (chunk) => { data += chunk; });
+          res.on('end', () => {
+            try { process.stdout.write(JSON.stringify(JSON.parse(data), null, 2) + '\n'); }
+            catch { process.stdout.write(data + '\n'); }
+            resolve();
+          });
+        });
+        req.on('error', (e) => { reject(new Error(`reindex failed: ${e.message}`)); });
+        req.write(body);
+        req.end();
+      });
       break;
     }
 

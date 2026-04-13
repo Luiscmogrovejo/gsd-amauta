@@ -57,6 +57,11 @@ from pathlib import Path
 from socketserver import ThreadingMixIn
 import logging
 
+# Ensure project root is in sys.path so 'from services.X' imports work (Phase 27)
+_PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+
 # ── Structured Logging ─────────────────────────────────────────────────────────
 _log_level = os.environ.get("AMAUTA_LOG_LEVEL", "INFO").upper()
 _log_format = os.environ.get("AMAUTA_LOG_FORMAT", "text").lower()
@@ -199,6 +204,49 @@ class ChunkCache:
 
 
 CHUNK_CACHE = ChunkCache(max_size=CACHE_MAX_SIZE)
+
+
+# ═══════════════════════════════════════════════════════
+# PostgreSQL connection for rlm_chunks ingestion (Phase 27)
+# ═══════════════════════════════════════════════════════
+
+def _get_pg_conn():
+    """Return a psycopg2 connection for rlm_chunks ingestion, or None if unavailable."""
+    try:
+        import psycopg2
+        pg_url = os.environ.get("GSD_POSTGRES_URL", "postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta")
+        conn = psycopg2.connect(pg_url)
+        conn.autocommit = False
+        return conn
+    except Exception as e:
+        log.warning("rlm_pg_unavailable error=%s — using in-memory BM25 only", str(e))
+        return None
+
+
+def _trigger_lazy_ingestion(paths: list):
+    """Trigger lazy on-demand ingestion for a list of file paths (Phase 27 / RLM-01)."""
+    try:
+        from services.rlm_ingestion import ingest_file
+    except ImportError:
+        return  # Wave 2 not yet installed -- skip silently
+    pg_conn = _get_pg_conn()
+    if pg_conn is None:
+        return  # PG unavailable -- fall back to in-memory BM25
+    try:
+        for path in paths:
+            path = os.path.expanduser(str(path))
+            if os.path.isfile(path):
+                ingest_file(path, pg_conn)
+            elif os.path.isdir(path):
+                from services.rlm_ingestion import ingest_directory
+                ingest_directory(path, pg_conn)
+    except Exception as e:
+        log.warning("lazy_ingestion_failed error=%s — continuing with in-memory BM25", str(e))
+    finally:
+        try:
+            pg_conn.close()
+        except Exception:
+            pass
 
 
 # ═══════════════════════════════════════════════════════
@@ -824,6 +872,8 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
             self._handle_search(body)
         elif path == "/query":
             self._handle_query(body)
+        elif path == "/reindex":
+            self._handle_reindex(body)
         elif path == "/cache/clear":
             CHUNK_CACHE.clear()
             self._send_json({"ok": True, "message": "Cache cleared"})
@@ -889,6 +939,10 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
             for p in paths:
                 CHUNK_CACHE.clear_file(os.path.expanduser(p))
             log.debug("rlm_fresh_bypass_search cleared=%d paths", len(paths))
+
+        # Phase 27 lazy ingestion: trigger AST chunking + PG indexing for each path on first touch
+        _trigger_lazy_ingestion(paths)
+
         all_chunks = []
         for p in paths:
             if not _is_safe_path(p):
@@ -908,6 +962,37 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
             "returned": len(results),
             "elapsed_ms": elapsed_ms,
         })
+
+    def _handle_reindex(self, body):
+        """
+        POST /reindex
+        Body: { "path": "/path/to/dir", "force": true }
+        Triggers explicit full re-index of all code files in the given path.
+        """
+        target_path = body.get("path", ".")
+        force = body.get("force", False)
+        if not _is_safe_path(target_path):
+            self._send_json({"error": "Access denied: path outside allowed scope"}, 403)
+            return
+        target_path = os.path.expanduser(target_path)
+        try:
+            from services.rlm_ingestion import ingest_directory, ingest_file
+            pg_conn = _get_pg_conn()
+            if pg_conn is None:
+                self._send_json({"error": "PG unavailable — cannot reindex"}, 503)
+                return
+            try:
+                if os.path.isfile(target_path):
+                    result = ingest_file(target_path, pg_conn, force=force)
+                    self._send_json({"ok": True, "result": result})
+                else:
+                    stats = ingest_directory(target_path, pg_conn, force=force)
+                    self._send_json({"ok": True, "stats": stats})
+            finally:
+                pg_conn.close()
+        except Exception as e:
+            log.error("reindex_failed path=%s error=%s", target_path, str(e))
+            self._send_json({"error": str(e)}, 500)
 
     def _handle_query(self, body):
         """
