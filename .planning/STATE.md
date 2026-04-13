@@ -143,6 +143,8 @@ Resume file: None
 
 
 
+
+- [learning] 2026-04-13T04:45:40.213Z: semantic_cache_store and semantic_cache_lookup must both use input_type='query' for cosine parity — using 'document' for store causes embedding space mismatch and silent cache misses; MockPGStore test fixtures need distinct embedding vectors per entry to avoid accidental cross-query cosine hits in invalidation assertions
 - [learning] 2026-04-13T06:00:00.000Z: semantic_cache_store and semantic_cache_lookup BOTH use input_type="query" for cosine parity — using "document" for store causes embedding space mismatch and silent cache misses on lookup. Phase 24 SEMANTIC-01 checker note.
 - [learning] 2026-04-13T06:00:00.000Z: MockPGStore for semantic cache tests must use distinct query embeddings per entry when testing selective invalidation; generic hash-based embeddings can accidentally be cosine-similar to each other, causing cross-query hits in assertions.
 - [learning] 2026-04-13T06:00:00.000Z: model_routing added to loadConfig follows same null-coalesce pattern as model_overrides (parsed.model_routing || null). init.cjs hardcoded fallback {R: "sonnet", T: "haiku", ...} ensures output is never undefined even when config.json lacks the key.
