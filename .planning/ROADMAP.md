@@ -52,7 +52,7 @@
 **Success Criteria** (what must be TRUE):
 1. [x] `valkey-cli ping` returns PONG; all 2750 existing tests pass unchanged — zero application-code modifications required for the Redis-to-Valkey migration. *(26-01 done)*
 2. [ ] `SELECT extversion FROM pg_extension WHERE extname='vector'` returns >= 0.8.0; filtered vector queries on semantic_cache show >= 3x speedup on 10-query benchmark vs prior version.
-3. [ ] `SELECT extversion FROM pg_extension WHERE extname='pg_search'` returns non-null; a BM25 query against a test table returns ranked results — migration 011-paradedb-setup.sql delivered.
+3. [x] `SELECT extversion FROM pg_extension WHERE extname='pg_search'` returns non-null; a BM25 query against a test table returns ranked results — migration 011-paradedb-setup.sql delivered.
 4. [x] `tree-sitter parse <file>` produces an AST with node count > 0 for one sample file of each target language (JS, Python, TypeScript, CJS); parser import succeeds in both Python and Node test scripts. *(26-01 done)*
 
 **Plans:** 2/2 plans complete

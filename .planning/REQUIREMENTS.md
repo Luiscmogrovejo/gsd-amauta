@@ -11,7 +11,7 @@ Five infrastructure layers composing into a unified upgrade. Target: 3x retrieva
 
 Infrastructure installs with zero application code changes. Everything downstream depends on this.
 
-- [ ] **INFRA-01**: Redis replaced by Valkey 8.x. All existing Redis clients work unchanged. Throughput measured via redis-benchmark shows >= 30% improvement on SET operations. BSD 3-Clause license confirmed in docker-compose.yml.
+- [x] **INFRA-01**: Redis replaced by Valkey 8.x. All existing Redis clients work unchanged. Throughput measured via redis-benchmark shows >= 30% improvement on SET operations. BSD 3-Clause license confirmed in docker-compose.yml.
   - *Acceptance:* valkey-cli ping returns PONG. All 2750 existing tests pass. Benchmark delta logged.
 
 - [x] **INFRA-02**: pgvector upgraded to >= 0.8.0. Iterative index scans enabled (SET ivfflat.iterative_scan = relaxed_order). Filtered vector queries on semantic_cache table show >= 3x speedup on 10-query benchmark vs current.
@@ -20,7 +20,7 @@ Infrastructure installs with zero application code changes. Everything downstrea
 - [x] **INFRA-03**: ParadeDB pg_search extension installed alongside pgvector. BM25 index created on a test table. SELECT * FROM test_table WHERE test_table @@@ 'query' returns results. Migration 011-paradedb-setup.sql delivered.
   - *Acceptance:* SELECT extversion FROM pg_extension WHERE extname='pg_search' returns non-null. BM25 query returns ranked results.
 
-- [ ] **INFRA-04**: Tree-sitter parsers installed for JavaScript, Python, TypeScript, and CJS. tree-sitter parse <file> produces valid AST for one sample file of each language. Parser binaries available to Python and Node processes.
+- [x] **INFRA-04**: Tree-sitter parsers installed for JavaScript, Python, TypeScript, and CJS. tree-sitter parse <file> produces valid AST for one sample file of each language. Parser binaries available to Python and Node processes.
   - *Acceptance:* 4 sample files parsed, AST node count > 0 for each. Parser import succeeds in both Python and CJS test files.
 
 ### Retrieval — The Retrieval Rewrite (Phase 27)
@@ -132,10 +132,10 @@ Deferred beyond v2.9:
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INFRA-01 | Phase 26 | Pending |
+| INFRA-01 | Phase 26 | Complete |
 | INFRA-02 | Phase 26 | Complete |
 | INFRA-03 | Phase 26 | Complete |
-| INFRA-04 | Phase 26 | Pending |
+| INFRA-04 | Phase 26 | Complete |
 | RLM-01 | Phase 27 | Pending |
 | RLM-02 | Phase 27 | Pending |
 | RLM-03 | Phase 27 | Pending |
