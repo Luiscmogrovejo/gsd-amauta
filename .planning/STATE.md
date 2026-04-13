@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v2.8
 milestone_name: milestone
-status: completed
-stopped_at: "Phase 23 complete. Plan 23-02 done — prompt_cache.py, /metrics/cache GET+POST wired, cache-stats CLI subcommand, 18 Python + 13 CJS tests (31 total), 0 regressions. Next: Phase 24 (Semantic Cache + Tiered Routing)."
-last_updated: "2026-04-13T04:00:04.451Z"
-last_activity: 2026-04-12 — Plan 23-02 complete (CACHE-02+CACHE-04 met)
+status: planning
+stopped_at: "Phase 24 planned. 2 plans (24-01 Wave 1: 7 tasks, 24-02 Wave 2: 4 tasks). SEMANTIC-01..03 + ROUTE-01..02 all covered. Next: execute plan 24-01."
+last_updated: "2026-04-13T05:00:00.000Z"
+last_activity: 2026-04-12 — Phase 24 planned (2 plans, 11 tasks)
 progress:
   total_phases: 6
   completed_phases: 4
-  total_plans: 9
+  total_plans: 11
   completed_plans: 9
   percent: 55
 ---
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-04-12 for v2.8)
 
 ## Current Position
 
-Phase: 23 of 25 (Prompt Prefix Caching — COMPLETE)
-Plan: 23-02 complete (Wave 2)
-Status: Phase 23 complete — all 4 CACHE requirements met (CACHE-01..04)
+Phase: 24 of 25 (Semantic Cache + Tiered Routing — PLANNING)
+Plan: 24-01 planned (Wave 1), 24-02 planned (Wave 2)
+Status: Phase 24 planned — 2 plans, 11 tasks, 5 requirements (SEMANTIC-01..03, ROUTE-01..02)
 Last activity: 2026-04-12 — Plan 23-02 complete (CACHE-02+CACHE-04 met)
 
 Progress: [█████░░░░░] 55%
