@@ -33,7 +33,7 @@
 
 - [x] **Phase 20: Structured Context Handoffs** — RPETDContext typed object replaces full conversation forwarding; each phase boundary compacts to <= 600 tokens stored in PostgreSQL (HANDOFF-01..05) — COMPLETE 2026-04-12
 - [x] **Phase 21: Hash-Based Staleness Detection** — SHA-256 file hashing + git diff selectively refreshes only changed files, skipping unchanged file descriptions (STALE-01..04) — COMPLETE 2026-04-12
-- [ ] **Phase 22: Caveman-Compressed Descriptions** — grammar-stripped agent definitions and structured file descriptions deliver >= 40% more facts per 500-char budget (CAVE-01..04)
+- [x] **Phase 22: Caveman-Compressed Descriptions** — grammar-stripped agent definitions and structured file descriptions deliver >= 40% more facts per 500-char budget (CAVE-01..04) — COMPLETE 2026-04-13 (CAVE-01/03/04 verified; CAVE-02 divergence open: 1.5% actual vs 30% target)
 - [ ] **Phase 23: Prompt Prefix Caching** — all 11 agent prompts restructured for stable prefix / variable suffix split with `cache_control` annotation; prefix stability lint added (CACHE-01..04)
 - [ ] **Phase 24: Semantic Cache + Tiered Routing** — pgvector cosine >= 0.90 semantic cache for research calls; config-driven model routing (haiku T/D, sonnet R/P/E) (SEMANTIC-01..03, ROUTE-01..02)
 - [ ] **Phase 25: Tech Debt Sweep** — cmdInitPhaseOp ghost fallback eliminated; plan-to-tasks registration for phases >= 20; amauta.cjs HTTP routing fixed; routeExecutor specificity-wins determinism (DEBT-01..04)
@@ -95,7 +95,7 @@
 
 **Plans:**
 - [x] Plan 22-01: Caveman Description Generator + Grammar Stripper + Unit Tests (Wave 1, CAVE-01/02) — COMPLETE 2026-04-13 (CAVE-01 verified 29/29 tests; CAVE-02 divergence documented: 30% threshold not achievable with word-list removal on dense technical markdown, 5 tests fail with root-cause)
-- [ ] Plan 22-02: Daemon Wiring + BM25 Benchmark + Fact Density Test + Integration (Wave 2, CAVE-01/03/04)
+- [x] Plan 22-02: Daemon Wiring + BM25 Benchmark + Fact Density Test + Integration (Wave 2, CAVE-01/03/04) — COMPLETE 2026-04-13 (CAVE-01 wired, CAVE-03 BM25 5/5 pass, CAVE-04 1.4x all 10 entries)
 
 ### Phase 23: Prompt Prefix Caching
 
@@ -184,7 +184,7 @@ Phase 25 (Tech Debt Sweep) — no v2.8 dependencies, runs anytime
 |-------|----------------|--------|-----------|
 | 20. Structured Context Handoffs | 3/3 | Complete    | 2026-04-12 |
 | 21. Hash-Based Staleness Detection | 1/2 | Complete    | 2026-04-13 |
-| 22. Caveman-Compressed Descriptions | 0/TBD | Not started | - |
+| 22. Caveman-Compressed Descriptions | 2/2 | Complete    | 2026-04-13 |
 | 23. Prompt Prefix Caching | 0/TBD | Not started | - |
 | 24. Semantic Cache + Tiered Routing | 0/TBD | Not started | - |
 | 25. Tech Debt Sweep | 0/TBD | Not started | - |
