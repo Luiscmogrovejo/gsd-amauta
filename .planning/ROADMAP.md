@@ -35,7 +35,7 @@
 - [x] **Phase 21: Hash-Based Staleness Detection** — SHA-256 file hashing + git diff selectively refreshes only changed files, skipping unchanged file descriptions (STALE-01..04) — COMPLETE 2026-04-12
 - [x] **Phase 22: Caveman-Compressed Descriptions** — grammar-stripped agent definitions and structured file descriptions deliver >= 40% more facts per 500-char budget (CAVE-01..04) — COMPLETE 2026-04-13 (CAVE-01/03/04 verified; CAVE-02 divergence open: 1.5% actual vs 30% target)
 - [x] **Phase 23: Prompt Prefix Caching** — all 11 agent prompts restructured for stable prefix / variable suffix split with `cache_control` annotation; prefix stability lint added (CACHE-01..04) — COMPLETE 2026-04-12
-- [ ] **Phase 24: Semantic Cache + Tiered Routing** — pgvector cosine >= 0.90 semantic cache for research calls; config-driven model routing (haiku T/D, sonnet R/P/E) (SEMANTIC-01..03, ROUTE-01..02)
+- [x] **Phase 24: Semantic Cache + Tiered Routing** — pgvector cosine >= 0.90 semantic cache for research calls; config-driven model routing (haiku T/D, sonnet R/P/E) (SEMANTIC-01..03, ROUTE-01..02) — COMPLETE 2026-04-12
 - [ ] **Phase 25: Tech Debt Sweep** — cmdInitPhaseOp ghost fallback eliminated; plan-to-tasks registration for phases >= 20; amauta.cjs HTTP routing fixed; routeExecutor specificity-wins determinism (DEBT-01..04)
 
 ---
@@ -132,7 +132,7 @@
 
 **Plans:**
 - [x] Plan 24-01: Semantic Cache Infrastructure + Model Routing Config (Wave 1, SEMANTIC-01/02/03 + ROUTE-01) — 7 tasks COMPLETE
-- [ ] Plan 24-02: Research Chain Integration + ROUTE-02 Compaction Wiring (Wave 2, SEMANTIC-01 + ROUTE-02) — 4 tasks
+- [x] Plan 24-02: Research Chain Integration + ROUTE-02 Compaction Wiring (Wave 2, SEMANTIC-01 + ROUTE-02) — 4 tasks COMPLETE
 
 ### Phase 25: Tech Debt Sweep
 
