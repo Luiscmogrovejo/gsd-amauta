@@ -1,8 +1,9 @@
-version: "1.1.0"
+version: "1.2.0"
 reference_type: runtime-read
 scope: executors (4) + gsd-validator
-protocol_version: 1.1.0
+protocol_version: 1.2.0
 # v1.1.0: +agent_assignment_conflict, +plan_amauta_drift (Phase 14)
+# v1.2.0: +Section 14 Reflexion Memory Hook (Phase 28)
 
 # Divergence Protocol
 
@@ -416,4 +417,94 @@ it is a divergence, full stop.
 
 ---
 
-Protocol version: 1.1.0
+---
+
+## 14. Reflexion Memory Hook (v1.2.0)
+
+Divergences are not just stopped and reported — they are reflected on. After
+the orchestrator receives a divergence report, it invokes gsd-debugger to
+generate a verbal reflection. This reflection is persisted to
+`divergence-memory.json` so that future execution sessions can learn from
+past failures.
+
+### 14.1 Trigger
+
+All four divergence types trigger a reflection:
+- `manifest_violation`
+- `plan_amauta_drift`
+- `scope_expansion`
+- `rationalization_detected`
+
+Any other divergence type does NOT automatically trigger a reflection
+(it may be triggered manually by the orchestrator).
+
+### 14.2 Flow
+
+1. Executor fires divergence report and exits non-zero (existing protocol, unchanged).
+2. Orchestrator receives the divergence report (existing protocol, unchanged).
+3. **NEW:** Orchestrator calls gsd-debugger, passing the divergence report path.
+4. gsd-debugger reads the report, analyzes what failed and why, and generates
+   a reflection entry.
+5. gsd-debugger **writes** the reflection to `divergence-memory.json`
+   (project root, gitignored). The failed executor NEVER writes this file.
+   "No agent validates its own work" — and no agent reflects on its own failure.
+6. Orchestrator continues with its decision (re-route / re-plan / expand scope / halt).
+
+### 14.3 divergence-memory.json Schema
+
+Location: `.planning/divergence-memory.json` (gitignored, created on first write).
+
+The file is a JSON array. Each entry:
+
+```json
+{
+  "task_id": "28-01-03",
+  "timestamp": "2026-04-13T18:00:00Z",
+  "agent": "gsd-executor-backend",
+  "divergence_type": "manifest_violation",
+  "what_failed": "One concrete sentence: what the executor did or failed to do.",
+  "why": "One concrete sentence: root cause — assumption that was wrong or context that was missing.",
+  "what_to_try_next": "One concrete sentence: the corrective action for the next attempt."
+}
+```
+
+Field constraints:
+- `what_failed`, `why`, `what_to_try_next` — each a single sentence (no hedging
+  vocabulary: no "seems", "looks like", "probably", "I think").
+- `divergence_type` — copied verbatim from the divergence_report.
+
+### 14.4 Retry Injection
+
+When the orchestrator re-dispatches a task (re-route or re-plan decision), it
+injects the **3 most recent** reflection entries for that `task_id` into the
+executor's task brief under a `PRE_EXECUTION_EVIDENCE` header:
+
+```
+PRE_EXECUTION_EVIDENCE (Reflexion — past failures on this task):
+[1] 2026-04-13T18:00:00Z: what_failed / why / what_to_try_next
+[2] ... (if exists)
+[3] ... (if exists)
+```
+
+If there are more than 3 entries for the task, the oldest are dropped.
+If there are 0 entries, the `PRE_EXECUTION_EVIDENCE` header is omitted.
+
+### 14.5 gsd-debugger Role
+
+gsd-debugger gains one new responsibility: when invoked by the orchestrator
+post-divergence, it:
+1. Reads the divergence report JSON.
+2. Reads any existing `divergence-memory.json` entries for the same `task_id`.
+3. Generates the reflection by analyzing: what was expected vs found, the
+   divergence_type, and the rationalization_check field.
+4. Appends (NOT overwrites) the new entry to `divergence-memory.json`.
+5. Exits 0 on success, 1 on write failure.
+
+gsd-debugger DOES NOT evaluate its own divergence reports. The failed agent
+is always a different executor. If the orchestrator accidentally calls
+gsd-debugger to reflect on a gsd-debugger divergence report, gsd-debugger
+must refuse and exit 87.
+
+---
+
+Protocol version: 1.2.0

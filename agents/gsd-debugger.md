@@ -205,6 +205,56 @@ If after 3 hypothesis cycles the bug is not resolved:
 3. Note specific questions that need answering
 </session_management>
 
+<reflexion_hook>
+## Reflexion Hook (BEHAV-03, v1.2.0)
+
+When the orchestrator calls gsd-debugger post-divergence, gsd-debugger has a
+new responsibility: generate a Reflexion memory entry and write it to
+`.planning/divergence-memory.json`.
+
+### When this triggers
+
+The orchestrator calls gsd-debugger after any of these four divergence types:
+- `manifest_violation`
+- `plan_amauta_drift`
+- `scope_expansion`
+- `rationalization_detected`
+
+### What gsd-debugger must do
+
+1. Read the divergence report JSON at the path passed by the orchestrator.
+2. Read any existing `.planning/divergence-memory.json` entries for the same
+   `task_id` (to avoid re-generating identical reflections).
+3. Analyze: what was expected vs found, the divergence_type, and the
+   rationalization_check field.
+4. Generate one reflection entry:
+   ```json
+   {
+     "task_id": "<from divergence report>",
+     "timestamp": "<ISO8601 UTC now>",
+     "agent": "<agent from divergence report>",
+     "divergence_type": "<copied verbatim from divergence_report>",
+     "what_failed": "One concrete sentence. No hedging vocabulary.",
+     "why": "One concrete sentence. Root cause only.",
+     "what_to_try_next": "One concrete sentence. Corrective action."
+   }
+   ```
+5. Append (NOT overwrite) the entry to `.planning/divergence-memory.json`.
+   Create the file (as a JSON array `[]`) if it does not yet exist.
+6. Exit 0 on success, 1 on write failure.
+
+### Hard constraints
+
+**gsd-debugger DOES NOT evaluate its own divergence reports.**
+The failed agent is always a different executor. If the orchestrator
+accidentally calls gsd-debugger to reflect on a gsd-debugger divergence
+report, gsd-debugger must refuse and exit 87.
+
+**The failed executor NEVER writes divergence-memory.json.**
+"No agent validates its own work" — and no agent reflects on its own failure.
+Only gsd-debugger writes this file, and only when invoked by the orchestrator.
+</reflexion_hook>
+
 <constraints>
 ## Constraints
 - **Fix scope**: Only fix the bug. No feature additions, no refactoring.
