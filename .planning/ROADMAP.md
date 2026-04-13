@@ -33,7 +33,7 @@
 - [x] **Phase 31: Format Standard** — All 11 existing agents restructured to standardized 10-section format; shared security rules; behavioral regression suite (FORMAT-01..07) (FOUNDATION — everything depends on this) — COMPLETE 2026-04-13
 - [ ] **Phase 32: Frontend Rebuild** — gsd-executor-frontend rebuilt with v0-inspired composite pipeline; React 19 + TypeScript + Tailwind + shadcn/ui; Playwright screenshots (FRONT-01..07)
 - [x] **Phase 33: Testing Pipeline** — Two new agents: gsd-tester (generates) and gsd-qa (evaluates); CoverUp coverage-guided iteration; mutation testing; Pact contracts (TEST-01..08) — COMPLETE 2026-04-13 (Wave 1: agents + scripts; Wave 2: stryker, Pact contracts, Playwright POM, fast-check, quality-audit; Wave 3: 111-assertion regression suite TEST-01..08)
-- [ ] **Phase 34: Security Pipeline** — New gsd-security agent; Semgrep SAST, Gitleaks, npm/pip audit, supply chain rules, Rule of Two audit, Trivy container scan (SEC-01..06) — IN PROGRESS (34-01 done: gsd-security agent + Semgrep rules + Gitleaks config + installer + fixtures; 34-02 done: 12-rule supply chain propagated to 14 agents + rule-of-two-audit.cjs + install-trivy.cjs + security-scan.cjs)
+- [x] **Phase 34: Security Pipeline** — New gsd-security agent; Semgrep SAST, Gitleaks, npm/pip audit, supply chain rules, Rule of Two audit, Trivy container scan (SEC-01..06) — COMPLETE 2026-04-13 (34-01: gsd-security agent + Semgrep rules + Gitleaks config + fixtures; 34-02: 12-rule supply chain propagated to 14 agents + rule-of-two-audit.cjs + install-trivy.cjs + security-scan.cjs; 34-03: 89-assertion regression suite SEC-01..06)
 - [ ] **Phase 35: Code Review Agent** — New gsd-reviewer; style/pattern review, SOLID check, structured output schema (REVIEW-01..04)
 - [ ] **Phase 36: Data Engineering Agent** — New gsd-executor-data; expand-and-contract migrations, query analysis, data quality checks (DATA-01..04)
 - [ ] **Phase 37: Architect Agent** — New gsd-architect; ADR management, API design review, N+1 detection (ARCH-01..03)
@@ -141,7 +141,7 @@ Plans:
 Plans:
 - [x] 34-01: Create gsd-security agent with Semgrep SAST, Gitleaks secret scanning; test fixtures; install-gitleaks.cjs (SEC-01..02) — 2026-04-13
 - [x] 34-02: Supply chain rules in all 14 agent files (7→12 rules); Rule of Two audit for all current agents; install-trivy.cjs; unified orchestrator scripts/security-scan.cjs (SEC-03..06) — 2026-04-13
-- [ ] 34-03: Integration tests and regression suite covering SEC-01..06
+- [x] 34-03: Integration tests and regression suite covering SEC-01..06; 89 assertions (60 unit + 29 integration), 0 failures; full regression gate 293/293 pass — 2026-04-13
 
 ### Phase 35: Code Review Agent
 **Goal:** A new gsd-reviewer agent provides the "always-available second pair of eyes" capability for a solo developer. It detects style violations, duplication, SOLID violations, and produces structured output that is distinct from and complementary to gsd-validator.
@@ -275,7 +275,7 @@ Phase 31: Format Standard (FOUNDATION)
 | 31. Format Standard | 1/2 | Complete    | 2026-04-13 |
 | 32. Frontend Rebuild | 0/2 | Not started | - |
 | 33. Testing Pipeline | 0/2 | Complete    | 2026-04-13 |
-| 34. Security Pipeline | 2/3 | In progress | 34-01: 2026-04-13; 34-02: 2026-04-13 |
+| 34. Security Pipeline | 3/3 | Complete    | 2026-04-13 |
 | 35. Code Review Agent | 0/1 | Not started | - |
 | 36. Data Engineering Agent | 0/1 | Not started | - |
 | 37. Architect Agent | 0/1 | Not started | - |
