@@ -54,6 +54,25 @@ if [[ ! "$ARGUMENTS" =~ --auto ]]; then
 fi
 ```
 
+**AGENTS.md Discovery (BEHAV-01):**
+Before spawning any executor, locate the closest AGENTS.md file using this
+"closest file wins" algorithm:
+1. Start at the directory containing the majority of `files_expected` for the current task.
+2. Walk upward toward the project root (the directory containing `.planning/`).
+3. At each directory level, check if an `AGENTS.md` file exists.
+4. If found, stop searching — this is the **active AGENTS.md**.
+5. If the project root is reached without finding one, no AGENTS.md applies.
+
+The active AGENTS.md content is **additive** — it overrides per-directory conventions
+on top of the system-level agent definition in `agents/`. It does NOT replace the
+system-level definition. Agent must NOT create or modify AGENTS.md during execution.
+
+Prepend the active AGENTS.md content to the executor's task brief under a
+`## Directory Conventions (from AGENTS.md)` header before spawning the executor.
+If no AGENTS.md is found, omit this header entirely.
+
+Report in the execution summary: "AGENTS.md: {path} applied" or "AGENTS.md: none found"
+
 **Amauta integration (optional — skip if daemon unavailable):**
 ```bash
 # Check if amauta daemon is available
