@@ -1,18 +1,37 @@
 -- GSD-Amauta Migration 011: pgvector upgrade (INFRA-02) + ParadeDB pg_search (INFRA-03)
 -- Phase 26: The Substrate (v2.9 Nervous System)
--- Shared migration: upgrades pgvector to latest available version and installs pg_search.
+-- Installs pg_search (BM25) and verifies pgvector >= 0.8.0 is active.
 -- Both extensions must be available as binaries in the paradedb/paradedb:latest-pg16 image.
 -- This migration is idempotent: safe to re-run.
+--
+-- Image versions: pgvector 0.8.1 (shipped by paradedb:latest-pg16), pg_search 0.22.6
 --
 -- Prerequisites:
 --   docker-compose.yml postgres command must include: -c shared_preload_libraries=pg_search
 --   (pg_search v0.22.6 requires shared_preload_libraries before CREATE EXTENSION)
+--
+-- Note on ALTER EXTENSION vector UPDATE: skipped — paradedb:latest-pg16 ships pgvector 0.8.1
+-- which satisfies INFRA-02 (>= 0.8.0). The running DB already has 0.8.1 installed.
+-- ALTER EXTENSION UPDATE to a lower version is not supported by PostgreSQL and would fail.
 
 BEGIN;
 
--- INFRA-02: Upgrade pgvector to latest available version (>= 0.8.0)
--- ALTER EXTENSION ... UPDATE is a no-op if already at latest version.
-ALTER EXTENSION vector UPDATE;
+-- INFRA-02: Verify pgvector version is >= 0.8.0 (assertion — no UPDATE needed).
+-- paradedb/paradedb:latest-pg16 ships pgvector 0.8.1 which satisfies this requirement.
+-- The DO block raises an exception if the installed version is below the required minimum.
+DO $$
+DECLARE
+  v TEXT;
+BEGIN
+  SELECT extversion INTO v FROM pg_extension WHERE extname = 'vector';
+  IF v IS NULL THEN
+    RAISE EXCEPTION 'pgvector extension not installed';
+  END IF;
+  -- Version check: require >= 0.8.0
+  IF string_to_array(v, '.')::int[] < string_to_array('0.8.0', '.')::int[] THEN
+    RAISE EXCEPTION 'pgvector version % is below required 0.8.0', v;
+  END IF;
+END $$;
 
 -- INFRA-02: Enable iterative index scans for filtered vector queries.
 -- This session-level SET is also applied in pg_store.py _get_conn() for application connections.

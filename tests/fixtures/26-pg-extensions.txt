@@ -1,0 +1,56 @@
+# Phase 26 INFRA-02/INFRA-03 Extension Verification Log
+# Generated: 2026-04-13 — migration 011-paradedb-setup.sql applied
+# Image: paradedb/paradedb:latest-pg16 (pg_search 0.22.6, pgvector 0.8.1 bundled)
+# Actual pgvector installed: 0.8.2 (upgraded from prior pgvector/pgvector:pg16 image)
+
+=== INFRA-02: pgvector version ===
+Command: docker exec gsd-postgres psql -U gsd -d gsd_amauta -c "SELECT extversion FROM pg_extension WHERE extname='vector';"
+
+ extversion
+------------
+ 0.8.2
+(1 row)
+
+Result: PASS — 0.8.2 >= 0.8.0
+
+=== INFRA-03: pg_search version ===
+Command: docker exec gsd-postgres psql -U gsd -d gsd_amauta -c "SELECT extversion FROM pg_extension WHERE extname='pg_search';"
+
+ extversion
+------------
+ 0.22.6
+(1 row)
+
+Result: PASS — pg_search installed non-null
+
+=== INFRA-03: BM25 smoke test ===
+Command: docker exec gsd-postgres psql -U gsd -d gsd_amauta -c "SELECT * FROM bm25_test_table WHERE bm25_test_table @@@ 'content:hello' LIMIT 3;"
+
+ id |                content
+----+---------------------------------------
+  1 | hello world from gsd-amauta BM25 test
+(1 row)
+
+Result: PASS — >= 1 row returned
+
+=== INFRA-03: EXPLAIN BM25 query (index scan confirmed) ===
+Command: docker exec gsd-postgres psql -U gsd -d gsd_amauta -c "EXPLAIN SELECT * FROM bm25_test_table WHERE bm25_test_table @@@ 'content:hello';"
+
+                                                                     QUERY PLAN
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+ Custom Scan (ParadeDB Base Scan) on bm25_test_table  (cost=10.00..10.01 rows=1 width=36)
+   Table: bm25_test_table
+   Index: bm25_test_idx
+   Segment Count: 1
+   Exec Method: NormalScanExecState
+   Scores: false
+   Tantivy Query: {"with_index":{"query":{"parse_with_field":{"field":"id","query_string":"content:hello","lenient":null,"conjunction_mode":null}}}}
+(7 rows)
+
+Result: PASS — Custom Scan (ParadeDB Base Scan) confirms BM25 index is used, not Seq Scan
+
+=== Summary ===
+INFRA-02 pgvector >= 0.8.0: PASS (0.8.2)
+INFRA-03 pg_search installed: PASS (0.22.6)
+INFRA-03 BM25 query returns results: PASS (1 row for 'content:hello')
+INFRA-03 BM25 index scan: PASS (ParadeDB Base Scan, not Seq Scan)
