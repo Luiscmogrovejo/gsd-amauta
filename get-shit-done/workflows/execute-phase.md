@@ -120,6 +120,7 @@ Report:
 # The phase number cutoff is authoritative — a <story> block in a
 # Phase 12 plan does NOT trigger registration.
 # Kill switch: GSD_P_AUTO_TASK=false disables plan-to-tasks everywhere.
+# Default: plan-to-tasks is ON (runs automatically for phases >= 14 unless explicitly disabled).
 
 ```bash
 # Phase-gated plan-to-tasks registration (Phase 14+)
@@ -130,7 +131,7 @@ PHASE_NUM_FLOAT=$(echo "$PHASE_NUMBER" | python3 -c "import sys; parts=sys.stdin
 
 if python3 -c "exit(0 if ${PHASE_NUM_FLOAT} >= 14 else 1)" 2>/dev/null; then
   # Phase >= 14: use plan-to-tasks (or skip entirely if kill switch is active)
-  if [ "${GSD_P_AUTO_TASK:-false}" = "false" ]; then
+  if [ "${GSD_P_AUTO_TASK:-true}" = "false" ]; then
     echo "[plan-to-tasks] Phase ${PHASE_NUMBER} >= 14 but GSD_P_AUTO_TASK=false — skipping task registration entirely (no legacy loop fallback for phase 14+)"
   else
     echo "[plan-to-tasks] Phase ${PHASE_NUMBER} >= 14 — running plan-to-tasks for full registration"
