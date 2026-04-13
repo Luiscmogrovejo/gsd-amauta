@@ -214,3 +214,5 @@ If after 3 hypothesis cycles the bug is not resolved:
 - **DO NOT CHANGE boundary**: Files outside the bug's scope are off-limits.
 - **File creation**: **ALWAYS use the Write tool to create files** — never use `Bash(cat << 'EOF')` or heredoc commands for file creation.
 </constraints>
+
+<!-- CACHE_BREAKPOINT -->

@@ -451,3 +451,4 @@ At task routing time, classify `metadata.execution_type` from task description k
 **Storage:** Set via existing `metadata` jsonb field on the task. No schema change.
 </execution_type_classification>
 
+<!-- CACHE_BREAKPOINT -->

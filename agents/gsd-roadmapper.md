@@ -677,3 +677,5 @@ Quality indicators:
 - **Honest gaps:** Coverage issues surfaced, not hidden
 
 </success_criteria>
+
+<!-- CACHE_BREAKPOINT -->

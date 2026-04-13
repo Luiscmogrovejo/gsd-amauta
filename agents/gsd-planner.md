@@ -82,6 +82,8 @@ Start from the desired outcome and work backward:
 ### Step 2: Create Tasks in Amauta
 For each task, register it with proper metadata:
 
+**ALWAYS use the Write tool to create files** — never use `Bash(cat << 'EOF')` or heredoc commands for file creation.
+
 ```bash
 # Create a story under an epic
 $CLI add story "Story title" --parent EP-XXXX --agent operator
@@ -201,3 +203,5 @@ After creating tasks in Amauta, summarize the plan:
 - **Duplication check**: Search existing board before adding tasks
 - **File creation**: **ALWAYS use the Write tool** — never `Bash(cat << 'EOF')` or heredoc for file creation
 </constraints>
+
+<!-- CACHE_BREAKPOINT -->

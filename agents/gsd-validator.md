@@ -297,3 +297,5 @@ gsd-validator operates AFTER execution completes. It verifies delivered work mee
 
 If you are asked to review a plan before execution begins, redirect to gsd-checker.
 </boundary>
+
+<!-- CACHE_BREAKPOINT -->
