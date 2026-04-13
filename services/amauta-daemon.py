@@ -185,7 +185,7 @@ def _check_oidc(handler):
 
     # Health and metrics endpoints bypass OIDC
     path = handler.path.split("?")[0].rstrip("/")
-    if path in ("/health", "/metrics"):
+    if path in ("/health", "/metrics", "/metrics/cache"):
         return {"valid": True, "sub": "health-check"}
 
     auth_header = handler.headers.get("Authorization", "")
@@ -276,6 +276,13 @@ class _Metrics:
         return "\n".join(lines) + "\n"
 
 _metrics = _Metrics()
+
+# ── Prompt Cache Metrics (Phase 23 / CACHE-04) ────────────────────────────────
+try:
+    from services.prompt_cache import PromptCacheMetrics as _PromptCacheMetrics
+    _prompt_cache_metrics = _PromptCacheMetrics()
+except ImportError:
+    _prompt_cache_metrics = None
 
 # ── RLM Service Management ───────────────────────────────────────────────────
 RLM_SERVICE_PY = str(Path(__file__).resolve().parent / "rlm-service.py")
@@ -976,7 +983,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         log.debug("request method=%s path=%s", self.command, self.path)
-        if self.path not in ("/health", "/metrics") and not _check_auth(self):
+        if self.path not in ("/health", "/metrics", "/metrics/cache") and not _check_auth(self):
             return
         # OIDC validation (SSO-03: all endpoints except /health, /metrics)
         oidc_result = _check_oidc(self)
@@ -1001,6 +1008,14 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             return
 
         path = self.path.split("?")[0].rstrip("/")
+
+        # ── GET /metrics/cache — Prompt cache performance (Phase 23 / CACHE-04) ──
+        if path == "/metrics/cache":
+            if _prompt_cache_metrics:
+                self._send_json(_prompt_cache_metrics.stats())
+            else:
+                self._send_json({"error": "prompt_cache module not available"}, 503)
+            return
 
         if path == "/health":
             health = {
@@ -1088,6 +1103,11 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                         cache_metrics["rlm_cache_hit_rate"] = rlm_stats.get("hit_rate", 0.0)
                 except Exception:
                     cache_metrics["rlm_cache"] = "unavailable"
+            # Prompt cache metrics (Phase 23 / CACHE-04)
+            if _prompt_cache_metrics:
+                prompt_stats = _prompt_cache_metrics.stats()
+                cache_metrics["prompt_cache_hit_rate"] = prompt_stats.get("hit_rate", 0.0)
+                cache_metrics["prompt_cache_tokens_saved"] = prompt_stats.get("total_tokens_saved", 0)
             health["cache_metrics"] = cache_metrics
 
             self._send_json(health)
@@ -1541,6 +1561,20 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
         path = self.path.rstrip("/")
         body = self._read_body()
         if body is None:
+            return
+
+        # ── POST /metrics/cache/record — Accept cache telemetry (Phase 23 / CACHE-04) ──
+        if path == "/metrics/cache/record":
+            cache_read = body.get("cache_read_input_tokens", 0)
+            cache_creation = body.get("cache_creation_input_tokens", 0)
+            if _prompt_cache_metrics:
+                _prompt_cache_metrics.record(
+                    cache_read_input_tokens=int(cache_read),
+                    cache_creation_input_tokens=int(cache_creation),
+                )
+                self._send_json({"recorded": True, "stats": _prompt_cache_metrics.stats()})
+            else:
+                self._send_json({"error": "prompt_cache module not available"}, 503)
             return
 
         # ─── Research Cache POST route (TOK-06: Store Perplexity response in Redis) ─
