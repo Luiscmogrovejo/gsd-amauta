@@ -31,7 +31,7 @@
  */
 'use strict';
 
-const { describe, it } = require('node:test');
+const { describe, it, before } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -222,5 +222,128 @@ describe('FORMAT-03: Security rules identical in executor agents', () => {
         assert.ok(agents[name].includes(rule), `${name} missing security rule: "${rule}"`);
       }
     }
+  });
+});
+
+describe('PHASE-33: gsd-tester agent format', () => {
+  let testerContent;
+  before(() => {
+    testerContent = fs.readFileSync(path.join(AGENTS_DIR, 'gsd-tester.md'), 'utf-8');
+  });
+
+  it('33-01. gsd-tester.md exists with correct frontmatter', () => {
+    assert.ok(testerContent.includes('name: gsd-tester'), 'Missing name: gsd-tester');
+    assert.ok(testerContent.includes('description:'), 'Missing description');
+  });
+
+  it('33-02. gsd-tester has exactly 10 ## sections', () => {
+    const count = (testerContent.match(/^## /gm) || []).length;
+    assert.strictEqual(count, 10, `Expected 10 ## sections, got ${count}`);
+  });
+
+  it('33-03. gsd-tester has version: 3.0.0', () => {
+    assert.ok(testerContent.includes('version: 3.0.0'), 'Missing version: 3.0.0');
+  });
+
+  it('33-04. gsd-tester has anti-over-engineering mandate', () => {
+    assert.ok(
+      testerContent.includes('Do not add features, refactor code, or make improvements beyond what was explicitly requested.'),
+      'Missing anti-over-engineering mandate'
+    );
+  });
+
+  it('33-05. gsd-tester has tester boundary (does not evaluate quality)', () => {
+    assert.ok(
+      testerContent.includes('You do not evaluate test quality or mutation scores.'),
+      'Missing tester boundary statement'
+    );
+  });
+
+  it('33-06. gsd-tester has security rules (Parameterized SQL)', () => {
+    assert.ok(testerContent.includes('Parameterized SQL'), 'Missing security rules');
+  });
+
+  it('33-07. gsd-tester has CACHE_BREAKPOINT as last non-empty line', () => {
+    const lines = testerContent.split('\n').filter(l => l.trim());
+    assert.ok(lines[lines.length - 1].includes('CACHE_BREAKPOINT'), 'Missing CACHE_BREAKPOINT as last line');
+  });
+
+  it('33-08. gsd-tester references CoverUp pattern', () => {
+    assert.ok(
+      testerContent.toLowerCase().includes('coverup') || testerContent.includes('CoverUp'),
+      'Missing CoverUp pattern reference'
+    );
+  });
+
+  it('33-09. gsd-tester references file naming conventions', () => {
+    assert.ok(
+      testerContent.includes('.unit.test.cjs') || testerContent.includes('.e2e.test.cjs'),
+      'Missing file naming conventions'
+    );
+  });
+});
+
+describe('PHASE-33: gsd-qa agent format', () => {
+  let qaContent;
+  before(() => {
+    qaContent = fs.readFileSync(path.join(AGENTS_DIR, 'gsd-qa.md'), 'utf-8');
+  });
+
+  it('33-10. gsd-qa.md exists with correct frontmatter', () => {
+    assert.ok(qaContent.includes('name: gsd-qa'), 'Missing name: gsd-qa');
+    assert.ok(qaContent.includes('description:'), 'Missing description');
+  });
+
+  it('33-11. gsd-qa has exactly 10 ## sections', () => {
+    const count = (qaContent.match(/^## /gm) || []).length;
+    assert.strictEqual(count, 10, `Expected 10 ## sections, got ${count}`);
+  });
+
+  it('33-12. gsd-qa has version: 3.0.0', () => {
+    assert.ok(qaContent.includes('version: 3.0.0'), 'Missing version: 3.0.0');
+  });
+
+  it('33-13. gsd-qa has anti-over-engineering mandate', () => {
+    assert.ok(
+      qaContent.includes('Do not add features, refactor code, or make improvements beyond what was explicitly requested.'),
+      'Missing anti-over-engineering mandate'
+    );
+  });
+
+  it('33-14. gsd-qa has qa boundary (does not generate tests)', () => {
+    assert.ok(
+      qaContent.includes('You do not generate tests.'),
+      'Missing qa boundary statement'
+    );
+  });
+
+  it('33-15. gsd-qa has security rules (Parameterized SQL)', () => {
+    assert.ok(qaContent.includes('Parameterized SQL'), 'Missing security rules');
+  });
+
+  it('33-16. gsd-qa has CACHE_BREAKPOINT as last non-empty line', () => {
+    const lines = qaContent.split('\n').filter(l => l.trim());
+    assert.ok(lines[lines.length - 1].includes('CACHE_BREAKPOINT'), 'Missing CACHE_BREAKPOINT as last line');
+  });
+
+  it('33-17. gsd-qa references coverage ratchet', () => {
+    assert.ok(
+      qaContent.includes('coverage_threshold.json') || qaContent.includes('.coverage_threshold'),
+      'Missing coverage ratchet reference'
+    );
+  });
+
+  it('33-18. gsd-qa references mutation testing threshold', () => {
+    assert.ok(
+      qaContent.includes('70%') || qaContent.includes('mutation score'),
+      'Missing mutation testing threshold'
+    );
+  });
+
+  it('33-19. gsd-qa references test pyramid', () => {
+    assert.ok(
+      qaContent.toLowerCase().includes('pyramid'),
+      'Missing test pyramid reference'
+    );
   });
 });
