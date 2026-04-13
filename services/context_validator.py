@@ -127,3 +127,98 @@ class ContextValidator:
             log.warning("git_diff_error error=%s", str(e)[:200])
             # On error, treat all files as changed (safe fallback)
             return list(file_hashes.keys())
+
+    @staticmethod
+    def selective_refresh(context: dict, stale_files: list[str],
+                          description_fn=None) -> dict:
+        """Regenerate descriptions only for stale files; cache the rest.
+
+        For each file in context["file_hashes"]:
+        - If the file is in stale_files, call description_fn(path) to get a
+          new description and recompute its SHA-256 hash.
+        - If the file is NOT in stale_files, retain the existing description
+          and hash verbatim from the context.
+
+        Args:
+            context: dict with keys:
+                - "file_hashes": dict[str, str] — {path: sha256_hash}
+                - "file_descriptions": dict[str, str] — {path: description_text}
+            stale_files: list[str] — file paths that need description refresh.
+            description_fn: callable(path: str) -> str — function that generates
+                a file description. If None, stale files get empty descriptions.
+
+        Returns:
+            dict with keys:
+                - "file_hashes": dict[str, str] — updated {path: sha256_hash}
+                - "file_descriptions": dict[str, str] — updated {path: description}
+                - "refreshed_count": int — number of files that were refreshed
+                - "cached_count": int — number of files served from cache
+                - "commit_ref": str — current HEAD commit SHA (for next cycle)
+        """
+        old_hashes = context.get("file_hashes", {})
+        old_descriptions = context.get("file_descriptions", {})
+        stale_set = set(stale_files)
+
+        new_hashes = {}
+        new_descriptions = {}
+        refreshed_count = 0
+        cached_count = 0
+
+        for path in old_hashes:
+            if path in stale_set:
+                # Recompute hash and regenerate description
+                new_hash = ContextValidator.compute_file_hash(path)
+                if new_hash is not None:
+                    new_hashes[path] = new_hash
+                    if description_fn is not None:
+                        try:
+                            new_descriptions[path] = description_fn(path)
+                        except Exception as e:
+                            log.warning("description_fn_failed path=%s error=%s",
+                                        path, str(e)[:200])
+                            new_descriptions[path] = old_descriptions.get(path, "")
+                    else:
+                        new_descriptions[path] = ""
+                    refreshed_count += 1
+                else:
+                    # File deleted or unreadable — drop from tracking
+                    log.debug("file_gone path=%s", path)
+            else:
+                # Unchanged — retain cached hash and description verbatim
+                new_hashes[path] = old_hashes[path]
+                new_descriptions[path] = old_descriptions.get(path, "")
+                cached_count += 1
+
+        # Get current commit for next cycle's changed_since
+        current_commit = ContextValidator.get_current_commit()
+
+        log.info("[STALE] %d files refreshed, %d cached", refreshed_count, cached_count)
+
+        return {
+            "file_hashes": new_hashes,
+            "file_descriptions": new_descriptions,
+            "refreshed_count": refreshed_count,
+            "cached_count": cached_count,
+            "commit_ref": current_commit or "",
+        }
+
+    @staticmethod
+    def compute_file_hashes(paths: list[str]) -> dict[str, str]:
+        """Compute SHA-256 hashes for a list of file paths.
+
+        Convenience method for initial hash computation when creating
+        a new RPETD context (no prior hashes exist).
+
+        Args:
+            paths: List of file paths to hash.
+
+        Returns:
+            dict[str, str]: {path: sha256_hash} for all readable files.
+                Unreadable files are omitted (not included with None).
+        """
+        hashes = {}
+        for path in paths:
+            h = ContextValidator.compute_file_hash(path)
+            if h is not None:
+                hashes[path] = h
+        return hashes
