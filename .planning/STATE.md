@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.9
 milestone_name: Nervous System
 status: in_progress
-stopped_at: Phase 29 Plan 29-02 complete
-last_updated: "2026-04-13T22:35:00.000Z"
-last_activity: 2026-04-13 — Plan 29-02 complete (4 atomic commits, MCP-02..05 done, all 5 tool/resource handlers in amauta-mcp.py + REQUIREMENTS.md MCP-02/05 fixes)
+stopped_at: Phase 29 Plan 29-03 complete
+last_updated: "2026-04-13T23:05:00.000Z"
+last_activity: 2026-04-13 — Plan 29-03 complete (3 atomic commits, 17 behavioral tests for MCP-01..05 in tests/29-mcp-interface.test.cjs, all pass)
 progress:
   total_phases: 5
   completed_phases: 2
-  total_plans: 6
-  completed_plans: 6
-  percent: 97
+  total_plans: 7
+  completed_plans: 7
+  percent: 99
 ---
 
 # GSD-Amauta -- Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-13 for v2.9)
 
 ## Current Position
 
-Phase: 29 — The MCP Interface (IN PROGRESS)
-Plan: 29-02 complete — MCP tool and resource handlers (MCP-02..05): all 5 tools/resources in amauta-mcp.py; REQUIREMENTS.md MCP-02/05 corrected
-Status: MCP-01..05 delivered. All amauta-mcp.py handlers implemented. Phase 29 implementation complete; awaiting test plan.
-Last activity: 2026-04-13 — Plan 29-02 complete (4 atomic commits, all 5 MCP tools/resources, research chain, REQUIREMENTS.md fixes)
+Phase: 29 — The MCP Interface (COMPLETE)
+Plan: 29-03 complete — 17 behavioral tests in tests/29-mcp-interface.test.cjs covering MCP-01..05 (structural file-content, no daemon required, 17/17 pass)
+Status: MCP-01..05 implemented and tested. Phase 29 complete pending validator sign-off. Phase 30 can begin.
+Last activity: 2026-04-13 — Plan 29-03 complete (3 atomic commits, 17 structural behavioral tests, all pass)
 
 Progress: [██████████] 96%
 
@@ -93,6 +93,8 @@ Progress: [██████████] 96%
     - Plan 29-02: WebFetch in research tool uses DuckDuckGo instant answer API (no key, best-effort, 5s timeout). Context7 and Perplexity are Claude-side MCP tools — full 5-step chain via gsd-researcher agent only.
     - Plan 29-02: list_resources extracts TK-XXXX IDs from daemon text output via re.findall, generates 5 resources per task (one per RPETD phase). read_resource validates URI via ^amauta://context/([^/]+)/([RPETD])$ regex.
     - Plan 29-02: REQUIREMENTS.md /api/rlm/search ghost: the false claim "Results match HTTP /api/rlm/search output" removed and replaced with negation note. The string itself appears in new text as "daemon has no /api/rlm/search proxy" — plan acceptance criterion (0 matches) was self-contradictory.
+    - Plan 29-03: doesNotMatch for absence-of-code tests must target function-call patterns (e.g., _call_daemon("POST",...)) not bare HTTP-verb+path strings — comments mentioning the restriction will falsely match the latter.
+    - Plan 29-03: Split cross-line assertions into two separate assert.match calls (one per element) rather than complex multi-line regex — more readable, same coverage.
 
 ### Pending Todos
 
@@ -104,9 +106,9 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-13T22:35:00.000Z
-Stopped at: Phase 29 Plan 29-02 complete (MCP-01..05 all implemented; next: test plan or Phase 30)
-Resume file: .planning/phases/29-the-mcp-interface/29-02-SUMMARY.md
+Last session: 2026-04-13T23:05:00.000Z
+Stopped at: Phase 29 Plan 29-03 complete (17 behavioral tests passing; Phase 29 fully done; next: Phase 30 or validator)
+Resume file: .planning/phases/29-the-mcp-interface/29-03-SUMMARY.md
 
 ## Learnings
 
@@ -114,6 +116,8 @@ Resume file: .planning/phases/29-the-mcp-interface/29-02-SUMMARY.md
 
 
 
+
+- [learning] 2026-04-13T19:36:34.288Z: MCP tool delegation pattern: all handlers use _call_daemon(method, path, body) or _call_rlm(); read-through cache with GET only (no POST write-back); memory-distill is status-only (CLI triggers distill); resource list_resources extracts task IDs via re.findall from daemon text output; URI validation with explicit regex before delegating
 - [learning] 2026-04-13T18:46:41.418Z: featureListGenerate reads PLAN.md XML task blocks to extract first acceptance_criteria bullet as description; feature_list.json is overwrite-not-append (current-state snapshot); get-bearings block triggers on feature_list.json presence in PHASE_DIR — silent no-op on fresh phase; lint-after-edit is advisory (exits non-zero but never blocks); all three added to execute-phase.md in single file without conflict by anchoring insertions to unique text markers
 - [learning] 2026-04-13T17:22:15.838Z: RRF fusion in single SQL: FULL OUTER JOIN bm25_leg + vector_leg inside PostgreSQL with k=60 constant. pg_search BM25 alias syntax: WHERE c @@@ param (not c.table @@@). Matryoshka truncation: ::vector(256) cast on stored 1024-dim. MRR baseline=1.0 by construction when expected_top3 derived from engine output — use non-regression floor (80%) not impossible >1.0 targets. NetworkX+Valkey graph is ephemeral (TTL 1h), rebuild on /reindex. DEPRECATED comment pattern for keeping fallback code alive.
 - [learning] 2026-04-13T17:09:58.138Z: voyageai 0.2.x does not accept output_dimension kwarg in embed() — try/except TypeError to fall back. psycopg2 pgvector without adapter: pass embedding as '[f1,f2,...fN]' string with ::vector cast. rlm-service.py _load_dotenv skips vars already in os.environ — shell env takes priority over .env file.

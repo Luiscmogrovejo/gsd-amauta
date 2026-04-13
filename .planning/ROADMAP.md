@@ -34,7 +34,7 @@
 - [x] **Phase 26: The Substrate** — Valkey 8.x replaces Redis, pgvector upgraded to >= 0.8.0, ParadeDB pg_search installed, tree-sitter parsers available for JS/Python/TS/CJS — all with zero application code changes (INFRA-01..04) (completed 2026-04-13)
 - [x] **Phase 27: The Retrieval Rewrite** — AST-aware chunking, ParadeDB BM25 in PG, code-specific embeddings, RRF hybrid search, cross-encoder reranking, dependency graph — standalone rlm-service.py rebuilt as thin PG wrapper (RLM-01..06) (completed 2026-04-13)
 - [x] **Phase 28: The Behavioral Upgrade** — AGENTS.md discovery, circuit breakers on all 11 agents, Reflexion memory, lint guardrails, feature-level progress tracking, get-bearings ritual — all sharing behavioral test infrastructure (BEHAV-01..06) (completed 2026-04-13)
-- [ ] **Phase 29: The MCP Interface** — Daemon gains MCP server (stdio + SSE), exposing code search, memory, RPETD context, and research as protocol-native tools and resources (MCP-01..05)
+- [x] **Phase 29: The MCP Interface** — Daemon gains MCP server (stdio + SSE), exposing code search, memory, RPETD context, and research as protocol-native tools and resources (MCP-01..05) (implementation + 17 behavioral tests complete 2026-04-13; awaiting validator)
 - [ ] **Phase 30: Observability + Security** — Langfuse tracing on K3s, model canary suite, Rule of Two audit, gVisor sandbox, tool integrity checking (OBS-01..02, SEC-01..03)
 
 ---
@@ -103,7 +103,7 @@
 3. Memory store → search round-trip via MCP returns the stored memory; distill trigger completes without error — 4 tests pass.
 4. MCP resource read `amauta://context/{task_id}/{phase}` returns valid JSON matching RPETDContext schema; research tool call returns results and cache hit on identical query skips API calls — 3+3 tests pass.
 
-**Plans:** 2/TBD complete (29-01: MCP server scaffold, .mcp.json, install.js update, mcp>=1.0, docker-compose port 18800 — MCP-01 done 2026-04-13; 29-02: all 5 tool/resource handlers in amauta-mcp.py, REQUIREMENTS.md MCP-02/05 fixes — MCP-02..05 done 2026-04-13)
+**Plans:** 3/3 complete (29-01: MCP server scaffold, .mcp.json, install.js update, mcp>=1.0, docker-compose port 18800 — MCP-01 done 2026-04-13; 29-02: all 5 tool/resource handlers in amauta-mcp.py, REQUIREMENTS.md MCP-02/05 fixes — MCP-02..05 done 2026-04-13; 29-03: 17 behavioral tests in tests/29-mcp-interface.test.cjs covering MCP-01..05 — 17/17 pass 2026-04-13) **PHASE COMPLETE (pending validator)**
 
 ### Phase 30: Observability + Security
 
@@ -158,7 +158,7 @@ Phase 29 and Phase 30 can run in PARALLEL (both need 27+28; 29 needs only 27)
 | 26. The Substrate | 2/2 | Complete   | 2026-04-13 |
 | 27. The Retrieval Rewrite | 3/3 | Complete | 2026-04-13 |
 | 28. The Behavioral Upgrade | 2/2 | Complete | 2026-04-13 |
-| 29. The MCP Interface | 2/TBD | In progress (29-01+29-02 done; MCP-01..05 implemented) | - |
+| 29. The MCP Interface | 3/3 | Complete (pending validator) — MCP-01..05 implemented + 17 tests passing | 2026-04-13 |
 | 30. Observability + Security | 0/TBD | Not started | - |
 
 ---
