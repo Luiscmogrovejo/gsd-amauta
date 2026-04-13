@@ -1,0 +1,35 @@
+rules:
+  - id: gsd-raw-sql-injection
+    languages: [python]
+    severity: ERROR
+    message: "Potential SQL injection: raw string interpolation in SQL query. Use parameterized queries."
+    metadata:
+      cwe: "CWE-89"
+      category: security
+      confidence: HIGH
+    pattern-either:
+      - pattern: |
+          $CURSOR.execute(f"...", ...)
+      - pattern: |
+          $CURSOR.execute("..." + $VAR, ...)
+      - pattern: |
+          $CURSOR.execute("..." % $ARGS, ...)
+
+  - id: gsd-hardcoded-localhost
+    languages: [javascript, typescript, python]
+    severity: WARNING
+    message: "Hardcoded localhost URL detected. Use environment variables for service URLs."
+    metadata:
+      category: security
+      confidence: MEDIUM
+    pattern-regex: "(http://localhost|http://127\\.0\\.0\\.1):[0-9]+"
+
+  - id: gsd-subprocess-shell-true
+    languages: [python]
+    severity: ERROR
+    message: "subprocess called with shell=True. Use shell=False and pass arguments as a list to prevent command injection."
+    metadata:
+      cwe: "CWE-78"
+      category: security
+      confidence: HIGH
+    pattern: subprocess.$FUNC(..., shell=True, ...)
