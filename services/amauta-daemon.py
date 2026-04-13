@@ -2183,6 +2183,60 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": _safe_error(e)}, 500)
             return
 
+        # ─── RPETD Context Validate route (Phase 21 STALE-04) ─────────────
+        if path == "/api/context/validate":
+            ctx_task_id = body.get("task_id")
+            ctx_phase = body.get("phase", "R")
+            ctx_project_dir = body.get("project_dir", ".")
+
+            if not ctx_task_id:
+                self._send_json({"error": "task_id is required"}, 400)
+                return
+
+            ctx_phase = ctx_phase.upper()
+            if ctx_phase not in ('R', 'P', 'E', 'T', 'D'):
+                self._send_json({"error": f"Invalid phase: {ctx_phase}. Must be R, P, E, T, or D"}, 400)
+                return
+
+            try:
+                from services.context_validator import validate_context
+
+                store = _get_store()
+                result = validate_context(
+                    task_id=ctx_task_id,
+                    phase=ctx_phase,
+                    project_dir=ctx_project_dir,
+                    pg_store=store,
+                    description_fn=None,  # Phase 22 CAVE-01 will wire compressed description_fn
+                )
+
+                # If we got updated hashes, store them back for next phase
+                if result.get("had_prior_context") and result.get("file_hashes"):
+                    if store and hasattr(store, 'rpetd_context_store'):
+                        # Store updated hashes with commit_ref embedded
+                        hashes_with_ref = dict(result["file_hashes"])
+                        if result.get("commit_ref"):
+                            hashes_with_ref["__commit_ref__"] = result["commit_ref"]
+                        store.rpetd_context_store(
+                            task_id=ctx_task_id,
+                            phase=ctx_phase,
+                            compiled_view={"file_descriptions": result.get("file_descriptions", {})},
+                            file_hashes=hashes_with_ref,
+                        )
+
+                self._send_json({
+                    "changed_files": result.get("changed_files", []),
+                    "refreshed_count": result.get("refreshed_count", 0),
+                    "cached_count": result.get("cached_count", 0),
+                    "file_hashes": result.get("file_hashes", {}),
+                    "commit_ref": result.get("commit_ref", ""),
+                    "had_prior_context": result.get("had_prior_context", False),
+                })
+            except Exception as e:
+                log.error("Context validation failed: %s", str(e))
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
         self._send_json({"error": f"Unknown POST route: {path}"}, 404)
 
     # ─── PATCH routes (Phase 10 LEARN-05) ────────────
