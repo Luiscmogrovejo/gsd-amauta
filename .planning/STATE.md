@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.9
 milestone_name: Nervous System
 status: in_progress
-stopped_at: Plan 27-03 complete
-last_updated: "2026-04-13T19:05:00.000Z"
-last_activity: 2026-04-13 — Plan 27-03 complete (5 atomic commits, 10 CJS + 15 Python + 1 MRR validation tests passing, full hybrid RRF pipeline live)
+stopped_at: Phase 28 Plan 28-01 complete
+last_updated: "2026-04-13T19:15:00.000Z"
+last_activity: 2026-04-13 — Plan 28-01 complete (7 atomic commits, BEHAV-01/02/03 done, 15 CJS + 6 Python tests passing, AGENTS.md discovery + circuit breaker + Reflexion memory live)
 progress:
   total_phases: 5
-  completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
-  percent: 40
+  completed_phases: 2
+  total_plans: 6
+  completed_plans: 6
+  percent: 97
 ---
 
 # GSD-Amauta -- Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-13 for v2.9)
 
 ## Current Position
 
-Phase: 27 — The Retrieval Rewrite (COMPLETE — all 3 plans done)
-Plan: 27-03 complete — Hybrid RRF SQL + Jina reranker + NetworkX graph + rlm-service.py transformation
-Status: Wave 3 delivered. Full retrieval pipeline live. /search uses hybrid_rrf_reranked (PG) or falls back to in_memory_bm25. All 6 RLM requirements complete.
-Last activity: 2026-04-13 — Plan 27-03 complete (5 atomic commits, 10 CJS + 15 Python + 1 MRR validation tests passing, full hybrid RRF pipeline live)
+Phase: 28 — The Behavioral Upgrade (IN PROGRESS — Wave 1 done)
+Plan: 28-01 complete — AGENTS.md discovery + circuit breaker (gsd-tools.cjs + amauta-daemon.py) + Reflexion Memory Hook (divergence-protocol.md v1.2.0)
+Status: Wave 1 (BEHAV-01/02/03) delivered. 7 atomic commits, 15 CJS + 6 Python tests passing. Wave 2 (BEHAV-04/05/06) pending.
+Last activity: 2026-04-13 — Plan 28-01 complete (7 atomic commits, BEHAV-01/02/03 done, 15 CJS + 6 Python tests passing, AGENTS.md discovery + circuit breaker + Reflexion memory live)
 
 Progress: [██████████] 96%
 
@@ -38,7 +38,7 @@ Progress: [██████████] 96%
 |-------|------|--------------|------------|--------|
 | 26 | The Substrate | INFRA-01..04 (4) | Nothing | Complete (2026-04-13) |
 | 27 | The Retrieval Rewrite | RLM-01..06 (6) | Phase 26 | Complete (2026-04-13) |
-| 28 | The Behavioral Upgrade | BEHAV-01..06 (6) | Phase 26 | Not started |
+| 28 | The Behavioral Upgrade | BEHAV-01..06 (6) | Phase 26 | In progress (Wave 1 done) |
 | 29 | The MCP Interface | MCP-01..05 (5) | Phase 27 | Not started |
 | 30 | Observability + Security | OBS-01..02, SEC-01..03 (5) | Phases 27+28 | Not started |
 
@@ -76,6 +76,10 @@ Progress: [██████████] 96%
     - Plan 27-03: baseline_mrr=1.0 by construction (Wave 1 expected_top3 derived from engine's own output). Absolute improvement targets (>=15%/>=10%) require MRR > 1.0 which is impossible. Use non-regression floor (80% of baseline) instead.
     - Plan 27-03: NetworkX graph + Valkey adjacency is ephemeral (TTL 1h); rebuilt on /reindex. Acceptable for local dev.
     - Plan 27-03: rlm-service.py thin wrapper pattern complete — BM25 scorer and MtimeIndex marked DEPRECATED (kept for PG-unavailable fallback).
+    - Plan 28-01: AGENTS.md discovery uses closest-file-wins algorithm (walk upward to project root). AGENTS.md is additive overlay, never replaces system-level agent definition. Agents CANNOT create/modify AGENTS.md (scope_expansion divergence).
+    - Plan 28-01: Circuit breaker state stored in Valkey at cb:{agent_name}. CB_FAILURE_THRESHOLD=3, CB_OPEN_TTL_SECONDS=60. gsd-executor-general and executor-general are hardcoded CB_EXEMPT (last-resort fallback — adding CB creates unroutable loop).
+    - Plan 28-01: Reflexion memory written exclusively by gsd-debugger post-divergence. Failed executor never writes divergence-memory.json. gsd-debugger exits 87 if asked to reflect on its own divergence report. Protocol bumped to v1.2.0.
+    - Plan 28-01: circuit-breaker CLI subcommands exit 0 (allowed) or 2 (CB open) — bash callers check exit code, not JSON. valkey_unavailable returns fail-open in Node, 503 in daemon.
 
 ### Pending Todos
 
@@ -87,13 +91,15 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-13T19:05:00.000Z
-Stopped at: Plan 27-03 complete
-Resume file: .planning/phases/27-the-retrieval-rewrite/27-03-SUMMARY.md
+Last session: 2026-04-13T19:15:00.000Z
+Stopped at: Phase 28 Plan 28-01 complete (Wave 1 done)
+Resume file: .planning/phases/28-the-behavioral-upgrade/28-01-SUMMARY.md
 
 ## Learnings
 
 
 
+
+- [learning] 2026-04-13T17:22:15.838Z: RRF fusion in single SQL: FULL OUTER JOIN bm25_leg + vector_leg inside PostgreSQL with k=60 constant. pg_search BM25 alias syntax: WHERE c @@@ param (not c.table @@@). Matryoshka truncation: ::vector(256) cast on stored 1024-dim. MRR baseline=1.0 by construction when expected_top3 derived from engine output — use non-regression floor (80%) not impossible >1.0 targets. NetworkX+Valkey graph is ephemeral (TTL 1h), rebuild on /reindex. DEPRECATED comment pattern for keeping fallback code alive.
 - [learning] 2026-04-13T17:09:58.138Z: voyageai 0.2.x does not accept output_dimension kwarg in embed() — try/except TypeError to fall back. psycopg2 pgvector without adapter: pass embedding as '[f1,f2,...fN]' string with ::vector cast. rlm-service.py _load_dotenv skips vars already in os.environ — shell env takes priority over .env file.
 - [learning] 2026-04-13T16:59:59.885Z: tree-sitter 0.23.x Python API: Parser(Language(ts_lang.language())) constructor — no .set_language(). TypeScript: language_typescript() / language_tsx() sub-exports. pg_search 0.22.6: b= and position_decay= are NOT valid index WITH params — document in migration comments, apply at query time.

@@ -87,7 +87,7 @@
 3. After a divergence event, divergence-memory.json contains the new reflection entry; on retry, executor's PRE_EXECUTION_EVIDENCE block includes past reflections (max 3 most recent) — JSON schema validated, 6 tests pass.
 4. A commit introducing a syntax error produces a lint_report with >= 1 finding; a clean commit produces an empty lint_report; plan 27-01 produces a feature_list.json with >= 3 features; validator refuses --pass verdict when any feature is failing.
 
-**Plans:** TBD
+**Plans:** 1/TBD complete (28-01: AGENTS.md discovery + circuit breaker + Reflexion memory — BEHAV-01/02/03 done, Wave 1 complete 2026-04-13)
 
 ### Phase 29: The MCP Interface
 
