@@ -425,6 +425,12 @@ class PGStore:
             conn = self._pool.getconn()
             conn.autocommit = False
             reconnected = True
+        # INFRA-02: Enable iterative index scans for filtered vector queries (pgvector >= 0.8.0)
+        with conn.cursor() as _setup_cur:
+            try:
+                _setup_cur.execute("SET ivfflat.iterative_scan = relaxed_order")
+            except Exception:
+                pass  # Gracefully skip if pgvector not installed (e.g., SQLite fallback)
         try:
             yield conn
             conn.commit()
