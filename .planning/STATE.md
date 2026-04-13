@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.8
 milestone_name: milestone
-status: executing
-stopped_at: phase_23_plan_01_complete
-last_updated: "2026-04-12"
-last_activity: 2026-04-12 — Phase 23 Plan 23-01 complete (CACHE_BREAKPOINT in all 11 agents, audit script, 10-test suite)
+status: completed
+stopped_at: "Phase 23 complete. Plan 23-02 done — prompt_cache.py, /metrics/cache GET+POST wired, cache-stats CLI subcommand, 18 Python + 13 CJS tests (31 total), 0 regressions. Next: Phase 24 (Semantic Cache + Tiered Routing)."
+last_updated: "2026-04-13T04:00:04.451Z"
+last_activity: 2026-04-12 — Plan 23-02 complete (CACHE-02+CACHE-04 met)
 progress:
   total_phases: 6
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 9
-  completed_plans: 8
-  percent: 38
+  completed_plans: 9
+  percent: 55
 ---
 
 # GSD-Amauta -- Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-12 for v2.8)
 
 ## Current Position
 
-Phase: 23 of 25 (Prompt Prefix Caching — in progress)
-Plan: 23-02 (Wave 2, ready for execution)
-Status: Plan 23-01 complete — CACHE_BREAKPOINT markers in all 11 agents, audit script, 10-test stability suite
-Last activity: 2026-04-12 — Plan 23-01 complete (CACHE-01+CACHE-03 met)
+Phase: 23 of 25 (Prompt Prefix Caching — COMPLETE)
+Plan: 23-02 complete (Wave 2)
+Status: Phase 23 complete — all 4 CACHE requirements met (CACHE-01..04)
+Last activity: 2026-04-12 — Plan 23-02 complete (CACHE-02+CACHE-04 met)
 
-Progress: [███░░░░░░░] 33%
+Progress: [█████░░░░░] 55%
 
 ## v2.8 Phase Map
 
@@ -48,9 +48,9 @@ Critical path: 20 → 22 → 23 → 24. Phase 21 parallel with 22. Phase 25 inde
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 8 (20-01, 20-02, 20-03, 21-01, 21-02, 22-01, 22-02, 23-01)
+- Total plans completed: 9 (20-01, 20-02, 20-03, 21-01, 21-02, 22-01, 22-02, 23-01, 23-02)
 - Average duration: ~25 min
-- Total execution time: ~3.3 hours
+- Total execution time: ~3.5 hours
 
 **By Phase:**
 
@@ -59,7 +59,7 @@ Critical path: 20 → 22 → 23 → 24. Phase 21 parallel with 22. Phase 25 inde
 | 20 | 3/3 | ~75 min | ~25 min |
 | 21 | 2/2 | ~50 min | ~25 min |
 | 22 | 2/2 | ~70 min | ~35 min |
-| 23 | 1/2 | ~25 min | ~25 min |
+| 23 | 2/2 | ~50 min | ~25 min |
 
 *Updated after each plan completion*
 
@@ -107,6 +107,12 @@ None.
 - Plan 23-01: 4 executor agents (backend/frontend/infra/general) had CACHE_BREAKPOINT and runtime_read relocation already done in a prior session; tasks 23-01-01/02 partial required only verification and commit, not re-implementation.
 - Plan 23-01: audit-prefix-stability.cjs checks 6 properties per agent: breakpoint count=1, no volatile patterns in prefix, YAML frontmatter before breakpoint, <role> before breakpoint, <patterns> before breakpoint, no runtime_read/enrichment/dynamic tags in prefix.
 
+- Plan 23-02: annotate_cache_control() is documentation/validation only — not called at API time (Claude Code handles caching). Returns breakpoint_index, stable_tokens_estimate, annotation, valid, min_tokens, sections_analyzed.
+- Plan 23-02: PromptCacheMetrics is a module-level singleton in amauta-daemon.py wrapped in try/except ImportError — daemon starts cleanly even if prompt_cache.py is unavailable.
+- Plan 23-02: daemon has TWO auth bypass locations that BOTH required /metrics/cache: _check_oidc (OIDC set literal) and do_GET (auth check not-in). Missing either causes partial auth block.
+- Plan 23-02: /metrics/cache GET uses path = self.path.split("?")[0].rstrip("/") normalization (same as /health); route check must come AFTER this assignment, not before.
+- Plan 23-02: Cost savings model: input $3/MTok (Sonnet), cache read $0.3/MTok = $2.7/MTok saved. cost_savings_estimate = (cache_read_tokens / 1_000_000) * 2.7.
+
 ### Blockers/Concerns
 
 CAVE-02 divergence (open): 30% compression ratio target is not achievable with article/filler/hedging removal alone on dense technical agent .md files (actual: ~1.5%). 5 tests in test_grammar_strip.py remain failing with detailed root-cause messages. This does NOT block Phase 23 (CAVE-01 pipe-delimited descriptions are live and verified). Resolution options: expand vocabulary, revise metric, or change threshold — Phase 22.1 scope.
@@ -114,7 +120,7 @@ CAVE-02 divergence (open): 30% compression ratio target is not achievable with a
 ## Session Continuity
 
 Last session: 2026-04-12
-Stopped at: Plan 23-01 complete. CACHE_BREAKPOINT in all 11 agents, audit script verified (11/11 pass), 10 stability tests passing. Plan 23-02 (CACHE-02/04) ready for execution.
+Stopped at: Phase 23 complete. Plan 23-02 done — prompt_cache.py, /metrics/cache GET+POST wired, cache-stats CLI subcommand, 18 Python + 13 CJS tests (31 total), 0 regressions. Next: Phase 24 (Semantic Cache + Tiered Routing).
 Resume file: None
 
 
@@ -135,6 +141,10 @@ Resume file: None
 
 
 
+
+
+- [learning] 2026-04-13T03:54:22.356Z: amauta-daemon.py has TWO auth bypass locations that must BOTH be updated for new unauth endpoints: (1) _check_oidc OIDC bypass set literal (around line 188) and (2) do_GET basic auth not-in check (around line 979). Missing either causes partial auth block. Pattern established in Phase 23 /metrics/cache.
+- [learning] 2026-04-13T03:43:32.046Z: CACHE_BREAKPOINT placement rule for GSD-Amauta agent .md files: frontmatter+role+patterns+domain+rpetd above the marker; runtime_read blocks below. For agents without runtime_read, append at end of file. Audit script checks 6 properties per agent.
 - [learning] 2026-04-13T02:55:23.974Z: BM25 inline benchmark: tokenize+IDF+score (no external npm). Fact density fixtures at tests/fixtures/ need 3 dirname() calls to reach project root from test file. Original 500-char file descriptions are sparse (shebang+docstring+imports), compressed pipe-delimited are dense (deps/tests/loc/exports) — 1.4x fact density ratios are achievable even for small files.
 - [learning] 2026-04-13T02:48:41.975Z: legacy regression test: free text learning
 - [learning] 2026-04-13T02:46:27.820Z: legacy regression test: free text learning

@@ -34,7 +34,7 @@
 - [x] **Phase 20: Structured Context Handoffs** — RPETDContext typed object replaces full conversation forwarding; each phase boundary compacts to <= 600 tokens stored in PostgreSQL (HANDOFF-01..05) — COMPLETE 2026-04-12
 - [x] **Phase 21: Hash-Based Staleness Detection** — SHA-256 file hashing + git diff selectively refreshes only changed files, skipping unchanged file descriptions (STALE-01..04) — COMPLETE 2026-04-12
 - [x] **Phase 22: Caveman-Compressed Descriptions** — grammar-stripped agent definitions and structured file descriptions deliver >= 40% more facts per 500-char budget (CAVE-01..04) — COMPLETE 2026-04-13 (CAVE-01/03/04 verified; CAVE-02 divergence open: 1.5% actual vs 30% target)
-- [ ] **Phase 23: Prompt Prefix Caching** — all 11 agent prompts restructured for stable prefix / variable suffix split with `cache_control` annotation; prefix stability lint added (CACHE-01..04)
+- [x] **Phase 23: Prompt Prefix Caching** — all 11 agent prompts restructured for stable prefix / variable suffix split with `cache_control` annotation; prefix stability lint added (CACHE-01..04) — COMPLETE 2026-04-12
 - [ ] **Phase 24: Semantic Cache + Tiered Routing** — pgvector cosine >= 0.90 semantic cache for research calls; config-driven model routing (haiku T/D, sonnet R/P/E) (SEMANTIC-01..03, ROUTE-01..02)
 - [ ] **Phase 25: Tech Debt Sweep** — cmdInitPhaseOp ghost fallback eliminated; plan-to-tasks registration for phases >= 20; amauta.cjs HTTP routing fixed; routeExecutor specificity-wins determinism (DEBT-01..04)
 
@@ -112,8 +112,8 @@
 4. `/metrics/cache` endpoint returns `{hit_rate, total_tokens_saved, cost_savings_estimate}` and counters update correctly after each API call.
 
 **Plans:**
-- [x] Plan 23-01: Prefix Restructuring — audit script + 11 agent CACHE_BREAKPOINT markers + stability tests (Wave 1, CACHE-01/03) — COMPLETE 2026-04-12
-- [ ] Plan 23-02: Cache Infrastructure — annotate_cache_control utility + /metrics/cache endpoint + CLI stats + tests (Wave 2, CACHE-02/04)
+2/2 plans complete
+- [x] Plan 23-02: Cache Infrastructure — annotate_cache_control utility + /metrics/cache endpoint + CLI stats + tests (Wave 2, CACHE-02/04) — COMPLETE 2026-04-12
 
 ### Phase 24: Semantic Cache + Tiered Routing
 
@@ -187,7 +187,7 @@ Phase 25 (Tech Debt Sweep) — no v2.8 dependencies, runs anytime
 | 20. Structured Context Handoffs | 3/3 | Complete    | 2026-04-12 |
 | 21. Hash-Based Staleness Detection | 1/2 | Complete    | 2026-04-13 |
 | 22. Caveman-Compressed Descriptions | 2/2 | Complete    | 2026-04-13 |
-| 23. Prompt Prefix Caching | 1/2 | In progress | - |
+| 23. Prompt Prefix Caching | 1/2 | Complete    | 2026-04-13 |
 | 24. Semantic Cache + Tiered Routing | 0/TBD | Not started | - |
 | 25. Tech Debt Sweep | 0/TBD | Not started | - |
 
