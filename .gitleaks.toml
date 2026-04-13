@@ -1,0 +1,16 @@
+title = "GSD-Amauta Gitleaks Configuration"
+description = "Secret scanning configuration for the GSD-Amauta project."
+
+[allowlist]
+  description = "Test fixtures contain deliberate test secrets — not real credentials."
+  paths = [
+    "tests/fixtures/.*",
+    "tests/.*\\.fixture\\..*"
+  ]
+
+[[rules]]
+  description = "Generic API key pattern (supplement built-in rules)"
+  id = "generic-api-key"
+  regex = '''(?i)(api[_-]?key|apikey|api[_-]?secret)\s*[:=]\s*["']?[A-Za-z0-9_\-]{16,}["']?'''
+  tags = ["key", "API"]
+  severity = "HIGH"
