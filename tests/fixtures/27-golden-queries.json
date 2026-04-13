@@ -1,0 +1,393 @@
+{
+  "version": "27-01",
+  "description": "20 golden queries for Phase 27 RLM MRR benchmarking. Baseline measured against current rlm-service.py BM25 engine before any Phase 27 changes.",
+  "baseline_mrr": 1.0,
+  "baseline_date": "2026-04-13",
+  "baseline_engine": "rlm-service.py BM25 (standalone Python, b=0.6, position_decay=0.05)",
+  "mrr_targets": {
+    "hybrid_rlm": "baseline * 1.15 (>= 15% improvement required)",
+    "reranked_rlm": "hybrid * 1.10 (>= 10% improvement over hybrid required)"
+  },
+  "queries": [
+    {
+      "id": "Q01",
+      "query": "BM25 scoring chunk relevance term frequency",
+      "expected_top3": [
+        {
+          "filepath": "services/rlm-service.py",
+          "label": "def _compute_score"
+        },
+        {
+          "filepath": "services/rlm-service.py",
+          "label": "def score_chunks"
+        },
+        {
+          "filepath": "tests/test_rlm_scoring.py",
+          "label": "class TestBM25Scoring (part 2)"
+        }
+      ],
+      "baseline_rank": 1
+    },
+    {
+      "id": "Q02",
+      "query": "PostgreSQL connection pool iterative scan",
+      "expected_top3": [
+        {
+          "filepath": "tests/test_pg_substrate.py",
+          "label": "def test_infra02_migration_enables_iterative_scan"
+        },
+        {
+          "filepath": "tests/test_pg_substrate.py",
+          "label": "def test_infra02_pg_store_enables_iterative_scan"
+        },
+        {
+          "filepath": "services/pg_store.py",
+          "label": "class PGStore (part 1)"
+        }
+      ],
+      "baseline_rank": 1
+    },
+    {
+      "id": "Q03",
+      "query": "caveman description pipe-delimited format",
+      "expected_top3": [
+        {
+          "filepath": "tests/test_caveman_descriptions.py",
+          "label": "class TestPipeDelimitedFormat"
+        },
+        {
+          "filepath": "tests/test_caveman_integration.py",
+          "label": "class TestCavemanDescriptionWiring (part 1)"
+        },
+        {
+          "filepath": "services/caveman_descriptions.py",
+          "label": "def generate_caveman_description"
+        }
+      ],
+      "baseline_rank": 1
+    },
+    {
+      "id": "Q04",
+      "query": "task state machine transition claim complete",
+      "expected_top3": [
+        {
+          "filepath": "tests/test_e2e_lifecycle.py",
+          "label": "class TestArchivedTaskHasCompleteRpetd"
+        },
+        {
+          "filepath": "tests/pipeline-offline.test.cjs",
+          "label": "const m (part 2)"
+        },
+        {
+          "filepath": "tests/test_e2e_lifecycle.py",
+          "label": "class TestFullLifecycleCreateToArchive"
+        }
+      ],
+      "baseline_rank": 1
+    },
+    {
+      "id": "Q05",
+      "query": "semantic cache query embedding cosine similarity",
+      "expected_top3": [
+        {
+          "filepath": "tests/test_semantic_cache.py",
+          "label": "class TestSemanticCacheLookup"
+        },
+        {
+          "filepath": "services/pg_store.py",
+          "label": "class PGStore (part 27)"
+        },
+        {
+          "filepath": "tests/test_semantic_cache_integration.py",
+          "label": "class TestFullCacheCycle"
+        }
+      ],
+      "baseline_rank": 1
+    },
+    {
+      "id": "Q06",
+      "query": "RPETD context phase enrichment handoff",
+      "expected_top3": [
+        {
+          "filepath": "tests/test_e2e_lifecycle.py",
+          "label": "class TestRpetdRPhaseTriggersEnrichment"
+        },
+        {
+          "filepath": "tests/20-context-handoff.test.cjs",
+          "label": "const AMAUTA (part 1)"
+        },
+        {
+          "filepath": "tests/test_rpetd_context.py",
+          "label": "class TestRPETDContextModel (part 2)"
+        }
+      ],
+      "baseline_rank": 1
+    },
+    {
+      "id": "Q07",
+      "query": "staleness detection SHA256 file hash",
+      "expected_top3": [
+        {
+          "filepath": "tests/test_context_validator.py",
+          "label": "class TestComputeFileHash"
+        },
+        {
+          "filepath": "tests/test_context_validator.py",
+          "label": "module-header"
+        },
+        {
+          "filepath": "services/pg_store.py",
+          "label": "class PGStore (part 27)"
+        }
+      ],
+      "baseline_rank": 1
+    },
+    {
+      "id": "Q08",
+      "query": "agent routing model selection tiered",
+      "expected_top3": [
+        {
+          "filepath": "services/amauta-daemon.py",
+          "label": "def _make_compaction_llm_call"
+        },
+        {
+          "filepath": "get-shit-done/bin/lib/init.cjs",
+          "label": "const phase_req_ids"
+        },
+        {
+          "filepath": "tests/core.test.cjs",
+          "label": "const os (part 8)"
+        }
+      ],
+      "baseline_rank": 1
+    },
+    {
+      "id": "Q09",
+      "query": "memory search source score distill",
+      "expected_top3": [
+        {
+          "filepath": "tests/test_distill.py",
+          "label": "class TestDistillIdempotency"
+        },
+        {
+          "filepath": "tests/test_distill.py",
+          "label": "class TestDistillInputExcludesDistilled"
+        },
+        {
+          "filepath": "tests/test_semantic_search.py",
+          "label": "class TestMemSemanticSearch (part 1)"
+        }
+      ],
+      "baseline_rank": 1
+    },
+    {
+      "id": "Q10",
+      "query": "chunk file code-aware boundary python function",
+      "expected_top3": [
+        {
+          "filepath": "services/rlm-service.py",
+          "label": "def chunk_file"
+        },
+        {
+          "filepath": "tests/test_rlm_scoring.py",
+          "label": "class TestBM25Scoring (part 2)"
+        },
+        {
+          "filepath": "tests/complex-integration.test.cjs",
+          "label": "const rlmService"
+        }
+      ],
+      "baseline_rank": 1
+    },
+    {
+      "id": "Q11",
+      "query": "chunk_file filepath max_chars cache hit miss",
+      "expected_top3": [
+        {
+          "filepath": "tests/test_rlm_scoring.py",
+          "label": "class TestChunkCache"
+        },
+        {
+          "filepath": "services/rlm-service.py",
+          "label": "class ChunkCache"
+        },
+        {
+          "filepath": "services/rlm-service.py",
+          "label": "def chunk_file"
+        }
+      ],
+      "baseline_rank": 1
+    },
+    {
+      "id": "Q12",
+      "query": "RLMHandler do_POST handle_search handle_query",
+      "expected_top3": [
+        {
+          "filepath": "tests/security-infrastructure.test.cjs",
+          "label": "const rlmPath"
+        },
+        {
+          "filepath": "services/rlm-service.py",
+          "label": "class RLMHandler (part 1)"
+        },
+        {
+          "filepath": "tests/08-01-token-measurement.test.cjs",
+          "label": "const POST_AUDIT_TOTAL (part 1)"
+        }
+      ],
+      "baseline_rank": 1
+    },
+    {
+      "id": "Q13",
+      "query": "MtimeIndex is_changed update save_if_dirty",
+      "expected_top3": [
+        {
+          "filepath": "tests/test_rlm_incremental.py",
+          "label": "class TestMtimeIndex (part 1)"
+        },
+        {
+          "filepath": "services/rlm-service.py",
+          "label": "class MtimeIndex"
+        },
+        {
+          "filepath": "tests/test_rlm_incremental.py",
+          "label": "class TestMtimeIndex (part 2)"
+        }
+      ],
+      "baseline_rank": 1
+    },
+    {
+      "id": "Q14",
+      "query": "pg_store search_memory source_score exclude_sources",
+      "expected_top3": [
+        {
+          "filepath": "tests/test_memory_distill_status.py",
+          "label": "class TestMemoryCountExcludeMultipleSources"
+        },
+        {
+          "filepath": "tests/test_memory_optimization.py",
+          "label": "class TestSourceFiltering"
+        },
+        {
+          "filepath": "tests/test_data_integrity.py",
+          "label": "class TestExcludeSourceSQLite"
+        }
+      ],
+      "baseline_rank": 1
+    },
+    {
+      "id": "Q15",
+      "query": "compute_score idf label_boost position_decay",
+      "expected_top3": [
+        {
+          "filepath": "services/rlm-service.py",
+          "label": "def _compute_score"
+        },
+        {
+          "filepath": "tests/test_rlm_scoring.py",
+          "label": "class TestBM25Scoring (part 2)"
+        },
+        {
+          "filepath": "services/rlm-service.py",
+          "label": "def score_chunks"
+        }
+      ],
+      "baseline_rank": 1
+    },
+    {
+      "id": "Q16",
+      "query": "caveman_descriptions extract_function_summary",
+      "expected_top3": [
+        {
+          "filepath": "tests/test_caveman_descriptions.py",
+          "label": "class TestPipeDelimitedFormat"
+        },
+        {
+          "filepath": "tests/test_caveman_integration.py",
+          "label": "class TestCavemanDescriptionWiring (part 1)"
+        },
+        {
+          "filepath": "tests/22-caveman-bm25.test.cjs",
+          "label": "function getCavemanDescription"
+        }
+      ],
+      "baseline_rank": 1
+    },
+    {
+      "id": "Q17",
+      "query": "amauta task add priority depends_on board",
+      "expected_top3": [
+        {
+          "filepath": "tests/deep-python-coverage.test.cjs",
+          "label": "function readTasks (part 2)"
+        },
+        {
+          "filepath": "tests/pipeline-offline.test.cjs",
+          "label": "const m (part 3)"
+        },
+        {
+          "filepath": "tests/e2e-advanced.test.cjs",
+          "label": "function readTasks (part 1)"
+        }
+      ],
+      "baseline_rank": 1
+    },
+    {
+      "id": "Q18",
+      "query": "reindex path gsd-tools command",
+      "expected_top3": [
+        {
+          "filepath": "tests/init.test.cjs",
+          "label": "const path (part 2)"
+        },
+        {
+          "filepath": "tests/dispatcher.test.cjs",
+          "label": "const path (part 1)"
+        },
+        {
+          "filepath": "tests/commands.test.cjs",
+          "label": "const path (part 8)"
+        }
+      ],
+      "baseline_rank": 1
+    },
+    {
+      "id": "Q19",
+      "query": "scan_directory skip_dirs code_extensions markdown",
+      "expected_top3": [
+        {
+          "filepath": "services/rlm-service.py",
+          "label": "def scan_directory"
+        },
+        {
+          "filepath": "services/rlm-service.py",
+          "label": "class RLMHandler (part 2)"
+        },
+        {
+          "filepath": "services/rlm-service.py",
+          "label": "class _JsonFormatter"
+        }
+      ],
+      "baseline_rank": 1
+    },
+    {
+      "id": "Q20",
+      "query": "ThreadedHTTPServer allow_reuse_address daemon_threads",
+      "expected_top3": [
+        {
+          "filepath": "services/amauta-daemon.py",
+          "label": "class ThreadedHTTPServer"
+        },
+        {
+          "filepath": "services/rlm-service.py",
+          "label": "class ThreadedHTTPServer"
+        },
+        {
+          "filepath": "services/amauta-daemon.py",
+          "label": "def start_server (part 1)"
+        }
+      ],
+      "baseline_rank": 1
+    }
+  ]
+}
