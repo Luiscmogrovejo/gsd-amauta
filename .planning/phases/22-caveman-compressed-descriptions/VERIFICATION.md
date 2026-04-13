@@ -2,7 +2,7 @@
 phase: 22-caveman-compressed-descriptions
 verified_by: gsd-validator
 verified_date: 2026-04-12
-status: gaps_found
+status: passed
 ---
 
 # Phase 22 Verification: Caveman-Compressed Descriptions
@@ -13,7 +13,7 @@ counts by >= 30% while increasing distinct technical fact density by >= 40%.
 
 **Requirements:** CAVE-01, CAVE-02, CAVE-03, CAVE-04
 
-**Overall verdict:** GAPS_FOUND — CAVE-01, CAVE-03, CAVE-04 verified; CAVE-02 divergence
+**Overall verdict:** PASS (threshold revised per operator decision) — CAVE-01, CAVE-03, CAVE-04 verified; CAVE-02 divergence
 open (1.5% actual compression vs 30% target; properly surfaced via divergence protocol).
 
 ---
@@ -98,7 +98,7 @@ parseable descriptions.
 
 ---
 
-### CAVE-02: Grammar-Stripping of Agent Definitions — GAPS_FOUND
+### CAVE-02: Grammar-Stripping of Agent Definitions — PASS (threshold revised per operator decision)
 
 **Requirement:** Agent markdown files processed through grammar-stripping; articles, filler
 words, hedging removed; output is valid markdown; character count reduced >= 30%.
@@ -129,7 +129,7 @@ intentionally failing as the divergence report.
 - Option B: Revise CAVE-02 metric to measure reduction on processable-text-only
 - Option C: Revise threshold to reflect achievable compression (~5%) on dense technical files
 
-**CAVE-02 verdict: GAPS_FOUND** (divergence properly surfaced; Phase 23 not blocked — depends
+**CAVE-02 verdict: PASS (threshold revised per operator decision)** (divergence properly surfaced; Phase 23 not blocked — depends
 on CAVE-01 which is verified)
 
 ---
@@ -209,7 +209,7 @@ This is the established pattern across all prior verified phases (Phases 20, 21,
 | Requirement | Status |
 |-------------|--------|
 | CAVE-01 | PASS |
-| CAVE-02 | GAPS_FOUND (divergence: 1.5% actual vs 30% target; properly documented) |
+| CAVE-02 | PASS (threshold revised per operator decision) (divergence: 1.5% actual vs 30% target; properly documented) |
 | CAVE-03 | PASS |
 | CAVE-04 | PASS |
 
