@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: The Birth
-status: completed
-stopped_at: Plan 32-01 complete
-last_updated: "2026-04-14T01:30:00.000Z"
-last_activity: 2026-04-14 — Plan 32-01 complete. gsd-executor-frontend rebuilt with FRONT-01..07 behavioral rules: progressive 4-pass pipeline, mandatory stack (React 19 + TS strict + Tailwind 4 + shadcn/ui), component structure, state decision tree, WCAG 2.1 AA accessibility, tsc+ESLint validation loop, Playwright screenshots. 4 new few-shot examples. All 3 regression suites pass (35+75+60 assertions, 0 failures).
+status: in_progress
+stopped_at: Plan 32-02 complete
+last_updated: "2026-04-14T02:45:00.000Z"
+last_activity: 2026-04-14 — Plan 32-02 complete. 85-assertion test suite (66 unit + 19 integration) created for Phase 32 rebuild. All FRONT-01..07 rules verified. Full regression gate 376/376 pass across 7 test suites. Phase 32 complete.
 progress:
   total_phases: 10
-  completed_phases: 4
-  total_plans: 10
-  completed_plans: 10
-  percent: 30
+  completed_phases: 5
+  total_plans: 12
+  completed_plans: 12
+  percent: 40
 ---
 
 # GSD-Amauta -- Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-13 after v2.9 milestone close)
 
 ## Current Position
 
-Phase: 32 of 40 (Frontend Rebuild) — IN PROGRESS
-Plan: 32-01 COMPLETE — FRONT-01..07 behavioral rules in gsd-executor-frontend.md; 5 atomic commits; all 3 regression suites green (170 assertions, 0 failures).
-Status: Plan 32-01 complete. Next: Plan 32-02 (post-generation validation + Playwright test suite) per Phase 32 plan structure.
-Last activity: 2026-04-14 — Plan 32-01 complete. gsd-executor-frontend rebuilt with FRONT-01..07 behavioral rules: progressive 4-pass pipeline, mandatory stack (React 19 + TS strict + Tailwind 4 + shadcn/ui), component structure, state decision tree, WCAG 2.1 AA accessibility, tsc+ESLint validation loop, Playwright screenshots. 4 new few-shot examples. All 3 regression suites pass (35+75+60 assertions, 0 failures).
+Phase: 32 of 40 (Frontend Rebuild) — COMPLETE
+Plan: 32-02 COMPLETE — 85-assertion test suite (66 unit + 19 integration) verifying all FRONT-01..07 rules. Full regression gate 376/376 pass. Phase 32 complete.
+Status: Phase 32 complete. Next: Phase 35 (Code Review Agent) per execution order.
+Last activity: 2026-04-14 — Plan 32-02 complete. Unit tests: 66 assertions across 14 groups covering FRONT-01..07 + FORMAT/SEC/ENG regressions. Integration tests: 19 assertions (Phases 31/34/40 regression gates + cross-file consistency). Combined 85 assertions pass, 376 total across full regression suite.
 
 Progress: [███░░░░░░░] 30%
 
@@ -37,7 +37,7 @@ Progress: [███░░░░░░░] 30%
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
 | 31 | Format Standard (FOUNDATION) | FORMAT-01..07 | COMPLETE 2026-04-13 |
-| 32 | Frontend Rebuild | FRONT-01..07 | In progress (Plan 32-01 complete) |
+| 32 | Frontend Rebuild | FRONT-01..07 | COMPLETE 2026-04-14 |
 | 33 | Testing Pipeline | TEST-01..08 | COMPLETE 2026-04-13 |
 | 34 | Security Pipeline | SEC-01..06 | COMPLETE 2026-04-13 |
 | 35 | Code Review Agent | REVIEW-01..04 | Not started |
@@ -92,6 +92,7 @@ Progress: [███░░░░░░░] 30%
 - Plan 32-01: FRONT-06 validation loop is internal to E-phase (not a separate workflow step); max-3-iteration ceiling; 4th failure commits partial delivery with divergence report. Final commit MUST include VERIFICATION: tag.
 - Plan 32-01: FRONT-07 Playwright screenshots are stored-only in v3.0 — visual regression diffing is v3.1 scope. Graceful degradation pattern mirrors Phase 34 gitleaks/trivy skip.
 - Plan 32-01: Tasks 32-01-01 and 32-01-02 were pre-executed in prior session — executor detected via grep, reported divergence, skipped re-execution. Correct behavior per divergence protocol.
+- Plan 32-02: Example count regex uses /\*\*Example \d+:/g — matches the bold-prefix "**Example 1:" pattern verbatim. Preconditions count test uses within-1 tolerance (backend has extra executor-general fallback note not in frontend). NODE_TEST_CONTEXT deletion extracted as cleanEnv() helper. Cross-file consistency tests are pure fs reads (no child processes). 376/376 full regression pass.
 
 ### Pending Todos
 
@@ -103,9 +104,9 @@ Progress: [███░░░░░░░] 30%
 
 ## Session Continuity
 
-Last session: 2026-04-14T01:30:00.000Z
-Stopped at: Plan 32-01 complete — FRONT-01..07 rules in gsd-executor-frontend.md
-Resume file: .planning/phases/32-frontend-rebuild/32-01-SUMMARY.md
+Last session: 2026-04-14T02:45:00.000Z
+Stopped at: Plan 32-02 complete — Phase 32 fully done (agent rebuild + test suite)
+Resume file: .planning/phases/32-frontend-rebuild/32-02-SUMMARY.md
 
 
 ## Learnings
@@ -120,6 +121,10 @@ Resume file: .planning/phases/32-frontend-rebuild/32-01-SUMMARY.md
 
 
 
+
+
+- [learning] 2026-04-14T01:28:02.302Z: Plan 32-02 pattern: when testing a rebuilt agent file, unit test = pure fs.readFileSync (60+ assertions across 14 groups), integration test = spawnSync regression gates for prior phases + cross-file consistency vs shared source-of-truth. NODE_TEST_CONTEXT must be deleted in cleanEnv() helper. Example count uses regex matching bold prefix pattern. Combined >= 85 assertions; full regression gate runs 7 test files.
+- [learning] 2026-04-14T01:20:56.561Z: Plan 32-01 pattern: when rebuilding a single agent file across 6 sequential tasks, run grep verification before each task to detect prior-session partial execution — if FRONT-XX rule headings already present, skip re-execution and surface divergence rather than silently overwriting. Graceful degradation for optional tools (Playwright, gitleaks, trivy) follows the same pattern: log [skip] and continue, never fail.
 - [learning] 2026-04-14T00:18:38.527Z: Plan 40-02 pattern: node --test recursive invocation detection fires when integration test spawns inner node --test subprocess. Fix: delete NODE_TEST_CONTEXT from spawnSync env. extractEngStandards() clips from ### Engineering standards to next ### or ## for content-identity tests.
 - [learning] 2026-04-13T23:33:39.465Z: Plan 34-03 pattern: integration test run-once-reuse pattern — spawnSync at describe-block level, reuse result across all it() assertions. Conditional tool test: if (toolAvailable) { assert } else { console.log('[skip]') } — never .skip() markers. Full regression gate: explicit file list of 9 suites, not run-tests.cjs (which includes pre-existing failures in security-infrastructure.test.cjs).
 - [learning] 2026-04-13T23:24:42.406Z: legacy regression test: free text learning
