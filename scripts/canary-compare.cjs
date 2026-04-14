@@ -134,32 +134,47 @@ function mcnemar(baseline, current) {
 // ─── --generate mode: run canary suite and extract per-test results ───────────
 
 /**
- * Parse node:test TAP/text output to extract per-test pass/fail state.
- * node --test output format includes lines like:
- *   ok N - description
- *   not ok N - description
- * plus nested describe output.
+ * Parse node:test output to extract per-test pass/fail state.
+ *
+ * node --test outputs in two formats:
+ *   1. Text/spec format (default): lines with ✔/✗ markers and indentation
+ *      "  ✔ test name (1.2ms)"      — individual test pass (indented)
+ *      "  ✗ test name (1.2ms)"      — individual test fail (indented)
+ *      "✔ suite name (5ms)"         — suite summary (no indent, not a test)
+ *   2. TAP format (--test-reporter=tap):
+ *      "ok 1 - description"
+ *      "not ok 1 - description"
+ *
+ * We parse both formats. Individual tests are indented (leading whitespace before ✔/✗).
+ * Suite summary lines (no leading whitespace) are skipped.
  *
  * @param {string} output — raw stdout from node --test
  * @returns {Record<string, boolean>} test name → pass/fail
  */
 function parseNodeTestOutput(output) {
   const results = {};
-  // Match "ok N - name" and "not ok N - name" at any indent level
   const lines = output.split('\n');
 
   for (const line of lines) {
-    // TAP format: "ok 1 - description" or "not ok 1 - description"
-    const okMatch = line.match(/^\s*(?:not ok|ok)\s+\d+\s+-\s+(.+?)(?:\s*#.*)?$/);
-    if (okMatch) {
-      const testName = okMatch[1].trim();
-      const passed = !line.trim().startsWith('not ok');
+    // Format 1: text/spec — indented ✔ or ✗ lines are individual tests
+    // Match: "  ✔ test name (1.2ms)" or "    ✗ test name" (any indentation depth >= 1 space)
+    const specMatch = line.match(/^(\s+)[✔✗x×]\s+(.+?)(?:\s+\(\d+(?:\.\d+)?m?s?\))?\s*$/u);
+    if (specMatch) {
+      const indent = specMatch[1];
+      const testName = specMatch[2].trim();
+      // Only capture indented lines (describe-level test, not top-level suite summary)
+      if (indent.length >= 2 && testName) {
+        const passed = /[✔]/.test(line);
+        results[testName] = passed;
+        continue;
+      }
+    }
 
-      // Skip suite-level lines (describe blocks) — they appear as top-level ok/not ok
-      // We identify individual tests by excluding names that are pure category labels
-      // (no colon separator) — but since our tests use "CATEGORY: description" format
-      // we accept all named tests with colon separators.
-      // Also include tests without colons for robustness.
+    // Format 2: TAP — "ok N - name" or "not ok N - name"
+    const tapMatch = line.match(/^\s*(?:not ok|ok)\s+\d+\s+-\s+(.+?)(?:\s*#.*)?$/);
+    if (tapMatch) {
+      const testName = tapMatch[1].trim();
+      const passed = !line.trim().startsWith('not ok');
       if (testName) {
         results[testName] = passed;
       }
