@@ -83,11 +83,11 @@ New gsd-architect — the strategic thinker.
 
 Architectural upgrade from hub-spoke to blackboard-based inter-agent communication.
 
-- [ ] **COMM-01**: `agent_findings` PG table: `{id, agent_name, task_id, finding_type, content, confidence, created_at}`. pgvector semantic search over findings.
-- [ ] **COMM-02**: `agent_messages` table with types: `ASK_QUESTION`, `SHARE_FINDING`, `REQUEST_REVIEW`, `DELEGATE_SUBTASK`.
-- [ ] **COMM-03**: Operator supervises all inter-agent messages. `operator_approved: bool` field. Auto-approve low-risk (SHARE_FINDING).
-- [ ] **COMM-04**: Structured handoff JSON: `{task_id, from_agent, handoff_type, summary, key_findings[], decisions_made[], open_questions[], artifacts[], confidence}`. ≤ 800 tokens.
-- [ ] **COMM-05**: Conflict resolution: security→checker wins; correctness→test results authoritative; style→executor deference; ambiguous→escalate.
+- [x] **COMM-01**: `agent_findings` PG table: `{id, agent_name, task_id, finding_type, content, confidence, created_at}`. Query by task_id. Semantic search deferred to v3.1.
+- [x] **COMM-02**: `agent_messages` table with types: `ASK_QUESTION`, `SHARE_FINDING`, `REQUEST_REVIEW`, `DELEGATE_SUBTASK`.
+- [x] **COMM-03**: Operator supervises all inter-agent messages. `operator_approved: bool` field. Auto-approve low-risk (SHARE_FINDING).
+- [x] **COMM-04**: Structured handoff JSON: `{task_id, from_agent, handoff_type, summary, key_findings[], decisions_made[], open_questions[], artifacts[], confidence}`. ≤ 800 tokens.
+- [x] **COMM-05**: Conflict resolution: security→checker wins; correctness→test results authoritative; style→executor deference; ambiguous→escalate.
 
 ## Phase 39 — Agent Lifecycle
 
@@ -174,11 +174,11 @@ Best practices embedded in every agent's DNA.
 | ARCH-01 | 37 | Complete |
 | ARCH-02 | 37 | Complete |
 | ARCH-03 | 37 | Complete |
-| COMM-01 | 38 | Pending |
-| COMM-02 | 38 | Pending |
-| COMM-03 | 38 | Pending |
-| COMM-04 | 38 | Pending |
-| COMM-05 | 38 | Pending |
+| COMM-01 | 38 | Complete |
+| COMM-02 | 38 | Complete |
+| COMM-03 | 38 | Complete |
+| COMM-04 | 38 | Complete |
+| COMM-05 | 38 | Complete |
 | LIFE-01 | 39 | Pending |
 | LIFE-02 | 39 | Pending |
 | LIFE-03 | 39 | Pending |

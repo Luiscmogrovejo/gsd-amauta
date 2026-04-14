@@ -196,7 +196,7 @@ Plans:
   2. `agent_messages` table exists with message types `ASK_QUESTION`, `SHARE_FINDING`, `REQUEST_REVIEW`, `DELEGATE_SUBTASK`; a `SHARE_FINDING` message is auto-approved; a `DELEGATE_SUBTASK` message requires operator approval (`operator_approved: true`) before the target agent acts on it.
   3. A complete agent handoff produces structured JSON matching schema `{task_id, from_agent, handoff_type, summary, key_findings[], decisions_made[], open_questions[], artifacts[], confidence}` in <= 800 tokens.
   4. Conflict resolution rules are exercised: security finding wins over style finding on the same file; test results win on correctness disputes; ambiguous conflicts escalate rather than auto-resolve.
-**Plans:** 2/3 planned
+**Plans:** 3/3 plans complete
 
 Plans:
 - [x] 38-01: Infrastructure — migrations 014+015, daemon endpoints (6 routes), handoff utility, conflict resolution rules file (COMM-01..05) — 2026-04-13
@@ -284,7 +284,7 @@ Phase 31: Format Standard (FOUNDATION)
 | 35. Code Review Agent | 2/2 | Complete    | 2026-04-14 |
 | 36. Data Engineering Agent | 2/2 | Complete    | 2026-04-14 |
 | 37. Architect Agent | 2/2 | Complete    | 2026-04-14 |
-| 38. Blackboard Communication | 3/3 | Complete    | 2026-04-13 |
+| 38. Blackboard Communication | 3/3 | Complete    | 2026-04-14 |
 | 39. Agent Lifecycle | 0/2 | Not started | - |
 | 40. Engineering Standards | 2/2 | Complete    | 2026-04-14 |
 
