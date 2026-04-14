@@ -1,0 +1,133 @@
+{
+  "version": "1.0.0",
+  "description": "Grader type schemas for the gsd-amauta eval framework. Code-based graders are IMPLEMENTED in v3.0. Model-based and human graders are DOCUMENTED here for v3.1 implementation.",
+  "grader_types": [
+    {
+      "type": "code-based",
+      "status": "IMPLEMENTED",
+      "milestone": "v3.0",
+      "description": "Automated assertions that grep a specified file for a pattern and compare against expected_match. Fast, cheap, reproducible, and requires no API key. The only grader type implemented in v3.0.",
+      "schema": {
+        "grader_type": "code-based",
+        "grading_criteria": {
+          "file_to_check": {
+            "type": "string",
+            "description": "Relative path from project root to the file to inspect (e.g., 'agents/gsd-executor-backend.md')"
+          },
+          "pattern_to_grep": {
+            "type": "string",
+            "description": "Regular expression pattern to search for in the file. Falls back to literal string if regex is invalid."
+          },
+          "expected_match": {
+            "type": "boolean",
+            "description": "true if the pattern must be present, false if the pattern must be absent"
+          }
+        }
+      },
+      "example": {
+        "grader_type": "code-based",
+        "grading_criteria": {
+          "file_to_check": "agents/gsd-executor-backend.md",
+          "pattern_to_grep": "No swallowed exceptions",
+          "expected_match": true
+        }
+      }
+    },
+    {
+      "type": "model-based",
+      "status": "DOCUMENTED",
+      "milestone": "v3.1",
+      "description": "LLM rubric scoring via Anthropic API. The agent output is sent to a model along with a rubric and scoring criteria. On-demand only due to API cost. Not implemented in v3.0 (portability constraint — no API key required).",
+      "schema": {
+        "grader_type": "model-based",
+        "grading_criteria": {
+          "model": {
+            "type": "string",
+            "description": "Anthropic model to use for scoring (e.g., 'claude-sonnet-4-6')"
+          },
+          "rubric": {
+            "type": "string",
+            "description": "Multi-line rubric describing what constitutes a good response"
+          },
+          "scoring_criteria": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "criterion": { "type": "string" },
+                "weight": { "type": "number", "description": "0.0 to 1.0 — must sum to 1.0 across all criteria" },
+                "pass_threshold": { "type": "number", "description": "0.0 to 1.0 — minimum score to pass this criterion" }
+              }
+            }
+          },
+          "temperature": {
+            "type": "number",
+            "description": "Model temperature for scoring. Recommend 0.0 for deterministic scoring."
+          },
+          "max_tokens": {
+            "type": "integer",
+            "description": "Maximum tokens for the scoring response"
+          }
+        }
+      },
+      "example": {
+        "grader_type": "model-based",
+        "grading_criteria": {
+          "model": "claude-sonnet-4-6",
+          "rubric": "Does the agent response follow RPETD protocol, include a clear plan, and log all phases? Score 0-1 per criterion.",
+          "scoring_criteria": [
+            { "criterion": "RPETD phases all present", "weight": 0.4, "pass_threshold": 0.8 },
+            { "criterion": "Plan is specific and actionable", "weight": 0.3, "pass_threshold": 0.7 },
+            { "criterion": "No silent scope expansion", "weight": 0.3, "pass_threshold": 0.9 }
+          ],
+          "temperature": 0.0,
+          "max_tokens": 512
+        }
+      }
+    },
+    {
+      "type": "human",
+      "status": "DOCUMENTED",
+      "milestone": "v3.1",
+      "description": "Manual spot-check with a structured checklist reviewed by a human evaluator. Used for qualitative behavioral checks that cannot be automated. Not implemented in v3.0.",
+      "schema": {
+        "grader_type": "human",
+        "grading_criteria": {
+          "reviewer_role": {
+            "type": "string",
+            "description": "The role/expertise required to review this scenario (e.g., 'backend engineer', 'security specialist')"
+          },
+          "checklist_items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string", "description": "Unique identifier for this checklist item" },
+                "description": { "type": "string", "description": "What the reviewer should look for" },
+                "pass_criteria": { "type": "string", "description": "What constitutes a passing result for this item" }
+              }
+            }
+          }
+        }
+      },
+      "example": {
+        "grader_type": "human",
+        "grading_criteria": {
+          "reviewer_role": "backend engineer",
+          "checklist_items": [
+            {
+              "id": "H-01",
+              "description": "Does the agent output include a clear rationale for the chosen database schema?",
+              "pass_criteria": "Rationale references normalization, indexing strategy, and query patterns"
+            },
+            {
+              "id": "H-02",
+              "description": "Does the migration include a downgrade path?",
+              "pass_criteria": "DOWN migration reverses all changes cleanly without data loss"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
