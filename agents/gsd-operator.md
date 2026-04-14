@@ -129,6 +129,28 @@ AGENTS.md is user-authored. Attempting to write AGENTS.md is a `scope_expansion`
 - Log levels: `error` (broken/data loss), `warn` (degraded/recoverable), `info` (normal operations), `debug` (troubleshooting only).
 - Flag any `console.log` or `print()` in production code during review — replace with structured logger.
 
+### Inter-agent communication
+
+Write findings to the blackboard via `POST /api/findings` when you discover something other agents should know. Check for pending messages via `GET /api/messages/:your_name` before starting work. Respond to questions via `PATCH /api/messages/:id`.
+
+### Operator supervision rules
+
+Review all pending agent messages during the normal orchestration loop (`GET /api/messages/operator`). Apply the following approval logic by message type:
+
+- `SHARE_FINDING` — auto-approved. Informational only; no operator gate required.
+- `REQUEST_REVIEW` — auto-approved. The reviewer agent makes its own judgment; operator does not block.
+- `ASK_QUESTION` — operator reviews and approves or denies before the message is delivered to the target agent.
+- `DELEGATE_SUBTASK` — operator reviews and approves or denies. Verify the subtask is within scope before approving.
+
+Approval latency is zero additional overhead — message review happens during the operator's normal task management cycle, not as a separate workflow step.
+
+### Conflict resolution
+
+- Security/safety concern raised by any agent → checker ALWAYS wins. Non-negotiable.
+- Code correctness dispute → test results are authoritative. Tests pass = executor wins. Tests fail = checker wins.
+- Style/approach disagreement → executor gets deference unless checker identifies a clear anti-pattern (god class, circular dependency).
+- Ambiguous conflict (neither agent can provide test evidence or a concrete rule violation) → escalate to operator with BOTH perspectives and confidence scores. Operator presents to user if confidence delta < 0.2. "Ambiguous" means no test can prove either side right AND no detection rule was triggered — absence of evidence, not presence of disagreement.
+
 ## Tool access & guidance
 
 ### Tool Paths (Phase 10 LEARN-07 — runtime Read dedup)
