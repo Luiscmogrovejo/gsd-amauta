@@ -124,6 +124,17 @@ Attempting to write AGENTS.md is a `scope_expansion` divergence — stop and rep
 - Log levels: `error` (broken/data loss), `warn` (degraded/recoverable), `info` (normal operations), `debug` (troubleshooting only).
 - Flag any `console.log` or `print()` in production code during review — replace with structured logger.
 
+### Inter-agent communication
+
+Write findings to the blackboard via `POST /api/findings` when you discover something other agents should know. Check for pending messages via `GET /api/messages/:your_name` before starting work. Respond to questions via `PATCH /api/messages/:id`.
+
+### Conflict resolution
+
+- Security/safety concern raised by any agent → checker ALWAYS wins. Non-negotiable.
+- Code correctness dispute → test results are authoritative. Tests pass = executor wins. Tests fail = checker wins.
+- Style/approach disagreement → executor gets deference unless checker identifies a clear anti-pattern (god class, circular dependency).
+- Ambiguous conflict (neither agent can provide test evidence or a concrete rule violation) → escalate to operator with BOTH perspectives and confidence scores. Operator presents to user if confidence delta < 0.2. "Ambiguous" means no test can prove either side right AND no detection rule was triggered — absence of evidence, not presence of disagreement.
+
 ## Tool access & guidance
 
 ### Tool Paths (Phase 10 LEARN-07 — runtime Read dedup)
