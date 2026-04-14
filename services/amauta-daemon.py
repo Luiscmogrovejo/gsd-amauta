@@ -1624,6 +1624,88 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": _safe_error(e)}, 500)
             return
 
+        # ─── Blackboard GET routes (Phase 38 COMM-01, COMM-02) ───────────────────
+        #
+        # GET /api/findings/:task_id — retrieve all findings for a task, recency desc.
+        # GET /api/messages/:agent_name — retrieve pending/approved messages for an agent.
+
+        if path.startswith("/api/findings/"):
+            task_id = path[len("/api/findings/"):]
+            if not task_id:
+                self._send_json({"error": "task_id required in path"}, 400)
+                return
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
+                return
+            try:
+                conn = store._get_conn()
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT id, agent_name, task_id, finding_type, content, confidence, created_at"
+                        " FROM agent_findings WHERE task_id = %s ORDER BY created_at DESC",
+                        (task_id,),
+                    )
+                    rows = cur.fetchall()
+                results = [
+                    {
+                        "id": str(r[0]),
+                        "agent_name": r[1],
+                        "task_id": r[2],
+                        "finding_type": r[3],
+                        "content": r[4],
+                        "confidence": r[5],
+                        "created_at": r[6].isoformat() if r[6] else None,
+                    }
+                    for r in rows
+                ]
+                self._send_json({"findings": results, "count": len(results)})
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
+        if path.startswith("/api/messages/"):
+            agent_name = path[len("/api/messages/"):]
+            if not agent_name:
+                self._send_json({"error": "agent_name required in path"}, 400)
+                return
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
+                return
+            try:
+                conn = store._get_conn()
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT id, from_agent, to_agent, task_id, message_type, content,"
+                        " response, status, operator_approved, created_at, responded_at"
+                        " FROM agent_messages"
+                        " WHERE to_agent = %s AND status IN ('pending', 'approved')"
+                        " ORDER BY created_at ASC",
+                        (agent_name,),
+                    )
+                    rows = cur.fetchall()
+                messages = [
+                    {
+                        "id": str(r[0]),
+                        "from_agent": r[1],
+                        "to_agent": r[2],
+                        "task_id": r[3],
+                        "message_type": r[4],
+                        "content": r[5],
+                        "response": r[6],
+                        "status": r[7],
+                        "operator_approved": r[8],
+                        "created_at": r[9].isoformat() if r[9] else None,
+                        "responded_at": r[10].isoformat() if r[10] else None,
+                    }
+                    for r in rows
+                ]
+                self._send_json({"messages": messages, "count": len(messages)})
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
         self._send_json({"error": f"Unknown GET route: {path}"}, 404)
 
     # ─── POST routes ─────────────────────────────────
@@ -2469,6 +2551,136 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": _safe_error(e)}, 500)
             return
 
+        # ─── Blackboard POST routes (Phase 38 COMM-01, COMM-02, COMM-04) ──────────
+        #
+        # POST /api/findings — write a finding to agent_findings table.
+        # POST /api/messages — send a message to agent_messages table.
+        # POST /api/handoff  — generate structured handoff JSON via handoff.cjs.
+
+        if path == "/api/findings":
+            _VALID_FINDING_TYPES = {"observation", "decision", "warning", "blocker"}
+            required = ["agent_name", "task_id", "finding_type", "content"]
+            missing = [f for f in required if not body.get(f)]
+            if missing:
+                self._send_json({"error": f"Missing required fields: {', '.join(missing)}"}, 400)
+                return
+            if body["finding_type"] not in _VALID_FINDING_TYPES:
+                self._send_json({
+                    "error": f"finding_type must be one of: {', '.join(sorted(_VALID_FINDING_TYPES))}"
+                }, 400)
+                return
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
+                return
+            try:
+                conn = store._get_conn()
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "INSERT INTO agent_findings (agent_name, task_id, finding_type, content, confidence)"
+                        " VALUES (%s, %s, %s, %s, %s) RETURNING id, created_at",
+                        (
+                            body["agent_name"],
+                            body["task_id"],
+                            body["finding_type"],
+                            body["content"],
+                            float(body.get("confidence", 0.8)),
+                        ),
+                    )
+                    row = cur.fetchone()
+                    conn.commit()
+                self._send_json({"id": str(row[0]), "created": True, "created_at": row[1].isoformat()}, 201)
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
+        if path == "/api/messages":
+            _VALID_MESSAGE_TYPES = {"ASK_QUESTION", "SHARE_FINDING", "REQUEST_REVIEW", "DELEGATE_SUBTASK"}
+            # Auto-approved types (informational/advisory — no operator gate needed)
+            _AUTO_APPROVED = {"SHARE_FINDING", "REQUEST_REVIEW"}
+            required = ["from_agent", "to_agent", "task_id", "message_type", "content"]
+            missing = [f for f in required if not body.get(f)]
+            if missing:
+                self._send_json({"error": f"Missing required fields: {', '.join(missing)}"}, 400)
+                return
+            if body["message_type"] not in _VALID_MESSAGE_TYPES:
+                self._send_json({
+                    "error": f"message_type must be one of: {', '.join(sorted(_VALID_MESSAGE_TYPES))}"
+                }, 400)
+                return
+            auto_approved = body["message_type"] in _AUTO_APPROVED
+            status = "approved" if auto_approved else "pending"
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
+                return
+            try:
+                conn = store._get_conn()
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "INSERT INTO agent_messages"
+                        " (from_agent, to_agent, task_id, message_type, content, status, operator_approved)"
+                        " VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id, created_at",
+                        (
+                            body["from_agent"],
+                            body["to_agent"],
+                            body["task_id"],
+                            body["message_type"],
+                            body["content"],
+                            status,
+                            auto_approved,
+                        ),
+                    )
+                    row = cur.fetchone()
+                    conn.commit()
+                self._send_json({
+                    "id": str(row[0]),
+                    "created": True,
+                    "status": status,
+                    "operator_approved": auto_approved,
+                    "created_at": row[1].isoformat(),
+                }, 201)
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
+        if path == "/api/handoff":
+            # POST /api/handoff — generate structured handoff JSON via Node.js handoff.cjs.
+            # Required: task_id, from_agent, handoff_type.
+            required = ["task_id", "from_agent", "handoff_type"]
+            missing = [f for f in required if not body.get(f)]
+            if missing:
+                self._send_json({"error": f"Missing required fields: {', '.join(missing)}"}, 400)
+                return
+            handoff_script = str(Path(__file__).resolve().parent / "handoff.cjs")
+            input_json = json.dumps(body)
+            try:
+                result = subprocess.run(  # invoke handoff.cjs via node subprocess
+                    ["node", "-e",
+                     f"const h=require('{handoff_script}');"
+                     f"const opts=JSON.parse(process.argv[1]);"
+                     f"process.stdout.write(JSON.stringify(h.createHandoff(opts)));",
+                     input_json],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                if result.returncode != 0:
+                    self._send_json({
+                        "error": "handoff generation failed",
+                        "details": result.stderr.strip(),
+                    }, 500)
+                    return
+                handoff_data = json.loads(result.stdout)
+                self._send_json(handoff_data, 200)
+            except subprocess.TimeoutExpired:
+                self._send_json({"error": "handoff generation timed out"}, 500)
+            except json.JSONDecodeError as e:
+                self._send_json({"error": "invalid JSON from handoff.cjs", "details": str(e)}, 500)
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
         self._send_json({"error": f"Unknown POST route: {path}"}, 404)
 
     # ─── PATCH routes (Phase 10 LEARN-05) ────────────
@@ -2520,6 +2732,68 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                         self._send_json(result, 500)
                     return
                 self._send_json(result, 200)
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
+        # ─── Blackboard PATCH route (Phase 38 COMM-02) ──────────────────────────
+        #
+        # PATCH /api/messages/:id — update message status (approve/deny/respond).
+        # Body: {"status": "approved"|"denied"|"responded", "response": "...", "operator_approved": bool}
+
+        if path.startswith("/api/messages/"):
+            msg_id = path[len("/api/messages/"):]
+            if not msg_id:
+                self._send_json({"error": "message id required in path"}, 400)
+                return
+            _VALID_STATUSES = {"approved", "denied", "responded"}
+            new_status = body.get("status")
+            if new_status and new_status not in _VALID_STATUSES:
+                self._send_json({
+                    "error": f"status must be one of: {', '.join(sorted(_VALID_STATUSES))}"
+                }, 400)
+                return
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
+                return
+            try:
+                conn = store._get_conn()
+                with conn.cursor() as cur:
+                    # Build update SET clauses from provided fields
+                    updates = []
+                    params = []
+                    if new_status:
+                        updates.append("status = %s")
+                        params.append(new_status)
+                    if "response" in body:
+                        updates.append("response = %s")
+                        params.append(body["response"])
+                        updates.append("responded_at = NOW()")
+                    if "operator_approved" in body:
+                        updates.append("operator_approved = %s")
+                        params.append(bool(body["operator_approved"]))
+                    if not updates:
+                        self._send_json({"error": "No updatable fields provided"}, 400)
+                        return
+                    params.append(msg_id)
+                    cur.execute(
+                        f"UPDATE agent_messages SET {', '.join(updates)}"
+                        f" WHERE id = %s RETURNING id, status, operator_approved, responded_at",
+                        params,
+                    )
+                    row = cur.fetchone()
+                    conn.commit()
+                if not row:
+                    self._send_json({"error": "message not found"}, 404)
+                    return
+                self._send_json({
+                    "id": str(row[0]),
+                    "status": row[1],
+                    "operator_approved": row[2],
+                    "responded_at": row[3].isoformat() if row[3] else None,
+                    "updated": True,
+                })
             except Exception as e:
                 self._send_json({"error": _safe_error(e)}, 500)
             return
