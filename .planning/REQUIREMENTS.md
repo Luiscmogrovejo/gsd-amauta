@@ -22,7 +22,7 @@ All 11 existing agents restructured to standardized 10-section format. Foundatio
 gsd-executor-frontend rebuilt with v0-inspired composite pipeline.
 
 - [ ] **FRONT-01**: Progressive generation pattern (layout → sections → components → interactivity). Never full-page in one pass.
-- [ ] **FRONT-02**: Mandatory stack: React 19 + TypeScript strict + Tailwind CSS 4 + shadcn/ui. Refuses vanilla CSS, inline styles, untyped JS.
+- [ ] **FRONT-02**: Mandatory stack: React 19 + TypeScript strict + Tailwind CSS 4 + shadcn/ui. Warns and adapts for vanilla CSS, inline styles, untyped JS (new code uses mandatory stack; existing code left alone).
 - [ ] **FRONT-03**: Component-driven: `components/ui/` (shadcn primitives), `components/` (composed), `app/` (routes). No component > 200 lines.
 - [ ] **FRONT-04**: State decision tree: local→useState, shared UI→Zustand, server→TanStack Query, URL→search params.
 - [ ] **FRONT-05**: WCAG 2.1 AA baseline. Semantic HTML, ARIA, keyboard nav, focus mgmt, contrast. `eslint-plugin-jsx-a11y` 0 errors.
