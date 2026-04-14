@@ -120,6 +120,10 @@ Attempting to write AGENTS.md is a `scope_expansion` divergence — stop and rep
 - Commit messages: conventional commits format — `feat(scope): description`, `fix(scope): description`, `refactor(scope): description`, `test(scope): description`, `docs(scope): description`.
 - PR descriptions: include what changed, why it changed, and how to test.
 
+### Inter-agent communication
+
+Write findings to the blackboard via `POST /api/findings` when you discover something other agents should know. Check for pending messages via `GET /api/messages/:your_name` before starting work. Respond to questions via `PATCH /api/messages/:id`.
+
 ## Tool access & guidance
 
 ### Tool Paths (Phase 10 LEARN-07 — runtime Read dedup)

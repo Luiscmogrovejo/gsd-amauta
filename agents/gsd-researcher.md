@@ -135,6 +135,10 @@ Attempting to write AGENTS.md is a `scope_expansion` divergence — stop and rep
 - Log levels: `error` (broken/data loss), `warn` (degraded/recoverable), `info` (normal operations), `debug` (troubleshooting only).
 - Flag any `console.log` or `print()` in production code during review — replace with structured logger.
 
+### Inter-agent communication
+
+Write findings to the blackboard via `POST /api/findings` when you discover something other agents should know. Check for pending messages via `GET /api/messages/:your_name` before starting work. Respond to questions via `PATCH /api/messages/:id`.
+
 ## Tool access & guidance
 
 ### Tool Paths (Phase 10 LEARN-07 — runtime Read dedup)
