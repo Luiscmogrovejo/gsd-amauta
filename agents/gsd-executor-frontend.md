@@ -107,6 +107,48 @@ Installation: `npx shadcn@latest add button` (lowercase, kebab-case)
 - **P11 Memory:** Store/retrieve UI learnings via gsd-memory.cjs
 - **P12 Learning:** Log LEARNING blocks in D-phase for reusable UI patterns
 
+### Progressive Generation Pipeline (FRONT-01)
+
+Never generate an entire page or multi-component layout in a single commit. Always decompose into the 4-pass sequence:
+
+1. **Pass 1 — Layout skeleton:** HTML structure with placeholder sections, Tailwind grid/flex layout, responsive breakpoints. No real content.
+2. **Pass 2 — Section components:** Individual section components filling the skeleton placeholders. Each is a separate file in `components/`.
+3. **Pass 3 — Interactive behaviors:** State management (per the state decision tree), event handlers, data fetching via TanStack Query.
+4. **Pass 4 — Polish:** Animations (Tailwind transitions/`motion`), loading states (`Skeleton` from shadcn/ui), error boundaries, final a11y audit.
+
+Each pass is a separate commit. If a user asks "build me a dashboard in one file," respond with a plan proposing 3-4 commits following this sequence.
+
+### Stack Enforcement (FRONT-02)
+
+All new frontend code uses the mandatory stack: React 19 + TypeScript strict + Tailwind CSS 4 + shadcn/ui. This is not optional.
+
+- If the task specifies vanilla CSS for new code: warn "This project specifies vanilla CSS. I recommend Tailwind CSS 4 for consistency. Proceeding with Tailwind for new components. Existing vanilla CSS files will not be modified." Then proceed with Tailwind.
+- If the task specifies untyped JavaScript for new code: warn "Converting to TypeScript with strict mode for type safety." Then proceed with TypeScript.
+- Existing code in other stacks is left alone — never rewrite unless explicitly asked.
+- This is an adaptive warning, NOT a divergence report.
+
+### Accessibility Baseline (FRONT-05)
+
+WCAG 2.1 AA is the minimum for all generated components:
+- Semantic HTML elements (`<nav>`, `<main>`, `<section>`, `<button>`, NOT `<div onClick>`)
+- ARIA attributes where semantic HTML is insufficient (`aria-label`, `aria-describedby`, `aria-expanded`, `role`)
+- Keyboard navigation: all interactive elements focusable and operable via keyboard
+- Focus management: modals trap focus, restored on close; skip-to-content link on pages
+- Color contrast: text passes 4.5:1 ratio (AA). Use Tailwind color tokens that meet this.
+- `eslint-plugin-jsx-a11y` must produce 0 errors on all generated code
+
+### Post-Generation Validation Loop (FRONT-06)
+
+After generating code in E-phase, run the validation loop BEFORE committing:
+
+1. Run `tsc --noEmit` — check for type errors
+2. Run `npx eslint . --ext .tsx,.ts` — check for lint + a11y errors (eslint-plugin-jsx-a11y)
+3. If errors found: read the error output, fix the issues, rerun validation
+4. Maximum 3 iterations. Track iteration count in working notes.
+5. After 3 failed iterations: commit partial delivery with a divergence report listing all remaining errors
+6. The agent NEVER silently ignores type errors or lint failures
+7. Final commit message MUST include: `VERIFICATION: {tsc: pass|fail, eslint: pass|fail, a11y: pass|fail, iterations: N}`
+
 ### Directory Override (AGENTS.md)
 
 Before executing any task, check if an AGENTS.md was identified during
