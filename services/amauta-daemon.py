@@ -1706,6 +1706,46 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": _safe_error(e)}, 500)
             return
 
+        # ─── Agent Metrics GET routes (Phase 39 LIFE-02) ────────────────────────
+        #
+        # GET /api/metrics/stats — return per-agent aggregated execution stats.
+
+        if path == "/api/metrics/stats":
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
+                return
+            try:
+                conn = store._get_conn()
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT agent_name,"
+                        " COUNT(*) AS tasks_completed,"
+                        " AVG(completion_time_ms)::int AS avg_time_ms,"
+                        " AVG(token_usage)::int AS avg_tokens,"
+                        " (SUM(error_count)::float / NULLIF(COUNT(*), 0)) AS error_rate,"
+                        " (COUNT(*) FILTER (WHERE outcome = 'pass')::float / NULLIF(COUNT(*), 0)) AS pass_rate"
+                        " FROM agent_metrics"
+                        " GROUP BY agent_name"
+                        " ORDER BY agent_name"
+                    )
+                    rows = cur.fetchall()
+                stats = [
+                    {
+                        "agent_name": r[0],
+                        "tasks_completed": r[1],
+                        "avg_time_ms": r[2],
+                        "avg_tokens": r[3],
+                        "error_rate": float(r[4]) if r[4] is not None else None,
+                        "pass_rate": float(r[5]) if r[5] is not None else None,
+                    }
+                    for r in rows
+                ]
+                self._send_json({"stats": stats, "count": len(stats)})
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
         self._send_json({"error": f"Unknown GET route: {path}"}, 404)
 
     # ─── POST routes ─────────────────────────────────
@@ -2677,6 +2717,51 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": "handoff generation timed out"}, 500)
             except json.JSONDecodeError as e:
                 self._send_json({"error": "invalid JSON from handoff.cjs", "details": str(e)}, 500)
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
+        # ─── Agent Metrics POST routes (Phase 39 LIFE-02) ───────────────────────
+        #
+        # POST /api/metrics — record an agent execution metric.
+        # Required: agent_name, task_id, outcome: 'pass', 'fail', 'partial'
+        # Optional: completion_time_ms, token_usage, error_count (default 0).
+
+        if path == "/api/metrics":
+            _VALID_OUTCOMES = {"pass", "fail", "partial"}
+            required = ["agent_name", "task_id", "outcome"]
+            missing = [f for f in required if not body.get(f)]
+            if missing:
+                self._send_json({"error": f"Missing required fields: {', '.join(missing)}"}, 400)
+                return
+            if body["outcome"] not in _VALID_OUTCOMES:  # outcome: 'pass', 'fail', 'partial'
+                self._send_json({
+                    "error": f"outcome must be one of: {', '.join(sorted(_VALID_OUTCOMES))}"
+                }, 400)
+                return
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
+                return
+            try:
+                conn = store._get_conn()
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "INSERT INTO agent_metrics"
+                        " (agent_name, task_id, completion_time_ms, token_usage, error_count, outcome)"
+                        " VALUES (%s, %s, %s, %s, %s, %s) RETURNING id, created_at",
+                        (
+                            body["agent_name"],
+                            body["task_id"],
+                            body.get("completion_time_ms"),
+                            body.get("token_usage"),
+                            int(body.get("error_count", 0)),
+                            body["outcome"],
+                        ),
+                    )
+                    row = cur.fetchone()
+                    conn.commit()
+                self._send_json({"id": str(row[0]), "created": True, "created_at": row[1].isoformat()}, 201)
             except Exception as e:
                 self._send_json({"error": _safe_error(e)}, 500)
             return
