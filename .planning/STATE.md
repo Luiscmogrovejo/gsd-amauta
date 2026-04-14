@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: The Birth
 status: completed
-stopped_at: Plan 39-01 complete — lifecycle infrastructure Wave 1 done
-last_updated: "2026-04-13T00:35:00.000Z"
-last_activity: "2026-04-13 — Plan 39-01 complete. Migration 016 (agent_metrics), POST /api/metrics + GET /api/metrics/stats daemon endpoints, scripts/tool-integrity.cjs (SHA-256 + Valkey), 17 changelog files in agents/changelog/, SemVer version bump rules in gsd-operator.md (LIFE-01/02/05). 5 atomic commits. FORMAT-01 preserved."
+stopped_at: Plan 39-02 complete — canary suite + McNemar + baseline + agent-stats Wave 2 done
+last_updated: "2026-04-13T01:25:00.000Z"
+last_activity: "2026-04-13 — Plan 39-02 complete. 50-test canary suite (tests/39-canary-suite.test.cjs, 50/50 pass in 94ms), McNemar's chi-squared comparison (scripts/canary-compare.cjs, erfc-based p-value, continuity correction), baseline vector (tests/fixtures/39-canary-baseline.json, 50 entries all true), gsd-tools agent-stats subcommand. LIFE-02/03 complete. 4 atomic commits."
 progress:
   total_phases: 10
   completed_phases: 9
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-04-13 after v2.9 milestone close)
 ## Current Position
 
 Phase: 39 of 40 (Agent Lifecycle — CAPSTONE) — IN PROGRESS
-Plan: 39-01 COMPLETE — Migration 016, POST /api/metrics + GET /api/metrics/stats, tool-integrity.cjs, 17 changelog files, SemVer version rules in operator. 5 atomic commits, 0 deviations. LIFE-01/02/05 complete.
-Status: Plan 39-01 (Wave 1) complete. Plan 39-02 (Wave 2: canary suite + canary-compare.cjs + agent-stats) is next.
-Last activity: 2026-04-13 — Plan 39-01 complete. Migration 016 (agent_metrics), POST /api/metrics + GET /api/metrics/stats daemon endpoints, scripts/tool-integrity.cjs (SHA-256 + Valkey), 17 changelog files in agents/changelog/, SemVer version bump rules in gsd-operator.md (LIFE-01/02/05). 5 atomic commits. FORMAT-01 preserved.
+Plan: 39-02 COMPLETE — 50-test canary suite (94ms), McNemar's chi-squared comparison, baseline vector, gsd-tools agent-stats. 4 atomic commits, 1 deviation (parser format fix). LIFE-02/03 complete.
+Status: Plan 39-02 (Wave 2) complete. Plan 39-03 (Wave 3: eval framework + integration tests + full regression) is next.
+Last activity: 2026-04-13 — Plan 39-02 complete. 50-test canary suite (tests/39-canary-suite.test.cjs, 50/50 pass in 94ms), McNemar's chi-squared comparison (scripts/canary-compare.cjs, erfc-based p-value, continuity correction), baseline vector (tests/fixtures/39-canary-baseline.json, 50 entries all true), gsd-tools agent-stats subcommand. LIFE-02/03 complete. 4 atomic commits.
 
 Progress: [████░░░░░░] 35%
 
@@ -102,6 +102,7 @@ Progress: [████░░░░░░] 35%
 - Plan 38-02: Agent behavioral updates Wave 2 — ### Inter-agent communication is a ### subsection (not a new ## section); FORMAT-01 preserved at exactly 10 ## sections for all 17 agents. Universal insertion point: after last ### within ## Behavioral rules (ENG-05 last bullet for all except planner, which uses ### Git workflow standards). Conflict resolution verbatim copy into operator + checker only (both adjudicators). Pact contracts: findings-crud (POST+GET+400, 3/3 pass) + messages-crud (SHARE_FINDING+GET+PATCH+DELEGATE_SUBTASK, 4/4 pass). Read tool requires file to be read (even limit 5) before Edit can be applied — batch reads satisfy this for multiple files.
 - Plan 38-03: Test suite Wave 3 — 3-file test structure (handoff utility unit, blackboard communication unit, blackboard communication integration). E2E groups use single-test-body skip (not .skip() markers) when E2E_BASE_URL absent — 0 skipped in test runner output. Security rules identity loop: 17 agents × 12 bullets produces 18 assertions in one group. Inter-agent communication canonical text hardcoded in test file for identity comparison (avoids relative-read indirection). Prior-phase regression gate spawns 4 unit suites (35/36/37/40) not integration suites — gate completes in < 2 min. Total: 209 assertions (39 handoff unit + 100 agent unit + 70 integration), 0 failures. Exceeds 90-assertion minimum.
 - Plan 39-01: Lifecycle infrastructure Wave 1 — migration 016 exact schema from CONTEXT.md (UUID, agent_name, task_id, completion_time_ms, token_usage, error_count DEFAULT 0, outcome, created_at + idx_metrics_agent). POST /api/metrics validates outcome ∈ {'pass','fail','partial'}, returns 201. GET /api/metrics/stats uses GROUP BY agent_name with FILTER (WHERE outcome = 'pass') for pass_rate. tool-integrity.cjs uses raw net.Socket + RESP protocol (no Redis dep) for Valkey — portable, graceful degradation exits 0 on cache failure. TOOL_INTEGRITY_VIOLATION is a security event: exit 1 + structured JSON to stderr, no auto-heal by design. 17 changelog files: v3.0-created agents (tester/qa Phase 33, security Phase 34, reviewer Phase 35, executor-data Phase 36, architect Phase 37, executor-frontend Phase 32) include creation phase bullet. ### Version management (LIFE-01) inserted after ### Conflict resolution — executor-owns-bump: version bump + changelog = one atomic commit alongside agent modification. FORMAT-01 preserved at exactly 10 ## sections.
+- Plan 39-02: Canary suite Wave 2 — 50-test suite runs in 94ms (10 describe × 5 it), all pass. node:test outputs Unicode ✔/✗ markers (NOT TAP) — parseNodeTestOutput detects individual tests by requiring indent >= 2 spaces; suite summary lines have no indent. McNemar's continuity correction: (|b-c|-1)^2/(b+c); p-value via erfc Horner approximation (Abramowitz & Stegun 7.1.26, accurate to ~1.5e-7); degraded = p < 0.05 AND delta > 0.01 (both conditions required). Self-comparison returns p=1.0, degraded=false (use as sanity check). gsd-tools agent-stats: GET /api/metrics/stats on AMAUTA_PORT=18799; human-readable table default, --raw JSON; graceful exit 1 with {error: "Daemon not available"} when down.
 
 ### Pending Todos
 
@@ -139,6 +140,8 @@ Resume file: .planning/phases/39-agent-lifecycle/39-CONTEXT.md
 
 
 
+
+- [learning] 2026-04-14T12:02:23.435Z: Plan 39-01 pattern: lifecycle infrastructure Wave 1 — migration + daemon endpoint + integrity script + changelog bootstrap + operator behavioral rule. tool-integrity.cjs uses raw net.Socket + RESP (no Redis dep), graceful degradation exits 0 on Valkey unavailability. TOOL_INTEGRITY_VIOLATION exits 1 + JSON to stderr, no auto-heal (security event). executor-owns-bump: version bump + changelog entry = one atomic commit with agent .md modification. 17 changelog bootstrap: v3.0-created agents get creation phase bullet, pre-existing agents get 4 standard bullets. FORMAT-01 preserved via ### subsection insert (not new ##).
 - [learning] 2026-04-14T04:44:15.527Z: Plan 38-03 pattern: blackboard test suite — 3-file structure (handoff utility unit, agent unit, integration). E2E groups use single-test-body skip (not .skip()) when E2E_BASE_URL absent — 0 skipped in runner output. Security rules identity loop yields 17 per-agent assertions + 1 count = 18 per group. Inter-agent canonical text hardcoded in test (not read from file) for clearer identity tests. Prior-phase regression gate uses 4 unit suites (not integration) for speed under 2 min. 209 total assertions vs 90 minimum. spawnSync at describe-level for run-once-reuse efficiency (prior suites, Phase 38 suites, Pact contract gate).
 - [learning] 2026-04-14T04:35:25.982Z: Plan 38-02 pattern: cross-cutting agent update (17 agents) -- universal insertion point is after last ### subsection within ## Behavioral rules, before ## Tool access & guidance. ENG-05 last bullet is the anchor for 16/17 agents; planner exception uses ### Git workflow standards. Edit tool requires file to be Read (even limit 5) before applying edit. Pact PATCH helper mirrors POST helper with method: PATCH. Conflict resolution goes to adjudicators only (operator + checker). FORMAT-01 stays at 10 ## sections because ### subsections do not count.
 - [learning] 2026-04-13T01:00:00.000Z: Plan 38-03 pattern: blackboard test suite -- 3-file structure (handoff utility unit, agent unit, integration). E2E groups use single-test-body skip (not .skip()) when E2E_BASE_URL absent -- 0 skipped in runner. Security rules identity loop yields 17 per-agent assertions + 1 count = 18 per group. Inter-agent canonical text hardcoded in test (not read from file) for clearer identity tests. Prior-phase regression gate uses 4 unit suites (not integration) for speed. 209 total assertions vs 90 minimum.
