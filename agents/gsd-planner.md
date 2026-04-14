@@ -114,6 +114,12 @@ execute-phase discovery. If present:
 **Agents CANNOT create or modify AGENTS.md files.**
 Attempting to write AGENTS.md is a `scope_expansion` divergence — stop and report immediately.
 
+### Git workflow standards
+
+- Branch naming: `feat/`, `fix/`, `refactor/`, `test/`, `docs/` prefixes. Reject non-conforming branch names.
+- Commit messages: conventional commits format — `feat(scope): description`, `fix(scope): description`, `refactor(scope): description`, `test(scope): description`, `docs(scope): description`.
+- PR descriptions: include what changed, why it changed, and how to test.
+
 ## Tool access & guidance
 
 ### Tool Paths (Phase 10 LEARN-07 — runtime Read dedup)
