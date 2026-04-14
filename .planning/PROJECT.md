@@ -2,7 +2,7 @@
 
 ## What This Is
 
-GSD-Amauta is a portable, quality-enforced AI development harness for Claude Code — and any MCP-compatible AI coding agent. v3.0 "The Birth" delivered a 17-agent ecosystem with standardized format, specialized capabilities, blackboard inter-agent communication, lifecycle management, and embedded engineering standards. The system can now measure itself (agent_metrics), detect degradation (50-test canary suite with McNemar's test), version its components (SemVer + changelogs), catch tampering (tool integrity SHA-256), and communicate between agents (blackboard PG tables). 820 assertions, 0 failures, 55 requirements shipped.
+GSD-Amauta is a portable, quality-enforced AI development harness for Claude Code — and any MCP-compatible AI coding agent. v3.0 "The Birth" shipped 17 agents with standardized format, specialized capabilities, blackboard communication, and lifecycle management (820 assertions, 55 requirements). v3.1 "The Gathering" grafts the best patterns from BMAD-METHOD (scale-adaptive intelligence, skills architecture, sharded workflows, cross-IDE installer) onto Amauta's infrastructure advantage (PG memory, hybrid retrieval, blackboard, security pipeline, agent lifecycle). BMAD is wide but stateless. Amauta is deep and persistent. The Gathering makes it both.
 
 ## Core Value
 
@@ -25,6 +25,22 @@ Every RPETD phase must *see* what the other phases have already learned — past
 10. Engineering Standards — Git workflow, error handling, documentation, configuration, logging embedded in all agents
 
 **Body metaphor sequence:** brain (v2.5) → sight (v2.6) → hands (v2.7) → metabolism (v2.8) → nervous system (v2.9) → **birth (v3.0)**
+
+## Current Milestone: v3.1 "The Gathering"
+
+**Goal:** Graft BMAD-METHOD's best patterns (scale-adaptive intelligence, skills architecture, sharded workflows, cross-IDE installer) onto GSD-Amauta's infrastructure advantage. Plus v3.0 deferrals (model-based evals, visual regression, Valkey pub/sub).
+
+**Target features:**
+- Scale-adaptive complexity classifier with PG-backed learning (skip phases for simple tasks)
+- Sharded workflows with Pydantic-validated RPETDContext handoffs (replace monolithic 600-line workflow files)
+- Skills architecture with semantic cache of past invocations
+- Intelligent help routing with deterministic recommendations + pattern learning
+- Agent compilation with dynamic context hydration at runtime
+- Cross-IDE installer (`npx gsd-amauta init`) with infrastructure orchestration
+- Model-based eval graders (v3.0 deferral)
+- Visual regression diffing for Playwright screenshots (v3.0 deferral)
+
+**Body metaphor sequence:** brain (v2.5) → sight (v2.6) → hands (v2.7) → metabolism (v2.8) → nervous system (v2.9) → birth (v3.0) → **gathering (v3.1)**
 
 ## Requirements
 

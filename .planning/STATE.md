@@ -1,9 +1,9 @@
 ---
 gsd_state_version: 1.0
-milestone: v3.0
-milestone_name: The Birth
-status: completed
-stopped_at: v3.0 milestone COMPLETE — all 10 phases done, 820 assertions green
+milestone: v3.1
+milestone_name: The Gathering
+status: active
+stopped_at: Defining requirements for v3.1 — BMAD competitive intelligence research complete (344 sources)
 last_updated: "2026-04-14T12:44:20.639Z"
 last_activity: 2026-04-13 — Plan 39-02 complete. 50-test canary suite (tests/39-canary-suite.test.cjs, 50/50 pass in 94ms), McNemar's chi-squared comparison (scripts/canary-compare.cjs, erfc-based p-value, continuity correction), baseline vector (tests/fixtures/39-canary-baseline.json, 50 entries all true), gsd-tools agent-stats subcommand. LIFE-02/03 complete. 4 atomic commits.
 progress:
@@ -21,13 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-13 after v2.9 milestone close)
 
 **Core value:** The discipline has shifted from prompt engineering to context engineering. Find the smallest set of high-signal tokens that maximizes agent behavior quality. Every RPETD phase must see what other phases have learned. The brain synthesizes, not accumulates.
-**Current focus:** Milestone v3.0 — The Birth. 17 agents with standardized format, specialized capabilities, blackboard communication, lifecycle management, and embedded engineering standards.
+**Current focus:** Milestone v3.1 — The Gathering. Graft BMAD-METHOD's best patterns onto Amauta's infrastructure advantage. Scale-adaptive intelligence, sharded workflows, skills architecture, cross-IDE installer.
 
 ## Current Position
 
-Phase: 39 of 40 (Agent Lifecycle — CAPSTONE) — COMPLETE
-Plan: 39-03 COMPLETE — eval framework (15 eval scenarios, eval-runner 15/15 pass, grader-schemas.json 3 types), unit test (61 assertions LIFE-01..05), integration test (79 assertions 9 regression gates). Full regression: 820 assertions, 0 failures. v3.0 milestone COMPLETE.
-Status: ALL PHASES COMPLETE. v3.0 "The Birth" milestone shipped. 10 phases, 21 plans, 55 requirements, 820 assertions green.
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements for v3.1 "The Gathering". BMAD competitive intelligence research complete (344 sources, 8 features analyzed).
+Last activity: 2026-04-14 — v3.0 milestone completed. Starting v3.1 requirements definition.
 Last activity: 2026-04-13 — Plan 39-02 complete. 50-test canary suite (tests/39-canary-suite.test.cjs, 50/50 pass in 94ms), McNemar's chi-squared comparison (scripts/canary-compare.cjs, erfc-based p-value, continuity correction), baseline vector (tests/fixtures/39-canary-baseline.json, 50 entries all true), gsd-tools agent-stats subcommand. LIFE-02/03 complete. 4 atomic commits.
 
 Progress: [████░░░░░░] 35%
