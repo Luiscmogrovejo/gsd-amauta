@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: The Birth
 status: completed
-stopped_at: Plan 36-02 complete — test fixtures + verification suite committed
-last_updated: "2026-04-14T03:20:00.000Z"
-last_activity: "2026-04-14 — Plan 36-02 complete. 3 fixtures + 94 assertions (66 unit + 28 integration). 182/182 full regression pass. Phase 36 COMPLETE."
+stopped_at: Phase 36 context gathered
+last_updated: "2026-04-14T02:57:23.448Z"
+last_activity: 2026-04-14 — Plan 36-02 complete. 3 fixture files + unit test (66 assertions) + integration test (28 assertions). 182/182 regression pass. Phase 36 fully complete.
 progress:
   total_phases: 10
   completed_phases: 7
   total_plans: 16
   completed_plans: 16
-  percent: 35
+  percent: 30
 ---
 
 # GSD-Amauta -- Project State
@@ -129,6 +129,8 @@ Resume file: .planning/phases/36-data-engineering-agent/36-CONTEXT.md
 
 
 
+
+- [learning] 2026-04-14T02:52:23.325Z: Plan 36-02 pattern: data agent test suite — safe/destructive/anti-pattern fixture triad maps directly to detection rule boundary testing. Integration test always verifies N-agent section regression + shared file content identity (security-rules bullet lines + engineering-standard headings) + prior phase regression gates + executor pattern compliance (RPETD, fallback, claim line, routing).
 - [learning] 2026-04-14T02:44:18.983Z: Plan 36-01 pattern: new data executor agent — expand-and-contract is the core behavioral rule (adaptive warn + 3-step alternative, same as FRONT-02), static SQL analysis keeps portability (no DB connection), dynamic migration numbering via directory scan always beats hardcoded numbers, data quality test file generated alongside every migration.
 - [learning] 2026-04-14T02:11:25.355Z: Plan 35-02 pattern: three-tier fixture coverage (clean/messy/god-class) maps directly to detection rule severity boundary testing. god-class fixture must be written, then measured (wc -l), then expanded if below threshold — do not assume line count. Unit test fixture assertions for 'long function' check use embedded VIOLATION comment strings rather than runtime line-counting.
 - [learning] 2026-04-14T02:03:10.786Z: Plan 35-01 pattern: new review agent — detection rules as Markdown table in Domain knowledge (10 rules, locked thresholds), deterministic approval logic stated twice (spec in Domain knowledge + mandate in Behavioral rules), advisory boundary in Role & identity AND Preconditions for behavioral enforcement. Example 4 security overlap demonstrates reviewer CAN flag hardcoded creds without violating gsd-security boundary.

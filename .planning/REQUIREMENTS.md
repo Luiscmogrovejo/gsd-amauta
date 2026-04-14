@@ -66,10 +66,10 @@ New gsd-reviewer — the "always-available second pair of eyes" for a solo devel
 
 New gsd-executor-data — owns the data layer.
 
-- [ ] **DATA-01**: gsd-executor-data expand-and-contract migrations. Additive first, backfill, then remove. Never destructive without explicit confirmation.
-- [ ] **DATA-02**: EXPLAIN ANALYZE on queries touching >1 table. Flags sequential scans on >10K rows, missing indexes, N+1 patterns.
-- [ ] **DATA-03**: Data quality checks generated for every new migration. NOT NULL, FK integrity, enum validation, uniqueness.
-- [ ] **DATA-04**: Knows GSD-Amauta schema (migrations 001-013). Generates migration 014+ in correct sequence.
+- [x] **DATA-01**: gsd-executor-data expand-and-contract migrations. Additive first, backfill, then remove. Never destructive without explicit confirmation.
+- [x] **DATA-02**: EXPLAIN ANALYZE on queries touching >1 table. Flags sequential scans on >10K rows, missing indexes, N+1 patterns.
+- [x] **DATA-03**: Data quality checks generated for every new migration. NOT NULL, FK integrity, enum validation, uniqueness.
+- [x] **DATA-04**: Knows GSD-Amauta schema (migrations 001-013). Generates migration 014+ in correct sequence.
 
 ## Phase 37 — Architect Agent
 
@@ -167,10 +167,10 @@ Best practices embedded in every agent's DNA.
 | REVIEW-02 | 35 | Complete |
 | REVIEW-03 | 35 | Complete |
 | REVIEW-04 | 35 | Complete |
-| DATA-01 | 36 | Pending |
-| DATA-02 | 36 | Pending |
-| DATA-03 | 36 | Pending |
-| DATA-04 | 36 | Pending |
+| DATA-01 | 36 | Complete |
+| DATA-02 | 36 | Complete |
+| DATA-03 | 36 | Complete |
+| DATA-04 | 36 | Complete |
 | ARCH-01 | 37 | Pending |
 | ARCH-02 | 37 | Pending |
 | ARCH-03 | 37 | Pending |
