@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: The Birth
 status: completed
-stopped_at: Phase 39 context gathered — capstone ready
-last_updated: "2026-04-14T11:20:34.927Z"
-last_activity: "2026-04-13 — Plan 38-03 complete. 209 assertions (39+100+70), 0 failures. Full regression gate: 31-format-regression, 40-engineering-standards, 37-architect, 36-data, 35-reviewer all pass. Pact contracts: findings-crud (3/3) + messages-crud (4/4) pass."
+stopped_at: Plan 39-01 complete — lifecycle infrastructure Wave 1 done
+last_updated: "2026-04-13T00:35:00.000Z"
+last_activity: "2026-04-13 — Plan 39-01 complete. Migration 016 (agent_metrics), POST /api/metrics + GET /api/metrics/stats daemon endpoints, scripts/tool-integrity.cjs (SHA-256 + Valkey), 17 changelog files in agents/changelog/, SemVer version bump rules in gsd-operator.md (LIFE-01/02/05). 5 atomic commits. FORMAT-01 preserved."
 progress:
   total_phases: 10
   completed_phases: 9
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-13 after v2.9 milestone close)
 
 ## Current Position
 
-Phase: 39 of 40 (Agent Lifecycle — CAPSTONE) — NOT STARTED
-Plan: 38-03 COMPLETE — 5 test fixtures, 39-assertion handoff unit test, 100-assertion agent unit test, 70-assertion integration test. 209 total assertions, 0 failures. Phase 38 COMPLETE.
-Status: Phase 38 complete. Phase 39 (Agent Lifecycle — CAPSTONE) is next.
-Last activity: 2026-04-13 — Plan 38-03 complete. 209 assertions (39+100+70), 0 failures. Full regression gate: 31-format-regression, 40-engineering-standards, 37-architect, 36-data, 35-reviewer all pass. Pact contracts: findings-crud (3/3) + messages-crud (4/4) pass.
+Phase: 39 of 40 (Agent Lifecycle — CAPSTONE) — IN PROGRESS
+Plan: 39-01 COMPLETE — Migration 016, POST /api/metrics + GET /api/metrics/stats, tool-integrity.cjs, 17 changelog files, SemVer version rules in operator. 5 atomic commits, 0 deviations. LIFE-01/02/05 complete.
+Status: Plan 39-01 (Wave 1) complete. Plan 39-02 (Wave 2: canary suite + canary-compare.cjs + agent-stats) is next.
+Last activity: 2026-04-13 — Plan 39-01 complete. Migration 016 (agent_metrics), POST /api/metrics + GET /api/metrics/stats daemon endpoints, scripts/tool-integrity.cjs (SHA-256 + Valkey), 17 changelog files in agents/changelog/, SemVer version bump rules in gsd-operator.md (LIFE-01/02/05). 5 atomic commits. FORMAT-01 preserved.
 
 Progress: [████░░░░░░] 35%
 
@@ -44,7 +44,7 @@ Progress: [████░░░░░░] 35%
 | 36 | Data Engineering Agent | DATA-01..04 | COMPLETE 2026-04-14 |
 | 37 | Architect Agent | ARCH-01..03 | COMPLETE 2026-04-13 |
 | 38 | Blackboard Communication | COMM-01..05 | COMPLETE 2026-04-13 |
-| 39 | Agent Lifecycle (CAPSTONE) | LIFE-01..05 | Not started |
+| 39 | Agent Lifecycle (CAPSTONE) | LIFE-01..05 | In progress (39-01 Wave 1 done) |
 | 40 | Engineering Standards | ENG-01..05 | COMPLETE 2026-04-13 |
 
 **Execution order:** 31 → 33 → 34 → 40 → 32 → 35 → 36 → 37 → 38 → 39
@@ -101,6 +101,7 @@ Progress: [████░░░░░░] 35%
 - Plan 38-01: Blackboard infrastructure Wave 1 — migrations 014+015 exact schema from CONTEXT.md (no pgvector, task_id-indexed). conflict-resolution.md follows security-rules.md bullet-list pattern (## heading + bullets). handoff.cjs: whitespace-split estimator at 1.15x overhead, 800-token soft limit, top-5 confidence truncation, 200-char summary cap, process.argv[1] JSON input for Node subprocess. Daemon endpoints use _get_store()._get_conn().cursor() direct PG pattern. Auto-approval: SHARE_FINDING + REQUEST_REVIEW bypass operator gate; ASK_QUESTION + DELEGATE_SUBTASK require approval. PATCH /api/messages/:id uses dynamic SET clause — only updates provided fields.
 - Plan 38-02: Agent behavioral updates Wave 2 — ### Inter-agent communication is a ### subsection (not a new ## section); FORMAT-01 preserved at exactly 10 ## sections for all 17 agents. Universal insertion point: after last ### within ## Behavioral rules (ENG-05 last bullet for all except planner, which uses ### Git workflow standards). Conflict resolution verbatim copy into operator + checker only (both adjudicators). Pact contracts: findings-crud (POST+GET+400, 3/3 pass) + messages-crud (SHARE_FINDING+GET+PATCH+DELEGATE_SUBTASK, 4/4 pass). Read tool requires file to be read (even limit 5) before Edit can be applied — batch reads satisfy this for multiple files.
 - Plan 38-03: Test suite Wave 3 — 3-file test structure (handoff utility unit, blackboard communication unit, blackboard communication integration). E2E groups use single-test-body skip (not .skip() markers) when E2E_BASE_URL absent — 0 skipped in test runner output. Security rules identity loop: 17 agents × 12 bullets produces 18 assertions in one group. Inter-agent communication canonical text hardcoded in test file for identity comparison (avoids relative-read indirection). Prior-phase regression gate spawns 4 unit suites (35/36/37/40) not integration suites — gate completes in < 2 min. Total: 209 assertions (39 handoff unit + 100 agent unit + 70 integration), 0 failures. Exceeds 90-assertion minimum.
+- Plan 39-01: Lifecycle infrastructure Wave 1 — migration 016 exact schema from CONTEXT.md (UUID, agent_name, task_id, completion_time_ms, token_usage, error_count DEFAULT 0, outcome, created_at + idx_metrics_agent). POST /api/metrics validates outcome ∈ {'pass','fail','partial'}, returns 201. GET /api/metrics/stats uses GROUP BY agent_name with FILTER (WHERE outcome = 'pass') for pass_rate. tool-integrity.cjs uses raw net.Socket + RESP protocol (no Redis dep) for Valkey — portable, graceful degradation exits 0 on cache failure. TOOL_INTEGRITY_VIOLATION is a security event: exit 1 + structured JSON to stderr, no auto-heal by design. 17 changelog files: v3.0-created agents (tester/qa Phase 33, security Phase 34, reviewer Phase 35, executor-data Phase 36, architect Phase 37, executor-frontend Phase 32) include creation phase bullet. ### Version management (LIFE-01) inserted after ### Conflict resolution — executor-owns-bump: version bump + changelog = one atomic commit alongside agent modification. FORMAT-01 preserved at exactly 10 ## sections.
 
 ### Pending Todos
 

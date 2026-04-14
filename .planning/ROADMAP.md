@@ -38,7 +38,7 @@
 - [x] **Phase 36: Data Engineering Agent** — New gsd-executor-data; expand-and-contract migrations, query analysis, data quality checks (DATA-01..04) — COMPLETE 2026-04-14 (36-01: gsd-executor-data.md 434 lines, 10 sections, DATA-01..04 behavioral rules; 36-02: 3 fixtures + 94 assertions (66 unit + 28 integration), full regression 182/182 pass)
 - [x] **Phase 37: Architect Agent** — New gsd-architect; ADR management, API design review, N+1 detection (ARCH-01..03) — COMPLETE 2026-04-13 (37-01: gsd-architect.md 391 lines, docs/adr/ bootstrapped; 37-02: 103 assertions (71 unit + 32 integration), 17-agent gate, 197/197 full regression pass)
 - [x] **Phase 38: Blackboard Communication** — `agent_findings` + `agent_messages` PG tables; operator supervision; structured handoff JSON; conflict resolution (COMM-01..05) — COMPLETE 2026-04-13 (38-01: migrations 014+015, conflict-resolution.md, handoff.cjs 800-token budget, 6 daemon endpoints; 38-02: all 17 agents + operator supervision + conflict resolution + 2 Pact contracts 7/7 pass; 38-03: 209 assertions 39+100+70, 0 failures, full regression gate green)
-- [ ] **Phase 39: Agent Lifecycle** — SemVer versioning, `agent_metrics` PG table, 50-test canary suite, eval framework, tool integrity checking (LIFE-01..05) (CAPSTONE — needs all others)
+- [ ] **Phase 39: Agent Lifecycle** — SemVer versioning, `agent_metrics` PG table, 50-test canary suite, eval framework, tool integrity checking (LIFE-01..05) (CAPSTONE — needs all others) — IN PROGRESS (39-01 Wave 1: migration 016 + daemon metrics endpoints + tool-integrity.cjs + 17 changelog files + version bump rules; LIFE-01/02/05 complete)
 - [x] **Phase 40: Engineering Standards** — Git workflow, error handling, documentation, configuration management, structured logging standards embedded in all agents (ENG-01..05) — COMPLETE 2026-04-13 (40-01: engineering standards ENG-01..05 in shared file + all 4 executor agents; ENG-01 git workflow in gsd-planner; 40-02: remaining 9 agents + 167-assertion verification test suite)
 
 ---
@@ -213,11 +213,12 @@ Plans:
   3. 50-test canary suite runs in < 5 minutes; McNemar's test is applied; suite alerts (exit non-zero) when degradation > 1% with p < 0.05.
   4. Eval framework exists in `tests/evals/`; >= 5 scenarios per agent for at least 3 agents; grader types include code-based (deterministic), model-based, and human-review placeholders.
   5. Startup tool integrity check computes SHA hash of tool definitions; any mismatch between startup hash and current hash produces a `TOOL_INTEGRITY_VIOLATION` log event and blocks the affected tool.
-**Plans:** TBD (estimated 2 plans: 39-01 SemVer headers + agent_metrics + canary suite, 39-02 eval framework + tool integrity)
+**Plans:** 0/3 plans complete
 
 Plans:
-- [ ] 39-01: SemVer version headers in all 17 agents; agents/changelog/; agent_metrics PG table; gsd-tools agent-stats command; canary suite (LIFE-01..03)
-- [ ] 39-02: Eval framework in tests/evals/ with 3 grader types; tool integrity SHA checking at startup (LIFE-04..05)
+- [ ] 39-01: Migration 016 + daemon metrics endpoints + tool-integrity.cjs + 17 changelog files bootstrapped + version bump rules in operator (LIFE-01, LIFE-02, LIFE-05)
+- [ ] 39-02: 50-test canary suite + canary-compare.cjs (McNemar's) + baseline vector + gsd-tools agent-stats command (LIFE-02, LIFE-03)
+- [ ] 39-03: Eval framework (tests/evals/, 15 scenarios, code-based graders) + integration tests + full regression suite (LIFE-01..05)
 
 ### Phase 40: Engineering Standards
 **Goal:** Git workflow conventions, error handling patterns, documentation standards, configuration management, and structured logging are embedded in agent behavior — not just documented, but enforced by what agents generate and refuse to generate.
@@ -285,7 +286,7 @@ Phase 31: Format Standard (FOUNDATION)
 | 36. Data Engineering Agent | 2/2 | Complete    | 2026-04-14 |
 | 37. Architect Agent | 2/2 | Complete    | 2026-04-14 |
 | 38. Blackboard Communication | 3/3 | Complete    | 2026-04-14 |
-| 39. Agent Lifecycle | 0/2 | Not started | - |
+| 39. Agent Lifecycle | 0/3 | Not started | - |
 | 40. Engineering Standards | 2/2 | Complete    | 2026-04-14 |
 
 ---
