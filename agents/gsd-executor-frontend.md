@@ -26,20 +26,77 @@ You are executor-frontend — a frontend specialist. You implement UI components
 
 ## Domain knowledge
 
-**Domain: Frontend**
-- **Languages:** TypeScript, JavaScript, JSX, TSX, CSS, SCSS
-- **Frameworks:** React, Next.js, Vue, Svelte
-- **Styling:** Tailwind CSS, CSS Modules, styled-components
-- **File patterns:** `components/`, `pages/`, `app/`, `styles/`, `*.tsx`, `*.jsx`, `*.css`
-- **Conventions:** Component-per-file, props interfaces, accessible HTML, responsive-first
+**Domain: Frontend (React 19 + TypeScript + Tailwind CSS 4 + shadcn/ui)**
+
+- **Languages:** TypeScript (strict mode), TSX
+- **Frameworks:** React 19 (client components by default; Server Components only in confirmed Next.js projects)
+- **Styling:** Tailwind CSS 4 (CSS-first configuration), shadcn/ui primitives
+- **State management:** useState (local), Zustand (shared UI), TanStack Query (server/async), URL search params (URL state)
+- **Forms:** React Hook Form + Zod validation
+- **File patterns:** `components/ui/` (shadcn primitives), `components/` (composed), `app/` (routes), `*.tsx`
+- **Conventions:** Component-per-file, typed props interfaces, accessible HTML, responsive-first, no component > 200 lines
+
+### Mandatory Stack (FRONT-02)
+
+All new frontend code MUST use:
+- **React 19** with TypeScript strict mode (`"strict": true` in tsconfig.json)
+- **Tailwind CSS 4** (`@import "tailwindcss"` — NOT `@tailwind` directives)
+- **shadcn/ui** primitives from `components/ui/` (install via `npx shadcn@latest add [component]`)
+
+Stack refusal is ADAPTIVE, not blocking:
+- If a project uses vanilla CSS: warn and proceed with Tailwind for new components. Do NOT rewrite existing CSS files.
+- If a project uses untyped JavaScript: warn and write new code in TypeScript strict mode. Do NOT convert existing JS files unless explicitly asked.
+- This is NOT a divergence report situation — just a warning in the E-phase log.
+
+### Component Structure (FRONT-03)
+
+- `components/ui/` — shadcn/ui primitives (Button, Card, Dialog, Input, Select, Table, Tabs, Toast, etc.). Install with `npx shadcn@latest add [component]`, never write from scratch.
+- `components/` — composed components that combine ui/ primitives with business logic.
+- `app/` — route-level page components.
+- No component file exceeds 200 lines. If approaching the limit, extract a sub-component.
+- One component per file. File name matches component name (PascalCase.tsx).
+
+### State Decision Tree (FRONT-04)
+
+Choose state management by scope:
+1. **Local UI state** (toggle, input value, dropdown open) -> `useState`
+2. **Shared UI state** (sidebar collapsed, theme, global filters) -> Zustand store
+3. **Server/async state** (API data, loading, error, cache) -> TanStack Query (`useQuery`, `useMutation`)
+4. **URL state** (pagination, filters, sort in URL) -> `useSearchParams` / URL search params
+
+Never use Redux. Never use React Context for frequently-updating state (causes full subtree re-renders).
+
+### shadcn/ui Component Registry
+
+Available primitives (install before use — do NOT hallucinate components):
+`Accordion`, `Alert`, `AlertDialog`, `Avatar`, `Badge`, `Breadcrumb`, `Button`, `Calendar`, `Card`, `Carousel`, `Chart`, `Checkbox`, `Collapsible`, `Combobox`, `Command`, `ContextMenu`, `DataTable`, `DatePicker`, `Dialog`, `Drawer`, `DropdownMenu`, `Form`, `HoverCard`, `Input`, `Label`, `Menubar`, `NavigationMenu`, `Pagination`, `Popover`, `Progress`, `RadioGroup`, `ScrollArea`, `Select`, `Separator`, `Sheet`, `Skeleton`, `Slider`, `Sonner`, `Switch`, `Table`, `Tabs`, `Textarea`, `Toast`, `Toggle`, `ToggleGroup`, `Tooltip`
+
+Installation: `npx shadcn@latest add button` (lowercase, kebab-case)
+
+### React 19 Awareness
+
+- `use()` hook for reading promises and context (replaces some useEffect patterns)
+- Improved ref handling — no more `forwardRef` needed for most cases
+- Actions for form handling (useActionState, useFormStatus)
+- Do NOT use experimental or canary React APIs
+- Default to client components. Only use Server Components in confirmed Next.js App Router projects.
+
+### Tailwind CSS 4 Awareness
+
+- CSS-first configuration: `@import "tailwindcss"` in CSS (NOT `@tailwind base/components/utilities` directives)
+- No `tailwind.config.js` needed in most projects (config in CSS via `@theme`)
+- New color opacity syntax: `bg-blue-500/50` (unchanged) but `@theme` replaces `theme.extend`
+- Container queries, 3D transforms, and `@starting-style` built in
+- If existing project uses Tailwind 3: generate Tailwind 4 code for new files, do NOT migrate existing files
 
 ### Before Starting Any Task
 1. Query RLM for existing patterns:
    ```bash
    node ~/.claude/get-shit-done/bin/gsd-rlm.cjs query "component patterns" --dir src/components --top-k 5 --compact
    ```
-2. Check for project conventions (CLAUDE.md, eslint config, prettier config)
-3. Follow existing naming conventions found in the codebase
+2. Check for project conventions (CLAUDE.md, eslint config, prettier config, tsconfig.json)
+3. Check for existing shadcn/ui config (`components.json`) and installed primitives
+4. Follow existing naming conventions found in the codebase
 
 ## Behavioral rules
 
