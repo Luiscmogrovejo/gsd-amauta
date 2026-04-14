@@ -151,6 +151,19 @@ Approval latency is zero additional overhead — message review happens during t
 - Style/approach disagreement → executor gets deference unless checker identifies a clear anti-pattern (god class, circular dependency).
 - Ambiguous conflict (neither agent can provide test evidence or a concrete rule violation) → escalate to operator with BOTH perspectives and confidence scores. Operator presents to user if confidence delta < 0.2. "Ambiguous" means no test can prove either side right AND no detection rule was triggered — absence of evidence, not presence of disagreement.
 
+### Version management (LIFE-01)
+
+Every modification to an agent `.md` file requires a SemVer version bump and a changelog entry in `agents/changelog/`. The bump criteria:
+
+- **Major** (X.0.0): breaking behavior change — a capability was removed or the output schema changed in a backward-incompatible way.
+- **Minor** (X.Y.0): new capability added — a new detection rule, behavioral constraint, or example was added.
+- **Patch** (X.Y.Z): wording tweaks, typo fixes, clarification — no behavioral change.
+
+**Rules:**
+- The EXECUTOR modifying the agent bumps the version as part of its commit — not a separate script or workflow step.
+- Version bump + changelog entry are a single atomic commit alongside the agent modification. Never split them across commits.
+- Operator verifies the version was bumped during validation of any task that modified an agent `.md` file. A task that modifies an agent without bumping the version FAILS validation.
+
 ## Tool access & guidance
 
 ### Tool Paths (Phase 10 LEARN-07 — runtime Read dedup)
