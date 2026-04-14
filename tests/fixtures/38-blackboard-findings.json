@@ -1,0 +1,37 @@
+[
+  {
+    "agent_name": "gsd-executor-backend",
+    "task_id": "TK-TEST-001",
+    "finding_type": "observation",
+    "content": "Found N+1 query pattern in users endpoint — each user triggers a separate DB call for preferences.",
+    "confidence": 0.9
+  },
+  {
+    "agent_name": "gsd-checker",
+    "task_id": "TK-TEST-001",
+    "finding_type": "decision",
+    "content": "Migration 014 schema matches CONTEXT.md specification exactly — no drift detected.",
+    "confidence": 0.85
+  },
+  {
+    "agent_name": "gsd-security",
+    "task_id": "TK-TEST-001",
+    "finding_type": "warning",
+    "content": "agent_findings.content field accepts arbitrary text — ensure callers sanitize before display.",
+    "confidence": 0.7
+  },
+  {
+    "agent_name": "gsd-executor-backend",
+    "task_id": "TK-TEST-001",
+    "finding_type": "blocker",
+    "content": "Migration 015 depends on 014 — run in order or FK constraint will fail on startup.",
+    "confidence": 0.95
+  },
+  {
+    "agent_name": "gsd-validator",
+    "task_id": "TK-TEST-001",
+    "finding_type": "observation",
+    "content": "Handoff token budget enforcement tested: 800-token soft limit correctly triggers top-5 truncation.",
+    "confidence": 0.6
+  }
+]

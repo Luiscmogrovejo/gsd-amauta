@@ -1,0 +1,38 @@
+[
+  {
+    "from_agent": "gsd-executor-backend",
+    "to_agent": "gsd-operator",
+    "task_id": "TK-TEST-001",
+    "message_type": "ASK_QUESTION",
+    "content": "Should migration 014 use UUID or SERIAL for the primary key? CONTEXT.md says UUID but existing tables use SERIAL.",
+    "status": "pending",
+    "operator_approved": false
+  },
+  {
+    "from_agent": "gsd-executor-backend",
+    "to_agent": "gsd-checker",
+    "task_id": "TK-TEST-001",
+    "message_type": "SHARE_FINDING",
+    "content": "Index idx_findings_task created on agent_findings(task_id). Lookup latency for 10k rows is under 2ms.",
+    "status": "approved",
+    "operator_approved": true
+  },
+  {
+    "from_agent": "gsd-checker",
+    "to_agent": "gsd-operator",
+    "task_id": "TK-TEST-001",
+    "message_type": "REQUEST_REVIEW",
+    "content": "Post-check complete. All 17 agents have ### Inter-agent communication. FORMAT-01 preserved at 10 sections. Please review before closing Wave 2.",
+    "status": "approved",
+    "operator_approved": true
+  },
+  {
+    "from_agent": "gsd-operator",
+    "to_agent": "gsd-executor-frontend",
+    "task_id": "TK-TEST-001",
+    "message_type": "DELEGATE_SUBTASK",
+    "content": "Update the dashboard UI to display agent_findings entries for the active task. Read findings via GET /api/findings/:task_id.",
+    "status": "pending",
+    "operator_approved": false
+  }
+]
