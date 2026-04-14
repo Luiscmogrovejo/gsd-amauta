@@ -39,7 +39,7 @@
 - [ ] **Phase 37: Architect Agent** — New gsd-architect; ADR management, API design review, N+1 detection (ARCH-01..03)
 - [ ] **Phase 38: Blackboard Communication** — `agent_findings` + `agent_messages` PG tables; operator supervision; structured handoff JSON; conflict resolution (COMM-01..05)
 - [ ] **Phase 39: Agent Lifecycle** — SemVer versioning, `agent_metrics` PG table, 50-test canary suite, eval framework, tool integrity checking (LIFE-01..05) (CAPSTONE — needs all others)
-- [ ] **Phase 40: Engineering Standards** — Git workflow, error handling, documentation, configuration management, structured logging standards embedded in all agents (ENG-01..05)
+- [x] **Phase 40: Engineering Standards** — Git workflow, error handling, documentation, configuration management, structured logging standards embedded in all agents (ENG-01..05) — COMPLETE 2026-04-13 (40-01: engineering standards ENG-01..05 in shared file + all 4 executor agents; ENG-01 git workflow in gsd-planner)
 
 ---
 
@@ -136,7 +136,7 @@ Plans:
   4. All executor agent files contain supply chain rules: `npm ci` (not npm install), exact version pinning, lockfile commits, 7-day waiting period for new packages.
   5. Rule of Two audit produces a JSON report annotating all 17 agents with `{reads_untrusted, accesses_sensitive, modifies_state}` booleans; >= 1 violation is documented with remediation.
   6. Trivy container scan runs against all images in `docker-compose.yml`; findings are structured JSON; scan completes without error.
-**Plans:** 3 plans (34-01 done, 34-02 done)
+**Plans:** 3/3 plans complete
 
 Plans:
 - [x] 34-01: Create gsd-security agent with Semgrep SAST, Gitleaks secret scanning; test fixtures; install-gitleaks.cjs (SEC-01..02) — 2026-04-13
@@ -228,7 +228,7 @@ Plans:
 **Plans:** TBD (estimated 1 plan: 40-01 engineering standards embedded in all executor agents)
 
 Plans:
-- [ ] 40-01: Embed git workflow, error handling, documentation, configuration management, and structured logging standards into all executor agents (ENG-01..05)
+- [x] 40-01: Embed git workflow, error handling, documentation, configuration management, and structured logging standards into all executor agents (ENG-01..05) — 2026-04-13
 
 ---
 
@@ -272,16 +272,16 @@ Phase 31: Format Standard (FOUNDATION)
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 31. Format Standard | 1/2 | Complete    | 2026-04-13 |
+| 31. Format Standard | 2/2 | Complete    | 2026-04-13 |
 | 32. Frontend Rebuild | 0/2 | Not started | - |
-| 33. Testing Pipeline | 0/2 | Complete    | 2026-04-13 |
+| 33. Testing Pipeline | 3/3 | Complete    | 2026-04-13 |
 | 34. Security Pipeline | 3/3 | Complete    | 2026-04-13 |
 | 35. Code Review Agent | 0/1 | Not started | - |
 | 36. Data Engineering Agent | 0/1 | Not started | - |
 | 37. Architect Agent | 0/1 | Not started | - |
 | 38. Blackboard Communication | 0/2 | Not started | - |
 | 39. Agent Lifecycle | 0/2 | Not started | - |
-| 40. Engineering Standards | 0/1 | Not started | - |
+| 40. Engineering Standards | 1/1 | Complete    | 2026-04-13 |
 
 ---
 
