@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: The Birth
-status: in_progress
-stopped_at: Phase 40 COMPLETE. Plan 40-02 done. ENG-01..05 in all 9 remaining agents (operator/researcher/roadmapper/checker/validator/debugger/tester/qa/security). 167-assertion verification test suite (75 unit + 92 integration). All 14 agents at 10 sections.
-last_updated: "2026-04-13T24:00:00.000Z"
-last_activity: 2026-04-13 — Plan 40-02 complete. Engineering standards (ENG-01..05) embedded in all 9 remaining agents. Full verification suite: 75 unit + 92 integration assertions, 0 failures. Phase 40 all 2 plans complete.
+status: completed
+stopped_at: Phase 34 COMPLETE. Plan 34-03 done. 89-assertion regression suite (60 unit + 29 integration) covers SEC-01..06. Full regression gate 293/293 pass. Phase 34 all 3 plans complete.
+last_updated: "2026-04-14T00:22:04.711Z"
+last_activity: 2026-04-13 — Plan 40-02 complete. Engineering standards propagated to gsd-operator, gsd-researcher, gsd-roadmapper, gsd-checker, gsd-validator, gsd-debugger, gsd-tester, gsd-qa, gsd-security. All 14 agents confirmed at 10 sections with content-identical engineering standards. Full verification suite passes.
 progress:
   total_phases: 10
   completed_phases: 4
   total_plans: 10
   completed_plans: 10
-  percent: 40
+  percent: 30
 ---
 
 # GSD-Amauta -- Project State
@@ -115,6 +115,8 @@ Resume file: None
 
 
 
+
+- [learning] 2026-04-14T00:18:38.527Z: Plan 40-02 pattern: node --test recursive invocation detection fires when integration test spawns inner node --test subprocess. Fix: delete NODE_TEST_CONTEXT from spawnSync env. extractEngStandards() clips from ### Engineering standards to next ### or ## for content-identity tests.
 - [learning] 2026-04-13T23:33:39.465Z: Plan 34-03 pattern: integration test run-once-reuse pattern — spawnSync at describe-block level, reuse result across all it() assertions. Conditional tool test: if (toolAvailable) { assert } else { console.log('[skip]') } — never .skip() markers. Full regression gate: explicit file list of 9 suites, not run-tests.cjs (which includes pre-existing failures in security-infrastructure.test.cjs).
 - [learning] 2026-04-13T23:24:42.406Z: legacy regression test: free text learning
 - [learning] 2026-04-13T23:20:00.676Z: legacy regression test: free text learning

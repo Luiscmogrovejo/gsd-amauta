@@ -9,13 +9,13 @@
 
 All 11 existing agents restructured to standardized 10-section format. Foundation for every subsequent phase.
 
-- [ ] **FORMAT-01**: All 11 agent `.md` files restructured to standardized 10-section format. `grep -c "^## " agents/*.md` returns 10 for each file. All sections present: Role & Identity, Domain Knowledge, Behavioral Rules, Tool Access & Guidance, Task Management, Examples, Error Handling, Security Rules, Preconditions & Constraints, version header.
-- [ ] **FORMAT-02**: 2-4 few-shot examples per agent. Diverse, canonical, not edge cases. Each example shows input → reasoning → output.
-- [ ] **FORMAT-03**: Shared security rules section identical across all 11 agents. Single source of truth in `agents/shared/security-rules.md`.
-- [ ] **FORMAT-04**: Anti-over-engineering guardrail in every agent. Exact: "Do not add features, refactor code, or make improvements beyond what was explicitly requested."
-- [ ] **FORMAT-05**: Read-before-edit mandate in all 4 executor agents. Exact: "Always read a file completely before modifying it. Never edit a file based on assumptions about its contents."
-- [ ] **FORMAT-06**: AGENTS.md closest-file-wins discovery. Agents cannot create/modify AGENTS.md.
-- [ ] **FORMAT-07**: All 11 agents pass behavioral regression suite. Zero regressions from v2.9.
+- [x] **FORMAT-01**: All 11 agent `.md` files restructured to standardized 10-section format. `grep -c "^## " agents/*.md` returns 10 for each file. All sections present: Role & Identity, Domain Knowledge, Behavioral Rules, Tool Access & Guidance, Task Management, Examples, Error Handling, Security Rules, Preconditions & Constraints, version header.
+- [x] **FORMAT-02**: 2-4 few-shot examples per agent. Diverse, canonical, not edge cases. Each example shows input → reasoning → output.
+- [x] **FORMAT-03**: Shared security rules section identical across all 11 agents. Single source of truth in `agents/shared/security-rules.md`.
+- [x] **FORMAT-04**: Anti-over-engineering guardrail in every agent. Exact: "Do not add features, refactor code, or make improvements beyond what was explicitly requested."
+- [x] **FORMAT-05**: Read-before-edit mandate in all 4 executor agents. Exact: "Always read a file completely before modifying it. Never edit a file based on assumptions about its contents."
+- [x] **FORMAT-06**: AGENTS.md closest-file-wins discovery. Agents cannot create/modify AGENTS.md.
+- [x] **FORMAT-07**: All 11 agents pass behavioral regression suite. Zero regressions from v2.9.
 
 ## Phase 32 — Frontend Rebuild
 
@@ -135,13 +135,13 @@ Best practices embedded in every agent's DNA.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FORMAT-01 | 31 | Pending |
-| FORMAT-02 | 31 | Pending |
-| FORMAT-03 | 31 | Pending |
-| FORMAT-04 | 31 | Pending |
-| FORMAT-05 | 31 | Pending |
-| FORMAT-06 | 31 | Pending |
-| FORMAT-07 | 31 | Pending |
+| FORMAT-01 | 31 | Complete |
+| FORMAT-02 | 31 | Complete |
+| FORMAT-03 | 31 | Complete |
+| FORMAT-04 | 31 | Complete |
+| FORMAT-05 | 31 | Complete |
+| FORMAT-06 | 31 | Complete |
+| FORMAT-07 | 31 | Complete |
 | FRONT-01 | 32 | Pending |
 | FRONT-02 | 32 | Pending |
 | FRONT-03 | 32 | Pending |
