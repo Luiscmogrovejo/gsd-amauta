@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: The Birth
-status: in_progress
-stopped_at: Plan 35-02 complete — test suite + fixtures created
-last_updated: "2026-04-14T03:30:00.000Z"
-last_activity: "2026-04-14 — Plan 35-02 complete. 3 fixture files + 88-assertion test suite (65 unit + 23 integration). Full regression gate 177/177 pass. Phase 35 COMPLETE."
+status: completed
+stopped_at: Plan 35-02 complete — fixtures + test suite committed (7e46de9)
+last_updated: "2026-04-14T02:14:49.251Z"
+last_activity: "2026-04-14 — Plan 35-02 complete. fixtures 35-review-clean.js/messy.js/god-class.js created. Unit test: 65 assertions, 9 groups. Integration test: 23 assertions, 5 groups. Full regression gate 177/177 pass (4 suites)."
 progress:
   total_phases: 10
   completed_phases: 6
-  total_plans: 13
-  completed_plans: 13
-  percent: 35
+  total_plans: 14
+  completed_plans: 14
+  percent: 30
 ---
 
 # GSD-Amauta -- Project State
@@ -125,6 +125,8 @@ Resume file: .planning/phases/35-code-review-agent/35-02-SUMMARY.md
 
 
 
+
+- [learning] 2026-04-14T02:11:25.355Z: Plan 35-02 pattern: three-tier fixture coverage (clean/messy/god-class) maps directly to detection rule severity boundary testing. god-class fixture must be written, then measured (wc -l), then expanded if below threshold — do not assume line count. Unit test fixture assertions for 'long function' check use embedded VIOLATION comment strings rather than runtime line-counting.
 - [learning] 2026-04-14T02:03:10.786Z: Plan 35-01 pattern: new review agent — detection rules as Markdown table in Domain knowledge (10 rules, locked thresholds), deterministic approval logic stated twice (spec in Domain knowledge + mandate in Behavioral rules), advisory boundary in Role & identity AND Preconditions for behavioral enforcement. Example 4 security overlap demonstrates reviewer CAN flag hardcoded creds without violating gsd-security boundary.
 - [learning] 2026-04-14T01:28:02.302Z: Plan 32-02 pattern: when testing a rebuilt agent file, unit test = pure fs.readFileSync (60+ assertions across 14 groups), integration test = spawnSync regression gates for prior phases + cross-file consistency vs shared source-of-truth. NODE_TEST_CONTEXT must be deleted in cleanEnv() helper. Example count uses regex matching bold prefix pattern. Combined >= 85 assertions; full regression gate runs 7 test files.
 - [learning] 2026-04-14T01:20:56.561Z: Plan 32-01 pattern: when rebuilding a single agent file across 6 sequential tasks, run grep verification before each task to detect prior-session partial execution — if FRONT-XX rule headings already present, skip re-execution and surface divergence rather than silently overwriting. Graceful degradation for optional tools (Playwright, gitleaks, trivy) follows the same pattern: log [skip] and continue, never fail.

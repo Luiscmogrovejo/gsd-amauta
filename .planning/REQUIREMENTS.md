@@ -57,10 +57,10 @@ New gsd-security agent operating across the entire RPETD pipeline.
 
 New gsd-reviewer — the "always-available second pair of eyes" for a solo developer.
 
-- [ ] **REVIEW-01**: gsd-reviewer style/pattern review. Naming, organization, imports, dead code, duplication (>10 lines), function length (>50 lines flagged).
-- [ ] **REVIEW-02**: SOLID principles check. God classes (>500 lines), functions with >5 params, circular deps.
-- [ ] **REVIEW-03**: gsd-reviewer SEPARATE from gsd-validator. Different schemas, different concerns. Both can run on same code.
-- [ ] **REVIEW-04**: Structured output: `{findings: [{file, line, category, severity, message, suggestion}], summary, approval: "approve"|"request_changes"|"comment_only"}`.
+- [x] **REVIEW-01**: gsd-reviewer style/pattern review. Naming, organization, imports, dead code, duplication (>10 lines), function length (>50 lines flagged).
+- [x] **REVIEW-02**: SOLID principles check. God classes (>500 lines), functions with >5 params, circular deps.
+- [x] **REVIEW-03**: gsd-reviewer SEPARATE from gsd-validator. Different schemas, different concerns. Both can run on same code.
+- [x] **REVIEW-04**: Structured output: `{findings: [{file, line, category, severity, message, suggestion}], summary, approval: "approve"|"request_changes"|"comment_only"}`.
 
 ## Phase 36 — Data Engineering Agent
 
@@ -163,10 +163,10 @@ Best practices embedded in every agent's DNA.
 | SEC-04 | 34 | Pending |
 | SEC-05 | 34 | Pending |
 | SEC-06 | 34 | Pending |
-| REVIEW-01 | 35 | Pending |
-| REVIEW-02 | 35 | Pending |
-| REVIEW-03 | 35 | Pending |
-| REVIEW-04 | 35 | Pending |
+| REVIEW-01 | 35 | Complete |
+| REVIEW-02 | 35 | Complete |
+| REVIEW-03 | 35 | Complete |
+| REVIEW-04 | 35 | Complete |
 | DATA-01 | 36 | Pending |
 | DATA-02 | 36 | Pending |
 | DATA-03 | 36 | Pending |
