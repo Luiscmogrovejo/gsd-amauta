@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: The Birth
 status: completed
-stopped_at: Plan 39-02 complete — canary suite + McNemar + baseline + agent-stats Wave 2 done
-last_updated: "2026-04-13T01:25:00.000Z"
-last_activity: "2026-04-13 — Plan 39-02 complete. 50-test canary suite (tests/39-canary-suite.test.cjs, 50/50 pass in 94ms), McNemar's chi-squared comparison (scripts/canary-compare.cjs, erfc-based p-value, continuity correction), baseline vector (tests/fixtures/39-canary-baseline.json, 50 entries all true), gsd-tools agent-stats subcommand. LIFE-02/03 complete. 4 atomic commits."
+stopped_at: Plan 39-03 complete — eval framework + unit test + integration test + full regression. v3.0 milestone COMPLETE.
+last_updated: "2026-04-13T05:00:00.000Z"
+last_activity: "2026-04-13 — Plan 39-03 complete. 15 eval scenarios (5 per agent, code-based only), eval-runner.cjs (15/15 pass), grader-schemas.json (3 types documented), unit test (61 assertions, LIFE-01..05), integration test (79 assertions, 9 regression gates). Full regression: 820 assertions across 14 suites, 0 failures. v3.0 The Birth milestone COMPLETE."
 progress:
   total_phases: 10
   completed_phases: 9
   total_plans: 21
   completed_plans: 21
-  percent: 35
+  percent: 100
 ---
 
 # GSD-Amauta -- Project State
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-04-13 after v2.9 milestone close)
 
 ## Current Position
 
-Phase: 39 of 40 (Agent Lifecycle — CAPSTONE) — IN PROGRESS
-Plan: 39-02 COMPLETE — 50-test canary suite (94ms), McNemar's chi-squared comparison, baseline vector, gsd-tools agent-stats. 4 atomic commits, 1 deviation (parser format fix). LIFE-02/03 complete.
-Status: Plan 39-02 (Wave 2) complete. Plan 39-03 (Wave 3: eval framework + integration tests + full regression) is next.
+Phase: 39 of 40 (Agent Lifecycle — CAPSTONE) — COMPLETE
+Plan: 39-03 COMPLETE — eval framework (15 eval scenarios, eval-runner 15/15 pass, grader-schemas.json 3 types), unit test (61 assertions LIFE-01..05), integration test (79 assertions 9 regression gates). Full regression: 820 assertions, 0 failures. v3.0 milestone COMPLETE.
+Status: ALL PHASES COMPLETE. v3.0 "The Birth" milestone shipped. 10 phases, 21 plans, 55 requirements, 820 assertions green.
 Last activity: 2026-04-13 — Plan 39-02 complete. 50-test canary suite (tests/39-canary-suite.test.cjs, 50/50 pass in 94ms), McNemar's chi-squared comparison (scripts/canary-compare.cjs, erfc-based p-value, continuity correction), baseline vector (tests/fixtures/39-canary-baseline.json, 50 entries all true), gsd-tools agent-stats subcommand. LIFE-02/03 complete. 4 atomic commits.
 
 Progress: [████░░░░░░] 35%
@@ -44,7 +44,7 @@ Progress: [████░░░░░░] 35%
 | 36 | Data Engineering Agent | DATA-01..04 | COMPLETE 2026-04-14 |
 | 37 | Architect Agent | ARCH-01..03 | COMPLETE 2026-04-13 |
 | 38 | Blackboard Communication | COMM-01..05 | COMPLETE 2026-04-13 |
-| 39 | Agent Lifecycle (CAPSTONE) | LIFE-01..05 | In progress (39-01 Wave 1 done) |
+| 39 | Agent Lifecycle (CAPSTONE) | LIFE-01..05 | COMPLETE 2026-04-13 |
 | 40 | Engineering Standards | ENG-01..05 | COMPLETE 2026-04-13 |
 
 **Execution order:** 31 → 33 → 34 → 40 → 32 → 35 → 36 → 37 → 38 → 39
@@ -114,9 +114,9 @@ Progress: [████░░░░░░] 35%
 
 ## Session Continuity
 
-Last session: 2026-04-14T11:20:34.921Z
-Stopped at: Phase 39 context gathered — capstone ready
-Resume file: .planning/phases/39-agent-lifecycle/39-CONTEXT.md
+Last session: 2026-04-13T05:00:00.000Z
+Stopped at: v3.0 milestone COMPLETE — all 10 phases done, 820 assertions green
+Resume file: none — milestone complete, ready for v3.1 planning
 
 
 ## Learnings
