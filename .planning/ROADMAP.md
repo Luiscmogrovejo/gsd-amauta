@@ -36,7 +36,7 @@
 - [x] **Phase 34: Security Pipeline** — New gsd-security agent; Semgrep SAST, Gitleaks, npm/pip audit, supply chain rules, Rule of Two audit, Trivy container scan (SEC-01..06) — COMPLETE 2026-04-13 (34-01: gsd-security agent + Semgrep rules + Gitleaks config + fixtures; 34-02: 12-rule supply chain propagated to 14 agents + rule-of-two-audit.cjs + install-trivy.cjs + security-scan.cjs; 34-03: 89-assertion regression suite SEC-01..06)
 - [x] **Phase 35: Code Review Agent** — New gsd-reviewer; style/pattern review, SOLID check, structured output schema (REVIEW-01..04) — COMPLETE 2026-04-14 (35-01: gsd-reviewer.md 366 lines, 10 sections, 10 detection rules; 35-02: 3 fixtures + 88 assertions (65 unit + 23 integration), full regression gate 177/177 pass)
 - [x] **Phase 36: Data Engineering Agent** — New gsd-executor-data; expand-and-contract migrations, query analysis, data quality checks (DATA-01..04) — COMPLETE 2026-04-14 (36-01: gsd-executor-data.md 434 lines, 10 sections, DATA-01..04 behavioral rules; 36-02: 3 fixtures + 94 assertions (66 unit + 28 integration), full regression 182/182 pass)
-- [ ] **Phase 37: Architect Agent** — New gsd-architect; ADR management, API design review, N+1 detection (ARCH-01..03)
+- [ ] **Phase 37: Architect Agent** — New gsd-architect; ADR management, API design review, N+1 detection (ARCH-01..03) — Plan 37-01 COMPLETE 2026-04-13 (gsd-architect.md 391 lines, docs/adr/ bootstrapped); plan 37-02 pending
 - [ ] **Phase 38: Blackboard Communication** — `agent_findings` + `agent_messages` PG tables; operator supervision; structured handoff JSON; conflict resolution (COMM-01..05)
 - [ ] **Phase 39: Agent Lifecycle** — SemVer versioning, `agent_metrics` PG table, 50-test canary suite, eval framework, tool integrity checking (LIFE-01..05) (CAPSTONE — needs all others)
 - [x] **Phase 40: Engineering Standards** — Git workflow, error handling, documentation, configuration management, structured logging standards embedded in all agents (ENG-01..05) — COMPLETE 2026-04-13 (40-01: engineering standards ENG-01..05 in shared file + all 4 executor agents; ENG-01 git workflow in gsd-planner; 40-02: remaining 9 agents + 167-assertion verification test suite)
@@ -171,7 +171,7 @@ Plans:
 
 Plans:
 - [x] 36-01: Create agents/gsd-executor-data.md with full 10-section format, schema summary, expand-and-contract rules, query analysis, 4 examples (DATA-01..04) — 2026-04-14
-- [ ] 36-02: Test suite — fixtures (safe/destructive/N+1) + unit tests + integration regression gate (DATA-01..04)
+- [x] 36-02: Test suite — fixtures (safe/destructive/N+1) + unit tests + integration regression gate (DATA-01..04) — 2026-04-14
 
 ### Phase 37: Architect Agent
 **Goal:** A new gsd-architect provides strategic design review: ADRs for significant decisions, API consistency review, and N+1 pattern detection in proposed designs.
@@ -181,10 +181,11 @@ Plans:
   1. gsd-architect generates an ADR for a sample design decision containing context, decision, consequences, and alternatives sections; the file is stored in `docs/adr/` with a sequential number and descriptive slug.
   2. gsd-architect reviews an API design and flags inconsistent naming, wrong HTTP methods, missing pagination, non-standard error format, or missing versioning — at least 3 of these checks are exercised in the test case.
   3. gsd-architect identifies an N+1 query pattern in a proposed design and suggests eager loading, batching, or DataLoader as the resolution.
-**Plans:** TBD (estimated 1 plan: 37-01 full gsd-architect agent)
+**Plans:** 1/2 complete
 
 Plans:
-- [ ] 37-01: Create gsd-architect with ADR management, API design review, N+1 detection (ARCH-01..03)
+- [x] 37-01: Create agents/gsd-architect.md + docs/adr/ bootstrap (template + real ADR) (ARCH-01..03) — 2026-04-13
+- [ ] 37-02: Test suite — fixtures (API spec with violations, N+1 plan) + unit tests + integration regression gate (ARCH-01..03)
 
 ### Phase 38: Blackboard Communication
 **Goal:** Inter-agent communication upgrades from hub-spoke to blackboard architecture. Two PG tables enable agents to share findings and ask questions. Operator supervision gates message types. Structured handoff JSON replaces ad-hoc context passing. Conflict resolution rules prevent deadlock.
@@ -280,8 +281,8 @@ Phase 31: Format Standard (FOUNDATION)
 | 33. Testing Pipeline | 3/3 | Complete    | 2026-04-13 |
 | 34. Security Pipeline | 3/3 | Complete    | 2026-04-13 |
 | 35. Code Review Agent | 2/2 | Complete    | 2026-04-14 |
-| 36. Data Engineering Agent | 1/2 | Complete    | 2026-04-14 |
-| 37. Architect Agent | 0/1 | Not started | - |
+| 36. Data Engineering Agent | 2/2 | Complete    | 2026-04-14 |
+| 37. Architect Agent | 1/2 | In progress | 37-01: 2026-04-13 |
 | 38. Blackboard Communication | 0/2 | Not started | - |
 | 39. Agent Lifecycle | 0/2 | Not started | - |
 | 40. Engineering Standards | 2/2 | Complete    | 2026-04-14 |

@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: The Birth
-status: completed
-stopped_at: Phase 37 context gathered
-last_updated: "2026-04-14T03:07:03.664Z"
-last_activity: 2026-04-14 — Plan 36-02 complete. 3 fixture files + unit test (66 assertions) + integration test (28 assertions). 182/182 regression pass. Phase 36 fully complete.
+status: in_progress
+stopped_at: Plan 37-01 complete
+last_updated: "2026-04-13T00:00:00.000Z"
+last_activity: 2026-04-13 — Plan 37-01 complete. agents/gsd-architect.md (391 lines, 10 sections) + docs/adr/000-template.md + docs/adr/001-postgresql-pgvector.md. 264/264 regression pass.
 progress:
   total_phases: 10
   completed_phases: 7
-  total_plans: 16
-  completed_plans: 16
+  total_plans: 17
+  completed_plans: 17
   percent: 30
 ---
 
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-13 after v2.9 milestone close)
 
 ## Current Position
 
-Phase: 37 of 40 (Architect Agent) — NOT STARTED
-Plan: 36-02 COMPLETE — 3 fixtures + 94 assertions (66 unit + 28 integration). 182/182 full regression pass.
-Status: Phase 36 COMPLETE. Phase 37 (Architect Agent) is next.
-Last activity: 2026-04-14 — Plan 36-02 complete. 3 fixture files + unit test (66 assertions) + integration test (28 assertions). 182/182 regression pass. Phase 36 fully complete.
+Phase: 37 of 40 (Architect Agent) — IN PROGRESS (plan 37-01 complete, 37-02 pending)
+Plan: 37-01 COMPLETE — agents/gsd-architect.md (391 lines) + docs/adr/000-template.md + docs/adr/001-postgresql-pgvector.md. 264/264 regression pass.
+Status: Plan 37-01 complete. Wave 2 (37-02: test suite) is next.
+Last activity: 2026-04-13 — Plan 37-01 complete. Hybrid architect agent (review + write modes), ADR directory bootstrapped, all 26 acceptance criteria pass.
 
 Progress: [███░░░░░░░] 30%
 
@@ -42,7 +42,7 @@ Progress: [███░░░░░░░] 30%
 | 34 | Security Pipeline | SEC-01..06 | COMPLETE 2026-04-13 |
 | 35 | Code Review Agent | REVIEW-01..04 | COMPLETE 2026-04-14 |
 | 36 | Data Engineering Agent | DATA-01..04 | COMPLETE 2026-04-14 |
-| 37 | Architect Agent | ARCH-01..03 | Not started |
+| 37 | Architect Agent | ARCH-01..03 | IN PROGRESS (plan 37-01 complete) |
 | 38 | Blackboard Communication | COMM-01..05 | Not started |
 | 39 | Agent Lifecycle (CAPSTONE) | LIFE-01..05 | Not started |
 | 40 | Engineering Standards | ENG-01..05 | COMPLETE 2026-04-13 |
@@ -96,6 +96,7 @@ Progress: [███░░░░░░░] 30%
 - Plan 35-01: gsd-reviewer boundary is advisory-only — operator decides whether to enforce request_changes recommendation. Approval logic is DETERMINISTIC (not holistic): severity classification drives decision. Detection rules embedded as Markdown table in Domain knowledge (10 rules, locked thresholds). Example 4 (security overlap) demonstrates reviewer CAN flag hardcoded credentials without violating gsd-security boundary. gsd-executor-general is the circuit breaker fallback.
 - Plan 36-01: gsd-executor-data adaptive warning (same as FRONT-02): destructive migrations WARN + generate 3-step expand-and-contract alternative; no hard block. User override proceeds with `-- DESTRUCTIVE: confirmed by user` comment. Static analysis only (no DB connection) — portability constraint. Dynamic migration numbering: always read migrations/ directory, never hardcode. Line count: 434 lines (4 over 430 plan target) — all content required, operator to adjudicate in Wave 2.
 - Plan 36-02: Three-tier fixture coverage (safe/destructive/anti-pattern) maps directly to DATA-01/DATA-02 detection boundary testing. Unit test (66 assertions, 9 groups) + integration test (28 assertions, 5 groups) = 94 total (plan minimum: 70). Tasks 36-02-01..04 were pre-executed in prior session — detected via git log, surfaced, not silently re-executed.
+- Plan 37-01: gsd-architect is the only HYBRID agent in the v3.0 ecosystem — review mode returns JSON findings (API design, N+1 detection), write mode creates ADR files in docs/adr/. Temporal boundary locked: architect reviews BEFORE implementation (plans/proposals), gsd-reviewer reviews AFTER (committed code). ADR numbering is always dynamic (read directory, increment highest) — never hardcode. Task 37-01-01 was pre-executed in prior session — detected via git log, verified all 26 acceptance criteria pass, surfaced divergence, skipped re-execution.
 
 ### Pending Todos
 
