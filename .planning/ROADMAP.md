@@ -213,7 +213,7 @@ Plans:
   3. 50-test canary suite runs in < 5 minutes; McNemar's test is applied; suite alerts (exit non-zero) when degradation > 1% with p < 0.05.
   4. Eval framework exists in `tests/evals/`; >= 5 scenarios per agent for at least 3 agents; grader types include code-based (deterministic), model-based, and human-review placeholders.
   5. Startup tool integrity check computes SHA hash of tool definitions; any mismatch between startup hash and current hash produces a `TOOL_INTEGRITY_VIOLATION` log event and blocks the affected tool.
-**Plans:** 0/3 plans complete
+**Plans:** 3/3 plans complete
 
 Plans:
 - [ ] 39-01: Migration 016 + daemon metrics endpoints + tool-integrity.cjs + 17 changelog files bootstrapped + version bump rules in operator (LIFE-01, LIFE-02, LIFE-05)
@@ -286,7 +286,7 @@ Phase 31: Format Standard (FOUNDATION)
 | 36. Data Engineering Agent | 2/2 | Complete    | 2026-04-14 |
 | 37. Architect Agent | 2/2 | Complete    | 2026-04-14 |
 | 38. Blackboard Communication | 3/3 | Complete    | 2026-04-14 |
-| 39. Agent Lifecycle | 0/3 | Not started | - |
+| 39. Agent Lifecycle | 0/3 | Complete    | 2026-04-14 |
 | 40. Engineering Standards | 2/2 | Complete    | 2026-04-14 |
 
 ---

@@ -93,11 +93,11 @@ Architectural upgrade from hub-spoke to blackboard-based inter-agent communicati
 
 How agents are versioned, evaluated, and continuously improved.
 
-- [ ] **LIFE-01**: SemVer version headers in all 17 agent .md files. `agents/changelog/` directory.
-- [ ] **LIFE-02**: `agent_metrics` PG table: `{agent_name, task_id, completion_time_ms, token_usage, error_count, outcome}`. `gsd-tools agent-stats` command.
-- [ ] **LIFE-03**: 50-test canary suite. McNemar's test. Alert on >1% degradation with p<0.05. Runs in <5 minutes.
-- [ ] **LIFE-04**: Eval framework. Three grader types (code-based, model-based, human). ≥ 5 scenarios per agent. `tests/evals/` directory.
-- [ ] **LIFE-05**: Tool integrity checking at startup. SHA hash of tool definitions. `TOOL_INTEGRITY_VIOLATION` on mismatch.
+- [x] **LIFE-01**: SemVer version headers in all 17 agent .md files. `agents/changelog/` directory.
+- [x] **LIFE-02**: `agent_metrics` PG table: `{agent_name, task_id, completion_time_ms, token_usage, error_count, outcome}`. `gsd-tools agent-stats` command.
+- [x] **LIFE-03**: 50-test canary suite. McNemar's test. Alert on >1% degradation with p<0.05. Runs in <5 minutes.
+- [x] **LIFE-04**: Eval framework. Three grader types (code-based, model-based, human). ≥ 5 scenarios per agent. `tests/evals/` directory.
+- [x] **LIFE-05**: Tool integrity checking at startup. SHA hash of tool definitions. `TOOL_INTEGRITY_VIOLATION` on mismatch.
 
 ## Phase 40 — Engineering Standards
 
@@ -179,11 +179,11 @@ Best practices embedded in every agent's DNA.
 | COMM-03 | 38 | Complete |
 | COMM-04 | 38 | Complete |
 | COMM-05 | 38 | Complete |
-| LIFE-01 | 39 | Pending |
-| LIFE-02 | 39 | Pending |
-| LIFE-03 | 39 | Pending |
-| LIFE-04 | 39 | Pending |
-| LIFE-05 | 39 | Pending |
+| LIFE-01 | 39 | Complete |
+| LIFE-02 | 39 | Complete |
+| LIFE-03 | 39 | Complete |
+| LIFE-04 | 39 | Complete |
+| LIFE-05 | 39 | Complete |
 | ENG-01 | 40 | Complete |
 | ENG-02 | 40 | Complete |
 | ENG-03 | 40 | Complete |
