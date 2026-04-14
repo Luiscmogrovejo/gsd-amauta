@@ -1,0 +1,41 @@
+{
+  "_comment": "@testing-only: Phase 37 API spec fixture for gsd-architect testing. Contains deliberate violations of all 5 ARCH-02 API review rules.",
+  "api_version": "none",
+  "base_url": "/api",
+  "endpoints": [
+    {
+      "_violation": "ARCH-02 Rule 1 (naming): camelCase path, singular noun",
+      "method": "GET",
+      "path": "/api/userProfile/:id",
+      "description": "Get a single user profile"
+    },
+    {
+      "_violation": "ARCH-02 Rule 2 (http_method): GET with side effect",
+      "method": "GET",
+      "path": "/api/user/:id/deactivate",
+      "description": "Deactivates a user account (side effect via GET)"
+    },
+    {
+      "_violation": "ARCH-02 Rule 3 (pagination): list endpoint without pagination",
+      "method": "GET",
+      "path": "/api/v1/tasks",
+      "description": "Returns all tasks for a project (no pagination)"
+    },
+    {
+      "_violation": "ARCH-02 Rule 4 (error_format): non-standard error response",
+      "method": "POST",
+      "path": "/api/v1/tasks",
+      "description": "Creates a task",
+      "error_response": {
+        "err": "something went wrong",
+        "status": 500
+      }
+    },
+    {
+      "_violation": "ARCH-02 Rule 5 (versioning): no version prefix on public endpoint",
+      "method": "DELETE",
+      "path": "/api/tasks/:id",
+      "description": "Deletes a task (no /v1/ prefix)"
+    }
+  ]
+}
