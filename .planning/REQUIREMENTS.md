@@ -80,36 +80,36 @@ Requirements for v3.1 "The Gathering" — graft BMAD-METHOD's best patterns onto
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SCALE-01 | TBD | Pending |
-| SCALE-02 | TBD | Pending |
-| SCALE-03 | TBD | Pending |
-| SCALE-04 | TBD | Pending |
-| SHARD-01 | TBD | Pending |
-| SHARD-02 | TBD | Pending |
-| SHARD-03 | TBD | Pending |
-| SHARD-04 | TBD | Pending |
-| SHARD-05 | TBD | Pending |
-| SKILL-01 | TBD | Pending |
-| SKILL-02 | TBD | Pending |
-| SKILL-03 | TBD | Pending |
-| SKILL-04 | TBD | Pending |
-| INST-01 | TBD | Pending |
-| INST-02 | TBD | Pending |
-| INST-03 | TBD | Pending |
-| INST-04 | TBD | Pending |
-| HELP-01 | TBD | Pending |
-| HELP-02 | TBD | Pending |
-| HELP-03 | TBD | Pending |
-| MCP-01 | TBD | Pending |
-| MCP-02 | TBD | Pending |
-| MCP-03 | TBD | Pending |
-| HYDRA-01 | TBD | Pending |
-| HYDRA-02 | TBD | Pending |
+| SHARD-01 | Phase 41 | Pending |
+| SHARD-02 | Phase 41 | Pending |
+| SHARD-03 | Phase 41 | Pending |
+| SHARD-04 | Phase 41 | Pending |
+| SHARD-05 | Phase 41 | Pending |
+| SCALE-01 | Phase 42 | Pending |
+| SCALE-02 | Phase 42 | Pending |
+| SCALE-03 | Phase 42 | Pending |
+| SCALE-04 | Phase 42 | Pending |
+| SKILL-01 | Phase 43 | Pending |
+| SKILL-02 | Phase 43 | Pending |
+| SKILL-03 | Phase 43 | Pending |
+| SKILL-04 | Phase 43 | Pending |
+| INST-01 | Phase 44 | Pending |
+| INST-02 | Phase 44 | Pending |
+| INST-03 | Phase 44 | Pending |
+| INST-04 | Phase 44 | Pending |
+| HELP-01 | Phase 45 | Pending |
+| HELP-02 | Phase 45 | Pending |
+| HELP-03 | Phase 45 | Pending |
+| MCP-01 | Phase 46 | Pending |
+| MCP-02 | Phase 46 | Pending |
+| MCP-03 | Phase 46 | Pending |
+| HYDRA-01 | Phase 47 | Pending |
+| HYDRA-02 | Phase 47 | Pending |
 
 **Coverage:**
 - v3.1 requirements: 25 total
-- Mapped to phases: 0
-- Unmapped: 25 (roadmap pending)
+- Mapped to phases: 25/25
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-14*
