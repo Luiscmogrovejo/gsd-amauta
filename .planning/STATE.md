@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: The Birth
 status: in_progress
-stopped_at: Plan 37-01 complete
-last_updated: "2026-04-13T00:00:00.000Z"
-last_activity: 2026-04-13 — Plan 37-01 complete. agents/gsd-architect.md (391 lines, 10 sections) + docs/adr/000-template.md + docs/adr/001-postgresql-pgvector.md. 264/264 regression pass.
+stopped_at: Plan 37-02 complete
+last_updated: "2026-04-13T04:35:00.000Z"
+last_activity: 2026-04-13 — Plan 37-02 complete. 2 fixtures + 71-assertion unit test + 32-assertion integration test (17-agent regression gate). 197/197 regression pass.
 progress:
   total_phases: 10
   completed_phases: 7
-  total_plans: 17
-  completed_plans: 17
-  percent: 30
+  total_plans: 19
+  completed_plans: 19
+  percent: 35
 ---
 
 # GSD-Amauta -- Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-13 after v2.9 milestone close)
 
 ## Current Position
 
-Phase: 37 of 40 (Architect Agent) — IN PROGRESS (plan 37-01 complete, 37-02 pending)
-Plan: 37-01 COMPLETE — agents/gsd-architect.md (391 lines) + docs/adr/000-template.md + docs/adr/001-postgresql-pgvector.md. 264/264 regression pass.
-Status: Plan 37-01 complete. Wave 2 (37-02: test suite) is next.
-Last activity: 2026-04-13 — Plan 37-01 complete. Hybrid architect agent (review + write modes), ADR directory bootstrapped, all 26 acceptance criteria pass.
+Phase: 37 of 40 (Architect Agent) — COMPLETE
+Plan: 37-02 COMPLETE — 2 fixtures + 71-assertion unit test + 32-assertion integration test (17-agent regression gate). 197/197 full regression pass.
+Status: Phase 37 complete. Phase 38 (Blackboard Communication) is next.
+Last activity: 2026-04-13 — Plan 37-02 complete. ARCH-01..03 all covered: fixtures (api-spec-violations + plan-n-plus-one), unit test (71 assertions, 10 groups), integration test (32 assertions, 17-agent gate).
 
-Progress: [███░░░░░░░] 30%
+Progress: [████░░░░░░] 35%
 
 ## v3.0 Phase Map
 
@@ -42,7 +42,7 @@ Progress: [███░░░░░░░] 30%
 | 34 | Security Pipeline | SEC-01..06 | COMPLETE 2026-04-13 |
 | 35 | Code Review Agent | REVIEW-01..04 | COMPLETE 2026-04-14 |
 | 36 | Data Engineering Agent | DATA-01..04 | COMPLETE 2026-04-14 |
-| 37 | Architect Agent | ARCH-01..03 | IN PROGRESS (plan 37-01 complete) |
+| 37 | Architect Agent | ARCH-01..03 | COMPLETE 2026-04-13 |
 | 38 | Blackboard Communication | COMM-01..05 | Not started |
 | 39 | Agent Lifecycle (CAPSTONE) | LIFE-01..05 | Not started |
 | 40 | Engineering Standards | ENG-01..05 | COMPLETE 2026-04-13 |
@@ -97,6 +97,7 @@ Progress: [███░░░░░░░] 30%
 - Plan 36-01: gsd-executor-data adaptive warning (same as FRONT-02): destructive migrations WARN + generate 3-step expand-and-contract alternative; no hard block. User override proceeds with `-- DESTRUCTIVE: confirmed by user` comment. Static analysis only (no DB connection) — portability constraint. Dynamic migration numbering: always read migrations/ directory, never hardcode. Line count: 434 lines (4 over 430 plan target) — all content required, operator to adjudicate in Wave 2.
 - Plan 36-02: Three-tier fixture coverage (safe/destructive/anti-pattern) maps directly to DATA-01/DATA-02 detection boundary testing. Unit test (66 assertions, 9 groups) + integration test (28 assertions, 5 groups) = 94 total (plan minimum: 70). Tasks 36-02-01..04 were pre-executed in prior session — detected via git log, surfaced, not silently re-executed.
 - Plan 37-01: gsd-architect is the only HYBRID agent in the v3.0 ecosystem — review mode returns JSON findings (API design, N+1 detection), write mode creates ADR files in docs/adr/. Temporal boundary locked: architect reviews BEFORE implementation (plans/proposals), gsd-reviewer reviews AFTER (committed code). ADR numbering is always dynamic (read directory, increment highest) — never hardcode. Task 37-01-01 was pre-executed in prior session — detected via git log, verified all 26 acceptance criteria pass, surfaced divergence, skipped re-execution.
+- Plan 37-02: Fixture pattern: @testing-only marker + _violation labels (one per endpoint) allow assertion targeting by field name. ADR sections check uses inclusive pattern (Alternatives without ## prefix) because ADR files use "## Alternatives considered" not "## Alternatives". 103 total assertions (71 unit + 32 integration) vs 70 plan minimum. All 17 agents pass 10-section gate in integration test. Full regression: 197/197 pass.
 
 ### Pending Todos
 
