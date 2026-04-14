@@ -21,13 +21,13 @@ All 11 existing agents restructured to standardized 10-section format. Foundatio
 
 gsd-executor-frontend rebuilt with v0-inspired composite pipeline.
 
-- [ ] **FRONT-01**: Progressive generation pattern (layout → sections → components → interactivity). Never full-page in one pass.
-- [ ] **FRONT-02**: Mandatory stack: React 19 + TypeScript strict + Tailwind CSS 4 + shadcn/ui. Warns and adapts for vanilla CSS, inline styles, untyped JS (new code uses mandatory stack; existing code left alone).
-- [ ] **FRONT-03**: Component-driven: `components/ui/` (shadcn primitives), `components/` (composed), `app/` (routes). No component > 200 lines.
-- [ ] **FRONT-04**: State decision tree: local→useState, shared UI→Zustand, server→TanStack Query, URL→search params.
-- [ ] **FRONT-05**: WCAG 2.1 AA baseline. Semantic HTML, ARIA, keyboard nav, focus mgmt, contrast. `eslint-plugin-jsx-a11y` 0 errors.
-- [ ] **FRONT-06**: Post-generation validation: `tsc --noEmit`, ESLint + a11y lint, dependency completeness. Max 3 self-correction iterations.
-- [ ] **FRONT-07**: Playwright screenshots at 3 breakpoints (375px, 768px, 1440px). Stored in `tests/screenshots/`.
+- [x] **FRONT-01**: Progressive generation pattern (layout → sections → components → interactivity). Never full-page in one pass.
+- [x] **FRONT-02**: Mandatory stack: React 19 + TypeScript strict + Tailwind CSS 4 + shadcn/ui. Warns and adapts for vanilla CSS, inline styles, untyped JS (new code uses mandatory stack; existing code left alone).
+- [x] **FRONT-03**: Component-driven: `components/ui/` (shadcn primitives), `components/` (composed), `app/` (routes). No component > 200 lines.
+- [x] **FRONT-04**: State decision tree: local→useState, shared UI→Zustand, server→TanStack Query, URL→search params.
+- [x] **FRONT-05**: WCAG 2.1 AA baseline. Semantic HTML, ARIA, keyboard nav, focus mgmt, contrast. `eslint-plugin-jsx-a11y` 0 errors.
+- [x] **FRONT-06**: Post-generation validation: `tsc --noEmit`, ESLint + a11y lint, dependency completeness. Max 3 self-correction iterations.
+- [x] **FRONT-07**: Playwright screenshots at 3 breakpoints (375px, 768px, 1440px). Stored in `tests/screenshots/`.
 
 ## Phase 33 — Testing Pipeline
 
@@ -142,13 +142,13 @@ Best practices embedded in every agent's DNA.
 | FORMAT-05 | 31 | Complete |
 | FORMAT-06 | 31 | Complete |
 | FORMAT-07 | 31 | Complete |
-| FRONT-01 | 32 | Pending |
-| FRONT-02 | 32 | Pending |
-| FRONT-03 | 32 | Pending |
-| FRONT-04 | 32 | Pending |
-| FRONT-05 | 32 | Pending |
-| FRONT-06 | 32 | Pending |
-| FRONT-07 | 32 | Pending |
+| FRONT-01 | 32 | Complete |
+| FRONT-02 | 32 | Complete |
+| FRONT-03 | 32 | Complete |
+| FRONT-04 | 32 | Complete |
+| FRONT-05 | 32 | Complete |
+| FRONT-06 | 32 | Complete |
+| FRONT-07 | 32 | Complete |
 | TEST-01 | 33 | Pending |
 | TEST-02 | 33 | Pending |
 | TEST-03 | 33 | Pending |
