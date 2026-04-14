@@ -181,7 +181,7 @@ Plans:
   1. gsd-architect generates an ADR for a sample design decision containing context, decision, consequences, and alternatives sections; the file is stored in `docs/adr/` with a sequential number and descriptive slug.
   2. gsd-architect reviews an API design and flags inconsistent naming, wrong HTTP methods, missing pagination, non-standard error format, or missing versioning — at least 3 of these checks are exercised in the test case.
   3. gsd-architect identifies an N+1 query pattern in a proposed design and suggests eager loading, batching, or DataLoader as the resolution.
-**Plans:** 2/2 complete
+**Plans:** 2/2 plans complete
 
 Plans:
 - [x] 37-01: Create agents/gsd-architect.md + docs/adr/ bootstrap (template + real ADR) (ARCH-01..03) — 2026-04-13
@@ -282,7 +282,7 @@ Phase 31: Format Standard (FOUNDATION)
 | 34. Security Pipeline | 3/3 | Complete    | 2026-04-13 |
 | 35. Code Review Agent | 2/2 | Complete    | 2026-04-14 |
 | 36. Data Engineering Agent | 2/2 | Complete    | 2026-04-14 |
-| 37. Architect Agent | 2/2 | Complete    | 2026-04-13 |
+| 37. Architect Agent | 2/2 | Complete    | 2026-04-14 |
 | 38. Blackboard Communication | 0/2 | Not started | - |
 | 39. Agent Lifecycle | 0/2 | Not started | - |
 | 40. Engineering Standards | 2/2 | Complete    | 2026-04-14 |

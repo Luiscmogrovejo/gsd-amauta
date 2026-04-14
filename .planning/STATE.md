@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: The Birth
-status: in_progress
-stopped_at: Plan 37-02 complete
-last_updated: "2026-04-13T04:35:00.000Z"
-last_activity: 2026-04-13 — Plan 37-02 complete. 2 fixtures + 71-assertion unit test + 32-assertion integration test (17-agent regression gate). 197/197 regression pass.
+status: completed
+stopped_at: Phase 37 context gathered
+last_updated: "2026-04-14T03:43:26.244Z"
+last_activity: "2026-04-13 — Plan 37-02 complete. ARCH-01..03 all covered: fixtures (api-spec-violations + plan-n-plus-one), unit test (71 assertions, 10 groups), integration test (32 assertions, 17-agent gate)."
 progress:
   total_phases: 10
-  completed_phases: 7
-  total_plans: 19
-  completed_plans: 19
+  completed_phases: 8
+  total_plans: 18
+  completed_plans: 18
   percent: 35
 ---
 
@@ -132,6 +132,8 @@ Resume file: .planning/phases/37-architect-agent/37-CONTEXT.md
 
 
 
+
+- [learning] 2026-04-14T03:40:29.234Z: Plan 37-02 pattern: architect test suite -- fixture pattern uses @testing-only marker + _violation labels (one per endpoint/violation) for assertion targeting by field name. ADR section checks use inclusive 'Alternatives' without ## prefix because real ADR files use '## Alternatives considered'. Unit test (71 assertions, 10 groups) + integration test (32 assertions, 6 groups) = 103 total (plan min: 70). 17-agent 10-section regression gate loops AGENT_FILES array; cleanEnv() deletes NODE_TEST_CONTEXT before spawnSync. Boundary non-overlap tests verify: architect lacks 500-lines threshold (reviewer's rule), reviewer has 'You review code and produce findings', executor-data has 'Static analysis of SQL'.
 - [learning] 2026-04-14T02:52:23.325Z: Plan 36-02 pattern: data agent test suite — safe/destructive/anti-pattern fixture triad maps directly to detection rule boundary testing. Integration test always verifies N-agent section regression + shared file content identity (security-rules bullet lines + engineering-standard headings) + prior phase regression gates + executor pattern compliance (RPETD, fallback, claim line, routing).
 - [learning] 2026-04-14T02:44:18.983Z: Plan 36-01 pattern: new data executor agent — expand-and-contract is the core behavioral rule (adaptive warn + 3-step alternative, same as FRONT-02), static SQL analysis keeps portability (no DB connection), dynamic migration numbering via directory scan always beats hardcoded numbers, data quality test file generated alongside every migration.
 - [learning] 2026-04-14T02:11:25.355Z: Plan 35-02 pattern: three-tier fixture coverage (clean/messy/god-class) maps directly to detection rule severity boundary testing. god-class fixture must be written, then measured (wc -l), then expanded if below threshold — do not assume line count. Unit test fixture assertions for 'long function' check use embedded VIOLATION comment strings rather than runtime line-counting.

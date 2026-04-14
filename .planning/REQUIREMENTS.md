@@ -75,9 +75,9 @@ New gsd-executor-data — owns the data layer.
 
 New gsd-architect — the strategic thinker.
 
-- [ ] **ARCH-01**: ADRs for significant design choices. Stored in `docs/adr/`. Context, decision, consequences, alternatives.
-- [ ] **ARCH-02**: API design review. Consistent naming, HTTP methods, pagination, error format, versioning.
-- [ ] **ARCH-03**: N+1 detection in proposed designs. Suggests eager loading, batching, DataLoader patterns.
+- [x] **ARCH-01**: ADRs for significant design choices. Stored in `docs/adr/`. Context, decision, consequences, alternatives.
+- [x] **ARCH-02**: API design review. Consistent naming, HTTP methods, pagination, error format, versioning.
+- [x] **ARCH-03**: N+1 detection in proposed designs. Suggests eager loading, batching, DataLoader patterns.
 
 ## Phase 38 — Blackboard Communication
 
@@ -171,9 +171,9 @@ Best practices embedded in every agent's DNA.
 | DATA-02 | 36 | Complete |
 | DATA-03 | 36 | Complete |
 | DATA-04 | 36 | Complete |
-| ARCH-01 | 37 | Pending |
-| ARCH-02 | 37 | Pending |
-| ARCH-03 | 37 | Pending |
+| ARCH-01 | 37 | Complete |
+| ARCH-02 | 37 | Complete |
+| ARCH-03 | 37 | Complete |
 | COMM-01 | 38 | Pending |
 | COMM-02 | 38 | Pending |
 | COMM-03 | 38 | Pending |
