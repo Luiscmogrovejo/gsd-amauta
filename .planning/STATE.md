@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: The Birth
-status: completed
-stopped_at: Phase 35 context gathered
-last_updated: "2026-04-14T01:37:33.720Z"
-last_activity: "2026-04-14 — Plan 32-02 complete. Unit tests: 66 assertions across 14 groups covering FRONT-01..07 + FORMAT/SEC/ENG regressions. Integration tests: 19 assertions (Phases 31/34/40 regression gates + cross-file consistency). Combined 85 assertions pass, 376 total across full regression suite."
+status: in_progress
+stopped_at: Plan 35-01 complete — gsd-reviewer.md created
+last_updated: "2026-04-14T02:25:00.000Z"
+last_activity: "2026-04-14 — Plan 35-01 complete. agents/gsd-reviewer.md created (366 lines, 10 sections). 10 detection rules with locked thresholds, REVIEW-04 JSON output schema, deterministic approval logic, 4 few-shot examples, ENG standards + 12 security rules verbatim. All 141 regression assertions pass."
 progress:
   total_phases: 10
   completed_phases: 5
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-13 after v2.9 milestone close)
 
 ## Current Position
 
-Phase: 32 of 40 (Frontend Rebuild) — COMPLETE
-Plan: 32-02 COMPLETE — 85-assertion test suite (66 unit + 19 integration) verifying all FRONT-01..07 rules. Full regression gate 376/376 pass. Phase 32 complete.
-Status: Phase 32 complete. Next: Phase 35 (Code Review Agent) per execution order.
-Last activity: 2026-04-14 — Plan 32-02 complete. Unit tests: 66 assertions across 14 groups covering FRONT-01..07 + FORMAT/SEC/ENG regressions. Integration tests: 19 assertions (Phases 31/34/40 regression gates + cross-file consistency). Combined 85 assertions pass, 376 total across full regression suite.
+Phase: 35 of 40 (Code Review Agent) — IN PROGRESS
+Plan: 35-01 COMPLETE — agents/gsd-reviewer.md created (366 lines). 10 detection rules, REVIEW-04 schema, deterministic approval, 4 examples. All 141 regression assertions pass.
+Status: Phase 35 in progress. Plan 35-01 complete. Next: Plan 35-02 (test suite + fixture files).
+Last activity: 2026-04-14 — Plan 35-01 complete. agents/gsd-reviewer.md created (366 lines, 10 sections). 10 detection rules with locked thresholds, REVIEW-04 JSON output schema, deterministic approval logic, 4 few-shot examples, ENG standards + 12 security rules verbatim. All 141 regression assertions pass.
 
 Progress: [███░░░░░░░] 30%
 
@@ -40,7 +40,7 @@ Progress: [███░░░░░░░] 30%
 | 32 | Frontend Rebuild | FRONT-01..07 | COMPLETE 2026-04-14 |
 | 33 | Testing Pipeline | TEST-01..08 | COMPLETE 2026-04-13 |
 | 34 | Security Pipeline | SEC-01..06 | COMPLETE 2026-04-13 |
-| 35 | Code Review Agent | REVIEW-01..04 | Not started |
+| 35 | Code Review Agent | REVIEW-01..04 | In progress (35-01 complete) |
 | 36 | Data Engineering Agent | DATA-01..04 | Not started |
 | 37 | Architect Agent | ARCH-01..03 | Not started |
 | 38 | Blackboard Communication | COMM-01..05 | Not started |
@@ -93,6 +93,7 @@ Progress: [███░░░░░░░] 30%
 - Plan 32-01: FRONT-07 Playwright screenshots are stored-only in v3.0 — visual regression diffing is v3.1 scope. Graceful degradation pattern mirrors Phase 34 gitleaks/trivy skip.
 - Plan 32-01: Tasks 32-01-01 and 32-01-02 were pre-executed in prior session — executor detected via grep, reported divergence, skipped re-execution. Correct behavior per divergence protocol.
 - Plan 32-02: Example count regex uses /\*\*Example \d+:/g — matches the bold-prefix "**Example 1:" pattern verbatim. Preconditions count test uses within-1 tolerance (backend has extra executor-general fallback note not in frontend). NODE_TEST_CONTEXT deletion extracted as cleanEnv() helper. Cross-file consistency tests are pure fs reads (no child processes). 376/376 full regression pass.
+- Plan 35-01: gsd-reviewer boundary is advisory-only — operator decides whether to enforce request_changes recommendation. Approval logic is DETERMINISTIC (not holistic): severity classification drives decision. Detection rules embedded as Markdown table in Domain knowledge (10 rules, locked thresholds). Example 4 (security overlap) demonstrates reviewer CAN flag hardcoded credentials without violating gsd-security boundary. gsd-executor-general is the circuit breaker fallback.
 
 ### Pending Todos
 
@@ -104,9 +105,9 @@ Progress: [███░░░░░░░] 30%
 
 ## Session Continuity
 
-Last session: 2026-04-14T01:37:33.714Z
-Stopped at: Phase 35 context gathered
-Resume file: .planning/phases/35-code-review-agent/35-CONTEXT.md
+Last session: 2026-04-14T02:25:00.000Z
+Stopped at: Plan 35-01 complete — gsd-reviewer.md committed (8b67c01)
+Resume file: .planning/phases/35-code-review-agent/35-01-SUMMARY.md
 
 
 ## Learnings

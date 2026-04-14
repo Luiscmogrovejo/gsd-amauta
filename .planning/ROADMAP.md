@@ -34,7 +34,7 @@
 - [x] **Phase 32: Frontend Rebuild** — gsd-executor-frontend rebuilt with v0-inspired composite pipeline; React 19 + TypeScript + Tailwind + shadcn/ui; Playwright screenshots (FRONT-01..07) — COMPLETE 2026-04-14 (32-01: agent rebuild FRONT-01..07 behavioral rules, 4 examples; 32-02: 85-assertion test suite 66+19, full regression 376/376 pass)
 - [x] **Phase 33: Testing Pipeline** — Two new agents: gsd-tester (generates) and gsd-qa (evaluates); CoverUp coverage-guided iteration; mutation testing; Pact contracts (TEST-01..08) — COMPLETE 2026-04-13 (Wave 1: agents + scripts; Wave 2: stryker, Pact contracts, Playwright POM, fast-check, quality-audit; Wave 3: 111-assertion regression suite TEST-01..08)
 - [x] **Phase 34: Security Pipeline** — New gsd-security agent; Semgrep SAST, Gitleaks, npm/pip audit, supply chain rules, Rule of Two audit, Trivy container scan (SEC-01..06) — COMPLETE 2026-04-13 (34-01: gsd-security agent + Semgrep rules + Gitleaks config + fixtures; 34-02: 12-rule supply chain propagated to 14 agents + rule-of-two-audit.cjs + install-trivy.cjs + security-scan.cjs; 34-03: 89-assertion regression suite SEC-01..06)
-- [ ] **Phase 35: Code Review Agent** — New gsd-reviewer; style/pattern review, SOLID check, structured output schema (REVIEW-01..04)
+- [ ] **Phase 35: Code Review Agent** — New gsd-reviewer; style/pattern review, SOLID check, structured output schema (REVIEW-01..04) — IN PROGRESS (35-01 complete: gsd-reviewer.md; 35-02 pending: test suite + fixtures)
 - [ ] **Phase 36: Data Engineering Agent** — New gsd-executor-data; expand-and-contract migrations, query analysis, data quality checks (DATA-01..04)
 - [ ] **Phase 37: Architect Agent** — New gsd-architect; ADR management, API design review, N+1 detection (ARCH-01..03)
 - [ ] **Phase 38: Blackboard Communication** — `agent_findings` + `agent_messages` PG tables; operator supervision; structured handoff JSON; conflict resolution (COMM-01..05)
@@ -152,10 +152,11 @@ Plans:
   2. gsd-reviewer identifies god classes (> 500 lines), functions with > 5 parameters, and circular dependencies in a test module; findings are distinct from validator findings on the same code.
   3. gsd-reviewer and gsd-validator can both run on the same code without conflict; their output schemas are different; a finding in one does not imply a finding in the other.
   4. gsd-reviewer produces structured output matching schema `{findings: [{file, line, category, severity, message, suggestion}], summary, approval: "approve"|"request_changes"|"comment_only"}`.
-**Plans:** TBD (estimated 1 plan: 35-01 full gsd-reviewer agent)
+**Plans:** 0/2 planned
 
 Plans:
-- [ ] 35-01: Create gsd-reviewer with style/pattern review, SOLID check, structured output schema; confirm independence from gsd-validator (REVIEW-01..04)
+- [x] 35-01: Create agents/gsd-reviewer.md with full 10-section format, 10 detection rules, output schema, 4 examples (REVIEW-01..04) — 2026-04-14
+- [ ] 35-02: Test suite — unit assertions + fixture files + integration regression gate (REVIEW-01..04)
 
 ### Phase 36: Data Engineering Agent
 **Goal:** A new gsd-executor-data owns the data layer: it writes safe expand-and-contract migrations, analyzes query performance, generates data quality checks, and understands the GSD-Amauta schema well enough to produce the next migration in sequence.
@@ -277,7 +278,7 @@ Phase 31: Format Standard (FOUNDATION)
 | 32. Frontend Rebuild | 2/2 | Complete    | 2026-04-14 |
 | 33. Testing Pipeline | 3/3 | Complete    | 2026-04-13 |
 | 34. Security Pipeline | 3/3 | Complete    | 2026-04-13 |
-| 35. Code Review Agent | 0/1 | Not started | - |
+| 35. Code Review Agent | 1/2 | In progress | - |
 | 36. Data Engineering Agent | 0/1 | Not started | - |
 | 37. Architect Agent | 0/1 | Not started | - |
 | 38. Blackboard Communication | 0/2 | Not started | - |
