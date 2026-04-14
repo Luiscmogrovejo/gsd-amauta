@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: The Birth
 status: in_progress
-stopped_at: Plan 35-01 complete — gsd-reviewer.md created
-last_updated: "2026-04-14T02:25:00.000Z"
-last_activity: "2026-04-14 — Plan 35-01 complete. agents/gsd-reviewer.md created (366 lines, 10 sections). 10 detection rules with locked thresholds, REVIEW-04 JSON output schema, deterministic approval logic, 4 few-shot examples, ENG standards + 12 security rules verbatim. All 141 regression assertions pass."
+stopped_at: Plan 35-02 complete — test suite + fixtures created
+last_updated: "2026-04-14T03:30:00.000Z"
+last_activity: "2026-04-14 — Plan 35-02 complete. 3 fixture files + 88-assertion test suite (65 unit + 23 integration). Full regression gate 177/177 pass. Phase 35 COMPLETE."
 progress:
   total_phases: 10
-  completed_phases: 5
-  total_plans: 12
-  completed_plans: 12
-  percent: 30
+  completed_phases: 6
+  total_plans: 13
+  completed_plans: 13
+  percent: 35
 ---
 
 # GSD-Amauta -- Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-13 after v2.9 milestone close)
 
 ## Current Position
 
-Phase: 35 of 40 (Code Review Agent) — IN PROGRESS
-Plan: 35-01 COMPLETE — agents/gsd-reviewer.md created (366 lines). 10 detection rules, REVIEW-04 schema, deterministic approval, 4 examples. All 141 regression assertions pass.
-Status: Phase 35 in progress. Plan 35-01 complete. Next: Plan 35-02 (test suite + fixture files).
-Last activity: 2026-04-14 — Plan 35-01 complete. agents/gsd-reviewer.md created (366 lines, 10 sections). 10 detection rules with locked thresholds, REVIEW-04 JSON output schema, deterministic approval logic, 4 few-shot examples, ENG standards + 12 security rules verbatim. All 141 regression assertions pass.
+Phase: 36 of 40 (Data Engineering Agent) — NOT STARTED
+Plan: 35-02 COMPLETE — 3 fixtures + 88-assertion test suite (65 unit + 23 integration), 0 failures. Phase 35 COMPLETE.
+Status: Phase 35 COMPLETE. Phase 36 (Data Engineering Agent) is next.
+Last activity: 2026-04-14 — Plan 35-02 complete. fixtures 35-review-clean.js/messy.js/god-class.js created. Unit test: 65 assertions, 9 groups. Integration test: 23 assertions, 5 groups. Full regression gate 177/177 pass (4 suites).
 
 Progress: [███░░░░░░░] 30%
 
@@ -40,7 +40,7 @@ Progress: [███░░░░░░░] 30%
 | 32 | Frontend Rebuild | FRONT-01..07 | COMPLETE 2026-04-14 |
 | 33 | Testing Pipeline | TEST-01..08 | COMPLETE 2026-04-13 |
 | 34 | Security Pipeline | SEC-01..06 | COMPLETE 2026-04-13 |
-| 35 | Code Review Agent | REVIEW-01..04 | In progress (35-01 complete) |
+| 35 | Code Review Agent | REVIEW-01..04 | COMPLETE 2026-04-14 |
 | 36 | Data Engineering Agent | DATA-01..04 | Not started |
 | 37 | Architect Agent | ARCH-01..03 | Not started |
 | 38 | Blackboard Communication | COMM-01..05 | Not started |
@@ -105,9 +105,9 @@ Progress: [███░░░░░░░] 30%
 
 ## Session Continuity
 
-Last session: 2026-04-14T02:25:00.000Z
-Stopped at: Plan 35-01 complete — gsd-reviewer.md committed (8b67c01)
-Resume file: .planning/phases/35-code-review-agent/35-01-SUMMARY.md
+Last session: 2026-04-14T03:30:00.000Z
+Stopped at: Plan 35-02 complete — fixtures + test suite committed (7e46de9)
+Resume file: .planning/phases/35-code-review-agent/35-02-SUMMARY.md
 
 
 ## Learnings
@@ -124,6 +124,8 @@ Resume file: .planning/phases/35-code-review-agent/35-01-SUMMARY.md
 
 
 
+
+- [learning] 2026-04-14T02:03:10.786Z: Plan 35-01 pattern: new review agent — detection rules as Markdown table in Domain knowledge (10 rules, locked thresholds), deterministic approval logic stated twice (spec in Domain knowledge + mandate in Behavioral rules), advisory boundary in Role & identity AND Preconditions for behavioral enforcement. Example 4 security overlap demonstrates reviewer CAN flag hardcoded creds without violating gsd-security boundary.
 - [learning] 2026-04-14T01:28:02.302Z: Plan 32-02 pattern: when testing a rebuilt agent file, unit test = pure fs.readFileSync (60+ assertions across 14 groups), integration test = spawnSync regression gates for prior phases + cross-file consistency vs shared source-of-truth. NODE_TEST_CONTEXT must be deleted in cleanEnv() helper. Example count uses regex matching bold prefix pattern. Combined >= 85 assertions; full regression gate runs 7 test files.
 - [learning] 2026-04-14T01:20:56.561Z: Plan 32-01 pattern: when rebuilding a single agent file across 6 sequential tasks, run grep verification before each task to detect prior-session partial execution — if FRONT-XX rule headings already present, skip re-execution and surface divergence rather than silently overwriting. Graceful degradation for optional tools (Playwright, gitleaks, trivy) follows the same pattern: log [skip] and continue, never fail.
 - [learning] 2026-04-14T00:18:38.527Z: Plan 40-02 pattern: node --test recursive invocation detection fires when integration test spawns inner node --test subprocess. Fix: delete NODE_TEST_CONTEXT from spawnSync env. extractEngStandards() clips from ### Engineering standards to next ### or ## for content-identity tests.
