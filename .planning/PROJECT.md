@@ -2,25 +2,27 @@
 
 ## What This Is
 
-GSD-Amauta is a portable, quality-enforced AI development harness for Claude Code — and any MCP-compatible AI coding agent. v2.9 "Nervous System" delivered the five infrastructure layers that compose into a unified upgrade: Valkey replaces Redis (+35.7% throughput), ParadeDB BM25 + pgvector HNSW consolidate retrieval inside PostgreSQL, tree-sitter AST-aware chunking replaces fixed-character splits, hybrid RRF search fuses BM25 + vector in a single SQL query, circuit breakers and Reflexion memory add self-correction, and amauta-mcp.py exposes the full stack as protocol-native MCP tools and resources. Any tool that speaks MCP — Claude Code, Cursor, Gemini CLI, OpenCode — can now consume Amauta's retrieval, memory, and RPETD context without knowing GSD-Amauta exists.
+GSD-Amauta is a portable, quality-enforced AI development harness for Claude Code — and any MCP-compatible AI coding agent. v3.0 "The Birth" delivered a 17-agent ecosystem with standardized format, specialized capabilities, blackboard inter-agent communication, lifecycle management, and embedded engineering standards. The system can now measure itself (agent_metrics), detect degradation (50-test canary suite with McNemar's test), version its components (SemVer + changelogs), catch tampering (tool integrity SHA-256), and communicate between agents (blackboard PG tables). 820 assertions, 0 failures, 55 requirements shipped.
 
 ## Core Value
 
 Every RPETD phase must *see* what the other phases have already learned — past failures, validated best-practices, existing codebase style, parent-story acceptance criteria — so the system makes better decisions with each task it runs, not worse as context bloats. The brain synthesizes, not accumulates.
 
-## Shipped: v2.9 "Nervous System" (2026-04-13)
+## Shipped: v3.0 "The Birth" (2026-04-14)
 
-**4 phases, 10 plans.** Phase 30 cancelled — K3s-dependent infrastructure not portable.
+**10 phases, 24 plans, 55 requirements, 820 assertions.** 17 agents with standardized format, specialized capabilities, and lifecycle management.
 
 **Shipped:**
-1. The Substrate — Valkey 8.x, pgvector 0.8.2, ParadeDB pg_search, tree-sitter parsers
-2. The Retrieval Rewrite — AST chunking, ParadeDB BM25, Voyage Code 3 embeddings, RRF hybrid search, Jina reranking, NetworkX dependency graph
-3. The Behavioral Upgrade — AGENTS.md discovery, circuit breakers, Reflexion memory, lint guardrails, feature-list lifecycle, get-bearings ritual
-4. The MCP Interface — amauta-mcp.py (stdio + SSE :18800), search-code/memory/context/research as MCP tools and resources
-
-## Current Milestone: v3.0 "The Birth"
-
-**Goal:** Make GSD-Amauta ecosystem infrastructure — any AI coding agent that speaks MCP can consume it without installation. The MCP server becomes a standalone service with direct PG/Valkey connections (not daemon wrapper). One-command setup via npx. Public npm release. Portable security and observability as agent capabilities (no K3s dependency).
+1. Format Standard — 17 agents on standardized 10-section format with shared security rules and engineering standards
+2. Frontend Rebuild — Progressive 4-pass pipeline, React 19 + TypeScript + Tailwind 4 + shadcn/ui
+3. Testing Pipeline — gsd-tester + gsd-qa agents, CoverUp, Stryker, Pact contracts
+4. Security Pipeline — gsd-security agent, Semgrep SAST, Gitleaks, supply chain rules
+5. Code Review Agent — gsd-reviewer, 10 detection rules, structured findings
+6. Data Engineering Agent — gsd-executor-data, expand-and-contract migrations, static query analysis
+7. Architect Agent — gsd-architect, ADR management, API review, design-level N+1 detection
+8. Blackboard Communication — agent_findings + agent_messages PG tables, operator supervision, conflict resolution
+9. Agent Lifecycle — SemVer versioning, agent_metrics, canary suite, eval framework, tool integrity
+10. Engineering Standards — Git workflow, error handling, documentation, configuration, logging embedded in all agents
 
 **Body metaphor sequence:** brain (v2.5) → sight (v2.6) → hands (v2.7) → metabolism (v2.8) → nervous system (v2.9) → **birth (v3.0)**
 
@@ -60,18 +62,27 @@ Every RPETD phase must *see* what the other phases have already learned — past
 - ✓ **SEMANTIC-01..03, ROUTE-01..02**: Semantic cache store/lookup/invalidation, model routing config, compaction model routing
 - ✓ **DEBT-01..04**: Ghost fallback regression, plan-to-tasks default fix, amauta.cjs delegation, routeExecutor specificity
 
-### Active
-
 #### v2.9 Nervous System — Shipped 2026-04-13 (21/26 requirements; 5 deferred)
 - ✓ **INFRA-01..04**: Valkey 8.x, pgvector 0.8.2, ParadeDB pg_search, tree-sitter parsers — v2.9
 - ✓ **RLM-01..06**: AST-aware chunking, ParadeDB BM25, Voyage Code 3 embeddings, RRF hybrid search, Jina reranking, NetworkX dependency graph — v2.9
 - ✓ **BEHAV-01..06**: AGENTS.md discovery, circuit breakers, Reflexion memory, lint guardrails, feature-list lifecycle, get-bearings ritual — v2.9
 - ✓ **MCP-01..05**: amauta-mcp.py (stdio+SSE), search-code, memory, RPETD context resources, research chain — v2.9
-- ~ **OBS-01**: Langfuse/K3s tracing — deferred to v3.0 (portable OTel optional integration)
-- ~ **OBS-02**: Model canary suite — deferred to v3.0 (portable agent capability)
-- ~ **SEC-01**: Rule of Two audit — deferred to v3.0 (portable agent capability)
-- ~ **SEC-02**: gVisor K3s sandbox — deferred indefinitely (K3s-only infrastructure)
-- ~ **SEC-03**: Tool integrity checking — deferred to v3.0 (MCP startup check)
+
+#### v3.0 The Birth — Shipped 2026-04-14 (55/55 requirements)
+- ✓ **FORMAT-01..07**: Standardized 10-section format for all agents — v3.0
+- ✓ **FRONT-01..07**: Frontend rebuild with progressive pipeline, React 19 + Tailwind 4 + shadcn/ui — v3.0
+- ✓ **TEST-01..08**: Testing pipeline (gsd-tester + gsd-qa), CoverUp, Stryker, Pact — v3.0
+- ✓ **SEC-01..06**: Security pipeline (gsd-security), Semgrep, Gitleaks, supply chain — v3.0
+- ✓ **REVIEW-01..04**: Code review agent (gsd-reviewer), 10 detection rules — v3.0
+- ✓ **DATA-01..04**: Data engineering (gsd-executor-data), expand-and-contract, query analysis — v3.0
+- ✓ **ARCH-01..03**: Architect agent (gsd-architect), ADRs, API review, N+1 detection — v3.0
+- ✓ **COMM-01..05**: Blackboard communication, PG tables, operator supervision, conflict resolution — v3.0
+- ✓ **LIFE-01..05**: Agent lifecycle, SemVer, canary suite, eval framework, tool integrity — v3.0
+- ✓ **ENG-01..05**: Engineering standards embedded in all agents — v3.0
+
+### Active
+
+(No active requirements — v3.1 planning not yet started)
 
 #### Legacy (carried forward — all validated in v2.5)
 ##### Memory & Embeddings Audit
@@ -135,20 +146,20 @@ Every RPETD phase must *see* what the other phases have already learned — past
 
 ### Out of Scope
 
-- Web UI for audit results — CLI-only audit
-- Rewriting core architecture — audit and improve, not rebuild
-- Adding new agents — optimize existing 11 agents
+- Web UI — CLI-only
 - Changing database engine — PostgreSQL + pgvector stays
+- gVisor K3s sandbox — deferred indefinitely (not portable)
+- A2A protocol — v3.2+ scope
 
 ## Context
 
-- v2.4 milestone completed (4 phases, 6 plans, 408 tests)
-- Codebase mapped: 7 documents in .planning/codebase/ (2,337 lines total)
-- Daemon running on :18799, PG available, RLM NOT running (3 restart failures)
-- Voyage API key: SET, Perplexity API key: SET, PERPLEXITY_MODEL: NOT SET
-- CONCERNS.md identified 29 concerns with file paths and impact assessments
-- 21,579 lines across 17 primary source files
-- ~2000+ tests (Python + CJS)
+- v3.0 milestone shipped (10 phases, 24 plans, 820 assertions, 55 requirements)
+- 17 agents in standardized 10-section format with shared security rules and engineering standards
+- Daemon running on :18799 with findings/messages/metrics/handoff endpoints
+- 16 PG migrations (001-016), Valkey cache, pgvector 0.8.2
+- 50-test canary suite with McNemar's degradation detection
+- Eval framework: 15 scenarios across 3 agents, code-based graders
+- Tool integrity SHA-256 checking at startup
 
 ## Constraints
 
@@ -162,10 +173,11 @@ Every RPETD phase must *see* what the other phases have already learned — past
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Fresh audit project vs new milestone | Clean slate allows unbiased assessment of every subsystem | -- Pending |
-| Redis as caching layer | Reduce token usage by caching embeddings, responses, and RLM chunks | -- Pending |
-| Hybrid BM25 + Voyage reranking | MIT paper and Voyage docs recommend combining lexical + semantic | -- Pending |
-| sonar-pro for Perplexity | Better quality research results, currently PERPLEXITY_MODEL unset | -- Pending |
+| 17-agent ecosystem with standardized format | Consistency enables cross-cutting updates and behavioral testing | ✓ Good — Phase 40 + 38 proved the pattern |
+| Blackboard over direct agent calls | PG-backed shared state is simpler and more debuggable than direct A2A | ✓ Good — operator supervision model works |
+| Behavioral rules over code enforcement | Agent .md prompts are the enforcement mechanism, not linters | ✓ Good — 820 assertions verify rules exist |
+| Canary suite with McNemar's test | Statistical degradation detection after model updates | ✓ Good — 50 deterministic tests, <5 min |
+| Code-based graders only in v3.0 | Keeps portable (no API key for evals); model-based = v3.1 | ✓ Good — 15/15 scenarios pass |
 
 ---
-*Last updated: 2026-04-13 after v2.9 "Nervous System" milestone kickoff*
+*Last updated: 2026-04-14 after v3.0 "The Birth" milestone completion*

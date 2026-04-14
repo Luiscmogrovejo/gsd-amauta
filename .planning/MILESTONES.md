@@ -1,5 +1,24 @@
 # Milestones
 
+## v3.0 The Birth (Shipped: 2026-04-14)
+
+**Phases:** 31-40 (10 completed) | **Plans:** 24 | **Assertions:** 820 | **Agents:** 17
+**Timeline:** 2026-04-13 to 2026-04-14 (2 sessions) | **Requirements:** 55/55 complete
+
+**Key accomplishments:**
+1. Standardized 10-section format across all agents with shared security rules (12) and engineering standards (5 categories) — FORMAT-01..07, ENG-01..05 (Phases 31, 40)
+2. Rebuilt gsd-executor-frontend with progressive 4-pass pipeline, React 19 + TypeScript + Tailwind 4 + shadcn/ui, E-phase validation loop, Playwright screenshots — FRONT-01..07 (Phase 32)
+3. Created gsd-tester + gsd-qa (testing pipeline), gsd-security (security pipeline with Semgrep, Gitleaks, supply chain rules) — TEST-01..08, SEC-01..06 (Phases 33, 34)
+4. Created gsd-reviewer (code review, 10 detection rules, deterministic approval), gsd-executor-data (expand-and-contract migrations, static query analysis), gsd-architect (hybrid ADR + API review + N+1 detection) — REVIEW-01..04, DATA-01..04, ARCH-01..03 (Phases 35, 36, 37)
+5. Blackboard inter-agent communication: agent_findings + agent_messages PG tables, 6 daemon endpoints, operator supervision, conflict resolution, structured handoff JSON (800-token budget) — COMM-01..05 (Phase 38)
+6. Agent lifecycle capstone: SemVer versioning with per-agent changelogs, agent_metrics PG table, 50-test canary suite with McNemar's degradation detection, eval framework (15 scenarios, 3 grader types), tool integrity SHA-256 checking — LIFE-01..05 (Phase 39)
+
+**What makes this a release:** The system can now measure itself (metrics), detect degradation (canary), version its components (SemVer + changelogs), catch tampering (tool integrity), and communicate between agents (blackboard). 17 agents with standardized format, specialized capabilities, and shared engineering standards.
+
+**Archive:** milestones/v3.0-ROADMAP.md | milestones/v3.0-REQUIREMENTS.md
+
+---
+
 ## v2.9 Nervous System (Shipped: 2026-04-13)
 
 **Phases:** 26-29 (4 completed + Phase 30 cancelled — K3s non-portable) | **Plans:** 10 | **Commits:** 144

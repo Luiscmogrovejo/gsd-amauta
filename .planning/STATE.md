@@ -4,7 +4,7 @@ milestone: v3.0
 milestone_name: The Birth
 status: completed
 stopped_at: v3.0 milestone COMPLETE — all 10 phases done, 820 assertions green
-last_updated: "2026-04-14T12:30:05.487Z"
+last_updated: "2026-04-14T12:44:20.639Z"
 last_activity: 2026-04-13 — Plan 39-02 complete. 50-test canary suite (tests/39-canary-suite.test.cjs, 50/50 pass in 94ms), McNemar's chi-squared comparison (scripts/canary-compare.cjs, erfc-based p-value, continuity correction), baseline vector (tests/fixtures/39-canary-baseline.json, 50 entries all true), gsd-tools agent-stats subcommand. LIFE-02/03 complete. 4 atomic commits.
 progress:
   total_phases: 10
