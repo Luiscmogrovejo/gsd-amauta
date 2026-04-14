@@ -32,6 +32,8 @@
  *   route-executor <files>             Determine executor agent for comma-separated file list
  *                                      Output: {"executor": "executor-backend"} etc.
  *   reindex [path] [--force]           Trigger rlm-service /reindex for code files in path
+ *   agent-stats [--raw]                Fetch per-agent metrics summary from daemon
+ *                                      Output: human-readable table (default) or JSON (--raw)
  *
  * Phase Operations:
  *   phase next-decimal <phase>         Calculate next decimal phase number
@@ -2406,6 +2408,76 @@ async function main() {
         });
         req.on('error', (e) => { reject(new Error(`reindex failed: ${e.message}`)); });
         req.write(body);
+        req.end();
+      });
+      break;
+    }
+
+    case 'agent-stats': {
+      // Phase 39 LIFE-02: fetch per-agent aggregated metrics from daemon GET /api/metrics/stats
+      const http = require('http');
+      const rawFlag = args.includes('--raw');
+      const daemonPort = parseInt(process.env.AMAUTA_PORT || '18799');
+
+      await new Promise((resolve) => {
+        const req = http.request({
+          hostname: '127.0.0.1',
+          port: daemonPort,
+          path: '/api/metrics/stats',
+          method: 'GET',
+        }, (res) => {
+          let data = '';
+          res.on('data', (chunk) => { data += chunk; });
+          res.on('end', () => {
+            let parsed;
+            try { parsed = JSON.parse(data); } catch { parsed = null; }
+
+            if (rawFlag || !parsed) {
+              process.stdout.write((parsed ? JSON.stringify(parsed, null, 2) : data) + '\n');
+              resolve();
+              return;
+            }
+
+            // Human-readable table output
+            const rows = Array.isArray(parsed) ? parsed : (parsed.stats || [parsed]);
+            if (rows.length === 0) {
+              process.stdout.write('No agent metrics recorded yet.\n');
+              resolve();
+              return;
+            }
+
+            const header = [
+              'Agent'.padEnd(30),
+              'Tasks'.padStart(6),
+              'Avg Time(ms)'.padStart(13),
+              'Avg Tokens'.padStart(11),
+              'Error Rate'.padStart(11),
+              'Pass Rate'.padStart(10),
+            ].join('  ');
+            const sep = '-'.repeat(header.length);
+
+            process.stdout.write(header + '\n' + sep + '\n');
+            for (const row of rows) {
+              const line = [
+                String(row.agent_name || row.agent || '').padEnd(30),
+                String(row.tasks_completed || row.count || 0).padStart(6),
+                String(row.avg_time_ms != null ? Number(row.avg_time_ms).toFixed(0) : '-').padStart(13),
+                String(row.avg_tokens != null ? Number(row.avg_tokens).toFixed(0) : '-').padStart(11),
+                String(row.error_rate != null ? Number(row.error_rate).toFixed(3) : '-').padStart(11),
+                String(row.pass_rate != null ? Number(row.pass_rate).toFixed(3) : '-').padStart(10),
+              ].join('  ');
+              process.stdout.write(line + '\n');
+            }
+            resolve();
+          });
+        });
+
+        req.on('error', () => {
+          process.stdout.write(JSON.stringify({ error: 'Daemon not available' }) + '\n');
+          process.exitCode = 1;
+          resolve();
+        });
+
         req.end();
       });
       break;
