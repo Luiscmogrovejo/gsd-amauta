@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: The Birth
 status: completed
-stopped_at: Phase 36 context gathered
-last_updated: "2026-04-14T02:22:56.426Z"
-last_activity: "2026-04-14 — Plan 35-02 complete. fixtures 35-review-clean.js/messy.js/god-class.js created. Unit test: 65 assertions, 9 groups. Integration test: 23 assertions, 5 groups. Full regression gate 177/177 pass (4 suites)."
+stopped_at: Plan 36-01 complete — agents/gsd-executor-data.md committed
+last_updated: "2026-04-14T03:00:00.000Z"
+last_activity: "2026-04-14 — Plan 36-01 complete. agents/gsd-executor-data.md created (434 lines, 10 sections). DATA-01..04 behavioral rules embedded. 4 examples. Engineering standards + 12 security rules verbatim. Full regression gate 208/208 pass."
 progress:
   total_phases: 10
   completed_phases: 6
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-13 after v2.9 milestone close)
 
 ## Current Position
 
-Phase: 36 of 40 (Data Engineering Agent) — NOT STARTED
-Plan: 35-02 COMPLETE — 3 fixtures + 88-assertion test suite (65 unit + 23 integration), 0 failures. Phase 35 COMPLETE.
-Status: Phase 35 COMPLETE. Phase 36 (Data Engineering Agent) is next.
-Last activity: 2026-04-14 — Plan 35-02 complete. fixtures 35-review-clean.js/messy.js/god-class.js created. Unit test: 65 assertions, 9 groups. Integration test: 23 assertions, 5 groups. Full regression gate 177/177 pass (4 suites).
+Phase: 36 of 40 (Data Engineering Agent) — IN PROGRESS (Plan 36-01 complete)
+Plan: 36-01 COMPLETE — agents/gsd-executor-data.md created (434 lines, 10 sections, DATA-01..04 behavioral rules). 208/208 regression tests pass.
+Status: Phase 36 Plan 36-01 COMPLETE. Plan 36-02 (test fixtures + verification suite) is next.
+Last activity: 2026-04-14 — Plan 36-01 complete. agents/gsd-executor-data.md created (434 lines, 10 sections). DATA-01..04 behavioral rules embedded. 4 examples. Engineering standards + 12 security rules verbatim. Full regression gate 208/208 pass.
 
 Progress: [███░░░░░░░] 30%
 
@@ -94,6 +94,7 @@ Progress: [███░░░░░░░] 30%
 - Plan 32-01: Tasks 32-01-01 and 32-01-02 were pre-executed in prior session — executor detected via grep, reported divergence, skipped re-execution. Correct behavior per divergence protocol.
 - Plan 32-02: Example count regex uses /\*\*Example \d+:/g — matches the bold-prefix "**Example 1:" pattern verbatim. Preconditions count test uses within-1 tolerance (backend has extra executor-general fallback note not in frontend). NODE_TEST_CONTEXT deletion extracted as cleanEnv() helper. Cross-file consistency tests are pure fs reads (no child processes). 376/376 full regression pass.
 - Plan 35-01: gsd-reviewer boundary is advisory-only — operator decides whether to enforce request_changes recommendation. Approval logic is DETERMINISTIC (not holistic): severity classification drives decision. Detection rules embedded as Markdown table in Domain knowledge (10 rules, locked thresholds). Example 4 (security overlap) demonstrates reviewer CAN flag hardcoded credentials without violating gsd-security boundary. gsd-executor-general is the circuit breaker fallback.
+- Plan 36-01: gsd-executor-data adaptive warning (same as FRONT-02): destructive migrations WARN + generate 3-step expand-and-contract alternative; no hard block. User override proceeds with `-- DESTRUCTIVE: confirmed by user` comment. Static analysis only (no DB connection) — portability constraint. Dynamic migration numbering: always read migrations/ directory, never hardcode. Line count: 434 lines (4 over 430 plan target) — all content required, operator to adjudicate in Wave 2.
 
 ### Pending Todos
 
