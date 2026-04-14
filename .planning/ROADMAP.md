@@ -39,7 +39,7 @@
 - [ ] **Phase 37: Architect Agent** — New gsd-architect; ADR management, API design review, N+1 detection (ARCH-01..03)
 - [ ] **Phase 38: Blackboard Communication** — `agent_findings` + `agent_messages` PG tables; operator supervision; structured handoff JSON; conflict resolution (COMM-01..05)
 - [ ] **Phase 39: Agent Lifecycle** — SemVer versioning, `agent_metrics` PG table, 50-test canary suite, eval framework, tool integrity checking (LIFE-01..05) (CAPSTONE — needs all others)
-- [x] **Phase 40: Engineering Standards** — Git workflow, error handling, documentation, configuration management, structured logging standards embedded in all agents (ENG-01..05) — COMPLETE 2026-04-13 (40-01: engineering standards ENG-01..05 in shared file + all 4 executor agents; ENG-01 git workflow in gsd-planner)
+- [x] **Phase 40: Engineering Standards** — Git workflow, error handling, documentation, configuration management, structured logging standards embedded in all agents (ENG-01..05) — COMPLETE 2026-04-13 (40-01: engineering standards ENG-01..05 in shared file + all 4 executor agents; ENG-01 git workflow in gsd-planner; 40-02: remaining 9 agents + 167-assertion verification test suite)
 
 ---
 
@@ -225,10 +225,11 @@ Plans:
   3. All executor agents generate JSDoc (TypeScript) or Python docstrings on public functions with @param, @returns, @throws, and usage examples; agents flag undocumented public API functions in reviewed code.
   4. All executor agents use environment variables with defaults for any URL, port, or timeout; agents refuse to hardcode values when asked to write configuration.
   5. All executor agents generate structured log statements `{timestamp, level, service, message, context}` with appropriate log levels; agents flag any `console.log` in production code during review.
-**Plans:** TBD (estimated 1 plan: 40-01 engineering standards embedded in all executor agents)
+**Plans:** 2/2 plans complete
 
 Plans:
 - [x] 40-01: Embed git workflow, error handling, documentation, configuration management, and structured logging standards into all executor agents (ENG-01..05) — 2026-04-13
+- [x] 40-02: Embed engineering standards in remaining 9 agents (operator, researcher, roadmapper, checker, validator, debugger, tester, qa, security); 75-assertion unit tests + 92-assertion integration tests; full regression gate (ENG-01..05) — 2026-04-13
 
 ---
 
@@ -281,7 +282,7 @@ Phase 31: Format Standard (FOUNDATION)
 | 37. Architect Agent | 0/1 | Not started | - |
 | 38. Blackboard Communication | 0/2 | Not started | - |
 | 39. Agent Lifecycle | 0/2 | Not started | - |
-| 40. Engineering Standards | 1/1 | Complete    | 2026-04-13 |
+| 40. Engineering Standards | 2/2 | Complete    | 2026-04-13 |
 
 ---
 
