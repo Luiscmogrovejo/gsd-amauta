@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: The Birth
 status: completed
-stopped_at: Plan 36-01 complete — agents/gsd-executor-data.md committed
-last_updated: "2026-04-14T03:00:00.000Z"
-last_activity: "2026-04-14 — Plan 36-01 complete. agents/gsd-executor-data.md created (434 lines, 10 sections). DATA-01..04 behavioral rules embedded. 4 examples. Engineering standards + 12 security rules verbatim. Full regression gate 208/208 pass."
+stopped_at: Plan 36-02 complete — test fixtures + verification suite committed
+last_updated: "2026-04-14T03:20:00.000Z"
+last_activity: "2026-04-14 — Plan 36-02 complete. 3 fixtures + 94 assertions (66 unit + 28 integration). 182/182 full regression pass. Phase 36 COMPLETE."
 progress:
   total_phases: 10
-  completed_phases: 6
-  total_plans: 14
-  completed_plans: 14
-  percent: 30
+  completed_phases: 7
+  total_plans: 16
+  completed_plans: 16
+  percent: 35
 ---
 
 # GSD-Amauta -- Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-13 after v2.9 milestone close)
 
 ## Current Position
 
-Phase: 36 of 40 (Data Engineering Agent) — IN PROGRESS (Plan 36-01 complete)
-Plan: 36-01 COMPLETE — agents/gsd-executor-data.md created (434 lines, 10 sections, DATA-01..04 behavioral rules). 208/208 regression tests pass.
-Status: Phase 36 Plan 36-01 COMPLETE. Plan 36-02 (test fixtures + verification suite) is next.
-Last activity: 2026-04-14 — Plan 36-01 complete. agents/gsd-executor-data.md created (434 lines, 10 sections). DATA-01..04 behavioral rules embedded. 4 examples. Engineering standards + 12 security rules verbatim. Full regression gate 208/208 pass.
+Phase: 37 of 40 (Architect Agent) — NOT STARTED
+Plan: 36-02 COMPLETE — 3 fixtures + 94 assertions (66 unit + 28 integration). 182/182 full regression pass.
+Status: Phase 36 COMPLETE. Phase 37 (Architect Agent) is next.
+Last activity: 2026-04-14 — Plan 36-02 complete. 3 fixture files + unit test (66 assertions) + integration test (28 assertions). 182/182 regression pass. Phase 36 fully complete.
 
 Progress: [███░░░░░░░] 30%
 
@@ -41,7 +41,7 @@ Progress: [███░░░░░░░] 30%
 | 33 | Testing Pipeline | TEST-01..08 | COMPLETE 2026-04-13 |
 | 34 | Security Pipeline | SEC-01..06 | COMPLETE 2026-04-13 |
 | 35 | Code Review Agent | REVIEW-01..04 | COMPLETE 2026-04-14 |
-| 36 | Data Engineering Agent | DATA-01..04 | Not started |
+| 36 | Data Engineering Agent | DATA-01..04 | COMPLETE 2026-04-14 |
 | 37 | Architect Agent | ARCH-01..03 | Not started |
 | 38 | Blackboard Communication | COMM-01..05 | Not started |
 | 39 | Agent Lifecycle (CAPSTONE) | LIFE-01..05 | Not started |
@@ -95,6 +95,7 @@ Progress: [███░░░░░░░] 30%
 - Plan 32-02: Example count regex uses /\*\*Example \d+:/g — matches the bold-prefix "**Example 1:" pattern verbatim. Preconditions count test uses within-1 tolerance (backend has extra executor-general fallback note not in frontend). NODE_TEST_CONTEXT deletion extracted as cleanEnv() helper. Cross-file consistency tests are pure fs reads (no child processes). 376/376 full regression pass.
 - Plan 35-01: gsd-reviewer boundary is advisory-only — operator decides whether to enforce request_changes recommendation. Approval logic is DETERMINISTIC (not holistic): severity classification drives decision. Detection rules embedded as Markdown table in Domain knowledge (10 rules, locked thresholds). Example 4 (security overlap) demonstrates reviewer CAN flag hardcoded credentials without violating gsd-security boundary. gsd-executor-general is the circuit breaker fallback.
 - Plan 36-01: gsd-executor-data adaptive warning (same as FRONT-02): destructive migrations WARN + generate 3-step expand-and-contract alternative; no hard block. User override proceeds with `-- DESTRUCTIVE: confirmed by user` comment. Static analysis only (no DB connection) — portability constraint. Dynamic migration numbering: always read migrations/ directory, never hardcode. Line count: 434 lines (4 over 430 plan target) — all content required, operator to adjudicate in Wave 2.
+- Plan 36-02: Three-tier fixture coverage (safe/destructive/anti-pattern) maps directly to DATA-01/DATA-02 detection boundary testing. Unit test (66 assertions, 9 groups) + integration test (28 assertions, 5 groups) = 94 total (plan minimum: 70). Tasks 36-02-01..04 were pre-executed in prior session — detected via git log, surfaced, not silently re-executed.
 
 ### Pending Todos
 
@@ -127,6 +128,8 @@ Resume file: .planning/phases/36-data-engineering-agent/36-CONTEXT.md
 
 
 
+
+- [learning] 2026-04-14T02:44:18.983Z: Plan 36-01 pattern: new data executor agent — expand-and-contract is the core behavioral rule (adaptive warn + 3-step alternative, same as FRONT-02), static SQL analysis keeps portability (no DB connection), dynamic migration numbering via directory scan always beats hardcoded numbers, data quality test file generated alongside every migration.
 - [learning] 2026-04-14T02:11:25.355Z: Plan 35-02 pattern: three-tier fixture coverage (clean/messy/god-class) maps directly to detection rule severity boundary testing. god-class fixture must be written, then measured (wc -l), then expanded if below threshold — do not assume line count. Unit test fixture assertions for 'long function' check use embedded VIOLATION comment strings rather than runtime line-counting.
 - [learning] 2026-04-14T02:03:10.786Z: Plan 35-01 pattern: new review agent — detection rules as Markdown table in Domain knowledge (10 rules, locked thresholds), deterministic approval logic stated twice (spec in Domain knowledge + mandate in Behavioral rules), advisory boundary in Role & identity AND Preconditions for behavioral enforcement. Example 4 security overlap demonstrates reviewer CAN flag hardcoded creds without violating gsd-security boundary.
 - [learning] 2026-04-14T01:28:02.302Z: Plan 32-02 pattern: when testing a rebuilt agent file, unit test = pure fs.readFileSync (60+ assertions across 14 groups), integration test = spawnSync regression gates for prior phases + cross-file consistency vs shared source-of-truth. NODE_TEST_CONTEXT must be deleted in cleanEnv() helper. Example count uses regex matching bold prefix pattern. Combined >= 85 assertions; full regression gate runs 7 test files.
