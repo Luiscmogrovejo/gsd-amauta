@@ -31,7 +31,7 @@
 ## Phases
 
 - [x] **Phase 31: Format Standard** — All 11 existing agents restructured to standardized 10-section format; shared security rules; behavioral regression suite (FORMAT-01..07) (FOUNDATION — everything depends on this) — COMPLETE 2026-04-13
-- [ ] **Phase 32: Frontend Rebuild** — gsd-executor-frontend rebuilt with v0-inspired composite pipeline; React 19 + TypeScript + Tailwind + shadcn/ui; Playwright screenshots (FRONT-01..07)
+- [ ] **Phase 32: Frontend Rebuild** — gsd-executor-frontend rebuilt with v0-inspired composite pipeline; React 19 + TypeScript + Tailwind + shadcn/ui; Playwright screenshots (FRONT-01..07) [Plan 32-01 COMPLETE 2026-04-14]
 - [x] **Phase 33: Testing Pipeline** — Two new agents: gsd-tester (generates) and gsd-qa (evaluates); CoverUp coverage-guided iteration; mutation testing; Pact contracts (TEST-01..08) — COMPLETE 2026-04-13 (Wave 1: agents + scripts; Wave 2: stryker, Pact contracts, Playwright POM, fast-check, quality-audit; Wave 3: 111-assertion regression suite TEST-01..08)
 - [x] **Phase 34: Security Pipeline** — New gsd-security agent; Semgrep SAST, Gitleaks, npm/pip audit, supply chain rules, Rule of Two audit, Trivy container scan (SEC-01..06) — COMPLETE 2026-04-13 (34-01: gsd-security agent + Semgrep rules + Gitleaks config + fixtures; 34-02: 12-rule supply chain propagated to 14 agents + rule-of-two-audit.cjs + install-trivy.cjs + security-scan.cjs; 34-03: 89-assertion regression suite SEC-01..06)
 - [ ] **Phase 35: Code Review Agent** — New gsd-reviewer; style/pattern review, SOLID check, structured output schema (REVIEW-01..04)
@@ -105,8 +105,8 @@ Plans:
 **Plans:** TBD (estimated 2 plans: 32-01 agent rebuild + stack enforcement, 32-02 validation pipeline + Playwright)
 
 Plans:
-- [ ] 32-01: Rebuild gsd-executor-frontend with progressive pipeline; enforce mandatory stack; component structure rules; state decision tree (FRONT-01..05)
-- [ ] 32-02: Post-generation validation (tsc, ESLint, a11y); Playwright screenshots at 3 breakpoints (FRONT-06..07)
+- [x] 32-01: Rebuild gsd-executor-frontend with progressive pipeline; enforce mandatory stack; component structure rules; state decision tree (FRONT-01..07) — 2026-04-14
+- [ ] 32-02: Post-generation validation test suite verifying all FRONT-XX rules present and old mandates survive (FRONT-01..07 regression)
 
 ### Phase 33: Testing Pipeline
 **Goal:** Two new agents — gsd-tester and gsd-qa — operate under the "no self-assessment" principle. gsd-tester generates coverage-guided unit tests, E2E Playwright tests, and property-based tests. gsd-qa enforces coverage ratchet, mutation scoring, test pyramid, and quality audits. Pact contracts verify daemon endpoint stability.
@@ -274,7 +274,7 @@ Phase 31: Format Standard (FOUNDATION)
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 31. Format Standard | 2/2 | Complete    | 2026-04-13 |
-| 32. Frontend Rebuild | 0/2 | Not started | - |
+| 32. Frontend Rebuild | 1/2 | In progress | - |
 | 33. Testing Pipeline | 3/3 | Complete    | 2026-04-13 |
 | 34. Security Pipeline | 3/3 | Complete    | 2026-04-13 |
 | 35. Code Review Agent | 0/1 | Not started | - |
