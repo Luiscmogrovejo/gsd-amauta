@@ -103,11 +103,11 @@ How agents are versioned, evaluated, and continuously improved.
 
 Best practices embedded in every agent's DNA.
 
-- [ ] **ENG-01**: Git workflow standards. Branch naming: `feat/`, `fix/`, `refactor/`, `test/`. Conventional commits. PR templates.
-- [ ] **ENG-02**: Error handling standards. Try-catch at service boundaries. Structured error objects `{code, message, details}`. No swallowed exceptions.
-- [ ] **ENG-03**: Documentation standards. JSDoc (TS) or docstrings (Python) on all generated functions. @param, @returns, @throws, usage examples for public APIs.
-- [ ] **ENG-04**: Configuration management. No hardcoded URLs, ports, timeouts. All via env vars with defaults.
-- [ ] **ENG-05**: Structured logging. `{timestamp, level, service, message, context}`. Appropriate log levels. No `console.log` in production code.
+- [x] **ENG-01**: Git workflow standards. Branch naming: `feat/`, `fix/`, `refactor/`, `test/`. Conventional commits. PR templates.
+- [x] **ENG-02**: Error handling standards. Try-catch at service boundaries. Structured error objects `{code, message, details}`. No swallowed exceptions.
+- [x] **ENG-03**: Documentation standards. JSDoc (TS) or docstrings (Python) on all generated functions. @param, @returns, @throws, usage examples for public APIs.
+- [x] **ENG-04**: Configuration management. No hardcoded URLs, ports, timeouts. All via env vars with defaults.
+- [x] **ENG-05**: Structured logging. `{timestamp, level, service, message, context}`. Appropriate log levels. No `console.log` in production code.
 
 ---
 
@@ -184,8 +184,8 @@ Best practices embedded in every agent's DNA.
 | LIFE-03 | 39 | Pending |
 | LIFE-04 | 39 | Pending |
 | LIFE-05 | 39 | Pending |
-| ENG-01 | 40 | Pending |
-| ENG-02 | 40 | Pending |
-| ENG-03 | 40 | Pending |
-| ENG-04 | 40 | Pending |
-| ENG-05 | 40 | Pending |
+| ENG-01 | 40 | Complete |
+| ENG-02 | 40 | Complete |
+| ENG-03 | 40 | Complete |
+| ENG-04 | 40 | Complete |
+| ENG-05 | 40 | Complete |
