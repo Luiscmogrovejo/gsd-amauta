@@ -1,0 +1,67 @@
+{
+  "agent": "gsd-security",
+  "version": "1.0.0",
+  "description": "Eval scenarios for gsd-security — security specialist agent. All graders are code-based in v3.0.",
+  "scenarios": [
+    {
+      "id": "SECURITY-01",
+      "agent": "gsd-security",
+      "input_description": "Given a SAST scan task, verify the agent file contains the Semgrep tool reference with correct invocation flags.",
+      "expected_behavior": "Agent documentation specifies Semgrep as the SAST tool and includes the exact CLI command with --config auto and --json flags.",
+      "grader_type": "code-based",
+      "grading_criteria": {
+        "file_to_check": "agents/gsd-security.md",
+        "pattern_to_grep": "Semgrep",
+        "expected_match": true
+      }
+    },
+    {
+      "id": "SECURITY-02",
+      "agent": "gsd-security",
+      "input_description": "Given a secret scan task, verify the agent file contains the Gitleaks tool reference with its scan mode rules.",
+      "expected_behavior": "Agent documentation specifies Gitleaks as the secrets detection tool and includes the run mode rules (full history on first invocation, staged on subsequent).",
+      "grader_type": "code-based",
+      "grading_criteria": {
+        "file_to_check": "agents/gsd-security.md",
+        "pattern_to_grep": "Gitleaks run mode",
+        "expected_match": true
+      }
+    },
+    {
+      "id": "SECURITY-03",
+      "agent": "gsd-security",
+      "input_description": "Given a dependency audit task, verify the agent file contains both npm audit and pip-audit rules.",
+      "expected_behavior": "Agent documentation references npm audit as always-available and pip-audit as optional, with block rule for critical/high vulnerabilities.",
+      "grader_type": "code-based",
+      "grading_criteria": {
+        "file_to_check": "agents/gsd-security.md",
+        "pattern_to_grep": "npm audit.*is always available",
+        "expected_match": true
+      }
+    },
+    {
+      "id": "SECURITY-04",
+      "agent": "gsd-security",
+      "input_description": "Given a supply chain review, verify the agent file contains the 7-day waiting period rule for new packages.",
+      "expected_behavior": "Agent documentation specifies that packages published less than 7 days ago should not be adopted without explicit user approval.",
+      "grader_type": "code-based",
+      "grading_criteria": {
+        "file_to_check": "agents/gsd-security.md",
+        "pattern_to_grep": "packages published less than 7 days ago",
+        "expected_match": true
+      }
+    },
+    {
+      "id": "SECURITY-05",
+      "agent": "gsd-security",
+      "input_description": "Given a container scan task, verify the agent file contains the Trivy tool reference for container image scanning.",
+      "expected_behavior": "Agent documentation specifies Trivy as the container scanning tool with the correct JSON output format flag.",
+      "grader_type": "code-based",
+      "grading_criteria": {
+        "file_to_check": "agents/gsd-security.md",
+        "pattern_to_grep": "Trivy",
+        "expected_match": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,67 @@
+{
+  "agent": "gsd-tester",
+  "version": "1.0.0",
+  "description": "Eval scenarios for gsd-tester — test generation specialist agent. All graders are code-based in v3.0.",
+  "scenarios": [
+    {
+      "id": "TESTER-01",
+      "agent": "gsd-tester",
+      "input_description": "Given a coverage-guided test task, verify the agent file contains the CoverUp pattern for iterative coverage improvement.",
+      "expected_behavior": "Agent documentation describes the CoverUp pattern for iteratively improving coverage up to a target threshold.",
+      "grader_type": "code-based",
+      "grading_criteria": {
+        "file_to_check": "agents/gsd-tester.md",
+        "pattern_to_grep": "CoverUp Pattern",
+        "expected_match": true
+      }
+    },
+    {
+      "id": "TESTER-02",
+      "agent": "gsd-tester",
+      "input_description": "Given an E2E test task, verify the agent file contains the Playwright Page Object Model (POM) rule.",
+      "expected_behavior": "Agent documentation specifies that Playwright E2E tests must use the Page Object Model pattern with POM classes in tests/pages/.",
+      "grader_type": "code-based",
+      "grading_criteria": {
+        "file_to_check": "agents/gsd-tester.md",
+        "pattern_to_grep": "Page Object Model",
+        "expected_match": true
+      }
+    },
+    {
+      "id": "TESTER-03",
+      "agent": "gsd-tester",
+      "input_description": "Given a property-based test task, verify the agent file contains the fast-check library reference for property testing.",
+      "expected_behavior": "Agent documentation references fast-check as the property testing library and specifies usage with fc.assert().",
+      "grader_type": "code-based",
+      "grading_criteria": {
+        "file_to_check": "agents/gsd-tester.md",
+        "pattern_to_grep": "fast-check",
+        "expected_match": true
+      }
+    },
+    {
+      "id": "TESTER-04",
+      "agent": "gsd-tester",
+      "input_description": "Given a test quality review, verify the agent file contains the boundary rule delegating quality evaluation to gsd-qa.",
+      "expected_behavior": "Agent documentation explicitly states that test quality, mutation scores, and pyramid ratios are gsd-qa's responsibility — not the tester's.",
+      "grader_type": "code-based",
+      "grading_criteria": {
+        "file_to_check": "agents/gsd-tester.md",
+        "pattern_to_grep": "gsd-qa evaluates the tests you generate",
+        "expected_match": true
+      }
+    },
+    {
+      "id": "TESTER-05",
+      "agent": "gsd-tester",
+      "input_description": "Given max iterations for the CoverUp loop, verify the agent file contains the 5-iteration limit rule.",
+      "expected_behavior": "Agent documentation specifies that the CoverUp loop stops at 5 iterations even if the 80% coverage target is not reached.",
+      "grader_type": "code-based",
+      "grading_criteria": {
+        "file_to_check": "agents/gsd-tester.md",
+        "pattern_to_grep": "CoverUp loop stops at 5 iterations",
+        "expected_match": true
+      }
+    }
+  ]
+}
