@@ -1,0 +1,8 @@
+# Changelog: gsd-reviewer
+
+## 3.0.0 (2026-04-13)
+- Created in Phase 35 (Code Review Agent)
+- Initial v3.0 format (Phase 31)
+- Added engineering standards (Phase 40)
+- Added supply chain security rules (Phase 34)
+- Added inter-agent communication (Phase 38)
