@@ -1,191 +1,116 @@
-# Requirements: GSD-Amauta v3.0 "The Birth"
+# Requirements: GSD-Amauta v3.1 "The Gathering"
 
-**Defined:** 2026-04-13
-**Core Value:** The discipline has shifted from prompt engineering to context engineering — find the smallest set of high-signal tokens that maximizes agent behavior quality. Every RPETD phase must *see* what other phases have learned. The brain synthesizes, not accumulates.
+**Defined:** 2026-04-14
+**Core Value:** Every RPETD phase must see what the other phases have already learned — the brain synthesizes, not accumulates.
 
----
+## v3.1 Requirements
 
-## Phase 31 — Format Standard (FOUNDATION)
+Requirements for v3.1 "The Gathering" — graft BMAD-METHOD's best patterns onto Amauta's infrastructure advantage.
 
-All 11 existing agents restructured to standardized 10-section format. Foundation for every subsequent phase.
+### Scale-Adaptive Intelligence
 
-- [x] **FORMAT-01**: All 11 agent `.md` files restructured to standardized 10-section format. `grep -c "^## " agents/*.md` returns 10 for each file. All sections present: Role & Identity, Domain Knowledge, Behavioral Rules, Tool Access & Guidance, Task Management, Examples, Error Handling, Security Rules, Preconditions & Constraints, version header.
-- [x] **FORMAT-02**: 2-4 few-shot examples per agent. Diverse, canonical, not edge cases. Each example shows input → reasoning → output.
-- [x] **FORMAT-03**: Shared security rules section identical across all 11 agents. Single source of truth in `agents/shared/security-rules.md`.
-- [x] **FORMAT-04**: Anti-over-engineering guardrail in every agent. Exact: "Do not add features, refactor code, or make improvements beyond what was explicitly requested."
-- [x] **FORMAT-05**: Read-before-edit mandate in all 4 executor agents. Exact: "Always read a file completely before modifying it. Never edit a file based on assumptions about its contents."
-- [x] **FORMAT-06**: AGENTS.md closest-file-wins discovery. Agents cannot create/modify AGENTS.md.
-- [x] **FORMAT-07**: All 11 agents pass behavioral regression suite. Zero regressions from v2.9.
+- [ ] **SCALE-01**: Continuous complexity classifier (0-100 score) computed from: files_expected count, estimated LOC, test_impact, dependency_depth, has_migration, has_api_change, security_sensitivity.
+- [ ] **SCALE-02**: Phase selector maps score to RPETD phases: 0-15 = Execute only, 16-35 = Plan→Execute→Test, 36-60 = R→P→E→T, 61-85 = full RPETD, 86-100 = full + security + architecture review.
+- [ ] **SCALE-03**: PG-backed learning from past tasks. Query task_completions for similar metadata signatures using pgvector similarity. Logistic regression calibrates future predictions.
+- [ ] **SCALE-04**: Divergence-triggered auto-escalation. If "Execute only" encounters unexpected complexity mid-execution, re-score and activate additional phases automatically.
 
-## Phase 32 — Frontend Rebuild
+### Sharded Workflows
 
-gsd-executor-frontend rebuilt with v0-inspired composite pipeline.
+- [ ] **SHARD-01**: Split plan-phase.md (656 lines) into 5 micro-step files with RPETDContext handoffs. Each step receives/produces validated StepHandoff object.
+- [ ] **SHARD-02**: Split execute-phase.md (~700 lines) into 5 micro-step files with StepHandoff persistence to PG after each step.
+- [ ] **SHARD-03**: Split discuss-phase.md (733 lines) into micro-step files with structured state passing.
+- [ ] **SHARD-04**: StepHandoff persistence enables: deterministic resumption, step rollback, cross-session continuity. New PG table: step_handoffs.
+- [ ] **SHARD-05**: HALT enforcement via operator hooks, not prompt-based. Programmatic prevention of auto-advance without user confirmation.
 
-- [x] **FRONT-01**: Progressive generation pattern (layout → sections → components → interactivity). Never full-page in one pass.
-- [x] **FRONT-02**: Mandatory stack: React 19 + TypeScript strict + Tailwind CSS 4 + shadcn/ui. Warns and adapts for vanilla CSS, inline styles, untyped JS (new code uses mandatory stack; existing code left alone).
-- [x] **FRONT-03**: Component-driven: `components/ui/` (shadcn primitives), `components/` (composed), `app/` (routes). No component > 200 lines.
-- [x] **FRONT-04**: State decision tree: local→useState, shared UI→Zustand, server→TanStack Query, URL→search params.
-- [x] **FRONT-05**: WCAG 2.1 AA baseline. Semantic HTML, ARIA, keyboard nav, focus mgmt, contrast. `eslint-plugin-jsx-a11y` 0 errors.
-- [x] **FRONT-06**: Post-generation validation: `tsc --noEmit`, ESLint + a11y lint, dependency completeness. Max 3 self-correction iterations.
-- [x] **FRONT-07**: Playwright screenshots at 3 breakpoints (375px, 768px, 1440px). Stored in `tests/screenshots/`.
+### Skills Architecture
 
-## Phase 33 — Testing Pipeline
+- [ ] **SKILL-01**: Refactor existing CJS workflow scripts into SKILL.md format with YAML frontmatter (name, description, allowed-tools, category).
+- [ ] **SKILL-02**: Skill invocation memory — each invocation creates PG record with context_embedding. Before execution, query for similar past invocations via hybrid BM25 + pgvector.
+- [ ] **SKILL-03**: Skill compiler (scripts/skill-compiler.cjs) reads workflow definitions and produces IDE-specific SKILL.md files for .claude/skills/, .cursor/skills/, etc.
+- [ ] **SKILL-04**: Tool enforcement — skills declared read-only trigger Semgrep rules on file writes. Deterministic enforcement, not advisory.
 
-Two new agents: gsd-tester (generates) and gsd-qa (evaluates). Separated by "no self-assessment" principle.
+### Cross-IDE Installer
 
-- [x] **TEST-01**: gsd-tester with CoverUp pattern. Coverage-guided iteration, max 5 rounds. Given 60% coverage → ≥ 80% within 5 iterations. Tests must PASS.
-- [x] **TEST-02**: gsd-tester generates Playwright E2E tests. Page Object Model. Complete user journey per test.
-- [x] **TEST-03**: gsd-tester generates fast-check property-based tests for pure functions. 100 iterations.
-- [x] **TEST-04**: gsd-qa coverage ratchet. `.coverage_threshold.json` with `{lines: N, branches: N}`. Never decreases. Auto-increments on improvement.
-- [x] **TEST-05**: gsd-qa Stryker mutation testing on changed files. Mutation score ≥ 70% for new code.
-- [x] **TEST-06**: gsd-qa test pyramid: ≥ 60% unit, ≥ 20% integration, ≤ 20% E2E. By naming convention.
-- [x] **TEST-07**: gsd-qa test quality audit. Detects: no-assertion tests, impl-testing, flaky tests.
-- [x] **TEST-08**: Pact contract testing for ≥ 3 daemon endpoints. Provider verification passes.
+- [ ] **INST-01**: `npx gsd-amauta init` with 6-step flow: detect IDEs, install skills, start infrastructure, run migrations, verify health, run assertions.
+- [ ] **INST-02**: Auto-detection of installed IDEs via filesystem scan (.claude/, .cursor/, .opencode/) + process list + CLI tool detection.
+- [ ] **INST-03**: Non-interactive mode (`--yes --tools claude-code,cursor`) for CI/CD. Graceful degradation: no Docker = skills only, no PG = file-based fallback.
+- [ ] **INST-04**: Legacy migration from old directory structures (.claude/commands/ → .claude/skills/). platform-codes.yaml defines IDE target directories.
 
-## Phase 34 — Security Pipeline
+### Intelligent Help Routing
 
-New gsd-security agent operating across the entire RPETD pipeline.
+- [ ] **HELP-01**: `/amauta:help` queries 4 sources: STATE.md, PG task history, git log, feature_list.json. Output is deterministic (code-generated, not LLM-interpreted).
+- [ ] **HELP-02**: Pattern learning from PG history. "You typically complete Execute phases in 2.3 sessions." "Similar features took avg 4.2 sessions." "3 commits since last test run."
+- [ ] **HELP-03**: Integrates with get-bearings ritual (Phase 28). Help routing IS the enhanced bearings block. Recommended next action with reasoning.
 
-- [x] **SEC-01**: gsd-security Semgrep SAST. OWASP Top 10 rules for JS/Python. < 30s scan. Structured findings.
-- [x] **SEC-02**: gsd-security Gitleaks. Pre-commit + full history on first run. Entropy scores.
-- [x] **SEC-03**: gsd-security `npm audit` + `pip-audit`. Blocks on critical/high with no fix.
-- [x] **SEC-04**: Supply chain rules in ALL executor agents. `npm ci`, pin exact versions, commit lockfiles, 7-day waiting for new packages.
-- [x] **SEC-05**: Rule of Two audit for all 17 agents. `{reads_untrusted, accesses_sensitive, modifies_state}` annotations. JSON report.
-- [x] **SEC-06**: Trivy container scan on `docker-compose.yml` images.
+### Standalone MCP Server
 
-## Phase 35 — Code Review Agent
+- [ ] **MCP-01**: amauta-mcp.py as standalone service with direct PG connection pool and Valkey client. Does NOT require daemon. Two modes: stdio (spawned by IDE) and SSE on :18800.
+- [ ] **MCP-02**: Tools: amauta/search-code (hybrid BM25+vector), amauta/memory-store, amauta/memory-search, amauta/memory-distill, amauta/research, amauta/complexity-score.
+- [ ] **MCP-03**: Resources: amauta://context/{task_id}/{phase}, amauta://agent/{agent_name}, amauta://findings/{task_id}. Any MCP client gets Amauta's capabilities.
 
-New gsd-reviewer — the "always-available second pair of eyes" for a solo developer.
+### Agent Dynamic Hydration
 
-- [x] **REVIEW-01**: gsd-reviewer style/pattern review. Naming, organization, imports, dead code, duplication (>10 lines), function length (>50 lines flagged).
-- [x] **REVIEW-02**: SOLID principles check. God classes (>500 lines), functions with >5 params, circular deps.
-- [x] **REVIEW-03**: gsd-reviewer SEPARATE from gsd-validator. Different schemas, different concerns. Both can run on same code.
-- [x] **REVIEW-04**: Structured output: `{findings: [{file, line, category, severity, message, suggestion}], summary, approval: "approve"|"request_changes"|"comment_only"}`.
+- [ ] **HYDRA-01**: Agent .md files become templates with dynamic sections. Before spawning, operator queries PG memory, blackboard, Valkey, security pipeline for agent-specific context.
+- [ ] **HYDRA-02**: Injected as "## Current context" section prepended to agent definition. Builds on get-bearings ritual but goes deeper — agent-specific operational context, not just project state.
 
-## Phase 36 — Data Engineering Agent
+## Future Requirements (v3.2+)
 
-New gsd-executor-data — owns the data layer.
+### Module System
+- **MOD-01**: Registry-based module architecture. Modules include infrastructure (migrations, Docker services) alongside configuration.
+- **MOD-02**: Dependency resolution between modules with semver compatibility.
 
-- [x] **DATA-01**: gsd-executor-data expand-and-contract migrations. Additive first, backfill, then remove. Never destructive without explicit confirmation.
-- [x] **DATA-02**: EXPLAIN ANALYZE on queries touching >1 table. Flags sequential scans on >10K rows, missing indexes, N+1 patterns.
-- [x] **DATA-03**: Data quality checks generated for every new migration. NOT NULL, FK integrity, enum validation, uniqueness.
-- [x] **DATA-04**: Knows GSD-Amauta schema (migrations 001-013). Generates migration 014+ in correct sequence.
+### Party Mode
+- **PARTY-01**: Blackboard-backed multi-agent collaboration. Persistent session memory, structured decisions, operator supervision.
 
-## Phase 37 — Architect Agent
+### Agent Compilation
+- **COMPILE-01**: Agent definitions in YAML, compiled to .md for different IDEs. Dynamic context hydration at compile time.
 
-New gsd-architect — the strategic thinker.
+## Out of Scope
 
-- [x] **ARCH-01**: ADRs for significant design choices. Stored in `docs/adr/`. Context, decision, consequences, alternatives.
-- [x] **ARCH-02**: API design review. Consistent naming, HTTP methods, pagination, error format, versioning.
-- [x] **ARCH-03**: N+1 detection in proposed designs. Suggests eager loading, batching, DataLoader patterns.
-
-## Phase 38 — Blackboard Communication
-
-Architectural upgrade from hub-spoke to blackboard-based inter-agent communication.
-
-- [x] **COMM-01**: `agent_findings` PG table: `{id, agent_name, task_id, finding_type, content, confidence, created_at}`. Query by task_id. Semantic search deferred to v3.1.
-- [x] **COMM-02**: `agent_messages` table with types: `ASK_QUESTION`, `SHARE_FINDING`, `REQUEST_REVIEW`, `DELEGATE_SUBTASK`.
-- [x] **COMM-03**: Operator supervises all inter-agent messages. `operator_approved: bool` field. Auto-approve low-risk (SHARE_FINDING).
-- [x] **COMM-04**: Structured handoff JSON: `{task_id, from_agent, handoff_type, summary, key_findings[], decisions_made[], open_questions[], artifacts[], confidence}`. ≤ 800 tokens.
-- [x] **COMM-05**: Conflict resolution: security→checker wins; correctness→test results authoritative; style→executor deference; ambiguous→escalate.
-
-## Phase 39 — Agent Lifecycle
-
-How agents are versioned, evaluated, and continuously improved.
-
-- [x] **LIFE-01**: SemVer version headers in all 17 agent .md files. `agents/changelog/` directory.
-- [x] **LIFE-02**: `agent_metrics` PG table: `{agent_name, task_id, completion_time_ms, token_usage, error_count, outcome}`. `gsd-tools agent-stats` command.
-- [x] **LIFE-03**: 50-test canary suite. McNemar's test. Alert on >1% degradation with p<0.05. Runs in <5 minutes.
-- [x] **LIFE-04**: Eval framework. Three grader types (code-based, model-based, human). ≥ 5 scenarios per agent. `tests/evals/` directory.
-- [x] **LIFE-05**: Tool integrity checking at startup. SHA hash of tool definitions. `TOOL_INTEGRITY_VIOLATION` on mismatch.
-
-## Phase 40 — Engineering Standards
-
-Best practices embedded in every agent's DNA.
-
-- [x] **ENG-01**: Git workflow standards. Branch naming: `feat/`, `fix/`, `refactor/`, `test/`. Conventional commits. PR templates.
-- [x] **ENG-02**: Error handling standards. Try-catch at service boundaries. Structured error objects `{code, message, details}`. No swallowed exceptions.
-- [x] **ENG-03**: Documentation standards. JSDoc (TS) or docstrings (Python) on all generated functions. @param, @returns, @throws, usage examples for public APIs.
-- [x] **ENG-04**: Configuration management. No hardcoded URLs, ports, timeouts. All via env vars with defaults.
-- [x] **ENG-05**: Structured logging. `{timestamp, level, service, message, context}`. Appropriate log levels. No `console.log` in production code.
-
----
-
-## Future Requirements
-
-- MCP standalone server (direct PG/Valkey, no daemon wrapper) — v3.1
-- npm public release (`npx @gsd-amauta/cli`) — v3.1
-- A2A protocol Agent Cards for each agent — v3.1
-- DSPy prompt optimization pipeline — v3.1
-- Reflexion memory per-agent self-improvement — v3.1
-
----
-
-## Out of Scope for v3.0
-
-- MCP standalone server / npm publish — v3.1
-- K3s, Langfuse, gVisor — never (non-portable)
-- Web UI for any feature — CLI and agent-native only
-- Changing database engine — PostgreSQL + pgvector stays
-- Everything works after `npm install -g . && docker compose up` — hard constraint
-
----
+| Feature | Reason |
+|---------|--------|
+| gVisor sandbox | K3s-only infrastructure, not portable |
+| A2A protocol | v3.2+ scope, needs module system foundation |
+| LLM quality eval graders | Model-based graders need API keys, breaks portability constraint for v3.1 |
+| Human eval graders | v3.2+ scope, needs eval framework to mature |
+| Module system | v3.2+ scope, needs v3.1 foundations (skills, installer) stable first |
+| Party mode | v3.2+ scope, needs blackboard maturity and skills architecture |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FORMAT-01 | 31 | Complete |
-| FORMAT-02 | 31 | Complete |
-| FORMAT-03 | 31 | Complete |
-| FORMAT-04 | 31 | Complete |
-| FORMAT-05 | 31 | Complete |
-| FORMAT-06 | 31 | Complete |
-| FORMAT-07 | 31 | Complete |
-| FRONT-01 | 32 | Complete |
-| FRONT-02 | 32 | Complete |
-| FRONT-03 | 32 | Complete |
-| FRONT-04 | 32 | Complete |
-| FRONT-05 | 32 | Complete |
-| FRONT-06 | 32 | Complete |
-| FRONT-07 | 32 | Complete |
-| TEST-01 | 33 | Pending |
-| TEST-02 | 33 | Pending |
-| TEST-03 | 33 | Pending |
-| TEST-04 | 33 | Pending |
-| TEST-05 | 33 | Pending |
-| TEST-06 | 33 | Pending |
-| TEST-07 | 33 | Pending |
-| TEST-08 | 33 | Pending |
-| SEC-01 | 34 | Pending |
-| SEC-02 | 34 | Pending |
-| SEC-03 | 34 | Pending |
-| SEC-04 | 34 | Pending |
-| SEC-05 | 34 | Pending |
-| SEC-06 | 34 | Pending |
-| REVIEW-01 | 35 | Complete |
-| REVIEW-02 | 35 | Complete |
-| REVIEW-03 | 35 | Complete |
-| REVIEW-04 | 35 | Complete |
-| DATA-01 | 36 | Complete |
-| DATA-02 | 36 | Complete |
-| DATA-03 | 36 | Complete |
-| DATA-04 | 36 | Complete |
-| ARCH-01 | 37 | Complete |
-| ARCH-02 | 37 | Complete |
-| ARCH-03 | 37 | Complete |
-| COMM-01 | 38 | Complete |
-| COMM-02 | 38 | Complete |
-| COMM-03 | 38 | Complete |
-| COMM-04 | 38 | Complete |
-| COMM-05 | 38 | Complete |
-| LIFE-01 | 39 | Complete |
-| LIFE-02 | 39 | Complete |
-| LIFE-03 | 39 | Complete |
-| LIFE-04 | 39 | Complete |
-| LIFE-05 | 39 | Complete |
-| ENG-01 | 40 | Complete |
-| ENG-02 | 40 | Complete |
-| ENG-03 | 40 | Complete |
-| ENG-04 | 40 | Complete |
-| ENG-05 | 40 | Complete |
+| SCALE-01 | TBD | Pending |
+| SCALE-02 | TBD | Pending |
+| SCALE-03 | TBD | Pending |
+| SCALE-04 | TBD | Pending |
+| SHARD-01 | TBD | Pending |
+| SHARD-02 | TBD | Pending |
+| SHARD-03 | TBD | Pending |
+| SHARD-04 | TBD | Pending |
+| SHARD-05 | TBD | Pending |
+| SKILL-01 | TBD | Pending |
+| SKILL-02 | TBD | Pending |
+| SKILL-03 | TBD | Pending |
+| SKILL-04 | TBD | Pending |
+| INST-01 | TBD | Pending |
+| INST-02 | TBD | Pending |
+| INST-03 | TBD | Pending |
+| INST-04 | TBD | Pending |
+| HELP-01 | TBD | Pending |
+| HELP-02 | TBD | Pending |
+| HELP-03 | TBD | Pending |
+| MCP-01 | TBD | Pending |
+| MCP-02 | TBD | Pending |
+| MCP-03 | TBD | Pending |
+| HYDRA-01 | TBD | Pending |
+| HYDRA-02 | TBD | Pending |
+
+**Coverage:**
+- v3.1 requirements: 25 total
+- Mapped to phases: 0
+- Unmapped: 25 (roadmap pending)
+
+---
+*Requirements defined: 2026-04-14*
+*Last updated: 2026-04-14 after BMAD competitive intelligence research*
