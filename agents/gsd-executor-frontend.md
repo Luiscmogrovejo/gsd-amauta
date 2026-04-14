@@ -349,43 +349,226 @@ Read `get-shit-done/references/divergence-protocol.md` at the start of every tas
 
 ## Examples
 
-**Example 1: Adding a new React component**
+**Example 1: Simple component — Button with variants (shadcn/ui + TypeScript)**
 
-**Input:** Create a `UserAvatar` component that shows the user's profile image with a fallback initial.
+**Input:** Create a `StatusBadge` component that shows different colors for "active", "inactive", and "pending" statuses.
 
-**Reasoning:** R-phase: query RLM for existing component patterns and naming conventions. P-phase: identify the components directory, check if similar avatar components exist. E-phase: read an existing component file completely before creating the new one to match props interface and styling patterns.
+**Reasoning:** R-phase: query RLM for existing badge/status components. P-phase: shadcn/ui has `Badge` primitive — use it as base. Props interface: `{ status: 'active' | 'inactive' | 'pending' }`. Tailwind 4 color tokens for each status. E-phase: read `components/ui/badge.tsx` to understand the shadcn variant pattern. FRONT-02 compliance: TypeScript strict, Tailwind 4, shadcn/ui base.
 
-**Output:** Created `components/UserAvatar.tsx` with typed props interface, fallback initial rendering, Tailwind styling consistent with existing components. T-phase: `npm test` → all pass.
+**Output:**
+```tsx
+// components/StatusBadge.tsx (42 lines — well under 200-line FRONT-03 limit)
+import { Badge } from '@/components/ui/badge';
+
+interface StatusBadgeProps {
+  /** Current status to display */
+  status: 'active' | 'inactive' | 'pending';
+}
+
+const STATUS_CONFIG = {
+  active: { label: 'Active', className: 'bg-green-500/10 text-green-700 border-green-200' },
+  inactive: { label: 'Inactive', className: 'bg-gray-500/10 text-gray-700 border-gray-200' },
+  pending: { label: 'Pending', className: 'bg-yellow-500/10 text-yellow-700 border-yellow-200' },
+} as const;
+
+export function StatusBadge({ status }: StatusBadgeProps) {
+  const config = STATUS_CONFIG[status];
+  return (
+    <Badge variant="outline" className={config.className} role="status" aria-label={`Status: ${config.label}`}>
+      {config.label}
+    </Badge>
+  );
+}
+```
+T-phase: `tsc --noEmit` pass, `eslint` 0 errors, `eslint-plugin-jsx-a11y` 0 errors. VERIFICATION: {tsc: pass, eslint: pass, a11y: pass, iterations: 1}
 
 ---
 
-**Example 2: Fixing a CSS/layout bug**
+**Example 2: Data display — Table with sorting (TanStack Query + Zustand)**
 
-**Input:** The navigation menu overflows the viewport at 375px mobile width.
+**Input:** Create a `UserTable` component that fetches users from `/api/users` and supports column sorting.
 
-**Reasoning:** R-phase: query RLM for the navigation component and existing responsive patterns. P-phase: identify the exact CSS rule causing overflow. E-phase: read the component file and styles completely before editing — found `width: 320px` hardcoded. T-phase: verify at 375px with Playwright or manual check.
+**Reasoning:** R-phase: query RLM for existing table patterns. P-phase: shadcn/ui `Table` for structure, TanStack Query for data fetching (FRONT-04: server state), Zustand for sort state (FRONT-04: shared UI state). FRONT-01 progressive generation: this is Pass 2 (section component filling a layout skeleton). E-phase: install shadcn/ui Table if not present via `npx shadcn@latest add table`.
 
-**Output:** Changed `width: 320px` to `max-width: 100%` in `components/Nav.tsx`. Existing tests pass. Added responsive breakpoint note in the component's JSDoc.
+**Output:**
+```tsx
+// components/UserTable.tsx (78 lines)
+'use client';
+import { useQuery } from '@tanstack/react-query';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { useUserTableStore } from '@/stores/userTableStore';
+
+interface User { id: string; name: string; email: string; createdAt: string; }
+
+export function UserTable() {
+  const { sortField, sortOrder, setSort } = useUserTableStore();
+  const { data, isLoading, error } = useQuery<User[]>({
+    queryKey: ['users', sortField, sortOrder],
+    queryFn: () => fetch(`/api/users?sort=${sortField}&order=${sortOrder}`).then(r => r.json()),
+  });
+
+  if (error) return <div role="alert" className="text-red-600 p-4">Failed to load users</div>;
+
+  const handleSort = (field: string) => {
+    setSort(field, sortField === field && sortOrder === 'asc' ? 'desc' : 'asc');
+  };
+
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>
+            <Button variant="ghost" onClick={() => handleSort('name')} aria-label="Sort by name">
+              Name {sortField === 'name' && (sortOrder === 'asc' ? '↑' : '↓')}
+            </Button>
+          </TableHead>
+          <TableHead>Email</TableHead>
+          <TableHead>Joined</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {isLoading ? (
+          Array.from({ length: 5 }).map((_, i) => (
+            <TableRow key={i}><TableCell colSpan={3}><Skeleton className="h-4 w-full" /></TableCell></TableRow>
+          ))
+        ) : (
+          data?.map(user => (
+            <TableRow key={user.id}>
+              <TableCell className="font-medium">{user.name}</TableCell>
+              <TableCell>{user.email}</TableCell>
+              <TableCell>{new Date(user.createdAt).toLocaleDateString()}</TableCell>
+            </TableRow>
+          ))
+        )}
+      </TableBody>
+    </Table>
+  );
+}
+```
+T-phase: `tsc --noEmit` pass, `eslint` 0 errors. Zustand store created separately in `stores/userTableStore.ts`. VERIFICATION: {tsc: pass, eslint: pass, a11y: pass, iterations: 1}
 
 ---
 
-**Example 3: Implementing an accessibility fix**
+**Example 3: Form — Multi-field form with validation (React Hook Form + Zod + a11y)**
 
-**Input:** The modal dialog is not announced to screen readers on open.
+**Input:** Create a `ContactForm` with name, email, and message fields with validation.
 
-**Reasoning:** R-phase: query RLM for existing modal component. P-phase: check ARIA attributes currently used. E-phase: read Modal component fully — missing `aria-modal="true"`, `role="dialog"`, and focus management. T-phase: run `eslint-plugin-jsx-a11y` checks.
+**Reasoning:** R-phase: query RLM for existing form patterns. P-phase: React Hook Form + Zod resolver for validation (per domain knowledge). shadcn/ui `Input`, `Textarea`, `Button`, `Label`, `Form` primitives. FRONT-05 a11y: every input needs a visible `<Label>`, `aria-describedby` for error messages, `aria-invalid` on error, focus management. E-phase: install shadcn/ui `form` and `input` if not present.
 
-**Output:** Added `role="dialog"`, `aria-modal="true"`, `aria-labelledby` referencing the modal title, and focus trap on open/close. T-phase: 0 a11y lint errors.
+**Output:**
+```tsx
+// components/ContactForm.tsx (92 lines)
+'use client';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Button } from '@/components/ui/button';
+
+const contactSchema = z.object({
+  name: z.string().min(2, 'Name must be at least 2 characters'),
+  email: z.string().email('Please enter a valid email address'),
+  message: z.string().min(10, 'Message must be at least 10 characters').max(500, 'Message cannot exceed 500 characters'),
+});
+type ContactFormData = z.infer<typeof contactSchema>;
+
+export function ContactForm() {
+  const form = useForm<ContactFormData>({
+    resolver: zodResolver(contactSchema),
+    defaultValues: { name: '', email: '', message: '' },
+  });
+
+  const onSubmit = async (data: ContactFormData) => {
+    await fetch('/api/contact', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  };
+
+  return (
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6" noValidate aria-label="Contact form">
+        <FormField control={form.control} name="name" render={({ field }) => (
+          <FormItem>
+            <FormLabel>Name</FormLabel>
+            <FormControl><Input placeholder="Your name" aria-required="true" {...field} /></FormControl>
+            <FormMessage />
+          </FormItem>
+        )} />
+        <FormField control={form.control} name="email" render={({ field }) => (
+          <FormItem>
+            <FormLabel>Email</FormLabel>
+            <FormControl><Input type="email" placeholder="you@example.com" aria-required="true" {...field} /></FormControl>
+            <FormMessage />
+          </FormItem>
+        )} />
+        <FormField control={form.control} name="message" render={({ field }) => (
+          <FormItem>
+            <FormLabel>Message</FormLabel>
+            <FormControl><Textarea placeholder="Your message" rows={4} aria-required="true" {...field} /></FormControl>
+            <FormMessage />
+          </FormItem>
+        )} />
+        <Button type="submit" disabled={form.formState.isSubmitting}>
+          {form.formState.isSubmitting ? 'Sending...' : 'Send Message'}
+        </Button>
+      </form>
+    </Form>
+  );
+}
+```
+T-phase: `tsc --noEmit` pass, `eslint` 0 errors, `eslint-plugin-jsx-a11y` 0 errors (all inputs have labels, aria-required, FormMessage provides aria-describedby). VERIFICATION: {tsc: pass, eslint: pass, a11y: pass, iterations: 1}
 
 ---
 
-**Example 4: Debugging a failing Playwright test**
+**Example 4: Layout — Dashboard skeleton (demonstrates 4-pass progressive generation)**
 
-**Input:** Playwright test `test('submits login form')` times out at `await page.click('[data-testid="submit"]')`.
+**Input:** Create a dashboard page with a sidebar, header, and main content area.
 
-**Reasoning:** R-phase: query RLM for the login form component. T-phase output shows the button renders with `disabled` attribute. E-phase: read the form component — the submit button disables while validation runs. Fix: wait for the button to become enabled before clicking.
+**Reasoning:** R-phase: query RLM for existing layout patterns. P-phase: this is a multi-component layout — FRONT-01 requires 4-pass progressive generation. Cannot do this in one commit. Plan 4 commits. E-phase: execute sequentially.
 
-**Output:** Updated test to `await page.waitForSelector('[data-testid="submit"]:not([disabled])')` before clicking. T-phase: test passes in 1.2s.
+**Output (Pass 1 — Layout skeleton):**
+```tsx
+// app/dashboard/layout.tsx (28 lines — skeleton only, no real content)
+import { Sidebar } from '@/components/Sidebar';
+import { Header } from '@/components/Header';
+
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex h-screen">
+      <Sidebar />
+      <div className="flex-1 flex flex-col">
+        <Header />
+        <main className="flex-1 overflow-auto p-6">{children}</main>
+      </div>
+    </div>
+  );
+}
+```
+Commit 1: `feat(dashboard): layout skeleton with sidebar + header placeholders`
+
+**Output (Pass 2 — Section components):**
+```tsx
+// components/Sidebar.tsx and components/Header.tsx created as separate files
+// Each under 100 lines, using shadcn/ui NavigationMenu and Button
+```
+Commit 2: `feat(dashboard): sidebar navigation and header components`
+
+**Output (Pass 3 — Interactive behaviors):**
+```tsx
+// Added Zustand store for sidebar collapsed state
+// Added TanStack Query for dashboard data in app/dashboard/page.tsx
+```
+Commit 3: `feat(dashboard): sidebar toggle state + dashboard data fetching`
+
+**Output (Pass 4 — Polish):**
+```tsx
+// Added Skeleton loading states, error boundary, Tailwind transitions for sidebar
+// Screenshots captured at 375px, 768px, 1440px
+```
+Commit 4: `feat(dashboard): loading states, error boundary, animations. VERIFICATION: {tsc: pass, eslint: pass, a11y: pass, iterations: 1}`
+T-phase: Playwright screenshots stored in `tests/screenshots/dashboard-375.png`, `tests/screenshots/dashboard-768.png`, `tests/screenshots/dashboard-1440.png`.
 
 ## Error handling
 
