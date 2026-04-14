@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: The Birth
 status: completed
-stopped_at: Phase 38 context gathered
-last_updated: "2026-04-14T04:05:04.443Z"
-last_activity: "2026-04-13 — Plan 37-02 complete. ARCH-01..03 all covered: fixtures (api-spec-violations + plan-n-plus-one), unit test (71 assertions, 10 groups), integration test (32 assertions, 17-agent gate)."
+stopped_at: Plan 38-01 complete
+last_updated: "2026-04-13T23:45:00.000Z"
+last_activity: "2026-04-13 — Plan 38-01 complete. COMM-01/02/04/05 all covered: migrations 014+015 (agent_findings + agent_messages), conflict-resolution.md, handoff.cjs (800-token budget), 6 daemon endpoints (GET+POST findings, GET+POST+PATCH messages, POST handoff)."
 progress:
   total_phases: 10
   completed_phases: 8
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-13 after v2.9 milestone close)
 
 ## Current Position
 
-Phase: 37 of 40 (Architect Agent) — COMPLETE
-Plan: 37-02 COMPLETE — 2 fixtures + 71-assertion unit test + 32-assertion integration test (17-agent regression gate). 197/197 full regression pass.
-Status: Phase 37 complete. Phase 38 (Blackboard Communication) is next.
-Last activity: 2026-04-13 — Plan 37-02 complete. ARCH-01..03 all covered: fixtures (api-spec-violations + plan-n-plus-one), unit test (71 assertions, 10 groups), integration test (32 assertions, 17-agent gate).
+Phase: 38 of 40 (Blackboard Communication) — IN PROGRESS (Wave 1 complete)
+Plan: 38-01 COMPLETE — migrations 014+015, conflict-resolution.md, handoff.cjs (800-token budget), 6 daemon endpoints. COMM-01/02/04/05 covered.
+Status: Phase 38 Wave 1 complete. Wave 2 (agent behavioral updates + Pact contracts) is next.
+Last activity: 2026-04-13 — Plan 38-01 complete. COMM-01/02/04/05 all covered: migrations 014+015 (agent_findings + agent_messages), conflict-resolution.md, handoff.cjs (800-token budget), 6 daemon endpoints (GET+POST findings, GET+POST+PATCH messages, POST handoff).
 
 Progress: [████░░░░░░] 35%
 
@@ -43,7 +43,7 @@ Progress: [████░░░░░░] 35%
 | 35 | Code Review Agent | REVIEW-01..04 | COMPLETE 2026-04-14 |
 | 36 | Data Engineering Agent | DATA-01..04 | COMPLETE 2026-04-14 |
 | 37 | Architect Agent | ARCH-01..03 | COMPLETE 2026-04-13 |
-| 38 | Blackboard Communication | COMM-01..05 | Not started |
+| 38 | Blackboard Communication | COMM-01..05 | In Progress (Wave 1 complete) |
 | 39 | Agent Lifecycle (CAPSTONE) | LIFE-01..05 | Not started |
 | 40 | Engineering Standards | ENG-01..05 | COMPLETE 2026-04-13 |
 
@@ -98,6 +98,7 @@ Progress: [████░░░░░░] 35%
 - Plan 36-02: Three-tier fixture coverage (safe/destructive/anti-pattern) maps directly to DATA-01/DATA-02 detection boundary testing. Unit test (66 assertions, 9 groups) + integration test (28 assertions, 5 groups) = 94 total (plan minimum: 70). Tasks 36-02-01..04 were pre-executed in prior session — detected via git log, surfaced, not silently re-executed.
 - Plan 37-01: gsd-architect is the only HYBRID agent in the v3.0 ecosystem — review mode returns JSON findings (API design, N+1 detection), write mode creates ADR files in docs/adr/. Temporal boundary locked: architect reviews BEFORE implementation (plans/proposals), gsd-reviewer reviews AFTER (committed code). ADR numbering is always dynamic (read directory, increment highest) — never hardcode. Task 37-01-01 was pre-executed in prior session — detected via git log, verified all 26 acceptance criteria pass, surfaced divergence, skipped re-execution.
 - Plan 37-02: Fixture pattern: @testing-only marker + _violation labels (one per endpoint) allow assertion targeting by field name. ADR sections check uses inclusive pattern (Alternatives without ## prefix) because ADR files use "## Alternatives considered" not "## Alternatives". 103 total assertions (71 unit + 32 integration) vs 70 plan minimum. All 17 agents pass 10-section gate in integration test. Full regression: 197/197 pass.
+- Plan 38-01: Blackboard infrastructure Wave 1 — migrations 014+015 exact schema from CONTEXT.md (no pgvector, task_id-indexed). conflict-resolution.md follows security-rules.md bullet-list pattern (## heading + bullets). handoff.cjs: whitespace-split estimator at 1.15x overhead, 800-token soft limit, top-5 confidence truncation, 200-char summary cap, process.argv[1] JSON input for Node subprocess. Daemon endpoints use _get_store()._get_conn().cursor() direct PG pattern. Auto-approval: SHARE_FINDING + REQUEST_REVIEW bypass operator gate; ASK_QUESTION + DELEGATE_SUBTASK require approval. PATCH /api/messages/:id uses dynamic SET clause — only updates provided fields.
 
 ### Pending Todos
 

@@ -37,7 +37,7 @@
 - [x] **Phase 35: Code Review Agent** — New gsd-reviewer; style/pattern review, SOLID check, structured output schema (REVIEW-01..04) — COMPLETE 2026-04-14 (35-01: gsd-reviewer.md 366 lines, 10 sections, 10 detection rules; 35-02: 3 fixtures + 88 assertions (65 unit + 23 integration), full regression gate 177/177 pass)
 - [x] **Phase 36: Data Engineering Agent** — New gsd-executor-data; expand-and-contract migrations, query analysis, data quality checks (DATA-01..04) — COMPLETE 2026-04-14 (36-01: gsd-executor-data.md 434 lines, 10 sections, DATA-01..04 behavioral rules; 36-02: 3 fixtures + 94 assertions (66 unit + 28 integration), full regression 182/182 pass)
 - [x] **Phase 37: Architect Agent** — New gsd-architect; ADR management, API design review, N+1 detection (ARCH-01..03) — COMPLETE 2026-04-13 (37-01: gsd-architect.md 391 lines, docs/adr/ bootstrapped; 37-02: 103 assertions (71 unit + 32 integration), 17-agent gate, 197/197 full regression pass)
-- [ ] **Phase 38: Blackboard Communication** — `agent_findings` + `agent_messages` PG tables; operator supervision; structured handoff JSON; conflict resolution (COMM-01..05)
+- [ ] **Phase 38: Blackboard Communication** — `agent_findings` + `agent_messages` PG tables; operator supervision; structured handoff JSON; conflict resolution (COMM-01..05) — Wave 1 complete 2026-04-13 (38-01: migrations 014+015, conflict-resolution.md, handoff.cjs 800-token budget, 6 daemon endpoints COMM-01/02/04/05)
 - [ ] **Phase 39: Agent Lifecycle** — SemVer versioning, `agent_metrics` PG table, 50-test canary suite, eval framework, tool integrity checking (LIFE-01..05) (CAPSTONE — needs all others)
 - [x] **Phase 40: Engineering Standards** — Git workflow, error handling, documentation, configuration management, structured logging standards embedded in all agents (ENG-01..05) — COMPLETE 2026-04-13 (40-01: engineering standards ENG-01..05 in shared file + all 4 executor agents; ENG-01 git workflow in gsd-planner; 40-02: remaining 9 agents + 167-assertion verification test suite)
 
@@ -192,15 +192,16 @@ Plans:
 **Depends on:** Phase 31 (all 17 agents must be on standardized format before blackboard is added) and Phase 33 (Pact contracts test the new PG endpoints)
 **Requirements:** COMM-01, COMM-02, COMM-03, COMM-04, COMM-05
 **Success Criteria** (what must be TRUE):
-  1. `agent_findings` table exists in PG with schema `{id, agent_name, task_id, finding_type, content, confidence, created_at}`; a pgvector semantic search over findings returns the closest finding to a test query.
+  1. `agent_findings` table exists in PG with schema `{id, agent_name, task_id, finding_type, content, confidence, created_at}`; queried by task_id; semantic search deferred to v3.1.
   2. `agent_messages` table exists with message types `ASK_QUESTION`, `SHARE_FINDING`, `REQUEST_REVIEW`, `DELEGATE_SUBTASK`; a `SHARE_FINDING` message is auto-approved; a `DELEGATE_SUBTASK` message requires operator approval (`operator_approved: true`) before the target agent acts on it.
   3. A complete agent handoff produces structured JSON matching schema `{task_id, from_agent, handoff_type, summary, key_findings[], decisions_made[], open_questions[], artifacts[], confidence}` in <= 800 tokens.
   4. Conflict resolution rules are exercised: security finding wins over style finding on the same file; test results win on correctness disputes; ambiguous conflicts escalate rather than auto-resolve.
-**Plans:** TBD (estimated 2 plans: 38-01 PG tables + pgvector search, 38-02 operator supervision + handoff JSON + conflict resolution)
+**Plans:** 0/3 planned
 
 Plans:
-- [ ] 38-01: Create agent_findings + agent_messages PG tables with pgvector semantic search; message type enforcement (COMM-01..02)
-- [ ] 38-02: Operator supervision logic; structured handoff JSON; conflict resolution rules (COMM-03..05)
+- [ ] 38-01: Infrastructure — migrations 014+015, daemon endpoints (6 routes), handoff utility, conflict resolution rules file (COMM-01..05)
+- [ ] 38-02: Agent updates — operator supervision + all 17 agents inter-agent communication + Pact contracts (COMM-02..05)
+- [ ] 38-03: Integration tests — round-trip flows, handoff unit tests, 17-agent regression (COMM-01..05)
 
 ### Phase 39: Agent Lifecycle
 **Goal:** All 17 agents are versioned with SemVer, metriced in PG, evaluated with a canary suite, and assessed with a three-grader eval framework. Tool integrity checking at startup detects tampered tool definitions.
@@ -283,7 +284,7 @@ Phase 31: Format Standard (FOUNDATION)
 | 35. Code Review Agent | 2/2 | Complete    | 2026-04-14 |
 | 36. Data Engineering Agent | 2/2 | Complete    | 2026-04-14 |
 | 37. Architect Agent | 2/2 | Complete    | 2026-04-14 |
-| 38. Blackboard Communication | 0/2 | Not started | - |
+| 38. Blackboard Communication | 0/3 | Not started | - |
 | 39. Agent Lifecycle | 0/2 | Not started | - |
 | 40. Engineering Standards | 2/2 | Complete    | 2026-04-14 |
 
