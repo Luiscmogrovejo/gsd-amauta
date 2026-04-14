@@ -287,6 +287,26 @@ $RLM query "component test patterns" --dir tests/ --top-k 3 2>/dev/null || true
 $CLI rpetd TK-XXXX --phase T --content "T: [test commands and actual output]"
 ```
 
+### Playwright Screenshot Capture (FRONT-07)
+
+During T-phase, capture responsive screenshots for every generated page component:
+
+1. Start a dev server: `npx vite preview --port $((RANDOM % 1000 + 4000))` or `npx next start -p $((RANDOM % 1000 + 4000))`
+2. Wait for server ready (poll localhost with curl, max 10 seconds)
+3. Capture screenshots at 3 breakpoints:
+   - 375px (mobile): `tests/screenshots/{component}-375.png`
+   - 768px (tablet): `tests/screenshots/{component}-768.png`
+   - 1440px (desktop): `tests/screenshots/{component}-1440.png`
+4. Kill the dev server process
+5. If Playwright is not installed: log `[skip] Playwright not installed — screenshot capture skipped` and continue. This is graceful degradation, NOT a failure.
+
+Screenshot Playwright script pattern:
+```bash
+npx playwright test --config=playwright.screenshot.config.ts 2>/dev/null || echo "[skip] Playwright screenshots skipped"
+```
+
+Screenshots are stored for manual review and future visual regression (v3.1 scope). They are NOT diffed automatically in v3.0.
+
 ### D — Document (Memory: store UI learning)
 ```bash
 $CLI rpetd TK-XXXX --phase D --content "D: [summary]. LEARNING: [reusable insight]"
