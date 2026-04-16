@@ -310,4 +310,4 @@ curl -s -X POST "http://127.0.0.1:18799/api/steps/discuss-phase/${PHASE}/handoff
 
 ---
 
-STOP. Workflow complete. Save final StepHandoff with next_step=null via POST /api/steps/discuss-phase/{PHASE}/handoff and return control to the workflow router.
+STOP. Do not proceed to the next step. Save final StepHandoff with next_step=null via POST /api/steps/discuss-phase/{PHASE}/handoff and return control to the workflow router. This is the final step — workflow complete.
