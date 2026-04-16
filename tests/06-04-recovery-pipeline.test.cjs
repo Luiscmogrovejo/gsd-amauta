@@ -36,7 +36,11 @@ const path = require('node:path');
 
 const ROOT = path.resolve(__dirname, '..');
 const AMAUTA = fs.readFileSync(path.join(ROOT, 'amauta.py'), 'utf-8');
-const EXEC_PHASE = fs.readFileSync(path.join(ROOT, 'get-shit-done', 'workflows', 'execute-phase.md'), 'utf-8');
+// Phase 41: execute-phase.md is now a redirect — read sharded step files for full content
+const EXEC_PHASE_DIR = path.join(ROOT, 'get-shit-done', 'workflows', 'execute-phase');
+const EXEC_PHASE = fs.existsSync(path.join(EXEC_PHASE_DIR, 'steps'))
+  ? fs.readdirSync(path.join(EXEC_PHASE_DIR, 'steps')).sort().map(f => fs.readFileSync(path.join(EXEC_PHASE_DIR, 'steps', f), 'utf-8')).join('\n') + '\n' + fs.readFileSync(path.join(EXEC_PHASE_DIR, 'workflow.md'), 'utf-8')
+  : fs.readFileSync(path.join(ROOT, 'get-shit-done', 'workflows', 'execute-phase.md'), 'utf-8');
 
 // Isolate _classify_failure function
 const classifyStart = AMAUTA.indexOf('def _classify_failure(');

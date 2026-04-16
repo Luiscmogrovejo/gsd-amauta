@@ -146,8 +146,12 @@ describe('Workflow Structural Validation — 36 files', () => {
     assert.strictEqual(violations.length, 0, `Found GSD > banners that should be AMAUTA >:\n${violations.join('\n')}`);
   });
 
-  test('2.4 execute-phase.md has amauta_enrichment block', () => {
-    const content = fs.readFileSync(path.join(WORKFLOWS_DIR, 'execute-phase.md'), 'utf-8');
+  test('2.4 execute-phase has amauta_enrichment block', () => {
+    // Phase 41: read sharded step files instead of redirect
+    const epDir = path.join(WORKFLOWS_DIR, 'execute-phase');
+    const content = fs.existsSync(path.join(epDir, 'steps'))
+      ? fs.readdirSync(path.join(epDir, 'steps')).sort().map(f => fs.readFileSync(path.join(epDir, 'steps', f), 'utf-8')).join('\n')
+      : fs.readFileSync(path.join(WORKFLOWS_DIR, 'execute-phase.md'), 'utf-8');
     assert.ok(content.includes('amauta_enrichment') || content.includes('enrichment'), 'Should have enrichment block');
   });
 
@@ -583,8 +587,12 @@ describe('Research Chain — deep integration tests', () => {
     }
   });
 
-  test('7.4 execute-phase.md calls research in enrichment', () => {
-    const content = fs.readFileSync(path.join(WORKFLOWS_DIR, 'execute-phase.md'), 'utf-8');
+  test('7.4 execute-phase calls research in enrichment', () => {
+    // Phase 41: read sharded step files instead of redirect
+    const epDir = path.join(WORKFLOWS_DIR, 'execute-phase');
+    const content = fs.existsSync(path.join(epDir, 'steps'))
+      ? fs.readdirSync(path.join(epDir, 'steps')).sort().map(f => fs.readFileSync(path.join(epDir, 'steps', f), 'utf-8')).join('\n')
+      : fs.readFileSync(path.join(WORKFLOWS_DIR, 'execute-phase.md'), 'utf-8');
     assert.ok(
       content.includes('gsd-research') || content.includes('RESEARCH') || content.includes('research'),
       'execute-phase should call research chain'

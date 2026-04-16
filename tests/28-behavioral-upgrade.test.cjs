@@ -37,12 +37,28 @@ console.log('[discovery] Integration: lint + feature_list + bearings all present
 
 const ROOT = path.join(__dirname, '..');
 
+// Phase 41: execute-phase.md is now a redirect — helper reads sharded step files + legacy for full content
+function readExecPhase() {
+  const epDir = path.join(ROOT, 'get-shit-done', 'workflows', 'execute-phase');
+  const legacyPath = path.join(ROOT, 'get-shit-done', 'workflows', 'execute-phase-legacy.md');
+  let content = '';
+  if (fs.existsSync(path.join(epDir, 'steps'))) {
+    content = fs.readdirSync(path.join(epDir, 'steps')).sort()
+      .map(f => fs.readFileSync(path.join(epDir, 'steps', f), 'utf-8')).join('\n')
+      + '\n' + fs.readFileSync(path.join(epDir, 'workflow.md'), 'utf-8');
+  }
+  // Include legacy content for backward-compatible assertions (Phase 28 behavioral content)
+  if (fs.existsSync(legacyPath)) {
+    content += '\n' + fs.readFileSync(legacyPath, 'utf-8');
+  }
+  return content || fs.readFileSync(path.join(ROOT, 'get-shit-done', 'workflows', 'execute-phase.md'), 'utf-8');
+}
+
 // ─── BEHAV-01 Tests ───────────────────────────────────────────────────────────
 
 // Test 1: execute-phase.md includes AGENTS.md discovery block
 test('BEHAV-01: execute-phase.md includes AGENTS.md discovery block', () => {
-  const content = fs.readFileSync(
-    path.join(ROOT, 'get-shit-done', 'workflows', 'execute-phase.md'), 'utf8');
+  const content = readExecPhase();
   assert.match(content, /AGENTS\.md Discovery/);
   assert.match(content, /closest file wins|walk upward/i);
   assert.match(content, /additive/i);
@@ -88,8 +104,7 @@ test('BEHAV-01: AGENTS.md cannot be created by agents (scope_expansion divergenc
 
 // Test 5: no AGENTS.md found → header omitted documented in execute-phase.md
 test('BEHAV-01: execute-phase.md documents "no AGENTS.md" behavior (header omitted)', () => {
-  const content = fs.readFileSync(
-    path.join(ROOT, 'get-shit-done', 'workflows', 'execute-phase.md'), 'utf8');
+  const content = readExecPhase();
   assert.match(content, /If no AGENTS\.md is found|no AGENTS\.md/i);
   assert.match(content, /Directory Conventions \(from AGENTS\.md\)/);
   assert.match(content, /AGENTS\.md: none found/);
@@ -287,8 +302,7 @@ test('BEHAV-04: lintAfterEdit — JS syntax error detected by node --check fallb
 
 // Test 20: execute-phase.md VERIFICATION block documents lint_report advisory behavior
 test('BEHAV-04: execute-phase.md VERIFICATION block documents lint_report advisory behavior', () => {
-  const content = fs.readFileSync(
-    path.join(ROOT, 'get-shit-done', 'workflows', 'execute-phase.md'), 'utf8');
+  const content = readExecPhase();
   assert.match(content, /Lint-After-Edit/);
   assert.match(content, /lint_report/);
   assert.match(content, /advisory.*does not block|advisory.*not block/i);
@@ -351,8 +365,7 @@ test('BEHAV-05: all feature statuses in generated files are valid enum values', 
 
 // Test 25: execute-phase.md validate-phase step blocks --pass on failing features
 test('BEHAV-05: execute-phase.md validate-phase step blocks --pass on failing features', () => {
-  const content = fs.readFileSync(
-    path.join(ROOT, 'get-shit-done', 'workflows', 'execute-phase.md'), 'utf8');
+  const content = readExecPhase();
   assert.match(content, /Feature List Gate/);
   assert.match(content, /FEATURE_LIST/);
   assert.match(content, /feature_list\.json/);
@@ -364,8 +377,7 @@ test('BEHAV-05: execute-phase.md validate-phase step blocks --pass on failing fe
 
 // Test 26: execute-phase.md initialize step has Get-Bearings block
 test('BEHAV-06: execute-phase.md initialize step has Get-Bearings block', () => {
-  const content = fs.readFileSync(
-    path.join(ROOT, 'get-shit-done', 'workflows', 'execute-phase.md'), 'utf8');
+  const content = readExecPhase();
   assert.match(content, /Get-Bearings/);
   assert.match(content, /get-bearings|GET-BEARINGS/i);
   assert.match(content, /BEHAV-06/);
@@ -374,8 +386,7 @@ test('BEHAV-06: execute-phase.md initialize step has Get-Bearings block', () => 
 
 // Test 27: get-bearings block documents all 4 priority slots
 test('BEHAV-06: get-bearings block has 4 priority slots (feature_list, git log, divergence-memory, STATE.md)', () => {
-  const content = fs.readFileSync(
-    path.join(ROOT, 'get-shit-done', 'workflows', 'execute-phase.md'), 'utf8');
+  const content = readExecPhase();
   assert.match(content, /Slot 1.*feature_list|feature_list.*150 token/i);
   assert.match(content, /Slot 2.*git log|git log.*50 token/i);
   assert.match(content, /Slot 3.*divergence-memory|divergence-memory.*100 token/i);
@@ -385,8 +396,7 @@ test('BEHAV-06: get-bearings block has 4 priority slots (feature_list, git log, 
 
 // Test 28: get-bearings block documents STATE.md truncation rule as overflow handler
 test('BEHAV-06: get-bearings block documents STATE.md as first to truncate on overflow', () => {
-  const content = fs.readFileSync(
-    path.join(ROOT, 'get-shit-done', 'workflows', 'execute-phase.md'), 'utf8');
+  const content = readExecPhase();
   assert.match(content, /truncate.*STATE\.md.*first|STATE\.md.*truncate.*first/i);
   assert.match(content, /AUTOMATICALLY/i);
 });
@@ -395,8 +405,7 @@ test('BEHAV-06: get-bearings block documents STATE.md as first to truncate on ov
 
 // Test 29: All 6 BEHAV capabilities are wired in execute-phase.md and gsd-tools.cjs
 test('Integration: all 6 BEHAV capabilities are wired in execute-phase.md and gsd-tools.cjs', () => {
-  const ep = fs.readFileSync(
-    path.join(ROOT, 'get-shit-done', 'workflows', 'execute-phase.md'), 'utf8');
+  const ep = readExecPhase();
   const tools = fs.readFileSync(
     path.join(ROOT, 'get-shit-done', 'bin', 'gsd-tools.cjs'), 'utf8');
   // BEHAV-01

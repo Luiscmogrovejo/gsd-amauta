@@ -593,7 +593,11 @@ describe('Research Chain — complex E2E', () => {
   });
 
   test('4.8 execute-phase.md has research chain', () => {
-    const c = fs.readFileSync(path.join(__dirname, '..', 'get-shit-done', 'workflows', 'execute-phase.md'), 'utf-8');
+    // Phase 41: read sharded step files instead of redirect
+    const epDir = path.join(__dirname, '..', 'get-shit-done', 'workflows', 'execute-phase');
+    const c = fs.existsSync(path.join(epDir, 'steps'))
+      ? fs.readdirSync(path.join(epDir, 'steps')).sort().map(f => fs.readFileSync(path.join(epDir, 'steps', f), 'utf-8')).join('\n')
+      : fs.readFileSync(path.join(__dirname, '..', 'get-shit-done', 'workflows', 'execute-phase.md'), 'utf-8');
     assert.ok(c.includes('gsd-research.cjs search'));
   });
 

@@ -295,10 +295,11 @@ test('DEBT-02: execute-phase.md defaults GSD_P_AUTO_TASK to true', () => {
   // The workflow guard must default to "true" (plan-to-tasks ON by default).
   // The old inverted default "false" caused plan-to-tasks to be skipped
   // for ALL phases >= 14 unless GSD_P_AUTO_TASK was explicitly set to "true".
-  const workflowPath = path.join(
-    REPO_ROOT, 'get-shit-done', 'workflows', 'execute-phase.md'
-  );
-  const content = fs.readFileSync(workflowPath, 'utf-8');
+  // Phase 41: execute-phase.md is now a redirect — read sharded step files
+  const epDir = path.join(REPO_ROOT, 'get-shit-done', 'workflows', 'execute-phase');
+  const content = fs.existsSync(path.join(epDir, 'steps'))
+    ? fs.readdirSync(path.join(epDir, 'steps')).sort().map(f => fs.readFileSync(path.join(epDir, 'steps', f), 'utf-8')).join('\n') + '\n' + fs.readFileSync(path.join(epDir, 'workflow.md'), 'utf-8')
+    : fs.readFileSync(path.join(REPO_ROOT, 'get-shit-done', 'workflows', 'execute-phase.md'), 'utf-8');
 
   assert.ok(
     content.includes('GSD_P_AUTO_TASK:-true'),

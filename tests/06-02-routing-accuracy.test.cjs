@@ -47,7 +47,11 @@ const path = require('node:path');
 
 const ROOT = path.resolve(__dirname, '..');
 const TOOLS = path.join(ROOT, 'get-shit-done', 'bin', 'gsd-tools.cjs');
-const EXEC_PHASE = fs.readFileSync(path.join(ROOT, 'get-shit-done', 'workflows', 'execute-phase.md'), 'utf-8');
+// Phase 41: execute-phase.md is now a redirect — read sharded step files + legacy for full content
+const EXEC_PHASE_DIR = path.join(ROOT, 'get-shit-done', 'workflows', 'execute-phase');
+const EXEC_PHASE = fs.existsSync(path.join(EXEC_PHASE_DIR, 'steps'))
+  ? fs.readdirSync(path.join(EXEC_PHASE_DIR, 'steps')).sort().map(f => fs.readFileSync(path.join(EXEC_PHASE_DIR, 'steps', f), 'utf-8')).join('\n') + '\n' + fs.readFileSync(path.join(EXEC_PHASE_DIR, 'workflow.md'), 'utf-8')
+  : fs.readFileSync(path.join(ROOT, 'get-shit-done', 'workflows', 'execute-phase.md'), 'utf-8');
 const EXEC_PLAN = fs.readFileSync(path.join(ROOT, 'get-shit-done', 'workflows', 'execute-plan.md'), 'utf-8');
 
 function route(files) {
