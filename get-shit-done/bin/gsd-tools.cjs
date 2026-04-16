@@ -2483,6 +2483,78 @@ async function main() {
       break;
     }
 
+    case 'step-handoff': {
+      // Phase 41 SHARD-05: CLI wrappers for step handoff daemon endpoints.
+      // Allows workflow.md routers and step files to persist/load StepHandoff objects.
+      // GET /api/steps/{workflow}/{phase} — load current handoff
+      // POST /api/steps/{workflow}/{phase}/handoff — save step handoff
+      const op = args[1]; // 'get' or 'save'
+      const workflow = args[2];
+      const phase = args[3];
+      if (!op || !workflow || !phase) {
+        process.stderr.write('Usage: gsd-tools step-handoff <get|save> <workflow> <phase> [--data JSON]\n');
+        process.exit(1);
+      }
+      const DAEMON_URL = process.env.AMAUTA_DAEMON_URL || 'http://127.0.0.1:18799';
+      if (op === 'get') {
+        await new Promise((resolve) => {
+          const url = new URL(`${DAEMON_URL}/api/steps/${workflow}/${phase}`);
+          const http = require('http');
+          const req = http.request(url, { method: 'GET' }, (res) => {
+            let data = '';
+            res.on('data', (chunk) => { data += chunk; });
+            res.on('end', () => {
+              try { process.stdout.write(JSON.stringify(JSON.parse(data)) + '\n'); }
+              catch { process.stdout.write(data + '\n'); }
+              resolve();
+            });
+          });
+          req.on('error', () => {
+            process.stdout.write(JSON.stringify({ error: 'Daemon not available', step_id: null }) + '\n');
+            resolve();
+          });
+          req.end();
+        });
+      } else if (op === 'save') {
+        const dataArg = args.indexOf('--data');
+        let body;
+        if (dataArg !== -1) {
+          body = args[dataArg + 1];
+        } else {
+          // Read from stdin
+          body = require('fs').readFileSync('/dev/stdin', 'utf8');
+        }
+        await new Promise((resolve) => {
+          const http = require('http');
+          const url = new URL(`${DAEMON_URL}/api/steps/${workflow}/${phase}/handoff`);
+          const bodyBuf = Buffer.from(body || '{}', 'utf8');
+          const req = http.request(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Content-Length': bodyBuf.byteLength },
+          }, (res) => {
+            let data = '';
+            res.on('data', (chunk) => { data += chunk; });
+            res.on('end', () => {
+              try { process.stdout.write(JSON.stringify(JSON.parse(data)) + '\n'); }
+              catch { process.stdout.write(data + '\n'); }
+              resolve();
+            });
+          });
+          req.on('error', () => {
+            process.stdout.write(JSON.stringify({ error: 'Daemon not available' }) + '\n');
+            process.exitCode = 1;
+            resolve();
+          });
+          req.write(bodyBuf);
+          req.end();
+        });
+      } else {
+        process.stderr.write(`Unknown step-handoff operation: ${op}. Use 'get' or 'save'.\n`);
+        process.exit(1);
+      }
+      break;
+    }
+
     default:
       error(`Unknown command: ${command}`);
   }
