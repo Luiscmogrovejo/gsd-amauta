@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v3.1
 milestone_name: The Gathering
-status: "Plan 41-01 complete. Wave 1 foundation shipped. Ready for plan 41-02."
-stopped_at: Plan 41-01 complete — migration, orchestrator, daemon endpoints, JSON schema, plan-phase sharded into 5 steps
-last_updated: "2026-04-15T00:00:00.000Z"
-last_activity: 2026-04-15 — Plan 41-01 complete. 8 tasks, 12 files created, 2 modified. plan-phase sharded into 5 micro-step files.
+status: "Plan 41-02 complete. Wave 2 shipped. All 3 workflows sharded. Ready for plan 41-03."
+stopped_at: Plan 41-02 complete — execute-phase sharded into 6 steps, discuss-phase sharded into 4 steps, routers, legacy backups, schema copies, gsd-tools step-handoff helpers
+last_updated: "2026-04-13T00:00:00.000Z"
+last_activity: 2026-04-13 — Plan 41-02 complete. 7 tasks, 16 files created, 3 modified. All 3 workflows (plan-phase, execute-phase, discuss-phase) now sharded.
 progress:
   total_phases: 7
   completed_phases: 0
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-14 after v3.0 milestone close)
 
 ## Current Position
 
-Phase: 41 (In Progress — Wave 1 complete)
-Plan: 41-01 COMPLETE
-Status: Plan 41-01 shipped. Ready for plan 41-02 (shard execute-phase + discuss-phase).
-Last activity: 2026-04-15 — Plan 41-01 complete: 8 tasks committed, migration 017, step-orchestrator.py, daemon endpoints, JSON schema, plan-phase sharded into 5 micro-step files with 3-layer HALT enforcement.
+Phase: 41 (In Progress — Wave 2 complete)
+Plan: 41-02 COMPLETE
+Status: Plan 41-02 shipped. All 3 workflows sharded. Ready for plan 41-03 (integration tests + regression suite).
+Last activity: 2026-04-13 — Plan 41-02 complete: 7 tasks committed, execute-phase sharded into 6 micro-step files, discuss-phase sharded into 4 micro-step files, both routers with Layer 3 HALT enforcement, legacy backups, schema copies, gsd-tools step-handoff helpers.
 
-Progress: [█░░░░░░░░░] ~5% (1 of ~15 plans)
+Progress: [██░░░░░░░░] ~10% (2 of ~15 plans)
 
 ## v3.1 Phase Map
 
@@ -74,11 +74,12 @@ Progress: [█░░░░░░░░░] ~5% (1 of ~15 plans)
 
 ## Session Continuity
 
-Last session: 2026-04-15T00:00:00.000Z
-Stopped at: Plan 41-01 complete — Wave 1 foundation shipped
-Resume file: .planning/phases/41-sharded-workflows/41-01-SUMMARY.md
+Last session: 2026-04-13T00:00:00.000Z
+Stopped at: Plan 41-02 complete — Wave 2 shipped, all 3 workflows sharded
+Resume file: .planning/phases/41-sharded-workflows/41-02-SUMMARY.md
 
 ## Learnings
 
 
 - [learning] 2026-04-16T11:39:23.966Z: Plan 41-01 (v3.1 FOUNDATION): sharded workflows pattern — StepHandoff is append-only PG log (not upsert), each step file ends with explicit HALT instruction, workflow.md router verifies PG handoff before advancing (3-layer enforcement). Step files carry significant LOC overhead vs monolith (40%+) due to step_context + step_output + HALT blocks — diverge and name it, don't silently absorb.
+- [learning] 2026-04-13T00:00:00.000Z: Plan 41-02 (Wave 2): final step HALT pattern must be "STOP. Do not proceed to the next step." not "STOP. Workflow complete." to pass acceptance criteria grep. Legacy backups created by prepending 4-line header to original file content. step-handoff CLI uses http.request (same pattern as agent-stats), not fetch, for daemon calls.

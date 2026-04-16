@@ -33,6 +33,7 @@
 
 - [ ] **Phase 41: Sharded Workflows** — Split 3 monolithic workflow files into micro-step files with RPETDContext handoffs; StepHandoff PG persistence; programmatic HALT enforcement (SHARD-01..05) (FOUNDATION — everything else benefits from reliable step execution)
   - [x] Plan 41-01: Foundation Infrastructure + plan-phase Sharding (migration 017, step-orchestrator.py, daemon endpoints, JSON schema, 5 step files, workflow.md router, legacy backup, redirect) — COMPLETE 2026-04-15
+  - [x] Plan 41-02: execute-phase + discuss-phase Sharding + Legacy Fallback (6 execute steps, 4 discuss steps, routers, legacy backups, schema copies, gsd-tools step-handoff helpers) — COMPLETE 2026-04-13
 - [ ] **Phase 42: Scale-Adaptive Intelligence** — Continuous complexity classifier (0-100), phase selector, PG-backed learning from past tasks, divergence-triggered auto-escalation (SCALE-01..04) — depends on 41
 - [ ] **Phase 43: Skills Architecture** — Refactor workflows to SKILL.md format with YAML frontmatter; invocation memory with hybrid search; skill compiler for cross-IDE output; Semgrep tool enforcement (SKILL-01..04) — depends on 41
 - [ ] **Phase 44: Cross-IDE Installer** — `npx gsd-amauta init` 6-step flow; IDE auto-detection; non-interactive CI mode; legacy migration (INST-01..04) — depends on 43
@@ -92,8 +93,8 @@ Phase 41: Sharded Workflows (FOUNDATION)
 **Plans:** 3 plans across 3 waves (22 tasks total)
 
 Plans:
-- [ ] 41-01: Foundation Infrastructure + plan-phase Sharding (Wave 1, 8 tasks — migration 017, step-orchestrator.py, daemon endpoints, JSON schema, 5 plan-phase steps, workflow.md router, legacy backup)
-- [ ] 41-02: execute-phase + discuss-phase Sharding + Legacy Fallback (Wave 2, 6 tasks — 6 execute-phase steps, 4 discuss-phase steps, routers, legacy backups, gsd-tools.cjs helpers)
+- [x] 41-01: Foundation Infrastructure + plan-phase Sharding (Wave 1, 8 tasks — migration 017, step-orchestrator.py, daemon endpoints, JSON schema, 5 plan-phase steps, workflow.md router, legacy backup)
+- [x] 41-02: execute-phase + discuss-phase Sharding + Legacy Fallback (Wave 2, 6 tasks — 6 execute-phase steps, 4 discuss-phase steps, routers, legacy backups, gsd-tools.cjs helpers)
 - [ ] 41-03: Integration Tests + Regression Suite (Wave 3, 8 tasks — orchestrator unit tests, daemon tests, schema tests, integration tests, HALT enforcement tests, legacy fallback tests, migration tests, 820+ regression)
 
 ### Phase 42: Scale-Adaptive Intelligence
