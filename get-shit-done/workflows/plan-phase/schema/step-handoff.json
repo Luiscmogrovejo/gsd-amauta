@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "StepHandoff",
+  "description": "Schema for validated step-to-step handoff objects in sharded workflows (Phase 41 SHARD-04)",
+  "type": "object",
+  "required": ["workflow_name", "step_id", "task_id", "phase_number", "context_snapshot"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Auto-generated UUID primary key"
+    },
+    "workflow_name": {
+      "type": "string",
+      "enum": ["plan-phase", "execute-phase", "discuss-phase"],
+      "description": "Which workflow this handoff belongs to"
+    },
+    "step_id": {
+      "type": "string",
+      "pattern": "^step-[0-9]{2}-[a-z]+$",
+      "description": "Current step identifier (e.g., step-01-init)"
+    },
+    "task_id": {
+      "type": "string",
+      "description": "Links to RPETD task (e.g., TK-XXXX or phase execution task)"
+    },
+    "phase_number": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Phase number being executed"
+    },
+    "completed_steps": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "List of step_ids that have completed"
+    },
+    "context_snapshot": {
+      "type": "object",
+      "description": "RPETDContext-compatible snapshot, <=600 tokens (~2400 chars). Injected into next step prompt."
+    },
+    "artifacts": {
+      "type": "object",
+      "default": {},
+      "description": "Step outputs: {plan_files: [], summaries: [], commits: []}"
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "decision": { "type": "string" },
+          "rationale": { "type": "string" },
+          "agent": { "type": "string" }
+        }
+      },
+      "default": [],
+      "description": "Decisions made during workflow execution"
+    },
+    "user_inputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "step": { "type": "string" },
+          "question": { "type": "string" },
+          "answer": { "type": "string" }
+        }
+      },
+      "default": [],
+      "description": "User responses to AskUserQuestion prompts"
+    },
+    "next_step": {
+      "type": ["string", "null"],
+      "description": "Next step to execute, or null if workflow is complete"
+    },
+    "escalation_flags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "Flags for issues that need operator attention"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Auto-generated timestamp"
+    }
+  },
+  "additionalProperties": false
+}
