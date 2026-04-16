@@ -1746,6 +1746,62 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": _safe_error(e)}, 500)
             return
 
+        # ─── Step Handoffs GET routes (Phase 41 SHARD-04) ────────────────────────
+        #
+        # GET /api/steps/:workflow/:phase — return current step state for a workflow+phase.
+
+        if path.startswith("/api/steps/"):
+            parts = path[len("/api/steps/"):].strip("/").split("/")
+            if len(parts) < 2:
+                self._send_json({"error": "Usage: /api/steps/:workflow/:phase"}, 400)
+                return
+            workflow_name = parts[0]
+            try:
+                phase_number = int(parts[1])
+            except ValueError:
+                self._send_json({"error": "phase must be integer"}, 400)
+                return
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
+                return
+            try:
+                conn = store._get_conn()
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT id, workflow_name, step_id, task_id, phase_number,"
+                        " completed_steps, context_snapshot, artifacts, decisions,"
+                        " user_inputs, next_step, escalation_flags, created_at"
+                        " FROM step_handoffs"
+                        " WHERE workflow_name = %s AND phase_number = %s"
+                        " ORDER BY created_at DESC LIMIT 1",
+                        (workflow_name, phase_number),
+                    )
+                    row = cur.fetchone()
+                if row:
+                    import json as _json
+                    result = {
+                        "id": str(row[0]),
+                        "workflow_name": row[1],
+                        "step_id": row[2],
+                        "task_id": row[3],
+                        "phase_number": row[4],
+                        "completed_steps": row[5] or [],
+                        "context_snapshot": row[6] or {},
+                        "artifacts": row[7] or {},
+                        "decisions": row[8] or [],
+                        "user_inputs": row[9] or [],
+                        "next_step": row[10],
+                        "escalation_flags": row[11] or [],
+                        "created_at": row[12].isoformat() if row[12] else None,
+                    }
+                    self._send_json(result)
+                else:
+                    self._send_json({"step_id": None, "message": "No handoff found"})
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
         self._send_json({"error": f"Unknown GET route: {path}"}, 404)
 
     # ─── POST routes ─────────────────────────────────
@@ -2587,6 +2643,61 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     "new_state": next_state["state"],
                     "failures": next_state["failures"],
                 })
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
+        # ─── Step Handoffs POST routes (Phase 41 SHARD-04) ───────────────────────
+        #
+        # POST /api/steps/:workflow/:phase/handoff — save a step handoff.
+
+        if path.startswith("/api/steps/") and path.endswith("/handoff"):
+            inner = path[len("/api/steps/"):]
+            # Strip trailing /handoff
+            inner = inner[: inner.rfind("/handoff")]
+            parts = inner.strip("/").split("/")
+            if len(parts) < 2:
+                self._send_json({"error": "Usage: /api/steps/:workflow/:phase/handoff"}, 400)
+                return
+            workflow_name = parts[0]
+            try:
+                phase_number = int(parts[1])
+            except ValueError:
+                self._send_json({"error": "phase must be integer"}, 400)
+                return
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
+                return
+            try:
+                import json as _json
+                body_data = _json.loads(self._read_body())
+                conn = store._get_conn()
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "INSERT INTO step_handoffs"
+                        " (workflow_name, step_id, task_id, phase_number,"
+                        "  completed_steps, context_snapshot, artifacts,"
+                        "  decisions, user_inputs, next_step, escalation_flags)"
+                        " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+                        " RETURNING id, created_at",
+                        (
+                            workflow_name,
+                            body_data.get("step_id", ""),
+                            body_data.get("task_id", ""),
+                            phase_number,
+                            body_data.get("completed_steps", []),
+                            _json.dumps(body_data.get("context_snapshot", {})),
+                            _json.dumps(body_data.get("artifacts", {})),
+                            _json.dumps(body_data.get("decisions", [])),
+                            _json.dumps(body_data.get("user_inputs", [])),
+                            body_data.get("next_step"),
+                            body_data.get("escalation_flags", []),
+                        ),
+                    )
+                    row = cur.fetchone()
+                    conn.commit()
+                self._send_json({"id": str(row[0]), "created_at": row[1].isoformat()}, 201)
             except Exception as e:
                 self._send_json({"error": _safe_error(e)}, 500)
             return
