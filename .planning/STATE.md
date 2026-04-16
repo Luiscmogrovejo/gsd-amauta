@@ -80,3 +80,5 @@ Resume file: .planning/phases/41-sharded-workflows/41-01-SUMMARY.md
 
 ## Learnings
 
+
+- [learning] 2026-04-16T11:39:23.966Z: Plan 41-01 (v3.1 FOUNDATION): sharded workflows pattern — StepHandoff is append-only PG log (not upsert), each step file ends with explicit HALT instruction, workflow.md router verifies PG handoff before advancing (3-layer enforcement). Step files carry significant LOC overhead vs monolith (40%+) due to step_context + step_output + HALT blocks — diverge and name it, don't silently absorb.
