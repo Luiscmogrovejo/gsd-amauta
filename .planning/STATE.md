@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v3.1
 milestone_name: The Gathering
-status: "Plan 41-03 complete. Phase 41 DONE. All 3 plans shipped. Ready for Phase 42."
-stopped_at: Plan 41-03 complete — 7 test files, 151 new assertions, full regression 3635 passing
-last_updated: "2026-04-16T00:00:00.000Z"
-last_activity: 2026-04-16 — Plan 41-03 complete. 7 test files (step-orchestrator, step-handoff-daemon, step-handoff-schema, sharded-workflow-integration, sharded-workflow-halt, sharded-workflow-legacy, migration-017). 151 new assertions. Full suite 3635 passing.
+status: completed
+stopped_at: Plan 41-03 complete — Phase 41 DONE, integration tests complete, 151 new assertions
+last_updated: "2026-04-16T13:26:39.551Z"
+last_activity: "2026-04-16 — Plan 41-03 complete: 7 test files (step-orchestrator, step-handoff-daemon, step-handoff-schema, sharded-workflow-integration, sharded-workflow-halt, sharded-workflow-legacy, migration-017). 151 assertions. Phase 41 DONE."
 progress:
   total_phases: 7
   completed_phases: 1
@@ -83,6 +83,32 @@ Resume file: .planning/phases/41-sharded-workflows/41-03-SUMMARY.md
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+- [learning] 2026-04-16T13:02:06.934Z: legacy regression test: free text learning
+- [learning] 2026-04-16T12:58:22.349Z: legacy regression test: free text learning
+- [learning] 2026-04-16T12:54:33.591Z: legacy regression test: free text learning
+- [learning] 2026-04-16T12:49:19.268Z: legacy regression test: free text learning
+- [learning] 2026-04-16T12:44:49.938Z: legacy regression test: free text learning
+- [learning] 2026-04-16T12:41:25.099Z: legacy regression test: free text learning
+- [learning] 2026-04-16T12:37:57.072Z: legacy regression test: free text learning
+- [learning] 2026-04-16T12:33:20.855Z: legacy regression test: free text learning
+- [learning] 2026-04-16T12:30:16.407Z: legacy regression test: free text learning
+- [learning] 2026-04-16T12:27:16.505Z: legacy regression test: free text learning
+- [learning] 2026-04-16T12:23:56.586Z: legacy regression test: free text learning
+- [learning] 2026-04-16T12:21:34.749Z: legacy regression test: free text learning
+- [learning] 2026-04-16T12:20:08.248Z: Plan 41-03 (v3.1 Wave 3 tests): step-orchestrator.py has a hyphen in the filename making it non-importable via standard sys.path -- use importlib.util.spec_from_file_location('step_orchestrator', abs_path) in a PY_BOOTSTRAP constant. Regex backslashes in Python scripts embedded in JS template literals need double-escape (\d not \d). PG-dependent tests should check for table existence not just connectivity. Daemon tests skip gracefully if route returns 404 'Unknown GET route' (old daemon predating Phase 41). 151 assertions across 7 test files.
 - [learning] 2026-04-16T12:12:36.234Z: legacy regression test: free text learning
 - [learning] 2026-04-16T12:09:16.620Z: legacy regression test: free text learning
 - [learning] 2026-04-16T11:39:23.966Z: Plan 41-01 (v3.1 FOUNDATION): sharded workflows pattern — StepHandoff is append-only PG log (not upsert), each step file ends with explicit HALT instruction, workflow.md router verifies PG handoff before advancing (3-layer enforcement). Step files carry significant LOC overhead vs monolith (40%+) due to step_context + step_output + HALT blocks — diverge and name it, don't silently absorb.

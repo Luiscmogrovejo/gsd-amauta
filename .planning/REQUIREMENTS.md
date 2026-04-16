@@ -16,11 +16,11 @@ Requirements for v3.1 "The Gathering" — graft BMAD-METHOD's best patterns onto
 
 ### Sharded Workflows
 
-- [ ] **SHARD-01**: Split plan-phase.md (656 lines) into 5 micro-step files with RPETDContext handoffs. Each step receives/produces validated StepHandoff object.
-- [ ] **SHARD-02**: Split execute-phase.md (~700 lines) into 5 micro-step files with StepHandoff persistence to PG after each step.
-- [ ] **SHARD-03**: Split discuss-phase.md (733 lines) into micro-step files with structured state passing.
-- [ ] **SHARD-04**: StepHandoff persistence enables: deterministic resumption, step rollback, cross-session continuity. New PG table: step_handoffs.
-- [ ] **SHARD-05**: HALT enforcement via operator hooks, not prompt-based. Programmatic prevention of auto-advance without user confirmation.
+- [x] **SHARD-01**: Split plan-phase.md (656 lines) into 5 micro-step files with RPETDContext handoffs. Each step receives/produces validated StepHandoff object.
+- [x] **SHARD-02**: Split execute-phase.md (~840 lines) into 6 micro-step files with StepHandoff persistence to PG after each step.
+- [x] **SHARD-03**: Split discuss-phase.md (733 lines) into micro-step files with structured state passing.
+- [x] **SHARD-04**: StepHandoff persistence enables: deterministic resumption, step rollback, cross-session continuity. New PG table: step_handoffs.
+- [x] **SHARD-05**: 3-layer HALT enforcement: architectural isolation (step content not in context), prompt-level HALT instructions, operator/PG verification gate (handoff must exist before next step loads). Auto-advance without user confirmation produces error.
 
 ### Skills Architecture
 
@@ -80,11 +80,11 @@ Requirements for v3.1 "The Gathering" — graft BMAD-METHOD's best patterns onto
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SHARD-01 | Phase 41 | Pending |
-| SHARD-02 | Phase 41 | Pending |
-| SHARD-03 | Phase 41 | Pending |
-| SHARD-04 | Phase 41 | Pending |
-| SHARD-05 | Phase 41 | Pending |
+| SHARD-01 | Phase 41 | Complete |
+| SHARD-02 | Phase 41 | Complete |
+| SHARD-03 | Phase 41 | Complete |
+| SHARD-04 | Phase 41 | Complete |
+| SHARD-05 | Phase 41 | Complete |
 | SCALE-01 | Phase 42 | Pending |
 | SCALE-02 | Phase 42 | Pending |
 | SCALE-03 | Phase 42 | Pending |

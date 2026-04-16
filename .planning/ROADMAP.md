@@ -91,7 +91,7 @@ Phase 41: Sharded Workflows (FOUNDATION)
   3. discuss-phase.md is replaced by micro-step files with structured state passing; the discuss workflow can be interrupted and resumed from any step boundary.
   4. `step_handoffs` PG table exists with schema supporting task_id, step_name, handoff_data (JSONB), created_at, and workflow_type; rows are queryable for resumption.
   5. HALT enforcement is programmatic via operator hooks (not prompt text); attempting to auto-advance past a HALT boundary without user confirmation produces an error, not a warning.
-**Plans:** 3 plans across 3 waves (22 tasks total)
+**Plans:** 3/3 plans complete
 
 Plans:
 - [x] 41-01: Foundation Infrastructure + plan-phase Sharding (Wave 1, 8 tasks — migration 017, step-orchestrator.py, daemon endpoints, JSON schema, 5 plan-phase steps, workflow.md router, legacy backup)
@@ -192,7 +192,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 41. Sharded Workflows | 0/3 | Not started | - |
+| 41. Sharded Workflows | 0/3 | Complete    | 2026-04-16 |
 | 42. Scale-Adaptive Intelligence | 0/2 | Not started | - |
 | 43. Skills Architecture | 0/2 | Not started | - |
 | 44. Cross-IDE Installer | 0/2 | Not started | - |
