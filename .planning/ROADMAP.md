@@ -32,6 +32,7 @@
 ## Phases
 
 - [ ] **Phase 41: Sharded Workflows** — Split 3 monolithic workflow files into micro-step files with RPETDContext handoffs; StepHandoff PG persistence; programmatic HALT enforcement (SHARD-01..05) (FOUNDATION — everything else benefits from reliable step execution)
+  - [x] Plan 41-01: Foundation Infrastructure + plan-phase Sharding (migration 017, step-orchestrator.py, daemon endpoints, JSON schema, 5 step files, workflow.md router, legacy backup, redirect) — COMPLETE 2026-04-15
 - [ ] **Phase 42: Scale-Adaptive Intelligence** — Continuous complexity classifier (0-100), phase selector, PG-backed learning from past tasks, divergence-triggered auto-escalation (SCALE-01..04) — depends on 41
 - [ ] **Phase 43: Skills Architecture** — Refactor workflows to SKILL.md format with YAML frontmatter; invocation memory with hybrid search; skill compiler for cross-IDE output; Semgrep tool enforcement (SKILL-01..04) — depends on 41
 - [ ] **Phase 44: Cross-IDE Installer** — `npx gsd-amauta init` 6-step flow; IDE auto-detection; non-interactive CI mode; legacy migration (INST-01..04) — depends on 43
@@ -88,12 +89,12 @@ Phase 41: Sharded Workflows (FOUNDATION)
   3. discuss-phase.md is replaced by micro-step files with structured state passing; the discuss workflow can be interrupted and resumed from any step boundary.
   4. `step_handoffs` PG table exists with schema supporting task_id, step_name, handoff_data (JSONB), created_at, and workflow_type; rows are queryable for resumption.
   5. HALT enforcement is programmatic via operator hooks (not prompt text); attempting to auto-advance past a HALT boundary without user confirmation produces an error, not a warning.
-**Plans:** TBD (estimated 3 plans: one per workflow being sharded, or infrastructure + sharding + tests)
+**Plans:** 3 plans across 3 waves (22 tasks total)
 
 Plans:
-- [ ] 41-01: TBD
-- [ ] 41-02: TBD
-- [ ] 41-03: TBD
+- [ ] 41-01: Foundation Infrastructure + plan-phase Sharding (Wave 1, 8 tasks — migration 017, step-orchestrator.py, daemon endpoints, JSON schema, 5 plan-phase steps, workflow.md router, legacy backup)
+- [ ] 41-02: execute-phase + discuss-phase Sharding + Legacy Fallback (Wave 2, 6 tasks — 6 execute-phase steps, 4 discuss-phase steps, routers, legacy backups, gsd-tools.cjs helpers)
+- [ ] 41-03: Integration Tests + Regression Suite (Wave 3, 8 tasks — orchestrator unit tests, daemon tests, schema tests, integration tests, HALT enforcement tests, legacy fallback tests, migration tests, 820+ regression)
 
 ### Phase 42: Scale-Adaptive Intelligence
 **Goal:** The system automatically classifies task complexity and selects the minimum effective RPETD phase set. Simple tasks (rename a variable) skip Research and Plan phases. Complex tasks (new agent with migrations) get full RPETD plus security and architecture review. The classifier learns from past task outcomes stored in PG.

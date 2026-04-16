@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v3.1
 milestone_name: The Gathering
-status: "Roadmap defined. Ready for `/amauta:plan-phase 41`."
-stopped_at: Phase 41 context gathered — sharded workflows foundation
-last_updated: "2026-04-15T03:41:37.441Z"
-last_activity: 2026-04-13 — v3.1 roadmap created. 7 phases (41-47), 25 requirements, estimated 15 plans.
+status: "Plan 41-01 complete. Wave 1 foundation shipped. Ready for plan 41-02."
+stopped_at: Plan 41-01 complete — migration, orchestrator, daemon endpoints, JSON schema, plan-phase sharded into 5 steps
+last_updated: "2026-04-15T00:00:00.000Z"
+last_activity: 2026-04-15 — Plan 41-01 complete. 8 tasks, 12 files created, 2 modified. plan-phase sharded into 5 micro-step files.
 progress:
   total_phases: 7
   completed_phases: 0
@@ -25,18 +25,18 @@ See: .planning/PROJECT.md (updated 2026-04-14 after v3.0 milestone close)
 
 ## Current Position
 
-Phase: Not started (roadmap defined, ready to plan Phase 41)
-Plan: —
-Status: Roadmap defined. Ready for `/amauta:plan-phase 41`.
-Last activity: 2026-04-13 — v3.1 roadmap created. 7 phases (41-47), 25 requirements, estimated 15 plans.
+Phase: 41 (In Progress — Wave 1 complete)
+Plan: 41-01 COMPLETE
+Status: Plan 41-01 shipped. Ready for plan 41-02 (shard execute-phase + discuss-phase).
+Last activity: 2026-04-15 — Plan 41-01 complete: 8 tasks committed, migration 017, step-orchestrator.py, daemon endpoints, JSON schema, plan-phase sharded into 5 micro-step files with 3-layer HALT enforcement.
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█░░░░░░░░░] ~5% (1 of ~15 plans)
 
 ## v3.1 Phase Map
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 41 | Sharded Workflows (FOUNDATION) | SHARD-01..05 | Not started |
+| 41 | Sharded Workflows (FOUNDATION) | SHARD-01..05 | In Progress (Wave 1 complete) |
 | 42 | Scale-Adaptive Intelligence | SCALE-01..04 | Not started |
 | 43 | Skills Architecture | SKILL-01..04 | Not started |
 | 44 | Cross-IDE Installer | INST-01..04 | Not started |
@@ -57,6 +57,9 @@ Progress: [░░░░░░░░░░] 0%
 
 - v3.0 shipped: 10 phases (31-40), 24 plans, 820 assertions, 55 requirements, 17 agents.
 - v3.1 Phase 41 is the mandatory foundation: sharded workflows enable scale-adaptive skipping, skills format, and resumable execution.
+- Plan 41-01: StepHandoff is append-only (new row per step boundary) — enables full audit trail and rollback without upsert complexity.
+- Plan 41-01: 3-layer HALT enforcement: (1) architectural (next step NOT in context), (2) prompt-based (STOP instruction in each step file), (3) operator verification (workflow.md checks PG handoff before advancing).
+- Plan 41-01: Legacy fallback via workflow.use_legacy_workflows config flag — enables zero-risk transition to sharded system.
 - Phase 47 is the capstone: dynamic hydration needs both scale scores (42) and skill invocation history (43).
 - Phases 44, 45, 46 are independent after Phase 43 — can run in any order or parallel.
 - 7 phases justified despite coarse granularity: each category is a natural delivery boundary with distinct dependencies.
@@ -71,9 +74,9 @@ Progress: [░░░░░░░░░░] 0%
 
 ## Session Continuity
 
-Last session: 2026-04-15T03:41:37.436Z
-Stopped at: Phase 41 context gathered — sharded workflows foundation
-Resume file: .planning/phases/41-sharded-workflows/41-CONTEXT.md
+Last session: 2026-04-15T00:00:00.000Z
+Stopped at: Plan 41-01 complete — Wave 1 foundation shipped
+Resume file: .planning/phases/41-sharded-workflows/41-01-SUMMARY.md
 
 ## Learnings
 
