@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.1
 milestone_name: The Gathering
-status: "Plan 41-02 complete. Wave 2 shipped. All 3 workflows sharded. Ready for plan 41-03."
-stopped_at: Plan 41-02 complete — execute-phase sharded into 6 steps, discuss-phase sharded into 4 steps, routers, legacy backups, schema copies, gsd-tools step-handoff helpers
-last_updated: "2026-04-13T00:00:00.000Z"
-last_activity: 2026-04-13 — Plan 41-02 complete. 7 tasks, 16 files created, 3 modified. All 3 workflows (plan-phase, execute-phase, discuss-phase) now sharded.
+status: "Plan 41-03 complete. Phase 41 DONE. All 3 plans shipped. Ready for Phase 42."
+stopped_at: Plan 41-03 complete — 7 test files, 151 new assertions, full regression 3635 passing
+last_updated: "2026-04-16T00:00:00.000Z"
+last_activity: 2026-04-16 — Plan 41-03 complete. 7 test files (step-orchestrator, step-handoff-daemon, step-handoff-schema, sharded-workflow-integration, sharded-workflow-halt, sharded-workflow-legacy, migration-017). 151 new assertions. Full suite 3635 passing.
 progress:
   total_phases: 7
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  completed_phases: 1
+  total_plans: 3
+  completed_plans: 3
+  percent: 14
 ---
 
 # GSD-Amauta -- Project State
@@ -25,18 +25,18 @@ See: .planning/PROJECT.md (updated 2026-04-14 after v3.0 milestone close)
 
 ## Current Position
 
-Phase: 41 (In Progress — Wave 2 complete)
-Plan: 41-02 COMPLETE
-Status: Plan 41-02 shipped. All 3 workflows sharded. Ready for plan 41-03 (integration tests + regression suite).
-Last activity: 2026-04-13 — Plan 41-02 complete: 7 tasks committed, execute-phase sharded into 6 micro-step files, discuss-phase sharded into 4 micro-step files, both routers with Layer 3 HALT enforcement, legacy backups, schema copies, gsd-tools step-handoff helpers.
+Phase: 41 COMPLETE — Phase 42 (Scale-Adaptive Intelligence) is next
+Plan: 41-03 COMPLETE
+Status: Plan 41-03 shipped. Phase 41 complete. All 3 workflows sharded, 151 new assertions, 3635 passing in full suite.
+Last activity: 2026-04-16 — Plan 41-03 complete: 7 test files (step-orchestrator, step-handoff-daemon, step-handoff-schema, sharded-workflow-integration, sharded-workflow-halt, sharded-workflow-legacy, migration-017). 151 assertions. Phase 41 DONE.
 
-Progress: [██░░░░░░░░] ~10% (2 of ~15 plans)
+Progress: [██░░░░░░░░] ~14% (1 of 7 phases complete)
 
 ## v3.1 Phase Map
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 41 | Sharded Workflows (FOUNDATION) | SHARD-01..05 | In Progress (Wave 1 complete) |
+| 41 | Sharded Workflows (FOUNDATION) | SHARD-01..05 | COMPLETE (3 plans, 151 new assertions) |
 | 42 | Scale-Adaptive Intelligence | SCALE-01..04 | Not started |
 | 43 | Skills Architecture | SKILL-01..04 | Not started |
 | 44 | Cross-IDE Installer | INST-01..04 | Not started |
@@ -74,12 +74,16 @@ Progress: [██░░░░░░░░] ~10% (2 of ~15 plans)
 
 ## Session Continuity
 
-Last session: 2026-04-13T00:00:00.000Z
-Stopped at: Plan 41-02 complete — Wave 2 shipped, all 3 workflows sharded
-Resume file: .planning/phases/41-sharded-workflows/41-02-SUMMARY.md
+Last session: 2026-04-16T00:00:00.000Z
+Stopped at: Plan 41-03 complete — Phase 41 DONE, integration tests complete, 151 new assertions
+Resume file: .planning/phases/41-sharded-workflows/41-03-SUMMARY.md
 
 ## Learnings
 
 
+
+
+- [learning] 2026-04-16T12:12:36.234Z: legacy regression test: free text learning
+- [learning] 2026-04-16T12:09:16.620Z: legacy regression test: free text learning
 - [learning] 2026-04-16T11:39:23.966Z: Plan 41-01 (v3.1 FOUNDATION): sharded workflows pattern — StepHandoff is append-only PG log (not upsert), each step file ends with explicit HALT instruction, workflow.md router verifies PG handoff before advancing (3-layer enforcement). Step files carry significant LOC overhead vs monolith (40%+) due to step_context + step_output + HALT blocks — diverge and name it, don't silently absorb.
 - [learning] 2026-04-13T00:00:00.000Z: Plan 41-02 (Wave 2): final step HALT pattern must be "STOP. Do not proceed to the next step." not "STOP. Workflow complete." to pass acceptance criteria grep. Legacy backups created by prepending 4-line header to original file content. step-handoff CLI uses http.request (same pattern as agent-stats), not fetch, for daemon calls.
