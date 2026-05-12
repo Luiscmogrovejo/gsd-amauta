@@ -97,6 +97,27 @@ From init JSON: `phase_dir`, `plan_count`, `incomplete_count`.
 
 Report: "Found {plan_count} plans in {phase_dir} ({incomplete_count} incomplete)"
 
+## 4. Compute Complexity Score (Phase 42 / SCALE-01)
+
+Compute the score using the first plan in the phase as the sample (PLAN.md files have `<files_expected>` blocks the scorer parses):
+
+```bash
+FIRST_PLAN=$(ls "${PHASE_DIR}"/*-PLAN.md 2>/dev/null | head -1)
+SCORE_JSON=$(node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" complexity-score "$FIRST_PLAN" \
+  --task-id "${PHASE_NUMBER}-execute-phase" \
+  --phase "${PHASE_NUMBER}" \
+  --workflow execute-phase 2>/dev/null || echo '{"score":0,"chosen_phases":["R","P","E","T","D"],"override_source":"fallback","banner":"Phase 42 scorer unavailable; defaulting to R,P,E,T,D."}')
+
+COMPLEXITY_SCORE=$(echo "$SCORE_JSON" | jq -r '.score // 0')
+CHOSEN_PHASES=$(echo "$SCORE_JSON" | jq -c '.chosen_phases // ["R","P","E","T","D"]')
+OVERRIDE_SOURCE=$(echo "$SCORE_JSON" | jq -r '.override_source // "auto"')
+FEATURE_VECTOR=$(echo "$SCORE_JSON" | jq -c '.feature_vector // {}')
+BANNER=$(echo "$SCORE_JSON" | jq -r '.banner // ""')
+echo "$BANNER"
+```
+
+Persist `COMPLEXITY_SCORE`, `CHOSEN_PHASES`, `OVERRIDE_SOURCE`, `FEATURE_VECTOR` for the StepHandoff and the workflow-close write.
+
 </process>
 
 <step_output>
@@ -123,6 +144,10 @@ At the end of this step, save a StepHandoff via POST /api/steps/execute-phase/{P
     "incomplete_count": "{incomplete_count}",
     "plan_index_data": null,
     "phase_req_ids": "{phase_req_ids}",
+    "complexity_score": "{COMPLEXITY_SCORE}",
+    "chosen_phases": "{CHOSEN_PHASES}",
+    "override_source": "{OVERRIDE_SOURCE}",
+    "feature_vector": "{FEATURE_VECTOR}",
     "amauta_ok": "{amauta_ok}",
     "phase_task_id": "{phase_task_id}"
   },
