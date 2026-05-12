@@ -407,27 +407,53 @@ async def call_tool(name: str, arguments: dict) -> CallToolResult:
 
     elif name == "amauta/memory-store":
         text = arguments.get("text", "")
-        if not text:
+        if not isinstance(text, str) or not text.strip():
             return CallToolResult(content=[TextContent(type="text",
-                text=json.dumps({"error": "text is required"}))])
-        body = {"text": text}
-        for k in ("source", "agent_id", "tags", "project_id", "metadata"):
-            if k in arguments:
-                body[k] = arguments[k]
-        result = _call_daemon("POST", "/api/memory/store", body)
-        return CallToolResult(content=[TextContent(type="text", text=json.dumps(result))])
+                text=json.dumps({"error": "invalid_input", "detail": "text is required"}))])
+        store = _get_pg_store()
+        if store is None:
+            return CallToolResult(content=[TextContent(type="text",
+                text=json.dumps({"error": "pg_unavailable", "detail": "PGStore unavailable"}))])
+        try:
+            result = store.memory_store_with_embedding(
+                text=text,
+                source=arguments.get("source", "agent"),
+                agent_id=arguments.get("agent_id"),
+                tags=arguments.get("tags"),
+                project_id=arguments.get("project_id"),
+                metadata=arguments.get("metadata"),
+            )
+            # result may be a UUID string or a dedup dict
+            if isinstance(result, dict):
+                return CallToolResult(content=[TextContent(type="text", text=json.dumps(result))])
+            return CallToolResult(content=[TextContent(type="text", text=json.dumps({"id": str(result), "stored": True}))])
+        except Exception as e:
+            return CallToolResult(content=[TextContent(type="text",
+                text=json.dumps({"error": "internal_error", "detail": str(e)}))])
 
     elif name == "amauta/memory-search":
         query = arguments.get("query", "")
-        if not query:
+        if not isinstance(query, str) or not query.strip():
             return CallToolResult(content=[TextContent(type="text",
-                text=json.dumps({"error": "query is required"}))])
-        body = {"query": query, "limit": arguments.get("limit", 20)}
-        for k in ("project_id", "source"):
-            if k in arguments:
-                body[k] = arguments[k]
-        result = _call_daemon("POST", "/api/memory/semantic-search", body)
-        return CallToolResult(content=[TextContent(type="text", text=json.dumps(result))])
+                text=json.dumps({"error": "invalid_input", "detail": "query is required"}))])
+        store = _get_pg_store()
+        if store is None:
+            return CallToolResult(content=[TextContent(type="text",
+                text=json.dumps({"error": "pg_unavailable", "detail": "PGStore unavailable"}))])
+        try:
+            raw = store.memory_semantic_search(
+                query=query,
+                project_id=arguments.get("project_id"),
+                source=arguments.get("source"),
+                limit=int(arguments.get("limit", 20)),
+            )
+            # memory_semantic_search returns (results, method) tuple
+            results, method = raw if isinstance(raw, tuple) else (raw, "unknown")
+            return CallToolResult(content=[TextContent(type="text",
+                text=json.dumps({"results": results, "method": method}))])
+        except Exception as e:
+            return CallToolResult(content=[TextContent(type="text",
+                text=json.dumps({"error": "internal_error", "detail": str(e)}))])
 
     elif name == "amauta/memory-distill":
         # Daemon has no POST /api/memory/distill route. Return distill-status and
