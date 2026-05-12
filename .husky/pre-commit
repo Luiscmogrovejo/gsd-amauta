@@ -1,0 +1,31 @@
+#!/usr/bin/env sh
+# Phase 43 / SKILL-04 — pre-commit gate for SKILL.md tool-boundary enforcement.
+# Runs scripts/skill-semgrep-runner.cjs against the canonical skills tree
+# when any SKILL.md file is in the staged changes.
+
+set -e
+
+# Identify staged SKILL.md files (added/copied/modified).
+changed_skills=$(git diff --cached --name-only --diff-filter=ACM | grep -E '(^get-shit-done/skills/|^\.claude/skills/|^\.opencode/skills/|^\.cursor/skills/).*SKILL\.md$' || true)
+
+if [ -z "$changed_skills" ]; then
+  # No SKILL.md changes — fast path, exit silently.
+  exit 0
+fi
+
+echo "[pre-commit] SKILL.md changes detected — running skill-semgrep-runner..."
+node scripts/skill-semgrep-runner.cjs get-shit-done/skills
+rc=$?
+
+if [ "$rc" = "2" ]; then
+  echo "[pre-commit] WARN: semgrep not installed — skill enforcement skipped at pre-commit (CI will still enforce)."
+  echo "[pre-commit] Install with: pip install semgrep"
+  exit 0
+fi
+
+if [ "$rc" != "0" ]; then
+  echo "[pre-commit] FAIL: skill enforcement found violations (exit $rc). Fix the SKILL.md frontmatter and retry the commit."
+  exit "$rc"
+fi
+
+exit 0

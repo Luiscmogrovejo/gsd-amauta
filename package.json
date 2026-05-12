@@ -73,6 +73,7 @@
     "stop-pg": "docker compose -f docker/docker-compose.yml down",
     "migrate": "for f in migrations/0[0-9][0-9]-*.sql; do case \"$f\" in *DOWN*) continue;; esac; echo \"Running $f...\"; docker exec -i gsd-postgres psql -U gsd -d gsd_amauta < \"$f\"; done",
     "build:hooks": "node scripts/build-hooks.js",
+    "semgrep:skills": "node scripts/skill-semgrep-runner.cjs get-shit-done/skills",
     "test": "node scripts/run-tests.cjs",
     "test:behavioral": "node scripts/run-behavioral-tests.cjs",
     "test:coverage": "c8 --check-coverage --lines 70 --reporter text --include 'get-shit-done/bin/lib/*.cjs' --exclude 'tests/**' --all node scripts/run-tests.cjs"
