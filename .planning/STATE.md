@@ -106,6 +106,8 @@ Resume file: .planning/phases/42-scale-adaptive-intelligence/42-CONTEXT.md
 
 
 
+
+- [learning] 2026-05-12T17:20:19.618Z: Phase 42 step-orchestrator.py pattern: STEP_TO_PHASE map + ALWAYS_RUN_STEPS set + forward-cursor loop in get_next_step() implements phase skipping with T-floor invariant; step-05-validate appears in BOTH maps (T-letter for traceability, ALWAYS_RUN for runtime skip guard); empty chosen_phases = zero-skip backward compat; hyphen in filename requires importlib.util for Python tests.
 - [learning] 2026-05-12T15:11:10.645Z: Subprocess watchdog self-heal pattern: pair uptime-gated counter reset (>=300s healthy + count>0) with cooldown-after-cap (sleep then reset+continue, never abandon) + exponential backoff between retries (min(2^(n-1),60)s) + first-iteration-immediate (sleep at bottom of loop). Prevents the canonical failure mode where 1-2 crashes in tight succession burn the retry budget and leave a permanently degraded supervisor until manual restart
 - [learning] 2026-04-16T13:02:06.934Z: legacy regression test: free text learning
 - [learning] 2026-04-16T12:58:22.349Z: legacy regression test: free text learning
