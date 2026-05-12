@@ -50,7 +50,9 @@
   - [x] Plan 44-02: --yes/--tools/--force-migrate flag parsing + printHelp() + migrateLegacyCommands() atomic timestamped rename + 6-step orchestrator + all 5 existing steps converted to FROZEN buildStepResult() schema (install_skills, detect_infra, migrations, start_daemon, verify) + FROZEN exit rule + 14 new tests (7 legacy-migration + 7 flags-non-interactive), 29 total 44-0x tests passing — COMPLETE 2026-05-12
   - [x] Plan 44-03: stepAssertions() with 5 FROZEN post-install assertions (skill_files_present, compiler_validates, daemon_health, schema_applied, semgrep_rules_present) + worst-of combinator + totalSteps bumped 6→7 + tests/init-assertions.test.cjs (10 tests) + tests/init-smoke.test.cjs (8 subprocess tests) — COMPLETE 2026-05-12
 - [x] **Phase 44: Cross-IDE Installer** — COMPLETE 2026-05-12 (3 plans, 47 tests)
-- [ ] **Phase 45: Intelligent Help Routing** — `/amauta:help` queries 4 sources deterministically; pattern learning from PG history; get-bearings integration (HELP-01..03) — depends on 43
+- [x] **Phase 45: Intelligent Help Routing** — `/amauta:help` queries 4 sources deterministically; pattern learning from PG history; get-bearings integration (HELP-01..03) — depends on 43 — COMPLETE 2026-05-12
+  - [x] Plan 45-01: `gsd-tools bearings` subcommand (readProjectState, readRecentActivity, readPlanProgress, 4 FROZEN pattern stats, FROZEN 6-rule recommendation precedence, renderBearings 600/400-token, JSON schema_version:1.0, graceful degradation, 17 tests) — COMPLETE 2026-05-12
+  - [x] Plan 45-02: Wire bearings into /amauta:help (prepend <bearings> + ## Reference above static body) + step-01-prepare.md + execute-phase-legacy.md (BEHAV-06 400-token, shell-out, single source of truth), 5 new tests (22 total bearings tests) — COMPLETE 2026-05-12
 - [ ] **Phase 46: Standalone MCP Server** — amauta-mcp.py as standalone with direct PG+Valkey; complexity-score tool; agent/findings resources (MCP-01..03) — depends on 43
 - [ ] **Phase 47: Agent Dynamic Hydration** — Agent .md templates with dynamic sections; operator queries PG/blackboard/Valkey/security for agent-specific context injection (HYDRA-01..02) — depends on 42+43
 

@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v3.1
 milestone_name: The Gathering
 status: in_progress
-stopped_at: Phase 45 plan 45-01 complete
-last_updated: "2026-05-12T23:30:00.000Z"
-last_activity: 2026-05-12 — Plan 45-01 complete. HELP-01 (bearings subcommand) satisfied. 17 tests (7+4+3+3), 0 failures.
+stopped_at: Phase 45 plan 45-02 complete
+last_updated: "2026-05-12T18:25:00.000Z"
+last_activity: 2026-05-12 — Plan 45-02 complete. HELP-01 + HELP-03 satisfied. bearings wired into /amauta:help + both execute-phase surfaces. 5 new tests (6 total bearings-integration + parity), 0 failures. 22 bearings tests total.
 progress:
   total_phases: 7
   completed_phases: 4
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-14 after v3.0 milestone close)
 
 ## Current Position
 
-Phase: 45 IN PROGRESS — Plan 45-01 complete
-Plan: 45-01 COMPLETE
-Status: Plan 45-01 shipped. `gsd-tools bearings` subcommand added to get-shit-done/bin/gsd-tools.cjs with: readProjectState(), readRecentActivity(), readPlanProgress(), computePatternStats() (4 FROZEN stats), chooseRecommendation() (FROZEN 6-rule precedence), renderBearings() (600/400 token budget enforcement). JSON schema_version:1.0. 17 total tests across 4 test files (bearings-rules: 7, bearings-json-schema: 4, bearings-token-budget: 3, bearings-patterns: 3), 0 failures. HELP-01 satisfied. Next: 45-02 (/amauta:help + execute-phase integration).
-Last activity: 2026-05-12 — Plan 45-01 complete. HELP-01 (bearings subcommand) satisfied. 17 tests (7+4+3+3), 0 failures.
+Phase: 45 IN PROGRESS — Plan 45-02 complete
+Plan: 45-02 COMPLETE
+Status: Plan 45-02 shipped. Wave 1 bearings subcommand wired into two consumers: (1) get-shit-done/workflows/help.md: <purpose> updated, <bearings> shell-out block + ## Reference header prepended above 708-LOC static reference body. (2) get-shit-done/workflows/execute-phase/steps/step-01-prepare.md: Get-Bearings BEHAV-06 subsection inserted between Sync-chain-flag and Amauta-integration blocks. (3) get-shit-done/workflows/execute-phase-legacy.md: inline 4-slot Python heredoc replaced with gsd-tools shell-out. 5 new tests: bearings-help-integration (3 hermetic) + bearings-execute-phase-parity (3 including HELP-01 determinism). 22 total bearings tests, 0 failures. HELP-01 + HELP-03 satisfied. Phase 45 COMPLETE.
+Last activity: 2026-05-12 — Plan 45-02 complete. HELP-01 + HELP-03 satisfied. bearings wired into /amauta:help + both execute-phase surfaces. 5 new tests (6 total bearings-integration + parity), 0 failures. 22 bearings tests total.
 
-Progress: [████░░░░░░] ~32% (3 of 7 phases partially, 11 of 14 plans complete)
+Progress: [█████░░░░░] ~43% (5 of 7 phases complete or in progress, 13 of 14 plans complete)
 
 ## v3.1 Phase Map
 
@@ -40,7 +40,7 @@ Progress: [████░░░░░░] ~32% (3 of 7 phases partially, 11 of 
 | 42 | Scale-Adaptive Intelligence | SCALE-01..04 | COMPLETE (4 plans, 150 JS + 32 Python assertions) |
 | 43 | Skills Architecture | SKILL-01..04 | In progress (Plans 43-01 + 43-02 COMPLETE; 43-03 remaining) |
 | 44 | Cross-IDE Installer | INST-01..04 | COMPLETE (Plans 44-01 + 44-02 + 44-03, 47 tests) |
-| 45 | Intelligent Help Routing | HELP-01..03 | In progress (Plan 45-01 COMPLETE) |
+| 45 | Intelligent Help Routing | HELP-01..03 | COMPLETE (Plans 45-01 + 45-02, 22 tests) |
 | 46 | Standalone MCP Server | MCP-01..03 | Not started |
 | 47 | Agent Dynamic Hydration | HYDRA-01..02 | Not started |
 
@@ -78,6 +78,9 @@ Progress: [████░░░░░░] ~32% (3 of 7 phases partially, 11 of 
 - Plan 44-01: stepDetectIdes() emits status:'warn' (not 'fail') when no IDEs detected — empty filesystem is a valid state. status:'pass' = at least one IDE detected. All 3 IDEs appear in detections table regardless of detection result.
 - Plan 44-02: All 5 existing steps converted to FROZEN buildStepResult() schema. FROZEN names: install_skills, detect_infra, migrations, start_daemon, verify. Exit rule: results.some(r=>r.status==='fail')?1:0. main() uses results array (not hash). migrateLegacyCommands() timestamp: toISOString().replace(/[:.]/g,'-').slice(0,19). stepInstall calls migrateLegacyCommands() then iterates detections for per-IDE compile. Graceful degradation: sqlite warn → migrations skip, start_daemon skip.
 - Plan 44-03: stepAssertions() added as 7th step (run_assertions). 5 FROZEN assertion names: skill_files_present, compiler_validates, daemon_health, schema_applied, semgrep_rules_present. skill_files_present skips when installResult.status==='skip' OR no IDE action:install rows. Worst-of combinator: STATUS_RANK {fail:3,warn:2,pass:1,skip:0}; skip ignored; all-skip → pass. schema_applied: sqlite checks file existence (self-creating contract: skip if absent), pg hits /api/migrations (graceful 404 fallback). semgrep_rules_present: file presence only, no binary run. skills-only smoke (--skip-install --skip-daemon --backend sqlite): 7 steps, 0 fail, exit=0.
+
+- Plan 45-01: gsd-tools bearings subcommand — readProjectState() (STATE.md authoritative), readRecentActivity() (git log --oneline -5), readPlanProgress() (feature_list.json for active plan), computePatternStats() (4 FROZEN stats: avg_sessions_per_phase_type, commits_since_last_test, similar_feature_sessions, plan_complexity_trend), chooseRecommendation() (FROZEN 6-rule precedence in order: fail>0, drift, pending, allpass, commits_stale, default), renderBearings() (600 default / 400 terse, truncate Pattern Stats first). JSON schema_version:1.0.
+- Plan 45-02: help.md brownfield edit = PREPEND ONLY. <purpose> updated, <bearings> block + ## Reference header inserted at line 33 BEFORE <reference> opener at line 35. Static 708-LOC body preserved verbatim. execute-phase 400-token budget (BEHAV-06) preserved; /amauta:help uses 600-token default. Both execute-phase surfaces (sharded step-01-prepare.md + legacy execute-phase-legacy.md) shell out to identical gsd-tools bearings --terse --token-budget 400 command — single source of truth. HELP-01 determinism test scopes to ## Current Position (STATE.md-derived, never truncated) not full output (pattern stats are PG-dependent).
 
 ### Pending Todos
 
