@@ -1,0 +1,20 @@
+# Phase 44: IDE registry consumed by bin/init.cjs (auto-detection + install routing)
+# and scripts/skill-compiler.cjs (dir_name + skill_subdir resolution).
+# Schema is FROZEN at 4 fields per IDE (44-CONTEXT.md §Area 4). Additional fields
+# are an explicit Phase 44.x scope expansion, not a creeping addition.
+ides:
+  claude-code:
+    ide_id: claude-code
+    dir_name: .claude
+    skill_subdir: skills
+    cli_name: claude
+  cursor:
+    ide_id: cursor
+    dir_name: .cursor
+    skill_subdir: rules
+    cli_name: cursor
+  opencode:
+    ide_id: opencode
+    dir_name: .opencode
+    skill_subdir: skills
+    cli_name: opencode
