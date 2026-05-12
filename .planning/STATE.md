@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.1
 milestone_name: The Gathering
 status: in_progress
-stopped_at: Phase 43 Plan 43-03 complete
-last_updated: "2026-05-12T21:20:00.000Z"
-last_activity: "2026-05-12 — Plan 43-03 complete: .semgrep/skill-enforcement.yml (3 ERROR rules: skill-read-only-no-write, skill-allowed-tools-required, skill-bash-mutation-verbs-readonly), mutation_verbs.txt (14 seed verbs), skill-semgrep-runner.cjs (254 LOC, exit codes 0/1/2/3), .husky/pre-commit hook, semgrep:skills npm script, 7-test fixture suite (2 pass + 5 skip). Phase 43 COMPLETE."
+stopped_at: Phase 43 Plan 43-02 complete
+last_updated: "2026-05-12T22:00:00.000Z"
+last_activity: "2026-05-12 — Plan 43-02 complete: migration 019-skill-invocations.sql (vector(1024) + ivfflat + GIN tsvector BM25 + recency btree), services/skill_invocation_store.py (record_invocation, retrieve_similar with RRF k=60, update_outcome, _HAS_PG fallback), /api/skills/invoke + /api/skills/complete daemon endpoints, gsd-tools skills invoke/complete subcommands, tests/skill-invocation-store.test.cjs (7 tests, 4 pass + 3 skip gracefully), tests/test_skill_invocation_store.py (18 tests, all pass). SKILL-02 satisfied."
 progress:
   total_phases: 7
-  completed_phases: 3
-  total_plans: 10
-  completed_plans: 10
-  percent: 43
+  completed_phases: 2
+  total_plans: 9
+  completed_plans: 8
+  percent: 29
 ---
 
 # GSD-Amauta -- Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-14 after v3.0 milestone close)
 
 ## Current Position
 
-Phase: 43 COMPLETE — Plans 43-01, 43-02, 43-03 all shipped
-Plan: 43-03 COMPLETE
-Status: Phase 43 complete. SKILL.md schema locked (43-01), invocation memory + hybrid RRF retrieval (43-02), Semgrep enforcement gate (43-03). SKILL-01 through SKILL-04 all satisfied. Phase 44 (Cross-IDE Installer), 45 (Help Routing), 46 (MCP Server) now unblocked. Phase 47 (Agent Hydration) unblocked (requires 42+43 — both complete).
-Last activity: 2026-05-12 — Plan 43-03 complete: .semgrep/skill-enforcement.yml (3 ERROR rules), mutation_verbs.txt (14 seed verbs), skill-semgrep-runner.cjs (254 LOC), .husky/pre-commit, semgrep:skills npm script, 7-test fixture suite.
+Phase: 43 IN PROGRESS — Plans 43-01 + 43-02 shipped
+Plan: 43-02 COMPLETE
+Status: Plan 43-02 shipped. Skill invocation memory operational: migration 019 creates skill_invocations table with pgvector(1024) + ivfflat(lists=100) + GIN tsvector for BM25 + recency btree. skill_invocation_store.py provides record_invocation (voyage-code-3 embedding, NULL fallback), retrieve_similar (hybrid pgvector cosine + BM25 ts_rank + RRF k=60, cosine_floor=0.6, recency_days=90), update_outcome. Daemon endpoints /api/skills/invoke + /api/skills/complete wired. gsd-tools skills invoke/complete CLI subcommands. 7 Node + 18 Python tests. Remaining: 43-03 (Semgrep enforcement, SKILL-04).
+Last activity: 2026-05-12 — Plan 43-02 complete. SKILL-02 satisfied.
 
-Progress: [██░░░░░░░░] ~14% (1 of 7 phases complete)
+Progress: [████░░░░░░] ~29% (2 of 7 phases, 8 of 9 plans complete)
 
 ## v3.1 Phase Map
 
@@ -38,7 +38,7 @@ Progress: [██░░░░░░░░] ~14% (1 of 7 phases complete)
 |-------|------|--------------|--------|
 | 41 | Sharded Workflows (FOUNDATION) | SHARD-01..05 | COMPLETE (3 plans, 151 new assertions) |
 | 42 | Scale-Adaptive Intelligence | SCALE-01..04 | COMPLETE (4 plans, 150 JS + 32 Python assertions) |
-| 43 | Skills Architecture | SKILL-01..04 | In progress (Plan 43-01 COMPLETE) |
+| 43 | Skills Architecture | SKILL-01..04 | In progress (Plans 43-01 + 43-02 COMPLETE; 43-03 remaining) |
 | 44 | Cross-IDE Installer | INST-01..04 | Not started |
 | 45 | Intelligent Help Routing | HELP-01..03 | Not started |
 | 46 | Standalone MCP Server | MCP-01..03 | Not started |
@@ -68,6 +68,10 @@ Progress: [██░░░░░░░░] ~14% (1 of 7 phases complete)
 - Plan 43-01: Compiler uses manifest_skip warnings for unfit skills; only depends_on cycles trigger non-zero exit (code 2). Three IDE targets: claude (identity), opencode (+compatibility field), cursor (snake_case aliases).
 - Plan 43-01: Canonical skills live in get-shit-done/skills/<name>/SKILL.md; compiler outputs in .{claude,cursor,opencode}/skills/ are gitignored (Area 2 VCS policy).
 
+- Plan 43-02: skill_invocation_store.py embedded-payload = skill_name + prompt + json(args) + outcome_class (or 'pending'); this exact text is both stored for BM25 and embedded for pgvector retrieval (Area 3 lock).
+- Plan 43-02: retrieve_similar runs TWO queries (pgvector cosine + BM25 ts_rank) in one connection, fuses via RRF k=60, post-filters pgvector results by cosine_floor=0.6 before fusion. BM25 results are NOT floor-filtered (different scoring space).
+- Plan 43-02: Daemon-running-old-code (pre-Phase-43) returns 404 for /api/skills/* routes; tests skip gracefully on this 404 pattern, not just ECONNREFUSED.
+
 ### Pending Todos
 
 - Run `npx c8 --reporter json-summary node scripts/run-tests.cjs` to bootstrap .coverage_threshold.json with real values (carried from v3.0).
@@ -87,9 +91,9 @@ Context: 2026-05-12 health audit caught RLM dead 13h from uncaught BrokenPipe + 
 
 ## Session Continuity
 
-Last session: 2026-05-12T18:08:05.798Z
-Stopped at: Phase 43 context gathered
-Resume file: .planning/phases/43-skills-architecture/43-CONTEXT.md
+Last session: 2026-05-12T22:00:00.000Z
+Stopped at: Phase 43 Plan 43-02 complete
+Resume file: .planning/phases/43-skills-architecture/43-02-SUMMARY.md
 
 ## Learnings
 

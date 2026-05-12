@@ -136,7 +136,7 @@ Plans:
 
 Plans:
 - [x] 43-01: SKILL.md Schema + Canonical Skills + Compiler (SkillFrontmatter Pydantic model, walk_depends_on, 3 canonical SKILL.md files, skill-compiler.cjs TARGET_MAPS, gsd-tools skills subcommand, .gitignore policy, 9+12 tests) — COMPLETE 2026-05-12
-- [ ] 43-02: Invocation Memory (skill_invocations PG table, migration 019, hybrid BM25+pgvector retrieval, invocation logging hook)
+- [x] 43-02: Invocation Memory (migration 019 skill_invocations with ivfflat+GIN, skill_invocation_store.py record+retrieve_similar+RRF, /api/skills/invoke+complete daemon endpoints, gsd-tools invoke/complete, 7 Node + 18 Python tests) — COMPLETE 2026-05-12
 - [ ] 43-03: Semgrep Enforcement (skill-read-only-no-write rule, mutation_verbs.txt, pre-commit hook, CI step)
 
 ### Phase 44: Cross-IDE Installer
