@@ -1,0 +1,26 @@
+# Phase 43 / SKILL-04 — mutation verbs for Semgrep skill-bash-mutation-verbs-readonly rule.
+# Format: one verb (or fixed phrase) per line. Comments start with #.
+# The runner (scripts/skill-semgrep-runner.cjs) reads this file at enforcement time
+# and constructs a regex alternation pattern. Update this file (no rule recompile needed)
+# when new mutation surfaces emerge.
+# Area 4 decision: mutation-verb externalization — easier to update than Semgrep grammar.
+#
+# Filesystem mutators
+rm
+mv
+cp -r
+# Git mutators
+git push
+git commit
+git reset
+git checkout --force
+# HTTP write methods
+curl -X POST
+curl -X PUT
+curl -X DELETE
+curl -X PATCH
+# SQL mutators
+INSERT
+UPDATE
+DELETE
+DROP
