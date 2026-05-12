@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.1
 milestone_name: The Gathering
-status: verifying
-stopped_at: Phase 45 context gathered
-last_updated: "2026-05-12T22:44:15.191Z"
-last_activity: 2026-05-12 — Plan 44-03 complete. INST-01 + INST-02 + INST-03 + INST-04 all satisfied.
+status: in_progress
+stopped_at: Phase 45 plan 45-01 complete
+last_updated: "2026-05-12T23:30:00.000Z"
+last_activity: 2026-05-12 — Plan 45-01 complete. HELP-01 (bearings subcommand) satisfied. 17 tests (7+4+3+3), 0 failures.
 progress:
   total_phases: 7
   completed_phases: 4
-  total_plans: 13
-  completed_plans: 13
-  percent: 32
+  total_plans: 14
+  completed_plans: 14
+  percent: 35
 ---
 
 # GSD-Amauta -- Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-14 after v3.0 milestone close)
 
 ## Current Position
 
-Phase: 44 COMPLETE — All 3 plans shipped (44-01, 44-02, 44-03)
-Plan: 44-03 COMPLETE
-Status: Plan 44-03 shipped. stepAssertions() added to bin/init.cjs with 5 FROZEN post-install assertions: skill_files_present, compiler_validates, daemon_health, schema_applied, semgrep_rules_present. Worst-of-assertions combinator (fail>warn>pass; skip ignored). totalSteps bumped 6→7. assertLog/assertResult/push wired in main() after stepVerify. FROZEN exit rule unchanged. stepAssertions exported. tests/init-assertions.test.cjs: 10 hermetic tests. tests/init-smoke.test.cjs: 8 subprocess smoke tests. Phase 44 total: 47 tests / 0 failures. Next: Phase 45 (Intelligent Help Routing).
-Last activity: 2026-05-12 — Plan 44-03 complete. INST-01 + INST-02 + INST-03 + INST-04 all satisfied.
+Phase: 45 IN PROGRESS — Plan 45-01 complete
+Plan: 45-01 COMPLETE
+Status: Plan 45-01 shipped. `gsd-tools bearings` subcommand added to get-shit-done/bin/gsd-tools.cjs with: readProjectState(), readRecentActivity(), readPlanProgress(), computePatternStats() (4 FROZEN stats), chooseRecommendation() (FROZEN 6-rule precedence), renderBearings() (600/400 token budget enforcement). JSON schema_version:1.0. 17 total tests across 4 test files (bearings-rules: 7, bearings-json-schema: 4, bearings-token-budget: 3, bearings-patterns: 3), 0 failures. HELP-01 satisfied. Next: 45-02 (/amauta:help + execute-phase integration).
+Last activity: 2026-05-12 — Plan 45-01 complete. HELP-01 (bearings subcommand) satisfied. 17 tests (7+4+3+3), 0 failures.
 
 Progress: [████░░░░░░] ~32% (3 of 7 phases partially, 11 of 14 plans complete)
 
@@ -40,7 +40,7 @@ Progress: [████░░░░░░] ~32% (3 of 7 phases partially, 11 of 
 | 42 | Scale-Adaptive Intelligence | SCALE-01..04 | COMPLETE (4 plans, 150 JS + 32 Python assertions) |
 | 43 | Skills Architecture | SKILL-01..04 | In progress (Plans 43-01 + 43-02 COMPLETE; 43-03 remaining) |
 | 44 | Cross-IDE Installer | INST-01..04 | COMPLETE (Plans 44-01 + 44-02 + 44-03, 47 tests) |
-| 45 | Intelligent Help Routing | HELP-01..03 | Not started |
+| 45 | Intelligent Help Routing | HELP-01..03 | In progress (Plan 45-01 COMPLETE) |
 | 46 | Standalone MCP Server | MCP-01..03 | Not started |
 | 47 | Agent Dynamic Hydration | HYDRA-01..02 | Not started |
 

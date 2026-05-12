@@ -170,8 +170,8 @@ Plans:
 **Plans:** TBD (estimated 2 plans: help routing implementation, tests)
 
 Plans:
-- [ ] 45-01: TBD
-- [ ] 45-02: TBD
+- [x] 45-01: gsd-tools bearings subcommand — 4 frozen pattern stats + 6-rule recommendation + JSON schema v1.0 + Markdown renderer with token-budget enforcement (COMPLETE 2026-05-12)
+- [ ] 45-02: /amauta:help + execute-phase integration (shell-out to bearings subcommand)
 
 ### Phase 46: Standalone MCP Server
 **Goal:** amauta-mcp.py operates as a standalone service with direct PG connection pool and Valkey client — no daemon dependency. Exposes search-code, memory operations, research, and complexity-score as MCP tools. Exposes RPETD context, agent definitions, and findings as MCP resources. Any MCP-compatible client gets full Amauta capabilities.
