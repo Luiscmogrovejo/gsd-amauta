@@ -659,6 +659,85 @@ async function stepVerify(log) {
 }
 
 // ═══════════════════════════════════════════════════════
+// Legacy migration helper (Phase 44 INST-04)
+// ═══════════════════════════════════════════════════════
+
+/**
+ * Phase 44 INST-04: Legacy migration .claude/commands/ → backup-rename.
+ * Returns the FROZEN per-step result schema via buildStepResult().
+ *
+ * Behavior matrix (44-CONTEXT.md §Area 4):
+ *   - commands/ missing or empty          → status: 'skip', message: 'no legacy commands directory'
+ *   - commands/ present + skills/ absent  → atomic rename to commands.bak.<timestamp>/, status: 'pass'
+ *   - commands/ AND skills/ (collision) + !forceMigrate → status: 'warn' (never destructive)
+ *   - forceMigrate                        → rename even if skills/ present
+ *   - future runs see no commands/        → status: 'skip' (idempotent; no state file)
+ *
+ * @param {object} opts
+ * @param {string}  [opts.cwd]          — working directory (default: process.cwd())
+ * @param {boolean} [opts.yes]          — non-interactive mode flag
+ * @param {boolean} [opts.forceMigrate] — bypass collision guard
+ */
+function migrateLegacyCommands(opts) {
+  const start = Date.now();
+  opts = opts || {};
+  const cwd = opts.cwd || process.cwd();
+  const yes = !!opts.yes;          // eslint-disable-line no-unused-vars
+  const forceMigrate = !!opts.forceMigrate;
+
+  const commandsDir = path.join(cwd, '.claude', 'commands');
+  const skillsDir = path.join(cwd, '.claude', 'skills');
+
+  // Helper: empty dir check (no entries) -- treat as "missing" per Area 2 false-positive guard.
+  function isMissingOrEmpty(p) {
+    if (!fs.existsSync(p)) return true;
+    try {
+      const entries = fs.readdirSync(p);
+      return entries.length === 0;
+    } catch (_e) { return true; }
+  }
+
+  if (isMissingOrEmpty(commandsDir)) {
+    const r = buildStepResult('legacy_migration', 'skip', 'no legacy commands directory', null);
+    r.duration_ms = Date.now() - start;
+    return r;
+  }
+
+  const skillsPresent = fs.existsSync(skillsDir) && !isMissingOrEmpty(skillsDir);
+
+  if (skillsPresent && !forceMigrate) {
+    // Collision guard: --yes returns warn (never destructive); without --yes the
+    // CLI would prompt -- in this v3.1 we treat unset --yes the same as --yes
+    // because all v3.1 CLI flows are non-interactive (CI-friendly default).
+    const r = buildStepResult('legacy_migration', 'warn',
+      'both legacy commands/ and skills/ present — skipped migration; pass --force-migrate to override',
+      { commands_dir: commandsDir, skills_dir: skillsDir });
+    r.duration_ms = Date.now() - start;
+    return r;
+  }
+
+  // Atomic timestamped backup-rename.
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const backupDir = path.join(cwd, '.claude', `commands.bak.${timestamp}`);
+
+  try {
+    fs.renameSync(commandsDir, backupDir);
+  } catch (err) {
+    const r = buildStepResult('legacy_migration', 'fail',
+      `rename failed: ${err.message}`,
+      { commands_dir: commandsDir, target: backupDir, error: err.message });
+    r.duration_ms = Date.now() - start;
+    return r;
+  }
+
+  const r = buildStepResult('legacy_migration', 'pass',
+    `migrated ${commandsDir} → ${backupDir}`,
+    { backup_path: backupDir, timestamp });
+  r.duration_ms = Date.now() - start;
+  return r;
+}
+
+// ═══════════════════════════════════════════════════════
 // Main
 // ═══════════════════════════════════════════════════════
 
@@ -751,4 +830,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { stepDetectIdes, buildStepResult, renderStepTable };
+module.exports = { stepDetectIdes, buildStepResult, renderStepTable, migrateLegacyCommands };
