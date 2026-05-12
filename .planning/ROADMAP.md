@@ -47,6 +47,7 @@
   - [x] Plan 43-03: Semgrep enforcement (skill-enforcement.yml 3 rules, mutation_verbs.txt, skill-semgrep-runner.cjs, .husky/pre-commit, semgrep:skills npm script, 7-test fixture suite) — COMPLETE 2026-05-12
 - [ ] **Phase 44: Cross-IDE Installer** — `npx gsd-amauta init` 6-step flow; IDE auto-detection; non-interactive CI mode; legacy migration (INST-01..04) — depends on 43 — In progress
   - [x] Plan 44-01: platform-codes.yaml (3 IDEs × 4 fields, frozen schema) + loadPlatformCodes() in skill-compiler.cjs + stepDetectIdes+buildStepResult+renderStepTable in bin/init.cjs + export gate + 15 hermetic tests — COMPLETE 2026-05-12
+  - [x] Plan 44-02: --yes/--tools/--force-migrate flag parsing + printHelp() + migrateLegacyCommands() atomic timestamped rename + 6-step orchestrator + all 5 existing steps converted to FROZEN buildStepResult() schema (install_skills, detect_infra, migrations, start_daemon, verify) + FROZEN exit rule + 14 new tests (7 legacy-migration + 7 flags-non-interactive), 29 total 44-0x tests passing — COMPLETE 2026-05-12
 - [ ] **Phase 45: Intelligent Help Routing** — `/amauta:help` queries 4 sources deterministically; pattern learning from PG history; get-bearings integration (HELP-01..03) — depends on 43
 - [ ] **Phase 46: Standalone MCP Server** — amauta-mcp.py as standalone with direct PG+Valkey; complexity-score tool; agent/findings resources (MCP-01..03) — depends on 43
 - [ ] **Phase 47: Agent Dynamic Hydration** — Agent .md templates with dynamic sections; operator queries PG/blackboard/Valkey/security for agent-specific context injection (HYDRA-01..02) — depends on 42+43
@@ -152,8 +153,9 @@ Plans:
 **Plans:** TBD (estimated 2 plans: installer implementation, tests + CI validation)
 
 Plans:
-- [ ] 44-01: TBD
-- [ ] 44-02: TBD
+- [x] 44-01: platform-codes.yaml + loadPlatformCodes() + stepDetectIdes + buildStepResult + renderStepTable + export gate + 15 tests — COMPLETE 2026-05-12
+- [x] 44-02: --yes/--tools/--force-migrate flags + migrateLegacyCommands() + 6-step orchestrator + frozen result schema for 5 steps + 14 tests — COMPLETE 2026-05-12
+- [ ] 44-03: assertions step (INST-01 6th step — skill_files_present, compiler_validates, daemon_health, schema_applied, semgrep_rules_present)
 
 ### Phase 45: Intelligent Help Routing
 **Goal:** `/amauta:help` provides deterministic, code-generated recommendations by querying STATE.md, PG task history, git log, and feature_list.json. Pattern learning surfaces session statistics. The help command IS the enhanced get-bearings ritual.

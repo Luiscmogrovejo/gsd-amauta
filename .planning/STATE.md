@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.1
 milestone_name: The Gathering
 status: in_progress
-stopped_at: Plan 44-01 complete
-last_updated: "2026-05-12T22:00:00.000Z"
-last_activity: 2026-05-12 — Plan 44-01 complete. platform-codes.yaml + loadPlatformCodes() + stepDetectIdes + frozen result schema + 15 tests.
+stopped_at: Plan 44-02 complete
+last_updated: "2026-05-12T23:00:00.000Z"
+last_activity: 2026-05-12 — Plan 44-02 complete. --yes/--tools/--force-migrate flags + migrateLegacyCommands + 6-step orchestrator + frozen result schema for all 5 existing steps + 14 new tests.
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 10
-  completed_plans: 10
-  percent: 29
+  completed_plans: 11
+  percent: 32
 ---
 
 # GSD-Amauta -- Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-14 after v3.0 milestone close)
 
 ## Current Position
 
-Phase: 44 IN PROGRESS — Plan 44-01 shipped
-Plan: 44-01 COMPLETE
-Status: Plan 44-01 shipped. platform-codes.yaml IDE registry (3 IDEs × 4 fields, frozen schema) created. loadPlatformCodes() added to skill-compiler.cjs with minimal yaml parser; overrides TARGET_MAPS.cursor.out_dir to '.cursor/rules/' at module-load. stepDetectIdes() + buildStepResult() + renderStepTable() added to bin/init.cjs with export gate. 15 hermetic tests (7 platform-codes + 8 detect-ides). All 9 prior skill-schema tests still pass. Remaining: 44-02 (--tools flag, legacy migration, orchestrator wiring), 44-03 (assertions step).
-Last activity: 2026-05-12 — Plan 44-01 complete. INST-02 + INST-04 partially satisfied.
+Phase: 44 IN PROGRESS — Plans 44-01 + 44-02 shipped
+Plan: 44-02 COMPLETE
+Status: Plan 44-02 shipped. --yes/--tools/--force-migrate flag parsing added to bin/init.cjs with printHelp(). migrateLegacyCommands() helper with atomic timestamped backup-rename and collision guard. main() orchestrator rewired to 6 steps (stepDetectIdes + stepInstall + stepDetectInfra + stepMigrations + stepStartDaemon + stepVerify). All 5 existing steps converted to FROZEN buildStepResult() schema with names: install_skills, detect_infra, migrations, start_daemon, verify. FROZEN exit rule: process.exit(results.some(r => r.status === 'fail') ? 1 : 0). 14 new hermetic tests (7 legacy-migration + 7 flags-non-interactive). All 29 Phase 44 tests pass. Remaining: 44-03 (assertions step).
+Last activity: 2026-05-12 — Plan 44-02 complete. INST-03 + INST-04 satisfied.
 
-Progress: [████░░░░░░] ~31% (2 of 7 phases, 9 of 10 plans complete for wave 1)
+Progress: [████░░░░░░] ~32% (3 of 7 phases partially, 11 of 14 plans complete)
 
 ## v3.1 Phase Map
 
@@ -76,6 +76,7 @@ Progress: [████░░░░░░] ~31% (2 of 7 phases, 9 of 10 plans co
 - Plan 44-01: loadPlatformCodes() uses minimal line-by-line yaml parser (no js-yaml dep); falls back to hard-coded TARGET_MAPS on missing/unreadable yaml (zero-breakage back-compat). commands/ accepted as advisory positive detection signal in stepDetectIdes() (legacy-migration source path).
 - Plan 44-01: Export gate pattern for bin/init.cjs — if(require.main===module) guard + module.exports makes installer dual-mode (executable via npx, importable by tests). Required for hermetic unit tests in 44-01-05+.
 - Plan 44-01: stepDetectIdes() emits status:'warn' (not 'fail') when no IDEs detected — empty filesystem is a valid state. status:'pass' = at least one IDE detected. All 3 IDEs appear in detections table regardless of detection result.
+- Plan 44-02: All 5 existing steps converted to FROZEN buildStepResult() schema. FROZEN names: install_skills, detect_infra, migrations, start_daemon, verify. Exit rule: results.some(r=>r.status==='fail')?1:0. main() uses results array (not hash). migrateLegacyCommands() timestamp: toISOString().replace(/[:.]/g,'-').slice(0,19). stepInstall calls migrateLegacyCommands() then iterates detections for per-IDE compile. Graceful degradation: sqlite warn → migrations skip, start_daemon skip.
 
 ### Pending Todos
 
@@ -96,9 +97,9 @@ Context: 2026-05-12 health audit caught RLM dead 13h from uncaught BrokenPipe + 
 
 ## Session Continuity
 
-Last session: 2026-05-12T22:00:00.000Z
-Stopped at: Plan 44-01 complete (5 tasks, 5 commits)
-Resume file: .planning/phases/44-cross-ide-installer/44-01-SUMMARY.md
+Last session: 2026-05-12T23:00:00.000Z
+Stopped at: Plan 44-02 complete (5 tasks, 5 commits)
+Resume file: .planning/phases/44-cross-ide-installer/44-02-SUMMARY.md
 
 ## Learnings
 
