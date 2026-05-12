@@ -379,62 +379,190 @@ async function stepDetectIdes() {
 }
 
 /**
- * Step 1: Install agents, commands, skills
+ * Step 2: Install agents, commands, skills
+ *
+ * Extended in 44-02-03:
+ *   - Calls migrateLegacyCommands() BEFORE install.js shell-out
+ *   - After install.js, iterates detections and calls skillCompiler.compile() per IDE
+ *   - Returns FROZEN result schema via buildStepResult('install_skills', ...)
+ *
+ * @param {Function} log       — step logger
+ * @param {Array}    detections — IDE detection rows from stepDetectIdes() (may be empty)
  */
-function stepInstall(log) {
+async function stepInstall(log, detections) {
+  const start = Date.now();
+  detections = detections || [];
+
   if (flags.skipInstall) {
     log('Skipped (--skip-install)');
-    return { skipped: true };
+    const r = buildStepResult('install_skills', 'skip', 'skipped via --skip-install', null);
+    r.duration_ms = Date.now() - start;
+    return r;
   }
+
+  // Phase 44 INST-04: run legacy migration BEFORE install
+  const legacyMigration = migrateLegacyCommands({
+    yes: flags.yes,
+    forceMigrate: flags.forceMigrate,
+  });
+  log(`migration: ${legacyMigration.status} — ${legacyMigration.message}`);
 
   if (!fs.existsSync(INSTALL_SCRIPT)) {
     log(`${yellow}Warning: install.js not found at ${INSTALL_SCRIPT}${reset}`);
-    return { skipped: true, error: 'install.js not found' };
+    const r = buildStepResult('install_skills', 'warn', 'install.js not found — skipped install',
+      { legacy_migration: legacyMigration, compile_results: [] });
+    r.duration_ms = Date.now() - start;
+    return r;
   }
 
+  // Determine runtime for legacy install.js invocation
+  // If --tools is set, use first entry to derive --runtime flag (back-compat)
+  let runtimeFlag = `--${flags.runtime}`;
+  if (flags.tools.length > 0) {
+    const firstTool = flags.tools[0];
+    if (firstTool === 'opencode') runtimeFlag = '--opencode';
+    else runtimeFlag = '--claude';
+  }
+
+  let installErr = null;
   try {
-    execFileSync(process.execPath, [INSTALL_SCRIPT, `--${flags.runtime}`], {
+    execFileSync(process.execPath, [INSTALL_SCRIPT, runtimeFlag], {
       stdio: flags.json ? 'pipe' : 'inherit',
       cwd: PLUGIN_ROOT,
       timeout: 60000,
     });
-    log('done');
-    return { success: true };
+    log('install.js done');
   } catch (err) {
-    log(`${yellow}Warning: install had issues (${err.message})${reset}`);
-    return { success: false, error: err.message };
+    log(`${yellow}Warning: install.js had issues (${err.message})${reset}`);
+    installErr = err.message;
   }
+
+  // Per-IDE compile via skill-compiler.cjs
+  // Map yaml ide_id → compiler target key
+  const IDE_TO_TARGET = {
+    'claude-code': 'claude',
+    'opencode': 'opencode',
+    'cursor': 'cursor',
+  };
+
+  const compileResults = [];
+  let anyCompileError = false;
+  let anyManifestSkipWarn = false;
+
+  for (const row of detections) {
+    // Apply --tools override: if --tools is set, only install listed IDEs
+    let action = row.action;
+    if (flags.tools.length > 0) {
+      action = flags.tools.includes(row.ide_id) ? 'install' : 'skip';
+    }
+
+    if (action !== 'install') {
+      compileResults.push({ ide_id: row.ide_id, compiled: 0, skipped: 1, errors: [] });
+      continue;
+    }
+
+    const compilerTarget = IDE_TO_TARGET[row.ide_id] || row.ide_id;
+
+    if (!skillCompiler || typeof skillCompiler.compile !== 'function') {
+      compileResults.push({ ide_id: row.ide_id, compiled: 0, skipped: 0, errors: ['skill-compiler not available'] });
+      anyCompileError = true;
+      continue;
+    }
+
+    try {
+      const compileResult = skillCompiler.compile(compilerTarget, {
+        source: path.join(PLUGIN_ROOT, 'get-shit-done', 'skills'),
+      });
+      const compiled = compileResult ? (compileResult.compiled || 0) : 0;
+      const skipped = compileResult ? (compileResult.skipped || 0) : 0;
+      const warnings = compileResult ? (compileResult.warnings || []) : [];
+      const hasManifestSkip = warnings.some(w => String(w).includes('manifest_skip'));
+      if (hasManifestSkip) anyManifestSkipWarn = true;
+      compileResults.push({ ide_id: row.ide_id, compiled, skipped, errors: [] });
+    } catch (err) {
+      log(`${yellow}Warning: compile for ${row.ide_id} failed (${err.message})${reset}`);
+      compileResults.push({ ide_id: row.ide_id, compiled: 0, skipped: 0, errors: [err.message] });
+      anyCompileError = true;
+    }
+  }
+
+  const details = { legacy_migration: legacyMigration, compile_results: compileResults };
+
+  let status;
+  let message;
+  if (anyCompileError || installErr) {
+    status = 'warn'; // compile errors are non-fatal (graceful degradation)
+    message = anyCompileError
+      ? `install complete with compile warnings; install.js: ${installErr || 'ok'}`
+      : `install.js had issues: ${installErr}`;
+  } else if (anyManifestSkipWarn) {
+    status = 'warn';
+    message = 'install complete — some skills emitted manifest_skip warnings';
+  } else {
+    status = 'pass';
+    message = `install complete (${compileResults.filter(c => c.compiled > 0).length} IDEs compiled)`;
+  }
+
+  const r = buildStepResult('install_skills', status, message, details);
+  r.duration_ms = Date.now() - start;
+  return r;
 }
 
 /**
- * Step 2: Detect infrastructure
+ * Step 3: Detect infrastructure
+ *
+ * Converted in 44-02-03 to return FROZEN result schema via buildStepResult('detect_infra', ...).
+ * FROZEN name: 'detect_infra' (binds 44-03 stepAssertions + smoke test).
+ *
+ * Status semantics (44-CONTEXT.md §Area 3):
+ *   'pass'  — PG available
+ *   'warn'  — SQLite fallback (skills-only mode or forced sqlite)
+ *   'fail'  — --backend pg specified but PG unavailable
+ *
+ * Also returns raw infra object in details for downstream step consumption.
  */
 function stepDetectInfra(log) {
-  // If user forced a backend, short-circuit detection
+  const start = Date.now();
+
+  function sqliteFallbackUrl() {
+    return `sqlite:///${path.join(
+      process.env.GSD_DATA_DIR || path.join(os.homedir(), '.amauta', 'data'),
+      'gsd_amauta.db'
+    )}`;
+  }
+
+  // If user forced sqlite backend, short-circuit
   if (flags.backend === 'sqlite') {
-    const result = {
+    const infraRaw = {
       backend: 'sqlite',
-      connection_url: `sqlite:///${path.join(
-        process.env.GSD_DATA_DIR || path.join(require('os').homedir(), '.amauta', 'data'),
-        'gsd_amauta.db'
-      )}`,
+      connection_url: sqliteFallbackUrl(),
       features: ['memory', 'tasks', 'skb', 'validation', 'fts'],
       message: 'Forced SQLite backend via --backend sqlite',
     };
     log(`\n          Backend: ${cyan}sqlite${reset} (forced via --backend)`);
-    log(`          Features: ${result.features.join(', ')}`);
-    return result;
-  }
-
-  if (flags.backend === 'pg') {
-    // Still run detection but expect PG — fail if not found
-    // Fall through to normal detection but error if result is sqlite
+    log(`          Features: ${infraRaw.features.join(', ')}`);
+    const r = buildStepResult('detect_infra', 'warn',
+      `Using SQLite fallback at ${infraRaw.connection_url}`,
+      { backend: infraRaw.backend, connection_url: infraRaw.connection_url, features: infraRaw.features, raw: infraRaw });
+    r.duration_ms = Date.now() - start;
+    return r;
   }
 
   // Run infra_detect.py as CLI and parse JSON
   if (!fs.existsSync(INFRA_DETECT)) {
     log(`${red}Error: infra_detect.py not found${reset}`);
-    return null;
+    // Degrade gracefully — fall back to SQLite warn
+    const infraRaw = {
+      backend: 'sqlite',
+      connection_url: sqliteFallbackUrl(),
+      features: ['memory', 'tasks', 'skb', 'validation', 'fts'],
+      message: 'infra_detect.py not found — SQLite fallback',
+    };
+    const r = buildStepResult('detect_infra', 'warn',
+      `Docker unavailable — skills-only install (no daemon, no migrations)`,
+      { backend: 'sqlite', connection_url: infraRaw.connection_url, features: infraRaw.features, raw: infraRaw });
+    r.duration_ms = Date.now() - start;
+    return r;
   }
 
   try {
@@ -445,48 +573,95 @@ function stepDetectInfra(log) {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
-    const result = JSON.parse(output.trim());
+    const infraRaw = JSON.parse(output.trim());
 
-    if (flags.backend === 'pg' && result.backend !== 'postgresql') {
+    if (flags.backend === 'pg' && infraRaw.backend !== 'postgresql') {
       log(`${red}Error: --backend pg specified but PostgreSQL not available${reset}`);
-      log(`          ${dim}${result.message}${reset}`);
-      return null;
+      log(`          ${dim}${infraRaw.message}${reset}`);
+      const r = buildStepResult('detect_infra', 'fail',
+        '--backend pg specified but PostgreSQL not available',
+        { backend: infraRaw.backend, connection_url: infraRaw.connection_url, features: infraRaw.features, raw: infraRaw });
+      r.duration_ms = Date.now() - start;
+      return r;
     }
 
-    const backendLabel = result.backend === 'postgresql' ? 'postgresql' : 'sqlite';
+    const isPg = infraRaw.backend === 'postgresql';
+    const status = isPg ? 'pass' : 'warn';
+    const backendLabel = isPg ? 'postgresql' : 'sqlite';
+    const message = isPg
+      ? `PostgreSQL available at ${infraRaw.connection_url}`
+      : `Using SQLite fallback at ${infraRaw.connection_url}`;
+
     log(`\n          Backend: ${cyan}${backendLabel}${reset}`);
-    log(`          ${dim}${result.message}${reset}`);
-    log(`          Features: ${result.features.join(', ')}`);
-    return result;
+    log(`          ${dim}${infraRaw.message}${reset}`);
+    log(`          Features: ${infraRaw.features.join(', ')}`);
+
+    const r = buildStepResult('detect_infra', status, message,
+      { backend: infraRaw.backend, connection_url: infraRaw.connection_url, features: infraRaw.features, raw: infraRaw });
+    r.duration_ms = Date.now() - start;
+    return r;
   } catch (err) {
     log(`${yellow}Warning: infra detection failed (${err.message})${reset}`);
-    // Fallback to SQLite if detection fails
-    const fallback = {
+    const infraRaw = {
       backend: 'sqlite',
-      connection_url: `sqlite:///${path.join(
-        process.env.GSD_DATA_DIR || path.join(require('os').homedir(), '.amauta', 'data'),
-        'gsd_amauta.db'
-      )}`,
+      connection_url: sqliteFallbackUrl(),
       features: ['memory', 'tasks', 'skb', 'validation', 'fts'],
       message: 'SQLite fallback (infra detection failed)',
     };
     log(`          Falling back to SQLite`);
-    return fallback;
+    const r = buildStepResult('detect_infra', 'warn',
+      `Docker unavailable — skills-only install (no daemon, no migrations)`,
+      { backend: 'sqlite', connection_url: infraRaw.connection_url, features: infraRaw.features, raw: infraRaw });
+    r.duration_ms = Date.now() - start;
+    return r;
   }
 }
 
 /**
- * Step 3: Run migrations (PG only)
+ * Step 4: Run migrations (PG only)
+ *
+ * Converted in 44-02-03 to return FROZEN result schema via buildStepResult('migrations', ...).
+ * FROZEN name: 'migrations' (binds 44-03 stepAssertions + smoke test).
+ *
+ * Status semantics:
+ *   'skip' — infra is not PG (SQLite schema is self-creating) OR requires_pg skip from detect_infra
+ *   'pass' — all migrations applied (or already applied = expected)
+ *   'warn' — some psql calls returned errors but migrations dir exists
+ *   'fail' — migrations dir missing AND backend is PG
+ *
+ * Accepts infraResult as FROZEN buildStepResult object (from 44-02-03 converted stepDetectInfra).
  */
 function stepMigrations(log, infraResult) {
-  if (!infraResult || infraResult.backend !== 'postgresql') {
+  const start = Date.now();
+
+  // Extract raw infra data from FROZEN result or legacy plain object
+  const infraRaw = (infraResult && infraResult.details && infraResult.details.raw)
+    ? infraResult.details.raw
+    : infraResult;
+
+  const infraStatus = infraResult && infraResult.status;
+  const infraBackend = infraRaw && infraRaw.backend;
+
+  // Skills-only mode: infra detected no PG AND no Docker → skip migrations
+  if (!infraResult || infraStatus === 'fail' || infraBackend !== 'postgresql') {
+    const skipReason = (infraStatus === 'warn' && infraBackend !== 'postgresql')
+      ? 'requires_pg'
+      : 'not postgresql';
     log('Skipped (SQLite schema is self-creating)');
-    return { skipped: true, reason: 'not postgresql' };
+    const r = buildStepResult('migrations', 'skip',
+      `migrations skipped — ${skipReason}`,
+      { skip_reason: skipReason });
+    r.duration_ms = Date.now() - start;
+    return r;
   }
 
   if (!fs.existsSync(MIGRATIONS_DIR)) {
     log(`${yellow}No migrations directory found${reset}`);
-    return { skipped: true, reason: 'no migrations dir' };
+    const r = buildStepResult('migrations', 'fail',
+      'migrations directory missing and backend is PG',
+      { skip_reason: 'no migrations dir' });
+    r.duration_ms = Date.now() - start;
+    return r;
   }
 
   // Get migration files (skip DOWN files)
@@ -496,12 +671,15 @@ function stepMigrations(log, infraResult) {
 
   if (migrationFiles.length === 0) {
     log('No migration files found');
-    return { skipped: true, reason: 'no files' };
+    const r = buildStepResult('migrations', 'skip', 'no migration files found',
+      { skip_reason: 'no files' });
+    r.duration_ms = Date.now() - start;
+    return r;
   }
 
   let applied = 0;
   let errors = 0;
-  const connUrl = infraResult.connection_url;
+  const connUrl = infraRaw.connection_url;
 
   for (const file of migrationFiles) {
     const filePath = path.join(MIGRATIONS_DIR, file);
@@ -537,40 +715,82 @@ function stepMigrations(log, infraResult) {
   }
 
   log(`done (${applied} applied, ${errors} already applied)`);
-  return { success: true, applied, errors, total: migrationFiles.length };
+  const status = errors > 0 && applied === 0 ? 'warn' : 'pass';
+  const r = buildStepResult('migrations', status,
+    `${applied} applied, ${errors} already applied`,
+    { applied, errors, total: migrationFiles.length });
+  r.duration_ms = Date.now() - start;
+  return r;
 }
 
 /**
- * Step 4: Start daemon
+ * Step 5: Start daemon
+ *
+ * Converted in 44-02-03 to return FROZEN result schema via buildStepResult('start_daemon', ...).
+ * FROZEN name: 'start_daemon' (binds 44-03 stepAssertions + smoke test).
+ *
+ * Status semantics:
+ *   'skip' — --skip-daemon OR skills-only mode (infra warn with no PG)
+ *   'pass' — daemon healthy within 10s
+ *   'fail' — daemon timeout (10s) or daemon script missing
  */
 async function stepStartDaemon(log, infraResult) {
+  const start = Date.now();
+
+  // Extract raw infra data from FROZEN result or legacy plain object
+  const infraRaw = (infraResult && infraResult.details && infraResult.details.raw)
+    ? infraResult.details.raw
+    : infraResult;
+
   if (flags.skipDaemon) {
     log('Skipped (--skip-daemon)');
-    return { skipped: true };
+    const r = buildStepResult('start_daemon', 'skip', 'skipped via --skip-daemon', null);
+    r.duration_ms = Date.now() - start;
+    return r;
+  }
+
+  // Skills-only mode: infra returned warn with no PG → skip daemon
+  if (infraResult && infraResult.status === 'warn' &&
+      infraRaw && infraRaw.backend !== 'postgresql') {
+    // Check if BOTH Docker AND local PG are absent (true skills-only mode)
+    const msg = infraRaw.message || '';
+    if (msg.includes('skills-only') || msg.includes('Docker unavailable')) {
+      log('Skipped (skills-only mode — no PG available)');
+      const r = buildStepResult('start_daemon', 'skip',
+        'skipped — skills-only mode (no PG/Docker available)',
+        { skip_reason: 'requires_pg' });
+      r.duration_ms = Date.now() - start;
+      return r;
+    }
   }
 
   // Check if already running
   if (await isDaemonRunning()) {
     if (!flags.force) {
       log('already running');
-      return { success: true, alreadyRunning: true };
+      const r = buildStepResult('start_daemon', 'pass', `daemon already running on port ${PORT}`,
+        { already_running: true, port: PORT });
+      r.duration_ms = Date.now() - start;
+      return r;
     }
     log('running (--force: restarting...)');
   }
 
   if (!fs.existsSync(DAEMON_SCRIPT)) {
     log(`${red}Error: amauta-daemon.py not found${reset}`);
-    return { success: false, error: 'daemon script not found' };
+    const r = buildStepResult('start_daemon', 'fail', 'daemon script not found', null);
+    r.duration_ms = Date.now() - start;
+    return r;
   }
 
   // Set environment for daemon based on detected infrastructure
   const env = { ...process.env, AMAUTA_DATA_DIR: DATA_DIR, GSD_AMAUTA_PY: AMAUTA_PY, GSD_AMAUTA_PORT: String(PORT) };
-  if (infraResult && infraResult.connection_url && infraResult.backend === 'postgresql') {
-    env.GSD_POSTGRES_URL = infraResult.connection_url;
+  if (infraRaw && infraRaw.connection_url && infraRaw.backend === 'postgresql') {
+    env.GSD_POSTGRES_URL = infraRaw.connection_url;
   }
-  if (infraResult && infraResult.backend === 'sqlite') {
+  if (infraRaw && infraRaw.backend === 'sqlite') {
     env.GSD_BACKEND = 'sqlite';
-    const sqlitePath = (infraResult.connection_url || '').replace('sqlite:///', '');
+    const sqlitePath = (infraRaw.connection_url || '').replace('sqlite:///', '');
     if (sqlitePath) {
       env.GSD_SQLITE_PATH = sqlitePath;
     }
@@ -603,35 +823,57 @@ async function stepStartDaemon(log, infraResult) {
         }
       } catch { /* ignore */ }
       log(`running (PID ${pid}, port ${PORT})`);
-      return { success: true, pid, port: PORT };
+      const r = buildStepResult('start_daemon', 'pass',
+        `daemon started on port ${PORT} (PID ${pid})`,
+        { pid, port: PORT });
+      r.duration_ms = Date.now() - start;
+      return r;
     }
   }
 
   log(`${yellow}Warning: daemon did not respond within 10s${reset}`);
-  return { success: false, error: 'daemon timeout' };
+  const r = buildStepResult('start_daemon', 'fail', 'daemon did not respond within 10s', null);
+  r.duration_ms = Date.now() - start;
+  return r;
 }
 
 /**
- * Step 5: Verify system
+ * Step 6: Verify system
+ *
+ * Converted in 44-02-03 to return FROZEN result schema via buildStepResult('verify', ...).
+ * FROZEN name: 'verify' (binds 44-03 stepAssertions + smoke test).
+ *
+ * Status semantics:
+ *   'skip' — --skip-daemon OR daemon step was skipped
+ *   'pass' — /health returns 200 with status:ok
+ *   'fail' — daemon unreachable or health check failed
  */
 async function stepVerify(log) {
+  const start = Date.now();
+
   if (flags.skipDaemon) {
     log('Skipped (daemon not started)');
-    return { skipped: true };
+    const r = buildStepResult('verify', 'skip', 'skipped — daemon not started', null);
+    r.duration_ms = Date.now() - start;
+    return r;
   }
 
   try {
     const health = await httpGet('/health', 3000);
     if (health.statusCode !== 200 || !health.data || health.data.status !== 'ok') {
       log(`${red}Health check failed${reset}`);
-      return { success: false, error: 'health check failed' };
+      const r = buildStepResult('verify', 'fail', 'health check failed — daemon not responding', null);
+      r.duration_ms = Date.now() - start;
+      return r;
     }
   } catch (err) {
     log(`${red}Cannot reach daemon: ${err.message}${reset}`);
-    return { success: false, error: err.message };
+    const r = buildStepResult('verify', 'fail', `cannot reach daemon: ${err.message}`, null);
+    r.duration_ms = Date.now() - start;
+    return r;
   }
 
-  // Try to get infrastructure info from daemon
+  // Try to get infrastructure info from daemon (non-fatal)
   let infra = null;
   try {
     const resp = await httpGet('/api/infra', 3000);
@@ -640,7 +882,7 @@ async function stepVerify(log) {
     }
   } catch { /* non-fatal */ }
 
-  // Try to get counts
+  // Try to get counts (non-fatal)
   let memoryCount = '?';
   let taskCount = '?';
   try {
@@ -655,7 +897,10 @@ async function stepVerify(log) {
   log(`\n          Memories: ${memoryCount} stored`);
   log(`          Tasks: ${taskCount} total`);
 
-  return { success: true, memoryCount, taskCount, infra };
+  const r = buildStepResult('verify', 'pass', `system healthy — ${memoryCount} memories, ${taskCount} tasks`,
+    { counts: { memoryCount, taskCount }, infra });
+  r.duration_ms = Date.now() - start;
+  return r;
 }
 
 // ═══════════════════════════════════════════════════════
@@ -749,7 +994,7 @@ async function main() {
   }
 
   const startTime = Date.now();
-  const results = {};
+  const results = [];  // array of FROZEN per-step result objects (44-02-03 conversion)
 
   if (!flags.json) {
     console.log(`\n${bold}gsd-amauta init${reset}`);
@@ -769,54 +1014,54 @@ async function main() {
     };
   }
 
-  const totalSteps = 5;
+  const totalSteps = 6;  // Wave 3 bumps to 7 with stepAssertions
 
-  // Step 1: Install
-  const installLog = makeLog(1, totalSteps, 'Installing agents, commands, skills');
-  results.install = stepInstall(installLog);
+  // Step 1: Detect IDEs (NEW — wired in 44-02-03)
+  const detectLog = makeLog(1, totalSteps, 'Detecting IDEs');
+  const detectResult = await stepDetectIdes();
+  detectLog(detectResult.message);
+  results.push(detectResult);
 
-  // Step 2: Detect infrastructure
-  const infraLog = makeLog(2, totalSteps, 'Detecting infrastructure');
-  results.infra = stepDetectInfra(infraLog);
-  if (!results.infra) {
-    if (flags.json) {
-      console.log(JSON.stringify({ success: false, error: 'Infrastructure detection failed', results }, null, 2));
-    } else {
-      console.log(`\n${red}Init failed: could not detect infrastructure.${reset}`);
-    }
-    process.exit(1);
-  }
+  // Step 2: Install (now consumes detection table + runs legacy migration)
+  const installLog = makeLog(2, totalSteps, 'Installing agents, commands, skills');
+  const installResult = await stepInstall(installLog, detectResult.details ? detectResult.details.detections : []);
+  results.push(installResult);
 
-  // Step 3: Run migrations
-  const migrateLog = makeLog(3, totalSteps, 'Running migrations');
-  results.migrations = stepMigrations(migrateLog, results.infra);
+  // Step 3: Detect infrastructure
+  const infraLog = makeLog(3, totalSteps, 'Detecting infrastructure');
+  const infraResult = stepDetectInfra(infraLog);
+  results.push(infraResult);
 
-  // Step 4: Start daemon
-  const daemonLog = makeLog(4, totalSteps, 'Starting daemon');
-  results.daemon = await stepStartDaemon(daemonLog, results.infra);
+  // Step 4: Migrations
+  const migrateLog = makeLog(4, totalSteps, 'Running migrations');
+  const migrationsResult = stepMigrations(migrateLog, infraResult);
+  results.push(migrationsResult);
 
-  // Step 5: Verify
-  const verifyLog = makeLog(5, totalSteps, 'Verifying system');
-  results.verify = await stepVerify(verifyLog);
+  // Step 5: Start daemon
+  const daemonLog = makeLog(5, totalSteps, 'Starting daemon');
+  const daemonResult = await stepStartDaemon(daemonLog, infraResult);
+  results.push(daemonResult);
+
+  // Step 6: Verify
+  const verifyLog = makeLog(6, totalSteps, 'Verifying system');
+  const verifyResult = await stepVerify(verifyLog);
+  results.push(verifyResult);
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
   if (flags.json) {
     console.log(JSON.stringify({
-      success: true,
       elapsed_seconds: parseFloat(elapsed),
-      backend: results.infra.backend,
-      features: results.infra.features,
       results,
     }, null, 2));
   } else {
+    renderStepTable(results);
     console.log(`\n${green}Ready!${reset} ${dim}(${elapsed}s)${reset} Run ${cyan}\`amauta board\`${reset} to see your tasks.`);
   }
 
-  // Determine exit code
-  const daemonOk = flags.skipDaemon || (results.daemon && results.daemon.success);
-  const verifyOk = flags.skipDaemon || (results.verify && results.verify.success);
-  process.exit(daemonOk && verifyOk ? 0 : 1);
+  // FROZEN exit-code rule per 44-CONTEXT.md §Specifics.
+  // Exact form required: results.some(r => r.status === 'fail') ? 1 : 0
+  process.exit(results.some(r => r.status === 'fail') ? 1 : 0);
 }
 
 // ═══════════════════════════════════════════════════════
