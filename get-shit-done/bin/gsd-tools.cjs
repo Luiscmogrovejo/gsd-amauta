@@ -35,6 +35,21 @@
  *   agent-stats [--raw]                Fetch per-agent metrics summary from daemon
  *                                      Output: human-readable table (default) or JSON (--raw)
  *
+ * Scale-Adaptive Intelligence (Phase 42 SCALE-01):
+ *   complexity-score <plan_path>       Compute complexity score for a plan/task
+ *     [--task-id ID]                   Associate with a specific task (reads pinned_phases)
+ *     [--phase N]                      Phase number
+ *     [--workflow NAME]                Workflow name (plan-phase|execute-phase)
+ *                                      Output: JSON with score, chosen_phases, banner
+ *   complexity-complete <task_id>      Write a task_completions row at workflow close
+ *     --phase N                        Phase number
+ *     --workflow NAME                  Workflow name
+ *     --outcome LABEL                  validator_pass|task_fail|gaps_found|manifest_overshoot|escalation_fired
+ *     --phases-run R,P,E,T             Comma-separated list of phases actually run
+ *     --feature-vector @file           Path to JSON file containing feature vector
+ *     --raw-score N                    Raw complexity score
+ *     [--escalation-history @file]     Path to JSON file with escalation events
+ *
  * Phase Operations:
  *   phase next-decimal <phase>         Calculate next decimal phase number
  *   phase add <description>            Append new phase to roadmap + create dir
@@ -1883,7 +1898,7 @@ async function main() {
   const command = args[0];
 
   if (!command) {
-    error('Usage: gsd-tools <command> [args] [--raw] [--cwd <path>]\nCommands: state, resolve-model, find-phase, commit, verify-summary, verify, frontmatter, template, generate-slug, current-timestamp, list-todos, verify-path-exists, config-ensure-section, init');
+    error('Usage: gsd-tools <command> [args] [--raw] [--cwd <path>]\nCommands: state, resolve-model, find-phase, commit, verify-summary, verify, frontmatter, template, generate-slug, current-timestamp, list-todos, verify-path-exists, config-ensure-section, init, complexity-score, complexity-complete');
   }
 
   switch (command) {
@@ -2552,6 +2567,132 @@ async function main() {
         process.stderr.write(`Unknown step-handoff operation: ${op}. Use 'get' or 'save'.\n`);
         process.exit(1);
       }
+      break;
+    }
+
+    case 'complexity-score': {
+      // Phase 42 SCALE-01: compute complexity score for a plan/task.
+      // POST to daemon /api/complexity/score; graceful degradation on daemon-down.
+      const planPath   = args[1] || '';
+      const taskIdIdx  = args.indexOf('--task-id');
+      const phaseIdx2  = args.indexOf('--phase');
+      const workflowIdx = args.indexOf('--workflow');
+      const scoreBody  = JSON.stringify({
+        plan_path:     planPath,
+        task_id:       taskIdIdx !== -1 ? args[taskIdIdx + 1] : '',
+        phase_number:  phaseIdx2 !== -1 ? parseInt(args[phaseIdx2 + 1], 10) : 0,
+        workflow_name: workflowIdx !== -1 ? args[workflowIdx + 1] : 'execute-phase',
+        task_meta:     {},
+      });
+      const _daemonPort = parseInt(process.env.GSD_AMAUTA_PORT || process.env.AMAUTA_PORT || '18799');
+      const _fallback = JSON.stringify({
+        score: 0,
+        chosen_phases: ['R', 'P', 'E', 'T', 'D'],
+        override_source: 'fallback',
+        banner: 'Phase 42 score: 0/100 → fallback (daemon-down).',
+        fallback: true,
+      });
+      await new Promise((resolve) => {
+        const http = require('http');
+        const req = http.request({
+          hostname: '127.0.0.1',
+          port: _daemonPort,
+          path: '/api/complexity/score',
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(scoreBody) },
+        }, (res) => {
+          let data = '';
+          res.on('data', (chunk) => { data += chunk; });
+          res.on('end', () => {
+            try { process.stdout.write(JSON.stringify(JSON.parse(data), null, 2) + '\n'); }
+            catch { process.stdout.write(data + '\n'); }
+            resolve();
+          });
+        });
+        req.on('error', () => {
+          process.stdout.write(_fallback + '\n');
+          resolve();
+        });
+        req.write(scoreBody);
+        req.end();
+      });
+      break;
+    }
+
+    case 'complexity-complete': {
+      // Phase 42 SCALE-01: write task_completions row at workflow close.
+      // POST to daemon /api/complexity/complete; graceful degradation on daemon-down.
+      const cTaskId         = args[1] || '';
+      const cPhaseIdx       = args.indexOf('--phase');
+      const cWorkflowIdx    = args.indexOf('--workflow');
+      const cOutcomeIdx     = args.indexOf('--outcome');
+      const cPhasesRunIdx   = args.indexOf('--phases-run');
+      const cFVIdx          = args.indexOf('--feature-vector');
+      const cRawScoreIdx    = args.indexOf('--raw-score');
+      const cEscIdx         = args.indexOf('--escalation-history');
+
+      // --feature-vector @file reads JSON from the given path
+      let _fv = {};
+      if (cFVIdx !== -1) {
+        const fvArg = args[cFVIdx + 1] || '';
+        const fvPath = fvArg.startsWith('@') ? fvArg.slice(1) : fvArg;
+        try { _fv = JSON.parse(fs.readFileSync(fvPath, 'utf8')); } catch { _fv = {}; }
+      }
+
+      // --escalation-history @file (optional)
+      let _escHist = [];
+      if (cEscIdx !== -1) {
+        const escArg = args[cEscIdx + 1] || '';
+        try {
+          const escContent = typeof escArg === 'string' && escArg.startsWith('@')
+            ? fs.readFileSync(escArg.slice(1), 'utf8')
+            : escArg;
+          const parsed = JSON.parse(escContent);
+          _escHist = Array.isArray(parsed) ? parsed : [parsed];
+        } catch { _escHist = []; }
+      }
+
+      // --phases-run R,P,E,T → array
+      const phasesRunStr = cPhasesRunIdx !== -1 ? (args[cPhasesRunIdx + 1] || '') : '';
+      const phasesRunArr = phasesRunStr ? phasesRunStr.split(',').map(p => p.trim().toUpperCase()).filter(Boolean) : [];
+
+      const completeBody = JSON.stringify({
+        task_id:            cTaskId,
+        phase_number:       cPhaseIdx !== -1 ? parseInt(args[cPhaseIdx + 1], 10) : 0,
+        workflow_name:      cWorkflowIdx !== -1 ? args[cWorkflowIdx + 1] : 'execute-phase',
+        feature_vector:     _fv,
+        raw_score:          cRawScoreIdx !== -1 ? parseInt(args[cRawScoreIdx + 1], 10) : 0,
+        chosen_phases:      phasesRunArr,
+        phases_run:         phasesRunArr,
+        outcome_label:      cOutcomeIdx !== -1 ? args[cOutcomeIdx + 1] : 'task_fail',
+        escalation_history: _escHist,
+      });
+      const _daemonPort2 = parseInt(process.env.GSD_AMAUTA_PORT || process.env.AMAUTA_PORT || '18799');
+      const _failResp = JSON.stringify({ stored: false, reason: 'daemon-unreachable' });
+      await new Promise((resolve) => {
+        const http = require('http');
+        const req = http.request({
+          hostname: '127.0.0.1',
+          port: _daemonPort2,
+          path: '/api/complexity/complete',
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(completeBody) },
+        }, (res) => {
+          let data = '';
+          res.on('data', (chunk) => { data += chunk; });
+          res.on('end', () => {
+            try { process.stdout.write(JSON.stringify(JSON.parse(data), null, 2) + '\n'); }
+            catch { process.stdout.write(data + '\n'); }
+            resolve();
+          });
+        });
+        req.on('error', () => {
+          process.stdout.write(_failResp + '\n');
+          resolve();
+        });
+        req.write(completeBody);
+        req.end();
+      });
       break;
     }
 
