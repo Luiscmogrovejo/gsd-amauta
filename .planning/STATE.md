@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.1
 milestone_name: The Gathering
-status: in_progress
-stopped_at: Phase 45 plan 45-02 complete
-last_updated: "2026-05-12T18:25:00.000Z"
-last_activity: 2026-05-12 — Plan 45-02 complete. HELP-01 + HELP-03 satisfied. bearings wired into /amauta:help + both execute-phase surfaces. 5 new tests (6 total bearings-integration + parity), 0 failures. 22 bearings tests total.
+status: completed
+stopped_at: Phase 45 context gathered
+last_updated: "2026-05-12T23:29:32.717Z"
+last_activity: "2026-05-12 — Plan 45-02 complete. HELP-01 + HELP-03 satisfied. bearings wired into /amauta:help + both execute-phase surfaces. 5 new tests (6 total bearings-integration + parity), 0 failures. 22 bearings tests total."
 progress:
   total_phases: 7
-  completed_phases: 4
-  total_plans: 14
-  completed_plans: 14
-  percent: 35
+  completed_phases: 5
+  total_plans: 15
+  completed_plans: 15
+  percent: 43
 ---
 
 # GSD-Amauta -- Project State
@@ -132,6 +132,8 @@ Resume file: .planning/phases/45-intelligent-help-routing/45-CONTEXT.md
 
 
 
+
+- [learning] 2026-05-12T23:24:39.409Z: Bearings subcommand extraction pattern: move inline Python heredoc logic from workflow .md into gsd-tools subcommand; workflow becomes a thin shell-out caller — both execute-phase surfaces and /amauta:help share one implementation with no drift risk
 - [learning] 2026-05-12T21:14:17.333Z: Phase 44 planner learning: plan-to-tasks routeExecutor uses ONLY files_expected.modify (not .create) when computing agent assignment — test-only tasks with create:[file.test.cjs] + modify:[] route to executor-general fallback regardless of .test.cjs extension. ALWAYS pin <agent>executor-general</agent> on create-only test tasks to match router verdict and avoid agent_assignment_conflict; the router-on-paths-alone CLI gives a different answer than plan-to-tasks routeExecutor() over the manifest. Verified via dry-run on 44-01..44-03 (pass0 complete after switching 6 test-only tasks from backend→general).
 - [learning] 2026-05-12T17:56:07.023Z: E2E test learning — cleanup after test
 - [learning] 2026-05-12T17:53:31.207Z: legacy with agent

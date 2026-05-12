@@ -169,7 +169,7 @@ Plans:
   1. `/amauta:help` queries 4 sources (STATE.md, PG task history, git log, feature_list.json) and produces deterministic output — same project state always produces the same recommendations; no LLM interpretation in the output path.
   2. Pattern learning queries PG history and surfaces statistics: average session duration for phase type, similar-feature session count, commits since last test run; at least 3 pattern types are surfaced.
   3. Help routing integrates with get-bearings ritual (Phase 28); the help command output IS the bearings block; recommended next action includes reasoning derived from the 4 sources.
-**Plans:** TBD (estimated 2 plans: help routing implementation, tests)
+**Plans:** 2/2 plans complete
 
 Plans:
 - [x] 45-01: gsd-tools bearings subcommand — 4 frozen pattern stats + 6-rule recommendation + JSON schema v1.0 + Markdown renderer with token-budget enforcement (COMPLETE 2026-05-12)
@@ -214,7 +214,7 @@ Plans:
 | 42. Scale-Adaptive Intelligence | 4/4 | Complete    | 2026-05-12 |
 | 43. Skills Architecture | 0/2 | Complete    | 2026-05-12 |
 | 44. Cross-IDE Installer | 0/2 | Complete    | 2026-05-12 |
-| 45. Intelligent Help Routing | 0/2 | Not started | - |
+| 45. Intelligent Help Routing | 0/2 | Complete    | 2026-05-12 |
 | 46. Standalone MCP Server | 0/2 | Not started | - |
 | 47. Agent Dynamic Hydration | 0/2 | Not started | - |
 
