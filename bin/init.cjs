@@ -4,7 +4,7 @@
  * gsd-amauta init — Single-command setup for GSD-Amauta.
  *
  * Orchestrates:
- *   1. Install agents, commands, skills to ~/.claude/
+ *   1. Install agents, commands, skills for the selected runtime
  *   2. Detect infrastructure (PG local, Docker PG, SQLite fallback)
  *   3. Run database migrations (PG only)
  *   4. Start the amauta daemon
@@ -17,6 +17,8 @@
  * Options:
  *   --skip-install    Skip agent/command/skill installation
  *   --skip-daemon     Skip daemon startup
+ *   --opencode        Install OpenCode config locally/globally via install.js
+ *   --claude          Install Claude Code config (default)
  *   --backend <type>  Force backend: pg, sqlite, auto (default: auto)
  *   --force           Force re-detection even if daemon is running
  *   --json            Output results as JSON
@@ -28,6 +30,15 @@ const { execFileSync, spawn } = require('child_process');
 const http = require('http');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
+
+// Skill compiler — optional (gracefully degrade if not installed)
+let skillCompiler = null;
+try {
+  skillCompiler = require('../scripts/skill-compiler.cjs');
+} catch (_e) {
+  // Partial install: skill-compiler.cjs not yet available — detection falls back to hard-coded values
+}
 
 // ═══════════════════════════════════════════════════════
 // Configuration
@@ -66,6 +77,7 @@ const flags = {
   skipDaemon: args.includes('--skip-daemon'),
   force: args.includes('--force'),
   json: args.includes('--json'),
+  runtime: args.includes('--opencode') ? 'opencode' : 'claude',
   backend: 'auto',
 };
 
@@ -128,8 +140,185 @@ async function isDaemonRunning() {
 }
 
 // ═══════════════════════════════════════════════════════
+// Per-step result schema helpers (Phase 44 — all steps return this shape)
+// ═══════════════════════════════════════════════════════
+
+/**
+ * Build a frozen per-step result object.
+ *
+ * Schema:
+ *   { name: string, status: 'pass'|'fail'|'skip'|'warn', message: string,
+ *     duration_ms: number, details: object|null }
+ *
+ * @param {string} name        — step identifier (e.g. 'detect_ides')
+ * @param {string} status      — one of 'pass', 'fail', 'skip', 'warn'
+ * @param {string} message     — human-readable summary
+ * @param {object|null} details — optional structured data
+ * @returns {{ name, status, message, duration_ms, details }}
+ */
+function buildStepResult(name, status, message, details) {
+  // All 4 status values must be representable (44-CONTEXT.md §Area 1 frozen schema):
+  //   status: 'pass'  — step completed successfully
+  //   status: 'fail'  — step encountered a blocking error
+  //   status: 'skip'  — step was intentionally skipped
+  //   status: 'warn'  — step completed with warnings (non-blocking)
+  const VALID_STATUSES = new Set(['pass', 'fail', 'skip', 'warn']);
+  if (!VALID_STATUSES.has(status)) {
+    throw new Error(`invalid status: '${status}' — must be one of: pass, fail, skip, warn`);
+  }
+  return {
+    name,
+    status,
+    message,
+    duration_ms: 0,
+    details: details !== undefined ? details : null,
+  };
+}
+
+/**
+ * Render a human-readable colored table of step results.
+ *
+ * Prints header "Step | Status | Duration | Message" and one row per result.
+ * In --json mode this is a NO-OP (orchestrator emits raw results array).
+ *
+ * Status color mapping: pass=green, warn=yellow, skip=dim, fail=red
+ *
+ * @param {Array} results — array of per-step result objects
+ */
+function renderStepTable(results) {
+  if (flags.json) return; // no-op in JSON mode
+
+  const statusColor = {
+    pass: green,
+    warn: yellow,
+    skip: dim,
+    fail: red,
+  };
+
+  const pad = (s, len) => String(s).padEnd(len);
+
+  console.log('');
+  console.log(`${bold}${pad('Step', 24)} ${pad('Status', 8)} ${pad('Duration', 12)} Message${reset}`);
+  console.log('─'.repeat(70));
+
+  for (const r of results) {
+    const color = statusColor[r.status] || reset;
+    const dur = r.duration_ms >= 0 ? `${r.duration_ms}ms` : '-';
+    console.log(`${pad(r.name, 24)} ${color}${pad(r.status, 8)}${reset} ${pad(dur, 12)} ${r.message}`);
+  }
+  console.log('');
+}
+
+// ═══════════════════════════════════════════════════════
 // Step functions
 // ═══════════════════════════════════════════════════════
+
+/**
+ * Step 0 (pre-install): Detect installed IDEs
+ *
+ * Scans project-local (cwd) first, then $HOME for IDE directories.
+ * A directory counts as detected ONLY when it contains at least one of:
+ *   (a) the skill_subdir from the yaml registry (e.g. skills/, rules/)
+ *   (b) any *.md file directly under it
+ *   (c) any *.json file directly under it
+ * Empty directories do NOT count (false-positive guard per 44-CONTEXT.md §Area 2).
+ *
+ * CLI advisory: 'which <cli_name>' presence boosts signals string but never
+ * blocks or enables detection.
+ *
+ * Returns buildStepResult('detect_ides', status, message, { detections: [...] })
+ * where each detection row = { ide_id, detected: 'yes'|'no', signals, action }
+ */
+async function stepDetectIdes() {
+  const start = Date.now();
+
+  // Load IDE registry from yaml (via skill-compiler) or fall back to frozen hard-coded values
+  let platformCodes = skillCompiler ? skillCompiler.loadPlatformCodes() : {};
+  if (!platformCodes || Object.keys(platformCodes).length === 0) {
+    // Hard-coded fallback (frozen per 44-CONTEXT.md §Area 4)
+    platformCodes = {
+      'claude-code': { ide_id: 'claude-code', dir_name: '.claude', skill_subdir: 'skills', cli_name: 'claude' },
+      'cursor':      { ide_id: 'cursor',      dir_name: '.cursor', skill_subdir: 'rules',  cli_name: 'cursor' },
+      'opencode':    { ide_id: 'opencode',    dir_name: '.opencode', skill_subdir: 'skills', cli_name: 'opencode' },
+    };
+  }
+
+  /**
+   * Determine whether a directory qualifies as "detected".
+   * Must contain at least one of: skill_subdir, *.md, *.json, or commands/
+   * (commands/ is legacy-migration source — advisory positive per plan spec).
+   */
+  function dirHasContent(dirPath, skillSubdir) {
+    if (!fs.existsSync(dirPath)) return false;
+    let entries;
+    try {
+      entries = fs.readdirSync(dirPath);
+    } catch (_e) {
+      return false;
+    }
+    for (const entry of entries) {
+      if (entry === skillSubdir) return true;                // skill_subdir present
+      if (entry === 'commands') return true;                 // legacy path (advisory)
+      if (entry.endsWith('.md') || entry.endsWith('.json')) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Check if a CLI binary is on PATH (advisory only, never blocks detection).
+   */
+  function cliOnPath(cliName) {
+    try {
+      execFileSync('which', [cliName], { stdio: 'pipe' });
+      return true;
+    } catch (_e) {
+      return false;
+    }
+  }
+
+  const homeDir = process.env.HOME || os.homedir();
+  const cwdDir = process.cwd();
+
+  const detections = [];
+
+  for (const [, codes] of Object.entries(platformCodes)) {
+    const dirName = codes.dir_name;
+    const skillSubdir = codes.skill_subdir;
+
+    const cwdDirPath = path.join(cwdDir, dirName);
+    const homeDirPath = path.join(homeDir, dirName);
+
+    const dirCwd = dirHasContent(cwdDirPath, skillSubdir);
+    const dirHome = dirHasContent(homeDirPath, skillSubdir);
+    const cli = cliOnPath(codes.cli_name);
+
+    const dirDetected = dirCwd || dirHome;
+    const detected = dirDetected;
+
+    // Build signals string: '+'-joined short labels
+    let signalParts = [];
+    if (dirDetected) signalParts.push('dir');
+    if (cli) signalParts.push('cli');
+    const signals = signalParts.length > 0 ? signalParts.join('+') : '(none)';
+
+    detections.push({
+      ide_id: codes.ide_id,
+      detected: detected ? 'yes' : 'no',
+      signals,
+      action: detected ? 'install' : 'skip',
+    });
+  }
+
+  const anyDetected = detections.some((d) => d.detected === 'yes');
+  const status = anyDetected ? 'pass' : 'warn';
+  const message = anyDetected
+    ? `${detections.filter((d) => d.detected === 'yes').length} IDE(s) detected`
+    : 'No IDE directories detected at cwd or $HOME';
+
+  const r = buildStepResult('detect_ides', status, message, { detections });
+  r.duration_ms = Date.now() - start;
+  return r;
+}
 
 /**
  * Step 1: Install agents, commands, skills
@@ -146,7 +335,7 @@ function stepInstall(log) {
   }
 
   try {
-    execFileSync(process.execPath, [INSTALL_SCRIPT, '--claude'], {
+    execFileSync(process.execPath, [INSTALL_SCRIPT, `--${flags.runtime}`], {
       stdio: flags.json ? 'pipe' : 'inherit',
       cwd: PLUGIN_ROOT,
       timeout: 60000,
@@ -487,7 +676,15 @@ async function main() {
   process.exit(daemonOk && verifyOk ? 0 : 1);
 }
 
-main().catch((err) => {
-  console.error(`${red}Fatal error: ${err.message}${reset}`);
-  process.exit(1);
-});
+// ═══════════════════════════════════════════════════════
+// Export gate (required for hermetic unit tests in 44-01-05)
+// ═══════════════════════════════════════════════════════
+
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(`${red}Fatal error: ${err.message}${reset}`);
+    process.exit(1);
+  });
+}
+
+module.exports = { stepDetectIdes, buildStepResult, renderStepTable };
