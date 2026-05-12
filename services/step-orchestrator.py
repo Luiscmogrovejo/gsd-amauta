@@ -87,6 +87,42 @@ WORKFLOW_STEPS = {
 _CONTEXT_SNAPSHOT_MAX_CHARS = 2400  # ~600 tokens (cl100k_base approximation)
 
 # ═══════════════════════════════════════════════════════
+# Phase 42 / SCALE-01: Step → RPETD-phase-letter map
+# Used by get_next_step() to skip steps whose phase letter is not in
+# context_snapshot.chosen_phases. Steps NOT in this map are infrastructure
+# (init/route/close) and always run regardless of chosen_phases.
+# ═══════════════════════════════════════════════════════
+STEP_TO_PHASE = {
+    # plan-phase mapping
+    "step-02-research": "R",
+    "step-03-plan":     "P",
+    "step-04-check":    "T",  # check is the plan-phase validator surface
+    "step-05-approve":  "D",  # approval includes documentation hand-off
+
+    # execute-phase mapping
+    "step-03-execute":  "E",
+    "step-04-verify":   "T",  # executor self-verify is part of the T-phase contract
+    "step-05-validate": "T",  # canonical validator step — ALWAYS runs (see ALWAYS_RUN_STEPS below)
+
+    # discuss-phase mapping
+    "step-02-analyze":  "R",
+    "step-03-discuss":  "D",
+}
+
+# Phase 42: steps that ALWAYS run regardless of chosen_phases.
+# Per 42-CONTEXT.md: "'Execute only' still gets a validator pass at minimum."
+# The validator step is the floor for every task that closes.
+ALWAYS_RUN_STEPS = {
+    "step-01-init",
+    "step-01-prepare",
+    "step-01-scout",
+    "step-02-route",
+    "step-04-commit",
+    "step-05-validate",  # T-phase floor — non-skippable
+    "step-06-close",
+}
+
+# ═══════════════════════════════════════════════════════
 # StepHandoff model
 # ═══════════════════════════════════════════════════════
 
@@ -287,15 +323,14 @@ def save_handoff(handoff: StepHandoff) -> None:
 def get_next_step(handoff: StepHandoff) -> Optional[str]:
     """Return the next step file path, or None if the workflow is complete.
 
-    Looks up workflow_name in WORKFLOW_STEPS, finds current step_id position,
-    and returns "steps/{next_step}.md" or None if at the last step.
+    Phase 42 / SCALE-01: honors handoff.context_snapshot.chosen_phases — when a
+    candidate next step's RPETD phase letter is NOT in the chosen set AND the
+    step is not in ALWAYS_RUN_STEPS, it is skipped (the function advances past
+    it and considers the step after). The validator step (step-05-validate)
+    is in ALWAYS_RUN_STEPS so every task still gets a validator pass.
 
-    Args:
-        handoff: Current StepHandoff object.
-
-    Returns:
-        str: Relative path like "steps/step-02-research.md"
-        None: If current step is the last step.
+    When chosen_phases is empty / missing, behavior matches pre-Phase-42:
+    no steps are skipped.
     """
     steps = WORKFLOW_STEPS.get(handoff.workflow_name)
     if not steps:
@@ -308,12 +343,49 @@ def get_next_step(handoff: StepHandoff) -> Optional[str]:
         log.warning("step_id %s not in WORKFLOW_STEPS[%s]", handoff.step_id, handoff.workflow_name)
         return None
 
-    if idx + 1 >= len(steps):
-        log.info("Workflow %s is complete after step %s", handoff.workflow_name, handoff.step_id)
-        return None
+    # Phase 42: read chosen_phases from context_snapshot
+    chosen_phases = []
+    try:
+        cs = handoff.context_snapshot or {}
+        cp = cs.get("chosen_phases", [])
+        # Accept either ["R","P","E","T"] or a JSON string from upstream
+        if isinstance(cp, str):
+            cp = json.loads(cp) if cp else []
+        chosen_phases = [str(x).upper() for x in (cp or [])]
+    except Exception as exc:
+        log.warning("get_next_step: failed to parse chosen_phases: %s", exc)
+        chosen_phases = []
 
-    next_step = steps[idx + 1]
-    return f"steps/{next_step}.md"
+    # Walk forward from idx+1 until we find a step that should run.
+    cursor = idx + 1
+    while cursor < len(steps):
+        candidate = steps[cursor]
+
+        # Always-run steps (init/route/close, validator) bypass skip logic.
+        if candidate in ALWAYS_RUN_STEPS:
+            return f"steps/{candidate}.md"
+
+        # When chosen_phases is empty, no skipping — match pre-Phase-42 behavior.
+        if not chosen_phases:
+            return f"steps/{candidate}.md"
+
+        phase_letter = STEP_TO_PHASE.get(candidate)
+        # Steps not in STEP_TO_PHASE are infra — always run.
+        if phase_letter is None:
+            return f"steps/{candidate}.md"
+
+        if phase_letter in chosen_phases:
+            return f"steps/{candidate}.md"
+
+        # Skip and continue.
+        log.info(
+            "get_next_step: skipping %s (phase=%s) — not in chosen_phases=%s",
+            candidate, phase_letter, chosen_phases,
+        )
+        cursor += 1
+
+    log.info("Workflow %s is complete after step %s", handoff.workflow_name, handoff.step_id)
+    return None
 
 
 def rollback_step(handoff: StepHandoff, target_step: str) -> StepHandoff:
