@@ -14,6 +14,61 @@ verification_status, amauta_ok, completion_data.
 
 <process>
 
+## 0. Write Task Completion (Phase 42 / SCALE-03)
+
+Load the carried-forward complexity context from the StepHandoff:
+
+```bash
+HANDOFF=$(curl -s "http://127.0.0.1:18799/api/steps/execute-phase/${PHASE_NUMBER}" 2>/dev/null || echo '{}')
+COMPLEXITY_SCORE=$(echo "$HANDOFF" | jq -r '.context_snapshot.complexity_score // 0')
+CHOSEN_PHASES=$(echo "$HANDOFF" | jq -c '.context_snapshot.chosen_phases // []')
+FEATURE_VECTOR=$(echo "$HANDOFF" | jq -c '.context_snapshot.feature_vector // {}')
+ESCALATION_FLAGS=$(echo "$HANDOFF" | jq -c '.escalation_flags // []')
+VERIFICATION_STATUS=$(echo "$HANDOFF" | jq -r '.context_snapshot.verification_status // "unknown"')
+```
+
+Derive the outcome label using this precedence (first match wins):
+- If `ESCALATION_FLAGS` contains "manifest_violation" → `manifest_overshoot`
+- Else if `ESCALATION_FLAGS` length > 0 → `escalation_fired`
+- Else if `VERIFICATION_STATUS` == "passed" → `validator_pass`
+- Else if `VERIFICATION_STATUS` == "gaps_found" → `gaps_found`
+- Else if `VERIFICATION_STATUS` == "failed" → `task_fail`
+- Else → `task_fail` (fallback for unknown state)
+
+```bash
+if echo "$ESCALATION_FLAGS" | jq -e 'map(select(. == "manifest_violation")) | length > 0' >/dev/null 2>&1; then
+  OUTCOME_LABEL="manifest_overshoot"
+elif [ "$(echo "$ESCALATION_FLAGS" | jq 'length')" -gt 0 ]; then
+  OUTCOME_LABEL="escalation_fired"
+elif [ "$VERIFICATION_STATUS" = "passed" ]; then
+  OUTCOME_LABEL="validator_pass"
+elif [ "$VERIFICATION_STATUS" = "gaps_found" ]; then
+  OUTCOME_LABEL="gaps_found"
+elif [ "$VERIFICATION_STATUS" = "failed" ]; then
+  OUTCOME_LABEL="task_fail"
+else
+  OUTCOME_LABEL="task_fail"
+fi
+
+PHASES_RUN=$(echo "$CHOSEN_PHASES")  # PHASES_RUN reads chosen_phases from the latest handoff, which reflects any escalation that occurred during execution.
+FV_FILE=$(mktemp)
+echo "$FEATURE_VECTOR" > "$FV_FILE"
+
+node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" complexity-complete "${PHASE_NUMBER}-execute-phase" \
+  --phase "${PHASE_NUMBER}" \
+  --workflow execute-phase \
+  --outcome "$OUTCOME_LABEL" \
+  --phases-run "$(echo $CHOSEN_PHASES | jq -r 'join(",")')" \
+  --feature-vector @"$FV_FILE" \
+  --raw-score "$COMPLEXITY_SCORE" \
+  --escalation-history "$ESCALATION_FLAGS" 2>/dev/null || \
+  echo "[warn] complexity-complete failed; task_completions not written"
+
+rm -f "$FV_FILE"
+```
+
+This write is best-effort; failures do NOT block workflow close.
+
 ## 1. Offer Next / Auto-Advance
 
 **Exception:** If `gaps_found`, the `verify_phase_goal` step (step-04-verify) already presents the gap-closure path (`/amauta:plan-phase {X} --gaps`). No additional routing needed — skip auto-advance.
