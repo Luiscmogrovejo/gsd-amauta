@@ -132,7 +132,7 @@ Plans:
   2. Each skill invocation creates a PG record with context_embedding; before execution, hybrid BM25 + pgvector query retrieves similar past invocations; retrieval returns relevant results within 200ms.
   3. Skill compiler (scripts/skill-compiler.cjs) reads workflow definitions and produces IDE-specific SKILL.md files for `.claude/skills/`, `.cursor/skills/`, and `.opencode/` directories; compiler output matches the target IDE's expected format.
   4. Skills declared read-only trigger Semgrep rules that fail the build if file writes are detected; enforcement is deterministic (Semgrep exit code), not advisory (prompt text).
-**Plans:** TBD (estimated 2 plans: skill format + compiler, invocation memory + enforcement + tests)
+**Plans:** 3/3 plans complete
 
 Plans:
 - [x] 43-01: SKILL.md Schema + Canonical Skills + Compiler (SkillFrontmatter Pydantic model, walk_depends_on, 3 canonical SKILL.md files, skill-compiler.cjs TARGET_MAPS, gsd-tools skills subcommand, .gitignore policy, 9+12 tests) — COMPLETE 2026-05-12
@@ -205,7 +205,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 41. Sharded Workflows | 0/3 | Complete    | 2026-04-16 |
 | 42. Scale-Adaptive Intelligence | 4/4 | Complete    | 2026-05-12 |
-| 43. Skills Architecture | 0/2 | Not started | - |
+| 43. Skills Architecture | 0/2 | Complete    | 2026-05-12 |
 | 44. Cross-IDE Installer | 0/2 | Not started | - |
 | 45. Intelligent Help Routing | 0/2 | Not started | - |
 | 46. Standalone MCP Server | 0/2 | Not started | - |

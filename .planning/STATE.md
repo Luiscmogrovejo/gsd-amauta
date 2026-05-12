@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v3.1
 milestone_name: The Gathering
-status: in_progress
+status: completed
 stopped_at: Phase 43 Plan 43-02 complete
-last_updated: "2026-05-12T22:00:00.000Z"
-last_activity: "2026-05-12 — Plan 43-02 complete: migration 019-skill-invocations.sql (vector(1024) + ivfflat + GIN tsvector BM25 + recency btree), services/skill_invocation_store.py (record_invocation, retrieve_similar with RRF k=60, update_outcome, _HAS_PG fallback), /api/skills/invoke + /api/skills/complete daemon endpoints, gsd-tools skills invoke/complete subcommands, tests/skill-invocation-store.test.cjs (7 tests, 4 pass + 3 skip gracefully), tests/test_skill_invocation_store.py (18 tests, all pass). SKILL-02 satisfied."
+last_updated: "2026-05-12T19:06:56.720Z"
+last_activity: 2026-05-12 — Plan 43-02 complete. SKILL-02 satisfied.
 progress:
   total_phases: 7
-  completed_phases: 2
-  total_plans: 9
-  completed_plans: 8
+  completed_phases: 3
+  total_plans: 10
+  completed_plans: 10
   percent: 29
 ---
 
