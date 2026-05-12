@@ -6,7 +6,8 @@
     "plan_check": true,
     "verifier": true,
     "auto_advance": false,
-    "nyquist_validation": true
+    "nyquist_validation": true,
+    "force_phases": null
   },
   "planning": {
     "commit_docs": true,
@@ -49,5 +50,24 @@
       "perplexity",
       "webfetch"
     ]
+  },
+  "complexity_buckets": [
+    {"max": 15, "phases": ["E"]},
+    {"max": 35, "phases": ["P", "E", "T"]},
+    {"max": 60, "phases": ["R", "P", "E", "T"]},
+    {"max": 85, "phases": ["R", "P", "E", "T", "D"]},
+    {"max": 100, "phases": ["R", "P", "E", "T", "D", "S", "A"]}
+  ],
+  "scale_adaptive": {
+    "enabled": true,
+    "cold_start_threshold": 10,
+    "file_overshoot_multiplier": 1.5,
+    "max_escalations_per_task": 2,
+    "escalation_triggers": {
+      "manifest_violation": true,
+      "file_count_overshoot": true,
+      "executor_self_report": true,
+      "validator_divergence": true
+    }
   }
 }
