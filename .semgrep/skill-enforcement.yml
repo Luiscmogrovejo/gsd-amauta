@@ -1,0 +1,66 @@
+# Phase 43 / SKILL-04 — Skill tool boundary enforcement.
+# Deterministic build-time gate. Runs at pre-commit + CI. Hard block on violations.
+# Read-only skills CANNOT declare write tools. Violations exit non-zero.
+# Sibling to .semgrep/gsd-amauta-rules.yml — do NOT merge into that file.
+
+rules:
+  - id: skill-read-only-no-write
+    languages: [generic]
+    paths:
+      include:
+        - "*.md"
+    severity: ERROR
+    message: "Skill declared security_class: read-only but allowed-tools includes a write tool. Read-only allowlist: [Read, Grep, Glob, WebFetch, WebSearch]."
+    metadata:
+      category: skill-enforcement
+      confidence: HIGH
+      phase: 43
+    pattern-either:
+      - patterns:
+          - pattern-regex: "(?ms)^security_class:\\s*read-only.*?^allowed-tools:\\s*(\\n\\s*-\\s*.+)*?\\n\\s*-\\s*Edit"
+      - patterns:
+          - pattern-regex: "(?ms)^security_class:\\s*read-only.*?^allowed-tools:\\s*(\\n\\s*-\\s*.+)*?\\n\\s*-\\s*Write"
+      - patterns:
+          - pattern-regex: "(?ms)^security_class:\\s*read-only.*?^allowed-tools:\\s*(\\n\\s*-\\s*.+)*?\\n\\s*-\\s*create_file"
+      - patterns:
+          - pattern-regex: "(?ms)^security_class:\\s*read-only.*?^allowed-tools:\\s*(\\n\\s*-\\s*.+)*?\\n\\s*-\\s*str_replace"
+
+  - id: skill-allowed-tools-required
+    languages: [generic]
+    paths:
+      include:
+        - "*.md"
+    severity: ERROR
+    message: "SKILL.md frontmatter MUST declare allowed-tools. Missing this field defeats Semgrep enforcement."
+    metadata:
+      category: skill-enforcement
+      confidence: HIGH
+      phase: 43
+    patterns:
+      - pattern-regex: "(?ms)^---\\n((?!allowed-tools:).)*?^name:.*?\\n---"
+
+  - id: skill-bash-mutation-verbs-readonly
+    languages: [generic]
+    paths:
+      include:
+        - "*.md"
+    severity: ERROR
+    message: "Read-only skill body contains a mutation verb in a Bash block. Verbs are listed in get-shit-done/references/mutation_verbs.txt."
+    metadata:
+      category: skill-enforcement
+      confidence: MEDIUM
+      phase: 43
+      verb_source: "get-shit-done/references/mutation_verbs.txt"
+    pattern-either:
+      - patterns:
+          - pattern-regex: "(?ms)^security_class:\\s*read-only.*?```bash[^`]*\\brm\\b[^`]*```"
+      - patterns:
+          - pattern-regex: "(?ms)^security_class:\\s*read-only.*?```bash[^`]*\\bmv\\b[^`]*```"
+      - patterns:
+          - pattern-regex: "(?ms)^security_class:\\s*read-only.*?```bash[^`]*git\\s+push[^`]*```"
+      - patterns:
+          - pattern-regex: "(?ms)^security_class:\\s*read-only.*?```bash[^`]*git\\s+commit[^`]*```"
+      - patterns:
+          - pattern-regex: "(?ms)^security_class:\\s*read-only.*?```bash[^`]*curl\\s+-X\\s+(POST|PUT|DELETE|PATCH)[^`]*```"
+      - patterns:
+          - pattern-regex: "(?ms)^security_class:\\s*read-only.*?```bash[^`]*\\b(INSERT|UPDATE|DELETE|DROP)\\s+[^`]*```"
