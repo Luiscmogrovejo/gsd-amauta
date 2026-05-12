@@ -1905,7 +1905,7 @@ async function main() {
   const command = args[0];
 
   if (!command) {
-    error('Usage: gsd-tools <command> [args] [--raw] [--cwd <path>]\nCommands: state, resolve-model, find-phase, commit, verify-summary, verify, frontmatter, template, generate-slug, current-timestamp, list-todos, verify-path-exists, config-ensure-section, init, complexity-score, complexity-complete, complexity-escalate');
+    error('Usage: gsd-tools <command> [args] [--raw] [--cwd <path>]\nCommands: state, resolve-model, find-phase, commit, verify-summary, verify, frontmatter, template, generate-slug, current-timestamp, list-todos, verify-path-exists, config-ensure-section, init, complexity-score, complexity-complete, complexity-escalate, skills');
   }
 
   switch (command) {
@@ -2240,6 +2240,114 @@ async function main() {
         name: nameIndex !== -1 ? args.slice(nameIndex + 1).join(' ') : null,
       };
       commands.cmdScaffold(cwd, scaffoldType, scaffoldOptions, raw);
+      break;
+    }
+
+    case 'skills': {
+      // Phase 43 SKILL-03: compile/validate/list subcommands via scripts/skill-compiler.cjs
+      let skillCompiler;
+      try {
+        const compilerPath = require('path').resolve(__dirname, '../../scripts/skill-compiler.cjs');
+        skillCompiler = require(compilerPath);
+      } catch (e) {
+        process.stderr.write(`Error: skills subcommand requires scripts/skill-compiler.cjs: ${e.message}\n`);
+        process.exit(1);
+      }
+
+      const skillSubcmd = args[1];
+
+      if (!skillSubcmd || skillSubcmd === '--help' || skillSubcmd === 'help') {
+        process.stdout.write(`Usage: gsd-tools skills <subcommand> [options]
+
+Subcommands:
+  compile --target=<ide> [--source=<dir>] [--dry-run]
+                     Compile canonical skills to IDE target (claude|opencode|cursor)
+  validate <skill-dir>
+                     Validate SKILL.md in a skill directory; exit 0 on success
+  list [--source=<dir>]
+                     List all skills in source directory as JSON array
+
+Options:
+  --target=<ide>   Target IDE: claude, opencode, cursor
+  --source=<dir>   Source directory of canonical skills (default: get-shit-done/skills)
+  --dry-run        Print intended writes without writing files
+
+Examples:
+  node gsd-tools.cjs skills compile --target=opencode --dry-run
+  node gsd-tools.cjs skills validate get-shit-done/skills/plan-phase
+  node gsd-tools.cjs skills list --source=get-shit-done/skills
+`);
+        break;
+      }
+
+      if (skillSubcmd === 'compile') {
+        // Parse flags from remaining args
+        const getSkillFlag = (name) => {
+          const prefix = `--${name}=`;
+          for (const a of args.slice(2)) {
+            if (a.startsWith(prefix)) return a.slice(prefix.length);
+          }
+          return args.slice(2).includes(`--${name}`) ? true : undefined;
+        };
+        const target = getSkillFlag('target');
+        if (!target) {
+          process.stderr.write('Error: skills compile requires --target=<ide>\n');
+          process.exit(1);
+        }
+        const source = getSkillFlag('source');
+        const outDir = getSkillFlag('out');
+        const dryRun = args.slice(2).includes('--dry-run');
+        const opts = {};
+        if (source && source !== true) opts.source = source;
+        if (outDir && outDir !== true) opts.outDir = outDir;
+        opts.dryRun = dryRun;
+        const result = skillCompiler.compile(target, opts);
+        process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+        const hasCycle = (result.errors || []).some(e =>
+          (typeof e === 'string' && e.toLowerCase().includes('cycle'))
+        );
+        process.exit(hasCycle ? 2 : (result.errors && result.errors.length > 0 ? 1 : 0));
+
+      } else if (skillSubcmd === 'validate') {
+        const skillDir = args[2];
+        if (!skillDir) {
+          process.stderr.write('Error: skills validate requires <skill-dir> argument\n');
+          process.exit(1);
+        }
+        const result = skillCompiler.validate(skillDir);
+        if (result.ok) {
+          // Read name from the skill for a friendlier message
+          let name = skillDir;
+          try {
+            const fs = require('fs');
+            const content = fs.readFileSync(require('path').join(skillDir, 'SKILL.md'), 'utf8');
+            const m = content.match(/^name:\s*(.+)$/m);
+            if (m) name = m[1].trim();
+          } catch {}
+          process.stdout.write(`validate ok: ${name}\n`);
+          process.exit(0);
+        } else {
+          process.stderr.write(`Validation errors:\n${result.errors.join('\n')}\n`);
+          process.exit(1);
+        }
+
+      } else if (skillSubcmd === 'list') {
+        const getSourceFlag = () => {
+          for (let i = 2; i < args.length; i++) {
+            if (args[i].startsWith('--source=')) return args[i].slice('--source='.length);
+            if (args[i] === '--source' && args[i + 1]) return args[i + 1];
+          }
+          return undefined;
+        };
+        const source = getSourceFlag() || 'get-shit-done/skills';
+        const skills = skillCompiler.listSkills(source);
+        process.stdout.write(JSON.stringify(skills, null, 2) + '\n');
+        process.exit(0);
+
+      } else {
+        process.stderr.write(`Unknown skills subcommand: ${skillSubcmd}\nAvailable: compile, validate, list\n`);
+        process.exit(1);
+      }
       break;
     }
 
