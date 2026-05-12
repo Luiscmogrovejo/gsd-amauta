@@ -307,6 +307,41 @@ After all waves:
 [Aggregate from SUMMARYs, or "None"]
 ```
 
+## 3.5. Detect Escalation (Phase 42 / SCALE-04)
+
+After all waves complete, check for divergence triggers that warrant escalation BEFORE handing off to step-04-verify.
+
+```bash
+# Build an executor_report.json with files_touched count + complexity_surprise flag.
+# files_touched: count distinct files appearing in any task's files_expected modify+create.
+# complexity_surprise: true if any task's executor summary contains "COMPLEXITY_SURPRISE" marker.
+EXECUTOR_REPORT=$(mktemp --suffix=.json)
+cat <<EOF > "$EXECUTOR_REPORT"
+{
+  "files_touched": ${TOTAL_FILES_TOUCHED:-0},
+  "complexity_surprise": ${COMPLEXITY_SURPRISE_FLAG:-false},
+  "manifest_violation": ${MANIFEST_VIOLATION_FLAG:-false}
+}
+EOF
+
+ESCALATION_RESULT=$(node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" complexity-escalate \
+  "${PHASE_NUMBER}-execute-phase" \
+  --phase "${PHASE_NUMBER}" \
+  --workflow execute-phase \
+  --executor-report @"$EXECUTOR_REPORT" 2>/dev/null || echo '{"escalated":false}')
+
+rm -f "$EXECUTOR_REPORT"
+
+if [ "$(echo "$ESCALATION_RESULT" | jq -r '.escalated')" = "true" ]; then
+  echo "$ESCALATION_RESULT" | jq -r '.banner'
+  # The daemon already saved the escalated handoff; the workflow router will see the new chosen_phases.
+fi
+```
+
+The TOTAL_FILES_TOUCHED, COMPLEXITY_SURPRISE_FLAG, and MANIFEST_VIOLATION_FLAG variables must be populated from the wave-results aggregation already in this step file (executor agents return a summary block per Phase 13 patterns). If those variables aren't already set in the aggregation, add lines to extract them with the same `jq` patterns used for other result fields.
+
+<!-- aggregate_wave_results / Uses services/complexity_scorer.py via the daemon endpoint (gsd-tools complexity-escalate) -->
+
 ## 4. Auto-Validate Tasks
 
 **Amauta: Auto-spawn validators for completed tasks (if daemon available).**
