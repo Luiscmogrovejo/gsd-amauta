@@ -152,7 +152,7 @@ Plans:
   2. IDE auto-detection finds `.claude/`, `.cursor/`, `.opencode/` directories plus process list and CLI tool detection; detection correctly identifies at least 2 IDEs in a test environment with both present.
   3. Non-interactive mode (`--yes --tools claude-code,cursor`) completes without prompts; graceful degradation: no Docker = skills-only install, no PG = file-based fallback; CI exit codes are 0 (success) or 1 (failure), no interactive hangs.
   4. Legacy migration from `.claude/commands/` to `.claude/skills/` is automatic; `platform-codes.yaml` defines IDE target directories; old directory contents are preserved (moved, not deleted).
-**Plans:** TBD (estimated 2 plans: installer implementation, tests + CI validation)
+**Plans:** 3/3 plans complete
 
 Plans:
 - [x] 44-01: platform-codes.yaml + loadPlatformCodes() + stepDetectIdes + buildStepResult + renderStepTable + export gate + 15 tests — COMPLETE 2026-05-12
@@ -211,7 +211,7 @@ Plans:
 | 41. Sharded Workflows | 0/3 | Complete    | 2026-04-16 |
 | 42. Scale-Adaptive Intelligence | 4/4 | Complete    | 2026-05-12 |
 | 43. Skills Architecture | 0/2 | Complete    | 2026-05-12 |
-| 44. Cross-IDE Installer | 0/2 | Not started | - |
+| 44. Cross-IDE Installer | 0/2 | Complete    | 2026-05-12 |
 | 45. Intelligent Help Routing | 0/2 | Not started | - |
 | 46. Standalone MCP Server | 0/2 | Not started | - |
 | 47. Agent Dynamic Hydration | 0/2 | Not started | - |
