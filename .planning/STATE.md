@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v3.1
 milestone_name: The Gathering
-status: completed
-stopped_at: Phase 44 context gathered
-last_updated: "2026-05-12T20:58:10.049Z"
-last_activity: 2026-05-12 — Plan 43-02 complete. SKILL-02 satisfied.
+status: in_progress
+stopped_at: Plan 44-01 complete
+last_updated: "2026-05-12T22:00:00.000Z"
+last_activity: 2026-05-12 — Plan 44-01 complete. platform-codes.yaml + loadPlatformCodes() + stepDetectIdes + frozen result schema + 15 tests.
 progress:
   total_phases: 7
   completed_phases: 3
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-14 after v3.0 milestone close)
 
 ## Current Position
 
-Phase: 43 IN PROGRESS — Plans 43-01 + 43-02 shipped
-Plan: 43-02 COMPLETE
-Status: Plan 43-02 shipped. Skill invocation memory operational: migration 019 creates skill_invocations table with pgvector(1024) + ivfflat(lists=100) + GIN tsvector for BM25 + recency btree. skill_invocation_store.py provides record_invocation (voyage-code-3 embedding, NULL fallback), retrieve_similar (hybrid pgvector cosine + BM25 ts_rank + RRF k=60, cosine_floor=0.6, recency_days=90), update_outcome. Daemon endpoints /api/skills/invoke + /api/skills/complete wired. gsd-tools skills invoke/complete CLI subcommands. 7 Node + 18 Python tests. Remaining: 43-03 (Semgrep enforcement, SKILL-04).
-Last activity: 2026-05-12 — Plan 43-02 complete. SKILL-02 satisfied.
+Phase: 44 IN PROGRESS — Plan 44-01 shipped
+Plan: 44-01 COMPLETE
+Status: Plan 44-01 shipped. platform-codes.yaml IDE registry (3 IDEs × 4 fields, frozen schema) created. loadPlatformCodes() added to skill-compiler.cjs with minimal yaml parser; overrides TARGET_MAPS.cursor.out_dir to '.cursor/rules/' at module-load. stepDetectIdes() + buildStepResult() + renderStepTable() added to bin/init.cjs with export gate. 15 hermetic tests (7 platform-codes + 8 detect-ides). All 9 prior skill-schema tests still pass. Remaining: 44-02 (--tools flag, legacy migration, orchestrator wiring), 44-03 (assertions step).
+Last activity: 2026-05-12 — Plan 44-01 complete. INST-02 + INST-04 partially satisfied.
 
-Progress: [████░░░░░░] ~29% (2 of 7 phases, 8 of 9 plans complete)
+Progress: [████░░░░░░] ~31% (2 of 7 phases, 9 of 10 plans complete for wave 1)
 
 ## v3.1 Phase Map
 
@@ -39,7 +39,7 @@ Progress: [████░░░░░░] ~29% (2 of 7 phases, 8 of 9 plans com
 | 41 | Sharded Workflows (FOUNDATION) | SHARD-01..05 | COMPLETE (3 plans, 151 new assertions) |
 | 42 | Scale-Adaptive Intelligence | SCALE-01..04 | COMPLETE (4 plans, 150 JS + 32 Python assertions) |
 | 43 | Skills Architecture | SKILL-01..04 | In progress (Plans 43-01 + 43-02 COMPLETE; 43-03 remaining) |
-| 44 | Cross-IDE Installer | INST-01..04 | Not started |
+| 44 | Cross-IDE Installer | INST-01..04 | In progress (Plan 44-01 COMPLETE) |
 | 45 | Intelligent Help Routing | HELP-01..03 | Not started |
 | 46 | Standalone MCP Server | MCP-01..03 | Not started |
 | 47 | Agent Dynamic Hydration | HYDRA-01..02 | Not started |
@@ -72,6 +72,11 @@ Progress: [████░░░░░░] ~29% (2 of 7 phases, 8 of 9 plans com
 - Plan 43-02: retrieve_similar runs TWO queries (pgvector cosine + BM25 ts_rank) in one connection, fuses via RRF k=60, post-filters pgvector results by cosine_floor=0.6 before fusion. BM25 results are NOT floor-filtered (different scoring space).
 - Plan 43-02: Daemon-running-old-code (pre-Phase-43) returns 404 for /api/skills/* routes; tests skip gracefully on this 404 pattern, not just ECONNREFUSED.
 
+- Plan 44-01: platform-codes.yaml schema frozen at 4 fields per IDE (ide_id, dir_name, skill_subdir, cli_name). claude-code ide_id uses -code suffix to disambiguate from other Anthropic .claude/ directories. cursor uses skill_subdir: rules (not skills).
+- Plan 44-01: loadPlatformCodes() uses minimal line-by-line yaml parser (no js-yaml dep); falls back to hard-coded TARGET_MAPS on missing/unreadable yaml (zero-breakage back-compat). commands/ accepted as advisory positive detection signal in stepDetectIdes() (legacy-migration source path).
+- Plan 44-01: Export gate pattern for bin/init.cjs — if(require.main===module) guard + module.exports makes installer dual-mode (executable via npx, importable by tests). Required for hermetic unit tests in 44-01-05+.
+- Plan 44-01: stepDetectIdes() emits status:'warn' (not 'fail') when no IDEs detected — empty filesystem is a valid state. status:'pass' = at least one IDE detected. All 3 IDEs appear in detections table regardless of detection result.
+
 ### Pending Todos
 
 - Run `npx c8 --reporter json-summary node scripts/run-tests.cjs` to bootstrap .coverage_threshold.json with real values (carried from v3.0).
@@ -91,9 +96,9 @@ Context: 2026-05-12 health audit caught RLM dead 13h from uncaught BrokenPipe + 
 
 ## Session Continuity
 
-Last session: 2026-05-12T20:58:10.046Z
-Stopped at: Phase 44 context gathered
-Resume file: .planning/phases/44-cross-ide-installer/44-CONTEXT.md
+Last session: 2026-05-12T22:00:00.000Z
+Stopped at: Plan 44-01 complete (5 tasks, 5 commits)
+Resume file: .planning/phases/44-cross-ide-installer/44-01-SUMMARY.md
 
 ## Learnings
 
@@ -121,6 +126,8 @@ Resume file: .planning/phases/44-cross-ide-installer/44-CONTEXT.md
 
 
 
+
+- [learning] 2026-05-12T21:14:17.333Z: Phase 44 planner learning: plan-to-tasks routeExecutor uses ONLY files_expected.modify (not .create) when computing agent assignment — test-only tasks with create:[file.test.cjs] + modify:[] route to executor-general fallback regardless of .test.cjs extension. ALWAYS pin <agent>executor-general</agent> on create-only test tasks to match router verdict and avoid agent_assignment_conflict; the router-on-paths-alone CLI gives a different answer than plan-to-tasks routeExecutor() over the manifest. Verified via dry-run on 44-01..44-03 (pass0 complete after switching 6 test-only tasks from backend→general).
 - [learning] 2026-05-12T17:56:07.023Z: E2E test learning — cleanup after test
 - [learning] 2026-05-12T17:53:31.207Z: legacy with agent
 - [learning] 2026-05-12T17:53:31.079Z: legacy regression test: free text learning

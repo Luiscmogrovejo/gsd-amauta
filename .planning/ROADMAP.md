@@ -45,7 +45,8 @@
   - [x] Plan 43-01: SKILL.md schema + SkillFrontmatter Pydantic model + 3 canonical skills + skill-compiler.cjs + gsd-tools.cjs skills subcommand — COMPLETE 2026-05-12
   - [x] Plan 43-02: Skill invocation memory (skill_invocations PG table, voyage-code-3 embeddings, hybrid BM25+pgvector RRF retrieval, daemon endpoints, gsd-tools invoke/complete) — COMPLETE 2026-05-12
   - [x] Plan 43-03: Semgrep enforcement (skill-enforcement.yml 3 rules, mutation_verbs.txt, skill-semgrep-runner.cjs, .husky/pre-commit, semgrep:skills npm script, 7-test fixture suite) — COMPLETE 2026-05-12
-- [ ] **Phase 44: Cross-IDE Installer** — `npx gsd-amauta init` 6-step flow; IDE auto-detection; non-interactive CI mode; legacy migration (INST-01..04) — depends on 43
+- [ ] **Phase 44: Cross-IDE Installer** — `npx gsd-amauta init` 6-step flow; IDE auto-detection; non-interactive CI mode; legacy migration (INST-01..04) — depends on 43 — In progress
+  - [x] Plan 44-01: platform-codes.yaml (3 IDEs × 4 fields, frozen schema) + loadPlatformCodes() in skill-compiler.cjs + stepDetectIdes+buildStepResult+renderStepTable in bin/init.cjs + export gate + 15 hermetic tests — COMPLETE 2026-05-12
 - [ ] **Phase 45: Intelligent Help Routing** — `/amauta:help` queries 4 sources deterministically; pattern learning from PG history; get-bearings integration (HELP-01..03) — depends on 43
 - [ ] **Phase 46: Standalone MCP Server** — amauta-mcp.py as standalone with direct PG+Valkey; complexity-score tool; agent/findings resources (MCP-01..03) — depends on 43
 - [ ] **Phase 47: Agent Dynamic Hydration** — Agent .md templates with dynamic sections; operator queries PG/blackboard/Valkey/security for agent-specific context injection (HYDRA-01..02) — depends on 42+43
