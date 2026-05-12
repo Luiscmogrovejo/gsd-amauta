@@ -486,70 +486,94 @@ async def call_tool(name: str, arguments: dict) -> CallToolResult:
                 text=json.dumps({"error": "internal_error", "detail": str(e)}))])
 
     elif name == "amauta/memory-distill":
-        # Daemon has no POST /api/memory/distill route. Return distill-status and
-        # instruct caller to trigger full distillation via gsd-memory distill CLI.
-        # This is the safe boundary: MCP reports status; distillation runs via CLI.
-        status = _call_daemon("GET", "/api/memory/distill-status")
-        result = {
-            "status": "ok",
-            "needs_distill": status.get("needs_distill", False),
-            "total": status.get("total", 0),
-            "threshold": status.get("distill_threshold", 500),
-            "message": "Run 'gsd-memory distill' CLI to trigger distillation.",
-        }
-        return CallToolResult(content=[TextContent(type="text", text=json.dumps(result))])
+        store = _get_pg_store()
+        if store is None:
+            return CallToolResult(content=[TextContent(type="text",
+                text=json.dumps({"error": "pg_unavailable", "detail": "PGStore unavailable"}))])
+        try:
+            total = store.memory_count(project_id=None)
+            result = {
+                "status": "ok",
+                "needs_distill": total >= 500,
+                "total": total,
+                "threshold": 500,
+                "message": "Run 'gsd-memory distill' CLI to trigger distillation.",
+            }
+            return CallToolResult(content=[TextContent(type="text", text=json.dumps(result))])
+        except Exception as e:
+            return CallToolResult(content=[TextContent(type="text",
+                text=json.dumps({"error": "internal_error", "detail": str(e)}))])
 
     elif name == "amauta/research":
         query = arguments.get("query", "")
-        if not query:
+        if not isinstance(query, str) or not query.strip():
             return CallToolResult(content=[TextContent(type="text",
-                text=json.dumps({"error": "query is required"}))])
+                text=json.dumps({"error": "invalid_input", "detail": "query is required"}))])
 
-        # 1. Check semantic cache first (key = sha256 of normalized query)
-        cache_key = hashlib.sha256(query.strip().lower().encode()).hexdigest()
-        cache_result = _call_daemon("GET", f"/api/research-cache?key={cache_key}")
-        if cache_result.get("hit"):
-            payload = cache_result.get("data", {})
-            payload["from_cache"] = True
-            return CallToolResult(content=[TextContent(type="text", text=json.dumps(payload))])
+        # 1. Valkey semantic cache check (key = "amauta:research:" + sha256)
+        cache_key = "amauta:research:" + hashlib.sha256(query.strip().lower().encode()).hexdigest()
+        valkey = _get_mcp_valkey()
+        if valkey.available():
+            cached = valkey.get(cache_key)
+            if cached is not None:
+                try:
+                    payload = json.loads(cached)
+                    payload["from_cache"] = True
+                    return CallToolResult(content=[TextContent(type="text", text=json.dumps(payload))])
+                except Exception:
+                    pass  # Corrupted cache entry — fall through to fresh fetch
+        # Valkey unavailable → skip cache gracefully (no error)
 
-        # 2. Memory search
-        mem_result = _call_daemon("POST", "/api/memory/semantic-search",
-                                  {"query": query, "limit": 10})
-        memory_results = mem_result.get("results", [])
+        store = _get_pg_store()
+        if store is None:
+            return CallToolResult(content=[TextContent(type="text",
+                text=json.dumps({"error": "pg_unavailable", "detail": "PGStore unavailable"}))])
 
-        # 3. SKB search
-        skb_result = _call_daemon("POST", "/api/skb/search",
-                                  {"query": query, "limit": 10})
-        skb_results = skb_result.get("results", [])
-
-        # 4. WebFetch — lightweight: attempt to fetch top DuckDuckGo result for the query
-        # Implementation: best-effort; on error or timeout, web_results = []
-        web_results = []
         try:
-            ddg_url = "https://api.duckduckgo.com/?q=" + urllib.parse.quote(query) + "&format=json&no_html=1&skip_disambig=1"
-            ddg_req = urllib.request.Request(ddg_url, headers={"User-Agent": "amauta-mcp/1.0"})
-            with urllib.request.urlopen(ddg_req, timeout=5) as resp:
-                ddg_data = json.loads(resp.read().decode("utf-8"))
-            abstract = ddg_data.get("AbstractText", "")
-            source_url = ddg_data.get("AbstractURL", "")
-            if abstract:
-                web_results = [{"text": abstract, "url": source_url, "source": "duckduckgo"}]
-        except Exception:
+            # 2. Memory search (direct PGStore)
+            raw_mem = store.memory_semantic_search(query=query, limit=10)
+            memory_results, _ = raw_mem if isinstance(raw_mem, tuple) else (raw_mem, "unknown")
+            if not isinstance(memory_results, list):
+                memory_results = []
+
+            # 3. SKB search (direct PGStore)
+            try:
+                skb_results = store.skb_search(query=query, limit=10)
+                if not isinstance(skb_results, list):
+                    skb_results = []
+            except Exception:
+                skb_results = []
+
+            # 4. WebFetch — lightweight: attempt to fetch top DuckDuckGo result for the query
+            # Implementation: best-effort; on error or timeout, web_results = []
             web_results = []
+            try:
+                ddg_url = "https://api.duckduckgo.com/?q=" + urllib.parse.quote(query) + "&format=json&no_html=1&skip_disambig=1"
+                ddg_req = urllib.request.Request(ddg_url, headers={"User-Agent": "amauta-mcp/1.0"})
+                with urllib.request.urlopen(ddg_req, timeout=5) as resp:
+                    ddg_data = json.loads(resp.read().decode("utf-8"))
+                abstract = ddg_data.get("AbstractText", "")
+                source_url = ddg_data.get("AbstractURL", "")
+                if abstract:
+                    web_results = [{"text": abstract, "url": source_url, "source": "duckduckgo"}]
+            except Exception:
+                web_results = []
 
-        result = {
-            "memory_results": memory_results,
-            "skb_results":    skb_results,
-            "web_results":    web_results,
-            "from_cache":     False,
-        }
+            result = {
+                "memory_results": memory_results,
+                "skb_results":    skb_results,
+                "web_results":    web_results,
+                "from_cache":     False,
+            }
 
-        # 5. No cache write — daemon has no POST /api/research-cache route.
-        # The GET check at the start is the only cache operation (read-through only).
-        # Cache writes are handled by the daemon's own internal path; do not add one here.
+            # 5. Best-effort Valkey SETEX (ttl=3600); swallow failures
+            if valkey.available():
+                valkey.setex(cache_key, 3600, json.dumps(result))
 
-        return CallToolResult(content=[TextContent(type="text", text=json.dumps(result))])
+            return CallToolResult(content=[TextContent(type="text", text=json.dumps(result))])
+        except Exception as e:
+            return CallToolResult(content=[TextContent(type="text",
+                text=json.dumps({"error": "internal_error", "detail": str(e)}))])
 
     return CallToolResult(content=[TextContent(type="text", text=json.dumps({"error": f"unknown tool: {name}"}))])
 
