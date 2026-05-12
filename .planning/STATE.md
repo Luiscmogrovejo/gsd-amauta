@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v3.1
 milestone_name: The Gathering
 status: completed
-stopped_at: Plan 42-02 complete
+stopped_at: Plan 42-03 complete
 last_updated: "2026-05-12T00:00:00.000Z"
-last_activity: "2026-05-12 — Plan 42-02 complete: daemon endpoints /api/complexity/score+complete (4-layer override precedence), gsd-tools complexity-score+complete subcommands, plan-phase+execute-phase entry steps wired to print banner+persist score, step-06-close writes task_completions row at every close, step-orchestrator.py get_next_step() now skips non-chosen phases with T-floor invariant (ALWAYS_RUN_STEPS). Phase 42 Wave 2a DONE."
+last_activity: "2026-05-12 — Plan 42-03 complete: detect_escalation + apply_escalation in complexity_scorer.py (already present from Wave 1), daemon /api/complexity/escalate endpoint (4 triggers, 2-cap, STATE.md append, step_handoffs append-only insert), gsd-tools complexity-escalate subcommand with @file args + bold banner, step-03-execute section 3.5 + step-04-verify section 1.5 wired. Phase 42 Wave 2b DONE."
 progress:
   total_phases: 7
   completed_phases: 1
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-14 after v3.0 milestone close)
 
 ## Current Position
 
-Phase: 42 IN PROGRESS — Plans 42-01 and 42-02 complete
-Plan: 42-02 COMPLETE
-Status: Plans 42-01 and 42-02 shipped. Scorer foundation + full workflow integration done. Complexity score at entry, phase routing with T-floor invariant, task_completions at close.
-Last activity: 2026-05-12 — Plan 42-02 complete: daemon /api/complexity/score+complete endpoints (4-layer override), gsd-tools CLI subcommands, plan-phase+execute-phase entry banners, step-06-close best-effort write, step-orchestrator.py STEP_TO_PHASE+ALWAYS_RUN_STEPS+get_next_step rewrite. Phase 42 Wave 2a DONE.
+Phase: 42 IN PROGRESS — Plans 42-01, 42-02, 42-03 complete
+Plan: 42-03 COMPLETE
+Status: Plans 42-01, 42-02, and 42-03 shipped. Scorer foundation + full workflow integration + auto-escalation done. 4 divergence triggers, 2-cap enforcement, daemon endpoint, CLI subcommand, step wiring all in place.
+Last activity: 2026-05-12 — Plan 42-03 complete: daemon /api/complexity/escalate (detect+apply escalation, step_handoffs append-only, STATE.md accumulation), gsd-tools complexity-escalate (@file args, bold stderr banner), step-03-execute section 3.5 + step-04-verify section 1.5 wired. Phase 42 Wave 2b DONE. SCALE-04 complete.
 
 Progress: [██░░░░░░░░] ~14% (1 of 7 phases complete)
 
