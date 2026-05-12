@@ -499,6 +499,7 @@ def _rlm_watchdog():
 REDIS_URL = os.environ.get("GSD_REDIS_URL", "redis://127.0.0.1:6379/0")
 REDIS_MAX_RESTARTS = 3
 _redis_restart_count = 0
+_redis_last_successful_uptime = None  # epoch seconds of first healthy observation post-reconnect; resets to None after each reconnect event so the 300s uptime gate re-arms
 _redis_enabled = os.environ.get("GSD_REDIS_ENABLED", "true").lower() != "false"
 # TOK-06: Redis-backed Perplexity response cache constants
 REDIS_PERPLEXITY_TTL = 21600  # 6 hours, matches file cache TTL
@@ -609,22 +610,52 @@ def _check_redis_health():
 
 
 def _redis_watchdog():
-    """Background thread: periodically check Redis health and reconnect if needed."""
-    global _redis_restart_count
+    """Background thread: periodically check Redis health and reconnect if needed.
+
+    Resilience contract (mirrors b41ad40 RLM watchdog fix; TK-B FOLLOWUP_NOTE):
+      - First iteration runs immediately after thread start (sleep moved to bottom).
+      - Healthy iterations arm an uptime timer; after >=300s continuous health with
+        a non-zero restart count, the counter resets so future bursts get a fresh
+        budget instead of permanent degradation.
+      - Consecutive reconnect attempts within a burst back off exponentially
+        (1,2,4,8,...,60s) to avoid burning the cap in seconds during a crash cascade.
+      - When the cap is hit, enter a 300s cooldown then reset and continue rather
+        than abandoning forever (pre-fix failure mode mirrored RLM's 13h silence).
+    """
+    global _redis_restart_count, _redis_last_successful_uptime
     while True:
-        time.sleep(30)
         if not _redis_enabled or not _HAS_REDIS:
+            time.sleep(30)
             continue
         if not _check_redis_health():
             if _redis_restart_count < REDIS_MAX_RESTARTS:
                 _redis_restart_count += 1
+                backoff = min(2 ** (_redis_restart_count - 1), 60)
                 log.warning(
-                    "redis_reconnect attempt=%d/%d", _redis_restart_count, REDIS_MAX_RESTARTS
+                    "redis_reconnect attempt=%d/%d backoff=%ds",
+                    _redis_restart_count, REDIS_MAX_RESTARTS, backoff,
                 )
                 _stop_redis()
+                time.sleep(backoff)
                 _start_redis()
+                _redis_last_successful_uptime = None  # re-arm uptime gate post-reconnect
             else:
-                log.error("redis_max_restarts_exceeded")
+                log.warning("redis_max_restarts_cooldown duration=300")
+                time.sleep(300)
+                _redis_restart_count = 0
+                _redis_last_successful_uptime = None
+        else:
+            # Healthy iteration: arm or evaluate the uptime-based counter reset.
+            now = time.time()
+            if _redis_last_successful_uptime is None:
+                _redis_last_successful_uptime = now
+            elif _redis_restart_count > 0 and (now - _redis_last_successful_uptime) >= 300:
+                log.info(
+                    "redis_restart_counter_reset previous_count=%d uptime=%ds",
+                    _redis_restart_count, int(now - _redis_last_successful_uptime),
+                )
+                _redis_restart_count = 0
+        time.sleep(30)
 
 
 # ── Stale Task Watchdog Thread ────────────────────────────────────────────────
