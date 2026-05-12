@@ -1,5 +1,5 @@
 <purpose>
-Display the complete GSD command reference. Output ONLY the reference content. Do NOT add project-specific analysis, git status, next-step suggestions, or any commentary beyond the reference.
+Display deterministic project bearings (current phase/plan, recent activity, plan progress, pattern stats, recommended next action — all code-generated, no LLM interpretation) followed by the complete GSD command reference. The dynamic bearings section comes from `gsd-tools bearings`; the static reference body lists every command available in the system.
 </purpose>
 
 ## Tool Paths (Phase 10 LEARN-07 — runtime Read dedup)
@@ -21,6 +21,16 @@ At the start of any bash invocation in this workflow, Read the shared CLI variab
 # TAG_RULES="/Users/luismogrovejo/.claude/get-shit-done/config/tag-rules.json"                # fallback: tag governance
 TOOLS="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-tools.cjs"
 ```
+
+<bearings>
+Run the bearings subcommand and print the captured output BEFORE the static reference. This provides deterministic, code-generated current-state guidance derived from STATE.md, PG task history (Phase 42 `task_completions`), git log, and feature_list.json. Output is byte-identical for the same project state — no LLM interpretation in the path.
+
+```bash
+node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" bearings 2>/dev/null || echo "(bearings unavailable — see Reference below)"
+```
+</bearings>
+
+## Reference
 
 <reference>
 # GSD-Amauta Command Reference
