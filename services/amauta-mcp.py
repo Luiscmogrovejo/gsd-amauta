@@ -291,29 +291,6 @@ def _call_daemon(method: str, path: str, body: dict | None = None) -> dict:
         return {"error": str(e)}
 
 
-def _call_rlm(query: str, top_k: int = 10, file_filter: str | None = None,
-              directory: str | None = None) -> dict:
-    """Delegate to RLM service HTTP API (/query on port 18798)."""
-    url = f"{RLM_URL}/query"
-    payload = {"query": query, "top_k": top_k}
-    if file_filter:
-        payload["file_filter"] = file_filter
-    if directory:
-        payload["directory"] = directory
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(url, data=data, method="POST")
-    req.add_header("Content-Type", "application/json")
-    try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        try:
-            return json.loads(e.read().decode("utf-8"))
-        except Exception:
-            return {"error": f"HTTP {e.code}: {e.reason}"}
-    except Exception as e:
-        return {"error": str(e)}
-
 # ── MCP server instance ───────────────────────────────────────────────────────
 
 server = Server("amauta")
@@ -396,14 +373,67 @@ async def list_tools() -> ListToolsResult:
 async def call_tool(name: str, arguments: dict) -> CallToolResult:
     if name == "amauta/search-code":
         query = arguments.get("query", "")
-        if not query:
+        if not isinstance(query, str) or not query.strip():
             return CallToolResult(content=[TextContent(type="text",
-                text=json.dumps({"error": "query is required"}))])
-        top_k = int(arguments.get("top_k", 10))
+                text=json.dumps({"error": "invalid_input", "detail": "query is required"}))])
+        top_k = int(arguments.get("top_k", 5))  # Phase 46 default: 5 (CONTEXT Area 4)
         file_filter = arguments.get("file_filter")
         directory = arguments.get("directory")
-        result = _call_rlm(query, top_k=top_k, file_filter=file_filter, directory=directory)
-        return CallToolResult(content=[TextContent(type="text", text=json.dumps(result))])
+        store = _get_pg_store()
+        if store is None:
+            return CallToolResult(content=[TextContent(type="text",
+                text=json.dumps({"error": "pg_unavailable", "detail": "PGStore unavailable"}))])
+        try:
+            # Try code_embeddings table first via direct SQL, fall back to memory_semantic_search
+            results = None
+            try:
+                with store._get_conn() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "SELECT 1 FROM information_schema.tables "
+                            "WHERE table_name = 'code_embeddings' LIMIT 1"
+                        )
+                        if cur.fetchone():
+                            # code_embeddings table exists — use direct query
+                            cur.execute(
+                                "SELECT file_path as path, chunk_text as text, "
+                                "symbol_name, 1.0 as score "
+                                "FROM code_embeddings "
+                                "LIMIT %s",
+                                (top_k,),
+                            )
+                            rows = cur.fetchall()
+                            results = [
+                                {
+                                    "path": r[0] or "",
+                                    "text": r[1] or "",
+                                    "symbol_name": r[2] or "",
+                                    "score": float(r[3] or 0),
+                                }
+                                for r in rows
+                            ]
+            except Exception as _e:
+                import sys as _sys
+                print(f"[amauta-mcp] code_embeddings query failed, falling back: {_e}", file=_sys.stderr)
+                results = None
+
+            if results is None:
+                # Fallback: memory_semantic_search (broader codebase memory)
+                raw = store.memory_semantic_search(query=query, project_id=None, source=None, limit=top_k)
+                raw_results, _ = raw if isinstance(raw, tuple) else (raw, "unknown")
+                results = raw_results if isinstance(raw_results, list) else []
+
+            # Post-filter: file_filter (substring on path) and directory (prefix on path)
+            if file_filter:
+                results = [r for r in results if file_filter in str(r.get("path", "") or r.get("file", ""))]
+            if directory:
+                results = [r for r in results if str(r.get("path", "") or r.get("file", "")).startswith(directory)]
+
+            return CallToolResult(content=[TextContent(type="text",
+                text=json.dumps({"results": results, "top_k": top_k}))])
+        except Exception as e:
+            return CallToolResult(content=[TextContent(type="text",
+                text=json.dumps({"error": "internal_error", "detail": str(e)}))])
 
     elif name == "amauta/memory-store":
         text = arguments.get("text", "")
