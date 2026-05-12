@@ -61,78 +61,23 @@ fi
 
 **Get-Bearings (BEHAV-06 — session orientation on resume):**
 
-When this is a resumed session (not a fresh phase start), assemble a bearings block
-before spawning executors. Trigger: any `{plan_id}-feature_list.json` found in
-`${PHASE_DIR}/`. For a fresh phase (no feature_list.json yet), this block is a
-silent no-op. This block runs AUTOMATICALLY at session start — no manual command needed.
+When this is a resumed session (any `${PHASE_DIR}/*-feature_list.json` exists), shell out
+to `gsd-tools bearings` for the deterministic 400-token bearings block. Phase 45 extracted
+the inline assembly into the subcommand (CONTEXT.md §Area 4); this legacy workflow now
+delegates to it. Single source of truth shared with the sharded
+`execute-phase/steps/step-01-prepare.md` (Phase 41 SHARD-02).
 
 ```bash
-# Check if any feature_list.json exists (triggers bearings assembly)
 FEATURE_LISTS=$(ls "${PHASE_DIR}"/*-feature_list.json 2>/dev/null)
 if [ -n "$FEATURE_LISTS" ]; then
-  echo "=== GET-BEARINGS (session resume detected) ==="
-
-  # Slot 1: feature_list summary (150 token budget)
-  # Summarize status counts per feature_list file (pending/passing/failing counts)
-  python3 - <<'PYEOF'
-import json, os, sys, glob
-phase_dir = os.environ.get('PHASE_DIR', '.')
-files = sorted(glob.glob(f'{phase_dir}/*-feature_list.json'))
-lines = []
-for f in files:
-    d = json.load(open(f))
-    feats = d.get('features', [])
-    counts = {'pending': 0, 'passing': 0, 'failing': 0}
-    for feat in feats:
-        counts[feat.get('status', 'pending')] += 1
-    failing_ids = [feat['feature_id'] for feat in feats if feat.get('status') == 'failing']
-    line = f"{d['plan_id']}: {counts['passing']}passing {counts['pending']}pending {counts['failing']}failing"
-    if failing_ids:
-        line += f" [FAILING: {', '.join(failing_ids[:3])}]"
-    lines.append(line)
-print('\n'.join(lines))
-PYEOF
-
-  # Slot 2: last 3 git log entries (50 token budget)
-  echo "--- Recent commits ---"
-  git log --oneline -3 2>/dev/null || echo "(no git history)"
-
-  # Slot 3: most recent divergence-memory.json entry (100 token budget)
-  if [ -f ".planning/divergence-memory.json" ]; then
-    echo "--- Last divergence reflection ---"
-    python3 -c "
-import json
-entries = json.load(open('.planning/divergence-memory.json'))
-if entries:
-    e = entries[-1]
-    print(f\"[{e['timestamp'][:10]}] {e['task_id']}: {e['what_failed']} | why: {e['why']} | try: {e['what_to_try_next']}\")
-" 2>/dev/null || echo "(no divergence history)"
-  fi
-
-  # Slot 4: STATE.md current position (100 token budget — truncate STATE.md first on overflow)
-  echo "--- Current position (STATE.md) ---"
-  python3 -c "
-import re
-content = open('.planning/STATE.md').read()
-# Extract 'stopped_at' and 'last_activity' lines (most volatile parts)
-for pattern in [r'stopped_at:.*', r'last_activity:.*', r'Phase:.*']:
-    match = re.search(pattern, content)
-    if match: print(match.group(0).strip())
-" 2>/dev/null || head -10 .planning/STATE.md 2>/dev/null
-
-  echo "=== END GET-BEARINGS ==="
+  node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" bearings --terse --token-budget 400 2>/dev/null
 fi
 ```
 
-Token budget enforcement (400 total): slots are ordered by priority.
-- Slot 1: feature_list summary — 150 tokens max
-- Slot 2: last 3 git log --oneline entries — 50 tokens
-- Slot 3: most recent divergence-memory.json entry — 100 tokens
-- Slot 4: STATE.md current position — 100 tokens
-If the total bearings block exceeds 400 tokens:
-1. Truncate STATE.md slot first (least volatile — changes rarely mid-phase).
-2. Then truncate divergence-memory.json to first sentence of `what_to_try_next`.
-3. Feature_list and git log are never truncated — they are structurally bounded.
+Token budget enforcement (400 total) is now handled by `gsd-tools bearings` per
+CONTEXT.md §Area 3: Pattern Stats are truncated first on overflow; Current Position
+is never truncated. Graceful degradation: PG-down / git-down / feature_list-missing
+→ section renders `(unavailable)`, exit 0. STATE.md missing → exit 1.
 
 **AGENTS.md Discovery (BEHAV-01):**
 Before spawning any executor, locate the closest AGENTS.md file using this
