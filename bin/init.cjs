@@ -4,24 +4,29 @@
  * gsd-amauta init — Single-command setup for GSD-Amauta.
  *
  * Orchestrates:
- *   1. Install agents, commands, skills for the selected runtime
- *   2. Detect infrastructure (PG local, Docker PG, SQLite fallback)
- *   3. Run database migrations (PG only)
- *   4. Start the amauta daemon
- *   5. Verify the system is operational
+ *   1. Detect installed IDEs (filesystem-first, cwd then $HOME)
+ *   2. Install agents, commands, skills for detected/specified IDEs
+ *   3. Detect infrastructure (PG local, Docker PG, SQLite fallback)
+ *   4. Run database migrations (PG only)
+ *   5. Start the amauta daemon
+ *   6. Verify the system is operational
  *
  * Usage:
  *   npx gsd-amauta init [options]
  *   node bin/init.cjs [options]
  *
  * Options:
- *   --skip-install    Skip agent/command/skill installation
- *   --skip-daemon     Skip daemon startup
- *   --opencode        Install OpenCode config locally/globally via install.js
- *   --claude          Install Claude Code config (default)
- *   --backend <type>  Force backend: pg, sqlite, auto (default: auto)
- *   --force           Force re-detection even if daemon is running
- *   --json            Output results as JSON
+ *   --skip-install         Skip agent/command/skill installation
+ *   --skip-daemon          Skip daemon startup
+ *   --opencode             Install OpenCode config (legacy alias for --tools opencode)
+ *   --claude               Install Claude Code config (legacy alias for --tools claude-code)
+ *   --backend <type>       Force backend: pg, sqlite, auto (default: auto)
+ *   --force                Force re-detection even if daemon is running
+ *   --yes                  Non-interactive mode; skip-with-warn on ambiguity (never destructive)
+ *   --tools <list>         Comma-list of IDEs to install (e.g. claude-code,cursor)
+ *   --force-migrate        Bypass legacy-migration collision guard
+ *   --json                 Output results as JSON
+ *   --help, -h             Print this help and exit 0
  */
 
 'use strict';
@@ -64,6 +69,28 @@ const dim = '\x1b[2m';
 const bold = '\x1b[1m';
 const reset = '\x1b[0m';
 
+/**
+ * Print help text and exit 0.
+ * Invoked when --help / -h is passed (Phase 44 INST-03 doc requirement).
+ */
+function printHelp() {
+  process.stdout.write(`gsd-amauta init [options]
+
+Options:
+  --skip-install         Skip agent/command/skill installation
+  --skip-daemon          Skip daemon startup
+  --opencode             Install OpenCode config (legacy alias for --tools opencode)
+  --claude               Install Claude Code config (legacy alias for --tools claude-code)
+  --backend <type>       Force backend: pg, sqlite, auto (default: auto)
+  --force                Force re-detection even if daemon is running
+  --yes                  Non-interactive mode; skip-with-warn on ambiguity (never destructive)
+  --tools <list>         Comma-list of IDEs to install (e.g. claude-code,cursor)
+  --force-migrate        Bypass legacy-migration collision guard
+  --json                 Output results as JSON
+  --help, -h             Print this help and exit 0
+`);
+}
+
 // ═══════════════════════════════════════════════════════
 // Argument parsing
 // ═══════════════════════════════════════════════════════
@@ -79,6 +106,10 @@ const flags = {
   json: args.includes('--json'),
   runtime: args.includes('--opencode') ? 'opencode' : 'claude',
   backend: 'auto',
+  yes: args.includes('--yes'),                   // NEW: non-interactive CI mode
+  tools: [],                                     // NEW: comma-list of IDEs (parsed below)
+  forceMigrate: args.includes('--force-migrate'), // NEW: bypass legacy-migration collision guard
+  help: args.includes('--help') || args.includes('-h'), // NEW: print help and exit
 };
 
 const backendIdx = args.indexOf('--backend');
@@ -90,6 +121,33 @@ if (backendIdx !== -1 && args[backendIdx + 1]) {
     console.error(`${red}Error: --backend must be pg, sqlite, or auto${reset}`);
     process.exit(1);
   }
+}
+
+// --tools parser: comma-separated IDE list (e.g. --tools claude-code,cursor)
+const toolsIdx = args.indexOf('--tools');
+if (toolsIdx !== -1 && args[toolsIdx + 1]) {
+  flags.tools = args[toolsIdx + 1].split(',').map(s => s.trim()).filter(Boolean);
+}
+// Legacy alias translation per 44-CONTEXT.md §Area 1:
+// --claude and --opencode prepend to flags.tools with a single-line stderr note
+// when --tools is ALSO explicitly set. When --tools is unset, the legacy flags
+// are honored as before (no stderr note).
+const hasLegacyClaude = args.includes('--claude');
+const hasLegacyOpencode = args.includes('--opencode');
+const explicitTools = toolsIdx !== -1;
+if (explicitTools) {
+  if (hasLegacyClaude && !flags.tools.includes('claude-code')) {
+    process.stderr.write('--claude is treated as --tools claude-code\n');
+    flags.tools.unshift('claude-code');
+  }
+  if (hasLegacyOpencode && !flags.tools.includes('opencode')) {
+    process.stderr.write('--opencode is treated as --tools opencode\n');
+    flags.tools.unshift('opencode');
+  }
+} else if (hasLegacyClaude || hasLegacyOpencode) {
+  // Legacy-only mode: build flags.tools from legacy flags without stderr note.
+  if (hasLegacyClaude) flags.tools.push('claude-code');
+  if (hasLegacyOpencode) flags.tools.push('opencode');
 }
 
 // ═══════════════════════════════════════════════════════
@@ -605,6 +663,12 @@ async function stepVerify(log) {
 // ═══════════════════════════════════════════════════════
 
 async function main() {
+  // --help short-circuit (Phase 44 INST-03 documentation requirement)
+  if (flags.help) {
+    printHelp();
+    process.exit(0);
+  }
+
   const startTime = Date.now();
   const results = {};
 
