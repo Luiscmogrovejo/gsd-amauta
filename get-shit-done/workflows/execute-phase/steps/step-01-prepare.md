@@ -63,6 +63,26 @@ if [[ ! "$ARGUMENTS" =~ --auto ]]; then
 fi
 ```
 
+**Get-Bearings (BEHAV-06 — session orientation on resume):**
+
+When this is a resumed session (any `${PHASE_DIR}/*-feature_list.json` exists), shell out
+to the `bearings` subcommand with the FROZEN 400-token budget per BEHAV-06.
+Phase 45 extracted this logic from the legacy inline assembly (formerly in
+`execute-phase-legacy.md` lines 62-135) into `get-shit-done/bin/gsd-tools.cjs bearings`
+so `/amauta:help` and execute-phase share one implementation (CONTEXT.md §Area 4).
+
+```bash
+FEATURE_LISTS=$(ls "${PHASE_DIR}"/*-feature_list.json 2>/dev/null)
+if [ -n "$FEATURE_LISTS" ]; then
+  node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" bearings --terse --token-budget 400 2>/dev/null
+fi
+```
+
+The 400-token budget preserves Phase 28 BEHAV-06's contract verbatim. Pattern Stats are
+truncated first on overflow; Current Position is never truncated (CONTEXT.md §Area 3).
+The shell-out exits 0 on all source-degradation cases (PG-down, git-down,
+feature_list-missing); STATE.md missing → exit 1 with stderr message.
+
 **Amauta integration (optional — skip if daemon unavailable):**
 ```bash
 # Check if amauta daemon is available
