@@ -48,6 +48,13 @@ try:
 except ImportError:
     _HAS_PG = False
 
+try:
+    import numpy as _np
+    _HAS_NUMPY = True
+except ImportError:
+    _np = None  # type: ignore
+    _HAS_NUMPY = False
+
 log = logging.getLogger("amauta.complexity_scorer")
 
 # ═══════════════════════════════════════════════════════
@@ -105,6 +112,15 @@ _API_CHANGE_PATTERNS = [
 ]
 
 _DEFAULT_PG_URL = "postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta"
+
+# ═══════════════════════════════════════════════════════
+# Calibration constants (SCALE-03 logistic regression)
+# ═══════════════════════════════════════════════════════
+
+_SIMILARITY_NEIGHBORS = 20          # k-nearest neighbors to retrieve for calibration
+_COLD_START_MIN_SIMILARITY = 0.5    # min mean similarity; below this → cold-start bias
+_CALIBRATION_LR_ITERATIONS = 50    # gradient-descent steps for in-house logistic regression
+_CALIBRATION_LR_RATE = 0.05        # learning rate for logistic regression
 
 # ═══════════════════════════════════════════════════════
 # Database connection (mirrors step-orchestrator._get_conn)
@@ -414,6 +430,183 @@ def select_phases(score: int, config: dict) -> list:
     return list(_DEFAULT_BUCKETS[-1]["phases"])
 
 
+# ═══════════════════════════════════════════════════════
+# Escalation — Phase 42 SCALE-04
+# ═══════════════════════════════════════════════════════
+
+ESCALATION_TRIGGERS = [
+    "manifest_violation",
+    "file_count_overshoot",
+    "executor_self_report",
+    "validator_divergence",
+]
+
+_ESCALATION_BIAS = 20  # added to raw_score on each fired escalation
+
+# Regex to count prior escalation entries (not cap_hit entries) in escalation_flags.
+_PRIOR_ESC_RE = re.compile(
+    r"^(manifest_violation|file_count_overshoot|executor_self_report|validator_divergence):"
+)
+
+
+def detect_escalation(
+    handoff: dict,
+    executor_report: "dict | None",
+    validator_report: "dict | None",
+    config: dict,
+) -> "list[str]":
+    """Detect escalation triggers from current step state. Pure function — no I/O.
+
+    Parameters
+    ----------
+    handoff : dict
+        StepHandoff dict. Must contain 'escalation_flags' (list) and optionally
+        'context_snapshot' with 'feature_vector' (dict) and 'chosen_phases' (list).
+    executor_report : dict or None
+        Executor summary dict. Keys used:
+          - 'files_touched': int — count of files actually modified by the executor.
+          - 'complexity_surprise': bool — executor self-flags unexpected complexity.
+          - 'manifest_violation': bool — executor explicitly reports a manifest violation.
+          - 'summary': str (optional) — executor prose; searched for 'COMPLEXITY_SURPRISE'.
+    validator_report : dict or None
+        Validator verdict dict. Keys used:
+          - 'verdict': str — one of 'pass', 'gaps_found', 'fail'.
+          - 'violations': list[str] — includes 'manifest_violation' if detected.
+    config : dict
+        Project config (.planning/config.json). Expected key:
+          config['scale_adaptive']['escalation_triggers'] — dict of trigger_name→bool.
+          config['scale_adaptive']['file_overshoot_multiplier'] — float (default 1.5).
+
+    Returns
+    -------
+    list[str]
+        Sorted list of trigger names that fired this call.
+        Triggers disabled in config are excluded even if conditions match.
+    """
+    _sa = config.get("scale_adaptive", {})
+    _trigger_toggles = _sa.get("escalation_triggers", {})
+    _multiplier = _sa.get("file_overshoot_multiplier", 1.5)
+
+    def _enabled(trigger: str) -> bool:
+        """Return True if trigger is enabled in config (default True when absent)."""
+        return bool(_trigger_toggles.get(trigger, True))
+
+    fired: list = []
+
+    # ── 1. manifest_violation ─────────────────────────────────────────────────────
+    if _enabled("manifest_violation"):
+        _mv_from_validator = (
+            validator_report is not None
+            and "manifest_violation" in validator_report.get("violations", [])
+        )
+        _mv_from_executor = (
+            executor_report is not None
+            and executor_report.get("manifest_violation") is True
+        )
+        if _mv_from_validator or _mv_from_executor:
+            fired.append("manifest_violation")
+
+    # ── 2. file_count_overshoot ───────────────────────────────────────────────────
+    if _enabled("file_count_overshoot") and executor_report is not None:
+        _files_touched = executor_report.get("files_touched")
+        _context = handoff.get("context_snapshot", {})
+        _fv = _context.get("feature_vector", {})
+        _files_expected = _fv.get("files_expected")
+        if (
+            isinstance(_files_touched, (int, float))
+            and isinstance(_files_expected, (int, float))
+            and _files_expected > 0
+            and _files_touched > _multiplier * _files_expected
+        ):
+            fired.append("file_count_overshoot")
+
+    # ── 3. executor_self_report ───────────────────────────────────────────────────
+    if _enabled("executor_self_report") and executor_report is not None:
+        _surprise_flag = executor_report.get("complexity_surprise") is True
+        _summary_str = executor_report.get("summary", "") or ""
+        _surprise_marker = "COMPLEXITY_SURPRISE" in str(_summary_str)
+        if _surprise_flag or _surprise_marker:
+            fired.append("executor_self_report")
+
+    # ── 4. validator_divergence ───────────────────────────────────────────────────
+    if _enabled("validator_divergence") and validator_report is not None:
+        _verdict = validator_report.get("verdict", "")
+        _chosen = handoff.get("context_snapshot", {}).get("chosen_phases", [])
+        # Lighter set = chosen_phases length <= 4 (R,P,E,T or fewer)
+        _is_lighter_set = len(_chosen) <= 4
+        if _verdict in ("gaps_found", "fail") and _is_lighter_set:
+            fired.append("validator_divergence")
+
+    return fired
+
+
+def apply_escalation(
+    handoff: dict,
+    fired_triggers: "list[str]",
+    config: dict,
+) -> dict:
+    """Compute the escalation outcome. Pure function — no I/O.
+
+    Parameters
+    ----------
+    handoff : dict
+        StepHandoff dict. Must contain:
+          - 'escalation_flags': list[str] — prior escalation flag strings.
+          - 'context_snapshot': dict with 'complexity_score' and 'chosen_phases'.
+    fired_triggers : list[str]
+        Trigger names from detect_escalation().
+    config : dict
+        Project config. Expected key:
+          config['scale_adaptive']['max_escalations_per_task'] — int (default 2).
+          config['complexity_buckets'] — list (passed to select_phases).
+
+    Returns
+    -------
+    dict
+        {
+          'new_score': int,
+          'new_chosen_phases': list[str],
+          'escalation_flags_to_append': list[str],
+          'cap_hit': bool,
+        }
+    """
+    _sa = config.get("scale_adaptive", {})
+    max_escalations = int(_sa.get("max_escalations_per_task", 2))
+
+    _existing_flags = handoff.get("escalation_flags", []) or []
+    _context = handoff.get("context_snapshot", {}) or {}
+    _current_score = int(_context.get("complexity_score", 0) or 0)
+    _current_phases = list(_context.get("chosen_phases", []) or [])
+
+    # Count prior escalation events (not cap_hit entries)
+    prior_count = sum(1 for f in _existing_flags if _PRIOR_ESC_RE.match(str(f)))
+
+    if prior_count >= max_escalations:
+        # Cap hit — record but do NOT re-score
+        return {
+            "new_score": _current_score,
+            "new_chosen_phases": _current_phases,
+            "escalation_flags_to_append": [
+                f"cap_hit:{','.join(fired_triggers)}"
+            ],
+            "cap_hit": True,
+        }
+
+    # Under cap — compute new score and new phase set
+    new_score = min(100, _current_score + _ESCALATION_BIAS * len(fired_triggers))
+    new_chosen_phases = select_phases(new_score, config)
+    flags_to_append = [
+        f"{t}:rescored_to_{new_score}" for t in fired_triggers
+    ]
+
+    return {
+        "new_score": new_score,
+        "new_chosen_phases": new_chosen_phases,
+        "escalation_flags_to_append": flags_to_append,
+        "cap_hit": False,
+    }
+
+
 def store_completion(
     task_id: str,
     phase_number: int,
@@ -553,3 +746,329 @@ def store_completion(
             conn.close()
         except Exception:
             pass
+
+
+# ═══════════════════════════════════════════════════════
+# Calibration — Phase 42 SCALE-03 (logistic regression learning loop)
+# ═══════════════════════════════════════════════════════
+
+def _load_similar_completions(
+    feature_vector: dict,
+    embedding: "list[float] | None",
+    k: int = _SIMILARITY_NEIGHBORS,
+) -> "list[dict]":
+    """Query task_completions for the k nearest neighbors by pgvector cosine distance.
+
+    Parameters
+    ----------
+    feature_vector : dict
+        The 7-key feature dict (used for logging only in this function).
+    embedding : list[float] or None
+        1024-dim embedding of the feature vector for cosine similarity retrieval.
+        If None or PG unavailable, returns [].
+    k : int
+        Number of nearest neighbors to retrieve (default _SIMILARITY_NEIGHBORS=20).
+
+    Returns
+    -------
+    list[dict]
+        Each dict has keys: feature_vector, raw_score, calibrated_score,
+        outcome_label, escalation_history, distance, similarity.
+        Returns [] on any error or when embedding is None.
+    """
+    if embedding is None:
+        return []
+    if not _HAS_PG:
+        log.debug("_load_similar_completions: psycopg2 not installed — returning []")
+        return []
+
+    sql = """
+        SELECT
+            feature_vector,
+            raw_score,
+            calibrated_score,
+            outcome_label,
+            escalation_history,
+            embedding <=> %s::vector AS distance
+        FROM task_completions
+        ORDER BY embedding <=> %s::vector
+        LIMIT %s
+    """
+    # pgvector expects the embedding as a stringified list: '[0.1,0.2,...]'
+    embedding_str = "[" + ",".join(str(float(v)) for v in embedding) + "]"
+
+    try:
+        conn = _get_conn()
+    except Exception as exc:
+        log.warning("_load_similar_completions: PG unavailable — %s", exc)
+        return []
+
+    try:
+        with conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(sql, (embedding_str, embedding_str, k))
+                rows = cur.fetchall()
+    except Exception as exc:
+        log.warning("_load_similar_completions: query failed — %s", exc)
+        return []
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    results = []
+    for row in rows:
+        d = dict(row)
+        distance = float(d.get("distance") or 1.0)
+        # Parse feature_vector if it's a JSON string
+        fv = d.get("feature_vector")
+        if isinstance(fv, str):
+            try:
+                fv = json.loads(fv)
+            except (json.JSONDecodeError, TypeError):
+                fv = {}
+        d["feature_vector"] = fv or {}
+        # Parse escalation_history if it's a JSON string
+        eh = d.get("escalation_history")
+        if isinstance(eh, str):
+            try:
+                eh = json.loads(eh)
+            except (json.JSONDecodeError, TypeError):
+                eh = []
+        d["escalation_history"] = eh or []
+        d["distance"] = distance
+        d["similarity"] = max(0.0, 1.0 - distance)
+        results.append(d)
+
+    return results
+
+
+def _logistic_regression(
+    neighbors: "list[dict]",
+    target_features: dict,
+) -> float:
+    """In-house NumPy logistic regression calibration signal.
+
+    Algorithm (documented per CONTEXT.md decision: in-house NumPy, no new dep):
+      1. Build feature matrix X (N×7) from neighbor feature_vectors.
+         Booleans coerced to 0/1. Numeric features left as-is.
+      2. Normalize each column by dividing by max (or 1 if max==0) to keep
+         gradients stable.
+      3. Build binary label vector y: 1 if outcome_label == 'validator_pass',
+         0 otherwise (the model predicts 'similar task succeeded').
+      4. Run _CALIBRATION_LR_ITERATIONS steps of batch gradient descent:
+           grad = X.T @ (sigmoid(X @ w) - y) / N
+           w -= lr * grad
+         with L2 regularization term: grad += (lambda/N) * w  (lambda=0.01)
+      5. Predict probability for target_features: p = sigmoid(w · x_target).
+         Interpretation:
+           p > 0.7 → similar tasks succeeded → trust the raw score (nudge down -5)
+           p < 0.3 → similar tasks failed   → boost score for safety (+10)
+           else    → leave score unchanged
+
+    Parameters
+    ----------
+    neighbors : list[dict]
+        Each dict must have 'feature_vector' (dict) and 'outcome_label' (str).
+    target_features : dict
+        The 7-key feature dict for the task being scored.
+
+    Returns
+    -------
+    float
+        Probability p in [0.0, 1.0].
+        Returns 0.5 (no-op) if fewer than 3 neighbors or NumPy unavailable.
+    """
+    if not _HAS_NUMPY:
+        log.warning("_logistic_regression: NumPy not available — returning 0.5 (no-op)")
+        return 0.5
+    if len(neighbors) < 3:
+        return 0.5  # insufficient data
+
+    def _to_vec(fv: dict) -> "list[float]":
+        """Convert a feature dict to a 7-element numeric list (same order as FEATURE_KEYS)."""
+        return [
+            float(fv.get("files_expected", 0)),
+            float(fv.get("estimated_loc", 0)),
+            float(fv.get("test_impact", 0)),
+            float(fv.get("dependency_depth", 0)),
+            float(1 if fv.get("has_migration") else 0),
+            float(1 if fv.get("has_api_change") else 0),
+            float(fv.get("security_sensitivity", 0)),
+        ]
+
+    # Build X and y
+    X = _np.array([_to_vec(n["feature_vector"]) for n in neighbors], dtype=_np.float64)
+    y = _np.array(
+        [1.0 if n.get("outcome_label") == "validator_pass" else 0.0 for n in neighbors],
+        dtype=_np.float64,
+    )
+
+    # Normalize columns (avoid division by zero)
+    col_max = X.max(axis=0)
+    col_max[col_max == 0] = 1.0
+    X_norm = X / col_max
+
+    # Initialize weights
+    n_features = X_norm.shape[1]
+    w = _np.zeros(n_features, dtype=_np.float64)
+
+    N = float(len(neighbors))
+    lr = _CALIBRATION_LR_RATE
+    lam = 0.01  # L2 regularization lambda
+
+    # Gradient descent
+    for _ in range(_CALIBRATION_LR_ITERATIONS):
+        logits = X_norm @ w
+        # sigmoid with clip to avoid overflow
+        logits_clipped = _np.clip(logits, -500, 500)
+        probs = 1.0 / (1.0 + _np.exp(-logits_clipped))
+        error = probs - y
+        grad = (X_norm.T @ error) / N + (lam / N) * w
+        w -= lr * grad
+
+    # Predict for target
+    x_target = _np.array(_to_vec(target_features), dtype=_np.float64)
+    x_target_norm = x_target / col_max
+    logit = float(_np.dot(w, x_target_norm))
+    logit_clipped = max(-500.0, min(500.0, logit))
+    p = 1.0 / (1.0 + _np.exp(-logit_clipped))
+    return float(p)
+
+
+def calibrate_score(
+    raw_score: int,
+    feature_vector: dict,
+    config: dict,
+    embedding: "list[float] | None" = None,
+) -> dict:
+    """Calibrate a raw complexity score using historical task outcomes from PG.
+
+    Implements SCALE-03: logistic regression learning loop with cold-start
+    conservative-high bias.
+
+    Cold-start branch (returns higher-caution score):
+      - Activated when: total task_completions count < cold_start_threshold,
+        OR fewer than 3 similar neighbors found,
+        OR mean neighbor similarity < _COLD_START_MIN_SIMILARITY.
+      - Bias: shift score to the start of the NEXT heavier bucket (more cautious).
+        If already in the heaviest bucket, return raw_score unchanged.
+      - Returns cold_start=True.
+
+    Calibrated branch (data-driven adjustment):
+      - Calls _logistic_regression on nearest neighbors.
+      - p > 0.7 (similar tasks passed): nudge score down by 5 (trust the raw).
+      - p < 0.3 (similar tasks failed): boost score up by 10 (safety margin).
+      - 0.3 <= p <= 0.7: leave score unchanged.
+      - Returns cold_start=False.
+
+    Import-safety: If psycopg2 is not installed, always returns cold-start bias
+    with a warning log. This preserves safe behavior in CI/CD without a DB.
+
+    Parameters
+    ----------
+    raw_score : int
+        Complexity score in [0, 100] from score_features().
+    feature_vector : dict
+        The 7-key feature dict for the task being scored.
+    config : dict
+        Project config dict (.planning/config.json). Must include:
+          config['scale_adaptive']['cold_start_threshold'] (default 10).
+          config['complexity_buckets'] (default _DEFAULT_BUCKETS).
+    embedding : list[float] or None
+        1024-dim embedding for pgvector similarity lookup.
+        If None, PG lookup is skipped and cold-start bias always applies.
+
+    Returns
+    -------
+    dict
+        {
+          'calibrated_score': int,    # adjusted score in [0, 100]
+          'confidence': float,        # logistic regression p (0.0 on cold-start)
+          'neighbor_count': int,      # number of similar completions found
+          'cold_start': bool,         # True when cold-start branch fired
+          'adjustment': int,          # calibrated_score - raw_score
+        }
+    """
+    _sa = config.get("scale_adaptive", {})
+    cold_start_threshold = int(_sa.get("cold_start_threshold", 10))
+    buckets = config.get("complexity_buckets", _DEFAULT_BUCKETS)
+
+    # ── 1. Read total task_completions row count ─────────────────────────────────
+    total_count = 0
+    if _HAS_PG:
+        try:
+            conn = _get_conn()
+            try:
+                with conn:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT COUNT(*) FROM task_completions")
+                        row = cur.fetchone()
+                        total_count = int(row[0]) if row else 0
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+        except Exception as exc:
+            log.warning("calibrate_score: could not read task_completions count — %s", exc)
+            total_count = 0
+
+    # ── 2. Load similar completions ──────────────────────────────────────────────
+    neighbors = _load_similar_completions(feature_vector, embedding, _SIMILARITY_NEIGHBORS)
+    mean_similarity = (
+        sum(n["similarity"] for n in neighbors) / len(neighbors)
+        if neighbors
+        else 0.0
+    )
+
+    # ── 3. Cold-start branch ─────────────────────────────────────────────────────
+    is_cold = (
+        total_count < cold_start_threshold
+        or len(neighbors) < 3
+        or (len(neighbors) >= 3 and mean_similarity < _COLD_START_MIN_SIMILARITY)
+    )
+
+    if is_cold:
+        # Bias UP: find the next heavier bucket's lower boundary
+        shifted = raw_score
+        current_bucket_idx = None
+        for i, bucket in enumerate(buckets):
+            if raw_score <= bucket["max"]:
+                current_bucket_idx = i
+                break
+
+        if current_bucket_idx is not None and current_bucket_idx < len(buckets) - 1:
+            # Shift to the START of the next bucket (prev bucket's max + 1)
+            next_bucket_lower = buckets[current_bucket_idx]["max"] + 1
+            shifted = next_bucket_lower
+        # If already in the heaviest bucket, leave unchanged
+
+        return {
+            "calibrated_score": shifted,
+            "confidence": 0.0,
+            "neighbor_count": len(neighbors),
+            "cold_start": True,
+            "adjustment": shifted - raw_score,
+        }
+
+    # ── 4. Calibrated branch ─────────────────────────────────────────────────────
+    p = _logistic_regression(neighbors, feature_vector)
+
+    if p > 0.7:
+        # Similar tasks succeeded — nudge down a touch
+        calibrated = max(0, raw_score - 5)
+    elif p < 0.3:
+        # Similar tasks failed — boost for safety
+        calibrated = min(100, raw_score + 10)
+    else:
+        calibrated = raw_score
+
+    return {
+        "calibrated_score": calibrated,
+        "confidence": p,
+        "neighbor_count": len(neighbors),
+        "cold_start": False,
+        "adjustment": calibrated - raw_score,
+    }

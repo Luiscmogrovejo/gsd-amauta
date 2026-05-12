@@ -2839,7 +2839,28 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 _raw_score = _cs.score_features(_features)
                 _auto_phases = _cs.select_phases(_raw_score, _cfg)
 
+                # ── 3b. Calibrate score via SCALE-03 logistic regression ─────────
+                # Generate embedding for the feature vector (best-effort).
+                _embedding = None
+                try:
+                    import sys as _sys2
+                    _svc_dir2 = os.path.dirname(os.path.abspath(__file__))
+                    if _svc_dir2 not in _sys2.path:
+                        _sys2.path.insert(0, _svc_dir2)
+                    from pg_store import PGStore as _PGStore
+                    _feature_text = json.dumps(_features, sort_keys=True)
+                    _embedding = _PGStore.generate_embedding(_feature_text, input_type="document")
+                except Exception as _ee:
+                    log.warning("/api/complexity/score: embedding generation failed: %s", _ee)
+
+                _cal_result = _cs.calibrate_score(_raw_score, _features, _cfg, _embedding)
+                _calibrated_score = _cal_result["calibrated_score"]
+                _confidence = _cal_result["confidence"]
+                _cold_start = _cal_result["cold_start"]
+                _adjustment = _cal_result["adjustment"]
+
                 # ── 4. Resolve override ──────────────────────────────────────────
+                # Use calibrated_score (not raw_score) for auto phase selection
                 if _env_phases:
                     _chosen_phases = _env_phases
                     _override_source = "env"
@@ -2850,7 +2871,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     _chosen_phases = _proj_phases
                     _override_source = "project"
                 else:
-                    _chosen_phases = _auto_phases
+                    _chosen_phases = _cs.select_phases(_calibrated_score, _cfg)
                     _override_source = "auto"
 
                 # ── 5. Derive bucket_label from chosen_phases length ─────────────
@@ -2861,18 +2882,32 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 # ── 6. Build banner ──────────────────────────────────────────────
                 _phases_str = ",".join(_chosen_phases)
                 if _override_source == "auto":
-                    _banner = (
-                        f"Phase 42 score: {_raw_score}/100 → {_phases_str} ({_bucket_label})."
-                        " Override: --force-phases=full."
-                    )
+                    if _cold_start:
+                        _banner = (
+                            f"Phase 42 score: {_raw_score}→{_calibrated_score}/100"
+                            f" → {_phases_str} ({_bucket_label}; cold-start)."
+                            " Override: --force-phases=full."
+                        )
+                    else:
+                        _banner = (
+                            f"Phase 42 score: {_raw_score}→{_calibrated_score}/100"
+                            f" → {_phases_str} ({_bucket_label};"
+                            f" calibrated p={_confidence:.2f})."
+                            " Override: --force-phases=full."
+                        )
                 else:
                     _banner = (
-                        f"Phase 42 score: {_raw_score}/100 → {_phases_str}"
+                        f"Phase 42 score: {_raw_score}→{_calibrated_score}/100"
+                        f" → {_phases_str}"
                         f" (override:{_override_source}). Override: --force-phases=full."
                     )
 
                 self._send_json({
                     "score": _raw_score,
+                    "calibrated_score": _calibrated_score,
+                    "confidence": _confidence,
+                    "cold_start": _cold_start,
+                    "adjustment": _adjustment,
                     "auto_phases": _auto_phases,
                     "chosen_phases": _chosen_phases,
                     "override_source": _override_source,
