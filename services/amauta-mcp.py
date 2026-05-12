@@ -367,6 +367,19 @@ async def list_tools() -> ListToolsResult:
                 "required": ["query"],
             },
         ),
+        Tool(
+            name="amauta/complexity-score",
+            description="Compute a deterministic 0-100 complexity score for a task plan using the Phase 42 SCALE-01 scorer. Returns score + 7-feature breakdown.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "plan_path":    {"type": "string", "description": "Path to PLAN.md file (optional)"},
+                    "task_meta":    {"type": "object", "description": "Task metadata: files_expected, estimated_loc, description, title"},
+                    "project_root": {"type": "string", "default": ".", "description": "Project root for relative path resolution"},
+                },
+                "required": ["task_meta"],
+            },
+        ),
     ])
 
 @server.call_tool()
@@ -571,6 +584,27 @@ async def call_tool(name: str, arguments: dict) -> CallToolResult:
                 valkey.setex(cache_key, 3600, json.dumps(result))
 
             return CallToolResult(content=[TextContent(type="text", text=json.dumps(result))])
+        except Exception as e:
+            return CallToolResult(content=[TextContent(type="text",
+                text=json.dumps({"error": "internal_error", "detail": str(e)}))])
+
+    elif name == "amauta/complexity-score":
+        try:
+            from services.complexity_scorer import extract_features, score_features
+        except Exception as e:
+            return CallToolResult(content=[TextContent(type="text",
+                text=json.dumps({"error": "internal_error", "detail": f"complexity_scorer import failed: {e}"}))])
+        task_meta = arguments.get("task_meta")
+        if not isinstance(task_meta, dict):
+            return CallToolResult(content=[TextContent(type="text",
+                text=json.dumps({"error": "invalid_input", "detail": "task_meta dict required"}))])
+        plan_path = arguments.get("plan_path")
+        project_root = arguments.get("project_root", ".")
+        try:
+            features = extract_features(plan_path, task_meta, project_root)
+            score = score_features(features)
+            return CallToolResult(content=[TextContent(type="text",
+                text=json.dumps({"score": score, "features": features}))])
         except Exception as e:
             return CallToolResult(content=[TextContent(type="text",
                 text=json.dumps({"error": "internal_error", "detail": str(e)}))])
