@@ -2954,6 +2954,214 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": _safe_error(e)}, 500)
             return
 
+        # ─── Complexity Escalate POST route (Phase 42 SCALE-04) ─────────────────────
+        #
+        # POST /api/complexity/escalate — re-score after divergence event; append
+        # escalation flags to step_handoffs and STATE.md accumulated_context.
+
+        if path == "/api/complexity/escalate":
+            try:
+                # ── 0. Import scorer ──────────────────────────────────────────────
+                import sys as _sys
+                _svc_dir = os.path.dirname(os.path.abspath(__file__))
+                if _svc_dir not in _sys.path:
+                    _sys.path.insert(0, _svc_dir)
+                import complexity_scorer as _cs
+
+                # ── 1. Parse request body ─────────────────────────────────────────
+                _task_id   = body.get("task_id") or ""
+                _phase_num = int(body.get("phase_number") or 0)
+                _wf_name   = body.get("workflow_name") or "execute-phase"
+                _exec_rpt  = body.get("executor_report")   # may be None
+                _val_rpt   = body.get("validator_report")  # may be None
+
+                # ── 2. Load config ────────────────────────────────────────────────
+                _config_path = os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    ".planning", "config.json",
+                )
+                try:
+                    with open(_config_path, "r", encoding="utf-8") as _fh:
+                        _cfg = json.load(_fh)
+                except Exception as _ce:
+                    log.warning("/api/complexity/escalate: could not load config.json: %s", _ce)
+                    _cfg = {}
+
+                # ── 3. Load latest step_handoffs row ──────────────────────────────
+                store = _get_store()
+                if not store:
+                    self._send_json({"escalated": False, "reason": "no_database"})
+                    return
+
+                _handoff_dict = None
+                try:
+                    conn = store._get_conn()
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "SELECT id, workflow_name, step_id, task_id, phase_number,"
+                            " completed_steps, context_snapshot, artifacts, decisions,"
+                            " user_inputs, next_step, escalation_flags, created_at"
+                            " FROM step_handoffs"
+                            " WHERE workflow_name = %s AND phase_number = %s"
+                            " ORDER BY created_at DESC LIMIT 1",
+                            (_wf_name, _phase_num),
+                        )
+                        _row = cur.fetchone()
+                    if _row:
+                        _handoff_dict = {
+                            "id": str(_row[0]),
+                            "workflow_name": _row[1],
+                            "step_id": _row[2],
+                            "task_id": _row[3],
+                            "phase_number": _row[4],
+                            "completed_steps": _row[5] or [],
+                            "context_snapshot": _row[6] or {},
+                            "artifacts": _row[7] or {},
+                            "decisions": _row[8] or [],
+                            "user_inputs": _row[9] or [],
+                            "next_step": _row[10],
+                            "escalation_flags": _row[11] or [],
+                            "created_at": _row[12].isoformat() if _row[12] else None,
+                        }
+                except Exception as _qe:
+                    log.warning("/api/complexity/escalate: handoff query failed: %s", _qe)
+
+                if _handoff_dict is None:
+                    self._send_json({"escalated": False, "reason": "no_handoff"})
+                    return
+
+                # ── 4. Detect escalation triggers ─────────────────────────────────
+                _fired = _cs.detect_escalation(
+                    _handoff_dict, _exec_rpt, _val_rpt, _cfg
+                )
+                if not _fired:
+                    self._send_json({"escalated": False, "reason": "no_triggers"})
+                    return
+
+                # ── 5. Apply escalation (cap check + score computation) ───────────
+                _result = _cs.apply_escalation(_handoff_dict, _fired, _cfg)
+                _new_score       = _result["new_score"]
+                _new_phases      = _result["new_chosen_phases"]
+                _flags_to_append = _result["escalation_flags_to_append"]
+                _cap_hit         = _result["cap_hit"]
+                _old_score       = int(
+                    (_handoff_dict.get("context_snapshot") or {}).get("complexity_score", 0) or 0
+                )
+                _old_phases      = list(
+                    (_handoff_dict.get("context_snapshot") or {}).get("chosen_phases", []) or []
+                )
+
+                # ── 6. INSERT new step_handoffs row (append-only) ─────────────────
+                _new_flags = list(_handoff_dict.get("escalation_flags") or []) + _flags_to_append
+                _new_context = dict(_handoff_dict.get("context_snapshot") or {})
+                _new_context["complexity_score"] = _new_score
+                _new_context["chosen_phases"] = _new_phases
+                try:
+                    conn = store._get_conn()
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "INSERT INTO step_handoffs"
+                            " (workflow_name, step_id, task_id, phase_number,"
+                            "  completed_steps, context_snapshot, artifacts,"
+                            "  decisions, user_inputs, next_step, escalation_flags)"
+                            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+                            " RETURNING id, created_at",
+                            (
+                                _wf_name,
+                                _handoff_dict.get("step_id", ""),
+                                _task_id or _handoff_dict.get("task_id", ""),
+                                _phase_num,
+                                _handoff_dict.get("completed_steps", []),
+                                json.dumps(_new_context),
+                                json.dumps(_handoff_dict.get("artifacts", {})),
+                                json.dumps(_handoff_dict.get("decisions", [])),
+                                json.dumps(_handoff_dict.get("user_inputs", [])),
+                                _handoff_dict.get("next_step"),
+                                _new_flags,
+                            ),
+                        )
+                        _ins_row = cur.fetchone()
+                        conn.commit()
+                    log.info(
+                        "[escalation] task=%s triggers=%s score=%d→%d cap_hit=%s",
+                        _task_id, _fired, _old_score, _new_score, _cap_hit,
+                    )
+                except Exception as _ie:
+                    log.warning("/api/complexity/escalate: INSERT failed: %s", _ie)
+
+                # ── 7. Append to STATE.md accumulated_context ─────────────────────
+                import datetime as _dt
+                _today = _dt.date.today().isoformat()
+                _triggers_str  = ",".join(_fired)
+                _new_phases_str = ",".join(_new_phases)
+                _old_phases_str = ",".join(_old_phases)
+                _event_line = (
+                    f"- {_today}: Task {_task_id} phase {_phase_num} — "
+                    f"{_triggers_str} → {_new_phases_str} (score {_old_score} → {_new_score})"
+                )
+                _state_path = os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    ".planning", "STATE.md",
+                )
+                try:
+                    with open(_state_path, "r", encoding="utf-8") as _sfh:
+                        _state_content = _sfh.read()
+                    # Idempotent: skip if event line already present
+                    if _event_line not in _state_content:
+                        _ESC_HEADER = "### Escalation Events"
+                        if _ESC_HEADER in _state_content:
+                            # Append after the header line
+                            _state_content = _state_content.replace(
+                                _ESC_HEADER,
+                                f"{_ESC_HEADER}\n{_event_line}",
+                                1,
+                            )
+                        else:
+                            # Append the header + event before the end of file
+                            _state_content = _state_content.rstrip() + (
+                                f"\n\n{_ESC_HEADER}\n{_event_line}\n"
+                            )
+                        with open(_state_path, "w", encoding="utf-8") as _sfh:
+                            _sfh.write(_state_content)
+                except Exception as _se:
+                    log.warning("/api/complexity/escalate: STATE.md update failed: %s", _se)
+
+                # ── 8. Build banner and response ──────────────────────────────────
+                _delta = _new_score - _old_score
+                _added_phases = [p for p in _new_phases if p not in _old_phases]
+
+                if _cap_hit:
+                    _banner = (
+                        "ESCALATION CAP REACHED (2 escalations on this task). "
+                        "Halting auto-escalation. Manual review recommended."
+                    )
+                    self._send_json({
+                        "escalated": False,
+                        "cap_hit": True,
+                        "fired_triggers": _fired,
+                        "new_score": _new_score,
+                        "new_chosen_phases": _new_phases,
+                        "banner": _banner,
+                    })
+                else:
+                    _added_str = ",".join(_added_phases) if _added_phases else "none"
+                    _banner = (
+                        f"ESCALATION: {','.join(_fired)} (+{_delta}) "
+                        f"→ adding {_added_str}. "
+                        f"New phase set: {_new_phases_str}."
+                    )
+                    self._send_json({
+                        "escalated": True,
+                        "cap_hit": False,
+                        "fired_triggers": _fired,
+                        "new_score": _new_score,
+                        "new_chosen_phases": _new_phases,
+                        "banner": _banner,
+                    })
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
         # ─── Blackboard POST routes (Phase 38 COMM-01, COMM-02, COMM-04) ──────────
         #
         # POST /api/findings — write a finding to agent_findings table.
