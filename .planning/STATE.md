@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.1
 milestone_name: The Gathering
 status: completed
-stopped_at: Plan 42-01 complete
+stopped_at: Plan 42-02 complete
 last_updated: "2026-05-12T00:00:00.000Z"
-last_activity: "2026-05-12 — Plan 42-01 complete: migration 018 (task_completions + ivfflat embedding), complexity_scorer.py (7-feature scoring API, 0-100 int, configurable buckets), config keys (complexity_buckets/force_phases/scale_adaptive in both shipped template and repo config), task pin-phases subcommand in amauta.py, --force-phases flag in gsd-amauta.cjs. Phase 42 Wave 1 DONE."
+last_activity: "2026-05-12 — Plan 42-02 complete: daemon endpoints /api/complexity/score+complete (4-layer override precedence), gsd-tools complexity-score+complete subcommands, plan-phase+execute-phase entry steps wired to print banner+persist score, step-06-close writes task_completions row at every close, step-orchestrator.py get_next_step() now skips non-chosen phases with T-floor invariant (ALWAYS_RUN_STEPS). Phase 42 Wave 2a DONE."
 progress:
   total_phases: 7
   completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
+  total_plans: 4
+  completed_plans: 4
   percent: 14
 ---
 
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-14 after v3.0 milestone close)
 
 ## Current Position
 
-Phase: 42 IN PROGRESS — Plan 42-01 complete
-Plan: 42-01 COMPLETE
-Status: Plan 42-01 shipped. Complexity scorer foundation done. task_completions migration, 7-feature scoring service, config schema, CLI surfaces all delivered.
-Last activity: 2026-05-12 — Plan 42-01 complete: migration 018 (task_completions + ivfflat embedding), complexity_scorer.py (7-feature scoring API, 0-100 int, configurable buckets), config keys (complexity_buckets/force_phases/scale_adaptive in both shipped template and repo config), task pin-phases subcommand in amauta.py, --force-phases flag in gsd-amauta.cjs. Phase 42 Wave 1 DONE.
+Phase: 42 IN PROGRESS — Plans 42-01 and 42-02 complete
+Plan: 42-02 COMPLETE
+Status: Plans 42-01 and 42-02 shipped. Scorer foundation + full workflow integration done. Complexity score at entry, phase routing with T-floor invariant, task_completions at close.
+Last activity: 2026-05-12 — Plan 42-02 complete: daemon /api/complexity/score+complete endpoints (4-layer override), gsd-tools CLI subcommands, plan-phase+execute-phase entry banners, step-06-close best-effort write, step-orchestrator.py STEP_TO_PHASE+ALWAYS_RUN_STEPS+get_next_step rewrite. Phase 42 Wave 2a DONE.
 
 Progress: [██░░░░░░░░] ~14% (1 of 7 phases complete)
 
