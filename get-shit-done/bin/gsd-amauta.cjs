@@ -1898,10 +1898,34 @@ async function main() {
   const noInherit = noInheritIdx !== -1;
   if (noInheritIdx !== -1) rawArgs.splice(noInheritIdx, 1);  // strip --no-inherit before subcommand dispatch
 
+  // --force-phases=<set>: Phase 42 / SCALE-02 override of the auto-selected RPETD phase set.
+  // Accepts: full|rpetd|rpet|pet|pe|e or a comma list like R,P,E,T
+  // Stashed into GSD_FORCE_PHASES env so Python (amauta.py / step-orchestrator.py /
+  // complexity_scorer.py) can read it via os.environ.get("GSD_FORCE_PHASES").
+  // The flag is NOT stripped from rawArgs so it propagates to exec/amauta.py invocations.
+  let forcePhasesValue = null;
+  for (let i = 0; i < rawArgs.length; i++) {
+    const arg = rawArgs[i];
+    if (arg.startsWith('--force-phases=')) {
+      forcePhasesValue = arg.slice('--force-phases='.length);
+      break;
+    }
+    if (arg === '--force-phases') {
+      const next = rawArgs[i + 1];
+      if (next !== undefined && !next.startsWith('--')) {
+        forcePhasesValue = next;
+      }
+      break;
+    }
+  }
+  if (forcePhasesValue) {
+    process.env.GSD_FORCE_PHASES = forcePhasesValue;
+  }
+
   const command = rawArgs[0];
   const rest = rawArgs.slice(1);
 
-  if (!command) {
+  if (!command || command === '--help' || command === 'help') {
     process.stdout.write(
       '\n' +
       '  \x1b[36m█████╗ ███╗   ███╗ █████╗ ██╗   ██╗████████╗ █████╗\x1b[0m\n' +
@@ -1940,6 +1964,12 @@ async function main() {
       '    validate <id> --pass|--fail|--gaps-found (exit 2) --validator <agent> --notes "..."\n' +
       '                [--gap "REQ-ID:description"] [--non-gaps "obs"]\n' +
       '                [--subtasks "Fix A|Add B"] [--force-reason "justification"] [--json]\n' +
+      '\n' +
+      '  \x1b[33mScale-Adaptive (Phase 42):\x1b[0m\n' +
+      '    --force-phases=<set>           Override RPETD phase set for this invocation\n' +
+      '                                   set: full|rpetd|rpet|pet|pe|e or R,P,E,T\n' +
+      '    task pin-phases <id> <set>     Pin phases for a task (per-task override)\n' +
+      '    task pin-phases <id> <set> --clear  Remove existing pin\n' +
       '\n' +
       '  \x1b[33mAudit:\x1b[0m\n' +
       '    audit show <task-id>         Full audit trail for a task\n' +
@@ -2114,6 +2144,13 @@ async function main() {
 
     case 'exec':
       exitCode = await cmdExec(useDaemon, rest, jsonMode);
+      break;
+
+    // Phase 42 / SCALE-02: task subcommand group (pin-phases)
+    // Forwards all args to amauta.py 'task ...' so 'node gsd-amauta.cjs task pin-phases TK-XXXX full'
+    // reaches 'python3 amauta.py task pin-phases TK-XXXX full'.
+    case 'task':
+      exitCode = await cmdExec(useDaemon, ['task', ...rest], jsonMode);
       break;
 
     case 'audit':
