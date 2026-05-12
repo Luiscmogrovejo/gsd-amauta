@@ -48,6 +48,26 @@ mkdir -p ".planning/phases/${padded_phase}-${phase_slug}"
 
 **Existing artifacts from init:** `has_research`, `has_plans`, `plan_count`.
 
+## 2.5. Compute Complexity Score (Phase 42 / SCALE-01)
+
+Before any plan-checker or research, compute the complexity score for this phase.
+
+```bash
+PLAN_PATH=""  # plans don't exist yet at step-01-init for fresh runs
+SCORE_JSON=$(node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" complexity-score "" \
+  --task-id "${PHASE}-plan-phase" \
+  --phase "${PHASE}" \
+  --workflow plan-phase 2>/dev/null || echo '{"score":0,"chosen_phases":["R","P","E","T"],"override_source":"fallback","banner":"Phase 42 scorer unavailable; defaulting to R,P,E,T."}')
+
+COMPLEXITY_SCORE=$(echo "$SCORE_JSON" | jq -r '.score // 0')
+CHOSEN_PHASES=$(echo "$SCORE_JSON" | jq -c '.chosen_phases // ["R","P","E","T"]')
+OVERRIDE_SOURCE=$(echo "$SCORE_JSON" | jq -r '.override_source // "auto"')
+BANNER=$(echo "$SCORE_JSON" | jq -r '.banner // ""')
+echo "$BANNER"
+```
+
+Persist `COMPLEXITY_SCORE`, `CHOSEN_PHASES`, and `OVERRIDE_SOURCE` for inclusion in the StepHandoff (step_output below).
+
 ## 3. Validate Phase
 
 ```bash
@@ -203,6 +223,9 @@ At the end of this step, save a StepHandoff via POST /api/steps/plan-phase/{PHAS
     "plan_checker_enabled": "{plan_checker_enabled}",
     "nyquist_validation_enabled": "{nyquist_validation_enabled}",
     "phase_req_ids": "{phase_req_ids}",
+    "complexity_score": "{COMPLEXITY_SCORE}",
+    "chosen_phases": "{CHOSEN_PHASES}",
+    "override_source": "{OVERRIDE_SOURCE}",
     "state_path": "{state_path}",
     "roadmap_path": "{roadmap_path}",
     "requirements_path": "{requirements_path}",
