@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v3.1
 milestone_name: The Gathering
 status: completed
-stopped_at: Plan 41-03 complete — Phase 41 DONE, integration tests complete, 151 new assertions
-last_updated: "2026-04-16T13:26:39.551Z"
-last_activity: "2026-04-16 — Plan 41-03 complete: 7 test files (step-orchestrator, step-handoff-daemon, step-handoff-schema, sharded-workflow-integration, sharded-workflow-halt, sharded-workflow-legacy, migration-017). 151 assertions. Phase 41 DONE."
+stopped_at: Plan 42-01 complete
+last_updated: "2026-05-12T00:00:00.000Z"
+last_activity: "2026-05-12 — Plan 42-01 complete: migration 018 (task_completions + ivfflat embedding), complexity_scorer.py (7-feature scoring API, 0-100 int, configurable buckets), config keys (complexity_buckets/force_phases/scale_adaptive in both shipped template and repo config), task pin-phases subcommand in amauta.py, --force-phases flag in gsd-amauta.cjs. Phase 42 Wave 1 DONE."
 progress:
   total_phases: 7
   completed_phases: 1
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-14 after v3.0 milestone close)
 
 ## Current Position
 
-Phase: 41 COMPLETE — Phase 42 (Scale-Adaptive Intelligence) is next
-Plan: 41-03 COMPLETE
-Status: Plan 41-03 shipped. Phase 41 complete. All 3 workflows sharded, 151 new assertions, 3635 passing in full suite.
-Last activity: 2026-04-16 — Plan 41-03 complete: 7 test files (step-orchestrator, step-handoff-daemon, step-handoff-schema, sharded-workflow-integration, sharded-workflow-halt, sharded-workflow-legacy, migration-017). 151 assertions. Phase 41 DONE.
+Phase: 42 IN PROGRESS — Plan 42-01 complete
+Plan: 42-01 COMPLETE
+Status: Plan 42-01 shipped. Complexity scorer foundation done. task_completions migration, 7-feature scoring service, config schema, CLI surfaces all delivered.
+Last activity: 2026-05-12 — Plan 42-01 complete: migration 018 (task_completions + ivfflat embedding), complexity_scorer.py (7-feature scoring API, 0-100 int, configurable buckets), config keys (complexity_buckets/force_phases/scale_adaptive in both shipped template and repo config), task pin-phases subcommand in amauta.py, --force-phases flag in gsd-amauta.cjs. Phase 42 Wave 1 DONE.
 
 Progress: [██░░░░░░░░] ~14% (1 of 7 phases complete)
 
@@ -37,7 +37,7 @@ Progress: [██░░░░░░░░] ~14% (1 of 7 phases complete)
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
 | 41 | Sharded Workflows (FOUNDATION) | SHARD-01..05 | COMPLETE (3 plans, 151 new assertions) |
-| 42 | Scale-Adaptive Intelligence | SCALE-01..04 | Not started |
+| 42 | Scale-Adaptive Intelligence | SCALE-01..04 | In progress (Plan 42-01 done) |
 | 43 | Skills Architecture | SKILL-01..04 | Not started |
 | 44 | Cross-IDE Installer | INST-01..04 | Not started |
 | 45 | Intelligent Help Routing | HELP-01..03 | Not started |
@@ -68,15 +68,24 @@ Progress: [██░░░░░░░░] ~14% (1 of 7 phases complete)
 
 - Run `npx c8 --reporter json-summary node scripts/run-tests.cjs` to bootstrap .coverage_threshold.json with real values (carried from v3.0).
 
+### In-Session Infra Followups (2026-05-12 — scope-separate from Phase 42+)
+
+Context: 2026-05-12 health audit caught RLM dead 13h from uncaught BrokenPipe + watchdog gave up after 1 retry. Three commits landed + validated this session: `c0ce195` (rlm BrokenPipe swallow), `b41ad40` (RLM watchdog self-heal), `48728f1` (Redis watchdog mirror). Pipeline restored to healthy. These 4 items remain open.
+
+1. **Activate Redis self-heal fix** (commit `48728f1`). Currently staged in source only — daemon at PID 57335 still running pre-mirror code (b41ad40 RLM-only). Operator must restart daemon at low-traffic window. Verify activation via: `tail -f data/amauta-daemon.err.log | grep -E "redis_(reconnect|restart_counter_reset|max_restarts_cooldown)"`.
+2. **Counter-reset uptime-window live test (~7 min synthetic).** TK-B's cooldown path inspected-only — only fires when `_start_rlm` returns False. To exercise: bind port 18798 externally for 5+ min, watch watchdog cycle 3 attempts → 300s cooldown → reset → resume. Required to declare 2026-05-11 incident class fully closed.
+3. **PATH collision** — bare `amauta` resolves to pipx `amauta-ai` package (`/Users/luismogrovejo/.local/pipx/venvs/amauta-ai/bin/amauta`), not the plugin (`~/.claude/get-shit-done/bin/amauta.cjs`). Options: (a) symlink shadow at `~/.local/bin/amauta` to plugin, (b) leave + use slash commands + absolute paths only, (c) rename plugin binary to `gsd-amauta` on PATH.
+4. **Observability gap (not a regression)** — health endpoint's `rlm_restarts` field resets on `_start_rlm` success, so a recent burst doesn't show in monitoring. Consider a separate `rlm_restarts_lifetime` cumulative counter for monitoring. Same gap applies to `redis_restarts` after Redis fix activates.
+
 ### Blockers/Concerns
 
 - OBSERVATION: tests/13.1-divergence-protocol.integration.test.cjs LLM behavioral tests fail intermittently. Pre-existing issue from v2.6. Not a blocker.
 
 ## Session Continuity
 
-Last session: 2026-04-16T00:00:00.000Z
-Stopped at: Plan 41-03 complete — Phase 41 DONE, integration tests complete, 151 new assertions
-Resume file: .planning/phases/41-sharded-workflows/41-03-SUMMARY.md
+Last session: 2026-05-12T16:26:20.560Z
+Stopped at: Phase 42 context gathered
+Resume file: .planning/phases/42-scale-adaptive-intelligence/42-CONTEXT.md
 
 ## Learnings
 
@@ -96,6 +105,8 @@ Resume file: .planning/phases/41-sharded-workflows/41-03-SUMMARY.md
 
 
 
+
+- [learning] 2026-05-12T15:11:10.645Z: Subprocess watchdog self-heal pattern: pair uptime-gated counter reset (>=300s healthy + count>0) with cooldown-after-cap (sleep then reset+continue, never abandon) + exponential backoff between retries (min(2^(n-1),60)s) + first-iteration-immediate (sleep at bottom of loop). Prevents the canonical failure mode where 1-2 crashes in tight succession burn the retry budget and leave a permanently degraded supervisor until manual restart
 - [learning] 2026-04-16T13:02:06.934Z: legacy regression test: free text learning
 - [learning] 2026-04-16T12:58:22.349Z: legacy regression test: free text learning
 - [learning] 2026-04-16T12:54:33.591Z: legacy regression test: free text learning

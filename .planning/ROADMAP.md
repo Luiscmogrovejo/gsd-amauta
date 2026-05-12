@@ -36,6 +36,7 @@
   - [x] Plan 41-02: execute-phase + discuss-phase Sharding + Legacy Fallback (6 execute steps, 4 discuss steps, routers, legacy backups, schema copies, gsd-tools step-handoff helpers) — COMPLETE 2026-04-13
   - [x] Plan 41-03: Integration Tests + Regression Suite (7 test files, 151 assertions, full regression 3635 passing) — COMPLETE 2026-04-16
 - [ ] **Phase 42: Scale-Adaptive Intelligence** — Continuous complexity classifier (0-100), phase selector, PG-backed learning from past tasks, divergence-triggered auto-escalation (SCALE-01..04) — depends on 41
+  - [x] Plan 42-01: Complexity Scorer Foundation + CLI + Config Schema (migration 018, complexity_scorer.py, config keys, --force-phases flag, pin-phases subcommand) — COMPLETE 2026-05-12
 - [ ] **Phase 43: Skills Architecture** — Refactor workflows to SKILL.md format with YAML frontmatter; invocation memory with hybrid search; skill compiler for cross-IDE output; Semgrep tool enforcement (SKILL-01..04) — depends on 41
 - [ ] **Phase 44: Cross-IDE Installer** — `npx gsd-amauta init` 6-step flow; IDE auto-detection; non-interactive CI mode; legacy migration (INST-01..04) — depends on 43
 - [ ] **Phase 45: Intelligent Help Routing** — `/amauta:help` queries 4 sources deterministically; pattern learning from PG history; get-bearings integration (HELP-01..03) — depends on 43
