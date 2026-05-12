@@ -49,6 +49,13 @@
  *     --feature-vector @file           Path to JSON file containing feature vector
  *     --raw-score N                    Raw complexity score
  *     [--escalation-history @file]     Path to JSON file with escalation events
+ *   complexity-escalate <task_id>     Re-score after divergence; append escalation flags (Phase 42 SCALE-04)
+ *     --phase N                        Phase number
+ *     --workflow NAME                  Workflow name (default: execute-phase)
+ *     [--executor-report @file]        Path to JSON file with executor report
+ *     [--validator-report @file]       Path to JSON file with validator report
+ *     Output: JSON with escalated, fired_triggers, new_score, new_chosen_phases, cap_hit, banner
+ *     Graceful: prints fallback JSON and exits 0 when daemon unreachable
  *
  * Phase Operations:
  *   phase next-decimal <phase>         Calculate next decimal phase number
@@ -1898,7 +1905,7 @@ async function main() {
   const command = args[0];
 
   if (!command) {
-    error('Usage: gsd-tools <command> [args] [--raw] [--cwd <path>]\nCommands: state, resolve-model, find-phase, commit, verify-summary, verify, frontmatter, template, generate-slug, current-timestamp, list-todos, verify-path-exists, config-ensure-section, init, complexity-score, complexity-complete');
+    error('Usage: gsd-tools <command> [args] [--raw] [--cwd <path>]\nCommands: state, resolve-model, find-phase, commit, verify-summary, verify, frontmatter, template, generate-slug, current-timestamp, list-todos, verify-path-exists, config-ensure-section, init, complexity-score, complexity-complete, complexity-escalate');
   }
 
   switch (command) {
@@ -2691,6 +2698,82 @@ async function main() {
           resolve();
         });
         req.write(completeBody);
+        req.end();
+      });
+      break;
+    }
+
+    case 'complexity-escalate': {
+      // Phase 42 SCALE-04: re-score after divergence event; append escalation flags.
+      // POST to daemon /api/complexity/escalate; graceful degradation on daemon-down.
+      const escTaskId      = args[1] || '';
+      const escPhaseIdx    = args.indexOf('--phase');
+      const escWfIdx       = args.indexOf('--workflow');
+      const escExecIdx     = args.indexOf('--executor-report');
+      const escValIdx      = args.indexOf('--validator-report');
+
+      // --executor-report @file reads JSON from path
+      let _execRpt = null;
+      if (escExecIdx !== -1) {
+        const execArg = args[escExecIdx + 1] || '';
+        const execPath = execArg.startsWith('@') ? execArg.slice(1) : execArg;
+        try { _execRpt = JSON.parse(fs.readFileSync(execPath, 'utf8')); } catch { _execRpt = null; }
+      }
+
+      // --validator-report @file reads JSON from path
+      let _valRpt = null;
+      if (escValIdx !== -1) {
+        const valArg = args[escValIdx + 1] || '';
+        const valPath = valArg.startsWith('@') ? valArg.slice(1) : valArg;
+        try { _valRpt = JSON.parse(fs.readFileSync(valPath, 'utf8')); } catch { _valRpt = null; }
+      }
+
+      const escalateBody = JSON.stringify({
+        task_id:          escTaskId,
+        phase_number:     escPhaseIdx !== -1 ? parseInt(args[escPhaseIdx + 1], 10) : 0,
+        workflow_name:    escWfIdx !== -1 ? args[escWfIdx + 1] : 'execute-phase',
+        executor_report:  _execRpt,
+        validator_report: _valRpt,
+      });
+
+      const _escPort = parseInt(process.env.GSD_AMAUTA_PORT || process.env.AMAUTA_PORT || '18799');
+      const _escFallback = JSON.stringify({
+        escalated: false,
+        reason: 'daemon-unreachable',
+        banner: 'ESCALATION: daemon down — escalation suspended.',
+      });
+
+      await new Promise((resolve) => {
+        const http = require('http');
+        const req = http.request({
+          hostname: '127.0.0.1',
+          port: _escPort,
+          path: '/api/complexity/escalate',
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(escalateBody) },
+        }, (res) => {
+          let data = '';
+          res.on('data', (chunk) => { data += chunk; });
+          res.on('end', () => {
+            let parsed;
+            try { parsed = JSON.parse(data); } catch { parsed = { banner: data }; }
+            // Always print banner to stderr in bold so it is visible above other output
+            const banner = parsed.banner || '';
+            if (banner) {
+              process.stderr.write(`\x1b[1m${banner}\x1b[0m\n`);
+            }
+            try { process.stdout.write(JSON.stringify(parsed, null, 2) + '\n'); }
+            catch { process.stdout.write(data + '\n'); }
+            resolve();
+          });
+        });
+        req.on('error', () => {
+          const fb = JSON.parse(_escFallback);
+          process.stderr.write(`\x1b[1m${fb.banner}\x1b[0m\n`);
+          process.stdout.write(_escFallback + '\n');
+          resolve();
+        });
+        req.write(escalateBody);
         req.end();
       });
       break;
