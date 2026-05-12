@@ -87,6 +87,50 @@ if [ "$AMAUTA_OK" = "1" ] && [ -n "$PHASE_TASK_ID" ]; then
 fi
 ```
 
+## 1.5. Detect Validator-Triggered Escalation (Phase 42 / SCALE-04)
+
+After gsd-validator returns its verdict but BEFORE applying the verdict routing in §1's table, check for retro-escalation triggers.
+
+```bash
+# Read VERIFICATION.md for verdict + any manifest violations.
+VERIFICATION_PATH=$(ls "$PHASE_DIR"/*-VERIFICATION.md 2>/dev/null | head -1)
+VERDICT=$(grep "^status:" "$VERIFICATION_PATH" 2>/dev/null | cut -d: -f2 | tr -d ' ')
+
+# Manifest violations: gsd-validator records them under a "violations:" YAML block
+# or in the gaps section. Look for the literal pattern "manifest_violation" anywhere
+# in the VERIFICATION.md body.
+VIOLATIONS_JSON="[]"
+if grep -q "manifest_violation" "$VERIFICATION_PATH" 2>/dev/null; then
+  VIOLATIONS_JSON='["manifest_violation"]'
+fi
+
+VALIDATOR_REPORT=$(mktemp --suffix=.json)
+cat <<EOF > "$VALIDATOR_REPORT"
+{
+  "verdict": "${VERDICT:-unknown}",
+  "violations": ${VIOLATIONS_JSON}
+}
+EOF
+
+ESCALATION_RESULT=$(node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" complexity-escalate \
+  "${PHASE_NUMBER}-execute-phase" \
+  --phase "${PHASE_NUMBER}" \
+  --workflow execute-phase \
+  --validator-report @"$VALIDATOR_REPORT" 2>/dev/null || echo '{"escalated":false}')
+
+rm -f "$VALIDATOR_REPORT"
+
+if [ "$(echo "$ESCALATION_RESULT" | jq -r '.escalated')" = "true" ]; then
+  echo "$ESCALATION_RESULT" | jq -r '.banner'
+  NEW_PHASES=$(echo "$ESCALATION_RESULT" | jq -c '.new_chosen_phases')
+  echo "ESCALATION: Validator triggered retro-escalation. New chosen_phases=${NEW_PHASES}."
+  # The workflow router (workflow.md) reads the updated step_handoffs row and inserts
+  # additional R/P/D/S/A phases before close per the SCALE-04 spec.
+fi
+```
+
+Then proceed to the existing `## 2. Validation Enforcement` section unchanged.
+
 ## 2. Validation Enforcement
 
 **MANDATORY: External Validation Gate**
