@@ -3197,6 +3197,60 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": _safe_error(e)}, 500)
             return
 
+        # ─── Skill Invocation POST routes (Phase 43 SKILL-02) ───────────────────────
+        #
+        # POST /api/skills/invoke   — write pre-execution invocation row + return top-3 neighbors.
+        # POST /api/skills/complete — update outcome_class + completed_at by invocation_id.
+
+        if path == "/api/skills/invoke":
+            try:
+                import sys as _sis_sys
+                _sis_dir = os.path.dirname(os.path.abspath(__file__))
+                if _sis_dir not in _sis_sys.path:
+                    _sis_sys.path.insert(0, _sis_dir)
+                import skill_invocation_store as _sis
+                _skill_name = body.get("skill_name") or ""
+                _prompt = body.get("prompt") or ""
+                _args = body.get("args") or {}
+                if not _skill_name or not _prompt:
+                    self._send_json({"error": "skill_name and prompt required"}, 400)
+                    return
+                _invocation_id = _sis.record_invocation(_skill_name, _prompt, _args, outcome_class=None)
+                _neighbors = _sis.retrieve_similar(_skill_name, _prompt)
+                self._send_json({
+                    "invocation_id": _invocation_id,
+                    "neighbors": _neighbors or [],
+                })
+            except Exception as e:
+                log.exception("/api/skills/invoke failed")
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
+        if path == "/api/skills/complete":
+            try:
+                import sys as _sic_sys
+                _sic_dir = os.path.dirname(os.path.abspath(__file__))
+                if _sic_dir not in _sic_sys.path:
+                    _sic_sys.path.insert(0, _sic_dir)
+                import skill_invocation_store as _sis
+                _invocation_id = body.get("invocation_id") or ""
+                _outcome_class = body.get("outcome_class") or ""
+                if not _invocation_id or not _outcome_class:
+                    self._send_json({"error": "invocation_id and outcome_class required"}, 400)
+                    return
+                if _outcome_class not in ("success", "fail", "escalation"):
+                    self._send_json({"error": "outcome_class must be success|fail|escalation"}, 400)
+                    return
+                _ok = _sis.update_outcome(_invocation_id, _outcome_class)
+                if _ok:
+                    self._send_json({"ok": True})
+                else:
+                    self._send_json({"ok": False, "error": "invocation not found"}, 404)
+            except Exception as e:
+                log.exception("/api/skills/complete failed")
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
         # ─── Blackboard POST routes (Phase 38 COMM-01, COMM-02, COMM-04) ──────────
         #
         # POST /api/findings — write a finding to agent_findings table.
