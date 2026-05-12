@@ -5847,7 +5847,123 @@ AGENT WORKFLOW (heartbeat cycle):
     au_sh.add_argument("--format", choices=["table", "json"], default="table",
                        help="Output format: table (default) or json")
 
+    # ── task — Phase 42 / SCALE-02: per-task operations ──────────────────────
+    t = sub.add_parser("task", help="Task-level operations (Phase 42)")
+    t_sub = t.add_subparsers(dest="task_cmd", required=True)
+    pin = t_sub.add_parser("pin-phases", help="Pin RPETD phase set for a task")
+    pin.add_argument("task_id", help="Task ID (e.g., TK-0042)")
+    pin.add_argument("phase_set",
+                     help="Phase set: full|rpetd|rpet|pet|pe|e (or comma list like R,P,E,T)")
+    pin.add_argument("--clear",  action="store_true", help="Remove existing pin")
+    pin.add_argument("--json",   action="store_true", help="Emit JSON")
+
     return p
+
+
+# ── TASK (Phase 42 / SCALE-02) ────────────────────────────────────────────────
+
+_PHASE_SET_MAP = {
+    "e":     ["E"],
+    "pe":    ["P", "E"],
+    "pet":   ["P", "E", "T"],
+    "rpet":  ["R", "P", "E", "T"],
+    "rpetd": ["R", "P", "E", "T", "D"],
+    "full":  ["R", "P", "E", "T", "D", "S", "A"],
+}
+_VALID_PHASE_LETTERS = {"R", "P", "E", "T", "D", "S", "A"}
+
+
+def _normalize_phase_set(phase_set_str: str) -> Optional[list]:
+    """Normalize a phase_set string to a canonical list of phase letters.
+
+    Accepts shorthand names (full, rpetd, rpet, pet, pe, e) or a comma-separated
+    list of individual phase letters (e.g. R,P,E,T). Returns None on invalid input.
+    """
+    s = phase_set_str.strip().lower()
+    if s in _PHASE_SET_MAP:
+        return _PHASE_SET_MAP[s]
+    # Try comma-separated list
+    parts = [p.strip().upper() for p in phase_set_str.split(",")]
+    if all(p in _VALID_PHASE_LETTERS for p in parts) and len(parts) > 0:
+        return parts
+    return None
+
+
+def cmd_task_pin_phases(args):
+    """Phase 42 / SCALE-02: Pin or clear a task's forced RPETD phase set.
+
+    Persists the pin as a structured note on the task (grep-able via
+    'amauta show <id>'). The note format is:
+        pinned_phases:<SET>  (e.g. pinned_phases:R,P,E,T)
+    or on clear:
+        pinned_phases:CLEARED
+
+    Precedence in the workflow: per-invocation --force-phases > per-task
+    pinned_phases (this command) > project config > auto-selected.
+    """
+    task_id = args.task_id
+    json_out = getattr(args, "json", False)
+
+    with _file_lock():
+        data = load()
+        item = _find(data["items"], task_id)
+        if not item:
+            msg = f"{task_id} not found."
+            if json_out:
+                print(json.dumps({"task_id": task_id, "status": "error", "message": msg}))
+            else:
+                print(c(msg, RED))
+            sys.exit(1)
+
+        if getattr(args, "clear", False):
+            _append_note(item, "pinned_phases:CLEARED", by="system")
+            item["updated_at"] = _now()
+            save(data)
+            if json_out:
+                print(json.dumps({"task_id": task_id, "status": "cleared", "pinned_phases": None}))
+            else:
+                print(c(f"Phase pin cleared for {task_id}", GREEN))
+            return
+
+        phases = _normalize_phase_set(args.phase_set)
+        if phases is None:
+            msg = (
+                f"Invalid phase_set '{args.phase_set}'. "
+                f"Use one of: full, rpetd, rpet, pet, pe, e "
+                f"or a comma list from R,P,E,T,D,S,A"
+            )
+            if json_out:
+                print(json.dumps({"task_id": task_id, "status": "error", "message": msg}))
+            else:
+                print(c(msg, RED))
+            sys.exit(1)
+
+        pin_value = ",".join(phases)
+        _append_note(item, f"pinned_phases:{pin_value}", by="system")
+        item["updated_at"] = _now()
+        save(data)
+
+        if json_out:
+            print(json.dumps({
+                "task_id": task_id,
+                "status": "pinned",
+                "pinned_phases": phases,
+            }))
+        else:
+            print(c(f"Phase set pinned for {task_id}: {phases}", GREEN))
+
+
+def cmd_task(args):
+    """Dispatcher for 'task' subcommand group (Phase 42 / SCALE-02)."""
+    task_cmd_dispatch = {
+        "pin-phases": cmd_task_pin_phases,
+    }
+    fn = task_cmd_dispatch.get(args.task_cmd)
+    if fn:
+        fn(args)
+    else:
+        print(c(f"Unknown task subcommand: {args.task_cmd}", RED))
+        sys.exit(1)
 
 
 def main():
@@ -5889,6 +6005,7 @@ def main():
         "migrate":     cmd_migrate,
         "archive":     cmd_archive,
         "reconcile":   cmd_reconcile,
+        "task":        cmd_task,
     }
 
     fn = dispatch.get(args.command)
