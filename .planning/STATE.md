@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.1
 milestone_name: The Gathering
 status: in_progress
-stopped_at: Plan 42-04 complete
-last_updated: "2026-05-12T00:00:00.000Z"
-last_activity: "2026-05-12 — Plan 42-04 complete: calibrate_score + _load_similar_completions + _logistic_regression added to complexity_scorer.py (in-house NumPy LR, cold-start conservative-high bias, pgvector cosine neighbor retrieval). Daemon /api/complexity/score now calls calibrate_score + returns calibrated_score/cold_start/confidence/adjustment. 5 test files: complexity-scorer.test.cjs (19 tests, 44 assert), escalation-triggers.test.cjs (13 tests, 30 assert), scale-adaptive-integration.test.cjs (16 tests, 33 assert), task-completions-learning.test.cjs (12 tests, 43 assert + TEST-SCALE03 binding), test_complexity_scorer.py (27 tests, 32 assert). Wave gate: 150 JS + 32 Python assertions. Phase 42 COMPLETE."
+stopped_at: Phase 43 Plan 43-03 complete
+last_updated: "2026-05-12T21:20:00.000Z"
+last_activity: "2026-05-12 — Plan 43-03 complete: .semgrep/skill-enforcement.yml (3 ERROR rules: skill-read-only-no-write, skill-allowed-tools-required, skill-bash-mutation-verbs-readonly), mutation_verbs.txt (14 seed verbs), skill-semgrep-runner.cjs (254 LOC, exit codes 0/1/2/3), .husky/pre-commit hook, semgrep:skills npm script, 7-test fixture suite (2 pass + 5 skip). Phase 43 COMPLETE."
 progress:
   total_phases: 7
-  completed_phases: 2
-  total_plans: 5
-  completed_plans: 5
-  percent: 28
+  completed_phases: 3
+  total_plans: 10
+  completed_plans: 10
+  percent: 43
 ---
 
 # GSD-Amauta -- Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-14 after v3.0 milestone close)
 
 ## Current Position
 
-Phase: 42 COMPLETE — All 4 plans shipped
-Plan: 42-04 COMPLETE
-Status: Plans 42-01 through 42-04 shipped. Scorer foundation + workflow integration + auto-escalation + logistic regression learning loop all complete. SCALE-01 through SCALE-04 satisfied. Phase 42 DONE.
-Last activity: 2026-05-12 — Plan 42-04 complete: calibrate_score (cold-start bias + NumPy logistic regression), daemon calibrated_score wiring, 5 test files (150 JS + 32 Python assertions, wave gate >= 80 JS + 20 Python), TEST-SCALE03 accuracy-improves-over-N binding present.
+Phase: 43 COMPLETE — Plans 43-01, 43-02, 43-03 all shipped
+Plan: 43-03 COMPLETE
+Status: Phase 43 complete. SKILL.md schema locked (43-01), invocation memory + hybrid RRF retrieval (43-02), Semgrep enforcement gate (43-03). SKILL-01 through SKILL-04 all satisfied. Phase 44 (Cross-IDE Installer), 45 (Help Routing), 46 (MCP Server) now unblocked. Phase 47 (Agent Hydration) unblocked (requires 42+43 — both complete).
+Last activity: 2026-05-12 — Plan 43-03 complete: .semgrep/skill-enforcement.yml (3 ERROR rules), mutation_verbs.txt (14 seed verbs), skill-semgrep-runner.cjs (254 LOC), .husky/pre-commit, semgrep:skills npm script, 7-test fixture suite.
 
 Progress: [██░░░░░░░░] ~14% (1 of 7 phases complete)
 
@@ -38,7 +38,7 @@ Progress: [██░░░░░░░░] ~14% (1 of 7 phases complete)
 |-------|------|--------------|--------|
 | 41 | Sharded Workflows (FOUNDATION) | SHARD-01..05 | COMPLETE (3 plans, 151 new assertions) |
 | 42 | Scale-Adaptive Intelligence | SCALE-01..04 | COMPLETE (4 plans, 150 JS + 32 Python assertions) |
-| 43 | Skills Architecture | SKILL-01..04 | Not started |
+| 43 | Skills Architecture | SKILL-01..04 | In progress (Plan 43-01 COMPLETE) |
 | 44 | Cross-IDE Installer | INST-01..04 | Not started |
 | 45 | Intelligent Help Routing | HELP-01..03 | Not started |
 | 46 | Standalone MCP Server | MCP-01..03 | Not started |
@@ -64,6 +64,10 @@ Progress: [██░░░░░░░░] ~14% (1 of 7 phases complete)
 - Phases 44, 45, 46 are independent after Phase 43 — can run in any order or parallel.
 - 7 phases justified despite coarse granularity: each category is a natural delivery boundary with distinct dependencies.
 
+- Plan 43-01: SkillFrontmatter 7-field declaration order locked (security_class BEFORE allowed-tools) — required by Semgrep 43-03-02 regex contract.
+- Plan 43-01: Compiler uses manifest_skip warnings for unfit skills; only depends_on cycles trigger non-zero exit (code 2). Three IDE targets: claude (identity), opencode (+compatibility field), cursor (snake_case aliases).
+- Plan 43-01: Canonical skills live in get-shit-done/skills/<name>/SKILL.md; compiler outputs in .{claude,cursor,opencode}/skills/ are gitignored (Area 2 VCS policy).
+
 ### Pending Todos
 
 - Run `npx c8 --reporter json-summary node scripts/run-tests.cjs` to bootstrap .coverage_threshold.json with real values (carried from v3.0).
@@ -83,9 +87,9 @@ Context: 2026-05-12 health audit caught RLM dead 13h from uncaught BrokenPipe + 
 
 ## Session Continuity
 
-Last session: 2026-05-12T16:26:20.560Z
-Stopped at: Phase 42 context gathered
-Resume file: .planning/phases/42-scale-adaptive-intelligence/42-CONTEXT.md
+Last session: 2026-05-12T18:08:05.798Z
+Stopped at: Phase 43 context gathered
+Resume file: .planning/phases/43-skills-architecture/43-CONTEXT.md
 
 ## Learnings
 
@@ -107,6 +111,18 @@ Resume file: .planning/phases/42-scale-adaptive-intelligence/42-CONTEXT.md
 
 
 
+
+
+
+
+
+
+- [learning] 2026-05-12T17:56:07.023Z: E2E test learning — cleanup after test
+- [learning] 2026-05-12T17:53:31.207Z: legacy with agent
+- [learning] 2026-05-12T17:53:31.079Z: legacy regression test: free text learning
+- [learning] 2026-05-12T17:52:56.484Z: E2E test learning — cleanup after test
+- [learning] 2026-05-12T17:49:48.122Z: legacy with agent
+- [learning] 2026-05-12T17:49:47.955Z: legacy regression test: free text learning
 - [learning] 2026-05-12T17:20:19.618Z: Phase 42 step-orchestrator.py pattern: STEP_TO_PHASE map + ALWAYS_RUN_STEPS set + forward-cursor loop in get_next_step() implements phase skipping with T-floor invariant; step-05-validate appears in BOTH maps (T-letter for traceability, ALWAYS_RUN for runtime skip guard); empty chosen_phases = zero-skip backward compat; hyphen in filename requires importlib.util for Python tests.
 - [learning] 2026-05-12T15:11:10.645Z: Subprocess watchdog self-heal pattern: pair uptime-gated counter reset (>=300s healthy + count>0) with cooldown-after-cap (sleep then reset+continue, never abandon) + exponential backoff between retries (min(2^(n-1),60)s) + first-iteration-immediate (sleep at bottom of loop). Prevents the canonical failure mode where 1-2 crashes in tight succession burn the retry budget and leave a permanently degraded supervisor until manual restart
 - [learning] 2026-04-16T13:02:06.934Z: legacy regression test: free text learning

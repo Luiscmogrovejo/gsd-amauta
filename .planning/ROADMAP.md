@@ -41,7 +41,10 @@
   - [x] Plan 42-03: Divergence-Triggered Auto-Escalation — detect_escalation + apply_escalation, daemon /api/complexity/escalate, gsd-tools complexity-escalate, step-03-execute + step-04-verify wired, 2-cap enforced — COMPLETE 2026-05-12
   - [x] Plan 42-04: Logistic Regression Learning Loop + Cold Start + Test Suite — calibrate_score, _logistic_regression (in-house NumPy), cold-start conservative-high bias, daemon calibrated_score wiring, 5 test files (150 JS + 32 Python assertions, TEST-SCALE03 binding) — COMPLETE 2026-05-12
 - [x] **Phase 42: Scale-Adaptive Intelligence** — Continuous complexity classifier (0-100), phase selector, PG-backed learning from past tasks, divergence-triggered auto-escalation (SCALE-01..04) — COMPLETE 2026-05-12
-- [ ] **Phase 43: Skills Architecture** — Refactor workflows to SKILL.md format with YAML frontmatter; invocation memory with hybrid search; skill compiler for cross-IDE output; Semgrep tool enforcement (SKILL-01..04) — depends on 41
+- [x] **Phase 43: Skills Architecture** — Refactor workflows to SKILL.md format with YAML frontmatter; invocation memory with hybrid search; skill compiler for cross-IDE output; Semgrep tool enforcement (SKILL-01..04) — depends on 41 — COMPLETE 2026-05-12
+  - [x] Plan 43-01: SKILL.md schema + SkillFrontmatter Pydantic model + 3 canonical skills + skill-compiler.cjs + gsd-tools.cjs skills subcommand — COMPLETE 2026-05-12
+  - [x] Plan 43-02: Skill invocation memory (skill_invocations PG table, voyage-code-3 embeddings, hybrid BM25+pgvector RRF retrieval, daemon endpoints, gsd-tools invoke/complete) — COMPLETE 2026-05-12
+  - [x] Plan 43-03: Semgrep enforcement (skill-enforcement.yml 3 rules, mutation_verbs.txt, skill-semgrep-runner.cjs, .husky/pre-commit, semgrep:skills npm script, 7-test fixture suite) — COMPLETE 2026-05-12
 - [ ] **Phase 44: Cross-IDE Installer** — `npx gsd-amauta init` 6-step flow; IDE auto-detection; non-interactive CI mode; legacy migration (INST-01..04) — depends on 43
 - [ ] **Phase 45: Intelligent Help Routing** — `/amauta:help` queries 4 sources deterministically; pattern learning from PG history; get-bearings integration (HELP-01..03) — depends on 43
 - [ ] **Phase 46: Standalone MCP Server** — amauta-mcp.py as standalone with direct PG+Valkey; complexity-score tool; agent/findings resources (MCP-01..03) — depends on 43
@@ -112,7 +115,7 @@ Plans:
   2. Phase selector maps score to RPETD depth: 0-15 = Execute only, 16-35 = Plan+Execute+Test, 36-60 = R+P+E+T, 61-85 = full RPETD, 86-100 = full + security + architecture review; mapping is configurable.
   3. Past task outcomes are queried from PG using pgvector similarity on task metadata signatures; logistic regression calibration adjusts future predictions; accuracy improves measurably over 10+ tasks.
   4. An "Execute only" task that encounters unexpected complexity mid-execution triggers automatic re-scoring and phase escalation without user intervention; the escalation event is logged with before/after scores.
-**Plans:** 4 plans shipped (Wave 1: foundation + migration; Wave 2a: workflow wiring; Wave 2b: escalation; Wave 3: logistic regression learning loop + cold-start + test suite). COMPLETE.
+**Plans:** 4/4 plans complete
 
 Plans:
 - [x] 42-01: Migration 018 + complexity_scorer.py foundation (extract_features, score_features, select_phases, store_completion)
@@ -132,8 +135,9 @@ Plans:
 **Plans:** TBD (estimated 2 plans: skill format + compiler, invocation memory + enforcement + tests)
 
 Plans:
-- [ ] 43-01: TBD
-- [ ] 43-02: TBD
+- [x] 43-01: SKILL.md Schema + Canonical Skills + Compiler (SkillFrontmatter Pydantic model, walk_depends_on, 3 canonical SKILL.md files, skill-compiler.cjs TARGET_MAPS, gsd-tools skills subcommand, .gitignore policy, 9+12 tests) — COMPLETE 2026-05-12
+- [ ] 43-02: Invocation Memory (skill_invocations PG table, migration 019, hybrid BM25+pgvector retrieval, invocation logging hook)
+- [ ] 43-03: Semgrep Enforcement (skill-read-only-no-write rule, mutation_verbs.txt, pre-commit hook, CI step)
 
 ### Phase 44: Cross-IDE Installer
 **Goal:** A single command (`npx gsd-amauta init`) detects installed IDEs, installs compiled skill files, starts infrastructure, runs migrations, verifies health, and runs assertions. Works non-interactively in CI. Migrates legacy directory structures.
