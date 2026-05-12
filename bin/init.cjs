@@ -903,6 +903,190 @@ async function stepVerify(log) {
   return r;
 }
 
+/**
+ * Step 7 (INST-01 frozen final step): Run 5 post-install assertions.
+ *
+ * Each assertion produces one entry in details.assertions[] with {name, status, message}.
+ * Step status = worst-of-assertions (fail > warn > pass; skip ignored per 44-CONTEXT.md §Area 3).
+ *
+ * Five FROZEN assertion names (hard contract, 44-CONTEXT.md §Area 3 + §Specifics):
+ *   1. skill_files_present
+ *   2. compiler_validates
+ *   3. daemon_health
+ *   4. schema_applied
+ *   5. semgrep_rules_present
+ *
+ * @param {Array} prevResults — array of prior step results (from main() results array)
+ */
+async function stepAssertions(prevResults) {
+  const start = Date.now();
+  const assertions = [];
+
+  // Collect prior-step references for cross-step lookups.
+  prevResults = prevResults || [];
+  const detectResult  = prevResults.find(r => r.name === 'detect_ides')    || { details: {} };
+  const installResult = prevResults.find(r => r.name === 'install_skills') || {};
+  const daemonResult  = prevResults.find(r => r.name === 'start_daemon')   || {};
+  const infraResult   = prevResults.find(r => r.name === 'detect_infra')   || { details: {} };
+  const detections    = (detectResult.details && detectResult.details.detections) || [];
+
+  // ─── Assertion 1: skill_files_present ─────────────────────────────────────
+  {
+    // If install step was skipped entirely (e.g. --skip-install), skip this assertion too.
+    const installSkipped = installResult.status === 'skip';
+    const installs = installSkipped ? [] : detections.filter(d => d.action === 'install');
+    if (installs.length === 0) {
+      const skipReason = installSkipped ? '--skip-install was passed' : 'no IDEs marked for install';
+      assertions.push({ name: 'skill_files_present', status: 'skip', message: skipReason });
+    } else {
+      let allPresent = true;
+      const missing = [];
+      const platformCodes = skillCompiler ? skillCompiler.loadPlatformCodes() : {};
+      for (const det of installs) {
+        const codes = platformCodes[det.ide_id];
+        if (!codes) {
+          allPresent = false;
+          missing.push(`${det.ide_id}:no-yaml-entry`);
+          continue;
+        }
+        const targetDir = path.join(process.cwd(), codes.dir_name, codes.skill_subdir);
+        if (!fs.existsSync(targetDir)) {
+          allPresent = false;
+          missing.push(`${det.ide_id}:${targetDir}`);
+          continue;
+        }
+        try {
+          const entries = fs.readdirSync(targetDir);
+          const hasAnyMd = entries.some(f => f.endsWith('.md')) ||
+            entries.some(sub => {
+              try {
+                return fs.readdirSync(path.join(targetDir, sub)).some(f => f.endsWith('.md'));
+              } catch { return false; }
+            });
+          if (!hasAnyMd) {
+            allPresent = false;
+            missing.push(`${det.ide_id}:${targetDir}:no-md-files`);
+          }
+        } catch (e) {
+          allPresent = false;
+          missing.push(`${det.ide_id}:${targetDir}:${e.message}`);
+        }
+      }
+      assertions.push({
+        name: 'skill_files_present',
+        status: allPresent ? 'pass' : 'fail',
+        message: allPresent
+          ? `${installs.length} IDE skill dir(s) present with compiled .md files`
+          : `missing: ${missing.join(', ')}`,
+      });
+    }
+  }
+
+  // ─── Assertion 2: compiler_validates ──────────────────────────────────────
+  {
+    const compilerPath = path.join(PLUGIN_ROOT, 'scripts', 'skill-compiler.cjs');
+    const skillsSource = path.join(PLUGIN_ROOT, 'get-shit-done', 'skills');
+    if (!fs.existsSync(compilerPath)) {
+      assertions.push({ name: 'compiler_validates', status: 'fail', message: `scripts/skill-compiler.cjs not found at ${compilerPath}` });
+    } else {
+      try {
+        execFileSync(process.execPath, [
+          compilerPath, '--target=claude', '--dry-run', `--source=${skillsSource}`,
+        ], { timeout: 10000, stdio: 'pipe' });
+        assertions.push({ name: 'compiler_validates', status: 'pass', message: 'scripts/skill-compiler.cjs --dry-run exited 0' });
+      } catch (err) {
+        assertions.push({ name: 'compiler_validates', status: 'fail', message: `compiler exited non-zero: ${err.message}` });
+      }
+    }
+  }
+
+  // ─── Assertion 3: daemon_health ───────────────────────────────────────────
+  if (daemonResult.status === 'skip') {
+    assertions.push({ name: 'daemon_health', status: 'skip', message: 'daemon not started' });
+  } else {
+    try {
+      const h = await httpGet('/health', 3000);
+      if (h.statusCode === 200 && h.data && h.data.status === 'ok') {
+        assertions.push({ name: 'daemon_health', status: 'pass', message: '/health returned 200 with status: ok' });
+      } else {
+        assertions.push({ name: 'daemon_health', status: 'fail', message: `/health returned ${h.statusCode}` });
+      }
+    } catch (e) {
+      assertions.push({ name: 'daemon_health', status: 'fail', message: `cannot reach daemon: ${e.message}` });
+    }
+  }
+
+  // ─── Assertion 4: schema_applied ──────────────────────────────────────────
+  {
+    // infraResult.details has {backend, connection_url, features, raw} per 44-02-03 conversion.
+    const backend = (infraResult.details || {}).backend;
+    const connUrl = (infraResult.details || {}).connection_url || '';
+    if (backend === 'postgresql') {
+      try {
+        const r = await httpGet('/api/migrations', 3000);
+        if (r.statusCode === 404) {
+          assertions.push({ name: 'schema_applied', status: 'skip', message: 'daemon /api/migrations endpoint not available (old daemon)' });
+        } else if (r.statusCode === 200 && Array.isArray(r.data) && r.data.length >= 1) {
+          assertions.push({ name: 'schema_applied', status: 'pass', message: `${r.data.length} migrations applied` });
+        } else if (r.statusCode === 200 && r.data && Array.isArray(r.data.migrations) && r.data.migrations.length >= 1) {
+          assertions.push({ name: 'schema_applied', status: 'pass', message: `${r.data.migrations.length} migrations applied` });
+        } else {
+          assertions.push({ name: 'schema_applied', status: 'fail', message: `unexpected /api/migrations shape (status=${r.statusCode})` });
+        }
+      } catch (e) {
+        assertions.push({ name: 'schema_applied', status: 'skip', message: `daemon unreachable for /api/migrations: ${e.message}` });
+      }
+    } else if (backend === 'sqlite') {
+      // SQLite schema is self-creating — check if file has been written yet
+      const sqlitePath = connUrl.replace('sqlite:///', '');
+      if (sqlitePath && fs.existsSync(sqlitePath)) {
+        assertions.push({ name: 'schema_applied', status: 'pass', message: `SQLite schema file present at ${sqlitePath}` });
+      } else {
+        // No file yet (fresh install before daemon writes) — skip, not fail (self-creating per 44-CONTEXT.md §Area 3)
+        assertions.push({ name: 'schema_applied', status: 'skip', message: 'SQLite schema is self-creating; no file yet' });
+      }
+    } else {
+      assertions.push({ name: 'schema_applied', status: 'skip', message: `unknown or missing backend: ${backend}` });
+    }
+  }
+
+  // ─── Assertion 5: semgrep_rules_present ───────────────────────────────────
+  // File presence only — does NOT run Semgrep (binary may be absent per 44-CONTEXT.md §Area 3).
+  {
+    const semgrepFile = path.join(PLUGIN_ROOT, '.semgrep', 'skill-enforcement.yml');
+    if (fs.existsSync(semgrepFile)) {
+      assertions.push({ name: 'semgrep_rules_present', status: 'pass', message: `.semgrep/skill-enforcement.yml present` });
+    } else {
+      assertions.push({ name: 'semgrep_rules_present', status: 'fail', message: `.semgrep/skill-enforcement.yml not found at ${semgrepFile}` });
+    }
+  }
+
+  // ─── Worst-of-assertions combinator (FROZEN per 44-CONTEXT.md §Area 3) ────
+  // fail > warn > pass; skip is ignored when computing worst.
+  // STATUS_RANK encodes: fail beats warn beats pass; skip ignored
+  const STATUS_RANK = { fail: 3, warn: 2, pass: 1, skip: 0 };
+  let worst = 'pass';
+  let nonSkipCount = 0;
+  for (const a of assertions) {
+    if (a.status === 'skip') continue; // skip ignored when computing worst
+    nonSkipCount++;
+    if (STATUS_RANK[a.status] > STATUS_RANK[worst]) worst = a.status;
+  }
+  // If ALL 5 assertions are skip (extreme degraded mode), step status = 'pass'
+  if (nonSkipCount === 0) worst = 'pass';
+
+  const passCt = assertions.filter(a => a.status === 'pass').length;
+  const failCt = assertions.filter(a => a.status === 'fail').length;
+  const warnCt = assertions.filter(a => a.status === 'warn').length;
+  const skipCt = assertions.filter(a => a.status === 'skip').length;
+
+  const r = buildStepResult('run_assertions', worst,
+    `${passCt} pass / ${warnCt} warn / ${failCt} fail / ${skipCt} skip`,
+    { assertions });
+  r.duration_ms = Date.now() - start;
+  return r;
+}
+
 // ═══════════════════════════════════════════════════════
 // Legacy migration helper (Phase 44 INST-04)
 // ═══════════════════════════════════════════════════════
@@ -1014,7 +1198,7 @@ async function main() {
     };
   }
 
-  const totalSteps = 6;  // Wave 3 bumps to 7 with stepAssertions
+  const totalSteps = 7;  // Wave 3: bumped from 6 to 7 with stepAssertions (run_assertions)
 
   // Step 1: Detect IDEs (NEW — wired in 44-02-03)
   const detectLog = makeLog(1, totalSteps, 'Detecting IDEs');
@@ -1047,6 +1231,12 @@ async function main() {
   const verifyResult = await stepVerify(verifyLog);
   results.push(verifyResult);
 
+  // Step 7: Run assertions (INST-01 final step — 5 post-install checks)
+  const assertLog = makeLog(7, totalSteps, 'Running assertions');
+  const assertResult = await stepAssertions(results);
+  assertLog(assertResult.message);
+  results.push(assertResult);
+
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
   if (flags.json) {
@@ -1075,4 +1265,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { stepDetectIdes, buildStepResult, renderStepTable, migrateLegacyCommands };
+module.exports = { stepDetectIdes, buildStepResult, renderStepTable, migrateLegacyCommands, stepAssertions };
