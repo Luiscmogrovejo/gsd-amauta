@@ -812,7 +812,15 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
-        self.wfile.write(json.dumps(data).encode("utf-8"))
+        try:
+            self.wfile.write(json.dumps(data).encode("utf-8"))
+        except (BrokenPipeError, ConnectionResetError) as e:
+            # Client closed the connection mid-response (timed-out curl,
+            # agent that gave up). Don't bloat the log with tracebacks or
+            # crash the threaded handler — silently drop. See 2026-05-11
+            # incident: cascade of BrokenPipe tracebacks stopped the service.
+            if os.environ.get("GSD_DEBUG"):
+                log.debug("rlm_send_json_client_hangup err=%s", e)
 
     MAX_BODY_SIZE = 50 * 1024 * 1024  # 50 MB
 
