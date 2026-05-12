@@ -2767,6 +2767,193 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": _safe_error(e)}, 500)
             return
 
+        # ─── Complexity Score POST routes (Phase 42 SCALE-01, SCALE-02) ──────────
+        #
+        # POST /api/complexity/score  — compute score + select phases, applying 4-layer override.
+        # POST /api/complexity/complete — write task_completions row at workflow close.
+
+        if path == "/api/complexity/score":
+            try:
+                # ── 0. Import scorer ──────────────────────────────────────────────
+                import sys as _sys
+                _svc_dir = os.path.dirname(os.path.abspath(__file__))
+                if _svc_dir not in _sys.path:
+                    _sys.path.insert(0, _svc_dir)
+                import complexity_scorer as _cs
+
+                # ── 1. Load .planning/config.json ────────────────────────────────
+                _config_path = os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    ".planning", "config.json",
+                )
+                try:
+                    with open(_config_path, "r", encoding="utf-8") as _fh:
+                        _cfg = json.load(_fh)
+                except Exception as _ce:
+                    log.warning("/api/complexity/score: could not load config.json: %s", _ce)
+                    _cfg = {}
+
+                # ── 2. 4-layer override precedence: env > pin > project > auto ───
+                _plan_path = body.get("plan_path") or ""
+                _task_id   = body.get("task_id") or ""
+                _phase_num = body.get("phase_number") or 0
+                _wf_name   = body.get("workflow_name") or "execute-phase"
+                _task_meta = body.get("task_meta") or {}
+
+                # Layer 1 — env (set by gsd-amauta.cjs --force-phases)
+                _env_phases_raw = os.environ.get("GSD_FORCE_PHASES", "").strip()
+                _env_phases = [p.strip().upper() for p in _env_phases_raw.split(",") if p.strip()] if _env_phases_raw else []
+
+                # Layer 2 — per-task pin (pinned_phases:<SET> note in amauta.py)
+                _pin_phases = []
+                if _task_id:
+                    try:
+                        _show_out, _, _show_rc = self._run_amauta(["show", _task_id, "--json"])
+                        if _show_rc == 0:
+                            _show_data = json.loads(_show_out)
+                            _notes = _show_data.get("notes", [])
+                            # Look for last pinned_phases note (most recent wins)
+                            for _note in reversed(_notes):
+                                _nc = _note.get("content", "")
+                                if _nc.startswith("pinned_phases:"):
+                                    _pin_raw = _nc[len("pinned_phases:"):].strip()
+                                    if _pin_raw and _pin_raw != "CLEARED":
+                                        _pin_phases = [p.strip().upper() for p in _pin_raw.split(",") if p.strip()]
+                                    break
+                    except Exception as _pe:
+                        log.warning("/api/complexity/score: failed to read pinned_phases for %s: %s", _task_id, _pe)
+
+                # Layer 3 — project config .planning/config.json workflow.force_phases
+                _proj_phases_raw = (_cfg.get("workflow") or {}).get("force_phases") or ""
+                _proj_phases = []
+                if _proj_phases_raw and isinstance(_proj_phases_raw, str):
+                    _proj_phases = [p.strip().upper() for p in _proj_phases_raw.split(",") if p.strip()]
+                elif isinstance(_proj_phases_raw, list):
+                    _proj_phases = [str(p).strip().upper() for p in _proj_phases_raw if p]
+
+                # ── 3. Always compute the auto score for reporting ───────────────
+                _features = _cs.extract_features(
+                    _plan_path if _plan_path else None,
+                    _task_meta,
+                )
+                _raw_score = _cs.score_features(_features)
+                _auto_phases = _cs.select_phases(_raw_score, _cfg)
+
+                # ── 4. Resolve override ──────────────────────────────────────────
+                if _env_phases:
+                    _chosen_phases = _env_phases
+                    _override_source = "env"
+                elif _pin_phases:
+                    _chosen_phases = _pin_phases
+                    _override_source = "pin"
+                elif _proj_phases:
+                    _chosen_phases = _proj_phases
+                    _override_source = "project"
+                else:
+                    _chosen_phases = _auto_phases
+                    _override_source = "auto"
+
+                # ── 5. Derive bucket_label from chosen_phases length ─────────────
+                # 1=trivial, 3=light, 4=medium, 5=heavy, 7=critical
+                _len_map = {1: "trivial", 3: "light", 4: "medium", 5: "heavy", 7: "critical"}
+                _bucket_label = _len_map.get(len(_chosen_phases), "medium")
+
+                # ── 6. Build banner ──────────────────────────────────────────────
+                _phases_str = ",".join(_chosen_phases)
+                if _override_source == "auto":
+                    _banner = (
+                        f"Phase 42 score: {_raw_score}/100 → {_phases_str} ({_bucket_label})."
+                        " Override: --force-phases=full."
+                    )
+                else:
+                    _banner = (
+                        f"Phase 42 score: {_raw_score}/100 → {_phases_str}"
+                        f" (override:{_override_source}). Override: --force-phases=full."
+                    )
+
+                self._send_json({
+                    "score": _raw_score,
+                    "auto_phases": _auto_phases,
+                    "chosen_phases": _chosen_phases,
+                    "override_source": _override_source,
+                    "bucket_label": _bucket_label,
+                    "feature_vector": _features,
+                    "banner": _banner,
+                })
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
+        if path == "/api/complexity/complete":
+            try:
+                # ── 0. Import scorer ──────────────────────────────────────────────
+                import sys as _sys
+                _svc_dir = os.path.dirname(os.path.abspath(__file__))
+                if _svc_dir not in _sys.path:
+                    _sys.path.insert(0, _svc_dir)
+                import complexity_scorer as _cs
+
+                _VALID_OUTCOME_LABELS = {
+                    "validator_pass", "task_fail", "gaps_found",
+                    "manifest_overshoot", "escalation_fired",
+                }
+                _task_id    = body.get("task_id") or ""
+                _phase_num  = int(body.get("phase_number") or 0)
+                _wf_name    = body.get("workflow_name") or "execute-phase"
+                _fv         = body.get("feature_vector") or {}
+                _raw_score  = int(body.get("raw_score") or 0)
+                _chosen     = body.get("chosen_phases") or []
+                _phases_run = body.get("phases_run") or []
+                _outcome    = body.get("outcome_label") or "task_fail"
+                _esc_hist   = body.get("escalation_history") or []
+
+                if _outcome not in _VALID_OUTCOME_LABELS:
+                    self._send_json({
+                        "error": f"outcome_label must be one of: {sorted(_VALID_OUTCOME_LABELS)}"
+                    }, 400)
+                    return
+
+                # ── Attempt embedding via pg_store ────────────────────────────────
+                _embedding = None
+                if _HAS_PG_MODULE and _pg_store is not None:
+                    try:
+                        from pg_store import PGStore as _PGS
+                        _embedding = _PGS.generate_embedding(
+                            json.dumps(_fv), input_type="document"
+                        )
+                    except Exception as _ee:
+                        log.warning("/api/complexity/complete: embedding failed: %s", _ee)
+
+                # ── Write task_completions row ────────────────────────────────────
+                _row_id = _cs.store_completion(
+                    task_id=_task_id,
+                    phase_number=_phase_num,
+                    workflow_name=_wf_name,
+                    features=_fv,
+                    raw_score=_raw_score,
+                    calibrated_score=None,
+                    chosen_phases=_chosen,
+                    phases_run=_phases_run,
+                    outcome_label=_outcome,
+                    escalation_history=_esc_hist,
+                    embedding=_embedding,
+                )
+                if _row_id:
+                    self._send_json({
+                        "id": _row_id,
+                        "stored": True,
+                        "embedding_present": _embedding is not None,
+                    }, 201)
+                else:
+                    self._send_json({
+                        "id": "",
+                        "stored": False,
+                        "reason": "PG unavailable or store_completion returned empty",
+                    })
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
         # ─── Blackboard POST routes (Phase 38 COMM-01, COMM-02, COMM-04) ──────────
         #
         # POST /api/findings — write a finding to agent_findings table.
