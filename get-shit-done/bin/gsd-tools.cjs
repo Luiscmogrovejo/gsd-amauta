@@ -2266,16 +2266,27 @@ Subcommands:
                      Validate SKILL.md in a skill directory; exit 0 on success
   list [--source=<dir>]
                      List all skills in source directory as JSON array
+  invoke --skill=<name> --prompt=<text> [--args=<json>]
+                     Record a pre-execution invocation; returns {invocation_id, neighbors}
+  complete --id=<uuid> --outcome=<success|fail|escalation>
+                     Update outcome_class for an existing invocation
 
 Options:
   --target=<ide>   Target IDE: claude, opencode, cursor
   --source=<dir>   Source directory of canonical skills (default: get-shit-done/skills)
   --dry-run        Print intended writes without writing files
+  --skill=<name>   Skill name for invoke subcommand
+  --prompt=<text>  Prompt text for invoke subcommand
+  --args=<json>    JSON args object for invoke subcommand (default {})
+  --id=<uuid>      Invocation UUID for complete subcommand
+  --outcome=<val>  Outcome class: success, fail, or escalation
 
 Examples:
   node gsd-tools.cjs skills compile --target=opencode --dry-run
   node gsd-tools.cjs skills validate get-shit-done/skills/plan-phase
   node gsd-tools.cjs skills list --source=get-shit-done/skills
+  node gsd-tools.cjs skills invoke --skill=plan-phase --prompt="write a plan for X"
+  node gsd-tools.cjs skills complete --id=<uuid> --outcome=success
 `);
         break;
       }
@@ -2344,8 +2355,108 @@ Examples:
         process.stdout.write(JSON.stringify(skills, null, 2) + '\n');
         process.exit(0);
 
+      } else if (skillSubcmd === 'invoke') {
+        // Phase 43 SKILL-02: record pre-execution invocation + return top-K neighbors.
+        // POST to daemon /api/skills/invoke; graceful degradation on daemon-down.
+        const _getFlag = (name) => {
+          const prefix = `--${name}=`;
+          for (const a of args.slice(2)) {
+            if (a.startsWith(prefix)) return a.slice(prefix.length);
+          }
+          return null;
+        };
+        const _invokeSkill = _getFlag('skill');
+        const _invokePrompt = _getFlag('prompt');
+        const _invokeArgsRaw = _getFlag('args');
+        if (!_invokeSkill || !_invokePrompt) {
+          process.stderr.write('Error: skills invoke requires --skill=<name> and --prompt=<text>\nUsage: gsd-tools skills invoke --skill=<name> --prompt=<text> [--args=<json>]\n');
+          process.exit(1);
+        }
+        let _invokeArgs = {};
+        if (_invokeArgsRaw) {
+          try { _invokeArgs = JSON.parse(_invokeArgsRaw); } catch { _invokeArgs = {}; }
+        }
+        const _invokeBody = JSON.stringify({ skill_name: _invokeSkill, prompt: _invokePrompt, args: _invokeArgs });
+        const _invokeDaemonPort = parseInt(process.env.GSD_AMAUTA_PORT || process.env.AMAUTA_PORT || '18799');
+        await new Promise((resolve) => {
+          const http = require('http');
+          const req = http.request({
+            hostname: '127.0.0.1',
+            port: _invokeDaemonPort,
+            path: '/api/skills/invoke',
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(_invokeBody) },
+          }, (res) => {
+            let data = '';
+            res.on('data', (chunk) => { data += chunk; });
+            res.on('end', () => {
+              try { process.stdout.write(JSON.stringify(JSON.parse(data), null, 2) + '\n'); }
+              catch { process.stdout.write(data + '\n'); }
+              resolve();
+              if (res.statusCode !== 200) process.exitCode = 1;
+            });
+          });
+          req.on('error', (err) => {
+            process.stderr.write(`Error: daemon unreachable at localhost:${_invokeDaemonPort} — ${err.message}\n`);
+            process.exitCode = 1;
+            resolve();
+          });
+          req.write(_invokeBody);
+          req.end();
+        });
+
+      } else if (skillSubcmd === 'complete') {
+        // Phase 43 SKILL-02: update outcome_class for an existing invocation.
+        // POST to daemon /api/skills/complete; graceful degradation on daemon-down.
+        const _getFlag2 = (name) => {
+          const prefix = `--${name}=`;
+          for (const a of args.slice(2)) {
+            if (a.startsWith(prefix)) return a.slice(prefix.length);
+          }
+          return null;
+        };
+        const _completeId = _getFlag2('id');
+        const _completeOutcome = _getFlag2('outcome');
+        const _VALID_OUTCOMES = ['success', 'fail', 'escalation'];
+        if (!_completeId || !_completeOutcome) {
+          process.stderr.write('Error: skills complete requires --id=<uuid> and --outcome=<success|fail|escalation>\nUsage: gsd-tools skills complete --id=<uuid> --outcome=<success|fail|escalation>\n');
+          process.exit(1);
+        }
+        if (!_VALID_OUTCOMES.includes(_completeOutcome)) {
+          process.stderr.write(`Error: --outcome must be one of: success, fail, escalation (got: "${_completeOutcome}")\n`);
+          process.exit(1);
+        }
+        const _completeBody = JSON.stringify({ invocation_id: _completeId, outcome_class: _completeOutcome });
+        const _completeDaemonPort = parseInt(process.env.GSD_AMAUTA_PORT || process.env.AMAUTA_PORT || '18799');
+        await new Promise((resolve) => {
+          const http = require('http');
+          const req = http.request({
+            hostname: '127.0.0.1',
+            port: _completeDaemonPort,
+            path: '/api/skills/complete',
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(_completeBody) },
+          }, (res) => {
+            let data = '';
+            res.on('data', (chunk) => { data += chunk; });
+            res.on('end', () => {
+              try { process.stdout.write(JSON.stringify(JSON.parse(data), null, 2) + '\n'); }
+              catch { process.stdout.write(data + '\n'); }
+              resolve();
+              if (res.statusCode !== 200) process.exitCode = 1;
+            });
+          });
+          req.on('error', (err) => {
+            process.stderr.write(`Error: daemon unreachable at localhost:${_completeDaemonPort} — ${err.message}\n`);
+            process.exitCode = 1;
+            resolve();
+          });
+          req.write(_completeBody);
+          req.end();
+        });
+
       } else {
-        process.stderr.write(`Unknown skills subcommand: ${skillSubcmd}\nAvailable: compile, validate, list\n`);
+        process.stderr.write(`Unknown skills subcommand: ${skillSubcmd}\nAvailable: compile, validate, list, invoke, complete\n`);
         process.exit(1);
       }
       break;
