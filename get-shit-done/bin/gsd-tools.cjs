@@ -1845,6 +1845,551 @@ async function planToTasks(planFilePath, opts) {
   };
 }
 
+// ─── Phase 45: Bearings Subcommand Helpers ────────────────────────────────────
+
+/**
+ * Read and parse .planning/STATE.md for current project position.
+ * Returns null if the file does not exist (caller must exit 1).
+ */
+function readProjectState() {
+  const statePath = path.join(process.cwd(), '.planning', 'STATE.md');
+  if (!fs.existsSync(statePath)) return null;
+
+  const raw = fs.readFileSync(statePath, 'utf8');
+
+  // Parse YAML frontmatter status field
+  let status = 'unknown';
+  const fmMatch = raw.match(/^---\n([\s\S]*?)\n---/);
+  if (fmMatch) {
+    const fmStatusMatch = fmMatch[1].match(/^status:\s*(.+)$/m);
+    if (fmStatusMatch) status = fmStatusMatch[1].trim();
+    const stoppedAtFmMatch = fmMatch[1].match(/^stopped_at:\s*(.+)$/m);
+    if (stoppedAtFmMatch) {
+      const stoppedAt = stoppedAtFmMatch[1].trim();
+      const phaseNumMatch = stoppedAt.match(/Phase\s+(\d+)/i);
+      if (phaseNumMatch) {
+        var _frontmatterPhaseNum = phaseNumMatch[1];
+      }
+    }
+  }
+
+  // Extract phase_number from stopped_at line in body
+  let phase_number = _frontmatterPhaseNum || '0';
+  const stoppedMatch = raw.match(/stopped_at:\s*Phase\s+(\d+)/im);
+  if (stoppedMatch) phase_number = stoppedMatch[1];
+
+  // Extract current_plan from last_activity line
+  let current_plan = null;
+  const lastActMatch = raw.match(/last_activity:\s*.*?Plan\s+([\d]+-[\d]+)/im);
+  if (lastActMatch) current_plan = lastActMatch[1];
+
+  // Extract phase_name from ROADMAP.md
+  let phase_name = `Phase ${phase_number}`;
+  try {
+    const roadmapPath = path.join(process.cwd(), '.planning', 'ROADMAP.md');
+    if (fs.existsSync(roadmapPath)) {
+      const roadmap = fs.readFileSync(roadmapPath, 'utf8');
+      const pnMatch = roadmap.match(new RegExp(`##\\s*Phase\\s+${phase_number}[:\\s]+([^\\n]+)`, 'i'));
+      if (pnMatch) phase_name = pnMatch[1].trim().replace(/^[:\s]+/, '');
+    }
+  } catch (_e) { /* best-effort */ }
+
+  return {
+    phase_number,
+    phase_name,
+    current_plan,
+    status,
+    drift_signals: [],
+  };
+}
+
+/**
+ * Read recent git commits and last divergence memory entry.
+ * Gracefully returns {commits: [], divergence: null} on any failure.
+ */
+function readRecentActivity({ maxCommits = 5 } = {}) {
+  const { execFileSync } = require('child_process');
+  let commits = [];
+  try {
+    const logOut = execFileSync('git', ['log', '--oneline', `-${String(maxCommits)}`], {
+      encoding: 'utf8',
+      timeout: 3000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+      cwd: process.cwd(),
+    });
+    commits = logOut.trim().split('\n').filter(Boolean).map(line => {
+      const spaceIdx = line.indexOf(' ');
+      return spaceIdx === -1
+        ? { sha: line, subject: '' }
+        : { sha: line.slice(0, spaceIdx), subject: line.slice(spaceIdx + 1) };
+    });
+  } catch (_e) {
+    return { commits: [], divergence: null };
+  }
+
+  // Read last divergence-memory.json entry
+  let divergence = null;
+  try {
+    const dmPath = path.join(process.cwd(), '.planning', 'divergence-memory.json');
+    if (fs.existsSync(dmPath)) {
+      const dmArr = JSON.parse(fs.readFileSync(dmPath, 'utf8'));
+      if (Array.isArray(dmArr) && dmArr.length > 0) {
+        const last = dmArr[dmArr.length - 1];
+        divergence = {
+          timestamp: last.timestamp || null,
+          summary: last.what_to_try_next || last.what_failed || null,
+        };
+      }
+    }
+  } catch (_e) { /* best-effort */ }
+
+  return { commits, divergence };
+}
+
+/**
+ * Read the feature_list.json for the active plan, mapping on-disk status names
+ * (passing/failing/pending) to FROZEN output names (pass/fail/pending).
+ * Returns {feature_list_path: null, counts: {pass:0,fail:0,pending:0}} on missing file.
+ */
+function readPlanProgress({ phaseDir, planId } = {}) {
+  const empty = { feature_list_path: null, counts: { pass: 0, fail: 0, pending: 0 } };
+  if (!phaseDir || !planId) return empty;
+
+  const flPath = path.join(phaseDir, `${planId}-feature_list.json`);
+  if (!fs.existsSync(flPath)) return empty;
+
+  try {
+    const fl = JSON.parse(fs.readFileSync(flPath, 'utf8'));
+    const features = Array.isArray(fl.features) ? fl.features : (Array.isArray(fl) ? fl : []);
+    const counts = { pass: 0, fail: 0, pending: 0 };
+    for (const f of features) {
+      const s = (f.status || '').toLowerCase();
+      if (s === 'passing' || s === 'pass') counts.pass++;
+      else if (s === 'failing' || s === 'fail') counts.fail++;
+      else if (s === 'pending') counts.pending++;
+    }
+    return { feature_list_path: flPath, counts };
+  } catch (_e) {
+    return empty;
+  }
+}
+
+/**
+ * Compute the 4 FROZEN pattern stats with graceful PG-down degradation.
+ * Returns array of {name, value, status, detail} in FROZEN order.
+ */
+async function computePatternStats({ projectState, planPath } = {}) {
+  const { execFileSync: _efs } = require('child_process');
+
+  // ── Stat 1: avg_sessions_per_phase_type ──────────────────────────────────
+  async function _stat_avg_sessions() {
+    try {
+      const phaseNum = projectState ? parseInt(projectState.phase_number || '0', 10) : 0;
+      const pyCode = [
+        'import os, sys',
+        'try:',
+        '    import psycopg2',
+        `    dsn = os.environ.get('GSD_PG_DSN','')`,
+        '    if not dsn: raise RuntimeError("no GSD_PG_DSN")',
+        '    conn = psycopg2.connect(dsn)',
+        '    cur = conn.cursor()',
+        `    cur.execute("SELECT AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) / 3600.0) FROM task_completions WHERE phase_number = %s", (${phaseNum},))`,
+        '    row = cur.fetchone()',
+        '    val = round(float(row[0]), 1) if row and row[0] is not None else None',
+        '    conn.close()',
+        '    print(val if val is not None else "null")',
+        'except Exception as e:',
+        '    print("unavailable:" + str(e))',
+      ].join('\n');
+      const out = _efs('python3', ['-c', pyCode], {
+        encoding: 'utf8', timeout: 8000, stdio: ['ignore', 'pipe', 'pipe'],
+        cwd: process.cwd(),
+        env: { ...process.env },
+      }).trim();
+      if (out.startsWith('unavailable:')) {
+        return { name: 'avg_sessions_per_phase_type', value: null, status: 'unavailable', detail: 'PG not reachable' };
+      }
+      const val = out === 'null' ? null : out;
+      return { name: 'avg_sessions_per_phase_type', value: val, status: 'pass', detail: `avg hours/session for phase ${phaseNum}` };
+    } catch (e) {
+      return { name: 'avg_sessions_per_phase_type', value: null, status: 'unavailable', detail: 'PG not reachable' };
+    }
+  }
+
+  // ── Stat 2: commits_since_last_test ──────────────────────────────────────
+  async function _stat_commits_since_test() {
+    try {
+      // Find most recent test-related commit
+      let testSha = null;
+      try {
+        const shaOut = _efs('git', ['log', '--oneline', '--grep', 'test', '-n', '1', '--format=%H'], {
+          encoding: 'utf8', timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'],
+          cwd: process.cwd(),
+        }).trim();
+        if (shaOut && shaOut.length === 40) testSha = shaOut;
+      } catch (_e) { /* git unavailable */ }
+
+      let count = null;
+      if (testSha) {
+        try {
+          const countOut = _efs('git', ['rev-list', `${testSha}..HEAD`, '--count'], {
+            encoding: 'utf8', timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'],
+            cwd: process.cwd(),
+          }).trim();
+          count = parseInt(countOut, 10);
+        } catch (_e) { /* fallback */ }
+      } else {
+        // Fallback: total HEAD count
+        try {
+          const totalOut = _efs('git', ['rev-list', 'HEAD', '--count'], {
+            encoding: 'utf8', timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'],
+            cwd: process.cwd(),
+          }).trim();
+          count = parseInt(totalOut, 10);
+        } catch (_e) { /* give up */ }
+      }
+
+      if (count === null || isNaN(count)) {
+        return { name: 'commits_since_last_test', value: null, status: 'unavailable', detail: 'git unavailable' };
+      }
+      const status = count > 3 ? 'warn' : 'pass';
+      const detail = testSha ? `${count} commits since last test commit` : `${count} total commits (no test commit found)`;
+      return { name: 'commits_since_last_test', value: String(count), status, detail };
+    } catch (e) {
+      return { name: 'commits_since_last_test', value: null, status: 'unavailable', detail: 'git unavailable' };
+    }
+  }
+
+  // ── Stat 3: similar_feature_sessions ─────────────────────────────────────
+  async function _stat_similar_sessions() {
+    try {
+      // Get the current plan objective from STATE.md current_plan + PLAN.md title
+      let planTitle = 'current plan feature';
+      if (planPath && fs.existsSync(planPath)) {
+        try {
+          const planRaw = fs.readFileSync(planPath, 'utf8');
+          const titleMatch = planRaw.match(/<title>([\s\S]*?)<\/title>/);
+          if (titleMatch) planTitle = titleMatch[1].trim().slice(0, 200);
+        } catch (_e) { /* best-effort */ }
+      }
+
+      const pyCode = [
+        'import os, sys',
+        'sys.path.insert(0, os.getcwd())',
+        'try:',
+        '    from services.complexity_scorer import _load_similar_completions',
+        '    from services.pg_store import PgStore',
+        `    title = ${JSON.stringify(planTitle)}`,
+        '    store = PgStore()',
+        '    emb = store.generate_embedding(title)',
+        '    neighbors = _load_similar_completions(emb, top_k=3, cosine_floor=0.6)',
+        '    if not neighbors:',
+        '        print("unavailable:no neighbors above 0.6")',
+        '    else:',
+        '        mean_sessions = round(sum(n.get("session_count", 0) or 0 for n in neighbors) / len(neighbors), 1)',
+        '        print(f"{mean_sessions}|{len(neighbors)}")',
+        'except Exception as e:',
+        '    print("unavailable:" + str(e))',
+      ].join('\n');
+
+      const out = _efs('python3', ['-c', pyCode], {
+        encoding: 'utf8', timeout: 15000, stdio: ['ignore', 'pipe', 'pipe'],
+        cwd: process.cwd(),
+        env: { ...process.env },
+      }).trim();
+
+      if (out.startsWith('unavailable:')) {
+        return { name: 'similar_feature_sessions', value: null, status: 'unavailable', detail: 'PG not reachable' };
+      }
+      const [val, n] = out.split('|');
+      return { name: 'similar_feature_sessions', value: val, status: 'pass', detail: `n=${n} matches above 0.6` };
+    } catch (e) {
+      return { name: 'similar_feature_sessions', value: null, status: 'unavailable', detail: 'PG not reachable' };
+    }
+  }
+
+  // ── Stat 4: plan_complexity_trend ─────────────────────────────────────────
+  async function _stat_complexity_trend() {
+    // Get current plan score
+    let currentScore = null;
+    const toolsPath = __filename; // this file
+    if (planPath) {
+      try {
+        const { spawnSync } = require('child_process');
+        const scoreOut = spawnSync(process.execPath, [toolsPath, 'complexity-score', planPath], {
+          encoding: 'utf8', timeout: 10000, cwd: process.cwd(),
+          env: { ...process.env },
+        });
+        if (scoreOut.status === 0 && scoreOut.stdout) {
+          const parsed = JSON.parse(scoreOut.stdout.trim());
+          currentScore = parsed.score !== undefined ? parsed.score : null;
+        }
+      } catch (_e) { /* fallback */ }
+    }
+
+    if (currentScore === null) {
+      return { name: 'plan_complexity_trend', value: null, status: 'unavailable', detail: 'complexity-score unavailable' };
+    }
+
+    // Get rolling avg from task_completions
+    let rollingAvg = null;
+    try {
+      const pyCode = [
+        'import os, sys',
+        'try:',
+        '    import psycopg2',
+        `    dsn = os.environ.get('GSD_PG_DSN','')`,
+        '    if not dsn: raise RuntimeError("no GSD_PG_DSN")',
+        '    conn = psycopg2.connect(dsn)',
+        '    cur = conn.cursor()',
+        '    cur.execute("SELECT AVG(calibrated_score) FROM (SELECT calibrated_score FROM task_completions WHERE calibrated_score IS NOT NULL ORDER BY completed_at DESC LIMIT 3) sub")',
+        '    row = cur.fetchone()',
+        '    val = round(float(row[0]), 1) if row and row[0] is not None else None',
+        '    conn.close()',
+        '    print(val if val is not None else "null")',
+        'except Exception as e:',
+        '    print("null")',
+      ].join('\n');
+      const out = _efs('python3', ['-c', pyCode], {
+        encoding: 'utf8', timeout: 8000, stdio: ['ignore', 'pipe', 'pipe'],
+        cwd: process.cwd(),
+        env: { ...process.env },
+      }).trim();
+      if (out !== 'null' && out) rollingAvg = parseFloat(out);
+    } catch (_e) { /* PG unavailable */ }
+
+    const value = `${currentScore}/100`;
+    let status = 'pass';
+    let detail = `current plan ${currentScore}/100`;
+    if (rollingAvg !== null) {
+      detail = `Last 3 plans avg complexity ${rollingAvg}/100; current ${currentScore}/100`;
+      if (currentScore > rollingAvg + 15) status = 'warn';
+    }
+
+    return { name: 'plan_complexity_trend', value, status, detail };
+  }
+
+  // Run all 4 stats independently (each wrapped in try/catch already)
+  const [s1, s2, s3, s4] = await Promise.all([
+    _stat_avg_sessions(),
+    _stat_commits_since_test(),
+    _stat_similar_sessions(),
+    _stat_complexity_trend(),
+  ]);
+
+  return [s1, s2, s3, s4];
+}
+
+/**
+ * FROZEN 6-rule recommendation precedence chain (top-to-bottom, first match wins).
+ * @param {object} structured — full bearings structured object
+ * @returns {{action: string, reasoning: string}}
+ */
+function chooseRecommendation(structured) {
+  const ps = structured.project_state;
+  const pp = structured.plan_progress;
+  const counts = pp.counts;
+  const currentPhase = ps.phase_number;
+  const currentPlan = ps.current_plan;
+  const nextPhase = String(parseInt(currentPhase, 10) + 1);
+
+  // Find commits_since_last_test pattern stat
+  const cslt = structured.pattern_stats.find(s => s.name === 'commits_since_last_test');
+  const csltValue = cslt && cslt.value !== null ? parseInt(cslt.value, 10) : 0;
+
+  // Rule 1: fail > 0 → /amauta:debug
+  if (counts.fail > 0) {
+    return { action: '/amauta:debug', reasoning: `${counts.fail} failing feature(s); fix before proceeding.` };
+  }
+  // Rule 2: drift_signals not empty → git status / review STATE.md
+  if (ps.drift_signals && ps.drift_signals.length > 0) {
+    const types = ps.drift_signals.map(d => typeof d === 'string' ? d : d.type).join(', ');
+    return { action: 'git status / review STATE.md', reasoning: `drift detected: ${types}` };
+  }
+  // Rule 3: pending > 0 AND no fail → /amauta:execute-phase <current>
+  if (counts.pending > 0 && counts.fail === 0) {
+    return { action: `/amauta:execute-phase ${currentPhase}`, reasoning: `${counts.pending} pending feature(s); resume execute.` };
+  }
+  // Rule 4: all pass (full plan done) → /amauta:plan-phase <next>
+  if (counts.pass > 0 && counts.fail === 0 && counts.pending === 0) {
+    return { action: `/amauta:plan-phase ${nextPhase}`, reasoning: 'plan complete; advance to next.' };
+  }
+  // Rule 5: commits_since_last_test > 3 → /amauta:test-phase <current>
+  if (csltValue > 3) {
+    return { action: `/amauta:test-phase ${currentPhase}`, reasoning: `${csltValue} commits since last test run.` };
+  }
+  // Rule 6: default → /amauta:progress
+  return { action: '/amauta:progress', reasoning: 'no clear next step from current signals.' };
+}
+
+/**
+ * Render the bearings structured object into a Markdown block.
+ * Token estimation: Math.ceil(text.length / 4) per Phase 28 BEHAV-06 precedent.
+ * Truncation order: Pattern Stats first (end entries), then Recent Activity (oldest commits),
+ *   then Plan Progress path shortening. STATE.md Current Position NEVER truncated.
+ *
+ * @param {object} structured
+ * @param {{tokenBudget?: number, terse?: boolean}} opts
+ * @returns {string}
+ */
+function renderBearings(structured, { tokenBudget = 600, terse = false } = {}) {
+  const ps = structured.project_state;
+  const ra = structured.recent_activity;
+  const pp = structured.plan_progress;
+  const patStats = structured.pattern_stats || [];
+  const rec = structured.recommendation || { action: '/amauta:progress', reasoning: '' };
+
+  // ── Section 1: Current Position (NEVER truncated) ─────────────────────────
+  const sec1 = [
+    '## Current Position',
+    `Phase: ${ps.phase_number} — ${ps.phase_name}`,
+    `Plan: ${ps.current_plan || '(unknown)'} (${ps.status})`,
+  ].join('\n');
+
+  // ── Section 2: Recent Activity ────────────────────────────────────────────
+  const maxCommitsToShow = terse ? 3 : 5;
+  let commits = (ra.commits || []).slice(0, maxCommitsToShow);
+  const commitLines = commits.length > 0
+    ? commits.map(c => `- ${c.sha} ${c.subject}`).join('\n')
+    : '(no recent commits)';
+  let sec2Parts = ['## Recent Activity', commitLines];
+  if (ra.divergence && ra.divergence.timestamp) {
+    sec2Parts.push(`Last divergence (${ra.divergence.timestamp}): ${ra.divergence.summary || ''}`);
+  }
+  let sec2 = sec2Parts.join('\n');
+
+  // ── Section 3: Plan Progress ───────────────────────────────────────────────
+  const flDisplay = pp.feature_list_path
+    ? pp.feature_list_path
+    : '(no feature_list.json for active plan)';
+  const countLine = `pass: ${pp.counts.pass}, fail: ${pp.counts.fail}, pending: ${pp.counts.pending}`;
+  let sec3 = ['## Plan Progress', flDisplay, countLine].join('\n');
+
+  // ── Section 4: Pattern Stats ──────────────────────────────────────────────
+  let statEntries = [...patStats]; // mutable copy for truncation
+  const renderStatLines = (entries) => entries.map(s => {
+    const v = s.value !== null && s.value !== undefined ? s.value : '(unavailable — PG not reachable)';
+    const display = s.status === 'unavailable' ? `(unavailable — PG not reachable)` : v;
+    return `- ${s.name}: ${display} (${s.status}) — ${s.detail}`;
+  }).join('\n');
+
+  let sec4 = terse
+    ? '## Pattern Stats\n(terse mode — pattern stats omitted)'
+    : `## Pattern Stats\n${renderStatLines(statEntries)}`;
+
+  // ── Section 5: Recommended Next Action ────────────────────────────────────
+  const sec5 = ['## Recommended Next Action', rec.action, `Reasoning: ${rec.reasoning}`].join('\n');
+
+  // ── Assemble and enforce token budget ─────────────────────────────────────
+  const assemble = (s4override) => [
+    '=== GET-BEARINGS ===',
+    '',
+    sec1,
+    '',
+    sec2,
+    '',
+    sec3,
+    '',
+    s4override,
+    '',
+    sec5,
+    '',
+    '=== END GET-BEARINGS ===',
+  ].join('\n');
+
+  // First pass — check if we're within budget
+  let output = assemble(sec4);
+  const estimateTokens = (t) => Math.ceil(t.length / 4);
+
+  if (terse) {
+    // Terse mode already has pattern stats omitted; just return
+    return output;
+  }
+
+  // Truncation loop: drop pattern stat entries from END until within budget
+  while (estimateTokens(output) > tokenBudget && statEntries.length > 0) {
+    statEntries = statEntries.slice(0, statEntries.length - 1);
+    sec4 = statEntries.length > 0
+      ? `## Pattern Stats\n${renderStatLines(statEntries)}\n(${patStats.length - statEntries.length} pattern stat(s) truncated for token budget)`
+      : '## Pattern Stats\n(truncated for token budget)';
+    output = assemble(sec4);
+  }
+
+  // If still over budget, drop oldest commits from Recent Activity (NOT Current Position)
+  let raCommits = [...commits];
+  while (estimateTokens(output) > tokenBudget && raCommits.length > 1) {
+    raCommits = raCommits.slice(0, raCommits.length - 1);
+    const raLines = raCommits.map(c => `- ${c.sha} ${c.subject}`).join('\n');
+    sec2 = `## Recent Activity\n${raLines}`;
+    output = assemble(sec4);
+  }
+
+  // If still over: shorten feature_list_path to just filename
+  if (estimateTokens(output) > tokenBudget && pp.feature_list_path) {
+    const shortPath = path.basename(pp.feature_list_path);
+    sec3 = ['## Plan Progress', shortPath, countLine].join('\n');
+    output = assemble(sec4);
+  }
+
+  // Current Position section (sec1) is NEVER modified — we stop here
+  return output;
+}
+
+/**
+ * Main orchestrator for bearings subcommand.
+ * @param {{tokenBudget?: number, terse?: boolean, json?: boolean}} opts
+ * @returns {{structured: object|null, markdown: string, exitCode: number}}
+ */
+async function generateBearings({ tokenBudget = 600, terse = false, json = false } = {}) {
+  // Step 1: Read project state (authoritative source)
+  const projectState = readProjectState();
+  if (!projectState) {
+    return { structured: null, markdown: '', exitCode: 1 };
+  }
+
+  // Step 2: Determine current phase directory and plan path
+  const phaseNum = projectState.phase_number;
+  let phaseDir = null;
+  let planPath = null;
+  try {
+    phaseDir = resolvePhaseDir(process.cwd(), phaseNum);
+  } catch (_e) { /* best-effort */ }
+
+  if (phaseDir && projectState.current_plan) {
+    const planFile = path.join(phaseDir, `${projectState.current_plan}-PLAN.md`);
+    if (fs.existsSync(planFile)) planPath = planFile;
+  }
+
+  // Step 3: Read all sources concurrently
+  const [recentActivity, planProgress, patternStats] = await Promise.all([
+    Promise.resolve(readRecentActivity({ maxCommits: 5 })),
+    Promise.resolve(readPlanProgress({
+      phaseDir: phaseDir || (process.cwd() + '/.planning/phases/placeholder'),
+      planId: projectState.current_plan || '',
+    })),
+    computePatternStats({ projectState, planPath }),
+  ]);
+
+  // Step 4: Assemble structured object
+  const structured = {
+    schema_version: '1.0',
+    generated_at: new Date().toISOString(),
+    project_state: projectState,
+    recent_activity: recentActivity,
+    plan_progress: planProgress,
+    pattern_stats: patternStats,
+    recommendation: { action: '/amauta:progress', reasoning: 'stub' },
+  };
+
+  // Step 5: Choose recommendation
+  structured.recommendation = chooseRecommendation(structured);
+
+  // Step 6: Render markdown
+  const markdown = renderBearings(structured, { tokenBudget, terse });
+
+  return { structured, markdown, exitCode: 0 };
+}
+
 // Export test-only entry points when imported (not invoked) as a module.
 if (require.main !== module) {
   module.exports = {
@@ -1870,6 +2415,14 @@ if (require.main !== module) {
     _filesDisjointSplit,
     _renderDagText,
     _diffPlanVsAmauta,
+    // Phase 45: Bearings
+    generateBearings,
+    readProjectState,
+    readRecentActivity,
+    readPlanProgress,
+    computePatternStats,
+    chooseRecommendation,
+    renderBearings,
   };
 }
 
@@ -2995,6 +3548,34 @@ Examples:
         req.write(escalateBody);
         req.end();
       });
+      break;
+    }
+
+    case 'bearings': {
+      // Phase 45 HELP-01: Generate bearings — structured project state + pattern stats + recommendation.
+      // Usage: gsd-tools bearings [--json] [--terse] [--token-budget N]
+      const jsonFlag = args.includes('--json');
+      const terseFlag = args.includes('--terse');
+      const tbIdx = args.indexOf('--token-budget');
+      let tokenBudget = 600; // default
+      if (tbIdx !== -1 && args[tbIdx + 1]) {
+        tokenBudget = parseInt(args[tbIdx + 1], 10) || 600;
+      } else if (terseFlag) {
+        tokenBudget = 400; // --terse implies 400 unless --token-budget explicitly given
+      }
+
+      const { structured, markdown, exitCode } = await generateBearings({ tokenBudget, terse: terseFlag, json: jsonFlag });
+
+      if (exitCode !== 0) {
+        process.stderr.write('STATE.md missing — no project state to derive bearings from\n');
+        process.exit(1);
+      }
+
+      if (jsonFlag) {
+        process.stdout.write(JSON.stringify(structured, null, 2) + '\n');
+      } else {
+        process.stdout.write(markdown + '\n');
+      }
       break;
     }
 
