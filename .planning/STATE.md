@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.1
 milestone_name: The Gathering
 status: in_progress
-stopped_at: Plan 44-02 complete
-last_updated: "2026-05-12T23:00:00.000Z"
-last_activity: 2026-05-12 — Plan 44-02 complete. --yes/--tools/--force-migrate flags + migrateLegacyCommands + 6-step orchestrator + frozen result schema for all 5 existing steps + 14 new tests.
+stopped_at: Plan 44-03 complete
+last_updated: "2026-05-12T23:30:00.000Z"
+last_activity: 2026-05-12 — Plan 44-03 complete. stepAssertions() + 5 frozen assertions + worst-of combinator + totalSteps bumped to 7 + init-assertions.test.cjs (10 tests) + init-smoke.test.cjs (8 tests). Phase 44 complete.
 progress:
   total_phases: 7
-  completed_phases: 3
-  total_plans: 10
-  completed_plans: 11
-  percent: 32
+  completed_phases: 4
+  total_plans: 11
+  completed_plans: 12
+  percent: 40
 ---
 
 # GSD-Amauta -- Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-14 after v3.0 milestone close)
 
 ## Current Position
 
-Phase: 44 IN PROGRESS — Plans 44-01 + 44-02 shipped
-Plan: 44-02 COMPLETE
-Status: Plan 44-02 shipped. --yes/--tools/--force-migrate flag parsing added to bin/init.cjs with printHelp(). migrateLegacyCommands() helper with atomic timestamped backup-rename and collision guard. main() orchestrator rewired to 6 steps (stepDetectIdes + stepInstall + stepDetectInfra + stepMigrations + stepStartDaemon + stepVerify). All 5 existing steps converted to FROZEN buildStepResult() schema with names: install_skills, detect_infra, migrations, start_daemon, verify. FROZEN exit rule: process.exit(results.some(r => r.status === 'fail') ? 1 : 0). 14 new hermetic tests (7 legacy-migration + 7 flags-non-interactive). All 29 Phase 44 tests pass. Remaining: 44-03 (assertions step).
-Last activity: 2026-05-12 — Plan 44-02 complete. INST-03 + INST-04 satisfied.
+Phase: 44 COMPLETE — All 3 plans shipped (44-01, 44-02, 44-03)
+Plan: 44-03 COMPLETE
+Status: Plan 44-03 shipped. stepAssertions() added to bin/init.cjs with 5 FROZEN post-install assertions: skill_files_present, compiler_validates, daemon_health, schema_applied, semgrep_rules_present. Worst-of-assertions combinator (fail>warn>pass; skip ignored). totalSteps bumped 6→7. assertLog/assertResult/push wired in main() after stepVerify. FROZEN exit rule unchanged. stepAssertions exported. tests/init-assertions.test.cjs: 10 hermetic tests. tests/init-smoke.test.cjs: 8 subprocess smoke tests. Phase 44 total: 47 tests / 0 failures. Next: Phase 45 (Intelligent Help Routing).
+Last activity: 2026-05-12 — Plan 44-03 complete. INST-01 + INST-02 + INST-03 + INST-04 all satisfied.
 
 Progress: [████░░░░░░] ~32% (3 of 7 phases partially, 11 of 14 plans complete)
 
@@ -39,7 +39,7 @@ Progress: [████░░░░░░] ~32% (3 of 7 phases partially, 11 of 
 | 41 | Sharded Workflows (FOUNDATION) | SHARD-01..05 | COMPLETE (3 plans, 151 new assertions) |
 | 42 | Scale-Adaptive Intelligence | SCALE-01..04 | COMPLETE (4 plans, 150 JS + 32 Python assertions) |
 | 43 | Skills Architecture | SKILL-01..04 | In progress (Plans 43-01 + 43-02 COMPLETE; 43-03 remaining) |
-| 44 | Cross-IDE Installer | INST-01..04 | In progress (Plan 44-01 COMPLETE) |
+| 44 | Cross-IDE Installer | INST-01..04 | COMPLETE (Plans 44-01 + 44-02 + 44-03, 47 tests) |
 | 45 | Intelligent Help Routing | HELP-01..03 | Not started |
 | 46 | Standalone MCP Server | MCP-01..03 | Not started |
 | 47 | Agent Dynamic Hydration | HYDRA-01..02 | Not started |
@@ -77,6 +77,7 @@ Progress: [████░░░░░░] ~32% (3 of 7 phases partially, 11 of 
 - Plan 44-01: Export gate pattern for bin/init.cjs — if(require.main===module) guard + module.exports makes installer dual-mode (executable via npx, importable by tests). Required for hermetic unit tests in 44-01-05+.
 - Plan 44-01: stepDetectIdes() emits status:'warn' (not 'fail') when no IDEs detected — empty filesystem is a valid state. status:'pass' = at least one IDE detected. All 3 IDEs appear in detections table regardless of detection result.
 - Plan 44-02: All 5 existing steps converted to FROZEN buildStepResult() schema. FROZEN names: install_skills, detect_infra, migrations, start_daemon, verify. Exit rule: results.some(r=>r.status==='fail')?1:0. main() uses results array (not hash). migrateLegacyCommands() timestamp: toISOString().replace(/[:.]/g,'-').slice(0,19). stepInstall calls migrateLegacyCommands() then iterates detections for per-IDE compile. Graceful degradation: sqlite warn → migrations skip, start_daemon skip.
+- Plan 44-03: stepAssertions() added as 7th step (run_assertions). 5 FROZEN assertion names: skill_files_present, compiler_validates, daemon_health, schema_applied, semgrep_rules_present. skill_files_present skips when installResult.status==='skip' OR no IDE action:install rows. Worst-of combinator: STATUS_RANK {fail:3,warn:2,pass:1,skip:0}; skip ignored; all-skip → pass. schema_applied: sqlite checks file existence (self-creating contract: skip if absent), pg hits /api/migrations (graceful 404 fallback). semgrep_rules_present: file presence only, no binary run. skills-only smoke (--skip-install --skip-daemon --backend sqlite): 7 steps, 0 fail, exit=0.
 
 ### Pending Todos
 
@@ -97,9 +98,9 @@ Context: 2026-05-12 health audit caught RLM dead 13h from uncaught BrokenPipe + 
 
 ## Session Continuity
 
-Last session: 2026-05-12T23:00:00.000Z
-Stopped at: Plan 44-02 complete (5 tasks, 5 commits)
-Resume file: .planning/phases/44-cross-ide-installer/44-02-SUMMARY.md
+Last session: 2026-05-12T23:30:00.000Z
+Stopped at: Plan 44-03 complete (3 tasks, 3 commits); Phase 44 COMPLETE
+Resume file: .planning/phases/44-cross-ide-installer/44-03-SUMMARY.md
 
 ## Learnings
 
