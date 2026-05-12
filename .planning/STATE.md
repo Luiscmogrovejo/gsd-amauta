@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.1
 milestone_name: The Gathering
-status: completed
-stopped_at: Plan 42-03 complete
+status: in_progress
+stopped_at: Plan 42-04 complete
 last_updated: "2026-05-12T00:00:00.000Z"
-last_activity: "2026-05-12 — Plan 42-03 complete: detect_escalation + apply_escalation in complexity_scorer.py (already present from Wave 1), daemon /api/complexity/escalate endpoint (4 triggers, 2-cap, STATE.md append, step_handoffs append-only insert), gsd-tools complexity-escalate subcommand with @file args + bold banner, step-03-execute section 3.5 + step-04-verify section 1.5 wired. Phase 42 Wave 2b DONE."
+last_activity: "2026-05-12 — Plan 42-04 complete: calibrate_score + _load_similar_completions + _logistic_regression added to complexity_scorer.py (in-house NumPy LR, cold-start conservative-high bias, pgvector cosine neighbor retrieval). Daemon /api/complexity/score now calls calibrate_score + returns calibrated_score/cold_start/confidence/adjustment. 5 test files: complexity-scorer.test.cjs (19 tests, 44 assert), escalation-triggers.test.cjs (13 tests, 30 assert), scale-adaptive-integration.test.cjs (16 tests, 33 assert), task-completions-learning.test.cjs (12 tests, 43 assert + TEST-SCALE03 binding), test_complexity_scorer.py (27 tests, 32 assert). Wave gate: 150 JS + 32 Python assertions. Phase 42 COMPLETE."
 progress:
   total_phases: 7
-  completed_phases: 1
-  total_plans: 4
-  completed_plans: 4
-  percent: 14
+  completed_phases: 2
+  total_plans: 5
+  completed_plans: 5
+  percent: 28
 ---
 
 # GSD-Amauta -- Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-14 after v3.0 milestone close)
 
 ## Current Position
 
-Phase: 42 IN PROGRESS — Plans 42-01, 42-02, 42-03 complete
-Plan: 42-03 COMPLETE
-Status: Plans 42-01, 42-02, and 42-03 shipped. Scorer foundation + full workflow integration + auto-escalation done. 4 divergence triggers, 2-cap enforcement, daemon endpoint, CLI subcommand, step wiring all in place.
-Last activity: 2026-05-12 — Plan 42-03 complete: daemon /api/complexity/escalate (detect+apply escalation, step_handoffs append-only, STATE.md accumulation), gsd-tools complexity-escalate (@file args, bold stderr banner), step-03-execute section 3.5 + step-04-verify section 1.5 wired. Phase 42 Wave 2b DONE. SCALE-04 complete.
+Phase: 42 COMPLETE — All 4 plans shipped
+Plan: 42-04 COMPLETE
+Status: Plans 42-01 through 42-04 shipped. Scorer foundation + workflow integration + auto-escalation + logistic regression learning loop all complete. SCALE-01 through SCALE-04 satisfied. Phase 42 DONE.
+Last activity: 2026-05-12 — Plan 42-04 complete: calibrate_score (cold-start bias + NumPy logistic regression), daemon calibrated_score wiring, 5 test files (150 JS + 32 Python assertions, wave gate >= 80 JS + 20 Python), TEST-SCALE03 accuracy-improves-over-N binding present.
 
 Progress: [██░░░░░░░░] ~14% (1 of 7 phases complete)
 
@@ -37,7 +37,7 @@ Progress: [██░░░░░░░░] ~14% (1 of 7 phases complete)
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
 | 41 | Sharded Workflows (FOUNDATION) | SHARD-01..05 | COMPLETE (3 plans, 151 new assertions) |
-| 42 | Scale-Adaptive Intelligence | SCALE-01..04 | In progress (Plan 42-01 done) |
+| 42 | Scale-Adaptive Intelligence | SCALE-01..04 | COMPLETE (4 plans, 150 JS + 32 Python assertions) |
 | 43 | Skills Architecture | SKILL-01..04 | Not started |
 | 44 | Cross-IDE Installer | INST-01..04 | Not started |
 | 45 | Intelligent Help Routing | HELP-01..03 | Not started |

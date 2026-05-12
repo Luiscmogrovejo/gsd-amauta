@@ -35,10 +35,12 @@
   - [x] Plan 41-01: Foundation Infrastructure + plan-phase Sharding (migration 017, step-orchestrator.py, daemon endpoints, JSON schema, 5 step files, workflow.md router, legacy backup, redirect) — COMPLETE 2026-04-15
   - [x] Plan 41-02: execute-phase + discuss-phase Sharding + Legacy Fallback (6 execute steps, 4 discuss steps, routers, legacy backups, schema copies, gsd-tools step-handoff helpers) — COMPLETE 2026-04-13
   - [x] Plan 41-03: Integration Tests + Regression Suite (7 test files, 151 assertions, full regression 3635 passing) — COMPLETE 2026-04-16
-- [ ] **Phase 42: Scale-Adaptive Intelligence** — Continuous complexity classifier (0-100), phase selector, PG-backed learning from past tasks, divergence-triggered auto-escalation (SCALE-01..04) — depends on 41
+- [x] **Phase 42: Scale-Adaptive Intelligence** — Continuous complexity classifier (0-100), phase selector, PG-backed learning from past tasks, divergence-triggered auto-escalation (SCALE-01..04) — depends on 41 — COMPLETE 2026-05-12
   - [x] Plan 42-01: Complexity Scorer Foundation + CLI + Config Schema (migration 018, complexity_scorer.py, config keys, --force-phases flag, pin-phases subcommand) — COMPLETE 2026-05-12
   - [x] Plan 42-02: Workflow Integration — Score at Entry, Write Completion at Close (daemon endpoints /api/complexity/score+complete, gsd-tools CLI, step files wired, step-orchestrator.py phase-routing with T-floor invariant) — COMPLETE 2026-05-12
   - [x] Plan 42-03: Divergence-Triggered Auto-Escalation — detect_escalation + apply_escalation, daemon /api/complexity/escalate, gsd-tools complexity-escalate, step-03-execute + step-04-verify wired, 2-cap enforced — COMPLETE 2026-05-12
+  - [x] Plan 42-04: Logistic Regression Learning Loop + Cold Start + Test Suite — calibrate_score, _logistic_regression (in-house NumPy), cold-start conservative-high bias, daemon calibrated_score wiring, 5 test files (150 JS + 32 Python assertions, TEST-SCALE03 binding) — COMPLETE 2026-05-12
+- [x] **Phase 42: Scale-Adaptive Intelligence** — Continuous complexity classifier (0-100), phase selector, PG-backed learning from past tasks, divergence-triggered auto-escalation (SCALE-01..04) — COMPLETE 2026-05-12
 - [ ] **Phase 43: Skills Architecture** — Refactor workflows to SKILL.md format with YAML frontmatter; invocation memory with hybrid search; skill compiler for cross-IDE output; Semgrep tool enforcement (SKILL-01..04) — depends on 41
 - [ ] **Phase 44: Cross-IDE Installer** — `npx gsd-amauta init` 6-step flow; IDE auto-detection; non-interactive CI mode; legacy migration (INST-01..04) — depends on 43
 - [ ] **Phase 45: Intelligent Help Routing** — `/amauta:help` queries 4 sources deterministically; pattern learning from PG history; get-bearings integration (HELP-01..03) — depends on 43
@@ -110,11 +112,13 @@ Plans:
   2. Phase selector maps score to RPETD depth: 0-15 = Execute only, 16-35 = Plan+Execute+Test, 36-60 = R+P+E+T, 61-85 = full RPETD, 86-100 = full + security + architecture review; mapping is configurable.
   3. Past task outcomes are queried from PG using pgvector similarity on task metadata signatures; logistic regression calibration adjusts future predictions; accuracy improves measurably over 10+ tasks.
   4. An "Execute only" task that encounters unexpected complexity mid-execution triggers automatic re-scoring and phase escalation without user intervention; the escalation event is logged with before/after scores.
-**Plans:** TBD (estimated 2 plans: classifier + learning implementation, tests)
+**Plans:** 4 plans shipped (Wave 1: foundation + migration; Wave 2a: workflow wiring; Wave 2b: escalation; Wave 3: logistic regression learning loop + cold-start + test suite). COMPLETE.
 
 Plans:
-- [ ] 42-01: TBD
-- [ ] 42-02: TBD
+- [x] 42-01: Migration 018 + complexity_scorer.py foundation (extract_features, score_features, select_phases, store_completion)
+- [x] 42-02: Workflow wiring (daemon endpoints /api/complexity/{score,complete}, step wiring, config schema)
+- [x] 42-03: Escalation triggers (detect_escalation, apply_escalation, /api/complexity/escalate, gsd-tools subcommand, step wiring)
+- [x] 42-04: Logistic regression learning loop (calibrate_score, cold-start bias, daemon calibrated_score, 5 test files — 150 JS + 32 Python assertions)
 
 ### Phase 43: Skills Architecture
 **Goal:** Workflow capabilities are packaged as SKILL.md files with YAML frontmatter declaring name, description, allowed-tools, and category. Every skill invocation is recorded in PG with context embeddings for semantic retrieval of similar past invocations. A skill compiler produces IDE-specific output. Tool enforcement is deterministic via Semgrep, not advisory.
@@ -196,7 +200,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 41. Sharded Workflows | 0/3 | Complete    | 2026-04-16 |
-| 42. Scale-Adaptive Intelligence | 0/2 | Not started | - |
+| 42. Scale-Adaptive Intelligence | 4/4 | Complete    | 2026-05-12 |
 | 43. Skills Architecture | 0/2 | Not started | - |
 | 44. Cross-IDE Installer | 0/2 | Not started | - |
 | 45. Intelligent Help Routing | 0/2 | Not started | - |
