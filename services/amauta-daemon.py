@@ -290,6 +290,7 @@ RLM_PORT = int(os.environ.get("GSD_RLM_PORT", "18798"))
 RLM_MAX_RESTARTS = 3
 _rlm_process = None
 _rlm_restart_count = 0
+_rlm_last_successful_uptime = None  # epoch seconds of first healthy observation post-restart; resets to None after each restart event so the 300s uptime gate re-arms
 _rlm_enabled = os.environ.get("GSD_RLM_ENABLED", "true").lower() != "false"
 
 
@@ -442,11 +443,23 @@ def _check_rlm_health():
 
 
 def _rlm_watchdog():
-    """Background thread: periodically check RLM health and restart if needed."""
-    global _rlm_restart_count
+    """Background thread: periodically check RLM health and restart if needed.
+
+    Resilience contract (post-13h-degraded-window fix):
+      - First iteration runs immediately after thread start (sleep moved to bottom).
+      - Healthy iterations arm an uptime timer; after >=300s continuous health with
+        a non-zero restart count, the counter resets so future bursts get a fresh
+        budget instead of permanent degradation.
+      - Consecutive restarts within a burst back off exponentially (1,2,4,8,...,60s)
+        to avoid burning the cap in seconds during a crash cascade.
+      - When the cap is hit, enter a 300s cooldown then reset and continue rather
+        than abandoning forever (yesterday's failure mode: 1 restart → cap → 13h
+        silence until manual intervention).
+    """
+    global _rlm_restart_count, _rlm_last_successful_uptime
     while True:
-        time.sleep(30)
         if not _rlm_enabled or _rlm_process is None:
+            time.sleep(30)
             continue
         process_dead = _rlm_process.poll() is not None
         health_failed = not process_dead and not _check_rlm_health()
@@ -454,11 +467,32 @@ def _rlm_watchdog():
             reason = "process_exited" if process_dead else "health_check_failed"
             if _rlm_restart_count < RLM_MAX_RESTARTS:
                 _rlm_restart_count += 1
-                log.warning("rlm_restart attempt=%d/%d reason=%s", _rlm_restart_count, RLM_MAX_RESTARTS, reason)
+                backoff = min(2 ** (_rlm_restart_count - 1), 60)
+                log.warning(
+                    "rlm_restart attempt=%d/%d reason=%s backoff=%ds",
+                    _rlm_restart_count, RLM_MAX_RESTARTS, reason, backoff,
+                )
                 _stop_rlm()
+                time.sleep(backoff)
                 _start_rlm()
+                _rlm_last_successful_uptime = None  # re-arm uptime gate post-restart
             else:
-                log.error("rlm_max_restarts_exceeded reason=%s", reason)
+                log.warning("rlm_max_restarts_cooldown duration=300")
+                time.sleep(300)
+                _rlm_restart_count = 0
+                _rlm_last_successful_uptime = None
+        else:
+            # Healthy iteration: arm or evaluate the uptime-based counter reset.
+            now = time.time()
+            if _rlm_last_successful_uptime is None:
+                _rlm_last_successful_uptime = now
+            elif _rlm_restart_count > 0 and (now - _rlm_last_successful_uptime) >= 300:
+                log.info(
+                    "rlm_restart_counter_reset previous_count=%d uptime=%ds",
+                    _rlm_restart_count, int(now - _rlm_last_successful_uptime),
+                )
+                _rlm_restart_count = 0
+        time.sleep(30)
 
 
 # ── Redis Service Management ──────────────────────────────────────────────────
