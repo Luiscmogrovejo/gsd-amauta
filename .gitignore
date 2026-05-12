@@ -54,3 +54,8 @@ reports/mutation/
 
 # Pact generated contract files
 pacts/
+
+# Phase 43: skill compiler outputs — canonical sources live in get-shit-done/skills/
+.claude/skills/
+.cursor/skills/
+.opencode/skills/
