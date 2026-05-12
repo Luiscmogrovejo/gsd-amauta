@@ -104,6 +104,104 @@ const TARGET_MAPS = {
 
 const SUPPORTED_TARGETS = Object.keys(TARGET_MAPS);
 
+// ─── Platform codes loader (reads get-shit-done/references/platform-codes.yaml) ──
+
+/**
+ * Load the platform-codes.yaml IDE registry.
+ *
+ * Resolution order for yaml path:
+ *   1. Explicit `refPath` argument
+ *   2. PLATFORM_CODES_YAML env var
+ *   3. Default: <repo-root>/get-shit-done/references/platform-codes.yaml
+ *
+ * Returns {} (empty map) on any error — compiler falls back to hard-coded
+ * TARGET_MAPS values (zero-breakage back-compat).
+ *
+ * Return shape: { <ide_id>: { ide_id, dir_name, skill_subdir, cli_name }, ... }
+ */
+function loadPlatformCodes(refPath) {
+  let yamlPath;
+  if (refPath && typeof refPath === 'string') {
+    yamlPath = refPath;
+  } else if (process.env.PLATFORM_CODES_YAML) {
+    yamlPath = process.env.PLATFORM_CODES_YAML;
+  } else {
+    yamlPath = path.resolve(__dirname, '../get-shit-done/references/platform-codes.yaml');
+  }
+
+  let raw;
+  try {
+    raw = fs.readFileSync(yamlPath, 'utf8');
+  } catch (_e) {
+    return {};
+  }
+
+  // Minimal line-by-line parser (mirrors parseFrontmatter style, no deps)
+  // Handles:
+  //   top-level key  → ides: (2-space indent children)
+  //   IDE id keys    → "  claude-code:" (2-space indent)
+  //   scalar fields  → "    field_name: value" (4-space indent)
+  //   # comments and blank lines → skip
+  const result = {};
+  let inIdes = false;
+  let currentIde = null;
+
+  const lines = raw.split('\n');
+  for (const line of lines) {
+    const trimmed = line.trimEnd();
+    if (!trimmed || trimmed.trimStart().startsWith('#')) continue;
+
+    // Top-level 'ides:' key
+    if (/^ides:\s*$/.test(trimmed)) {
+      inIdes = true;
+      continue;
+    }
+
+    if (!inIdes) continue;
+
+    // IDE id keys at 2-space indent: "  <ide-id>:"
+    const ideMatch = trimmed.match(/^  ([a-zA-Z0-9_-]+):\s*$/);
+    if (ideMatch) {
+      currentIde = ideMatch[1];
+      result[currentIde] = { ide_id: currentIde, dir_name: '', skill_subdir: '', cli_name: '' };
+      continue;
+    }
+
+    // Field values at 4-space indent: "    field_name: value"
+    if (currentIde) {
+      const fieldMatch = trimmed.match(/^    ([a-zA-Z0-9_-]+):\s*(.+)$/);
+      if (fieldMatch) {
+        const key = fieldMatch[1];
+        let val = fieldMatch[2].trim();
+        // Strip surrounding quotes if present
+        if ((val.startsWith('"') && val.endsWith('"')) ||
+            (val.startsWith("'") && val.endsWith("'"))) {
+          val = val.slice(1, -1);
+        }
+        result[currentIde][key] = val;
+      }
+    }
+  }
+
+  return result;
+}
+
+// ─── Apply yaml overrides to TARGET_MAPS at module-load time ─────────────────
+
+const _platformCodes = loadPlatformCodes();
+for (const [ideId, codes] of Object.entries(_platformCodes)) {
+  // Map yaml ide_id to TARGET_MAPS key. 'claude-code' yaml id maps to 'claude' TARGET_MAPS key.
+  const mapKey = ideId === 'claude-code' ? 'claude' : ideId;
+  if (TARGET_MAPS[mapKey]) {
+    // Rebuild out_dir from yaml fields: '<dir_name>/<skill_subdir>/'
+    TARGET_MAPS[mapKey].out_dir = `${codes.dir_name}/${codes.skill_subdir}/`;
+    TARGET_MAPS[mapKey].dir_name = codes.dir_name;
+    TARGET_MAPS[mapKey].skill_subdir = codes.skill_subdir;
+    TARGET_MAPS[mapKey].cli_name = codes.cli_name;
+    TARGET_MAPS[mapKey].ide_id = codes.ide_id;
+  }
+}
+
 // ─── YAML frontmatter parser (minimal, no deps) ────────────────────────────
 
 /**
@@ -494,7 +592,7 @@ function compile(target, opts) {
 
 // ─── Module exports ────────────────────────────────────────────────────────
 
-module.exports = { compile, validate, listSkills, TARGET_MAPS, SUPPORTED_TARGETS };
+module.exports = { compile, validate, listSkills, loadPlatformCodes, TARGET_MAPS, SUPPORTED_TARGETS };
 
 // ─── CLI entry-point ───────────────────────────────────────────────────────
 
