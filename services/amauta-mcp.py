@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Amauta MCP Server — thin MCP wrapper over amauta-daemon HTTP API.
+Amauta MCP Server — standalone MCP service with direct PG connection pool + Valkey client (Phase 46).
 
-Runs as a separate async process alongside the daemon (port 18799).
 Exposes amauta capabilities as MCP tools and resources for Claude Code
 (stdio transport) and remote clients (SSE on port 18800).
+Does NOT require amauta-daemon to be running.
 
 Usage:
     python3 services/amauta-mcp.py          # stdio transport (Claude Code)
@@ -51,11 +51,224 @@ from mcp.types import (
     ListToolsResult, CallToolResult, ListResourcesResult, ReadResourceResult,
 )
 
+# ── psycopg2 import-safety fallback (mirrors skill_invocation_store.py pattern) ─
+try:
+    import psycopg2
+    import psycopg2.extras
+    from psycopg2.pool import SimpleConnectionPool
+    _HAS_PG = True
+except ImportError:
+    _HAS_PG = False
+    print("[amauta-mcp] WARNING: psycopg2 not installed — PG tools will return pg_unavailable", file=sys.stderr)
+
 # ── Constants ─────────────────────────────────────────────────────────────────
-DAEMON_URL   = os.environ.get("AMAUTA_DAEMON_URL", "http://localhost:18799")
-RLM_URL      = os.environ.get("AMAUTA_RLM_URL",    "http://localhost:18798")
 MCP_SSE_PORT = int(os.environ.get("AMAUTA_MCP_PORT", "18800"))
 MCP_SSE_PATH = "/sse"
+
+# Frozen MCP error vocabulary (CONTEXT §Specifics) — must match test_constants_frozen
+_MCP_ERROR_CODES = (
+    "pg_unavailable",
+    "valkey_unavailable",
+    "invalid_input",
+    "not_found",
+    "internal_error",
+)
+
+
+# ── MCPDatabase: direct psycopg2 SimpleConnectionPool + SQLite adapter ────────
+
+class MCPDatabase:
+    """Direct PG connection pool (psycopg2 SimpleConnectionPool) with SQLite fallback.
+
+    Connection URL resolution:
+      1. GSD_POSTGRES_URL env var (always wins)
+      2. services/infra_detect.py cascade (local PG → Docker PG → SQLite)
+
+    Pool defaults: MIN=1, MAX=8. Override via MCP_PG_POOL_MIN / MCP_PG_POOL_MAX.
+    """
+
+    def __init__(self):
+        self._pool = None
+        self._sqlite_conn = None
+        self.backend = None
+        self._init_error = None
+
+        try:
+            url = os.environ.get("GSD_POSTGRES_URL")
+            if not url:
+                try:
+                    import importlib.util as _ilu
+                    import os as _os
+                    _services_dir = _os.path.dirname(_os.path.abspath(__file__))
+                    _spec = _ilu.spec_from_file_location(
+                        "infra_detect",
+                        _os.path.join(_services_dir, "infra_detect.py"),
+                    )
+                    _mod = _ilu.module_from_spec(_spec)
+                    _spec.loader.exec_module(_mod)
+                    _info = _mod.detect_infrastructure(auto_start=False)
+                    url = _info.get("connection_url")
+                    self.backend = _info.get("backend")
+                except Exception as e:
+                    self._init_error = f"infra_detect failed: {e}"
+                    return
+            else:
+                self.backend = "postgresql"
+
+            if not url:
+                self._init_error = "No connection URL resolved"
+                return
+
+            if self.backend == "sqlite" or (url and url.startswith("sqlite://")):
+                import sqlite3
+                sqlite_path = url.replace("sqlite:///", "")
+                self._sqlite_conn = sqlite3.connect(sqlite_path, check_same_thread=False)
+                self.backend = "sqlite"
+            elif _HAS_PG:
+                min_conn = int(os.environ.get("MCP_PG_POOL_MIN", "1"))
+                max_conn = int(os.environ.get("MCP_PG_POOL_MAX", "8"))
+                self._pool = SimpleConnectionPool(minconn=min_conn, maxconn=max_conn, dsn=url)
+                self.backend = "postgresql"
+            else:
+                self._init_error = "psycopg2 not installed and URL is postgres"
+        except Exception as e:
+            self._init_error = str(e)
+
+    def available(self) -> bool:
+        """Return True iff PG pool or SQLite connection is usable."""
+        if self._init_error:
+            return False
+        if self._pool is not None:
+            return True
+        if self._sqlite_conn is not None:
+            return True
+        return False
+
+    def getconn(self):
+        """Get a raw connection from the pool (or sqlite conn)."""
+        if self._pool is not None:
+            return self._pool.getconn()
+        return self._sqlite_conn
+
+    def putconn(self, conn):
+        """Return a connection to the pool (no-op for sqlite)."""
+        if self._pool is not None:
+            self._pool.putconn(conn)
+
+    def close(self):
+        """Close all pool connections."""
+        if self._pool is not None:
+            try:
+                self._pool.closeall()
+            except Exception:
+                pass
+
+
+# ── MCPValkey: optional Redis/Valkey client (redis.from_url pattern) ──────────
+
+try:
+    import redis as _redis_lib
+    _HAS_REDIS = True
+except ImportError:
+    _redis_lib = None  # type: ignore
+    _HAS_REDIS = False
+
+
+class MCPValkey:
+    """Optional Valkey/Redis client.
+
+    Connection URL: VALKEY_URL env first, then REDIS_URL, else None (no client).
+    Valkey is OPTIONAL — when unavailable, tools skip the cache path gracefully.
+    All methods swallow exceptions; get() returns None on failure; setex() returns False.
+    """
+
+    def __init__(self):
+        self._client = None
+        self._init_error = None
+        self._ping_ok = False
+
+        url = os.environ.get("VALKEY_URL") or os.environ.get("REDIS_URL")
+        if not url:
+            self._init_error = "VALKEY_URL / REDIS_URL not set"
+            return
+
+        if not _HAS_REDIS:
+            self._init_error = "redis library not installed"
+            return
+
+        try:
+            self._client = _redis_lib.from_url(url, socket_timeout=2, socket_connect_timeout=2)
+            self._client.ping()
+            self._ping_ok = True
+        except Exception as e:
+            self._init_error = f"Valkey ping failed: {e}"
+            self._ping_ok = False
+
+    def available(self) -> bool:
+        """Return True iff client present AND last ping succeeded."""
+        return self._client is not None and self._ping_ok
+
+    def get(self, key: str):
+        """Get a value from Valkey. Returns None on miss or error."""
+        if not self.available():
+            return None
+        try:
+            return self._client.get(key)
+        except Exception as e:
+            self._init_error = str(e)
+            return None
+
+    def setex(self, key: str, ttl: int, value) -> bool:
+        """Set a value with TTL in Valkey. Returns False on error."""
+        if not self.available():
+            return False
+        try:
+            self._client.setex(key, ttl, value)
+            return True
+        except Exception as e:
+            self._init_error = str(e)
+            return False
+
+
+# ── Module-level singleton accessors ──────────────────────────────────────────
+
+_pg_store_singleton = None
+_pg_store_attempted = False
+_mcp_valkey_singleton = None
+_mcp_valkey_attempted = False
+
+
+def _get_pg_store():
+    """Lazily instantiate and return a PGStore singleton. Returns None on error."""
+    global _pg_store_singleton, _pg_store_attempted
+    if _pg_store_attempted:
+        return _pg_store_singleton
+    _pg_store_attempted = True
+    try:
+        import importlib.util as _ilu
+        _services_dir = os.path.dirname(os.path.abspath(__file__))
+        _spec = _ilu.spec_from_file_location(
+            "pg_store",
+            os.path.join(_services_dir, "pg_store.py"),
+        )
+        _mod = _ilu.module_from_spec(_spec)
+        _spec.loader.exec_module(_mod)
+        _pg_store_singleton = _mod.PGStore()
+    except Exception as e:
+        print(f"[amauta-mcp] WARNING: PGStore init failed: {e}", file=sys.stderr)
+        _pg_store_singleton = None
+    return _pg_store_singleton
+
+
+def _get_mcp_valkey():
+    """Lazily instantiate and return the MCPValkey singleton."""
+    global _mcp_valkey_singleton, _mcp_valkey_attempted
+    if _mcp_valkey_attempted:
+        return _mcp_valkey_singleton
+    _mcp_valkey_attempted = True
+    _mcp_valkey_singleton = MCPValkey()
+    return _mcp_valkey_singleton
+
 
 # ── HTTP delegation helpers ───────────────────────────────────────────────────
 
