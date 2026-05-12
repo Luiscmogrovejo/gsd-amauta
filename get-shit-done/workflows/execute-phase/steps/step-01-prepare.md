@@ -99,7 +99,8 @@ Report: "Found {plan_count} plans in {phase_dir} ({incomplete_count} incomplete)
 
 ## 4. Compute Complexity Score (Phase 42 / SCALE-01)
 
-Compute the score using the first plan in the phase as the sample (PLAN.md files have `<files_expected>` blocks the scorer parses):
+Compute the score using the first plan in the phase as the sample (PLAN.md files have `<files_expected>` blocks the scorer parses).
+Uses services/complexity_scorer.py via the daemon endpoint (gsd-tools complexity-score).
 
 ```bash
 FIRST_PLAN=$(ls "${PHASE_DIR}"/*-PLAN.md 2>/dev/null | head -1)

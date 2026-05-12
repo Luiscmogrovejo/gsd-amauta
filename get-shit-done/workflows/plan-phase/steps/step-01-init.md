@@ -51,6 +51,7 @@ mkdir -p ".planning/phases/${padded_phase}-${phase_slug}"
 ## 2.5. Compute Complexity Score (Phase 42 / SCALE-01)
 
 Before any plan-checker or research, compute the complexity score for this phase.
+Uses services/complexity_scorer.py via the daemon endpoint (gsd-tools complexity-score).
 
 ```bash
 PLAN_PATH=""  # plans don't exist yet at step-01-init for fresh runs
