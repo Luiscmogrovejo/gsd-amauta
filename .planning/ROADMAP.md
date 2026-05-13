@@ -152,7 +152,7 @@ In practice, recommended serialization is 48 → 49 → 50 → 51 → 52 → 53 
   - Precedent: Phase 38 `agent_findings` + `agent_messages` blackboard tables and daemon endpoints
   - Precedent: Phase 41 `step_handoffs` append-only PG persistence pattern (apply same append-only mindset to party findings)
   - Precedent: Phase 47 Plan 47-00 migration 020 schema-extension discipline
-**Plans:** TBD
+**Plans:** 4/4 plans complete
 
 ### Phase 51: Party Mode Decisions + Operator CLI
 **Goal:** Agents in a party session can record structured decisions (propose, agree, dissent, block) with reasoning, and the operator has a CLI surface to list, inspect, and terminate sessions. Consensus and dissent are both first-class and visible.
@@ -214,7 +214,7 @@ In practice, recommended serialization is 48 → 49 → 50 → 51 → 52 → 53 
 |-------|----------------|--------|-----------|
 | 48. Module System Foundation | 1/1 | Complete    | 2026-05-13 |
 | 49. Module CLI + Lifecycle | 0/0 | Complete    | 2026-05-13 |
-| 50. Party Mode Foundation | 0/0 | Not started | - |
+| 50. Party Mode Foundation | 0/0 | Complete    | 2026-05-13 |
 | 51. Party Mode Decisions + Operator CLI | 0/0 | Not started | - |
 | 52. Agent Compilation | 0/0 | Not started | - |
 | 53. v3.1 Carry-Forwards | 0/0 | Not started | - |
