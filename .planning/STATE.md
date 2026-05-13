@@ -4,13 +4,13 @@ milestone: v3.2
 milestone_name: The Federation** — Phases 48-53
 status: completed
 stopped_at: v3.2 roadmap defined; awaiting Phase 48 planning
-last_updated: "2026-05-13T20:30:00.000Z"
-last_activity: "2026-05-13 — Plan 50-01 complete: migration 021 (party_sessions UP+DOWN) + PartySession Pydantic + state machine (5 FROZEN transitions) + 19 new tests (6 migration + 13 state machine). Phase 50 Plan 1 of N complete."
+last_updated: "2026-05-13T22:00:00.000Z"
+last_activity: "2026-05-13 — Plan 50-02 complete: post_finding() + list_findings() helpers + resume() extended with findings replay + SC3 + SC4 tests. 32 Phase 50 tests pass (0 regressions). Deviation: resume() strict paused-only guard added (pre-existing semantic gap exposed by SC4 test)."
 progress:
   total_phases: 6
   completed_phases: 2
-  total_plans: 7
-  completed_plans: 7
+  total_plans: 8
+  completed_plans: 8
   percent: 33
 ---
 
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-13 after v3.1 milestone close + v3.2 
 
 ## Current Position
 
-Phase: 50 — Party Mode Foundation (IN PROGRESS — Plan 50-01 COMPLETE)
-Plan: 50-01 COMPLETE (5 tasks)
-Status: Phase 50 Plan 50-01 complete. migrations/021-party-sessions.sql (UP+DOWN) + services/party_session.py (PartySession Pydantic v2 + 5 FROZEN state-machine transitions + InvalidTransitionError + SessionNotFoundError) + 19 new tests (6 migration + 13 state machine). All 19 pass. PARTY-01/PARTY-02 substrate shipped. Plans 50-02 (helpers/findings) + 50-03 (CLI) + 50-04 (E2E) remain.
-Last activity: 2026-05-13 — Plan 50-01 complete: migration 021 (party_sessions UP+DOWN) + PartySession Pydantic + state machine (5 FROZEN transitions) + 19 new tests (6 migration + 13 state machine). Phase 50 Plan 1 of N complete.
+Phase: 50 — Party Mode Foundation (IN PROGRESS — Plans 50-01 + 50-02 COMPLETE)
+Plan: 50-02 COMPLETE (5 tasks, 6 commits)
+Status: Phase 50 Plans 50-01 + 50-02 complete. post_finding() + list_findings() helpers added to services/party_session.py. resume() extended with findings replay (same-connection atomicity). SC3 (two-agent ordering + attribution) + SC4 (daemon-restart simulation via psycopg2 close+reopen) covered. 32 Phase 50 tests pass (0 regressions). Plans 50-03 (CLI) + 50-04 (E2E) remain.
+Last activity: 2026-05-13 — Plan 50-02 complete: post_finding() + list_findings() helpers + resume() extended with findings replay + SC3 + SC4 tests. 32 Phase 50 tests pass (0 regressions). Deviation: resume() strict paused-only guard added (pre-existing semantic gap exposed by SC4 test).
 
 Progress: [>>>       ] 33% (2 of 6 phases complete, 4 of 4 plans complete)
 
@@ -38,7 +38,7 @@ Progress: [>>>       ] 33% (2 of 6 phases complete, 4 of 4 plans complete)
 |-------|------|--------------|--------|
 | 48 | Module System Foundation | MOD-01, MOD-02 | COMPLETE — Plans 48-01 + 48-02 shipped 2026-05-13 |
 | 49 | Module CLI + Lifecycle | MOD-03, MOD-04 | COMPLETE — Plans 49-01 + 49-02 + 49-03 + 49-04 shipped 2026-05-13 |
-| 50 | Party Mode Foundation | PARTY-01, PARTY-02 | IN PROGRESS — Plan 50-01 complete (migration 021 + PartySession Pydantic + state machine + 19 tests) |
+| 50 | Party Mode Foundation | PARTY-01, PARTY-02 | IN PROGRESS — Plans 50-01 + 50-02 complete (migration 021 + PartySession Pydantic + state machine + post_finding + list_findings + resume() replay + 32 tests) |
 | 51 | Party Mode Decisions + Operator CLI | PARTY-03, PARTY-04 | Not started (depends on 50) |
 | 52 | Agent Compilation | COMPILE-01, COMPILE-02, COMPILE-03, COMPILE-04 | Not started |
 | 53 | v3.1 Carry-Forwards | POLISH-01..05 | Not started |
