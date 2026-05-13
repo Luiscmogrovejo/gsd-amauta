@@ -120,7 +120,7 @@ In practice, recommended serialization is 48 → 49 → 50 → 51 → 52 → 53 
   - REQUIREMENTS.md MOD-01, MOD-02
   - Precedent: Phase 43 `SkillFrontmatter` Pydantic model (`get-shit-done/skills/<name>/SKILL.md`); apply the same schema-first approach
   - Precedent: Phase 44 `platform-codes.yaml` frozen-schema pattern (line-by-line yaml parser, zero new deps)
-**Plans:** 48-01 (schema + resolver + CLI entry-point + 24 pytest tests), 48-02 (gsd-tools dispatch + 7 Node tests + canary). COMPLETE 2026-05-13.
+**Plans:** 2/2 plans complete
 
 ### Phase 49: Module CLI + Lifecycle
 **Goal:** Operators can install, uninstall, and upgrade modules with idempotent + reversible semantics, dry-run preview, and rollback on partial failure. Upgrade preserves user data via the module's migrations.
@@ -212,7 +212,7 @@ In practice, recommended serialization is 48 → 49 → 50 → 51 → 52 → 53 
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 48. Module System Foundation | 1/1 | In progress — Plan 48-01 complete | - |
+| 48. Module System Foundation | 1/1 | Complete    | 2026-05-13 |
 | 49. Module CLI + Lifecycle | 0/0 | Not started | - |
 | 50. Party Mode Foundation | 0/0 | Not started | - |
 | 51. Party Mode Decisions + Operator CLI | 0/0 | Not started | - |

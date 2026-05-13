@@ -9,8 +9,8 @@ Requirements for v3.2 "The Federation" — module system + multi-agent collabora
 
 ### Module System
 
-- [ ] **MOD-01**: Registry-based module architecture. Module manifest (YAML) declares the migrations, Docker services, agent definitions, and skill definitions that compose the module. Module = one cohesive installable unit.
-- [ ] **MOD-02**: Semver dependency resolution between modules. `requires:` field in manifest accepts semver ranges (e.g., `^1.2.0`). Resolver detects conflicts before install (e.g., module A requires `core@^1.0`, module B requires `core@^2.0`).
+- [x] **MOD-01**: Registry-based module architecture. Module manifest (YAML) declares the migrations, Docker services, agent definitions, and skill definitions that compose the module. Module = one cohesive installable unit.
+- [x] **MOD-02**: Semver dependency resolution between modules. `requires:` field in manifest accepts semver ranges (e.g., `^1.2.0`). Resolver detects conflicts before install (e.g., module A requires `core@^1.0`, module B requires `core@^2.0`).
 - [ ] **MOD-03**: `gsd-amauta module install <name>`, `gsd-amauta module uninstall <name>`, `gsd-amauta module upgrade <name>` CLI subcommands. Each is idempotent + reversible (`--dry-run` flag); upgrade preserves user data via the underlying migrations.
 - [ ] **MOD-04**: Module manifest schema validation (Pydantic) + reproducible install. Same manifest input → same on-disk state. Rollback path on partial failure (any step error → undo applied changes).
 
@@ -61,8 +61,8 @@ Requirements for v3.2 "The Federation" — module system + multi-agent collabora
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MOD-01 | Phase 48 | Pending |
-| MOD-02 | Phase 48 | Pending |
+| MOD-01 | Phase 48 | Complete |
+| MOD-02 | Phase 48 | Complete |
 | MOD-03 | Phase 49 | Pending |
 | MOD-04 | Phase 49 | Pending |
 | PARTY-01 | Phase 50 | Pending |
