@@ -1,0 +1,9 @@
+name: core
+version: 1.2.0
+description: Core module fixture used by Phase 48 resolver tests.
+requires: {}
+migrations:
+  - migrations/000-fixture-core-init.sql
+services: {}
+agents: []
+skills: []

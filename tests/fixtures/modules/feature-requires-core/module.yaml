@@ -1,0 +1,11 @@
+name: feature-requires-core
+version: 0.1.0
+description: Feature module fixture depending on core ^1.0.0.
+requires:
+  core: ^1.0.0
+migrations: []
+services:
+  feature-worker:
+    image: ghcr.io/example/feature:0.1.0
+agents: []
+skills: []

@@ -1,0 +1,10 @@
+name: feature-wants-core-v2
+version: 0.1.0
+description: Conflict fixture — depends on core ^2.0.0 (incompatible with core-1.2.0).
+requires:
+  core: ^2.0.0
+migrations:
+  - migrations/000-fixture-feature-v2-init.sql
+services: {}
+agents: []
+skills: []
