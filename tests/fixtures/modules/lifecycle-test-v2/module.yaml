@@ -1,0 +1,14 @@
+name: lifecycle-test
+version: 0.2.0
+description: Synthetic upgrade fixture (v0.2.0) used by Phase 49 upgrade tests. Not for production.
+requires: {}
+migrations:
+  - migrations/001-add-column-expand.sql
+  - migrations/001-add-column-contract.sql
+services:
+  test-service: {}
+agents:
+  - agents/test-agent.md
+skills:
+  - skills/test-skill/SKILL.md
+  - skills/new-skill/SKILL.md
