@@ -5,7 +5,7 @@ milestone_name: The Federation** — Phases 48-53
 status: completed
 stopped_at: v3.2 roadmap defined; awaiting Phase 48 planning
 last_updated: "2026-05-13T23:00:00.000Z"
-last_activity: "2026-05-13 — Plan 52-02 complete: 17 canonical AGENT.yaml files generated + validated via load_agent_definition(). Phase 52 Wave 2 COMPLETE. SHA 9224cbc."
+last_activity: "2026-05-13 — Plan 52-03 complete: scripts/agent-compiler.cjs (compile/validate/listAgents + TARGET_MAPS 3 IDEs) + SC1 byte-match 17/17 PASS. SHAs: 0edc5db 52-03-01, c1c5b97 52-03-02, cb44216 52-03-03."
 progress:
   total_phases: 6
   completed_phases: 4
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-05-13 after v3.1 milestone close + v3.2 
 
 ## Current Position
 
-Phase: 52 — Agent Compilation (IN PROGRESS — Plans 52-01 + 52-02 complete)
-Plan: 52-02 COMPLETE (2 tasks, 1 commit — 17 canonical AGENT.yaml files generated + validated)
-Status: Plans 52-01 + 52-02 COMPLETE. COMPILE-01 fulfilled (schema + converter + 17 YAML outputs). Wave 3 (agent-compiler.cjs + byte-match test) next.
-Last activity: 2026-05-13 — Plan 52-02 complete: 17 AGENT.yaml generated from batch conversion, all validated via load_agent_definition(). SHA 9224cbc.
+Phase: 52 — Agent Compilation (IN PROGRESS — Plans 52-01 + 52-02 + 52-03 complete)
+Plan: 52-03 COMPLETE (3 tasks, 3 commits — scripts/agent-compiler.cjs + 2 test files)
+Status: Plans 52-01 + 52-02 + 52-03 COMPLETE. COMPILE-01 + COMPILE-02 + COMPILE-03 fulfilled. Wave 4 (gsd-tools.cjs agents dispatch + CLI tests) next.
+Last activity: 2026-05-13 — Plan 52-03 complete: scripts/agent-compiler.cjs (compile/validate/listAgents + TARGET_MAPS 3 IDEs) + SC1 byte-match 17/17 PASS.
 
-Progress: [>>>>      ] 52% (4+ phases / 15 plans complete)
+Progress: [>>>>>     ] 60% (4+ phases / 18 plans complete)
 
 ## v3.2 Phase Map
 
@@ -63,6 +63,7 @@ Progress: [>>>>      ] 52% (4+ phases / 15 plans complete)
 - Agent compilation (Phase 52) is symmetric with Phase 43 skill compiler — reuses `TARGET_MAPS` pattern + `agent_hydrator.hydrate` API verbatim.
 - Phase 52 Plan 52-01: AgentDefinition 6-field locked frontmatter (name→description→tools→color→memory→skills), body_preamble Optional[str]=None for H1 preamble (16/17 agents have it; gsd-executor-data.md exception = null), 10-key SECTION_KEY_ORDER tuple. HEADING_TO_KEY maps actual .md headings ('Behavioral rules' → 'patterns_and_practices', 'Tool access & guidance' → 'workflow_and_process', etc.). Custom block-literal YAML emitter in .cjs (no external deps).
 - Phase 52 Plan 52-02: 17 canonical AGENT.yaml generated from agents/*.md batch conversion (SHA 9224cbc). All 17 pass load_agent_definition() validation: name==dir-basename, sections==SECTION_KEY_ORDER, tools non-empty, memory in {user,project,none}. 16/17 have body_preamble with '# Agent: <name>'; gsd-executor-data has null. agents/*.md UNCHANGED (Wave 3 byte-match baseline locked).
+- Phase 52 Plan 52-03: scripts/agent-compiler.cjs (928 lines) symmetric with Phase 43 skill-compiler.cjs. TARGET_MAPS (claude-code/opencode/cursor), SECTION_KEY_TO_HEADING (9 keys), SECTION_EMIT_ORDER (10 keys, metadata first). SC1 byte-match 17/17 PASS via AGENTS_WITH_HOOKS + AGENTS_WITH_UNQUOTED_DESCRIPTION lookup tables (compensates for Wave 1 converter gap — hooks comment and description quoting not stored in YAML). 13 unit tests (agent-compiler.test.cjs) + SC1 lock test (agents-compile-claude-target-byte-match.test.cjs, 92ms). SHAs: 0edc5db 52-03-01, c1c5b97 52-03-02, cb44216 52-03-03.
 - Phase 48 Plan 48-01: Migration file on-disk check deferred to Phase 49 install logic. Pre-release ordering deferred to v3.3+. Committed conflict fixture (feature-wants-core-v2) for stable Phase 49 reference. Resolver fails-closed via return dict.
 - Phase 48 Plan 48-01: Pydantic v2 model_config extra=forbid + field_validator + model_validator(mode=after) cross-field checks. SCHEMA_FIELD_ORDER tuple regression-locked by pytest introspection.
 - Phase 48 Plan 48-02: case 'module': added to gsd-tools.cjs after case 'agent-hydrate':. args[1] for first positional, args.slice(2) for rest (mirrors Phase 47 pattern). Phase 49 reserved actions (install/uninstall/upgrade) exit 2. Micro runner pattern works with both node direct and node --test.
