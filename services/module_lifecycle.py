@@ -730,6 +730,197 @@ def _rollback_post_install_verify(ctx: Dict[str, Any]) -> StepResult:
     )
 
 
+# ─── Shared SQL helper ────────────────────────────────────────────────────────
+
+
+def _apply_sql_file(
+    ctx: Dict[str, Any],
+    rel_path: str,
+    *,
+    raise_on_missing: bool = False,
+) -> None:
+    """Apply a single SQL file via pg_store._get_conn().
+
+    On PG unavailable: log a warning and return (best-effort) — does
+    NOT raise. On PG present but SQL exec fails: raises the exception
+    (caller wraps in StepResult).
+
+    Args:
+        ctx: install/upgrade context (carries module_dir).
+        rel_path: migration path relative to module_dir.
+        raise_on_missing: if True, FileNotFoundError raised; else missing
+            files become a no-op log.
+
+    Raises:
+        FileNotFoundError (only if raise_on_missing=True).
+        psycopg2.Error / generic Exception on PG SQL failure.
+    """
+    abs_path = os.path.join(ctx["module_dir"], rel_path)
+    if not os.path.isfile(abs_path):
+        if raise_on_missing:
+            raise FileNotFoundError(abs_path)
+        log.warning("migration file missing: %s", abs_path)
+        return
+    with open(abs_path, "r", encoding="utf-8") as f:
+        sql_text = f.read()
+    try:
+        from services.pg_store import _get_conn
+        conn = _get_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql_text)
+            conn.commit()
+        finally:
+            conn.close()
+    except ImportError:
+        # PG client unavailable — best-effort no-op (Phase 44 fallback)
+        log.warning(
+            "pg_store unavailable; recording migration without execution: %s",
+            rel_path,
+        )
+    except Exception:
+        raise
+
+
+# ─── compute_migration_delta helper ──────────────────────────────────────────
+
+
+def compute_migration_delta(
+    new_migrations: List[str],
+    applied_migrations: List[str],
+) -> Dict[str, List[str]]:
+    """Compute expand and contract migration lists from manifest delta.
+
+    Frozen suffix conventions (Phase 49 / Phase 36 inheritance):
+        - "<name>-expand.sql"   -> additive (run BEFORE service swap)
+        - "<name>-contract.sql" -> destructive (run AFTER service swap)
+        - "<name>.sql" (plain)  -> treated as expand by default
+
+    Args:
+        new_migrations: manifest.migrations from the upgrade target.
+        applied_migrations: install_record.applied_migrations from the
+            current install (already-applied set).
+
+    Returns:
+        {
+            "expand_migrations": list[str],     # to apply, in declared order
+            "contract_migrations": list[str],   # to apply, in declared order
+            "already_applied_skipped": list[str],  # set intersection
+        }
+    """
+    applied_set = set(applied_migrations)
+    expand_list: List[str] = []
+    contract_list: List[str] = []
+    skipped: List[str] = []
+    for mig in new_migrations:
+        if mig in applied_set:
+            skipped.append(mig)
+            continue
+        if mig.endswith("-contract.sql"):
+            contract_list.append(mig)
+        else:
+            # both -expand.sql AND plain .sql go to expand bucket
+            expand_list.append(mig)
+    return {
+        "expand_migrations": expand_list,
+        "contract_migrations": contract_list,
+        "already_applied_skipped": skipped,
+    }
+
+
+# ─── Upgrade-side inverse-op helpers ─────────────────────────────────────────
+
+
+def _rollback_apply_expand_migrations(ctx: Dict[str, Any]) -> StepResult:
+    """Reverse expand migrations using matching -DOWN.sql files in REVERSE order.
+
+    Mirrors _rollback_apply_migrations semantics.
+    """
+    ran: List[str] = []
+    missing_down: List[str] = []
+    applied = ctx.get("expand_applied", [])
+    for mig_rel in reversed(applied):
+        # Convert "001-add-column-expand.sql" -> "001-add-column-expand-DOWN.sql"
+        down = mig_rel.replace(".sql", "-DOWN.sql")
+        try:
+            _apply_sql_file(ctx, down, raise_on_missing=True)
+            ran.append(down)
+        except FileNotFoundError:
+            missing_down.append(down)
+    if missing_down:
+        return build_step_result(
+            ROLLBACK_PREFIX + "apply_expand_migrations",
+            "warn",
+            f"{len(ran)} reverted; {len(missing_down)} DOWN missing",
+            details={"reverted": ran, "missing_down": missing_down},
+        )
+    return build_step_result(
+        ROLLBACK_PREFIX + "apply_expand_migrations",
+        "pass",
+        f"reverted {len(ran)} expand migration(s)",
+        details={"reverted": ran},
+    )
+
+
+def _rollback_swap_services(ctx: Dict[str, Any]) -> StepResult:
+    """Restore previous service list from pre_upgrade_record."""
+    prev = (ctx.get("pre_upgrade_record") or {}).get("registered_services", [])
+    manifest = ctx.get("manifest") or ctx.get("new_manifest")
+    if manifest is None:
+        return build_step_result(
+            ROLLBACK_PREFIX + "swap_services",
+            "warn",
+            "no manifest in context — cannot restore services",
+            details={"partial_rollback": True},
+        )
+    path = os.path.expanduser(
+        f"~/.amauta/data/registered_services/{manifest.name}.json"
+    )
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"services": list(prev)}, f)
+    return build_step_result(
+        ROLLBACK_PREFIX + "swap_services",
+        "pass",
+        f"restored {len(prev)} previous service(s)",
+        details={"restored": list(prev)},
+    )
+
+
+def _rollback_apply_contract_migrations(ctx: Dict[str, Any]) -> StepResult:
+    """Contract migrations are destructive; rollback is NOT available.
+
+    Emits status="skip" with partial_rollback=True so the overall
+    result inherits the failure exit code (2 — partial rollback).
+    """
+    return build_step_result(
+        ROLLBACK_PREFIX + "apply_contract_migrations",
+        "skip",
+        "contract migrations are not reversible; operator action required",
+        details={"partial_rollback": True},
+    )
+
+
+def _rollback_update_install_record(ctx: Dict[str, Any]) -> StepResult:
+    """Restore the previous install record (pre-upgrade snapshot)."""
+    from services.install_record_store import put_install_record
+    prev = ctx.get("pre_upgrade_record")
+    if prev is None:
+        return build_step_result(
+            ROLLBACK_PREFIX + "update_install_record",
+            "warn",
+            "no pre-upgrade record snapshot available",
+            details={"partial_rollback": True},
+        )
+    put_install_record(prev)
+    return build_step_result(
+        ROLLBACK_PREFIX + "update_install_record",
+        "pass",
+        f"restored install record for {prev.get('module_name')}@{prev.get('version')}",
+        details={"restored_version": prev.get("version")},
+    )
+
+
 # ─── _run_rollback engine ─────────────────────────────────────────────────────
 
 
@@ -751,7 +942,7 @@ def _run_rollback(
     # Steps that ran with status="pass" BEFORE the failure
     forward_pass_steps = [r.name for r in results if r.status == "pass"]
 
-    # Frozen inverse mapping for the 6 state-changing install steps.
+    # Frozen inverse mapping for state-changing install + upgrade steps.
     # validate_manifest + resolve_dependencies are read-only → not rolled back.
     INVERSE_OPS: Dict[str, Any] = {
         "apply_migrations": _rollback_apply_migrations,
@@ -759,6 +950,11 @@ def _run_rollback(
         "copy_agents": _rollback_copy_agents,
         "copy_skills": _rollback_copy_skills,
         "post_install_verify": _rollback_post_install_verify,
+        # Upgrade-side inverse helpers (Phase 49-03)
+        "apply_expand_migrations": _rollback_apply_expand_migrations,
+        "swap_services": _rollback_swap_services,
+        "apply_contract_migrations": _rollback_apply_contract_migrations,
+        "update_install_record": _rollback_update_install_record,
     }
 
     undo_actions: List[str] = []
