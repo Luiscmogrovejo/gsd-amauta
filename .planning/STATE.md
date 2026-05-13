@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.1
 milestone_name: The Gathering
-status: completed
-stopped_at: Phase 46 context written direct from docs
+status: in_progress
+stopped_at: Phase 46 Plan 46-01 complete
 last_updated: "2026-05-12T23:31:27.599Z"
-last_activity: "2026-05-12 — Plan 45-02 complete. HELP-01 + HELP-03 satisfied. bearings wired into /amauta:help + both execute-phase surfaces. 5 new tests (6 total bearings-integration + parity), 0 failures. 22 bearings tests total."
+last_activity: "2026-05-12 — Plan 46-01 complete. MCP-01 + MCP-02 satisfied. amauta-mcp.py refactored from HTTP-wrapper to standalone direct PG+Valkey. MCPDatabase (SimpleConnectionPool) + MCPValkey helpers. All 6 tools wired (search-code, memory-store, memory-search, memory-distill, research, NEW complexity-score). _call_daemon/_call_rlm/_check_daemon_health deleted. _MCP_ERROR_CODES frozen. 23 new tests (23 pass, 0 fail)."
 progress:
   total_phases: 7
-  completed_phases: 5
-  total_plans: 15
-  completed_plans: 15
-  percent: 43
+  completed_phases: 6
+  total_plans: 16
+  completed_plans: 16
+  percent: 86
 ---
 
 # GSD-Amauta -- Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-14 after v3.0 milestone close)
 
 ## Current Position
 
-Phase: 45 IN PROGRESS — Plan 45-02 complete
-Plan: 45-02 COMPLETE
-Status: Plan 45-02 shipped. Wave 1 bearings subcommand wired into two consumers: (1) get-shit-done/workflows/help.md: <purpose> updated, <bearings> shell-out block + ## Reference header prepended above 708-LOC static reference body. (2) get-shit-done/workflows/execute-phase/steps/step-01-prepare.md: Get-Bearings BEHAV-06 subsection inserted between Sync-chain-flag and Amauta-integration blocks. (3) get-shit-done/workflows/execute-phase-legacy.md: inline 4-slot Python heredoc replaced with gsd-tools shell-out. 5 new tests: bearings-help-integration (3 hermetic) + bearings-execute-phase-parity (3 including HELP-01 determinism). 22 total bearings tests, 0 failures. HELP-01 + HELP-03 satisfied. Phase 45 COMPLETE.
-Last activity: 2026-05-12 — Plan 45-02 complete. HELP-01 + HELP-03 satisfied. bearings wired into /amauta:help + both execute-phase surfaces. 5 new tests (6 total bearings-integration + parity), 0 failures. 22 bearings tests total.
+Phase: 46 COMPLETE — Plan 46-01 complete
+Plan: 46-01 COMPLETE
+Status: Plan 46-01 shipped. amauta-mcp.py refactored from 17KB HTTP-wrapper to standalone direct PG+Valkey. MCPDatabase (psycopg2 SimpleConnectionPool MIN=1/MAX=8, infra_detect cascade, SQLite adapter, _HAS_PG import-safety) + MCPValkey (redis.from_url, _HAS_REDIS, graceful degradation). All 6 tools direct-DB: search-code (code_embeddings + fallback), memory-store, memory-search, memory-distill (memory_count threshold 500), research (Valkey cache + PGStore + DuckDuckGo). NEW amauta/complexity-score tool (Phase 42 two-step API). _call_daemon/_call_rlm/_check_daemon_health deleted (0 occurrences). _MCP_ERROR_CODES frozen 5-tuple. list_resources/read_resource updated to direct PG. 23 new tests (db_helpers + tools), all pass. MCP-01 + MCP-02 satisfied. Phase 46 COMPLETE.
+Last activity: 2026-05-12 — Plan 46-01 complete. MCP-01 + MCP-02 satisfied. 9 tasks committed atomically. 23 tests (23 pass, 0 fail). amauta-daemon.py untouched.
 
-Progress: [█████░░░░░] ~43% (5 of 7 phases complete or in progress, 13 of 14 plans complete)
+Progress: [██████░░░░] ~86% (6 of 7 phases complete, 16 of 16 plans complete)
 
 ## v3.1 Phase Map
 
@@ -41,7 +41,7 @@ Progress: [█████░░░░░] ~43% (5 of 7 phases complete or in pr
 | 43 | Skills Architecture | SKILL-01..04 | In progress (Plans 43-01 + 43-02 COMPLETE; 43-03 remaining) |
 | 44 | Cross-IDE Installer | INST-01..04 | COMPLETE (Plans 44-01 + 44-02 + 44-03, 47 tests) |
 | 45 | Intelligent Help Routing | HELP-01..03 | COMPLETE (Plans 45-01 + 45-02, 22 tests) |
-| 46 | Standalone MCP Server | MCP-01..03 | Not started |
+| 46 | Standalone MCP Server | MCP-01..03 | COMPLETE (Plan 46-01, 23 tests) |
 | 47 | Agent Dynamic Hydration | HYDRA-01..02 | Not started |
 
 **Execution order:** 41 → 42 → 43 → 44 → 45 → 46 → 47
