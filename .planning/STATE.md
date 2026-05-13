@@ -4,14 +4,14 @@ milestone: v3.2
 milestone_name: The Federation** — Phases 48-53
 status: completed
 stopped_at: v3.2 roadmap defined; awaiting Phase 48 planning
-last_updated: "2026-05-13T23:30:00.000Z"
-last_activity: "2026-05-13 — Plan 52-04 complete: case 'agents': in gsd-tools.cjs + bin/cli.cjs agents branch + 8 CLI integration tests. SHAs: 93baae3 52-04-01, 28838ca 52-04-02, f4ad199 52-04-03."
+last_updated: "2026-05-13T23:59:00.000Z"
+last_activity: "2026-05-13 — Plan 52-05 complete: --hydrate wired in agent-compiler.cjs (invokeHydration+mergeHydration two-stage spawnSync) + tests/agent-compiler-hydrate.test.cjs (6/6) + tests/phase-52-canary.test.cjs (11/11 NEVER SKIPS). Phase 52 COMPLETE — COMPILE-01..04 all fulfilled. SHAs: bed129a 52-05-01, 07e965b 52-05-02, 17a664a 52-05-03."
 progress:
   total_phases: 6
-  completed_phases: 4
-  total_plans: 19
-  completed_plans: 19
-  percent: 60
+  completed_phases: 5
+  total_plans: 20
+  completed_plans: 20
+  percent: 83
 ---
 
 # GSD-Amauta -- Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-05-13 after v3.1 milestone close + v3.2 
 
 ## Current Position
 
-Phase: 52 — Agent Compilation (IN PROGRESS — Plans 52-01 + 52-02 + 52-03 + 52-04 complete)
-Plan: 52-04 COMPLETE (3 tasks, 3 commits — gsd-tools.cjs case 'agents': + bin/cli.cjs agents branch + CLI tests)
-Status: Plans 52-01 + 52-02 + 52-03 + 52-04 COMPLETE. COMPILE-01 + COMPILE-02 + COMPILE-03 fulfilled. Wave 5 (--hydrate integration, COMPILE-04) next.
-Last activity: 2026-05-13 — Plan 52-04 complete: case 'agents': dispatch + bin/cli.cjs agents branch + 8 CLI integration tests all pass.
+Phase: 52 — Agent Compilation (COMPLETE — All 5 plans shipped)
+Plan: 52-05 COMPLETE (3 tasks, 3 commits — --hydrate wired + 6 hydration tests + 11-test canary)
+Status: Phase 52 COMPLETE. COMPILE-01 + COMPILE-02 + COMPILE-03 + COMPILE-04 all fulfilled. Phase 53 (v3.1 Carry-Forwards, POLISH-01..05) next.
+Last activity: 2026-05-13 — Plan 52-05 complete: --hydrate integration + tests/agent-compiler-hydrate.test.cjs (6/6) + tests/phase-52-canary.test.cjs (11/11 NEVER SKIPS).
 
-Progress: [>>>>>     ] 60% (4+ phases / 18 plans complete)
+Progress: [>>>>>>>>>  ] 83% (5/6 phases complete)
 
 ## v3.2 Phase Map
 
@@ -40,7 +40,7 @@ Progress: [>>>>>     ] 60% (4+ phases / 18 plans complete)
 | 49 | Module CLI + Lifecycle | MOD-03, MOD-04 | COMPLETE — Plans 49-01 + 49-02 + 49-03 + 49-04 shipped 2026-05-13 |
 | 50 | Party Mode Foundation | PARTY-01, PARTY-02 | COMPLETE — All 4 plans shipped (migration 021 + PartySession Pydantic + state machine + post_finding + list_findings + resume() replay + CLI dispatch + E2E SC4 + canary + 55 tests, 2026-05-13) |
 | 51 | Party Mode Decisions + Operator CLI | PARTY-03, PARTY-04 | COMPLETE — Plans 51-01 + 51-02 + 51-03 + 51-04 shipped 2026-05-13 |
-| 52 | Agent Compilation | COMPILE-01, COMPILE-02, COMPILE-03, COMPILE-04 | IN PROGRESS — Plan 52-01 complete (schema + converter) |
+| 52 | Agent Compilation | COMPILE-01, COMPILE-02, COMPILE-03, COMPILE-04 | COMPLETE — All 5 plans shipped (2026-05-13) |
 | 53 | v3.1 Carry-Forwards | POLISH-01..05 | Not started |
 
 **Execution order:** 48 → 49 → 50 → 51 → 52 → 53
@@ -64,6 +64,7 @@ Progress: [>>>>>     ] 60% (4+ phases / 18 plans complete)
 - Phase 52 Plan 52-01: AgentDefinition 6-field locked frontmatter (name→description→tools→color→memory→skills), body_preamble Optional[str]=None for H1 preamble (16/17 agents have it; gsd-executor-data.md exception = null), 10-key SECTION_KEY_ORDER tuple. HEADING_TO_KEY maps actual .md headings ('Behavioral rules' → 'patterns_and_practices', 'Tool access & guidance' → 'workflow_and_process', etc.). Custom block-literal YAML emitter in .cjs (no external deps).
 - Phase 52 Plan 52-02: 17 canonical AGENT.yaml generated from agents/*.md batch conversion (SHA 9224cbc). All 17 pass load_agent_definition() validation: name==dir-basename, sections==SECTION_KEY_ORDER, tools non-empty, memory in {user,project,none}. 16/17 have body_preamble with '# Agent: <name>'; gsd-executor-data has null. agents/*.md UNCHANGED (Wave 3 byte-match baseline locked).
 - Phase 52 Plan 52-03: scripts/agent-compiler.cjs (928 lines) symmetric with Phase 43 skill-compiler.cjs. TARGET_MAPS (claude-code/opencode/cursor), SECTION_KEY_TO_HEADING (9 keys), SECTION_EMIT_ORDER (10 keys, metadata first). SC1 byte-match 17/17 PASS via AGENTS_WITH_HOOKS + AGENTS_WITH_UNQUOTED_DESCRIPTION lookup tables (compensates for Wave 1 converter gap — hooks comment and description quoting not stored in YAML). 13 unit tests (agent-compiler.test.cjs) + SC1 lock test (agents-compile-claude-target-byte-match.test.cjs, 92ms). SHAs: 0edc5db 52-03-01, c1c5b97 52-03-02, cb44216 52-03-03.
+- Phase 52 Plan 52-05: --hydrate wired. invokeHydration(agentName): two-stage spawnSync pipeline (gsd-tools agent-hydrate --json → parse → python3 -c 'from agent_hydrate_cli import render_markdown; ...' with JSON as stdin). mergeHydration(outputContent, hydrationMd): second '---' delimiter scan → insert ## Current context block before first ## heading. Empty hydrateList = zero subprocess calls (SC4 offline-safe). SC1 17/17 PASS unchanged. 6 hydration tests (agent-compiler-hydrate.test.cjs) + 11-test cross-surface canary (phase-52-canary.test.cjs, PHASE_52_BASE=21438ae, NEVER SKIPS). SHAs: bed129a 52-05-01, 07e965b 52-05-02, 17a664a 52-05-03. COMPILE-04 fulfilled. Phase 52 COMPLETE.
 - Phase 48 Plan 48-01: Migration file on-disk check deferred to Phase 49 install logic. Pre-release ordering deferred to v3.3+. Committed conflict fixture (feature-wants-core-v2) for stable Phase 49 reference. Resolver fails-closed via return dict.
 - Phase 48 Plan 48-01: Pydantic v2 model_config extra=forbid + field_validator + model_validator(mode=after) cross-field checks. SCHEMA_FIELD_ORDER tuple regression-locked by pytest introspection.
 - Phase 48 Plan 48-02: case 'module': added to gsd-tools.cjs after case 'agent-hydrate':. args[1] for first positional, args.slice(2) for rest (mirrors Phase 47 pattern). Phase 49 reserved actions (install/uninstall/upgrade) exit 2. Micro runner pattern works with both node direct and node --test.
