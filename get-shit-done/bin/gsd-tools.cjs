@@ -3626,6 +3626,134 @@ Examples:
       break;
     }
 
+    case 'agents': {
+      // Phase 52 COMPILE-02 + COMPILE-03: agents compile/validate/list subcommands via
+      // scripts/agent-compiler.cjs. Symmetric with case 'skills'. Indexing:
+      // args[1] is the action; args.slice(2) is the rest.
+      let agentCompiler;
+      try {
+        const compilerPath = require('path').resolve(__dirname, '../../scripts/agent-compiler.cjs');
+        agentCompiler = require(compilerPath);
+      } catch (e) {
+        process.stderr.write(`Error: agents subcommand requires scripts/agent-compiler.cjs: ${e.message}\n`);
+        process.exit(2);
+      }
+
+      const agentSubcmd = args[1];
+
+      if (!agentSubcmd || agentSubcmd === '--help' || agentSubcmd === 'help') {
+        process.stdout.write(`Usage: gsd-tools agents <subcommand> [options]
+
+Subcommands:
+  compile --target=<ide> [--source=<dir>] [--out=<dir>] [--hydrate=<name>] [--dry-run]
+                       Compile canonical agents to IDE target (claude-code|opencode|cursor)
+                       --hydrate can be repeated for multiple agents
+  validate <agent-dir>
+                       Validate AGENT.yaml in an agent directory; exit 0 on success
+  list [--source=<dir>]
+                       List all agents in source directory as JSON array
+
+Options:
+  --target=<ide>       Target IDE: claude-code, opencode, cursor
+  --source=<dir>       Source directory of canonical agents (default: get-shit-done/agents)
+  --out=<dir>          Output directory override (default: per-target default)
+  --hydrate=<name>     Bake Phase 47 hydration into output for <name> (Phase 52 COMPILE-04)
+  --dry-run            Print intended writes without writing files
+`);
+        break;
+      }
+
+      if (agentSubcmd === 'compile') {
+        const getAgentFlag = (name) => {
+          const prefix = `--${name}=`;
+          for (const a of args.slice(2)) {
+            if (a.startsWith(prefix)) return a.slice(prefix.length);
+          }
+          return args.slice(2).includes(`--${name}`) ? true : undefined;
+        };
+        const getAgentFlagMulti = (name) => {
+          const prefix = `--${name}=`;
+          const out = [];
+          for (const a of args.slice(2)) {
+            if (a.startsWith(prefix)) out.push(a.slice(prefix.length));
+          }
+          return out;
+        };
+        const target = getAgentFlag('target');
+        if (!target) {
+          process.stderr.write('Error: agents compile requires --target=<ide>\n');
+          process.exit(1);
+        }
+        if (!agentCompiler.SUPPORTED_TARGETS.includes(target)) {
+          process.stderr.write(`Error: unknown target '${target}'. Supported: ${agentCompiler.SUPPORTED_TARGETS.join(', ')}\n`);
+          process.exit(2);
+        }
+        const source = getAgentFlag('source');
+        const outDir = getAgentFlag('out');
+        const hydrate = getAgentFlagMulti('hydrate');
+        const dryRun = args.slice(2).includes('--dry-run');
+        const opts = {};
+        if (source && source !== true) opts.source = source;
+        if (outDir && outDir !== true) opts.outDir = outDir;
+        opts.hydrate = hydrate;
+        opts.dryRun = dryRun;
+        let result;
+        try {
+          result = agentCompiler.compile(target, opts);
+        } catch (e) {
+          process.stderr.write(`agents compile failed: ${e.message}\n`);
+          process.exit(1);
+        }
+        process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+        process.exit((result.errors && result.errors.length > 0) ? 1 : 0);
+
+      } else if (agentSubcmd === 'validate') {
+        const agentDir = args[2];
+        if (!agentDir) {
+          process.stderr.write('Error: agents validate requires <agent-dir> argument\n');
+          process.exit(1);
+        }
+        let result;
+        try {
+          result = agentCompiler.validate(agentDir);
+        } catch (e) {
+          process.stderr.write(`agents validate failed: ${e.message}\n`);
+          process.exit(2);
+        }
+        if (result.ok) {
+          process.stdout.write(`validate ok: ${agentDir}\n`);
+          process.exit(0);
+        } else {
+          process.stderr.write(`Validation errors:\n${result.errors.join('\n')}\n`);
+          process.exit(1);
+        }
+
+      } else if (agentSubcmd === 'list') {
+        const getSourceFlag = () => {
+          for (let i = 2; i < args.length; i++) {
+            if (args[i].startsWith('--source=')) return args[i].slice('--source='.length);
+            if (args[i] === '--source' && args[i + 1]) return args[i + 1];
+          }
+          return undefined;
+        };
+        const source = getSourceFlag() || 'get-shit-done/agents';
+        let agents;
+        try {
+          agents = agentCompiler.listAgents(source);
+        } catch (e) {
+          process.stderr.write(`agents list failed: ${e.message}\n`);
+          process.exit(2);
+        }
+        process.stdout.write(JSON.stringify(agents, null, 2) + '\n');
+        process.exit(0);
+
+      } else {
+        process.stderr.write(`Unknown agents action: ${agentSubcmd}\nUsage: gsd-tools agents compile|validate|list <args...>\n`);
+        process.exit(2);
+      }
+      break;
+    }
+
     case 'module': {
       // Phase 48 MOD-01 + MOD-02: Module manifest validation + semver resolver.
       // Phase 49 MOD-03/MOD-04: Extend with install/uninstall/upgrade dispatch.
