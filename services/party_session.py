@@ -12,7 +12,10 @@ References:
   - services/step-orchestrator.py _HAS_PYDANTIC import-safety (Phase 41)
 
 Wave 1 scope: state machine create/start/pause/resume/terminate/get.
-Wave 2 (plan 50-02) adds: post_finding, list_findings, resume() extended with findings.
+Wave 2 (plan 50-02) adds:
+  - post_finding(session_id, agent_name, finding_type, content, ...) — Phase 50 PARTY-01
+  - list_findings(session_id) — Phase 50 PARTY-02
+  - resume() extended with findings replay via list_findings — Phase 50 PARTY-02
 """
 
 import json
@@ -433,6 +436,75 @@ def get(session_id: str, conn=None) -> Optional[dict]:
         if row is None:
             return None
         return _row_to_dict(row)
+
+    if conn is not None:
+        return _run(conn)
+    store = _get_store()
+    with store._get_conn() as c:
+        return _run(c)
+
+
+# ── Findings helpers (Phase 50 PARTY-01 / PARTY-02) ──────────────────────────
+
+def post_finding(
+    session_id: str,
+    agent_name: str,
+    finding_type: str,
+    content: str,
+    confidence: float = 0.8,
+    recipient_agent: Optional[str] = None,
+    severity: Optional[str] = None,
+    conn=None,
+) -> str:
+    """Insert a finding into agent_findings tagged with session_id. Returns the finding id (UUID str).
+
+    Phase 50 PARTY-01: session-scoped finding. Mirrors Phase 38 agent_findings INSERT
+    pattern (services/amauta-daemon.py:~3280) but adds session_id, recipient_agent
+    (Phase 47), and severity (Phase 47) columns when supplied.
+
+    CONVENTION: task_id is set to session_id to satisfy the NOT NULL constraint on
+    agent_findings.task_id from migration 014. Phase 50 conflates task_id with
+    session_id for session-scoped rows. Phase 51 may introduce separate per-turn
+    task_ids if needed.
+
+    Args:
+        session_id: UUID string of the party session; stored as both session_id FK
+                    and task_id (NOT NULL bypass).
+        agent_name: Name of the posting agent (e.g. 'gsd-planner').
+        finding_type: Category string ('observation', 'decision', 'warning', 'blocker',
+                      'security_alert', etc.).
+        content: Text body of the finding.
+        confidence: Float confidence 0.0–1.0 (default 0.8).
+        recipient_agent: Target agent name for direct messages; None = broadcast.
+        severity: Severity label ('info', 'warning', 'error', 'critical'); None = unset.
+        conn: optional psycopg2 connection. If None, uses pg_store._get_conn().
+
+    Returns:
+        Finding id as UUID string (36 chars).
+    """
+    def _run(c):
+        with c.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO agent_findings
+                  (agent_name, task_id, finding_type, content, confidence,
+                   recipient_agent, severity, session_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s::uuid)
+                RETURNING id::text
+                """,
+                (
+                    agent_name,
+                    session_id,        # task_id = session_id (NOT NULL bypass — Phase 50 convention)
+                    finding_type,
+                    content,
+                    float(confidence),
+                    recipient_agent,
+                    severity,
+                    session_id,
+                ),
+            )
+            row = cur.fetchone()
+        return row[0]
 
     if conn is not None:
         return _run(conn)
