@@ -4,13 +4,13 @@ milestone: v3.2
 milestone_name: The Federation** — Phases 48-53
 status: completed
 stopped_at: v3.2 roadmap defined; awaiting Phase 48 planning
-last_updated: "2026-05-13T18:29:37.925Z"
-last_activity: "2026-05-13 — Plan 48-02 complete: case 'module': dispatch in gsd-tools.cjs, 7-scenario Node integration test (module-validate-cli.test.cjs), integration sweep (24 pytest + 7 Node tests pass), canary diff EMPTY."
+last_updated: "2026-05-13T00:00:00.000Z"
+last_activity: "2026-05-13 — Plan 49-01 complete: migration 022 (module_installs 8-col), module_lifecycle.py skeleton (22 step names + LifecycleResult + worst-of), install_record_store.py (PG/SQLite cascade), 29 tests (10+19) PASS. Canary diff EMPTY."
 progress:
   total_phases: 6
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  total_plans: 3
+  completed_plans: 3
   percent: 17
 ---
 
@@ -25,19 +25,19 @@ See: .planning/PROJECT.md (updated 2026-05-13 after v3.1 milestone close + v3.2 
 
 ## Current Position
 
-Phase: 48 — Module System Foundation COMPLETE. Next: Phase 49 (Module CLI + Lifecycle)
-Plan: 48-02 COMPLETE (all 3 tasks)
-Status: Phase 48 COMPLETE. MOD-01 + MOD-02 satisfied. Ready for Phase 49 (module install/uninstall/upgrade).
-Last activity: 2026-05-13 — Plan 48-02 complete: case 'module': dispatch in gsd-tools.cjs, 7-scenario Node integration test (module-validate-cli.test.cjs), integration sweep (24 pytest + 7 Node tests pass), canary diff EMPTY.
+Phase: 49 — Module CLI + Lifecycle (in progress — Plan 49-01 COMPLETE)
+Plan: 49-01 COMPLETE (5 tasks)
+Status: Phase 49 foundation wave shipped. migration 022, module_lifecycle.py skeleton, install_record_store.py, 29 tests passing. Plans 49-02/49-03/49-04 next (install/uninstall/upgrade bodies + CLI dispatch).
+Last activity: 2026-05-13 — Plan 49-01 complete: migration 022 (module_installs 8-col), module_lifecycle.py skeleton (22 step names + LifecycleResult + worst-of), install_record_store.py (PG/SQLite cascade), 29 tests (10+19) PASS. Canary diff EMPTY.
 
-Progress: [>>        ] 17% (1 of 6 phases complete, 2 of 2 plans complete)
+Progress: [>>        ] 17% (1 of 6 phases complete, 3 of 3 plans complete)
 
 ## v3.2 Phase Map
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
 | 48 | Module System Foundation | MOD-01, MOD-02 | COMPLETE — Plans 48-01 + 48-02 shipped 2026-05-13 |
-| 49 | Module CLI + Lifecycle | MOD-03, MOD-04 | Not started (depends on 48) |
+| 49 | Module CLI + Lifecycle | MOD-03, MOD-04 | IN PROGRESS — Plan 49-01 COMPLETE 2026-05-13 |
 | 50 | Party Mode Foundation | PARTY-01, PARTY-02 | Not started |
 | 51 | Party Mode Decisions + Operator CLI | PARTY-03, PARTY-04 | Not started (depends on 50) |
 | 52 | Agent Compilation | COMPILE-01, COMPILE-02, COMPILE-03, COMPILE-04 | Not started |

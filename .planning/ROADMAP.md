@@ -65,7 +65,7 @@ Archive: `.planning/milestones/v3.1-ROADMAP.md` · `.planning/milestones/v3.1-RE
 ## Phases
 
 - [x] **Phase 48: Module System Foundation** — Module manifest YAML schema + Pydantic validation + semver dependency resolver with conflict detection + gsd-tools `module validate` CLI dispatch (MOD-01, MOD-02). Plans 48-01 + 48-02 complete (2026-05-13).
-- [ ] **Phase 49: Module CLI + Lifecycle** — `gsd-amauta module install/uninstall/upgrade <name>` subcommands with idempotency, dry-run, and rollback (MOD-03, MOD-04). Depends on 48.
+- [ ] **Phase 49: Module CLI + Lifecycle** — `gsd-amauta module install/uninstall/upgrade <name>` subcommands with idempotency, dry-run, and rollback (MOD-03, MOD-04). Depends on 48. Plan 49-01 COMPLETE 2026-05-13 (migration 022, module_lifecycle.py skeleton, install_record_store.py, 29 tests).
 - [ ] **Phase 50: Party Mode Foundation** — `party_sessions` PG table + session state machine + persistent session memory (resumable from blackboard replay) (PARTY-01, PARTY-02).
 - [ ] **Phase 51: Party Mode Decisions + Operator CLI** — Structured decision records (propose/agree/dissent/block) + `gsd-amauta party status/inspect/kill` subcommands (PARTY-03, PARTY-04). Depends on 50.
 - [ ] **Phase 52: Agent Compilation** — Canonical AGENT.yaml schema + `gsd-tools agents compile` symmetric with Phase 43 skill compiler + per-IDE alias tables + optional compile-time hydration bake (COMPILE-01, COMPILE-02, COMPILE-03, COMPILE-04).
