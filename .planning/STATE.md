@@ -4,8 +4,8 @@ milestone: v3.2
 milestone_name: The Federation** — Phases 48-53
 status: completed
 stopped_at: v3.2 roadmap defined; awaiting Phase 48 planning
-last_updated: "2026-05-13T21:30:00.000Z"
-last_activity: "2026-05-13 — Plan 51-02 complete: tests/test_party_decision_trail.py (5 tests, SC1 four-decision-types queryable) + tests/test_party_dissent_no_rollback.py (4 tests, SC3 dissent-no-rollback). 27 party-mode tests total, all pass."
+last_updated: "2026-05-13T22:00:00.000Z"
+last_activity: "2026-05-13 — Plan 51-03 complete: party_session_cli.py extended with status/inspect/kill subcommands + gsd-tools.cjs case 'party': extended to 9 actions + tests/party-decisions-cli.test.cjs (10 tests, all pass). 37 party-mode tests total (27 pytest + 10 Node)."
 progress:
   total_phases: 6
   completed_phases: 3
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-13 after v3.1 milestone close + v3.2 
 
 ## Current Position
 
-Phase: 51 — Party Mode Decisions + Operator CLI (IN PROGRESS — Plans 51-01 + 51-02 complete)
-Plan: 51-02 COMPLETE (2 tasks, 2 commits — test_party_decision_trail.py + test_party_dissent_no_rollback.py)
-Status: Plans 51-01 + 51-02 complete. Plan 51-02 delivers SC1 (4-decision-types queryable trail test, 5 tests) + SC3 (dissent-no-rollback contract, 4 tests). Full regression: 27 party-mode tests pass (11 Wave 1 + 9 Wave 2 trail + 7 Wave 2 dissent). Plans 51-03 (CLI dispatch) and 51-04 (E2E+canary) remain.
-Last activity: 2026-05-13 — Plan 51-02 complete: test_party_decision_trail.py (5 tests, SC1) + test_party_dissent_no_rollback.py (4 tests, SC3), 27 total party tests pass.
+Phase: 51 — Party Mode Decisions + Operator CLI (IN PROGRESS — Plans 51-01 + 51-02 + 51-03 complete)
+Plan: 51-03 COMPLETE (3 tasks, 3 commits — party_session_cli.py status/inspect/kill + gsd-tools.cjs 9 actions + tests/party-decisions-cli.test.cjs)
+Status: Plans 51-01 + 51-02 + 51-03 complete. Plan 51-03 delivers PARTY-04 operator CLI surface (status/inspect/kill subcommands). All 10 Node integration tests pass. Full regression: 37 party-mode tests pass (27 pytest + 10 Node). Plan 51-04 (E2E+canary) remains.
+Last activity: 2026-05-13 — Plan 51-03 complete: party_session_cli.py status/inspect/kill subcommands + gsd-tools.cjs 9-action KNOWN_ACTIONS + tests/party-decisions-cli.test.cjs (10 tests), 37 total party tests pass.
 
 Progress: [>>>>      ] 50% (3 of 6 phases complete, 10 plans complete)
 

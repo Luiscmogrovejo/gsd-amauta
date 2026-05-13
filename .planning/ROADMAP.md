@@ -67,7 +67,7 @@ Archive: `.planning/milestones/v3.1-ROADMAP.md` · `.planning/milestones/v3.1-RE
 - [x] **Phase 48: Module System Foundation** — Module manifest YAML schema + Pydantic validation + semver dependency resolver with conflict detection + gsd-tools `module validate` CLI dispatch (MOD-01, MOD-02). Plans 48-01 + 48-02 complete (2026-05-13).
 - [x] **Phase 49: Module CLI + Lifecycle** — `gsd-amauta module install/uninstall/upgrade <name>` subcommands with idempotency, dry-run, and rollback (MOD-03, MOD-04). Plans 49-01/02/03/04 complete (2026-05-13). 93 total tests (25 Node + 68 pytest). 10/10 v3.1 canary diffs empty. MOD-03 + MOD-04 fulfilled.
 - [x] **Phase 50: Party Mode Foundation** — `party_sessions` PG table + session state machine + persistent session memory (resumable from blackboard replay) (PARTY-01, PARTY-02). All 4 plans complete (2026-05-13): migration 021 (UP+DOWN) + PartySession Pydantic + 5 FROZEN transitions + post_finding() + list_findings() + resume() findings replay + party_session_cli.py + gsd-tools.cjs case 'party': + bin/cli.cjs party + E2E SC4 Layer 2 test + 13-path cross-surface canary + 55 tests (32 Python + 23 Node). PARTY-01 + PARTY-02 fulfilled.
-- [ ] **Phase 51: Party Mode Decisions + Operator CLI** — Structured decision records (propose/agree/dissent/block) + `gsd-amauta party status/inspect/kill` subcommands (PARTY-03, PARTY-04). Depends on 50. Plans 51-01 + 51-02 COMPLETE (2026-05-13): migration 023 + decision helpers + 11 Wave 1 tests + SC1 decision trail test (5 tests) + SC3 dissent-no-rollback test (4 tests). Plans 51-03 (CLI dispatch) + 51-04 (E2E+canary) remain.
+- [ ] **Phase 51: Party Mode Decisions + Operator CLI** — Structured decision records (propose/agree/dissent/block) + `gsd-amauta party status/inspect/kill` subcommands (PARTY-03, PARTY-04). Depends on 50. Plans 51-01 + 51-02 + 51-03 COMPLETE (2026-05-13): migration 023 + decision helpers + 11 Wave 1 tests + SC1 decision trail (5 tests) + SC3 dissent-no-rollback (4 tests) + party_session_cli.py status/inspect/kill subcommands + gsd-tools.cjs 9-action KNOWN_ACTIONS + tests/party-decisions-cli.test.cjs (10 tests). 37 party-mode tests pass. Plan 51-04 (E2E+canary) remains.
 - [ ] **Phase 52: Agent Compilation** — Canonical AGENT.yaml schema + `gsd-tools agents compile` symmetric with Phase 43 skill compiler + per-IDE alias tables + optional compile-time hydration bake (COMPILE-01, COMPILE-02, COMPILE-03, COMPILE-04).
 - [ ] **Phase 53: v3.1 Carry-Forwards** — Skill input/output schemas + installer upgrade/uninstall + MCP `amauta/bearings` + `amauta/agent-hydrate` + hydration auto-invoke at Task() spawn sites (POLISH-01..05).
 
@@ -215,7 +215,7 @@ In practice, recommended serialization is 48 → 49 → 50 → 51 → 52 → 53 
 | 48. Module System Foundation | 1/1 | Complete    | 2026-05-13 |
 | 49. Module CLI + Lifecycle | 0/0 | Complete    | 2026-05-13 |
 | 50. Party Mode Foundation | 0/0 | Complete    | 2026-05-13 |
-| 51. Party Mode Decisions + Operator CLI | 2/4 | In Progress | Plans 51-01+51-02 done 2026-05-13 |
+| 51. Party Mode Decisions + Operator CLI | 3/4 | In Progress | Plans 51-01+51-02+51-03 done 2026-05-13 |
 | 52. Agent Compilation | 0/0 | Not started | - |
 | 53. v3.1 Carry-Forwards | 0/0 | Not started | - |
 
