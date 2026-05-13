@@ -26,21 +26,30 @@ Every RPETD phase must *see* what the other phases have already learned — past
 
 **Body metaphor sequence:** brain (v2.5) → sight (v2.6) → hands (v2.7) → metabolism (v2.8) → nervous system (v2.9) → **birth (v3.0)**
 
-## Current Milestone: v3.1 "The Gathering"
+## Shipped: v3.1 "The Gathering" (2026-05-13)
 
-**Goal:** Graft BMAD-METHOD's best patterns (scale-adaptive intelligence, skills architecture, sharded workflows, cross-IDE installer) onto GSD-Amauta's infrastructure advantage. Plus v3.0 deferrals (model-based evals, visual regression, Valkey pub/sub).
+**7 phases, 18 plans, ~536 tests, 25 requirements.** BMAD-METHOD patterns grafted onto Amauta's PG/retrieval infrastructure.
+
+**Shipped:**
+1. Sharded Workflows — StepHandoff persistence + 3-layer HALT, resumable micro-steps
+2. Scale-Adaptive Intelligence — Continuous complexity classifier (0-100) + PG-backed learning
+3. Skills Architecture — SKILL.md schema + cross-IDE compiler + PG invocation memory + Semgrep enforcement
+4. Cross-IDE Installer — `npx gsd-amauta init` 7-step flow + IDE auto-detection + legacy migration
+5. Intelligent Help Routing — `gsd-tools bearings` deterministic 4-source + 4 pattern stats
+6. Standalone MCP Server — `services/amauta-mcp.py` daemon-independent + 6 tools + 3 resources
+7. Agent Dynamic Hydration — `gsd-tools agent-hydrate` + frozen `## Current context` injection
+
+## Current Milestone: v3.2 "The Federation"
+
+**Goal:** Bind skills, agents, and infrastructure into installable modules; enable multi-agent collaboration on a shared blackboard; ship symmetric agent compilation to match skill compilation. Plus v3.1 carry-forwards (skill schema validation, installer upgrade/uninstall, MCP wrappers for bearings + agent-hydrate, hydration auto-invoke).
 
 **Target features:**
-- Scale-adaptive complexity classifier with PG-backed learning (skip phases for simple tasks)
-- Sharded workflows with Pydantic-validated RPETDContext handoffs (replace monolithic 600-line workflow files)
-- Skills architecture with semantic cache of past invocations
-- Intelligent help routing with deterministic recommendations + pattern learning
-- Agent compilation with dynamic context hydration at runtime
-- Cross-IDE installer (`npx gsd-amauta init`) with infrastructure orchestration
-- Model-based eval graders (v3.0 deferral)
-- Visual regression diffing for Playwright screenshots (v3.0 deferral)
+- Module System: registry-based modules bundle migrations + Docker services + agent/skill configs as semver-resolved installable units
+- Party Mode: multi-agent collaboration session backed by blackboard with persistent session memory, structured decisions, operator supervision
+- Agent Compilation: YAML agent definitions compiled to per-IDE .md (symmetric with Phase 43 skill compiler), dynamic context hydration at compile time
+- v3.1 carry-forwards: input/output schemas for skills, installer upgrade/uninstall flow, MCP `amauta/bearings` + `amauta/agent-hydrate` tools, hydration auto-invoke across workflows
 
-**Body metaphor sequence:** brain (v2.5) → sight (v2.6) → hands (v2.7) → metabolism (v2.8) → nervous system (v2.9) → birth (v3.0) → **gathering (v3.1)**
+**Body metaphor sequence:** brain → sight → hands → metabolism → nervous system → birth → gathering → **federation (v3.2)**. The Federation binds individuals into operable, installable, cooperating units.
 
 ## Requirements
 
@@ -96,9 +105,32 @@ Every RPETD phase must *see* what the other phases have already learned — past
 - ✓ **LIFE-01..05**: Agent lifecycle, SemVer, canary suite, eval framework, tool integrity — v3.0
 - ✓ **ENG-01..05**: Engineering standards embedded in all agents — v3.0
 
-### Active
+### Active — v3.2 "The Federation"
 
-(No active requirements — v3.1 planning not yet started)
+#### Module System
+- [ ] **MOD-01**: Registry-based module architecture — manifest declares migrations, Docker services, agent/skill configs as one bundle
+- [ ] **MOD-02**: Semver dependency resolution between modules with conflict detection
+- [ ] **MOD-03**: `gsd-amauta module install/uninstall/upgrade <name>` CLI subcommands
+- [ ] **MOD-04**: Module manifest schema validation + reproducible install (idempotent, dry-run, rollback)
+
+#### Party Mode (Multi-Agent Collaboration)
+- [ ] **PARTY-01**: Multi-agent session backed by `agent_findings` blackboard with structured turn-taking
+- [ ] **PARTY-02**: Persistent session memory across agent invocations (resumable sessions)
+- [ ] **PARTY-03**: Structured decision records when agents agree/disagree (consensus + dissent captured)
+- [ ] **PARTY-04**: Operator supervision CLI (`gsd-amauta party status/inspect/kill`)
+
+#### Agent Compilation
+- [ ] **COMPILE-01**: Agent definitions in YAML (canonical source) compiled to per-IDE Markdown
+- [ ] **COMPILE-02**: `gsd-tools agents compile --target=<ide>` (symmetric with Phase 43 skill-compiler)
+- [ ] **COMPILE-03**: Per-IDE alias tables for tool names + frontmatter (matches skill TARGET_MAPS pattern)
+- [ ] **COMPILE-04**: Optional compile-time hydration injection (reuses Phase 47 `agent_hydrator.hydrate`)
+
+#### v3.1 Carry-Forwards
+- [ ] **POLISH-01**: Skill `input_schema` / `output_schema` Pydantic-validated frontmatter fields
+- [ ] **POLISH-02**: Installer upgrade/uninstall flow extending `bin/init.cjs` with version-aware migration
+- [ ] **POLISH-03**: MCP `amauta/bearings` tool wrapping `gsd-tools bearings`
+- [ ] **POLISH-04**: MCP `amauta/agent-hydrate` tool wrapping `gsd-tools agent-hydrate`
+- [ ] **POLISH-05**: Hydration auto-invoke at every Task() spawn site in workflows (CLI hook in workflow runner)
 
 #### Legacy (carried forward — all validated in v2.5)
 ##### Memory & Embeddings Audit
@@ -196,4 +228,4 @@ Every RPETD phase must *see* what the other phases have already learned — past
 | Code-based graders only in v3.0 | Keeps portable (no API key for evals); model-based = v3.1 | ✓ Good — 15/15 scenarios pass |
 
 ---
-*Last updated: 2026-04-14 after v3.0 "The Birth" milestone completion*
+*Last updated: 2026-05-13 after v3.1 "The Gathering" completion; v3.2 "The Federation" milestone defined*

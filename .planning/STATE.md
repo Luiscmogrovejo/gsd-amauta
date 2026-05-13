@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
 milestone: v3.1
-milestone_name: The Gathering
+milestone_name: The Gathering** — Phases 41-47
 status: completed
-stopped_at: "Plan 47-01 complete. Next: Plan 47-02 (gsd-tools agent-hydrate CLI subcommand + Node.js shell-out to agent_hydrator.py)"
-last_updated: "2026-05-13T01:17:37.876Z"
+stopped_at: v3.2 milestone defined; awaiting roadmap
+last_updated: "2026-05-13T17:23:19.581Z"
 last_activity: 2026-05-13 — Plan 47-02 complete. 5 tasks committed atomically (daae150..5908c9a). services/agent_hydrator.py untouched. agents/*.md untouched. services/amauta-mcp.py untouched.
 progress:
-  total_phases: 7
-  completed_phases: 7
-  total_plans: 20
-  completed_plans: 20
+  total_phases: 29
+  completed_phases: 27
+  total_plans: 76
+  completed_plans: 75
   percent: 100
 ---
 
@@ -109,9 +109,9 @@ Context: 2026-05-12 health audit caught RLM dead 13h from uncaught BrokenPipe + 
 
 ## Session Continuity
 
-Last session: 2026-05-12
-Stopped at: Plan 47-01 complete. Next: Plan 47-02 (gsd-tools agent-hydrate CLI subcommand + Node.js shell-out to agent_hydrator.py)
-Resume file: .planning/phases/47-agent-dynamic-hydration/47-01-SUMMARY.md
+Last session: 2026-05-13T17:23:19.570Z
+Stopped at: v3.2 milestone defined; awaiting roadmap
+Resume file: .planning/REQUIREMENTS.md
 
 ## Learnings
 
