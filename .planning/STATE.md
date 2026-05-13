@@ -4,14 +4,14 @@ milestone: v3.2
 milestone_name: The Federation** — Phases 48-53
 status: completed
 stopped_at: v3.2 roadmap defined; awaiting Phase 48 planning
-last_updated: "2026-05-13T23:00:00.000Z"
-last_activity: "2026-05-13 — Plan 50-03 complete: services/party_session_cli.py (argparse 6-action CLI + --json + exit codes 0/1/2) + gsd-tools.cjs case 'party': + bin/cli.cjs party branch + tests/party-cli.test.cjs (10 tests, all pass). 10 Node + 32 Python = 42 Phase 50 tests pass (0 regressions). Prior tasks 50-03-01/02/03 already committed in prior session; 50-03-04 committed in this session."
+last_updated: "2026-05-13T23:30:00.000Z"
+last_activity: "2026-05-13 — Plan 50-04 complete: tests/party-e2e.test.cjs (7 subtests, SC4 Layer 2 subprocess restart evidence, all pass) + tests/party-canary.test.cjs (6 subtests, 13 protected paths, never skips, all pass). Phase 50 COMPLETE. 49 total Phase 50 tests (10 Node party-cli + 7 Node e2e + 6 Node canary + 32 Python = 55 total tests, 0 regressions)."
 progress:
   total_phases: 6
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 8
-  completed_plans: 9
-  percent: 37
+  completed_plans: 10
+  percent: 50
 ---
 
 # GSD-Amauta -- Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-05-13 after v3.1 milestone close + v3.2 
 
 ## Current Position
 
-Phase: 50 — Party Mode Foundation (IN PROGRESS — Plans 50-01 + 50-02 + 50-03 COMPLETE)
-Plan: 50-03 COMPLETE (4 tasks, 4 commits — tasks 01/02/03 pre-committed; 04 committed this session)
-Status: Phase 50 Plans 50-01 + 50-02 + 50-03 complete. CLI dispatch layer fully shipped: party_session_cli.py (argparse 6 subcommands + --json + exit codes 0/1/2) + gsd-tools.cjs case 'party': + bin/cli.cjs party shortcut + 10 Node integration tests (all pass). 42 total Phase 50 tests (10 Node + 32 Python). Plan 50-04 (E2E) remains.
-Last activity: 2026-05-13 — Plan 50-03 complete: CLI dispatch surface (party_session_cli.py + gsd-tools.cjs case 'party': + bin/cli.cjs party + tests/party-cli.test.cjs). 10 Node tests + 32 Python = 42 Phase 50 tests pass (0 regressions).
+Phase: 50 — Party Mode Foundation (COMPLETE — All 4 plans shipped)
+Plan: 50-04 COMPLETE (2 tasks, 2 commits — tests/party-e2e.test.cjs + tests/party-canary.test.cjs)
+Status: Phase 50 ALL COMPLETE. Full lifecycle: migration 021 + PartySession Pydantic + 5 FROZEN state machine transitions + post_finding() + list_findings() + resume() replay + party_session_cli.py argparse + gsd-tools.cjs case 'party': + bin/cli.cjs party + E2E test (SC4 Layer 2 evidence) + cross-surface canary (13 protected paths). 55 total tests: 32 Python + 23 Node (10 party-cli + 7 party-e2e + 6 party-canary). All pass, 0 skip.
+Last activity: 2026-05-13 — Plan 50-04 complete: tests/party-e2e.test.cjs (7/7 pass) + tests/party-canary.test.cjs (6/6 pass, never skips). Phase 50 COMPLETE.
 
-Progress: [>>>       ] 33% (2 of 6 phases complete, 4 of 4 plans complete)
+Progress: [>>>>      ] 50% (3 of 6 phases complete, 10 plans complete)
 
 ## v3.2 Phase Map
 
@@ -38,7 +38,7 @@ Progress: [>>>       ] 33% (2 of 6 phases complete, 4 of 4 plans complete)
 |-------|------|--------------|--------|
 | 48 | Module System Foundation | MOD-01, MOD-02 | COMPLETE — Plans 48-01 + 48-02 shipped 2026-05-13 |
 | 49 | Module CLI + Lifecycle | MOD-03, MOD-04 | COMPLETE — Plans 49-01 + 49-02 + 49-03 + 49-04 shipped 2026-05-13 |
-| 50 | Party Mode Foundation | PARTY-01, PARTY-02 | IN PROGRESS — Plans 50-01 + 50-02 + 50-03 complete (migration 021 + PartySession Pydantic + state machine + post_finding + list_findings + resume() replay + CLI dispatch + 42 tests) |
+| 50 | Party Mode Foundation | PARTY-01, PARTY-02 | COMPLETE — All 4 plans shipped (migration 021 + PartySession Pydantic + state machine + post_finding + list_findings + resume() replay + CLI dispatch + E2E SC4 + canary + 55 tests, 2026-05-13) |
 | 51 | Party Mode Decisions + Operator CLI | PARTY-03, PARTY-04 | Not started (depends on 50) |
 | 52 | Agent Compilation | COMPILE-01, COMPILE-02, COMPILE-03, COMPILE-04 | Not started |
 | 53 | v3.1 Carry-Forwards | POLISH-01..05 | Not started |
