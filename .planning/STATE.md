@@ -4,13 +4,13 @@ milestone: v3.2
 milestone_name: The Federation** — Phases 48-53
 status: completed
 stopped_at: v3.2 roadmap defined; awaiting Phase 48 planning
-last_updated: "2026-05-13T21:00:00.000Z"
-last_activity: "2026-05-13 — Plan 51-01 complete: migration 023 (decision_type column + partial index) + services/party_session.py extended (DECISION_TYPES + post_decision/list_decisions/summarize_decisions) + 11 tests (4 migration + 7 unit), all pass."
+last_updated: "2026-05-13T21:30:00.000Z"
+last_activity: "2026-05-13 — Plan 51-02 complete: tests/test_party_decision_trail.py (5 tests, SC1 four-decision-types queryable) + tests/test_party_dissent_no_rollback.py (4 tests, SC3 dissent-no-rollback). 27 party-mode tests total, all pass."
 progress:
   total_phases: 6
   completed_phases: 3
-  total_plans: 11
-  completed_plans: 11
+  total_plans: 13
+  completed_plans: 13
   percent: 50
 ---
 
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-13 after v3.1 milestone close + v3.2 
 
 ## Current Position
 
-Phase: 51 — Party Mode Decisions + Operator CLI (IN PROGRESS — Plan 51-01 complete)
-Plan: 51-01 COMPLETE (5 tasks, 5 commits — migration 023 UP+DOWN + party_session.py DECISION_TYPES + post_decision/list_decisions/summarize_decisions + test_party_decisions_migration.py + test_party_decisions.py)
-Status: Plan 51-01 complete. migration 023 adds decision_type VARCHAR(16) column + partial index idx_agent_findings_session_decision WHERE decision_type IS NOT NULL. services/party_session.py extended (append-only, Phase 50 functions unchanged). 11 new tests: 4 migration (all pass) + 7 unit (all pass). Plans 51-02 (SC3 dissent no-rollback), 51-03 (CLI dispatch), 51-04 (E2E+canary) remain.
-Last activity: 2026-05-13 — Plan 51-01 complete: migration 023 (UP+DOWN) + DECISION_TYPES + decision helpers + 11 tests, all pass.
+Phase: 51 — Party Mode Decisions + Operator CLI (IN PROGRESS — Plans 51-01 + 51-02 complete)
+Plan: 51-02 COMPLETE (2 tasks, 2 commits — test_party_decision_trail.py + test_party_dissent_no_rollback.py)
+Status: Plans 51-01 + 51-02 complete. Plan 51-02 delivers SC1 (4-decision-types queryable trail test, 5 tests) + SC3 (dissent-no-rollback contract, 4 tests). Full regression: 27 party-mode tests pass (11 Wave 1 + 9 Wave 2 trail + 7 Wave 2 dissent). Plans 51-03 (CLI dispatch) and 51-04 (E2E+canary) remain.
+Last activity: 2026-05-13 — Plan 51-02 complete: test_party_decision_trail.py (5 tests, SC1) + test_party_dissent_no_rollback.py (4 tests, SC3), 27 total party tests pass.
 
 Progress: [>>>>      ] 50% (3 of 6 phases complete, 10 plans complete)
 
