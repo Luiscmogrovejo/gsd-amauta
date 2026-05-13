@@ -4,14 +4,14 @@ milestone: v3.2
 milestone_name: The Federation** — Phases 48-53
 status: completed
 stopped_at: v3.2 roadmap defined; awaiting Phase 48 planning
-last_updated: "2026-05-13T21:35:45.342Z"
-last_activity: "2026-05-13 — Plan 51-04 complete: party-decisions-e2e.test.cjs (9 pass) + party-decisions-canary.test.cjs (9 pass, NEVER SKIPS). Phase 51 COMPLETE."
+last_updated: "2026-05-13T22:00:00.000Z"
+last_activity: "2026-05-13 — Plan 52-01 complete: services/agent_schema.py + scripts/agent-md-to-yaml.cjs + tests/test_agent_schema.py (16 pass) + tests/agent-md-to-yaml.test.cjs (8 pass). Phase 52 Wave 1 COMPLETE."
 progress:
   total_phases: 6
   completed_phases: 4
-  total_plans: 14
-  completed_plans: 14
-  percent: 50
+  total_plans: 15
+  completed_plans: 15
+  percent: 52
 ---
 
 # GSD-Amauta -- Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-05-13 after v3.1 milestone close + v3.2 
 
 ## Current Position
 
-Phase: 51 — Party Mode Decisions + Operator CLI (COMPLETE — Plans 51-01 + 51-02 + 51-03 + 51-04 all complete)
-Plan: 51-04 COMPLETE (2 tasks, 3 commits — tests/party-decisions-e2e.test.cjs + tests/party-decisions-canary.test.cjs)
-Status: Phase 51 COMPLETE. All 4 plans shipped. PARTY-03 + PARTY-04 fulfilled. E2E: 9 subtests (9 pass). Canary: 9 subtests (9 pass, NEVER SKIPS). 46 party-mode tests total (27 pytest + 19 Node).
-Last activity: 2026-05-13 — Plan 51-04 complete: party-decisions-e2e.test.cjs (9 pass) + party-decisions-canary.test.cjs (9 pass, NEVER SKIPS). Phase 51 COMPLETE.
+Phase: 52 — Agent Compilation (IN PROGRESS — Plan 52-01 complete)
+Plan: 52-01 COMPLETE (4 tasks, 4 commits — services/agent_schema.py + scripts/agent-md-to-yaml.cjs + tests/test_agent_schema.py + tests/agent-md-to-yaml.test.cjs)
+Status: Plan 52-01 COMPLETE. COMPILE-01 partially fulfilled (schema + converter). 24 tests (16 Python + 8 Node). All pass.
+Last activity: 2026-05-13 — Plan 52-01 complete: AgentDefinition Pydantic schema + one-shot md→yaml converter + 24 tests. 4 atomic commits.
 
-Progress: [>>>>      ] 50% (3 of 6 phases complete, 10 plans complete)
+Progress: [>>>>      ] 52% (4+ phases / 15 plans complete)
 
 ## v3.2 Phase Map
 
@@ -40,7 +40,7 @@ Progress: [>>>>      ] 50% (3 of 6 phases complete, 10 plans complete)
 | 49 | Module CLI + Lifecycle | MOD-03, MOD-04 | COMPLETE — Plans 49-01 + 49-02 + 49-03 + 49-04 shipped 2026-05-13 |
 | 50 | Party Mode Foundation | PARTY-01, PARTY-02 | COMPLETE — All 4 plans shipped (migration 021 + PartySession Pydantic + state machine + post_finding + list_findings + resume() replay + CLI dispatch + E2E SC4 + canary + 55 tests, 2026-05-13) |
 | 51 | Party Mode Decisions + Operator CLI | PARTY-03, PARTY-04 | COMPLETE — Plans 51-01 + 51-02 + 51-03 + 51-04 shipped 2026-05-13 |
-| 52 | Agent Compilation | COMPILE-01, COMPILE-02, COMPILE-03, COMPILE-04 | Not started |
+| 52 | Agent Compilation | COMPILE-01, COMPILE-02, COMPILE-03, COMPILE-04 | IN PROGRESS — Plan 52-01 complete (schema + converter) |
 | 53 | v3.1 Carry-Forwards | POLISH-01..05 | Not started |
 
 **Execution order:** 48 → 49 → 50 → 51 → 52 → 53
@@ -61,6 +61,7 @@ Progress: [>>>>      ] 50% (3 of 6 phases complete, 10 plans complete)
 - Compile (Phase 52) and Polish (Phase 53) have NO v3.2 deps — they reuse shipped Phase 43/44/45/46/47 surfaces. Parallelizable with 49/50/51 after 48 ships.
 - Party Mode: dissent records do NOT auto-rollback (operator-supervised by design; REQUIREMENTS.md Out of Scope).
 - Agent compilation (Phase 52) is symmetric with Phase 43 skill compiler — reuses `TARGET_MAPS` pattern + `agent_hydrator.hydrate` API verbatim.
+- Phase 52 Plan 52-01: AgentDefinition 6-field locked frontmatter (name→description→tools→color→memory→skills), body_preamble Optional[str]=None for H1 preamble (16/17 agents have it; gsd-executor-data.md exception = null), 10-key SECTION_KEY_ORDER tuple. HEADING_TO_KEY maps actual .md headings ('Behavioral rules' → 'patterns_and_practices', 'Tool access & guidance' → 'workflow_and_process', etc.). Custom block-literal YAML emitter in .cjs (no external deps).
 - Phase 48 Plan 48-01: Migration file on-disk check deferred to Phase 49 install logic. Pre-release ordering deferred to v3.3+. Committed conflict fixture (feature-wants-core-v2) for stable Phase 49 reference. Resolver fails-closed via return dict.
 - Phase 48 Plan 48-01: Pydantic v2 model_config extra=forbid + field_validator + model_validator(mode=after) cross-field checks. SCHEMA_FIELD_ORDER tuple regression-locked by pytest introspection.
 - Phase 48 Plan 48-02: case 'module': added to gsd-tools.cjs after case 'agent-hydrate':. args[1] for first positional, args.slice(2) for rest (mirrors Phase 47 pattern). Phase 49 reserved actions (install/uninstall/upgrade) exit 2. Micro runner pattern works with both node direct and node --test.
