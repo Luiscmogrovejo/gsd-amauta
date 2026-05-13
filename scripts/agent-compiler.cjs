@@ -19,10 +19,20 @@
  * Symmetric with scripts/skill-compiler.cjs (Phase 43).
  * SC1 BYTE-MATCH LOCK: compile('claude-code') output is byte-identical to
  * agents/*.md committed at HEAD 21438ae.
+ *
+ * --hydrate integration (Wave 5 / COMPILE-04):
+ *   When opts.hydrate contains one or more agent names, the compiler shells out
+ *   to `gsd-tools agent-hydrate <name> --json` via spawnSync, pipes the JSON
+ *   payload to python3 services/agent_hydrate_cli.render_markdown(), and prepends
+ *   the resulting `## Current context` block BETWEEN the closing frontmatter ---
+ *   and the first ## heading in the compiled output.
+ *   Default (opts.hydrate = [] or undefined): ZERO subprocess calls — offline-safe
+ *   and cacheable. SC1 byte-match lock unaffected.
  */
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 
 // ─── HOOKS_COMMENT_BLOCK ─────────────────────────────────────────────────────
 // Verbatim commented hooks block emitted for claude-code target agents that had
@@ -593,6 +603,158 @@ function emitSections(sections, targetMap) {
   return parts.join('');
 }
 
+// ─── Hydration helpers (Wave 5 / COMPILE-04) ─────────────────────────────────
+
+/**
+ * Invoke Phase 47 agent-hydrate for a single agent name via subprocess.
+ *
+ * Steps:
+ *   1. spawnSync gsd-tools.cjs agent-hydrate <agentName> --json
+ *   2. Parse the JSON payload from stdout.
+ *   3. spawnSync python3 with agent_hydrate_cli.render_markdown() via inline -c
+ *      script, piping the JSON as stdin.
+ *   4. Return the rendered Markdown string (starts with '## Current context\n').
+ *
+ * On any failure: emits a WARN line to stderr and returns null (NON-FATAL —
+ * compile continues without hydration; PG/Valkey down is graceful degradation,
+ * not a fatal error per Phase 47 contract).
+ *
+ * @param {string} agentName
+ * @returns {string|null} rendered Markdown or null on failure
+ */
+function invokeHydration(agentName) {
+  const repoRoot = path.resolve(__dirname, '..');
+  const toolsPath = path.resolve(__dirname, '..', 'get-shit-done', 'bin', 'gsd-tools.cjs');
+
+  // Step 1: call gsd-tools agent-hydrate <agentName> --json
+  const hydrateResult = spawnSync(
+    'node',
+    [toolsPath, 'agent-hydrate', agentName, '--json'],
+    { encoding: 'utf8', timeout: 5000, cwd: repoRoot }
+  );
+
+  if (hydrateResult.error) {
+    process.stderr.write(
+      `WARN [agent-compiler] hydration failed for ${agentName}: ${hydrateResult.error.message}\n`
+    );
+    return null;
+  }
+
+  if (hydrateResult.status !== 0) {
+    const errMsg = (hydrateResult.stderr || '').trim() || `exit ${hydrateResult.status}`;
+    process.stderr.write(
+      `WARN [agent-compiler] hydration failed for ${agentName}: agent-hydrate exited ${hydrateResult.status}: ${errMsg}\n`
+    );
+    return null;
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(hydrateResult.stdout);
+  } catch (e) {
+    process.stderr.write(
+      `WARN [agent-compiler] hydration failed for ${agentName}: JSON parse error: ${e.message}\n`
+    );
+    return null;
+  }
+
+  // Step 2: render the JSON payload to ## Current context Markdown via python3
+  const renderScript = [
+    'import sys, json',
+    'sys.path.insert(0, "services")',
+    'from agent_hydrate_cli import render_markdown',
+    'payload = json.loads(sys.stdin.read())',
+    'print(render_markdown(payload))',
+  ].join('; ');
+
+  const renderResult = spawnSync(
+    'python3',
+    ['-c', renderScript],
+    {
+      input: JSON.stringify(payload),
+      encoding: 'utf8',
+      cwd: repoRoot,
+      env: process.env,
+      timeout: 3000,
+    }
+  );
+
+  if (renderResult.error) {
+    process.stderr.write(
+      `WARN [agent-compiler] hydration render failed for ${agentName}: ${renderResult.error.message}\n`
+    );
+    return null;
+  }
+
+  if (renderResult.status !== 0) {
+    const errMsg = (renderResult.stderr || '').trim() || `exit ${renderResult.status}`;
+    process.stderr.write(
+      `WARN [agent-compiler] hydration render failed for ${agentName}: python3 exited ${renderResult.status}: ${errMsg}\n`
+    );
+    return null;
+  }
+
+  return renderResult.stdout;
+}
+
+/**
+ * Merge a hydration Markdown block into the compiled agent output.
+ *
+ * INSERTION POINT: immediately AFTER the closing `---\n` of the YAML frontmatter
+ * and BEFORE the first `## ` heading line (typically "## version: 3.0.0").
+ *
+ * Result:
+ *   <frontmatter block>
+ *   <body_preamble if any>
+ *
+ *   ## Current context
+ *   ...
+ *   ---
+ *
+ *   ## version: 3.0.0
+ *   <remaining sections>
+ *
+ * Degraded case: if outputContent does not contain a closing `---` (malformed),
+ * hydrationMd is prepended to the entire output with a WARN.
+ *
+ * @param {string} outputContent — full compiled .md text
+ * @param {string} hydrationMd  — rendered ## Current context block
+ * @returns {string} merged output
+ */
+function mergeHydration(outputContent, hydrationMd) {
+  // The frontmatter block ends with `---\n`; find the SECOND occurrence
+  // (first `---` opens, second `---` closes the frontmatter).
+  const firstDash = outputContent.indexOf('---');
+  if (firstDash === -1) {
+    process.stderr.write(
+      `WARN [agent-compiler] mergeHydration: no frontmatter delimiter found; prepending hydration\n`
+    );
+    return hydrationMd + '\n\n' + outputContent;
+  }
+
+  const closingDashIdx = outputContent.indexOf('---', firstDash + 3);
+  if (closingDashIdx === -1) {
+    process.stderr.write(
+      `WARN [agent-compiler] mergeHydration: no closing frontmatter delimiter found; prepending hydration\n`
+    );
+    return hydrationMd + '\n\n' + outputContent;
+  }
+
+  // End of the closing `---` line (include the newline after `---`)
+  const afterFrontmatter = closingDashIdx + 3;
+  // Skip any newline immediately after `---`
+  let insertionPoint = afterFrontmatter;
+  if (outputContent[insertionPoint] === '\n') insertionPoint++;
+
+  const before = outputContent.slice(0, insertionPoint);
+  const after = outputContent.slice(insertionPoint);
+
+  // Ensure hydrationMd ends with a newline, then add a blank line separator
+  const hydration = hydrationMd.trimEnd() + '\n';
+
+  return before + '\n' + hydration + '\n' + after;
+}
+
 // ─── listAgents ───────────────────────────────────────────────────────────────
 
 /**
@@ -781,12 +943,22 @@ function compile(target, opts) {
     const preambleBlock = emitBodyPreamble(body_preamble, targetMap);
     const sectionsBlock = emitSections(sections, targetMap);
 
-    // NOTE: hydrate is a no-op at Wave 3 (empty array = default)
-    // Wave 5 wires: if (hydrateList.includes(agentMeta.name)) { ... prepend hydration ... }
-    // Silencing unused-var warning:
-    void hydrateList;
+    // Wave 5 --hydrate integration (COMPILE-04):
+    // When opts.hydrate contains this agent's name, invoke Phase 47 agent-hydrate
+    // and prepend the ## Current context block to the compiled output.
+    // When hydrateList is empty (default), ZERO subprocess calls — offline-safe
+    // and cacheable (SC4 contract preserved).
+    let outputContent = fmBlock + preambleBlock + sectionsBlock;
 
-    const outputContent = fmBlock + preambleBlock + sectionsBlock;
+    const shouldHydrate = hydrateList.includes(agentMeta.name);
+    if (shouldHydrate) {
+      const hydrationMd = invokeHydration(agentMeta.name);
+      if (hydrationMd) {
+        outputContent = mergeHydration(outputContent, hydrationMd);
+      }
+      // If hydrationMd is null (failure), compile continues without hydration
+      // (graceful degradation — WARN already emitted by invokeHydration)
+    }
 
     const outPath = path.join(outBase, `${agentMeta.name}.md`);
 
