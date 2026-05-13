@@ -339,11 +339,13 @@ def resume(session_id: str, conn=None) -> dict:
         if row is None:
             raise SessionNotFoundError(f"Session not found: {session_id}")
         current_status = row["status"]
-        target_status = "active"
-        if (current_status, target_status) not in VALID_TRANSITIONS:
+        # resume() is the ONLY function that triggers paused->active.
+        # Enforce strict source state to prevent created->active bypass via resume().
+        if current_status != "paused":
             raise InvalidTransitionError(
-                f"Cannot transition from {current_status} to {target_status}"
+                f"resume() requires status='paused'; current status is '{current_status}'"
             )
+        target_status = "active"
         with c.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
                 """
