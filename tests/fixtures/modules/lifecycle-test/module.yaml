@@ -1,0 +1,11 @@
+name: lifecycle-test
+version: 0.1.0
+description: Synthetic fixture used by Phase 49 install/uninstall tests. Not for production.
+requires: {}
+migrations: []
+services:
+  - test-service
+agents:
+  - agents/test-agent.md
+skills:
+  - skills/test-skill/SKILL.md
