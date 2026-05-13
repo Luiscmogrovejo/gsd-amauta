@@ -184,7 +184,7 @@ In practice, recommended serialization is 48 → 49 → 50 → 51 → 52 → 53 
   - Precedent: Phase 43 `scripts/skill-compiler.cjs` `TARGET_MAPS` pattern + 3 IDE targets (claude identity / opencode +compatibility / cursor snake_case aliases)
   - Precedent: Phase 47 `services/agent_hydrator.py` `hydrate(agent_name)` API and `## Current context` frozen section header
   - Precedent: Phase 31 v3.0 standardized 10-section agent format (FORMAT-01..07)
-**Plans:** TBD
+**Plans:** 5/5 plans complete
 
 ### Phase 53: v3.1 Carry-Forwards
 **Goal:** Five carry-forward items from v3.1 land in one bundle: skills get input/output schemas, the installer gains upgrade + uninstall, the MCP server gets `amauta/bearings` and `amauta/agent-hydrate` tools, and every Task() spawn site in the workflow runner auto-invokes hydration.
@@ -216,7 +216,7 @@ In practice, recommended serialization is 48 → 49 → 50 → 51 → 52 → 53 
 | 49. Module CLI + Lifecycle | 0/0 | Complete    | 2026-05-13 |
 | 50. Party Mode Foundation | 0/0 | Complete    | 2026-05-13 |
 | 51. Party Mode Decisions + Operator CLI | 3/4 | Complete    | 2026-05-13 |
-| 52. Agent Compilation | 0/0 | Not started | - |
+| 52. Agent Compilation | 0/0 | Complete    | 2026-05-13 |
 | 53. v3.1 Carry-Forwards | 0/0 | Not started | - |
 
 ---
