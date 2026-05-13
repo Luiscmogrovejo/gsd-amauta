@@ -4,13 +4,13 @@ milestone: v3.2
 milestone_name: The Federation** — Phases 48-53
 status: completed
 stopped_at: v3.2 roadmap defined; awaiting Phase 48 planning
-last_updated: "2026-05-13T20:45:30.553Z"
-last_activity: "2026-05-13 — Plan 50-04 complete: tests/party-e2e.test.cjs (7/7 pass) + tests/party-canary.test.cjs (6/6 pass, never skips). Phase 50 COMPLETE."
+last_updated: "2026-05-13T21:00:00.000Z"
+last_activity: "2026-05-13 — Plan 51-01 complete: migration 023 (decision_type column + partial index) + services/party_session.py extended (DECISION_TYPES + post_decision/list_decisions/summarize_decisions) + 11 tests (4 migration + 7 unit), all pass."
 progress:
   total_phases: 6
   completed_phases: 3
-  total_plans: 10
-  completed_plans: 10
+  total_plans: 11
+  completed_plans: 11
   percent: 50
 ---
 
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-13 after v3.1 milestone close + v3.2 
 
 ## Current Position
 
-Phase: 50 — Party Mode Foundation (COMPLETE — All 4 plans shipped)
-Plan: 50-04 COMPLETE (2 tasks, 2 commits — tests/party-e2e.test.cjs + tests/party-canary.test.cjs)
-Status: Phase 50 ALL COMPLETE. Full lifecycle: migration 021 + PartySession Pydantic + 5 FROZEN state machine transitions + post_finding() + list_findings() + resume() replay + party_session_cli.py argparse + gsd-tools.cjs case 'party': + bin/cli.cjs party + E2E test (SC4 Layer 2 evidence) + cross-surface canary (13 protected paths). 55 total tests: 32 Python + 23 Node (10 party-cli + 7 party-e2e + 6 party-canary). All pass, 0 skip.
-Last activity: 2026-05-13 — Plan 50-04 complete: tests/party-e2e.test.cjs (7/7 pass) + tests/party-canary.test.cjs (6/6 pass, never skips). Phase 50 COMPLETE.
+Phase: 51 — Party Mode Decisions + Operator CLI (IN PROGRESS — Plan 51-01 complete)
+Plan: 51-01 COMPLETE (5 tasks, 5 commits — migration 023 UP+DOWN + party_session.py DECISION_TYPES + post_decision/list_decisions/summarize_decisions + test_party_decisions_migration.py + test_party_decisions.py)
+Status: Plan 51-01 complete. migration 023 adds decision_type VARCHAR(16) column + partial index idx_agent_findings_session_decision WHERE decision_type IS NOT NULL. services/party_session.py extended (append-only, Phase 50 functions unchanged). 11 new tests: 4 migration (all pass) + 7 unit (all pass). Plans 51-02 (SC3 dissent no-rollback), 51-03 (CLI dispatch), 51-04 (E2E+canary) remain.
+Last activity: 2026-05-13 — Plan 51-01 complete: migration 023 (UP+DOWN) + DECISION_TYPES + decision helpers + 11 tests, all pass.
 
 Progress: [>>>>      ] 50% (3 of 6 phases complete, 10 plans complete)
 
