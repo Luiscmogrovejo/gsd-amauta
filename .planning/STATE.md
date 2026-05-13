@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.1
 milestone_name: The Gathering
 status: completed
-stopped_at: Plan 47-02 complete. gsd-tools agent-hydrate CLI + Markdown renderer + 3 test files shipped. 5 tasks committed atomically.
-last_updated: "2026-05-13T00:00:00.000Z"
-last_activity: 2026-05-13 — Plan 47-02 complete. services/agent_hydrate_cli.py (render_markdown + argparse CLI), case 'agent-hydrate' in gsd-tools.cjs, 3 test files (18 tests pass). Phase 47 COMPLETE. v3.1 milestone COMPLETE.
+stopped_at: "Plan 47-01 complete. Next: Plan 47-02 (gsd-tools agent-hydrate CLI subcommand + Node.js shell-out to agent_hydrator.py)"
+last_updated: "2026-05-13T01:13:10.687Z"
+last_activity: 2026-05-13 — Plan 47-02 complete. 5 tasks committed atomically (daae150..5908c9a). services/agent_hydrator.py untouched. agents/*.md untouched. services/amauta-mcp.py untouched.
 progress:
   total_phases: 7
   completed_phases: 7
-  total_plans: 18
-  completed_plans: 18
+  total_plans: 20
+  completed_plans: 20
   percent: 100
 ---
 

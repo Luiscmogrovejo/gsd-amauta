@@ -201,7 +201,7 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. Agent .md files contain template markers for dynamic sections; before spawning, operator queries PG memory, blackboard, Valkey, and security pipeline for agent-specific context; the query completes within 500ms.
   2. Injected context appears as "## Current context" section prepended to the agent definition; content includes task-specific findings, recent memory entries, security alerts, and skill invocation history relevant to the target agent; content is verifiably different per agent and per task.
-**Plans:** TBD (estimated 2 plans: hydration implementation, tests)
+**Plans:** 3/3 plans complete
 
 Plans:
 - [x] 47-00: Migration 020 — extend agent_findings with recipient_agent + severity + 2 indexes; UP + DOWN + applies-check test — COMPLETE 2026-05-12
@@ -222,7 +222,7 @@ Plans:
 | 44. Cross-IDE Installer | 0/2 | Complete    | 2026-05-12 |
 | 45. Intelligent Help Routing | 0/2 | Complete    | 2026-05-12 |
 | 46. Standalone MCP Server | 0/2 | Complete    | 2026-05-13 |
-| 47. Agent Dynamic Hydration | 0/2 | Not started | - |
+| 47. Agent Dynamic Hydration | 0/2 | Complete    | 2026-05-13 |
 
 ---
 
