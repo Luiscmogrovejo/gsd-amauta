@@ -7,6 +7,7 @@
  *   gsd-amauta init [options]        -> bin/init.cjs
  *   gsd-amauta mcp register          -> registers MCP server with Claude Code
  *   gsd-amauta mcp status            -> checks MCP registration status
+ *   gsd-amauta module <action> ...   -> get-shit-done/bin/gsd-tools.cjs module (Phase 49)
  *   gsd-amauta status (no args)      -> gsd-memory.cjs cmdStatus (system status)
  *   gsd-amauta status <id> <status>  -> gsd-amauta.cjs cmdStatus (task status change)
  *   gsd-amauta <anything else>       -> get-shit-done/bin/gsd-amauta.cjs
@@ -17,7 +18,7 @@
 'use strict';
 
 const path = require('path');
-const { execSync } = require('child_process');
+const { execSync, spawnSync } = require('child_process');
 
 const command = process.argv[2];
 
@@ -66,6 +67,35 @@ if (command === 'mcp') {
     console.log('  gsd-amauta mcp status     Check MCP registration status');
   }
   process.exit(0);
+}
+
+// ─── Module subcommand (Phase 49 MOD-03/MOD-04) ─────────────────────────────
+//
+// gsd-amauta module install <manifest.yaml>      → gsd-tools.cjs module install
+// gsd-amauta module uninstall <module-name>      → gsd-tools.cjs module uninstall
+// gsd-amauta module upgrade <new-manifest.yaml>  → gsd-tools.cjs module upgrade
+// gsd-amauta module validate <manifest.yaml>...  → gsd-tools.cjs module validate (Phase 48 surface)
+//
+// Mirrors the 'mcp' branch above: rewrite argv to point at the gsd-tools
+// entry-point, then require it. The require model preserves stdio so
+// process.stdout/stderr/exit propagation is identical to direct invocation.
+
+if (command === 'module') {
+  const toolsPath = path.resolve(__dirname, '..', 'get-shit-done', 'bin', 'gsd-tools.cjs');
+  // Dispatch to gsd-tools.cjs module <action> ... via spawnSync so that
+  // gsd-tools.cjs main() runs in a fresh process (gsd-tools.cjs guards
+  // main() with `if (require.main === module)`, which blocks require()-based
+  // dispatch). process.argv.slice(3) strips [node, cli.cjs, 'module'] and
+  // forwards the action + flags verbatim.
+  //
+  //   [node, cli.cjs, 'module', 'install', '/path/to/m.yaml', '--json']
+  //   spawns gsd-tools.cjs with args: ['module', 'install', '/path/to/m.yaml', '--json']
+  const moduleArgs = process.argv.slice(3);
+  const result = spawnSync('node', [toolsPath, 'module', ...moduleArgs], {
+    stdio: 'inherit',
+    cwd: path.resolve(__dirname, '..'),
+  });
+  process.exit(result.status === null ? 1 : result.status);
 }
 
 // ─── Status routing ─────────────────────────────────────────────────────────
