@@ -3579,6 +3579,53 @@ Examples:
       break;
     }
 
+    case 'agent-hydrate': {
+      // Phase 47 HYDRA-02: Per-agent context hydration — operator-side wrapper
+      // around services/agent_hydrate_cli.py. Subprocess invocation keeps the
+      // Node CLI clean and matches Phase 45 bearings pattern for shell-out.
+      // Usage: gsd-tools agent-hydrate <agent_name> [--task-id <id>] [--json] [--terse] [--budget N]
+      const agentName = args[1];
+      if (!agentName || agentName.startsWith('--')) {
+        process.stderr.write(
+          'Usage: gsd-tools agent-hydrate <agent_name> [--task-id <id>] [--json] [--terse] [--budget N]\n'
+        );
+        process.exit(2);
+      }
+
+      const jsonFlag = args.includes('--json');
+      const terseFlag = args.includes('--terse');
+      const tidIdx = args.indexOf('--task-id');
+      const taskId = tidIdx !== -1 && args[tidIdx + 1] ? args[tidIdx + 1] : null;
+      const budIdx = args.indexOf('--budget');
+      let budget = 800; // default
+      if (budIdx !== -1 && args[budIdx + 1]) {
+        const parsed = parseInt(args[budIdx + 1], 10);
+        if (!Number.isNaN(parsed) && parsed > 0) budget = parsed;
+      } else if (terseFlag) {
+        budget = 400;
+      }
+
+      const repoRoot = path.resolve(__dirname, '..', '..');
+      const cliPath = path.join(repoRoot, 'services', 'agent_hydrate_cli.py');
+
+      const subprocArgs = [cliPath, agentName];
+      if (taskId) subprocArgs.push('--task-id', taskId);
+      if (!jsonFlag) subprocArgs.push('--render');
+      subprocArgs.push('--budget', String(budget));
+      if (terseFlag) subprocArgs.push('--terse');
+
+      const result = spawnSync('python3', subprocArgs, { encoding: 'utf8', cwd: repoRoot });
+
+      if (result.error) {
+        process.stderr.write(`agent-hydrate subprocess failed: ${result.error.message}\n`);
+        process.exit(1);
+      }
+      if (result.stdout) process.stdout.write(result.stdout);
+      if (result.stderr) process.stderr.write(result.stderr);
+      process.exit(result.status === null ? 1 : result.status);
+      break;
+    }
+
     default:
       error(`Unknown command: ${command}`);
   }
