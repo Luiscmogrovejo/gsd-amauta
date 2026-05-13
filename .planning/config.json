@@ -4,7 +4,7 @@
   "parallelization": true,
   "commit_docs": false,
   "model_profile": "balanced",
-  "current_milestone": "v3.1",
+  "current_milestone": "v3.2",
   "model_routing": {
     "R": "sonnet",
     "P": "sonnet",
@@ -23,11 +23,51 @@
     "force_phases": null
   },
   "complexity_buckets": [
-    {"max": 15, "phases": ["E"]},
-    {"max": 35, "phases": ["P", "E", "T"]},
-    {"max": 60, "phases": ["R", "P", "E", "T"]},
-    {"max": 85, "phases": ["R", "P", "E", "T", "D"]},
-    {"max": 100, "phases": ["R", "P", "E", "T", "D", "S", "A"]}
+    {
+      "max": 15,
+      "phases": [
+        "E"
+      ]
+    },
+    {
+      "max": 35,
+      "phases": [
+        "P",
+        "E",
+        "T"
+      ]
+    },
+    {
+      "max": 60,
+      "phases": [
+        "R",
+        "P",
+        "E",
+        "T"
+      ]
+    },
+    {
+      "max": 85,
+      "phases": [
+        "R",
+        "P",
+        "E",
+        "T",
+        "D"
+      ]
+    },
+    {
+      "max": 100,
+      "phases": [
+        "R",
+        "P",
+        "E",
+        "T",
+        "D",
+        "S",
+        "A"
+      ]
+    }
   ],
   "scale_adaptive": {
     "enabled": true,
