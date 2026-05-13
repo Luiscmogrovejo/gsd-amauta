@@ -4,13 +4,13 @@ milestone: v3.2
 milestone_name: The Federation** — Phases 48-53
 status: completed
 stopped_at: v3.2 roadmap defined; awaiting Phase 48 planning
-last_updated: "2026-05-13T19:54:18.462Z"
-last_activity: "2026-05-13 — Plan 49-04 complete: CLI dispatch surface wired through gsd-tools.cjs + bin/cli.cjs, 18 new tests, Phase 49 COMPLETE."
+last_updated: "2026-05-13T20:30:00.000Z"
+last_activity: "2026-05-13 — Plan 50-01 complete: migration 021 (party_sessions UP+DOWN) + PartySession Pydantic + state machine (5 FROZEN transitions) + 19 new tests (6 migration + 13 state machine). Phase 50 Plan 1 of N complete."
 progress:
   total_phases: 6
   completed_phases: 2
-  total_plans: 6
-  completed_plans: 6
+  total_plans: 7
+  completed_plans: 7
   percent: 33
 ---
 
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-13 after v3.1 milestone close + v3.2 
 
 ## Current Position
 
-Phase: 49 — Module CLI + Lifecycle (COMPLETE — Plans 49-01 + 49-02 + 49-03 + 49-04 COMPLETE)
-Plan: 49-04 COMPLETE (6 tasks)
-Status: Phase 49 COMPLETE. module_lifecycle_cli.py + gsd-tools.cjs module dispatch + bin/cli.cjs shortcut + 18 new tests. 93 total tests pass (25 Node + 68 pytest). 10/10 v3.1 canary diffs empty. MOD-03 + MOD-04 requirements fulfilled. Phase 50 (Party Mode Foundation) is next.
-Last activity: 2026-05-13 — Plan 49-04 complete: CLI dispatch surface wired through gsd-tools.cjs + bin/cli.cjs, 18 new tests, Phase 49 COMPLETE.
+Phase: 50 — Party Mode Foundation (IN PROGRESS — Plan 50-01 COMPLETE)
+Plan: 50-01 COMPLETE (5 tasks)
+Status: Phase 50 Plan 50-01 complete. migrations/021-party-sessions.sql (UP+DOWN) + services/party_session.py (PartySession Pydantic v2 + 5 FROZEN state-machine transitions + InvalidTransitionError + SessionNotFoundError) + 19 new tests (6 migration + 13 state machine). All 19 pass. PARTY-01/PARTY-02 substrate shipped. Plans 50-02 (helpers/findings) + 50-03 (CLI) + 50-04 (E2E) remain.
+Last activity: 2026-05-13 — Plan 50-01 complete: migration 021 (party_sessions UP+DOWN) + PartySession Pydantic + state machine (5 FROZEN transitions) + 19 new tests (6 migration + 13 state machine). Phase 50 Plan 1 of N complete.
 
 Progress: [>>>       ] 33% (2 of 6 phases complete, 4 of 4 plans complete)
 
@@ -38,7 +38,7 @@ Progress: [>>>       ] 33% (2 of 6 phases complete, 4 of 4 plans complete)
 |-------|------|--------------|--------|
 | 48 | Module System Foundation | MOD-01, MOD-02 | COMPLETE — Plans 48-01 + 48-02 shipped 2026-05-13 |
 | 49 | Module CLI + Lifecycle | MOD-03, MOD-04 | COMPLETE — Plans 49-01 + 49-02 + 49-03 + 49-04 shipped 2026-05-13 |
-| 50 | Party Mode Foundation | PARTY-01, PARTY-02 | Not started |
+| 50 | Party Mode Foundation | PARTY-01, PARTY-02 | IN PROGRESS — Plan 50-01 complete (migration 021 + PartySession Pydantic + state machine + 19 tests) |
 | 51 | Party Mode Decisions + Operator CLI | PARTY-03, PARTY-04 | Not started (depends on 50) |
 | 52 | Agent Compilation | COMPILE-01, COMPILE-02, COMPILE-03, COMPILE-04 | Not started |
 | 53 | v3.1 Carry-Forwards | POLISH-01..05 | Not started |
