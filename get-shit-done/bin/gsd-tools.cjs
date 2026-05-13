@@ -3722,16 +3722,19 @@ Examples:
           '  gsd-tools party pause <session_id> [--json]\n' +
           '  gsd-tools party resume <session_id> [--json]\n' +
           '  gsd-tools party terminate <session_id> [--json]\n' +
-          '  gsd-tools party get <session_id> [--json] [--with-findings]\n'
+          '  gsd-tools party get <session_id> [--json] [--with-findings]\n' +
+          '  gsd-tools party status [--json]\n' +
+          '  gsd-tools party inspect <session_id> [--json]\n' +
+          '  gsd-tools party kill <session_id> [--reason "..."] [--json]\n'
         );
         process.exit(2);
       }
-      const KNOWN_ACTIONS = new Set(['create', 'start', 'pause', 'resume', 'terminate', 'get']);
+      const KNOWN_ACTIONS = new Set(['create', 'start', 'pause', 'resume', 'terminate', 'get', 'status', 'inspect', 'kill']);
       if (!KNOWN_ACTIONS.has(action)) {
         process.stderr.write(
           `Unknown party action: ${action}\n` +
           'Usage:\n' +
-          '  gsd-tools party create|start|pause|resume|terminate|get <args...>\n'
+          '  gsd-tools party create|start|pause|resume|terminate|get|status|inspect|kill <args...>\n'
         );
         process.exit(2);
       }
