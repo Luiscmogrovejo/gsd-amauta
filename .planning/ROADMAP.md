@@ -64,7 +64,7 @@ Archive: `.planning/milestones/v3.1-ROADMAP.md` · `.planning/milestones/v3.1-RE
 
 ## Phases
 
-- [~] **Phase 48: Module System Foundation** — Module manifest YAML schema + Pydantic validation + semver dependency resolver with conflict detection (MOD-01, MOD-02). FOUNDATION for Phase 49. Plan 48-01 complete (2026-05-13).
+- [x] **Phase 48: Module System Foundation** — Module manifest YAML schema + Pydantic validation + semver dependency resolver with conflict detection + gsd-tools `module validate` CLI dispatch (MOD-01, MOD-02). Plans 48-01 + 48-02 complete (2026-05-13).
 - [ ] **Phase 49: Module CLI + Lifecycle** — `gsd-amauta module install/uninstall/upgrade <name>` subcommands with idempotency, dry-run, and rollback (MOD-03, MOD-04). Depends on 48.
 - [ ] **Phase 50: Party Mode Foundation** — `party_sessions` PG table + session state machine + persistent session memory (resumable from blackboard replay) (PARTY-01, PARTY-02).
 - [ ] **Phase 51: Party Mode Decisions + Operator CLI** — Structured decision records (propose/agree/dissent/block) + `gsd-amauta party status/inspect/kill` subcommands (PARTY-03, PARTY-04). Depends on 50.
@@ -120,7 +120,7 @@ In practice, recommended serialization is 48 → 49 → 50 → 51 → 52 → 53 
   - REQUIREMENTS.md MOD-01, MOD-02
   - Precedent: Phase 43 `SkillFrontmatter` Pydantic model (`get-shit-done/skills/<name>/SKILL.md`); apply the same schema-first approach
   - Precedent: Phase 44 `platform-codes.yaml` frozen-schema pattern (line-by-line yaml parser, zero new deps)
-**Plans:** TBD
+**Plans:** 48-01 (schema + resolver + CLI entry-point + 24 pytest tests), 48-02 (gsd-tools dispatch + 7 Node tests + canary). COMPLETE 2026-05-13.
 
 ### Phase 49: Module CLI + Lifecycle
 **Goal:** Operators can install, uninstall, and upgrade modules with idempotent + reversible semantics, dry-run preview, and rollback on partial failure. Upgrade preserves user data via the module's migrations.

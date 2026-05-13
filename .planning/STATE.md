@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.2
 milestone_name: The Federation
 status: in_progress
-stopped_at: Plan 48-01 complete — ModuleManifest schema + semver resolver + CLI + 24 tests shipped
-last_updated: "2026-05-13T20:00:00.000Z"
-last_activity: 2026-05-13 — Plan 48-01 complete (6 tasks, 8 files, 24 pytest tests). Phase 48 foundation shipped.
+stopped_at: Phase 48 COMPLETE — Plan 48-02 shipped gsd-tools case 'module': dispatch + 7-scenario Node integration test + canary diff EMPTY
+last_updated: "2026-05-13T21:00:00.000Z"
+last_activity: 2026-05-13 — Phase 48 complete (Plans 48-01 + 48-02). case 'module': in gsd-tools.cjs, 7 Node tests, 24 pytest tests all pass. MOD-01 + MOD-02 done.
 progress:
   total_phases: 6
-  completed_phases: 0
-  total_plans: 1
-  completed_plans: 1
-  percent: 3
+  completed_phases: 1
+  total_plans: 2
+  completed_plans: 2
+  percent: 17
 ---
 
 # GSD-Amauta -- Project State
@@ -25,18 +25,18 @@ See: .planning/PROJECT.md (updated 2026-05-13 after v3.1 milestone close + v3.2 
 
 ## Current Position
 
-Phase: 48 — Module System Foundation (IN PROGRESS — Plan 48-01 complete, awaiting Phase 48 closeout or Plan 48-02)
-Plan: 48-01 COMPLETE
-Status: Plan 48-01 shipped. Ready for Plan 48-02 (gsd-tools module validate wiring) or Phase 48 closeout.
-Last activity: 2026-05-13 — Plan 48-01 complete: ModuleManifest Pydantic v2 + resolve() + module_validator_cli.py + 3 fixtures + 24 pytest tests (all pass).
+Phase: 48 — Module System Foundation COMPLETE. Next: Phase 49 (Module CLI + Lifecycle)
+Plan: 48-02 COMPLETE (all 3 tasks)
+Status: Phase 48 COMPLETE. MOD-01 + MOD-02 satisfied. Ready for Phase 49 (module install/uninstall/upgrade).
+Last activity: 2026-05-13 — Plan 48-02 complete: case 'module': dispatch in gsd-tools.cjs, 7-scenario Node integration test (module-validate-cli.test.cjs), integration sweep (24 pytest + 7 Node tests pass), canary diff EMPTY.
 
-Progress: [>         ] 3% (0 of 6 phases complete, 1 of 1 plans complete)
+Progress: [>>        ] 17% (1 of 6 phases complete, 2 of 2 plans complete)
 
 ## v3.2 Phase Map
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 48 | Module System Foundation | MOD-01, MOD-02 | In progress — Plan 48-01 complete |
+| 48 | Module System Foundation | MOD-01, MOD-02 | COMPLETE — Plans 48-01 + 48-02 shipped 2026-05-13 |
 | 49 | Module CLI + Lifecycle | MOD-03, MOD-04 | Not started (depends on 48) |
 | 50 | Party Mode Foundation | PARTY-01, PARTY-02 | Not started |
 | 51 | Party Mode Decisions + Operator CLI | PARTY-03, PARTY-04 | Not started (depends on 50) |
@@ -63,6 +63,7 @@ Progress: [>         ] 3% (0 of 6 phases complete, 1 of 1 plans complete)
 - Agent compilation (Phase 52) is symmetric with Phase 43 skill compiler — reuses `TARGET_MAPS` pattern + `agent_hydrator.hydrate` API verbatim.
 - Phase 48 Plan 48-01: Migration file on-disk check deferred to Phase 49 install logic. Pre-release ordering deferred to v3.3+. Committed conflict fixture (feature-wants-core-v2) for stable Phase 49 reference. Resolver fails-closed via return dict.
 - Phase 48 Plan 48-01: Pydantic v2 model_config extra=forbid + field_validator + model_validator(mode=after) cross-field checks. SCHEMA_FIELD_ORDER tuple regression-locked by pytest introspection.
+- Phase 48 Plan 48-02: case 'module': added to gsd-tools.cjs after case 'agent-hydrate':. args[1] for first positional, args.slice(2) for rest (mirrors Phase 47 pattern). Phase 49 reserved actions (install/uninstall/upgrade) exit 2. Micro runner pattern works with both node direct and node --test.
 
 ### Pending Todos
 
