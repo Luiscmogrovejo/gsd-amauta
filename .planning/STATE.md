@@ -5,12 +5,12 @@ milestone_name: The Federation** — Phases 48-53
 status: completed
 stopped_at: v3.2 roadmap defined; awaiting Phase 48 planning
 last_updated: "2026-05-13T00:00:00.000Z"
-last_activity: "2026-05-13 — Plan 49-02 complete: install()+uninstall() 7-step orchestrators + _run_rollback() engine + 3 test files (20 new tests, 49 total PASS). SC1 round-trip empty-diff verified. SC4 mid-install rollback verified. Canary diff EMPTY."
+last_activity: "2026-05-13 — Plan 49-03 complete: upgrade() 8-step expand-and-contract orchestrator + compute_migration_delta + v2 fixture + 19 new tests (68 total PASS). SC3 expand-before-swap-before-contract verified. SC4 contract partial_rollback verified. MOD-03 idempotency locked."
 progress:
   total_phases: 6
   completed_phases: 1
-  total_plans: 4
-  completed_plans: 4
+  total_plans: 5
+  completed_plans: 5
   percent: 17
 ---
 
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-13 after v3.1 milestone close + v3.2 
 
 ## Current Position
 
-Phase: 49 — Module CLI + Lifecycle (in progress — Plans 49-01 + 49-02 COMPLETE)
-Plan: 49-02 COMPLETE (7 tasks)
-Status: Phase 49 Wave 2 shipped. install()/uninstall() 7-step orchestrators + _run_rollback() engine + 3 test suites (49 total tests pass). SC1 round-trip verified. SC4 mid-install rollback verified. Plans 49-03/49-04 next (upgrade() + CLI dispatch).
-Last activity: 2026-05-13 — Plan 49-02 complete: install()+uninstall() 7-step orchestrators + _run_rollback() engine + 3 test files (20 new tests, 49 total PASS). SC1 round-trip empty-diff verified. SC4 mid-install rollback verified. Canary diff EMPTY.
+Phase: 49 — Module CLI + Lifecycle (in progress — Plans 49-01 + 49-02 + 49-03 COMPLETE)
+Plan: 49-03 COMPLETE (5 tasks)
+Status: Phase 49 Wave 3 shipped. upgrade() 8-step expand-and-contract orchestrator + compute_migration_delta + lifecycle-test-v2 fixture + 19 new tests (68 total tests pass). SC3 expand-before-swap-before-contract verified. SC4 contract partial_rollback verified. Plan 49-04 next (CLI dispatch + E2E).
+Last activity: 2026-05-13 — Plan 49-03 complete: upgrade() 8-step expand-and-contract orchestrator + compute_migration_delta + v2 fixture + 19 new tests (68 total PASS). SC3 expand-before-swap-before-contract verified. SC4 contract partial_rollback verified. MOD-03 idempotency locked.
 
 Progress: [>>        ] 17% (1 of 6 phases complete, 3 of 3 plans complete)
 
