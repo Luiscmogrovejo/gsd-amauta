@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v3.1
 milestone_name: The Gathering
 status: completed
-stopped_at: Phase 47 context written direct from docs (final phase of v3.1)
-last_updated: "2026-05-13T00:21:20.603Z"
-last_activity: 2026-05-12 — Plan 46-02 complete. MCP-03 satisfied. 6 tasks committed atomically (df30652..426c4a8). 27 new tests. amauta-daemon.py untouched.
+stopped_at: Plan 47-00 complete. Migration 020 shipped (recipient_agent + severity + 2 indexes). 3 tasks committed atomically.
+last_updated: "2026-05-12T00:00:00.000Z"
+last_activity: 2026-05-12 — Plan 47-00 complete. migrations/020-agent-findings-hydration.sql + DOWN + tests/test_migration_020.py committed (1a36a2f, 20bdee3, 39a2016). Schema substrate for Plan 47-01 hydrator in place.
 progress:
   total_phases: 7
   completed_phases: 6
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-14 after v3.0 milestone close)
 
 ## Current Position
 
-Phase: 46 COMPLETE — Plans 46-01 and 46-02 both complete
-Plan: 46-02 COMPLETE
-Status: Plan 46-02 shipped. _render_agent(name, hydration=None) helper added (Phase 47 HYDRA-02 injection point). list_resources() + read_resource() rewritten — 3 URI templates (amauta://context/{task_id}/{phase}, amauta://agent/{agent_name}, amauta://findings/{task_id}) via direct PG. 4 new test files: test_amauta_mcp_resources.py (16 tests), test_amauta_mcp_stdio.py (4 tests subprocess integration), test_amauta_mcp_sse.py (4 tests, port 18800), test_amauta_mcp_pg_down.py (5 tests — server-stays-up canary + complexity-score works PG-free). Total Phase 46: 52 tests (50 pass, 2 expected skips when mcp pkg absent). MCP-01 + MCP-02 + MCP-03 all satisfied. Phase 46 COMPLETE.
-Last activity: 2026-05-12 — Plan 46-02 complete. MCP-03 satisfied. 6 tasks committed atomically (df30652..426c4a8). 27 new tests. amauta-daemon.py untouched.
+Phase: 47 IN PROGRESS — Plan 47-00 complete
+Plan: 47-00 COMPLETE
+Status: Plan 47-00 shipped. Migration 020 adds recipient_agent VARCHAR(64) + severity VARCHAR(16) to agent_findings + 2 composite DESC indexes (idx_agent_findings_recipient, idx_agent_findings_finding_type_recent). UP + DOWN both idempotent (IF NOT EXISTS / IF EXISTS). test_migration_020.py: 6 introspection test functions with PG-down skip. Schema substrate for Plan 47-01 hydrator is in place.
+Last activity: 2026-05-12 — Plan 47-00 complete. 3 tasks committed atomically (1a36a2f, 20bdee3, 39a2016). No production code modified.
 
 Progress: [██████░░░░] ~86% (6 of 7 phases complete, 16 of 16 plans complete)
 
@@ -42,7 +42,7 @@ Progress: [██████░░░░] ~86% (6 of 7 phases complete, 16 of 1
 | 44 | Cross-IDE Installer | INST-01..04 | COMPLETE (Plans 44-01 + 44-02 + 44-03, 47 tests) |
 | 45 | Intelligent Help Routing | HELP-01..03 | COMPLETE (Plans 45-01 + 45-02, 22 tests) |
 | 46 | Standalone MCP Server | MCP-01..03 | COMPLETE (Plans 46-01 + 46-02, 52 tests) |
-| 47 | Agent Dynamic Hydration | HYDRA-01..02 | Not started |
+| 47 | Agent Dynamic Hydration | HYDRA-01..02 | In progress (Plan 47-00 COMPLETE) |
 
 **Execution order:** 41 → 42 → 43 → 44 → 45 → 46 → 47
 **Parallelizable:** 42+43 after 41; 44+45+46 after 43; 47 after 42+43
@@ -101,9 +101,9 @@ Context: 2026-05-12 health audit caught RLM dead 13h from uncaught BrokenPipe + 
 
 ## Session Continuity
 
-Last session: 2026-05-13T00:21:20.601Z
-Stopped at: Phase 47 context written direct from docs (final phase of v3.1)
-Resume file: .planning/phases/47-agent-dynamic-hydration/47-CONTEXT.md
+Last session: 2026-05-12
+Stopped at: Plan 47-00 complete. Next: Plan 47-01 (agent_hydrator.py Python helper + gsd-tools agent-hydrate subcommand)
+Resume file: .planning/phases/47-agent-dynamic-hydration/47-00-SUMMARY.md
 
 ## Learnings
 
