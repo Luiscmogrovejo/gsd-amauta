@@ -55,6 +55,7 @@
   - [x] Plan 45-02: Wire bearings into /amauta:help (prepend <bearings> + ## Reference above static body) + step-01-prepare.md + execute-phase-legacy.md (BEHAV-06 400-token, shell-out, single source of truth), 5 new tests (22 total bearings tests) — COMPLETE 2026-05-12
 - [x] **Phase 46: Standalone MCP Server** — amauta-mcp.py as standalone with direct PG+Valkey; complexity-score tool; agent/findings resources (MCP-01..03) — depends on 43 — COMPLETE 2026-05-12
   - [x] Plan 46-01: Direct PG+Valkey foundation; MCPDatabase (SimpleConnectionPool MIN=1/MAX=8) + MCPValkey; rewrite 5 handlers (search-code, memory-store, memory-search, memory-distill, research) to direct PGStore calls; add amauta/complexity-score (6th tool, Phase 42 two-step API); delete _call_daemon/_call_rlm/_check_daemon_health; _MCP_ERROR_CODES frozen tuple; 23 tests (db_helpers + tools) — COMPLETE 2026-05-12
+  - [x] Plan 46-02: 3 MCP resource URI templates (_render_agent + list_resources + read_resource direct PG); Phase 47 HYDRA-02 hydration=None injection point; test_amauta_mcp_resources.py (16 tests), test_amauta_mcp_stdio.py (4 tests subprocess integration), test_amauta_mcp_sse.py (4 tests port 18800), test_amauta_mcp_pg_down.py (5 tests server-stays-up + complexity-score PG-free); MCP-01+MCP-03 satisfied — COMPLETE 2026-05-12
 - [ ] **Phase 47: Agent Dynamic Hydration** — Agent .md templates with dynamic sections; operator queries PG/blackboard/Valkey/security for agent-specific context injection (HYDRA-01..02) — depends on 42+43
 
 ---
@@ -187,8 +188,8 @@ Plans:
 **Plans:** TBD (estimated 2 plans: MCP server implementation, tests)
 
 Plans:
-- [ ] 46-01: TBD
-- [ ] 46-02: TBD
+- [x] 46-01: Direct PG+Valkey foundation; MCPDatabase + MCPValkey; 6 tools refactored; _call_daemon deleted; 23 tests — COMPLETE 2026-05-12
+- [x] 46-02: 3 MCP resource URI templates; _render_agent Phase 47 hook; 4 integration/resilience test files; 27 tests — COMPLETE 2026-05-12
 
 ### Phase 47: Agent Dynamic Hydration
 **Goal:** Agent .md files become templates with dynamic sections. Before spawning an agent, the operator queries PG memory, blackboard findings, Valkey cache, and the security pipeline to build agent-specific operational context. This context is injected as a "## Current context" section, giving every agent a live briefing instead of static instructions.

@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.1
 milestone_name: The Gathering
 status: in_progress
-stopped_at: Phase 46 Plan 46-01 complete
-last_updated: "2026-05-12T23:31:27.599Z"
-last_activity: "2026-05-12 — Plan 46-01 complete. MCP-01 + MCP-02 satisfied. amauta-mcp.py refactored from HTTP-wrapper to standalone direct PG+Valkey. MCPDatabase (SimpleConnectionPool) + MCPValkey helpers. All 6 tools wired (search-code, memory-store, memory-search, memory-distill, research, NEW complexity-score). _call_daemon/_call_rlm/_check_daemon_health deleted. _MCP_ERROR_CODES frozen. 23 new tests (23 pass, 0 fail)."
+stopped_at: Phase 46 COMPLETE — both 46-01 and 46-02 done
+last_updated: "2026-05-12T00:00:00.000Z"
+last_activity: "2026-05-12 — Plan 46-02 complete. MCP-03 satisfied. 3 MCP resource URI templates exposed (_render_agent + list_resources + read_resource rewritten to direct PG). Phase 47 HYDRA-02 injection point (_render_agent hydration=None) locked. 4 new test files (resources, stdio, SSE, pg_down). 27 new tests (27 pass, 0 fail; 2 expected skips when mcp pkg absent). Phase 46 COMPLETE (both plans)."
 progress:
   total_phases: 7
   completed_phases: 6
-  total_plans: 16
-  completed_plans: 16
+  total_plans: 17
+  completed_plans: 17
   percent: 86
 ---
 
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-14 after v3.0 milestone close)
 
 ## Current Position
 
-Phase: 46 COMPLETE — Plan 46-01 complete
-Plan: 46-01 COMPLETE
-Status: Plan 46-01 shipped. amauta-mcp.py refactored from 17KB HTTP-wrapper to standalone direct PG+Valkey. MCPDatabase (psycopg2 SimpleConnectionPool MIN=1/MAX=8, infra_detect cascade, SQLite adapter, _HAS_PG import-safety) + MCPValkey (redis.from_url, _HAS_REDIS, graceful degradation). All 6 tools direct-DB: search-code (code_embeddings + fallback), memory-store, memory-search, memory-distill (memory_count threshold 500), research (Valkey cache + PGStore + DuckDuckGo). NEW amauta/complexity-score tool (Phase 42 two-step API). _call_daemon/_call_rlm/_check_daemon_health deleted (0 occurrences). _MCP_ERROR_CODES frozen 5-tuple. list_resources/read_resource updated to direct PG. 23 new tests (db_helpers + tools), all pass. MCP-01 + MCP-02 satisfied. Phase 46 COMPLETE.
-Last activity: 2026-05-12 — Plan 46-01 complete. MCP-01 + MCP-02 satisfied. 9 tasks committed atomically. 23 tests (23 pass, 0 fail). amauta-daemon.py untouched.
+Phase: 46 COMPLETE — Plans 46-01 and 46-02 both complete
+Plan: 46-02 COMPLETE
+Status: Plan 46-02 shipped. _render_agent(name, hydration=None) helper added (Phase 47 HYDRA-02 injection point). list_resources() + read_resource() rewritten — 3 URI templates (amauta://context/{task_id}/{phase}, amauta://agent/{agent_name}, amauta://findings/{task_id}) via direct PG. 4 new test files: test_amauta_mcp_resources.py (16 tests), test_amauta_mcp_stdio.py (4 tests subprocess integration), test_amauta_mcp_sse.py (4 tests, port 18800), test_amauta_mcp_pg_down.py (5 tests — server-stays-up canary + complexity-score works PG-free). Total Phase 46: 52 tests (50 pass, 2 expected skips when mcp pkg absent). MCP-01 + MCP-02 + MCP-03 all satisfied. Phase 46 COMPLETE.
+Last activity: 2026-05-12 — Plan 46-02 complete. MCP-03 satisfied. 6 tasks committed atomically (df30652..426c4a8). 27 new tests. amauta-daemon.py untouched.
 
 Progress: [██████░░░░] ~86% (6 of 7 phases complete, 16 of 16 plans complete)
 
@@ -41,7 +41,7 @@ Progress: [██████░░░░] ~86% (6 of 7 phases complete, 16 of 1
 | 43 | Skills Architecture | SKILL-01..04 | In progress (Plans 43-01 + 43-02 COMPLETE; 43-03 remaining) |
 | 44 | Cross-IDE Installer | INST-01..04 | COMPLETE (Plans 44-01 + 44-02 + 44-03, 47 tests) |
 | 45 | Intelligent Help Routing | HELP-01..03 | COMPLETE (Plans 45-01 + 45-02, 22 tests) |
-| 46 | Standalone MCP Server | MCP-01..03 | COMPLETE (Plan 46-01, 23 tests) |
+| 46 | Standalone MCP Server | MCP-01..03 | COMPLETE (Plans 46-01 + 46-02, 52 tests) |
 | 47 | Agent Dynamic Hydration | HYDRA-01..02 | Not started |
 
 **Execution order:** 41 → 42 → 43 → 44 → 45 → 46 → 47
