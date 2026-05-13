@@ -4,14 +4,14 @@ milestone: v3.2
 milestone_name: The Federation** — Phases 48-53
 status: completed
 stopped_at: v3.2 roadmap defined; awaiting Phase 48 planning
-last_updated: "2026-05-13T23:00:00.000Z"
-last_activity: "2026-05-13 — Plan 52-03 complete: scripts/agent-compiler.cjs (compile/validate/listAgents + TARGET_MAPS 3 IDEs) + SC1 byte-match 17/17 PASS. SHAs: 0edc5db 52-03-01, c1c5b97 52-03-02, cb44216 52-03-03."
+last_updated: "2026-05-13T23:30:00.000Z"
+last_activity: "2026-05-13 — Plan 52-04 complete: case 'agents': in gsd-tools.cjs + bin/cli.cjs agents branch + 8 CLI integration tests. SHAs: 93baae3 52-04-01, 28838ca 52-04-02, f4ad199 52-04-03."
 progress:
   total_phases: 6
   completed_phases: 4
-  total_plans: 16
-  completed_plans: 16
-  percent: 55
+  total_plans: 19
+  completed_plans: 19
+  percent: 60
 ---
 
 # GSD-Amauta -- Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-13 after v3.1 milestone close + v3.2 
 
 ## Current Position
 
-Phase: 52 — Agent Compilation (IN PROGRESS — Plans 52-01 + 52-02 + 52-03 complete)
-Plan: 52-03 COMPLETE (3 tasks, 3 commits — scripts/agent-compiler.cjs + 2 test files)
-Status: Plans 52-01 + 52-02 + 52-03 COMPLETE. COMPILE-01 + COMPILE-02 + COMPILE-03 fulfilled. Wave 4 (gsd-tools.cjs agents dispatch + CLI tests) next.
-Last activity: 2026-05-13 — Plan 52-03 complete: scripts/agent-compiler.cjs (compile/validate/listAgents + TARGET_MAPS 3 IDEs) + SC1 byte-match 17/17 PASS.
+Phase: 52 — Agent Compilation (IN PROGRESS — Plans 52-01 + 52-02 + 52-03 + 52-04 complete)
+Plan: 52-04 COMPLETE (3 tasks, 3 commits — gsd-tools.cjs case 'agents': + bin/cli.cjs agents branch + CLI tests)
+Status: Plans 52-01 + 52-02 + 52-03 + 52-04 COMPLETE. COMPILE-01 + COMPILE-02 + COMPILE-03 fulfilled. Wave 5 (--hydrate integration, COMPILE-04) next.
+Last activity: 2026-05-13 — Plan 52-04 complete: case 'agents': dispatch + bin/cli.cjs agents branch + 8 CLI integration tests all pass.
 
 Progress: [>>>>>     ] 60% (4+ phases / 18 plans complete)
 
