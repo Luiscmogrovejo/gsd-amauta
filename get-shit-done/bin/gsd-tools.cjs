@@ -3709,6 +3709,47 @@ Examples:
       break;
     }
 
+    case 'party': {
+      // Phase 50 PARTY-01 + PARTY-02: party session lifecycle + persistence.
+      // Mirrors Phase 49 module dispatch convention. args[1] is the action;
+      // args.slice(2) is the rest forwarded verbatim to argparse on the Python side.
+      const action = args[1];
+      if (!action || action.startsWith('--')) {
+        process.stderr.write(
+          'Usage:\n' +
+          '  gsd-tools party create --participants <comma-separated> [--json]\n' +
+          '  gsd-tools party start <session_id> [--json]\n' +
+          '  gsd-tools party pause <session_id> [--json]\n' +
+          '  gsd-tools party resume <session_id> [--json]\n' +
+          '  gsd-tools party terminate <session_id> [--json]\n' +
+          '  gsd-tools party get <session_id> [--json] [--with-findings]\n'
+        );
+        process.exit(2);
+      }
+      const KNOWN_ACTIONS = new Set(['create', 'start', 'pause', 'resume', 'terminate', 'get']);
+      if (!KNOWN_ACTIONS.has(action)) {
+        process.stderr.write(
+          `Unknown party action: ${action}\n` +
+          'Usage:\n' +
+          '  gsd-tools party create|start|pause|resume|terminate|get <args...>\n'
+        );
+        process.exit(2);
+      }
+      const rest = args.slice(2);
+      const repoRoot = path.resolve(__dirname, '..', '..');
+      const partyCli = path.join(repoRoot, 'services', 'party_session_cli.py');
+      const subprocArgs = [partyCli, action, ...rest];
+      const result = spawnSync('python3', subprocArgs, { encoding: 'utf8', cwd: repoRoot });
+      if (result.error) {
+        process.stderr.write(`party ${action} subprocess failed: ${result.error.message}\n`);
+        process.exit(2);
+      }
+      if (result.stdout) process.stdout.write(result.stdout);
+      if (result.stderr) process.stderr.write(result.stderr);
+      process.exit(result.status === null ? 1 : result.status);
+      break;
+    }
+
     default:
       error(`Unknown command: ${command}`);
   }
