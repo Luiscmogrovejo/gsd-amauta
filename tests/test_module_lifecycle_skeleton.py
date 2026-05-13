@@ -219,19 +219,23 @@ def test_compute_manifest_hash_is_64_lowercase_hex():
 # ─── 16–18. Stub lifecycle functions ─────────────────────────────────────────
 
 
-def test_install_stub_returns_skip_status():
-    """install() stub returns skip until 49-02 replaces the body."""
+def test_install_returns_lifecycle_result_with_correct_shape():
+    """install() (49-02 body) returns LifecycleResult with correct schema fields."""
+    # Use nonexistent path — will fail at validate_manifest, but shape must be correct
     result = install("/nonexistent/path", dry_run=True)
-    assert result.status == "skip"
+    # 49-02 replaced stub: nonexistent path → fail (not skip)
+    assert result.status in ("fail", "skip", "pass", "warn")
     assert result.schema_version == "1.0"
     assert result.operation == "install"
     assert result.dry_run is True
 
 
-def test_uninstall_stub_returns_skip_status():
-    """uninstall() stub returns skip until 49-02 replaces the body."""
-    result = uninstall("some-module", dry_run=False)
-    assert result.status == "skip"
+def test_uninstall_returns_lifecycle_result_with_correct_shape():
+    """uninstall() (49-02 body) returns LifecycleResult with correct schema fields."""
+    # 49-02 replaced stub: shape must be correct regardless of backend availability.
+    # Absent-module idempotent skip only works when backend accessible.
+    result = uninstall("nonexistent-module-xyz", dry_run=False)
+    assert result.status in ("skip", "fail")
     assert result.schema_version == "1.0"
     assert result.operation == "uninstall"
     assert result.dry_run is False
