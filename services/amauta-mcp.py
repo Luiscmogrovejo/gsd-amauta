@@ -270,6 +270,44 @@ def _get_mcp_valkey():
     return _mcp_valkey_singleton
 
 
+# ── Agent definition filesystem helper ───────────────────────────────────────
+
+def _render_agent(name: str, hydration=None):
+    """Phase 47 HYDRA-02 injection point — hydration kwarg reserved for `## Current context` prepend; Phase 46 always passes None.
+
+    Reads agent definition markdown from the filesystem. Search order:
+      1. <repo>/agents/<name>.md
+      2. ~/.claude/agents/<name>.md
+
+    Args:
+        name: Agent name (must match ^[a-z][a-z0-9-]+$). Returns None on mismatch.
+        hydration: Optional string prepended as a fenced context block before the
+            agent body. Phase 46 always passes None; Phase 47 HYDRA-02 passes the
+            live context block.
+
+    Returns:
+        str or None: Agent markdown content (with optional hydration block prepended),
+            or None if name is invalid or no file is found.
+    """
+    import re as _re
+    if not _re.match(r'^[a-z][a-z0-9-]+$', name):
+        return None
+    search_paths = [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "agents", f"{name}.md"),
+        os.path.expanduser(f"~/.claude/agents/{name}.md"),
+    ]
+    for candidate in search_paths:
+        try:
+            with open(candidate, "r", encoding="utf-8") as fh:
+                body = fh.read()
+            if hydration is not None and isinstance(hydration, str) and hydration:
+                return f"## Current context\n\n{hydration}\n\n---\n\n{body}"
+            return body
+        except OSError:
+            continue
+    return None
+
+
 # ── MCP server instance ───────────────────────────────────────────────────────
 
 server = Server("amauta")
