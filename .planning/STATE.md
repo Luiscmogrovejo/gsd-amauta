@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v3.1
 milestone_name: The Gathering
 status: completed
-stopped_at: Plan 47-00 complete. Migration 020 shipped (recipient_agent + severity + 2 indexes). 3 tasks committed atomically.
+stopped_at: Plan 47-01 complete. services/agent_hydrator.py + 2 test files shipped. 7 tasks committed atomically.
 last_updated: "2026-05-12T00:00:00.000Z"
-last_activity: 2026-05-12 — Plan 47-00 complete. migrations/020-agent-findings-hydration.sql + DOWN + tests/test_migration_020.py committed (1a36a2f, 20bdee3, 39a2016). Schema substrate for Plan 47-01 hydrator in place.
+last_activity: 2026-05-12 — Plan 47-01 complete. services/agent_hydrator.py (hydrate + 4 fetchers + frozen SQL), tests/test_agent_hydrator.py (10 tests pass), tests/test_agent_hydrator_perf.py (p95 ~7ms vs 500ms budget). 7 commits: a580a0a..7843694.
 progress:
   total_phases: 7
   completed_phases: 6
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-14 after v3.0 milestone close)
 
 ## Current Position
 
-Phase: 47 IN PROGRESS — Plan 47-00 complete
-Plan: 47-00 COMPLETE
-Status: Plan 47-00 shipped. Migration 020 adds recipient_agent VARCHAR(64) + severity VARCHAR(16) to agent_findings + 2 composite DESC indexes (idx_agent_findings_recipient, idx_agent_findings_finding_type_recent). UP + DOWN both idempotent (IF NOT EXISTS / IF EXISTS). test_migration_020.py: 6 introspection test functions with PG-down skip. Schema substrate for Plan 47-01 hydrator is in place.
-Last activity: 2026-05-12 — Plan 47-00 complete. 3 tasks committed atomically (1a36a2f, 20bdee3, 39a2016). No production code modified.
+Phase: 47 IN PROGRESS — Plan 47-01 complete
+Plan: 47-01 COMPLETE
+Status: Plan 47-01 shipped. services/agent_hydrator.py: async def hydrate(agent_name, task_id=None) -> dict. 4-source asyncio.gather (memory + blackboard + valkey + security). Frozen SQL: recipient_agent IS NULL OR recipient_agent = %s (2 branches) + content AS summary + Form A security IN list. _HAS_PG + _HAS_REDIS guards. 10 unit tests pass (PG-free). p95 perf test: ~7ms measured (budget 500ms). Migration 020 not yet applied to live DB (pre-existing from 47-00) — hydrator degrades gracefully.
+Last activity: 2026-05-12 — Plan 47-01 complete. 7 tasks committed atomically (a580a0a..7843694). services/amauta-mcp.py untouched. agents/*.md untouched.
 
-Progress: [██████░░░░] ~86% (6 of 7 phases complete, 16 of 16 plans complete)
+Progress: [██████░░░░] ~92% (6 of 7 phases complete, 17 of 18 plans complete)
 
 ## v3.1 Phase Map
 
@@ -82,6 +82,10 @@ Progress: [██████░░░░] ~86% (6 of 7 phases complete, 16 of 1
 - Plan 45-01: gsd-tools bearings subcommand — readProjectState() (STATE.md authoritative), readRecentActivity() (git log --oneline -5), readPlanProgress() (feature_list.json for active plan), computePatternStats() (4 FROZEN stats: avg_sessions_per_phase_type, commits_since_last_test, similar_feature_sessions, plan_complexity_trend), chooseRecommendation() (FROZEN 6-rule precedence in order: fail>0, drift, pending, allpass, commits_stale, default), renderBearings() (600 default / 400 terse, truncate Pattern Stats first). JSON schema_version:1.0.
 - Plan 45-02: help.md brownfield edit = PREPEND ONLY. <purpose> updated, <bearings> block + ## Reference header inserted at line 33 BEFORE <reference> opener at line 35. Static 708-LOC body preserved verbatim. execute-phase 400-token budget (BEHAV-06) preserved; /amauta:help uses 600-token default. Both execute-phase surfaces (sharded step-01-prepare.md + legacy execute-phase-legacy.md) shell out to identical gsd-tools bearings --terse --token-budget 400 command — single source of truth. HELP-01 determinism test scopes to ## Current Position (STATE.md-derived, never truncated) not full output (pattern stats are PG-dependent).
 
+- Plan 47-01: hydrate() uses asyncio.gather(return_exceptions=True) with 4 asyncio.wait_for(PER_SOURCE_TIMEOUT_S=0.4) — each source degrades independently (Exception/TimeoutError → status=unavailable). hydrate() NEVER raises. Schema: schema_version "1.0".
+- Plan 47-01: _fetch_valkey uses short-lived redis.Redis.from_url(socket_timeout=0.3), NOT daemon's global client — safe for MCP + CLI dual-import. v1 memory query is cosine-only (no BM25 hybrid); BM25 deferred to Phase 48.
+- Plan 47-01: SECURITY_FINDING_TYPES tuple exported for vocabulary tests but Form A hardcoded IN list in SQL — only SECURITY_LIMIT bound. content AS summary alias maps on-disk 'content' to JSON 'summary'.
+
 ### Pending Todos
 
 - Run `npx c8 --reporter json-summary node scripts/run-tests.cjs` to bootstrap .coverage_threshold.json with real values (carried from v3.0).
@@ -102,8 +106,8 @@ Context: 2026-05-12 health audit caught RLM dead 13h from uncaught BrokenPipe + 
 ## Session Continuity
 
 Last session: 2026-05-12
-Stopped at: Plan 47-00 complete. Next: Plan 47-01 (agent_hydrator.py Python helper + gsd-tools agent-hydrate subcommand)
-Resume file: .planning/phases/47-agent-dynamic-hydration/47-00-SUMMARY.md
+Stopped at: Plan 47-01 complete. Next: Plan 47-02 (gsd-tools agent-hydrate CLI subcommand + Node.js shell-out to agent_hydrator.py)
+Resume file: .planning/phases/47-agent-dynamic-hydration/47-01-SUMMARY.md
 
 ## Learnings
 
