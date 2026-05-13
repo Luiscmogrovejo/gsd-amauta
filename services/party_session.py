@@ -310,16 +310,19 @@ def pause(session_id: str, conn=None) -> dict:
 def resume(session_id: str, conn=None) -> dict:
     """Transition a session from 'paused' to 'active'. Clears paused_at; sets updated_at.
 
-    Wave 1 NOTE: Returns session row only with findings=None.
-    Wave 2 (plan 50-02) will extend this function to call list_findings() and populate
-    findings in the returned dict.
+    Wave 2 (plan 50-02): Returns session row with findings populated via list_findings().
+    The UPDATE and findings SELECT share the same connection/transaction so that resume
+    + replay is atomic — no findings can be lost between the state transition and the
+    findings query.
 
     Args:
         session_id: UUID string of the party session.
         conn: optional psycopg2 connection.
 
     Returns:
-        Updated PartySession dict with findings=None (Wave 1 scope).
+        Updated PartySession dict with findings populated (list[dict] ordered by
+        created_at ASC). findings is NOT populated when InvalidTransitionError or
+        SessionNotFoundError is raised.
 
     Raises:
         SessionNotFoundError: session_id not found.
@@ -352,8 +355,10 @@ def resume(session_id: str, conn=None) -> dict:
                 (target_status, session_id),
             )
             updated = cur.fetchone()
-        # Wave 1: findings=None (Wave 2 plan 50-02 extends this to call list_findings)
-        return _row_to_dict(updated)
+        result = _row_to_dict(updated)
+        # Phase 50 PARTY-02: resume includes findings replay
+        result["findings"] = list_findings(session_id, conn=c)
+        return result
 
     if conn is not None:
         return _run(conn)
