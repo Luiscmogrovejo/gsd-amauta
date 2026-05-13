@@ -195,12 +195,56 @@ async def _fetch_memory(agent_name: str, agent_role: str) -> dict:
 
 
 async def _fetch_blackboard(agent_name: str, task_id: Optional[str]) -> dict:
-    """Blackboard agent_findings query (recipient_agent IS NULL OR recipient_agent = agent_name).
+    """Blackboard agent_findings query.
 
-    Content AS summary alias. Two SQL branches: task_id present + absent.
-    Body implemented in task 47-01-03.
+    Two SQL branches (task_id present + absent). Both use:
+      - WHERE recipient_agent IS NULL OR recipient_agent = %s  (captures broadcasts + direct)
+      - content AS summary  (on-disk column is 'content'; JSON schema uses 'summary')
+
+    LOAD-BEARING: literal 'recipient_agent IS NULL OR recipient_agent = %s' and
+    'content AS summary' must appear in both branches per 47-CONTEXT.md §Area 5.
+    Runs sync psycopg2 inside asyncio.to_thread for gather concurrency.
     """
-    return {"status": "ok", "items": []}
+    if not _HAS_PG:
+        return {"status": "unavailable", "items": []}
+
+    def _sync_fetch() -> dict:
+        try:
+            store = PGStore()
+            with store._get_conn() as conn:
+                with conn.cursor() as cur:
+                    if task_id:
+                        cur.execute(
+                            "SELECT id, finding_type, severity, content AS summary, created_at, recipient_agent"
+                            " FROM agent_findings"
+                            " WHERE (recipient_agent IS NULL OR recipient_agent = %s)"
+                            "   AND task_id = %s"
+                            " ORDER BY created_at DESC LIMIT %s",
+                            (agent_name, task_id, BLACKBOARD_LIMIT),
+                        )
+                    else:
+                        cur.execute(
+                            "SELECT id, finding_type, severity, content AS summary, created_at, recipient_agent"
+                            " FROM agent_findings"
+                            " WHERE recipient_agent IS NULL OR recipient_agent = %s"
+                            " ORDER BY created_at DESC LIMIT %s",
+                            (agent_name, BLACKBOARD_LIMIT),
+                        )
+                    rows = cur.fetchall()
+            items = []
+            for row in rows:
+                items.append({
+                    "id": str(row[0]),
+                    "finding_type": row[1] or "",
+                    "severity": row[2] or "info",
+                    "summary": (row[3] or "")[:200],
+                    "age": _humanize_age(row[4]),
+                })
+            return {"status": "ok", "items": items}
+        except Exception as exc:
+            return {"status": "unavailable", "items": [], "error": str(exc)[:200]}
+
+    return await asyncio.to_thread(_sync_fetch)
 
 
 async def _fetch_valkey(agent_name: str) -> dict:
