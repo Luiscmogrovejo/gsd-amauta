@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v3.1
 milestone_name: The Gathering
-status: in_progress
-stopped_at: Phase 46 COMPLETE — both 46-01 and 46-02 done
-last_updated: "2026-05-12T00:00:00.000Z"
-last_activity: "2026-05-12 — Plan 46-02 complete. MCP-03 satisfied. 3 MCP resource URI templates exposed (_render_agent + list_resources + read_resource rewritten to direct PG). Phase 47 HYDRA-02 injection point (_render_agent hydration=None) locked. 4 new test files (resources, stdio, SSE, pg_down). 27 new tests (27 pass, 0 fail; 2 expected skips when mcp pkg absent). Phase 46 COMPLETE (both plans)."
+status: completed
+stopped_at: Phase 46 context written direct from docs
+last_updated: "2026-05-13T00:19:28.740Z"
+last_activity: 2026-05-12 — Plan 46-02 complete. MCP-03 satisfied. 6 tasks committed atomically (df30652..426c4a8). 27 new tests. amauta-daemon.py untouched.
 progress:
   total_phases: 7
   completed_phases: 6

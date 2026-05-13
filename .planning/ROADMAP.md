@@ -185,7 +185,7 @@ Plans:
   1. amauta-mcp.py runs as standalone service with direct PG connection pool and Valkey client; does NOT require daemon to be running; supports two modes: stdio (spawned by IDE) and SSE on :18800.
   2. MCP tools include: amauta/search-code (hybrid BM25+vector), amauta/memory-store, amauta/memory-search, amauta/memory-distill, amauta/research, amauta/complexity-score; each tool is callable from an MCP client and returns structured results.
   3. MCP resources include: amauta://context/{task_id}/{phase}, amauta://agent/{agent_name}, amauta://findings/{task_id}; resources are resolvable and return current data from PG.
-**Plans:** TBD (estimated 2 plans: MCP server implementation, tests)
+**Plans:** 2/2 plans complete
 
 Plans:
 - [x] 46-01: Direct PG+Valkey foundation; MCPDatabase + MCPValkey; 6 tools refactored; _call_daemon deleted; 23 tests — COMPLETE 2026-05-12
@@ -217,7 +217,7 @@ Plans:
 | 43. Skills Architecture | 0/2 | Complete    | 2026-05-12 |
 | 44. Cross-IDE Installer | 0/2 | Complete    | 2026-05-12 |
 | 45. Intelligent Help Routing | 0/2 | Complete    | 2026-05-12 |
-| 46. Standalone MCP Server | 0/2 | Not started | - |
+| 46. Standalone MCP Server | 0/2 | Complete    | 2026-05-13 |
 | 47. Agent Dynamic Hydration | 0/2 | Not started | - |
 
 ---
