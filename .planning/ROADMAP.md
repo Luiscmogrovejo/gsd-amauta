@@ -136,7 +136,7 @@ In practice, recommended serialization is 48 → 49 → 50 → 51 → 52 → 53 
   - Precedent: Phase 44 `bin/init.cjs` 7-step `buildStepResult()` schema and worst-of combinator (apply the same per-step result schema to module install/uninstall/upgrade steps)
   - Precedent: Phase 36 gsd-executor-data expand-and-contract migration discipline
   - Precedent: Phase 47 `services/agent_hydrate_cli.py` argparse + spawnSync shell-out wiring through `bin/gsd-tools.cjs`
-**Plans:** TBD
+**Plans:** 4/4 plans complete
 
 ### Phase 50: Party Mode Foundation
 **Goal:** A multi-agent collaboration session is backed by the existing `agent_findings` blackboard with a new `party_sessions` PG table tracking session identity, participant agents, and lifecycle state. Sessions are persistent: pause + resume reconstructs the full context by replaying findings filtered by session_id.
@@ -213,7 +213,7 @@ In practice, recommended serialization is 48 → 49 → 50 → 51 → 52 → 53 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 48. Module System Foundation | 1/1 | Complete    | 2026-05-13 |
-| 49. Module CLI + Lifecycle | 0/0 | Not started | - |
+| 49. Module CLI + Lifecycle | 0/0 | Complete    | 2026-05-13 |
 | 50. Party Mode Foundation | 0/0 | Not started | - |
 | 51. Party Mode Decisions + Operator CLI | 0/0 | Not started | - |
 | 52. Agent Compilation | 0/0 | Not started | - |
