@@ -8,6 +8,7 @@
  *   gsd-amauta mcp register          -> registers MCP server with Claude Code
  *   gsd-amauta mcp status            -> checks MCP registration status
  *   gsd-amauta module <action> ...   -> get-shit-done/bin/gsd-tools.cjs module (Phase 49)
+ *   gsd-amauta party <action> ...    -> get-shit-done/bin/gsd-tools.cjs party (Phase 50)
  *   gsd-amauta status (no args)      -> gsd-memory.cjs cmdStatus (system status)
  *   gsd-amauta status <id> <status>  -> gsd-amauta.cjs cmdStatus (task status change)
  *   gsd-amauta <anything else>       -> get-shit-done/bin/gsd-amauta.cjs
@@ -92,6 +93,28 @@ if (command === 'module') {
   //   spawns gsd-tools.cjs with args: ['module', 'install', '/path/to/m.yaml', '--json']
   const moduleArgs = process.argv.slice(3);
   const result = spawnSync('node', [toolsPath, 'module', ...moduleArgs], {
+    stdio: 'inherit',
+    cwd: path.resolve(__dirname, '..'),
+  });
+  process.exit(result.status === null ? 1 : result.status);
+}
+
+// ─── Party subcommand (Phase 50 PARTY-01/PARTY-02) ─────────────────────────
+//
+// gsd-amauta party create --participants <...>   -> gsd-tools.cjs party create
+// gsd-amauta party start <session_id>            -> gsd-tools.cjs party start
+// gsd-amauta party pause <session_id>            -> gsd-tools.cjs party pause
+// gsd-amauta party resume <session_id>           -> gsd-tools.cjs party resume
+// gsd-amauta party terminate <session_id>        -> gsd-tools.cjs party terminate
+// gsd-amauta party get <session_id>              -> gsd-tools.cjs party get
+//
+// Mirrors the 'module' branch above: spawnSync the gsd-tools entry-point
+// so stdio/exit-code propagation matches direct invocation.
+
+if (command === 'party') {
+  const toolsPath = path.resolve(__dirname, '..', 'get-shit-done', 'bin', 'gsd-tools.cjs');
+  const partyArgs = process.argv.slice(3);
+  const result = spawnSync('node', [toolsPath, 'party', ...partyArgs], {
     stdio: 'inherit',
     cwd: path.resolve(__dirname, '..'),
   });
