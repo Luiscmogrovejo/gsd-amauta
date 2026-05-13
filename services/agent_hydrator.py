@@ -41,10 +41,10 @@ except Exception:
         _HAS_PG = False
 
 try:
-    import redis as _redis_lib
+    import redis  # type: ignore
     _HAS_REDIS = True
 except Exception:
-    _redis_lib = None  # type: ignore
+    redis = None  # type: ignore
     _HAS_REDIS = False
 
 # ── Frozen module-level constants (Phase 47 HYDRA-01 locks) ───────────────────
@@ -248,11 +248,47 @@ async def _fetch_blackboard(agent_name: str, task_id: Optional[str]) -> dict:
 
 
 async def _fetch_valkey(agent_name: str) -> dict:
-    """Read agent:{name}:recent_activity key from Valkey/Redis.
+    """Read agent:{name}:recent_activity key from Valkey/Redis (READ-ONLY consumer).
 
-    Body implemented in task 47-01-04.
+    Uses a short-lived per-call connection (standalone from amauta_daemon_redis.py
+    to avoid shared daemon globals — hydrator may be imported by MCP + CLI processes).
+
+    Key format: VALKEY_KEY_TEMPLATE.format(name=agent_name)
+    Expected value (JSON): {"last_spawn": "<ISO8601>", "last_task": "TK-XXXX", "last_verdict": "pass|fail|n/a"}
+
+    Key absent → {"status": "ok", "data": None}  (reachable but empty — NOT unavailable)
+    Any exception → {"status": "unavailable", "data": None, "error": ...}
     """
-    return {"status": "ok", "data": None}
+    if not _HAS_REDIS:
+        return {"status": "unavailable", "data": None}
+
+    def _sync_fetch() -> dict:
+        try:
+            url = (
+                os.environ.get("REDIS_URL")
+                or "redis://localhost:6379/0"
+            )
+            client = redis.Redis.from_url(url, socket_timeout=0.3)
+            key = VALKEY_KEY_TEMPLATE.format(name=agent_name)
+            raw = client.get(key)
+            if raw is None:
+                return {"status": "ok", "data": None}
+            # Decode bytes → str if needed
+            if isinstance(raw, bytes):
+                raw = raw.decode("utf-8")
+            try:
+                data = json.loads(raw)
+            except Exception:
+                data = {
+                    "last_spawn": None,
+                    "last_task": None,
+                    "last_verdict": None,
+                }
+            return {"status": "ok", "data": data}
+        except Exception as exc:
+            return {"status": "unavailable", "data": None, "error": str(exc)[:200]}
+
+    return await asyncio.to_thread(_sync_fetch)
 
 
 async def _fetch_security() -> dict:
