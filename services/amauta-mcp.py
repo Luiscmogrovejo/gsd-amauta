@@ -270,27 +270,6 @@ def _get_mcp_valkey():
     return _mcp_valkey_singleton
 
 
-# ── HTTP delegation helpers ───────────────────────────────────────────────────
-
-def _call_daemon(method: str, path: str, body: dict | None = None) -> dict:
-    """Delegate to daemon HTTP API. Returns parsed JSON or {"error": "..."} on failure."""
-    url = f"{DAEMON_URL}{path}"
-    data = json.dumps(body).encode("utf-8") if body is not None else None
-    req = urllib.request.Request(url, data=data, method=method)
-    if data:
-        req.add_header("Content-Type", "application/json")
-    try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        try:
-            return json.loads(e.read().decode("utf-8"))
-        except Exception:
-            return {"error": f"HTTP {e.code}: {e.reason}"}
-    except Exception as e:
-        return {"error": str(e)}
-
-
 # ── MCP server instance ───────────────────────────────────────────────────────
 
 server = Server("amauta")
@@ -613,54 +592,63 @@ async def call_tool(name: str, arguments: dict) -> CallToolResult:
 
 @server.list_resources()
 async def list_resources() -> ListResourcesResult:
-    """List active tasks as context resources. Fetches active task IDs from daemon."""
+    """List active tasks as context resources via direct PG query."""
     import re
-    result = _call_daemon("GET", "/api/list?status=in_progress&type=task")
     resources = []
     phases = ["R", "P", "E", "T", "D"]
-    # Parse task IDs from output (the daemon returns {"output": "...", "exit_code": 0})
-    output = result.get("output", "")
-    # Extract TK-XXXX IDs from text output
-    task_ids = re.findall(r'TK-\d{4}', output)
-    seen = set()
-    for tid in task_ids:
-        if tid in seen:
-            continue
-        seen.add(tid)
-        for phase in phases:
-            resources.append(Resource(
-                uri=f"amauta://context/{tid}/{phase}",
-                name=f"{tid} — Phase {phase} context",
-                description=f"RPETDContext for task {tid}, phase {phase}",
-                mimeType="application/json",
-            ))
+    store = _get_pg_store()
+    if store is None:
+        return ListResourcesResult(resources=resources)
+    try:
+        with store._get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT DISTINCT task_id FROM rpetd_phases "
+                    "WHERE task_id IS NOT NULL ORDER BY task_id DESC LIMIT 50"
+                )
+                rows = cur.fetchall()
+        for row in rows:
+            tid = str(row[0])
+            for phase in phases:
+                resources.append(Resource(
+                    uri=f"amauta://context/{tid}/{phase}",
+                    name=f"{tid} — Phase {phase} context",
+                    description=f"RPETD context for task {tid}, phase {phase}",
+                    mimeType="application/json",
+                ))
+    except Exception:
+        pass  # Return empty list on PG error
     return ListResourcesResult(resources=resources)
 
 @server.read_resource()
 async def read_resource(uri: str) -> ReadResourceResult:
-    """Read RPETDContext JSON for amauta://context/{task_id}/{phase} URI."""
+    """Read RPETD phase content for amauta://context/{task_id}/{phase} URI."""
     import re
     m = re.match(r'^amauta://context/([^/]+)/([RPETD])$', uri)
     if not m:
         raise ValueError(f"Unsupported resource URI: {uri!r}. Expected amauta://context/{{task_id}}/{{phase}}")
     task_id, phase = m.group(1), m.group(2)
-    result = _call_daemon("GET", f"/api/context/{task_id}/{phase}")
-    if "error" in result:
-        raise ValueError(f"Context not found: {result['error']}")
-    return ReadResourceResult(contents=[TextContent(
-        type="text",
-        text=json.dumps(result),
-    )])
-
-# ── Daemon health guard ───────────────────────────────────────────────────────
-
-def _check_daemon_health() -> bool:
-    """Return True if daemon is reachable on DAEMON_URL."""
+    store = _get_pg_store()
+    if store is None:
+        raise ValueError("pg_unavailable: PGStore not initialized")
     try:
-        result = _call_daemon("GET", "/health")
-        return "error" not in result
-    except Exception:
-        return False
+        with store._get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT content FROM rpetd_phases WHERE task_id = %s AND phase = %s",
+                    (task_id, phase),
+                )
+                row = cur.fetchone()
+        if not row:
+            raise ValueError(f"not_found: no RPETD content for task {task_id!r} phase {phase!r}")
+        return ReadResourceResult(contents=[TextContent(
+            type="text",
+            text=json.dumps({"task_id": task_id, "phase": phase, "content": row[0]}),
+        )])
+    except ValueError:
+        raise
+    except Exception as e:
+        raise ValueError(f"internal_error: {e}")
 
 # ── Transport implementations ─────────────────────────────────────────────────
 
