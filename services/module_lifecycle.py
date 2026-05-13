@@ -1423,7 +1423,339 @@ def uninstall(
     )
 
 
-# ─── upgrade() stub (Plan 49-03 scope) ───────────────────────────────────────
+# ─── upgrade() private step helpers ──────────────────────────────────────────
+
+
+def _upgrade_validate_new_manifest(ctx: Dict[str, Any]) -> StepResult:
+    """Step 1: Read + validate new manifest YAML; compute hash."""
+    from services.module_schema import load_module_manifest
+
+    manifest_path = ctx["new_manifest_path"]
+    try:
+        with open(manifest_path, "r", encoding="utf-8") as fh:
+            yaml_text = fh.read()
+    except (FileNotFoundError, PermissionError) as exc:
+        return build_step_result("validate_new_manifest", "fail", str(exc))
+
+    ctx["new_manifest_yaml_text"] = yaml_text
+
+    try:
+        manifest = load_module_manifest(manifest_path)
+    except Exception as exc:
+        return build_step_result(
+            "validate_new_manifest", "fail",
+            f"manifest validation failed: {exc}"
+        )
+
+    ctx["new_manifest"] = manifest
+    ctx["manifest"] = manifest  # alias for shared rollback engine
+
+    try:
+        manifest_hash = compute_manifest_hash(yaml_text)
+    except Exception as exc:
+        return build_step_result(
+            "validate_new_manifest", "fail",
+            f"manifest hash computation failed: {exc}"
+        )
+
+    ctx["new_manifest_hash"] = manifest_hash
+
+    return build_step_result(
+        "validate_new_manifest", "pass",
+        f"manifest valid: {manifest.name}@{manifest.version}"
+    )
+
+
+def _upgrade_read_install_record(ctx: Dict[str, Any]) -> StepResult:
+    """Step 2: Load existing install record; probe idempotency."""
+    from services.install_record_store import get_install_record
+    import copy
+
+    manifest = ctx["new_manifest"]
+
+    try:
+        record = get_install_record(manifest.name)
+    except Exception as exc:
+        return build_step_result(
+            "read_install_record", "fail",
+            f"failed to read install record: {exc}"
+        )
+
+    if record is None:
+        return build_step_result(
+            "read_install_record", "fail",
+            f"module {manifest.name} not installed; use install instead"
+        )
+
+    # Snapshot before mutation (for rollback)
+    ctx["pre_upgrade_record"] = copy.deepcopy(record)
+
+    # Idempotency probe: same manifest_hash + no force → all-skip
+    if record.get("manifest_hash") == ctx["new_manifest_hash"] and not ctx["force"]:
+        ctx["idempotent_skip"] = True
+        return build_step_result(
+            "read_install_record", "skip",
+            f"already at {record['version']} with matching manifest_hash"
+        )
+
+    return build_step_result(
+        "read_install_record", "pass",
+        f"loaded install record for {manifest.name}@{record['version']}",
+        details={
+            "current_version": record["version"],
+            "target_version": manifest.version,
+        }
+    )
+
+
+def _upgrade_compute_migration_delta(ctx: Dict[str, Any]) -> StepResult:
+    """Step 3: Compute expand and contract migration delta."""
+    if ctx.get("idempotent_skip"):
+        return build_step_result(
+            "compute_migration_delta", "skip",
+            "idempotent_skip: already at target version with matching manifest_hash"
+        )
+
+    manifest = ctx["new_manifest"]
+    pre = ctx["pre_upgrade_record"]
+    new_migrations = list(manifest.migrations) if manifest.migrations else []
+    applied = list(pre.get("applied_migrations", []))
+
+    delta = compute_migration_delta(new_migrations, applied)
+    ctx["expand_migrations"] = delta["expand_migrations"]
+    ctx["contract_migrations"] = delta["contract_migrations"]
+
+    return build_step_result(
+        "compute_migration_delta", "pass",
+        f"delta: {len(delta['expand_migrations'])} expand, {len(delta['contract_migrations'])} contract",
+        details={
+            "expand": delta["expand_migrations"],
+            "contract": delta["contract_migrations"],
+            "already_applied_skipped": delta["already_applied_skipped"],
+        }
+    )
+
+
+def _upgrade_apply_expand_migrations(ctx: Dict[str, Any]) -> StepResult:
+    """Step 4: Apply expand (additive) migrations BEFORE service swap."""
+    if ctx.get("idempotent_skip"):
+        return build_step_result(
+            "apply_expand_migrations", "skip",
+            "idempotent_skip"
+        )
+
+    if ctx["dry_run"]:
+        return build_step_result(
+            "apply_expand_migrations", "skip",
+            f"dry_run: would apply {len(ctx['expand_migrations'])} expand migration(s)",
+            details={"would_apply": ctx["expand_migrations"]}
+        )
+
+    for path in ctx["expand_migrations"]:
+        try:
+            _apply_sql_file(ctx, path)
+        except Exception as exc:
+            return build_step_result(
+                "apply_expand_migrations", "fail",
+                f"expand migration failed: {path}: {exc}"
+            )
+        ctx["expand_applied"].append(path)
+
+    return build_step_result(
+        "apply_expand_migrations", "pass",
+        f"applied {len(ctx['expand_applied'])} expand migration(s)",
+        details={"applied": list(ctx["expand_applied"])}
+    )
+
+
+def _upgrade_swap_services(ctx: Dict[str, Any]) -> StepResult:
+    """Step 5: Write new service list, overwriting previous registration."""
+    if ctx.get("idempotent_skip"):
+        return build_step_result(
+            "swap_services", "skip",
+            "idempotent_skip"
+        )
+
+    manifest = ctx["new_manifest"]
+    pre = ctx["pre_upgrade_record"]
+
+    # Normalize services: may be dict (Phase 48 pydantic) or list
+    if isinstance(manifest.services, dict):
+        new_service_names = list(manifest.services.keys())
+    elif isinstance(manifest.services, list):
+        new_service_names = list(manifest.services)
+    else:
+        new_service_names = []
+
+    if ctx["dry_run"]:
+        return build_step_result(
+            "swap_services", "skip",
+            f"dry_run: would register {len(new_service_names)} service(s)",
+            details={"would_apply": new_service_names}
+        )
+
+    prev_services = set(pre.get("registered_services", []))
+    new_services = set(new_service_names)
+    added = new_services - prev_services
+    removed = prev_services - new_services
+
+    reg_dir = os.path.expanduser("~/.amauta/data/registered_services")
+    path = os.path.join(reg_dir, f"{manifest.name}.json")
+    try:
+        os.makedirs(reg_dir, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"module_name": manifest.name, "services": new_service_names}, f)
+    except OSError as exc:
+        return build_step_result(
+            "swap_services", "fail",
+            f"service swap failed: {exc}"
+        )
+
+    return build_step_result(
+        "swap_services", "pass",
+        f"swapped services: +{len(added)} added, -{len(removed)} removed",
+        details={"added": sorted(added), "removed": sorted(removed)}
+    )
+
+
+def _upgrade_apply_contract_migrations(ctx: Dict[str, Any]) -> StepResult:
+    """Step 6: Apply contract (destructive) migrations AFTER service swap."""
+    if ctx.get("idempotent_skip"):
+        return build_step_result(
+            "apply_contract_migrations", "skip",
+            "idempotent_skip"
+        )
+
+    if ctx["dry_run"]:
+        return build_step_result(
+            "apply_contract_migrations", "skip",
+            f"dry_run: would apply {len(ctx['contract_migrations'])} contract migration(s)",
+            details={"would_apply": ctx["contract_migrations"]}
+        )
+
+    for path in ctx["contract_migrations"]:
+        try:
+            _apply_sql_file(ctx, path)
+        except Exception as exc:
+            return build_step_result(
+                "apply_contract_migrations", "fail",
+                f"contract migration failed: {path}: {exc}"
+            )
+        ctx["contract_applied"].append(path)
+
+    return build_step_result(
+        "apply_contract_migrations", "pass",
+        f"applied {len(ctx['contract_applied'])} contract migration(s)",
+        details={"applied": list(ctx["contract_applied"])}
+    )
+
+
+def _upgrade_update_install_record(ctx: Dict[str, Any]) -> StepResult:
+    """Step 7: Write updated install record with new version + hash + applied_migrations."""
+    from services.install_record_store import put_install_record
+
+    if ctx.get("idempotent_skip"):
+        return build_step_result(
+            "update_install_record", "skip",
+            "idempotent_skip"
+        )
+
+    manifest = ctx["new_manifest"]
+    pre = ctx["pre_upgrade_record"]
+
+    if ctx["dry_run"]:
+        return build_step_result(
+            "update_install_record", "skip",
+            "dry_run: would update install record",
+            details={"would_apply": {"new_version": manifest.version}}
+        )
+
+    # Normalize new services
+    if isinstance(manifest.services, dict):
+        new_service_names = list(manifest.services.keys())
+    elif isinstance(manifest.services, list):
+        new_service_names = list(manifest.services)
+    else:
+        new_service_names = []
+
+    record = {
+        "module_name": manifest.name,
+        "version": manifest.version,
+        "manifest_hash": ctx["new_manifest_hash"],
+        "installed_at": pre.get("installed_at"),  # preserved from v1 install
+        "upgraded_at": datetime.now(timezone.utc).isoformat(),
+        "applied_migrations": (
+            list(pre.get("applied_migrations", []))
+            + list(ctx.get("expand_applied", []))
+            + list(ctx.get("contract_applied", []))
+        ),
+        "registered_services": new_service_names,
+        "installed_agents": list(manifest.agents) if manifest.agents else [],
+        "installed_skills": list(manifest.skills) if manifest.skills else [],
+    }
+    try:
+        put_install_record(record)
+    except Exception as exc:
+        return build_step_result(
+            "update_install_record", "fail",
+            f"failed to write upgraded install record: {exc}"
+        )
+
+    return build_step_result(
+        "update_install_record", "pass",
+        f"install record updated: {manifest.name}@{manifest.version}",
+        details={"upgraded_at": record["upgraded_at"]}
+    )
+
+
+def _upgrade_post_upgrade_verify(ctx: Dict[str, Any]) -> StepResult:
+    """Step 8: Reload install record and confirm version + hash + upgraded_at."""
+    from services.install_record_store import get_install_record
+
+    if ctx.get("idempotent_skip") or ctx["dry_run"]:
+        return build_step_result(
+            "post_upgrade_verify", "skip",
+            "skipped (idempotent_skip or dry_run)"
+        )
+
+    manifest = ctx["new_manifest"]
+    try:
+        record = get_install_record(manifest.name)
+    except Exception as exc:
+        return build_step_result(
+            "post_upgrade_verify", "fail",
+            f"failed to reload install record: {exc}"
+        )
+
+    if record is None:
+        return build_step_result(
+            "post_upgrade_verify", "fail",
+            "install record missing after update"
+        )
+
+    mismatches = []
+    if record.get("version") != manifest.version:
+        mismatches.append(
+            f"version: expected {manifest.version!r}, got {record.get('version')!r}"
+        )
+    if record.get("manifest_hash") != ctx["new_manifest_hash"]:
+        mismatches.append("manifest_hash mismatch")
+    if record.get("upgraded_at") is None:
+        mismatches.append("upgraded_at is None")
+
+    if mismatches:
+        return build_step_result(
+            "post_upgrade_verify", "fail",
+            f"post-upgrade verification failed: {'; '.join(mismatches)}"
+        )
+
+    return build_step_result(
+        "post_upgrade_verify", "pass",
+        f"verified {manifest.name}@{manifest.version} at upgraded_at={record.get('upgraded_at')}"
+    )
+
+
+# ─── upgrade() orchestrator ───────────────────────────────────────────────────
 
 
 def upgrade(
@@ -1436,20 +1768,87 @@ def upgrade(
     """
     Upgrade a module using the given new manifest YAML path.
 
-    STUB — Plan 49-01 skeleton only. Plan 49-03 replaces this body
-    with real upgrade logic: validate_new_manifest, read_install_record,
-    compute_migration_delta, apply_expand_migrations, swap_services,
-    apply_contract_migrations, update_install_record, post_upgrade_verify.
+    Implements the 8 frozen UPGRADE_STEPS in order:
+      validate_new_manifest → read_install_record → compute_migration_delta →
+      apply_expand_migrations → swap_services → apply_contract_migrations →
+      update_install_record → post_upgrade_verify
 
-    Returns a skip result until 49-03 is applied.
+    Idempotency: if target manifest_hash matches installed_manifest_hash AND
+    force=False, read_install_record returns skip, overall status="skip".
+
+    Rollback: if any step fails, inverse of prior pass steps runs in reverse.
+    Contract migrations are NOT reversible (partial_rollback=True on failure).
+
+    Dry-run: state-modifying steps return status="skip" with would_apply details.
     """
+    from services.install_record_store import get_install_record, put_install_record
+
+    ctx: Dict[str, Any] = {
+        "new_manifest_path": new_manifest_path,
+        "new_manifest_yaml_text": "",
+        "new_manifest": None,
+        "new_manifest_hash": "",
+        "pre_upgrade_record": None,
+        "dry_run": dry_run,
+        "force": force,
+        "module_dir": os.path.dirname(os.path.abspath(new_manifest_path)),
+        "expand_migrations": [],
+        "contract_migrations": [],
+        "expand_applied": [],
+        "contract_applied": [],
+        "idempotent_skip": False,
+        # NOTE: rollback engine reads ctx["manifest"] for module name;
+        # alias new_manifest so the shared engine works unchanged.
+        "manifest": None,
+    }
+
+    steps_to_run = [
+        ("validate_new_manifest", _upgrade_validate_new_manifest),
+        ("read_install_record", _upgrade_read_install_record),
+        ("compute_migration_delta", _upgrade_compute_migration_delta),
+        ("apply_expand_migrations", _upgrade_apply_expand_migrations),
+        ("swap_services", _upgrade_swap_services),
+        ("apply_contract_migrations", _upgrade_apply_contract_migrations),
+        ("update_install_record", _upgrade_update_install_record),
+        ("post_upgrade_verify", _upgrade_post_upgrade_verify),
+    ]
+
+    results: List[StepResult] = []
+    failed_step = None
+
+    for name, fn in steps_to_run:
+        t0 = time.time()
+        try:
+            r = fn(ctx)
+        except Exception as exc:
+            r = build_step_result(name, "fail", f"unhandled exception: {exc}")
+        r.duration_ms = int((time.time() - t0) * 1000)
+        if r.name != name:
+            r = build_step_result(name, r.status, r.message, r.duration_ms, r.details)
+        results.append(r)
+        if r.status == "fail":
+            failed_step = name
+            break
+
+    rollback_info = None
+    if failed_step is not None and not dry_run and not ctx.get("idempotent_skip"):
+        rollback_info = _run_rollback(failed_step, results, ctx)
+
+    module_name = (
+        ctx["new_manifest"].name if ctx["new_manifest"] else "<unknown>"
+    )
+    module_version = (
+        ctx["new_manifest"].version if ctx["new_manifest"] else "<unknown>"
+    )
+    overall = worst_of_status([r.status for r in results])
+
     return LifecycleResult(
         schema_version=SCHEMA_VERSION,
         operation="upgrade",
-        module="<unimplemented>",
-        module_version="<unimplemented>",
-        status="skip",
-        steps=[],
-        rollback=None,
+        module=module_name,
+        module_version=module_version,
+        status=overall,
+        steps=results,
+        rollback=rollback_info,
         dry_run=dry_run,
     )
