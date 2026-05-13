@@ -4,14 +4,14 @@ milestone: v3.2
 milestone_name: The Federation** — Phases 48-53
 status: completed
 stopped_at: v3.2 roadmap defined; awaiting Phase 48 planning
-last_updated: "2026-05-13T22:00:00.000Z"
-last_activity: "2026-05-13 — Plan 52-01 complete: services/agent_schema.py + scripts/agent-md-to-yaml.cjs + tests/test_agent_schema.py (16 pass) + tests/agent-md-to-yaml.test.cjs (8 pass). Phase 52 Wave 1 COMPLETE."
+last_updated: "2026-05-13T23:00:00.000Z"
+last_activity: "2026-05-13 — Plan 52-02 complete: 17 canonical AGENT.yaml files generated + validated via load_agent_definition(). Phase 52 Wave 2 COMPLETE. SHA 9224cbc."
 progress:
   total_phases: 6
   completed_phases: 4
-  total_plans: 15
-  completed_plans: 15
-  percent: 52
+  total_plans: 16
+  completed_plans: 16
+  percent: 55
 ---
 
 # GSD-Amauta -- Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-13 after v3.1 milestone close + v3.2 
 
 ## Current Position
 
-Phase: 52 — Agent Compilation (IN PROGRESS — Plan 52-01 complete)
-Plan: 52-01 COMPLETE (4 tasks, 4 commits — services/agent_schema.py + scripts/agent-md-to-yaml.cjs + tests/test_agent_schema.py + tests/agent-md-to-yaml.test.cjs)
-Status: Plan 52-01 COMPLETE. COMPILE-01 partially fulfilled (schema + converter). 24 tests (16 Python + 8 Node). All pass.
-Last activity: 2026-05-13 — Plan 52-01 complete: AgentDefinition Pydantic schema + one-shot md→yaml converter + 24 tests. 4 atomic commits.
+Phase: 52 — Agent Compilation (IN PROGRESS — Plans 52-01 + 52-02 complete)
+Plan: 52-02 COMPLETE (2 tasks, 1 commit — 17 canonical AGENT.yaml files generated + validated)
+Status: Plans 52-01 + 52-02 COMPLETE. COMPILE-01 fulfilled (schema + converter + 17 YAML outputs). Wave 3 (agent-compiler.cjs + byte-match test) next.
+Last activity: 2026-05-13 — Plan 52-02 complete: 17 AGENT.yaml generated from batch conversion, all validated via load_agent_definition(). SHA 9224cbc.
 
 Progress: [>>>>      ] 52% (4+ phases / 15 plans complete)
 
@@ -62,6 +62,7 @@ Progress: [>>>>      ] 52% (4+ phases / 15 plans complete)
 - Party Mode: dissent records do NOT auto-rollback (operator-supervised by design; REQUIREMENTS.md Out of Scope).
 - Agent compilation (Phase 52) is symmetric with Phase 43 skill compiler — reuses `TARGET_MAPS` pattern + `agent_hydrator.hydrate` API verbatim.
 - Phase 52 Plan 52-01: AgentDefinition 6-field locked frontmatter (name→description→tools→color→memory→skills), body_preamble Optional[str]=None for H1 preamble (16/17 agents have it; gsd-executor-data.md exception = null), 10-key SECTION_KEY_ORDER tuple. HEADING_TO_KEY maps actual .md headings ('Behavioral rules' → 'patterns_and_practices', 'Tool access & guidance' → 'workflow_and_process', etc.). Custom block-literal YAML emitter in .cjs (no external deps).
+- Phase 52 Plan 52-02: 17 canonical AGENT.yaml generated from agents/*.md batch conversion (SHA 9224cbc). All 17 pass load_agent_definition() validation: name==dir-basename, sections==SECTION_KEY_ORDER, tools non-empty, memory in {user,project,none}. 16/17 have body_preamble with '# Agent: <name>'; gsd-executor-data has null. agents/*.md UNCHANGED (Wave 3 byte-match baseline locked).
 - Phase 48 Plan 48-01: Migration file on-disk check deferred to Phase 49 install logic. Pre-release ordering deferred to v3.3+. Committed conflict fixture (feature-wants-core-v2) for stable Phase 49 reference. Resolver fails-closed via return dict.
 - Phase 48 Plan 48-01: Pydantic v2 model_config extra=forbid + field_validator + model_validator(mode=after) cross-field checks. SCHEMA_FIELD_ORDER tuple regression-locked by pytest introspection.
 - Phase 48 Plan 48-02: case 'module': added to gsd-tools.cjs after case 'agent-hydrate':. args[1] for first positional, args.slice(2) for rest (mirrors Phase 47 pattern). Phase 49 reserved actions (install/uninstall/upgrade) exit 2. Micro runner pattern works with both node direct and node --test.
