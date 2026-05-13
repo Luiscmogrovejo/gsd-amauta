@@ -61,28 +61,29 @@ Requirements for v3.2 "The Federation" — module system + multi-agent collabora
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MOD-01 | TBD | Pending |
-| MOD-02 | TBD | Pending |
-| MOD-03 | TBD | Pending |
-| MOD-04 | TBD | Pending |
-| PARTY-01 | TBD | Pending |
-| PARTY-02 | TBD | Pending |
-| PARTY-03 | TBD | Pending |
-| PARTY-04 | TBD | Pending |
-| COMPILE-01 | TBD | Pending |
-| COMPILE-02 | TBD | Pending |
-| COMPILE-03 | TBD | Pending |
-| COMPILE-04 | TBD | Pending |
-| POLISH-01 | TBD | Pending |
-| POLISH-02 | TBD | Pending |
-| POLISH-03 | TBD | Pending |
-| POLISH-04 | TBD | Pending |
-| POLISH-05 | TBD | Pending |
+| MOD-01 | Phase 48 | Pending |
+| MOD-02 | Phase 48 | Pending |
+| MOD-03 | Phase 49 | Pending |
+| MOD-04 | Phase 49 | Pending |
+| PARTY-01 | Phase 50 | Pending |
+| PARTY-02 | Phase 50 | Pending |
+| PARTY-03 | Phase 51 | Pending |
+| PARTY-04 | Phase 51 | Pending |
+| COMPILE-01 | Phase 52 | Pending |
+| COMPILE-02 | Phase 52 | Pending |
+| COMPILE-03 | Phase 52 | Pending |
+| COMPILE-04 | Phase 52 | Pending |
+| POLISH-01 | Phase 53 | Pending |
+| POLISH-02 | Phase 53 | Pending |
+| POLISH-03 | Phase 53 | Pending |
+| POLISH-04 | Phase 53 | Pending |
+| POLISH-05 | Phase 53 | Pending |
 
 **Coverage:**
 - v3.2 requirements: 17 total
-- Mapped to phases: 0 (roadmapper fills next)
-- Unmapped: 17 ⚠ (pending roadmap)
+- Mapped to phases: 17 ✓
+- Unmapped: 0
+- Roadmap: `.planning/ROADMAP.md` (v3.2 "The Federation" — Phases 48-53)
 
 ---
 
