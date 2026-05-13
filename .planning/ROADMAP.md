@@ -168,7 +168,7 @@ In practice, recommended serialization is 48 → 49 → 50 → 51 → 52 → 53 
   - REQUIREMENTS.md Out of Scope: "Auto-rollback on Party Mode dissent" + "LLM-driven turn-taking" (operator-supervised, deterministic)
   - Precedent: Phase 45 `gsd-tools bearings` frozen 6-rule recommendation + JSON `schema_version: 1.0` pattern
   - Precedent: Phase 38 operator supervision endpoints on the blackboard
-**Plans:** TBD
+**Plans:** 4/4 plans complete
 
 ### Phase 52: Agent Compilation
 **Goal:** Agent definitions move to canonical YAML (mirroring Phase 43's skill canonicalization) and compile to per-IDE Markdown via `gsd-tools agents compile`. Per-IDE alias tables convert tool names + frontmatter the same way `skill-compiler.cjs` does. Optional compile-time hydration injection reuses Phase 47's `agent_hydrator.hydrate` to bake current context into the output.
@@ -215,7 +215,7 @@ In practice, recommended serialization is 48 → 49 → 50 → 51 → 52 → 53 
 | 48. Module System Foundation | 1/1 | Complete    | 2026-05-13 |
 | 49. Module CLI + Lifecycle | 0/0 | Complete    | 2026-05-13 |
 | 50. Party Mode Foundation | 0/0 | Complete    | 2026-05-13 |
-| 51. Party Mode Decisions + Operator CLI | 3/4 | In Progress | Plans 51-01+51-02+51-03 done 2026-05-13 |
+| 51. Party Mode Decisions + Operator CLI | 3/4 | Complete    | 2026-05-13 |
 | 52. Agent Compilation | 0/0 | Not started | - |
 | 53. v3.1 Carry-Forwards | 0/0 | Not started | - |
 
