@@ -292,34 +292,103 @@ async def _fetch_valkey(agent_name: str) -> dict:
 
 
 async def _fetch_security() -> dict:
-    """Security pipeline query: finding_type IN ('security_alert', 'lint_violation', 'circuit_breaker_open'), 24h window.
+    """Security pipeline query — global (no agent filter).
 
-    Body implemented in task 47-01-05.
+    SQL Form A (locked per 47-CONTEXT.md §Area 5):
+      WHERE finding_type IN ('security_alert', 'lint_violation', 'circuit_breaker_open')
+        AND created_at >= NOW() - INTERVAL '24 hours'
+    Hardcoded IN list (Form A). SECURITY_FINDING_TYPES is exported for vocabulary
+    tests but NOT bound in the SQL execute() call — only SECURITY_LIMIT is bound.
+
+    Returns SECURITY_LIMIT (3) most recent findings within SECURITY_WINDOW_HOURS (24h).
     """
-    return {"status": "ok", "items": []}
+    if not _HAS_PG:
+        return {"status": "unavailable", "items": []}
+
+    def _sync_fetch() -> dict:
+        try:
+            store = PGStore()
+            with store._get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT id, finding_type, severity, content AS summary, created_at"
+                        " FROM agent_findings"
+                        " WHERE finding_type IN ('security_alert', 'lint_violation', 'circuit_breaker_open')"
+                        "   AND created_at >= NOW() - INTERVAL '24 hours'"
+                        " ORDER BY created_at DESC LIMIT %s",
+                        (SECURITY_LIMIT,),
+                    )
+                    rows = cur.fetchall()
+            items = []
+            for row in rows:
+                items.append({
+                    "id": str(row[0]),
+                    "finding_type": row[1] or "",
+                    "severity": row[2] or "info",
+                    "summary": (row[3] or "")[:200],
+                })
+            return {"status": "ok", "items": items}
+        except Exception as exc:
+            return {"status": "unavailable", "items": [], "error": str(exc)[:200]}
+
+    return await asyncio.to_thread(_sync_fetch)
 
 
 async def hydrate(agent_name: str, task_id: Optional[str] = None) -> dict:
-    """Hydrate agent context by querying 4 sources concurrently.
+    """Hydrate agent context by querying 4 sources concurrently via asyncio.gather.
 
-    Signature LOCKED per 47-CONTEXT.md. NEVER raises — all errors degrade to
-    'unavailable' status per source. Returns schema_version '1.0' JSON payload.
+    Signature LOCKED: async def hydrate(agent_name, task_id=None) -> dict
 
-    Body implemented in task 47-01-05.
+    Each source is wrapped in asyncio.wait_for(PER_SOURCE_TIMEOUT_S=0.4s).
+    Any Exception or TimeoutError degrades that source to 'unavailable'.
+    NEVER raises — server-stays-up contract.
+
+    Returns schema_version "1.0" JSON payload per 47-CONTEXT.md §Specifics.
     """
+    agent_role = _load_agent_role(agent_name)
+
+    # 4 sources queried concurrently — NOT sequential awaits
+    results = await asyncio.gather(
+        asyncio.wait_for(_fetch_memory(agent_name, agent_role), PER_SOURCE_TIMEOUT_S),
+        asyncio.wait_for(_fetch_blackboard(agent_name, task_id), PER_SOURCE_TIMEOUT_S),
+        asyncio.wait_for(_fetch_valkey(agent_name), PER_SOURCE_TIMEOUT_S),
+        asyncio.wait_for(_fetch_security(), PER_SOURCE_TIMEOUT_S),
+        return_exceptions=True,
+    )
+
+    # Normalize results: Exception or TimeoutError → unavailable status
+    def _normalize_list_result(res: Any) -> dict:
+        if isinstance(res, (Exception, asyncio.TimeoutError)):
+            return {"status": "unavailable", "items": []}
+        if not isinstance(res, dict):
+            return {"status": "unavailable", "items": []}
+        return res
+
+    def _normalize_valkey_result(res: Any) -> dict:
+        if isinstance(res, (Exception, asyncio.TimeoutError)):
+            return {"status": "unavailable", "data": None}
+        if not isinstance(res, dict):
+            return {"status": "unavailable", "data": None}
+        return res
+
+    memory_res = _normalize_list_result(results[0])
+    bb_res = _normalize_list_result(results[1])
+    vk_res = _normalize_valkey_result(results[2])
+    sec_res = _normalize_list_result(results[3])
+
     return {
         "schema_version": SCHEMA_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "agent_name": agent_name,
         "task_id": task_id,
         "sources_status": {
-            "memory": "unavailable",
-            "blackboard": "unavailable",
-            "valkey": "unavailable",
-            "security": "unavailable",
+            "memory": memory_res.get("status", "unavailable"),
+            "blackboard": bb_res.get("status", "unavailable"),
+            "valkey": vk_res.get("status", "unavailable"),
+            "security": sec_res.get("status", "unavailable"),
         },
-        "memory": [],
-        "blackboard": [],
-        "recent_activity": None,
-        "security": [],
+        "memory": memory_res.get("items", []),
+        "blackboard": bb_res.get("items", []),
+        "recent_activity": vk_res.get("data"),
+        "security": sec_res.get("items", []),
     }
