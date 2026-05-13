@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.2
 milestone_name: The Federation
-status: not_started
-stopped_at: v3.2 roadmap defined; awaiting Phase 48 planning
-last_updated: "2026-05-13T18:00:00.000Z"
-last_activity: 2026-05-13 — v3.2 "The Federation" roadmap defined (6 phases 48-53, 17 requirements). Ready for /amauta:plan-phase 48.
+status: in_progress
+stopped_at: Plan 48-01 complete — ModuleManifest schema + semver resolver + CLI + 24 tests shipped
+last_updated: "2026-05-13T20:00:00.000Z"
+last_activity: 2026-05-13 — Plan 48-01 complete (6 tasks, 8 files, 24 pytest tests). Phase 48 foundation shipped.
 progress:
   total_phases: 6
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_plans: 1
+  completed_plans: 1
+  percent: 3
 ---
 
 # GSD-Amauta -- Project State
@@ -25,18 +25,18 @@ See: .planning/PROJECT.md (updated 2026-05-13 after v3.1 milestone close + v3.2 
 
 ## Current Position
 
-Phase: 48 — Module System Foundation (NOT STARTED)
-Plan: —
-Status: Awaiting `/amauta:plan-phase 48`. v3.1 milestone shipped 2026-05-13. v3.2 roadmap defined 2026-05-13.
-Last activity: 2026-05-13 — v3.2 "The Federation" roadmap defined (6 phases 48-53, 17 requirements). Ready for /amauta:plan-phase 48.
+Phase: 48 — Module System Foundation (IN PROGRESS — Plan 48-01 complete, awaiting Phase 48 closeout or Plan 48-02)
+Plan: 48-01 COMPLETE
+Status: Plan 48-01 shipped. Ready for Plan 48-02 (gsd-tools module validate wiring) or Phase 48 closeout.
+Last activity: 2026-05-13 — Plan 48-01 complete: ModuleManifest Pydantic v2 + resolve() + module_validator_cli.py + 3 fixtures + 24 pytest tests (all pass).
 
-Progress: [          ] 0% (0 of 6 phases complete, 0 of 0 plans complete)
+Progress: [>         ] 3% (0 of 6 phases complete, 1 of 1 plans complete)
 
 ## v3.2 Phase Map
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 48 | Module System Foundation | MOD-01, MOD-02 | Not started |
+| 48 | Module System Foundation | MOD-01, MOD-02 | In progress — Plan 48-01 complete |
 | 49 | Module CLI + Lifecycle | MOD-03, MOD-04 | Not started (depends on 48) |
 | 50 | Party Mode Foundation | PARTY-01, PARTY-02 | Not started |
 | 51 | Party Mode Decisions + Operator CLI | PARTY-03, PARTY-04 | Not started (depends on 50) |
@@ -61,6 +61,8 @@ Progress: [          ] 0% (0 of 6 phases complete, 0 of 0 plans complete)
 - Compile (Phase 52) and Polish (Phase 53) have NO v3.2 deps — they reuse shipped Phase 43/44/45/46/47 surfaces. Parallelizable with 49/50/51 after 48 ships.
 - Party Mode: dissent records do NOT auto-rollback (operator-supervised by design; REQUIREMENTS.md Out of Scope).
 - Agent compilation (Phase 52) is symmetric with Phase 43 skill compiler — reuses `TARGET_MAPS` pattern + `agent_hydrator.hydrate` API verbatim.
+- Phase 48 Plan 48-01: Migration file on-disk check deferred to Phase 49 install logic. Pre-release ordering deferred to v3.3+. Committed conflict fixture (feature-wants-core-v2) for stable Phase 49 reference. Resolver fails-closed via return dict.
+- Phase 48 Plan 48-01: Pydantic v2 model_config extra=forbid + field_validator + model_validator(mode=after) cross-field checks. SCHEMA_FIELD_ORDER tuple regression-locked by pytest introspection.
 
 ### Pending Todos
 
