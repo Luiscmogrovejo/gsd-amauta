@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.1
 milestone_name: The Gathering
 status: completed
-stopped_at: Plan 47-01 complete. services/agent_hydrator.py + 2 test files shipped. 7 tasks committed atomically.
-last_updated: "2026-05-12T00:00:00.000Z"
-last_activity: 2026-05-12 — Plan 47-01 complete. services/agent_hydrator.py (hydrate + 4 fetchers + frozen SQL), tests/test_agent_hydrator.py (10 tests pass), tests/test_agent_hydrator_perf.py (p95 ~7ms vs 500ms budget). 7 commits: a580a0a..7843694.
+stopped_at: Plan 47-02 complete. gsd-tools agent-hydrate CLI + Markdown renderer + 3 test files shipped. 5 tasks committed atomically.
+last_updated: "2026-05-13T00:00:00.000Z"
+last_activity: 2026-05-13 — Plan 47-02 complete. services/agent_hydrate_cli.py (render_markdown + argparse CLI), case 'agent-hydrate' in gsd-tools.cjs, 3 test files (18 tests pass). Phase 47 COMPLETE. v3.1 milestone COMPLETE.
 progress:
   total_phases: 7
-  completed_phases: 6
-  total_plans: 17
-  completed_plans: 17
-  percent: 86
+  completed_phases: 7
+  total_plans: 18
+  completed_plans: 18
+  percent: 100
 ---
 
 # GSD-Amauta -- Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-14 after v3.0 milestone close)
 
 ## Current Position
 
-Phase: 47 IN PROGRESS — Plan 47-01 complete
-Plan: 47-01 COMPLETE
-Status: Plan 47-01 shipped. services/agent_hydrator.py: async def hydrate(agent_name, task_id=None) -> dict. 4-source asyncio.gather (memory + blackboard + valkey + security). Frozen SQL: recipient_agent IS NULL OR recipient_agent = %s (2 branches) + content AS summary + Form A security IN list. _HAS_PG + _HAS_REDIS guards. 10 unit tests pass (PG-free). p95 perf test: ~7ms measured (budget 500ms). Migration 020 not yet applied to live DB (pre-existing from 47-00) — hydrator degrades gracefully.
-Last activity: 2026-05-12 — Plan 47-01 complete. 7 tasks committed atomically (a580a0a..7843694). services/amauta-mcp.py untouched. agents/*.md untouched.
+Phase: 47 COMPLETE — Phase 47 Agent Dynamic Hydration COMPLETE
+Plan: 47-02 COMPLETE
+Status: Plan 47-02 shipped. services/agent_hydrate_cli.py: argparse CLI, render_markdown() with frozen template (5 load-bearing headers + ---), token budget enforcement. gsd-tools agent-hydrate subcommand (case 'agent-hydrate'): positional agent_name, --task-id/--json/--terse/--budget flags, spawnSync python3 shell-out. 3 test files: 18 tests pass (6 CLI integration + 8 Markdown render + 4 differentiation). Phase 47 COMPLETE. v3.1 milestone COMPLETE.
+Last activity: 2026-05-13 — Plan 47-02 complete. 5 tasks committed atomically (daae150..5908c9a). services/agent_hydrator.py untouched. agents/*.md untouched. services/amauta-mcp.py untouched.
 
-Progress: [██████░░░░] ~92% (6 of 7 phases complete, 17 of 18 plans complete)
+Progress: [██████████] 100% (7 of 7 phases complete, 18 of 18 plans complete)
 
 ## v3.1 Phase Map
 
@@ -42,7 +42,7 @@ Progress: [██████░░░░] ~92% (6 of 7 phases complete, 17 of 1
 | 44 | Cross-IDE Installer | INST-01..04 | COMPLETE (Plans 44-01 + 44-02 + 44-03, 47 tests) |
 | 45 | Intelligent Help Routing | HELP-01..03 | COMPLETE (Plans 45-01 + 45-02, 22 tests) |
 | 46 | Standalone MCP Server | MCP-01..03 | COMPLETE (Plans 46-01 + 46-02, 52 tests) |
-| 47 | Agent Dynamic Hydration | HYDRA-01..02 | In progress (Plan 47-00 COMPLETE) |
+| 47 | Agent Dynamic Hydration | HYDRA-01..02 | COMPLETE (Plans 47-00 + 47-01 + 47-02, 18 tests) |
 
 **Execution order:** 41 → 42 → 43 → 44 → 45 → 46 → 47
 **Parallelizable:** 42+43 after 41; 44+45+46 after 43; 47 after 42+43
@@ -85,6 +85,10 @@ Progress: [██████░░░░] ~92% (6 of 7 phases complete, 17 of 1
 - Plan 47-01: hydrate() uses asyncio.gather(return_exceptions=True) with 4 asyncio.wait_for(PER_SOURCE_TIMEOUT_S=0.4) — each source degrades independently (Exception/TimeoutError → status=unavailable). hydrate() NEVER raises. Schema: schema_version "1.0".
 - Plan 47-01: _fetch_valkey uses short-lived redis.Redis.from_url(socket_timeout=0.3), NOT daemon's global client — safe for MCP + CLI dual-import. v1 memory query is cosine-only (no BM25 hybrid); BM25 deferred to Phase 48.
 - Plan 47-01: SECURITY_FINDING_TYPES tuple exported for vocabulary tests but Form A hardcoded IN list in SQL — only SECURITY_LIMIT bound. content AS summary alias maps on-disk 'content' to JSON 'summary'.
+
+- Plan 47-02: render_markdown() token budget enforcement order: security first → activity → blackboard; never truncate header line or ## Current context heading. Budget: 800 default, 400 --terse. --budget explicit wins over --terse.
+- Plan 47-02: gsd-tools.cjs args indexing: args[0] is the subcommand name, positional args start at args[1]. agent_name = args[1]. All flag checks (--json, --terse, --task-id, --budget) use args.includes/indexOf correctly.
+- Plan 47-02: agent_hydrate_cli.py agent resolution: tries agents/gsd-{base}.md, agents/{agent_name}.md, agents/gsd-{agent_name}.md in order. Returns agent_not_found JSON (exit 1) if none found — checked BEFORE calling hydrate().
 
 ### Pending Todos
 

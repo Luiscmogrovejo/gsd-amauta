@@ -56,7 +56,10 @@
 - [x] **Phase 46: Standalone MCP Server** — amauta-mcp.py as standalone with direct PG+Valkey; complexity-score tool; agent/findings resources (MCP-01..03) — depends on 43 — COMPLETE 2026-05-12
   - [x] Plan 46-01: Direct PG+Valkey foundation; MCPDatabase (SimpleConnectionPool MIN=1/MAX=8) + MCPValkey; rewrite 5 handlers (search-code, memory-store, memory-search, memory-distill, research) to direct PGStore calls; add amauta/complexity-score (6th tool, Phase 42 two-step API); delete _call_daemon/_call_rlm/_check_daemon_health; _MCP_ERROR_CODES frozen tuple; 23 tests (db_helpers + tools) — COMPLETE 2026-05-12
   - [x] Plan 46-02: 3 MCP resource URI templates (_render_agent + list_resources + read_resource direct PG); Phase 47 HYDRA-02 hydration=None injection point; test_amauta_mcp_resources.py (16 tests), test_amauta_mcp_stdio.py (4 tests subprocess integration), test_amauta_mcp_sse.py (4 tests port 18800), test_amauta_mcp_pg_down.py (5 tests server-stays-up + complexity-score PG-free); MCP-01+MCP-03 satisfied — COMPLETE 2026-05-12
-- [ ] **Phase 47: Agent Dynamic Hydration** — Agent .md templates with dynamic sections; operator queries PG/blackboard/Valkey/security for agent-specific context injection (HYDRA-01..02) — depends on 42+43 [Plan 47-00 COMPLETE: Migration 020 schema substrate] [Plan 47-01 COMPLETE: services/agent_hydrator.py 4-source parallel hydration, schema_version "1.0", p95 ~7ms]
+- [x] **Phase 47: Agent Dynamic Hydration** — Agent .md templates with dynamic sections; operator queries PG/blackboard/Valkey/security for agent-specific context injection (HYDRA-01..02) — depends on 42+43 — COMPLETE 2026-05-13
+  - [x] Plan 47-00: Migration 020 schema substrate (agent_findings recipient_agent + severity columns, 2 indexes) — COMPLETE 2026-05-12
+  - [x] Plan 47-01: services/agent_hydrator.py 4-source parallel hydration (asyncio.gather, PER_SOURCE_TIMEOUT=0.4s, _HAS_PG/_HAS_REDIS guards, frozen SQL, schema_version "1.0"), p95 ~7ms, 10 unit + 1 perf test — COMPLETE 2026-05-12
+  - [x] Plan 47-02: gsd-tools agent-hydrate CLI subcommand (case 'agent-hydrate', spawnSync python3, services/agent_hydrate_cli.py argparse entry-point, render_markdown() frozen template 5 headers + ---, token budget 800/400, 18 tests: 6 CLI + 8 render + 4 differentiation) — COMPLETE 2026-05-13
 
 ---
 
