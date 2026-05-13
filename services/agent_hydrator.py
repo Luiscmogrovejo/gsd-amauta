@@ -139,10 +139,59 @@ def _load_agent_role(agent_name: str) -> str:
 async def _fetch_memory(agent_name: str, agent_role: str) -> dict:
     """Phase 43 hybrid BM25+pgvector memory query for this agent.
 
-    Top-K=3, cosine_floor=0.6, 90-day recency. Returns dict with status + items.
-    Body implemented in task 47-01-02.
+    Top-K=MEMORY_TOP_K (3), cosine_floor=MEMORY_COSINE_FLOOR (0.6),
+    recency=MEMORY_RECENCY_DAYS (90d). Runs sync psycopg2 query inside
+    asyncio.to_thread() for true concurrency when called via asyncio.gather.
+
+    Decision (v1): cosine-only path (no BM25 hybrid) for v1 simplicity.
+    BM25 hybrid (Phase 43 RRF) is deferred to a future iteration when BM25
+    recall matters more. Embedding-only path already covers semantic matches
+    for the agent_name + agent_role query string.
+    If embedding is None (Voyage API down), returns unavailable cleanly.
     """
-    return {"status": "ok", "items": []}
+    if not _HAS_PG:
+        return {"status": "unavailable", "items": []}
+
+    def _sync_fetch() -> dict:
+        try:
+            query_text = f"{agent_name} {agent_role}"
+            embedding = generate_embedding(query_text, input_type="query")
+            if embedding is None:
+                # Voyage/OpenAI API unavailable — skip gracefully (v1 cosine-only decision)
+                return {"status": "unavailable", "items": [], "error": "embedding_unavailable"}
+            emb_str = "[" + ",".join(str(float(v)) for v in embedding) + "]"
+            store = PGStore()
+            with store._get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT id, text,"
+                        " 1 - (embedding <=> %s::vector) AS cosine,"
+                        " EXTRACT(EPOCH FROM (NOW() - created_at)) / 86400.0 AS age_days"
+                        " FROM gsd_memory"
+                        " WHERE embedding IS NOT NULL"
+                        "   AND created_at >= NOW() - INTERVAL '%s days'"
+                        " ORDER BY embedding <=> %s::vector"
+                        " LIMIT %s",
+                        (emb_str, str(MEMORY_RECENCY_DAYS), emb_str, MEMORY_TOP_K),
+                    )
+                    rows = cur.fetchall()
+            items = []
+            for row in rows:
+                cosine = float(row[2]) if row[2] is not None else 0.0
+                if cosine < MEMORY_COSINE_FLOOR:
+                    continue
+                text_trunc = (row[1] or "")[:200]
+                items.append({
+                    "id": str(row[0]),
+                    "summary": text_trunc,
+                    "cosine": cosine,
+                    "age_days": float(row[3]) if row[3] is not None else 0.0,
+                })
+            return {"status": "ok", "items": items}
+        except Exception as exc:
+            return {"status": "unavailable", "items": [], "error": str(exc)[:200]}
+
+    return await asyncio.to_thread(_sync_fetch)
 
 
 async def _fetch_blackboard(agent_name: str, task_id: Optional[str]) -> dict:
