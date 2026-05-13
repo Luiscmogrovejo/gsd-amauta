@@ -4,7 +4,7 @@ description: Synthetic fixture used by Phase 49 install/uninstall tests. Not for
 requires: {}
 migrations: []
 services:
-  - test-service
+  test-service: {}
 agents:
   - agents/test-agent.md
 skills:
