@@ -630,63 +630,142 @@ async def call_tool(name: str, arguments: dict) -> CallToolResult:
 
 @server.list_resources()
 async def list_resources() -> ListResourcesResult:
-    """List active tasks as context resources via direct PG query."""
-    import re
-    resources = []
-    phases = ["R", "P", "E", "T", "D"]
-    store = _get_pg_store()
-    if store is None:
-        return ListResourcesResult(resources=resources)
-    try:
-        with store._get_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT DISTINCT task_id FROM rpetd_phases "
-                    "WHERE task_id IS NOT NULL ORDER BY task_id DESC LIMIT 50"
-                )
-                rows = cur.fetchall()
-        for row in rows:
-            tid = str(row[0])
-            for phase in phases:
-                resources.append(Resource(
-                    uri=f"amauta://context/{tid}/{phase}",
-                    name=f"{tid} — Phase {phase} context",
-                    description=f"RPETD context for task {tid}, phase {phase}",
-                    mimeType="application/json",
-                ))
-    except Exception:
-        pass  # Return empty list on PG error
-    return ListResourcesResult(resources=resources)
+    """Advertise the three frozen resource URI templates (MCP-03 verbatim).
+
+    Returns template entries as discoverability hints — Phase 46 exposes the
+    URI patterns, not a concrete enumeration of live task IDs.
+    """
+    return ListResourcesResult(resources=[
+        Resource(
+            uri="amauta://context/{task_id}/{phase}",
+            name="RPETD context (template)",
+            description="amauta://context/<task_id>/<R|P|E|T|D> — returns compiled RPETD context as text/markdown",
+            mimeType="text/markdown",
+        ),
+        Resource(
+            uri="amauta://agent/{agent_name}",
+            name="Agent definition (template)",
+            description="amauta://agent/<agent_name> — returns the agent .md content (filesystem-backed)",
+            mimeType="text/markdown",
+        ),
+        Resource(
+            uri="amauta://findings/{task_id}",
+            name="Blackboard findings (template)",
+            description="amauta://findings/<task_id> — returns agent_findings rows as JSON",
+            mimeType="application/json",
+        ),
+    ])
+
+
+def _format_rpetd_md(row: dict) -> str:
+    """Format an rpetd_context row as markdown for the context resource."""
+    task_id = row.get("task_id", "")
+    phase = row.get("phase", "")
+    compiled_view = row.get("compiled_view")
+    created_at = row.get("created_at", "")
+    if isinstance(compiled_view, str):
+        try:
+            compiled_view = json.loads(compiled_view)
+        except Exception:
+            pass
+    if isinstance(compiled_view, dict):
+        body_parts = []
+        for section, content in compiled_view.items():
+            body_parts.append(f"## {section}\n\n{content}")
+        body = "\n\n".join(body_parts) if body_parts else str(compiled_view)
+    else:
+        body = str(compiled_view) if compiled_view else ""
+    return f"# RPETD Context: {task_id} / Phase {phase}\n\n_Created: {created_at}_\n\n{body}"
+
 
 @server.read_resource()
 async def read_resource(uri: str) -> ReadResourceResult:
-    """Read RPETD phase content for amauta://context/{task_id}/{phase} URI."""
+    """Route resource URI to one of three handlers: context, agent, or findings.
+
+    URI patterns:
+        amauta://context/{task_id}/{phase}  — PG query via rpetd_context_get()
+        amauta://agent/{agent_name}          — filesystem read via _render_agent()
+        amauta://findings/{task_id}          — PG SELECT from agent_findings table
+    """
     import re
-    m = re.match(r'^amauta://context/([^/]+)/([RPETD])$', uri)
-    if not m:
-        raise ValueError(f"Unsupported resource URI: {uri!r}. Expected amauta://context/{{task_id}}/{{phase}}")
-    task_id, phase = m.group(1), m.group(2)
-    store = _get_pg_store()
-    if store is None:
-        raise ValueError("pg_unavailable: PGStore not initialized")
-    try:
-        with store._get_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT content FROM rpetd_phases WHERE task_id = %s AND phase = %s",
-                    (task_id, phase),
-                )
-                row = cur.fetchone()
-        if not row:
-            raise ValueError(f"not_found: no RPETD content for task {task_id!r} phase {phase!r}")
+    # Branch 1: RPETD context
+    m = re.match(r'^amauta://context/(TK-\d{4,})/([RPETD])$', str(uri))
+    if m:
+        task_id, phase = m.group(1), m.group(2)
+        store = _get_pg_store()
+        if store is None:
+            return ReadResourceResult(contents=[TextContent(
+                type="text",
+                text=json.dumps({"error": "pg_unavailable", "detail": "PGStore unavailable"}),
+            )])
+        row = store.rpetd_context_get(task_id, phase)
+        if row is None:
+            raise ValueError(f"Context not found: {uri}")
         return ReadResourceResult(contents=[TextContent(
             type="text",
-            text=json.dumps({"task_id": task_id, "phase": phase, "content": row[0]}),
+            text=_format_rpetd_md(row),
         )])
-    except ValueError:
-        raise
-    except Exception as e:
-        raise ValueError(f"internal_error: {e}")
+
+    # Branch 2: Agent definition
+    m = re.match(r'^amauta://agent/([a-z][a-z0-9-]+)$', str(uri))
+    if m:
+        name = m.group(1)
+        body = _render_agent(name, hydration=None)
+        if body is None:
+            raise ValueError(f"Agent not found: {uri}")
+        return ReadResourceResult(contents=[TextContent(
+            type="text",
+            text=body,
+        )])
+
+    # Branch 3: Blackboard findings
+    m = re.match(r'^amauta://findings/(TK-\d{4,})$', str(uri))
+    if m:
+        task_id = m.group(1)
+        store = _get_pg_store()
+        if store is None:
+            return ReadResourceResult(contents=[TextContent(
+                type="text",
+                text=json.dumps({"error": "pg_unavailable", "detail": "PGStore unavailable"}),
+            )])
+        try:
+            with store._get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT id, agent_name, task_id, finding_type, content, confidence, created_at "
+                        "FROM agent_findings WHERE task_id = %s ORDER BY created_at DESC",
+                        (task_id,),
+                    )
+                    raw_rows = cur.fetchall()
+            findings = [
+                {
+                    "id": str(r[0]),
+                    "agent_name": r[1],
+                    "task_id": r[2],
+                    "finding_type": r[3],
+                    "content": r[4],
+                    "confidence": r[5],
+                    "created_at": r[6].isoformat() if r[6] else None,
+                }
+                for r in raw_rows
+            ]
+            return ReadResourceResult(contents=[TextContent(
+                type="text",
+                text=json.dumps({"findings": findings, "count": len(findings)}),
+            )])
+        except Exception as e:
+            return ReadResourceResult(contents=[TextContent(
+                type="text",
+                text=json.dumps({"error": "pg_unavailable", "detail": str(e)}),
+            )])
+
+    # Default: unrecognized URI
+    raise ValueError(
+        f"Unsupported resource URI: {uri!r}. Expected one of "
+        "amauta://context/{task_id}/{phase}, "
+        "amauta://agent/{agent_name}, "
+        "amauta://findings/{task_id}"
+    )
 
 # ── Transport implementations ─────────────────────────────────────────────────
 
