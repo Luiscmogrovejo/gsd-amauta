@@ -4,14 +4,14 @@ milestone: v3.2
 milestone_name: The Federation** — Phases 48-53
 status: completed
 stopped_at: v3.2 roadmap defined; awaiting Phase 48 planning
-last_updated: "2026-05-13T22:00:00.000Z"
-last_activity: "2026-05-13 — Plan 51-03 complete: party_session_cli.py extended with status/inspect/kill subcommands + gsd-tools.cjs case 'party': extended to 9 actions + tests/party-decisions-cli.test.cjs (10 tests, all pass). 37 party-mode tests total (27 pytest + 10 Node)."
+last_updated: "2026-05-13T23:00:00.000Z"
+last_activity: "2026-05-13 — Plan 51-04 COMPLETE: tests/party-decisions-e2e.test.cjs (9 subtests, 9 pass) + tests/party-decisions-canary.test.cjs (9 subtests, NEVER SKIPS, 9 pass). Phase 51 COMPLETE. 4 plans: 51-01 + 51-02 + 51-03 + 51-04. 2 new test files. PARTY-03 + PARTY-04 fulfilled."
 progress:
   total_phases: 6
-  completed_phases: 3
-  total_plans: 13
-  completed_plans: 13
-  percent: 50
+  completed_phases: 4
+  total_plans: 17
+  completed_plans: 17
+  percent: 67
 ---
 
 # GSD-Amauta -- Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-13 after v3.1 milestone close + v3.2 
 
 ## Current Position
 
-Phase: 51 — Party Mode Decisions + Operator CLI (IN PROGRESS — Plans 51-01 + 51-02 + 51-03 complete)
-Plan: 51-03 COMPLETE (3 tasks, 3 commits — party_session_cli.py status/inspect/kill + gsd-tools.cjs 9 actions + tests/party-decisions-cli.test.cjs)
-Status: Plans 51-01 + 51-02 + 51-03 complete. Plan 51-03 delivers PARTY-04 operator CLI surface (status/inspect/kill subcommands). All 10 Node integration tests pass. Full regression: 37 party-mode tests pass (27 pytest + 10 Node). Plan 51-04 (E2E+canary) remains.
-Last activity: 2026-05-13 — Plan 51-03 complete: party_session_cli.py status/inspect/kill subcommands + gsd-tools.cjs 9-action KNOWN_ACTIONS + tests/party-decisions-cli.test.cjs (10 tests), 37 total party tests pass.
+Phase: 51 — Party Mode Decisions + Operator CLI (COMPLETE — Plans 51-01 + 51-02 + 51-03 + 51-04 all complete)
+Plan: 51-04 COMPLETE (2 tasks, 3 commits — tests/party-decisions-e2e.test.cjs + tests/party-decisions-canary.test.cjs)
+Status: Phase 51 COMPLETE. All 4 plans shipped. PARTY-03 + PARTY-04 fulfilled. E2E: 9 subtests (9 pass). Canary: 9 subtests (9 pass, NEVER SKIPS). 46 party-mode tests total (27 pytest + 19 Node).
+Last activity: 2026-05-13 — Plan 51-04 complete: party-decisions-e2e.test.cjs (9 pass) + party-decisions-canary.test.cjs (9 pass, NEVER SKIPS). Phase 51 COMPLETE.
 
 Progress: [>>>>      ] 50% (3 of 6 phases complete, 10 plans complete)
 
@@ -39,7 +39,7 @@ Progress: [>>>>      ] 50% (3 of 6 phases complete, 10 plans complete)
 | 48 | Module System Foundation | MOD-01, MOD-02 | COMPLETE — Plans 48-01 + 48-02 shipped 2026-05-13 |
 | 49 | Module CLI + Lifecycle | MOD-03, MOD-04 | COMPLETE — Plans 49-01 + 49-02 + 49-03 + 49-04 shipped 2026-05-13 |
 | 50 | Party Mode Foundation | PARTY-01, PARTY-02 | COMPLETE — All 4 plans shipped (migration 021 + PartySession Pydantic + state machine + post_finding + list_findings + resume() replay + CLI dispatch + E2E SC4 + canary + 55 tests, 2026-05-13) |
-| 51 | Party Mode Decisions + Operator CLI | PARTY-03, PARTY-04 | Not started (depends on 50) |
+| 51 | Party Mode Decisions + Operator CLI | PARTY-03, PARTY-04 | COMPLETE — Plans 51-01 + 51-02 + 51-03 + 51-04 shipped 2026-05-13 |
 | 52 | Agent Compilation | COMPILE-01, COMPILE-02, COMPILE-03, COMPILE-04 | Not started |
 | 53 | v3.1 Carry-Forwards | POLISH-01..05 | Not started |
 
