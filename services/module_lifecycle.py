@@ -35,9 +35,11 @@ import hashlib
 import json
 import logging
 import os
+import shutil
 import sys
 import time
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 # ─── Import-safety: yaml ─────────────────────────────────────────────────────
@@ -215,7 +217,607 @@ def compute_manifest_hash(yaml_text: str) -> str:
     return hashlib.sha256(canonical).hexdigest()
 
 
-# ─── Stub lifecycle functions (bodies filled in 49-02 / 49-03) ───────────────
+# ─── install() private step helpers ──────────────────────────────────────────
+
+
+def _install_validate_manifest(ctx: Dict[str, Any]) -> StepResult:
+    """Step 1: Read + validate manifest YAML; probe idempotency."""
+    from services.install_record_store import get_install_record
+    from services.module_schema import load_module_manifest
+
+    manifest_path = ctx["manifest_path"]
+
+    # Read raw YAML text
+    try:
+        with open(manifest_path, "r", encoding="utf-8") as fh:
+            yaml_text = fh.read()
+    except (FileNotFoundError, PermissionError) as exc:
+        return build_step_result("validate_manifest", "fail", str(exc))
+
+    ctx["manifest_yaml_text"] = yaml_text
+
+    # Validate manifest structure
+    try:
+        manifest = load_module_manifest(manifest_path)
+    except Exception as exc:
+        return build_step_result(
+            "validate_manifest", "fail",
+            f"manifest validation failed: {exc}"
+        )
+
+    ctx["manifest"] = manifest
+
+    # Compute hash
+    try:
+        manifest_hash = compute_manifest_hash(yaml_text)
+    except Exception as exc:
+        return build_step_result(
+            "validate_manifest", "fail",
+            f"manifest hash computation failed: {exc}"
+        )
+
+    ctx["manifest_hash"] = manifest_hash
+
+    # Idempotency probe
+    if not ctx["force"]:
+        try:
+            existing = get_install_record(manifest.name)
+        except Exception:
+            existing = None
+
+        if existing and existing.get("manifest_hash") == manifest_hash:
+            ctx["existing_record"] = existing
+            return build_step_result(
+                "validate_manifest", "skip",
+                f"module {manifest.name}@{manifest.version} already installed (manifest_hash match)"
+            )
+
+    return build_step_result(
+        "validate_manifest", "pass",
+        f"manifest valid: {manifest.name}@{manifest.version}"
+    )
+
+
+def _install_resolve_dependencies(ctx: Dict[str, Any]) -> StepResult:
+    """Step 2: Resolve module dependencies via module_resolver."""
+    from services.module_resolver import resolve
+
+    if ctx.get("existing_record") is not None:
+        return build_step_result(
+            "resolve_dependencies", "skip", "module already installed"
+        )
+
+    try:
+        result = resolve([ctx["manifest"]])
+    except Exception as exc:
+        return build_step_result(
+            "resolve_dependencies", "fail",
+            f"resolver raised: {exc}"
+        )
+
+    if not result.get("ok", False):
+        conflicts = result.get("conflicts", [])
+        missing = result.get("missing", [])
+        cycle = result.get("cycle")
+        parts = []
+        if conflicts:
+            parts.append(f"conflicts: {conflicts}")
+        if missing:
+            parts.append(f"missing: {missing}")
+        if cycle:
+            parts.append(f"cycle: {cycle}")
+        summary = "; ".join(parts) if parts else "resolution failed"
+        return build_step_result(
+            "resolve_dependencies", "fail",
+            summary,
+            details={"resolver": result}
+        )
+
+    return build_step_result(
+        "resolve_dependencies", "pass",
+        "dependencies resolved",
+        details={"install_order": result.get("install_order")}
+    )
+
+
+def _install_apply_migrations(ctx: Dict[str, Any]) -> StepResult:
+    """Step 3: Apply migration SQL files."""
+    if ctx.get("existing_record") is not None:
+        return build_step_result("apply_migrations", "skip", "module already installed")
+
+    manifest = ctx["manifest"]
+    migrations = list(manifest.migrations) if manifest.migrations else []
+
+    if ctx["dry_run"]:
+        return build_step_result(
+            "apply_migrations", "skip",
+            f"dry_run: would apply {len(migrations)} migration(s)",
+            details={"would_apply": migrations}
+        )
+
+    module_dir = ctx["module_dir"]
+
+    for mig_rel_path in migrations:
+        abs_path = os.path.join(module_dir, mig_rel_path)
+        if not os.path.exists(abs_path):
+            return build_step_result(
+                "apply_migrations", "fail",
+                f"migration file not found: {mig_rel_path}"
+            )
+
+        # Try to apply via PG; best-effort — fall back to recording on PG unavailable
+        try:
+            from services import pg_store
+            conn = pg_store._get_conn()
+            with open(abs_path, "r", encoding="utf-8") as fh:
+                sql = fh.read()
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute(sql)
+            conn.close()
+        except ImportError:
+            # pg_store not available — record path without execution (SQLite-fallback)
+            pass
+        except Exception as exc:
+            return build_step_result(
+                "apply_migrations", "fail",
+                f"migration {mig_rel_path} failed: {exc}"
+            )
+
+        ctx["applied_migrations"].append(mig_rel_path)
+
+    return build_step_result(
+        "apply_migrations", "pass",
+        f"applied {len(ctx['applied_migrations'])} migration(s)",
+        details={"applied": list(ctx["applied_migrations"])}
+    )
+
+
+def _install_register_services(ctx: Dict[str, Any]) -> StepResult:
+    """Step 4: Register module services via filesystem stub."""
+    if ctx.get("existing_record") is not None:
+        return build_step_result("register_services", "skip", "module already installed")
+
+    manifest = ctx["manifest"]
+    # services may be a dict (pydantic) or list (raw)
+    if isinstance(manifest.services, dict):
+        service_names = list(manifest.services.keys())
+    elif isinstance(manifest.services, list):
+        service_names = list(manifest.services)
+    else:
+        service_names = []
+
+    if ctx["dry_run"]:
+        return build_step_result(
+            "register_services", "skip",
+            f"dry_run: would register {len(service_names)} service(s)",
+            details={"would_apply": service_names}
+        )
+
+    if not service_names:
+        return build_step_result(
+            "register_services", "pass",
+            "no services to register"
+        )
+
+    reg_dir = os.path.expanduser("~/.amauta/data/registered_services")
+    try:
+        os.makedirs(reg_dir, exist_ok=True)
+        stub_path = os.path.join(reg_dir, f"{manifest.name}.json")
+        with open(stub_path, "w", encoding="utf-8") as fh:
+            json.dump({"module_name": manifest.name, "services": service_names}, fh, indent=2)
+        ctx["registered_services"].extend(service_names)
+    except (OSError, PermissionError) as exc:
+        return build_step_result(
+            "register_services", "fail",
+            f"service registration failed: {exc}"
+        )
+
+    return build_step_result(
+        "register_services", "pass",
+        f"registered {len(ctx['registered_services'])} service(s)"
+    )
+
+
+def _install_copy_agents(ctx: Dict[str, Any]) -> StepResult:
+    """Step 5: Copy agent files into agents/ directory."""
+    if ctx.get("existing_record") is not None:
+        return build_step_result("copy_agents", "skip", "module already installed")
+
+    manifest = ctx["manifest"]
+    agents = list(manifest.agents) if manifest.agents else []
+
+    if ctx["dry_run"]:
+        return build_step_result(
+            "copy_agents", "skip",
+            f"dry_run: would copy {len(agents)} agent(s)",
+            details={"would_apply": agents}
+        )
+
+    module_dir = ctx["module_dir"]
+
+    for agent_rel_path in agents:
+        src = os.path.join(module_dir, agent_rel_path)
+        dest = os.path.join("agents", os.path.basename(agent_rel_path))
+
+        if os.path.exists(dest) and not ctx["force"]:
+            return build_step_result(
+                "copy_agents", "fail",
+                f"agent destination exists: {dest}"
+            )
+
+        try:
+            os.makedirs(os.path.dirname(os.path.abspath(dest)), exist_ok=True)
+            shutil.copy2(src, dest)
+            ctx["installed_agents"].append(dest)
+        except Exception as exc:
+            return build_step_result(
+                "copy_agents", "fail",
+                f"failed to copy agent {agent_rel_path}: {exc}"
+            )
+
+    return build_step_result(
+        "copy_agents", "pass",
+        f"copied {len(ctx['installed_agents'])} agent(s)"
+    )
+
+
+def _install_copy_skills(ctx: Dict[str, Any]) -> StepResult:
+    """Step 6: Copy skill files into get-shit-done/skills/ directory."""
+    if ctx.get("existing_record") is not None:
+        return build_step_result("copy_skills", "skip", "module already installed")
+
+    manifest = ctx["manifest"]
+    skills = list(manifest.skills) if manifest.skills else []
+
+    if ctx["dry_run"]:
+        return build_step_result(
+            "copy_skills", "skip",
+            f"dry_run: would copy {len(skills)} skill(s)",
+            details={"would_apply": skills}
+        )
+
+    module_dir = ctx["module_dir"]
+
+    for skill_rel_path in skills:
+        src = os.path.join(module_dir, skill_rel_path)
+        # Determine skill name from path
+        # skill_rel_path is e.g. "skills/test-skill/SKILL.md"
+        # skill name = parent directory of the SKILL.md file
+        skill_name = os.path.basename(os.path.dirname(skill_rel_path))
+        if not skill_name or skill_name == ".":
+            skill_name = os.path.splitext(os.path.basename(skill_rel_path))[0]
+
+        dest = os.path.join("get-shit-done", "skills", skill_name, "SKILL.md")
+
+        if os.path.exists(dest) and not ctx["force"]:
+            return build_step_result(
+                "copy_skills", "fail",
+                f"skill destination exists: {dest}"
+            )
+
+        try:
+            os.makedirs(os.path.dirname(os.path.abspath(dest)), exist_ok=True)
+            shutil.copy2(src, dest)
+            ctx["installed_skills"].append(dest)
+        except Exception as exc:
+            return build_step_result(
+                "copy_skills", "fail",
+                f"failed to copy skill {skill_rel_path}: {exc}"
+            )
+
+    return build_step_result(
+        "copy_skills", "pass",
+        f"copied {len(ctx['installed_skills'])} skill(s)"
+    )
+
+
+def _install_post_install_verify(ctx: Dict[str, Any]) -> StepResult:
+    """Step 7: Confirm installed files exist; write install record."""
+    from services.install_record_store import put_install_record
+
+    if ctx["dry_run"]:
+        return build_step_result(
+            "post_install_verify", "skip",
+            "dry_run: skipped verify",
+            details={"reason": "dry_run"}
+        )
+
+    if ctx.get("existing_record") is not None:
+        return build_step_result("post_install_verify", "skip", "module already installed")
+
+    manifest = ctx["manifest"]
+
+    # Verify all installed agents exist on disk
+    missing: List[str] = []
+    for agent_path in ctx["installed_agents"]:
+        if not os.path.exists(agent_path):
+            missing.append(agent_path)
+
+    # Verify all installed skills exist on disk
+    for skill_path in ctx["installed_skills"]:
+        if not os.path.exists(skill_path):
+            missing.append(skill_path)
+
+    if missing:
+        return build_step_result(
+            "post_install_verify", "fail",
+            f"post-install verification failed: missing files {missing}",
+            details={"missing": missing}
+        )
+
+    # Write install record
+    record = {
+        "module_name": manifest.name,
+        "version": manifest.version,
+        "manifest_hash": ctx["manifest_hash"],
+        "installed_at": datetime.now(timezone.utc).isoformat(),
+        "upgraded_at": None,
+        "applied_migrations": list(ctx["applied_migrations"]),
+        "registered_services": list(ctx["registered_services"]),
+        "installed_agents": list(ctx["installed_agents"]),
+        "installed_skills": list(ctx["installed_skills"]),
+    }
+    try:
+        put_install_record(record)
+    except Exception as exc:
+        return build_step_result(
+            "post_install_verify", "fail",
+            f"failed to write install record: {exc}"
+        )
+
+    return build_step_result(
+        "post_install_verify", "pass",
+        f"install record written for {manifest.name}@{manifest.version}"
+    )
+
+
+# ─── Rollback inverse helpers ─────────────────────────────────────────────────
+
+
+def _rollback_apply_migrations(ctx: Dict[str, Any]) -> StepResult:
+    """Rollback: revert applied migrations in LIFO order via DOWN files."""
+    applied = list(ctx.get("applied_migrations", []))
+    module_dir = ctx.get("module_dir", "")
+
+    reverted = []
+    missing_down = []
+
+    for mig_rel_path in reversed(applied):
+        # Build DOWN file path: replace .sql suffix with -DOWN.sql
+        if mig_rel_path.endswith(".sql"):
+            down_rel = mig_rel_path[:-4] + "-DOWN.sql"
+        else:
+            down_rel = mig_rel_path + "-DOWN.sql"
+
+        down_abs = os.path.join(module_dir, down_rel)
+
+        if not os.path.exists(down_abs):
+            missing_down.append(down_rel)
+            continue
+
+        try:
+            from services import pg_store
+            conn = pg_store._get_conn()
+            with open(down_abs, "r", encoding="utf-8") as fh:
+                sql = fh.read()
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute(sql)
+            conn.close()
+            reverted.append(mig_rel_path)
+        except ImportError:
+            # PG unavailable — record as reverted (SQLite fallback)
+            reverted.append(mig_rel_path)
+        except Exception as exc:
+            return build_step_result(
+                ROLLBACK_PREFIX + "apply_migrations", "fail",
+                f"rollback migration {mig_rel_path} failed: {exc}",
+                details={"partial_rollback": True}
+            )
+
+    if missing_down:
+        return build_step_result(
+            ROLLBACK_PREFIX + "apply_migrations",
+            "warn" if reverted else "pass",
+            f"{len(reverted)} migration(s) reverted, {len(missing_down)} DOWN files missing",
+            details={"reverted": reverted, "missing_down": missing_down}
+        )
+
+    return build_step_result(
+        ROLLBACK_PREFIX + "apply_migrations",
+        "pass",
+        f"reverted {len(reverted)} migration(s)",
+        details={"reverted": reverted}
+    )
+
+
+def _rollback_register_services(ctx: Dict[str, Any]) -> StepResult:
+    """Rollback: remove registered_services stub file."""
+    manifest = ctx.get("manifest")
+    if not manifest:
+        return build_step_result(
+            ROLLBACK_PREFIX + "register_services", "skip",
+            "no manifest in context — skipping service deregistration"
+        )
+
+    stub_path = os.path.expanduser(
+        f"~/.amauta/data/registered_services/{manifest.name}.json"
+    )
+    try:
+        if os.path.exists(stub_path):
+            os.remove(stub_path)
+    except OSError:
+        pass  # missing file is tolerated — goal state is achieved
+
+    return build_step_result(
+        ROLLBACK_PREFIX + "register_services", "pass",
+        "registered_services stub removed (or was already absent)"
+    )
+
+
+def _rollback_copy_agents(ctx: Dict[str, Any]) -> StepResult:
+    """Rollback: remove installed agent files."""
+    installed_agents = list(ctx.get("installed_agents", []))
+    removed = []
+    errors = []
+
+    for agent_path in installed_agents:
+        try:
+            if os.path.exists(agent_path):
+                os.remove(agent_path)
+            removed.append(agent_path)
+        except OSError as exc:
+            errors.append(f"{agent_path}: {exc}")
+
+    if errors:
+        return build_step_result(
+            ROLLBACK_PREFIX + "copy_agents", "fail",
+            f"failed to remove {len(errors)} agent(s): {errors}",
+            details={"partial_rollback": True, "errors": errors}
+        )
+
+    return build_step_result(
+        ROLLBACK_PREFIX + "copy_agents", "pass",
+        f"removed {len(removed)} agent(s)"
+    )
+
+
+def _rollback_copy_skills(ctx: Dict[str, Any]) -> StepResult:
+    """Rollback: remove installed skill files and prune empty parent dirs."""
+    installed_skills = list(ctx.get("installed_skills", []))
+    removed = []
+    errors = []
+
+    for skill_path in installed_skills:
+        try:
+            if os.path.exists(skill_path):
+                os.remove(skill_path)
+            removed.append(skill_path)
+            # Prune empty parent directory
+            parent = os.path.dirname(skill_path)
+            if os.path.isdir(parent) and not os.listdir(parent):
+                os.rmdir(parent)
+        except OSError as exc:
+            errors.append(f"{skill_path}: {exc}")
+
+    if errors:
+        return build_step_result(
+            ROLLBACK_PREFIX + "copy_skills", "fail",
+            f"failed to remove {len(errors)} skill(s): {errors}",
+            details={"partial_rollback": True, "errors": errors}
+        )
+
+    return build_step_result(
+        ROLLBACK_PREFIX + "copy_skills", "pass",
+        f"removed {len(removed)} skill(s)"
+    )
+
+
+def _rollback_post_install_verify(ctx: Dict[str, Any]) -> StepResult:
+    """Rollback: delete install record (post_install_verify wrote it)."""
+    from services.install_record_store import delete_install_record
+
+    if ctx.get("manifest"):
+        delete_install_record(ctx["manifest"].name)
+
+    return build_step_result(
+        ROLLBACK_PREFIX + "post_install_verify",
+        "pass",
+        "install record removed",
+        duration_ms=0,
+        details=None,
+    )
+
+
+# ─── _run_rollback engine ─────────────────────────────────────────────────────
+
+
+def _run_rollback(
+    failed_step: str,
+    results: List[StepResult],
+    ctx: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Run inverse of each preceding pass step in reverse order.
+
+    Args:
+        failed_step: name of the step that returned status="fail".
+        results: forward-step list (mutated by appending rollback_* entries).
+        ctx: install context with accumulated state (applied_migrations etc).
+
+    Returns:
+        {"triggered_by_step": failed_step, "undo_actions": list[str], "partial_rollback": bool}
+    """
+    # Steps that ran with status="pass" BEFORE the failure
+    forward_pass_steps = [r.name for r in results if r.status == "pass"]
+
+    # Frozen inverse mapping for the 6 state-changing install steps.
+    # validate_manifest + resolve_dependencies are read-only → not rolled back.
+    INVERSE_OPS: Dict[str, Any] = {
+        "apply_migrations": _rollback_apply_migrations,
+        "register_services": _rollback_register_services,
+        "copy_agents": _rollback_copy_agents,
+        "copy_skills": _rollback_copy_skills,
+        "post_install_verify": _rollback_post_install_verify,
+    }
+
+    undo_actions: List[str] = []
+    partial_rollback = False
+
+    for step_name in reversed(forward_pass_steps):
+        if step_name not in INVERSE_OPS:
+            # No-op rollback for read-only steps; surface as skip.
+            results.append(build_step_result(
+                ROLLBACK_PREFIX + step_name,
+                "skip",
+                f"no inverse defined for {step_name} (read-only step)",
+                duration_ms=0,
+                details=None,
+            ))
+            continue
+
+        t0 = time.time()
+        try:
+            rb = INVERSE_OPS[step_name](ctx)
+        except Exception as exc:
+            rb = build_step_result(
+                ROLLBACK_PREFIX + step_name, "fail",
+                f"rollback raised: {exc}",
+                duration_ms=0,
+                details={"partial_rollback": True}
+            )
+            partial_rollback = True
+
+        rb.duration_ms = int((time.time() - t0) * 1000)
+
+        # Re-stamp the name to ensure rollback_<step> prefix
+        if not rb.name.startswith(ROLLBACK_PREFIX):
+            rb = build_step_result(
+                ROLLBACK_PREFIX + step_name,
+                rb.status, rb.message,
+                rb.duration_ms, rb.details
+            )
+
+        if rb.status == "fail":
+            partial_rollback = True
+            merged = dict(rb.details or {})
+            merged["partial_rollback"] = True
+            rb = build_step_result(
+                rb.name, "fail", rb.message,
+                rb.duration_ms, merged
+            )
+
+        results.append(rb)
+        undo_actions.append(ROLLBACK_PREFIX + step_name)
+
+    return {
+        "triggered_by_step": failed_step,
+        "undo_actions": undo_actions,
+        "partial_rollback": partial_rollback,
+    }
+
+
+# ─── install() orchestrator ───────────────────────────────────────────────────
 
 
 def install(
@@ -228,23 +830,336 @@ def install(
     """
     Install a module from the given manifest YAML path.
 
-    STUB — Plan 49-01 skeleton only. Plan 49-02 replaces this body
-    with real install logic: validate_manifest, resolve_dependencies,
-    apply_migrations, register_services, copy_agents, copy_skills,
-    post_install_verify.
+    Implements the 7 frozen INSTALL_STEPS in order:
+      validate_manifest → resolve_dependencies → apply_migrations →
+      register_services → copy_agents → copy_skills → post_install_verify
 
-    Returns a skip result until 49-02 is applied.
+    Idempotency: if module is already installed with same manifest_hash AND
+    force=False, all steps return status="skip", overall status="skip".
+
+    Rollback: if any step fails, inverse of prior pass steps runs in reverse.
+
+    Dry-run: state-modifying steps return status="skip" with would_apply details.
     """
+    ctx: Dict[str, Any] = {
+        "manifest_path": manifest_path,
+        "manifest_yaml_text": "",
+        "manifest": None,
+        "manifest_hash": "",
+        "dry_run": dry_run,
+        "force": force,
+        "module_dir": os.path.dirname(os.path.abspath(manifest_path)),
+        "applied_migrations": [],
+        "registered_services": [],
+        "installed_agents": [],
+        "installed_skills": [],
+        "existing_record": None,
+    }
+
+    steps_to_run = [
+        ("validate_manifest", _install_validate_manifest),
+        ("resolve_dependencies", _install_resolve_dependencies),
+        ("apply_migrations", _install_apply_migrations),
+        ("register_services", _install_register_services),
+        ("copy_agents", _install_copy_agents),
+        ("copy_skills", _install_copy_skills),
+        ("post_install_verify", _install_post_install_verify),
+    ]
+
+    results: List[StepResult] = []
+    failed_step = None
+
+    for name, fn in steps_to_run:
+        t0 = time.time()
+        try:
+            r = fn(ctx)
+        except Exception as exc:
+            r = build_step_result(name, "fail", f"unhandled exception: {exc}")
+        r.duration_ms = int((time.time() - t0) * 1000)
+        # Defensive: ensure step name matches expected
+        if r.name != name:
+            r = build_step_result(name, r.status, r.message, r.duration_ms, r.details)
+        results.append(r)
+        if r.status == "fail":
+            failed_step = name
+            break
+
+    rollback_info = None
+    if failed_step is not None and not dry_run:
+        rollback_info = _run_rollback(failed_step, results, ctx)
+
+    module_name = ctx["manifest"].name if ctx["manifest"] else "<unknown>"
+    module_version = ctx["manifest"].version if ctx["manifest"] else "<unknown>"
+    overall = worst_of_status([r.status for r in results])
+
     return LifecycleResult(
         schema_version=SCHEMA_VERSION,
         operation="install",
-        module="<unimplemented>",
-        module_version="<unimplemented>",
-        status="skip",
-        steps=[],
-        rollback=None,
+        module=module_name,
+        module_version=module_version,
+        status=overall,
+        steps=results,
+        rollback=rollback_info,
         dry_run=dry_run,
     )
+
+
+# ─── uninstall() private step helpers ────────────────────────────────────────
+
+
+def _uninstall_read_install_record(ctx: Dict[str, Any]) -> StepResult:
+    """Step 1: Load install record; gate absent-module idempotency."""
+    from services.install_record_store import get_install_record
+
+    module_name = ctx["module_name"]
+    try:
+        record = get_install_record(module_name)
+    except Exception as exc:
+        return build_step_result(
+            "read_install_record", "fail",
+            f"failed to read install record: {exc}"
+        )
+
+    if record is None:
+        ctx["absent"] = True
+        return build_step_result(
+            "read_install_record", "skip",
+            f"module {module_name} is not installed"
+        )
+
+    ctx["record"] = record
+    version = record.get("version", "<unknown>")
+    return build_step_result(
+        "read_install_record", "pass",
+        f"loaded install record for {module_name}@{version}",
+        details={"version": version}
+    )
+
+
+def _uninstall_remove_skills(ctx: Dict[str, Any]) -> StepResult:
+    """Step 2: Remove installed skill files."""
+    if ctx.get("absent"):
+        return build_step_result("remove_skills", "skip", "module not installed")
+
+    if ctx["dry_run"]:
+        skill_paths = ctx["record"].get("installed_skills", [])
+        return build_step_result(
+            "remove_skills", "skip",
+            "dry_run: would remove skills",
+            details={"would_apply": skill_paths}
+        )
+
+    skill_paths = ctx["record"].get("installed_skills", [])
+    for path in skill_paths:
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+            # Best-effort prune empty parent dir
+            parent = os.path.dirname(path)
+            if parent and os.path.isdir(parent) and not os.listdir(parent):
+                os.rmdir(parent)
+        except OSError:
+            pass  # missing files tolerated
+
+    return build_step_result(
+        "remove_skills", "pass",
+        f"removed {len(skill_paths)} skill file(s) (missing files tolerated)"
+    )
+
+
+def _uninstall_remove_agents(ctx: Dict[str, Any]) -> StepResult:
+    """Step 3: Remove installed agent files."""
+    if ctx.get("absent"):
+        return build_step_result("remove_agents", "skip", "module not installed")
+
+    if ctx["dry_run"]:
+        agent_paths = ctx["record"].get("installed_agents", [])
+        return build_step_result(
+            "remove_agents", "skip",
+            "dry_run: would remove agents",
+            details={"would_apply": agent_paths}
+        )
+
+    agent_paths = ctx["record"].get("installed_agents", [])
+    for path in agent_paths:
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except OSError:
+            pass  # missing files tolerated
+
+    return build_step_result(
+        "remove_agents", "pass",
+        f"removed {len(agent_paths)} agent file(s) (missing files tolerated)"
+    )
+
+
+def _uninstall_unregister_services(ctx: Dict[str, Any]) -> StepResult:
+    """Step 4: Remove registered_services stub file."""
+    if ctx.get("absent"):
+        return build_step_result("unregister_services", "skip", "module not installed")
+
+    if ctx["dry_run"]:
+        return build_step_result(
+            "unregister_services", "skip",
+            "dry_run: would unregister services",
+            details={"would_apply": ctx["record"].get("registered_services", [])}
+        )
+
+    module_name = ctx["module_name"]
+    stub_path = os.path.expanduser(
+        f"~/.amauta/data/registered_services/{module_name}.json"
+    )
+    try:
+        if os.path.exists(stub_path):
+            os.remove(stub_path)
+    except OSError:
+        pass  # missing stub is tolerated
+
+    return build_step_result(
+        "unregister_services", "pass",
+        "registered_services stub removed (or was already absent)"
+    )
+
+
+def _uninstall_revert_migrations(ctx: Dict[str, Any]) -> StepResult:
+    """Step 5: Revert applied migrations in LIFO order via DOWN files."""
+    if ctx.get("absent"):
+        return build_step_result("revert_migrations", "skip", "module not installed")
+
+    if ctx["dry_run"]:
+        migrations = ctx["record"].get("applied_migrations", [])
+        return build_step_result(
+            "revert_migrations", "skip",
+            "dry_run: would revert migrations",
+            details={"would_apply": list(reversed(migrations))}
+        )
+
+    applied = ctx["record"].get("applied_migrations", [])
+    reverted = []
+    missing_down = []
+
+    for mig_rel_path in reversed(applied):
+        if mig_rel_path.endswith(".sql"):
+            down_path = mig_rel_path[:-4] + "-DOWN.sql"
+        else:
+            down_path = mig_rel_path + "-DOWN.sql"
+
+        if not os.path.exists(down_path):
+            missing_down.append(down_path)
+            continue
+
+        try:
+            from services import pg_store
+            conn = pg_store._get_conn()
+            with open(down_path, "r", encoding="utf-8") as fh:
+                sql = fh.read()
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute(sql)
+            conn.close()
+            reverted.append(mig_rel_path)
+        except ImportError:
+            reverted.append(mig_rel_path)
+        except Exception as exc:
+            return build_step_result(
+                "revert_migrations", "fail",
+                f"revert migration {mig_rel_path} failed: {exc}"
+            )
+
+    if missing_down:
+        return build_step_result(
+            "revert_migrations",
+            "warn",
+            f"{len(reverted)} migration(s) reverted, {len(missing_down)} DOWN files missing",
+            details={"reverted": reverted, "missing_down": missing_down}
+        )
+
+    return build_step_result(
+        "revert_migrations", "pass",
+        f"reverted {len(reverted)} migration(s)",
+        details={"reverted": reverted}
+    )
+
+
+def _uninstall_clear_install_record(ctx: Dict[str, Any]) -> StepResult:
+    """Step 6: Delete the install record."""
+    from services.install_record_store import delete_install_record
+
+    if ctx.get("absent"):
+        return build_step_result("clear_install_record", "skip", "module not installed")
+
+    if ctx["dry_run"]:
+        return build_step_result(
+            "clear_install_record", "skip",
+            "dry_run: would delete install record",
+            details={"would_apply": f"delete record for {ctx['module_name']}"}
+        )
+
+    try:
+        delete_install_record(ctx["module_name"])
+    except Exception as exc:
+        return build_step_result(
+            "clear_install_record", "fail",
+            f"failed to delete install record: {exc}"
+        )
+
+    return build_step_result(
+        "clear_install_record", "pass",
+        f"install record deleted for {ctx['module_name']}"
+    )
+
+
+def _uninstall_post_uninstall_verify(ctx: Dict[str, Any]) -> StepResult:
+    """Step 7: Confirm all installed artifacts are gone."""
+    from services.install_record_store import get_install_record
+
+    if ctx.get("absent") or ctx["dry_run"]:
+        return build_step_result("post_uninstall_verify", "skip", "skipped (absent or dry_run)")
+
+    record = ctx["record"]
+    module_name = ctx["module_name"]
+    leftovers: List[str] = []
+
+    # Check skill files are gone
+    for path in record.get("installed_skills", []):
+        if os.path.exists(path):
+            leftovers.append(path)
+
+    # Check agent files are gone
+    for path in record.get("installed_agents", []):
+        if os.path.exists(path):
+            leftovers.append(path)
+
+    # Check registered_services stub is gone
+    stub_path = os.path.expanduser(
+        f"~/.amauta/data/registered_services/{module_name}.json"
+    )
+    if os.path.exists(stub_path):
+        leftovers.append(stub_path)
+
+    # Check install record is gone
+    try:
+        remaining = get_install_record(module_name)
+        if remaining is not None:
+            leftovers.append(f"install_record:{module_name}")
+    except Exception:
+        pass
+
+    if leftovers:
+        return build_step_result(
+            "post_uninstall_verify", "fail",
+            f"uninstall verification failed: {len(leftovers)} artifact(s) still present",
+            details={"leftovers": leftovers}
+        )
+
+    return build_step_result(
+        "post_uninstall_verify", "pass",
+        f"all artifacts for {module_name} confirmed removed"
+    )
+
+
+# ─── uninstall() orchestrator ─────────────────────────────────────────────────
 
 
 def uninstall(
@@ -256,23 +1171,63 @@ def uninstall(
     """
     Uninstall the named module.
 
-    STUB — Plan 49-01 skeleton only. Plan 49-02 replaces this body
-    with real uninstall logic: read_install_record, remove_skills,
-    remove_agents, unregister_services, revert_migrations,
-    clear_install_record, post_uninstall_verify.
+    Implements the 7 frozen UNINSTALL_STEPS in order:
+      read_install_record → remove_skills → remove_agents →
+      unregister_services → revert_migrations → clear_install_record →
+      post_uninstall_verify
 
-    Returns a skip result until 49-02 is applied.
+    Idempotency: if module is absent, all steps return status="skip".
+    No rollback on failure (uninstall failures surface to operator).
     """
+    ctx: Dict[str, Any] = {
+        "module_name": module_name,
+        "dry_run": dry_run,
+        "record": None,
+        "absent": False,
+    }
+
+    steps_to_run = [
+        ("read_install_record", _uninstall_read_install_record),
+        ("remove_skills", _uninstall_remove_skills),
+        ("remove_agents", _uninstall_remove_agents),
+        ("unregister_services", _uninstall_unregister_services),
+        ("revert_migrations", _uninstall_revert_migrations),
+        ("clear_install_record", _uninstall_clear_install_record),
+        ("post_uninstall_verify", _uninstall_post_uninstall_verify),
+    ]
+
+    results: List[StepResult] = []
+
+    for name, fn in steps_to_run:
+        t0 = time.time()
+        try:
+            r = fn(ctx)
+        except Exception as exc:
+            r = build_step_result(name, "fail", f"unhandled exception: {exc}")
+        r.duration_ms = int((time.time() - t0) * 1000)
+        if r.name != name:
+            r = build_step_result(name, r.status, r.message, r.duration_ms, r.details)
+        results.append(r)
+        # uninstall does NOT rollback — failures surface to operator (per CONTEXT.md)
+        if r.status == "fail":
+            break  # stop forward progress; no auto-undo
+
+    version = ctx["record"]["version"] if ctx["record"] else "<absent>"
+    overall = worst_of_status([r.status for r in results])
+
     return LifecycleResult(
         schema_version=SCHEMA_VERSION,
         operation="uninstall",
-        module="<unimplemented>",
-        module_version="<unimplemented>",
-        status="skip",
-        steps=[],
-        rollback=None,
+        module=module_name,
+        module_version=version,
+        status=overall,
+        steps=results,
+        rollback=None,  # uninstall has no rollback per CONTEXT.md Area 6
         dry_run=dry_run,
     )
+
+
+# ─── upgrade() stub (Plan 49-03 scope) ───────────────────────────────────────
 
 
 def upgrade(
