@@ -121,6 +121,25 @@ if (command === 'party') {
   process.exit(result.status === null ? 1 : result.status);
 }
 
+// ─── Agents subcommand (Phase 52 COMPILE-02 + COMPILE-03 + COMPILE-04) ─────
+//
+// gsd-amauta agents compile --target=<ide> [--out <dir>] [--hydrate <agent>] [--dry-run]
+// gsd-amauta agents validate <agent-dir>
+// gsd-amauta agents list [--source <dir>]
+//
+// Mirrors the 'module' and 'party' branches above: spawnSync the gsd-tools entry-point
+// so stdio/exit-code propagation matches direct invocation.
+
+if (command === 'agents') {
+  const toolsPath = path.resolve(__dirname, '..', 'get-shit-done', 'bin', 'gsd-tools.cjs');
+  const agentsArgs = process.argv.slice(3);
+  const result = spawnSync('node', [toolsPath, 'agents', ...agentsArgs], {
+    stdio: 'inherit',
+    cwd: path.resolve(__dirname, '..'),
+  });
+  process.exit(result.status === null ? 1 : result.status);
+}
+
 // ─── Status routing ─────────────────────────────────────────────────────────
 
 // Detect whether "status" is system status (no id) or task status change (with id).
