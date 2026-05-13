@@ -1003,8 +1003,43 @@ def _run_rollback(
                 rb.duration_ms, merged
             )
 
+        # A rollback step may return skip with partial_rollback=True in details
+        # (e.g. _rollback_apply_contract_migrations — contract not reversible).
+        # Bubble up the partial_rollback flag to the rollback summary.
+        if (rb.details or {}).get("partial_rollback"):
+            partial_rollback = True
+
         results.append(rb)
         undo_actions.append(ROLLBACK_PREFIX + step_name)
+
+    # Also run the rollback for the failed step itself if it has an INVERSE_OPS
+    # entry. This surfaces signals like _rollback_apply_contract_migrations
+    # (which returns skip + partial_rollback=True when a destructive migration
+    # fails mid-execution — "contract not reversible; operator action required").
+    if failed_step in INVERSE_OPS and (ROLLBACK_PREFIX + failed_step) not in undo_actions:
+        t0 = time.time()
+        try:
+            rb_self = INVERSE_OPS[failed_step](ctx)
+        except Exception as exc:
+            rb_self = build_step_result(
+                ROLLBACK_PREFIX + failed_step, "fail",
+                f"rollback raised: {exc}",
+                details={"partial_rollback": True},
+            )
+            partial_rollback = True
+        rb_self.duration_ms = int((time.time() - t0) * 1000)
+        if not rb_self.name.startswith(ROLLBACK_PREFIX):
+            rb_self = build_step_result(
+                ROLLBACK_PREFIX + failed_step,
+                rb_self.status, rb_self.message,
+                rb_self.duration_ms, rb_self.details,
+            )
+        if (rb_self.details or {}).get("partial_rollback"):
+            partial_rollback = True
+        if rb_self.status == "fail":
+            partial_rollback = True
+        results.append(rb_self)
+        undo_actions.append(ROLLBACK_PREFIX + failed_step)
 
     return {
         "triggered_by_step": failed_step,
@@ -1427,8 +1462,14 @@ def uninstall(
 
 
 def _upgrade_validate_new_manifest(ctx: Dict[str, Any]) -> StepResult:
-    """Step 1: Read + validate new manifest YAML; compute hash."""
+    """Step 1: Read + validate new manifest YAML; compute hash; probe idempotency.
+
+    Idempotency probe is done here (same as _install_validate_manifest) so that
+    when the manifest_hash already matches the installed record, all 8 steps
+    return skip and overall status is "skip".
+    """
     from services.module_schema import load_module_manifest
+    from services.install_record_store import get_install_record
 
     manifest_path = ctx["new_manifest_path"]
     try:
@@ -1459,6 +1500,19 @@ def _upgrade_validate_new_manifest(ctx: Dict[str, Any]) -> StepResult:
         )
 
     ctx["new_manifest_hash"] = manifest_hash
+
+    # Idempotency probe: peek at existing record; if hash already matches + no force → skip
+    if not ctx["force"]:
+        try:
+            existing = get_install_record(manifest.name)
+        except Exception:
+            existing = None
+        if existing and existing.get("manifest_hash") == manifest_hash:
+            ctx["idempotent_skip"] = True
+            return build_step_result(
+                "validate_new_manifest", "skip",
+                f"already at {existing['version']} with matching manifest_hash"
+            )
 
     return build_step_result(
         "validate_new_manifest", "pass",
