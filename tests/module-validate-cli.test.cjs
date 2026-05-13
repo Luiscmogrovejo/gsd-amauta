@@ -59,8 +59,11 @@ console.log('\nmodule validate CLI integration tests\n');
 run('usage exit code is 2 when no action given', () => {
   const r = runCli([]);
   assert.strictEqual(r.status, 2, `expected exit 2, got ${r.status}`);
+  // Phase 49 extended the usage block to multi-line format:
+  //   Usage:\n  gsd-tools module validate <manifest.yaml> ...
+  // Match the validate usage line regardless of preceding newline.
   assert.ok(
-    r.stderr.includes('Usage: gsd-tools module validate'),
+    r.stderr.includes('gsd-tools module validate'),
     `stderr must contain usage line; got: ${r.stderr}`
   );
 });
