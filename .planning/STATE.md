@@ -5,13 +5,13 @@ milestone_name: The Federation** — Phases 48-53
 status: completed
 stopped_at: v3.2 roadmap defined; awaiting Phase 48 planning
 last_updated: "2026-05-13T00:00:00.000Z"
-last_activity: "2026-05-13 — Plan 49-03 complete: upgrade() 8-step expand-and-contract orchestrator + compute_migration_delta + v2 fixture + 19 new tests (68 total PASS). SC3 expand-before-swap-before-contract verified. SC4 contract partial_rollback verified. MOD-03 idempotency locked."
+last_activity: "2026-05-13 — Plan 49-04 complete: module_lifecycle_cli.py + gsd-tools.cjs + bin/cli.cjs + 18 tests (25 Node + 68 pytest = 93 total PASS). Phase 49 COMPLETE. MOD-03 + MOD-04 fulfilled. 10/10 v3.1 canary diffs empty."
 progress:
   total_phases: 6
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 5
   completed_plans: 5
-  percent: 17
+  percent: 33
 ---
 
 # GSD-Amauta -- Project State
@@ -25,19 +25,19 @@ See: .planning/PROJECT.md (updated 2026-05-13 after v3.1 milestone close + v3.2 
 
 ## Current Position
 
-Phase: 49 — Module CLI + Lifecycle (in progress — Plans 49-01 + 49-02 + 49-03 COMPLETE)
-Plan: 49-03 COMPLETE (5 tasks)
-Status: Phase 49 Wave 3 shipped. upgrade() 8-step expand-and-contract orchestrator + compute_migration_delta + lifecycle-test-v2 fixture + 19 new tests (68 total tests pass). SC3 expand-before-swap-before-contract verified. SC4 contract partial_rollback verified. Plan 49-04 next (CLI dispatch + E2E).
-Last activity: 2026-05-13 — Plan 49-03 complete: upgrade() 8-step expand-and-contract orchestrator + compute_migration_delta + v2 fixture + 19 new tests (68 total PASS). SC3 expand-before-swap-before-contract verified. SC4 contract partial_rollback verified. MOD-03 idempotency locked.
+Phase: 49 — Module CLI + Lifecycle (COMPLETE — Plans 49-01 + 49-02 + 49-03 + 49-04 COMPLETE)
+Plan: 49-04 COMPLETE (6 tasks)
+Status: Phase 49 COMPLETE. module_lifecycle_cli.py + gsd-tools.cjs module dispatch + bin/cli.cjs shortcut + 18 new tests. 93 total tests pass (25 Node + 68 pytest). 10/10 v3.1 canary diffs empty. MOD-03 + MOD-04 requirements fulfilled. Phase 50 (Party Mode Foundation) is next.
+Last activity: 2026-05-13 — Plan 49-04 complete: CLI dispatch surface wired through gsd-tools.cjs + bin/cli.cjs, 18 new tests, Phase 49 COMPLETE.
 
-Progress: [>>        ] 17% (1 of 6 phases complete, 3 of 3 plans complete)
+Progress: [>>>       ] 33% (2 of 6 phases complete, 4 of 4 plans complete)
 
 ## v3.2 Phase Map
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
 | 48 | Module System Foundation | MOD-01, MOD-02 | COMPLETE — Plans 48-01 + 48-02 shipped 2026-05-13 |
-| 49 | Module CLI + Lifecycle | MOD-03, MOD-04 | IN PROGRESS — Plan 49-01 COMPLETE 2026-05-13 |
+| 49 | Module CLI + Lifecycle | MOD-03, MOD-04 | COMPLETE — Plans 49-01 + 49-02 + 49-03 + 49-04 shipped 2026-05-13 |
 | 50 | Party Mode Foundation | PARTY-01, PARTY-02 | Not started |
 | 51 | Party Mode Decisions + Operator CLI | PARTY-03, PARTY-04 | Not started (depends on 50) |
 | 52 | Agent Compilation | COMPILE-01, COMPILE-02, COMPILE-03, COMPILE-04 | Not started |
