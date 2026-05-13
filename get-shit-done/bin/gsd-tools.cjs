@@ -3626,6 +3626,61 @@ Examples:
       break;
     }
 
+    case 'module': {
+      // Phase 48 MOD-01 + MOD-02: Module manifest validation + semver resolver.
+      // Operator-side wrapper around services/module_validator_cli.py.
+      // Subprocess invocation mirrors Phase 47 agent-hydrate pattern.
+      // Usage: gsd-tools module <action> [args...]
+      // Phase 48 actions: validate (only). Phase 49 will add install/uninstall/upgrade.
+      // Indexing: args[0] is the command name ('module'); args[1] is the first
+      // positional after the command — mirrors agent-hydrate at L3587.
+      const action = args[1];
+      if (!action || action.startsWith('--')) {
+        process.stderr.write(
+          'Usage: gsd-tools module validate <manifest.yaml> [<manifest.yaml> ...] [--json]\n'
+        );
+        process.exit(2);
+      }
+
+      if (action !== 'validate') {
+        process.stderr.write(
+          `Unknown module action: ${action}\n` +
+          'Usage: gsd-tools module validate <manifest.yaml> [<manifest.yaml> ...] [--json]\n'
+        );
+        process.exit(2);
+      }
+
+      // Collect manifest paths (positional args after 'validate') and the --json flag.
+      // args.slice(2) skips both the command ('module') and the action ('validate').
+      const rest = args.slice(2);
+      const jsonFlag = rest.includes('--json');
+      const manifestPaths = rest.filter((a) => a !== '--json');
+
+      if (manifestPaths.length === 0) {
+        process.stderr.write(
+          'Usage: gsd-tools module validate <manifest.yaml> [<manifest.yaml> ...] [--json]\n'
+        );
+        process.exit(2);
+      }
+
+      const repoRoot = path.resolve(__dirname, '..', '..');
+      const cliPath = path.join(repoRoot, 'services', 'module_validator_cli.py');
+
+      const subprocArgs = [cliPath, ...manifestPaths];
+      if (jsonFlag) subprocArgs.push('--json');
+
+      const result = spawnSync('python3', subprocArgs, { encoding: 'utf8', cwd: repoRoot });
+
+      if (result.error) {
+        process.stderr.write(`module validate subprocess failed: ${result.error.message}\n`);
+        process.exit(1);
+      }
+      if (result.stdout) process.stdout.write(result.stdout);
+      if (result.stderr) process.stderr.write(result.stderr);
+      process.exit(result.status === null ? 1 : result.status);
+      break;
+    }
+
     default:
       error(`Unknown command: ${command}`);
   }
