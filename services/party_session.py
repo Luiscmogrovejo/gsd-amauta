@@ -84,6 +84,10 @@ VALID_TRANSITIONS = frozenset({
     ("paused", "terminated"),
 })
 
+# Phase 51 PARTY-03 — FROZEN decision vocabulary. CHECK constraint deliberately
+# omitted at DB level (migration 023); enforced at write site in post_decision().
+DECISION_TYPES = ("propose", "agree", "dissent", "block")
+
 
 # ── Exception classes ─────────────────────────────────────────────────────────
 
@@ -563,6 +567,125 @@ def list_findings(session_id: str, conn=None) -> list:
                 d["created_at"] = val.isoformat()
             results.append(d)
         return results
+
+    if conn is not None:
+        return _run(conn)
+    store = _get_store()
+    with store._get_conn() as c:
+        return _run(c)
+
+
+# ── Decision helpers (Phase 51 PARTY-03) ─────────────────────────────────────
+
+def post_decision(
+    session_id: str,
+    agent_name: str,
+    decision_type: str,
+    content: str,
+    confidence: float = 0.8,
+    finding_type: str = "decision",
+    conn=None,
+) -> str:
+    """Post a structured decision (Phase 51 PARTY-03). Returns finding_id (UUID str).
+
+    Raises ValueError when decision_type not in DECISION_TYPES; the validation
+    runs BEFORE any DB write so a rejected decision_type leaves the DB unchanged.
+    CONVENTION: task_id = session_id (mirrors Phase 50 post_finding).
+    """
+    if decision_type not in DECISION_TYPES:
+        raise ValueError(
+            f"decision_type must be in {DECISION_TYPES}, got {decision_type!r}"
+        )
+
+    def _run(c):
+        with c.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO agent_findings
+                  (agent_name, task_id, finding_type, content, confidence,
+                   session_id, decision_type)
+                VALUES (%s, %s, %s, %s, %s, %s::uuid, %s)
+                RETURNING id::text
+                """,
+                (
+                    agent_name,
+                    session_id,        # task_id = session_id (Phase 50 convention)
+                    finding_type,
+                    content,
+                    float(confidence),
+                    session_id,
+                    decision_type,
+                ),
+            )
+            row = cur.fetchone()
+        return row[0]
+
+    if conn is not None:
+        return _run(conn)
+    store = _get_store()
+    with store._get_conn() as c:
+        return _run(c)
+
+
+def list_decisions(session_id: str, conn=None) -> list:
+    """Return decisions only (decision_type IS NOT NULL) for a session, ordered
+    by created_at ASC. Phase 51 PARTY-03. Returns [] when no decisions exist.
+    """
+    def _run(c):
+        import psycopg2.extras
+        with c.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT id::text AS finding_id, agent_name, decision_type,
+                       content, confidence, created_at
+                  FROM agent_findings
+                 WHERE session_id = %s::uuid
+                   AND decision_type IS NOT NULL
+                 ORDER BY created_at ASC
+                """,
+                (session_id,),
+            )
+            rows = cur.fetchall()
+        results = []
+        for row in rows:
+            d = dict(row)
+            if d.get("created_at") is not None and isinstance(d["created_at"], datetime):
+                val = d["created_at"]
+                if val.tzinfo is None:
+                    val = val.replace(tzinfo=timezone.utc)
+                d["created_at"] = val.isoformat()
+            results.append(d)
+        return results
+
+    if conn is not None:
+        return _run(conn)
+    store = _get_store()
+    with store._get_conn() as c:
+        return _run(c)
+
+
+def summarize_decisions(session_id: str, conn=None) -> dict:
+    """Return per-decision_type counts for a session as {propose:int, agree:int,
+    dissent:int, block:int}. Missing types default to 0. Phase 51 PARTY-03/PARTY-04.
+    """
+    def _run(c):
+        with c.cursor() as cur:
+            cur.execute(
+                """
+                SELECT decision_type, COUNT(*)
+                  FROM agent_findings
+                 WHERE session_id = %s::uuid
+                   AND decision_type IS NOT NULL
+                 GROUP BY decision_type
+                """,
+                (session_id,),
+            )
+            rows = cur.fetchall()
+        summary = {dt: 0 for dt in DECISION_TYPES}
+        for dt, count in rows:
+            if dt in summary:
+                summary[dt] = int(count)
+        return summary
 
     if conn is not None:
         return _run(conn)
