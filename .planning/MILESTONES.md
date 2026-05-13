@@ -1,5 +1,14 @@
 # Milestones
 
+## v3.1 The Gathering (Shipped: 2026-05-13)
+
+**Phases completed:** 7 phases, 20 plans, 12 tasks
+
+**Key accomplishments:**
+- (none recorded)
+
+---
+
 ## v3.0 The Birth (Shipped: 2026-04-14)
 
 **Phases:** 31-40 (10 completed) | **Plans:** 24 | **Assertions:** 820 | **Agents:** 17
