@@ -47,7 +47,7 @@ import urllib.parse
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import (
-    Tool, Resource, TextContent,
+    Tool, Resource, TextContent, TextResourceContents,
     ListToolsResult, CallToolResult, ListResourcesResult, ReadResourceResult,
 )
 
@@ -694,15 +694,17 @@ async def read_resource(uri: str) -> ReadResourceResult:
         task_id, phase = m.group(1), m.group(2)
         store = _get_pg_store()
         if store is None:
-            return ReadResourceResult(contents=[TextContent(
-                type="text",
+            return ReadResourceResult(contents=[TextResourceContents(
+                uri=uri,
+                mimeType="application/json",
                 text=json.dumps({"error": "pg_unavailable", "detail": "PGStore unavailable"}),
             )])
         row = store.rpetd_context_get(task_id, phase)
         if row is None:
             raise ValueError(f"Context not found: {uri}")
-        return ReadResourceResult(contents=[TextContent(
-            type="text",
+        return ReadResourceResult(contents=[TextResourceContents(
+            uri=uri,
+            mimeType="text/markdown",
             text=_format_rpetd_md(row),
         )])
 
@@ -713,8 +715,9 @@ async def read_resource(uri: str) -> ReadResourceResult:
         body = _render_agent(name, hydration=None)
         if body is None:
             raise ValueError(f"Agent not found: {uri}")
-        return ReadResourceResult(contents=[TextContent(
-            type="text",
+        return ReadResourceResult(contents=[TextResourceContents(
+            uri=uri,
+            mimeType="text/markdown",
             text=body,
         )])
 
@@ -724,8 +727,9 @@ async def read_resource(uri: str) -> ReadResourceResult:
         task_id = m.group(1)
         store = _get_pg_store()
         if store is None:
-            return ReadResourceResult(contents=[TextContent(
-                type="text",
+            return ReadResourceResult(contents=[TextResourceContents(
+                uri=uri,
+                mimeType="application/json",
                 text=json.dumps({"error": "pg_unavailable", "detail": "PGStore unavailable"}),
             )])
         try:
@@ -749,13 +753,15 @@ async def read_resource(uri: str) -> ReadResourceResult:
                 }
                 for r in raw_rows
             ]
-            return ReadResourceResult(contents=[TextContent(
-                type="text",
+            return ReadResourceResult(contents=[TextResourceContents(
+                uri=uri,
+                mimeType="application/json",
                 text=json.dumps({"findings": findings, "count": len(findings)}),
             )])
         except Exception as e:
-            return ReadResourceResult(contents=[TextContent(
-                type="text",
+            return ReadResourceResult(contents=[TextResourceContents(
+                uri=uri,
+                mimeType="application/json",
                 text=json.dumps({"error": "pg_unavailable", "detail": str(e)}),
             )])
 
