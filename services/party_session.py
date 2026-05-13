@@ -511,3 +511,54 @@ def post_finding(
     store = _get_store()
     with store._get_conn() as c:
         return _run(c)
+
+
+def list_findings(session_id: str, conn=None) -> list:
+    """Return all findings for a session in ascending creation order.
+
+    Phase 50 PARTY-02: stable ordering required for replay. Returns dicts
+    with the agent_findings column shape (id, agent_name, task_id,
+    finding_type, content, confidence, created_at, recipient_agent,
+    severity, session_id). Empty list if no findings for the given session_id.
+
+    Args:
+        session_id: UUID string of the party session.
+        conn: optional psycopg2 connection. If None, uses pg_store._get_conn().
+
+    Returns:
+        List of dicts ordered by created_at ASC. created_at as ISO8601 string.
+        Returns [] (NOT an error) when no findings exist for the session.
+    """
+    def _run(c):
+        import psycopg2.extras
+        with c.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT id::text, agent_name, task_id, finding_type, content,
+                       confidence, created_at, recipient_agent, severity,
+                       session_id::text
+                  FROM agent_findings
+                 WHERE session_id = %s::uuid
+                 ORDER BY created_at ASC
+                """,
+                (session_id,),
+            )
+            rows = cur.fetchall()
+
+        results = []
+        for row in rows:
+            d = dict(row)
+            # Normalize created_at to ISO8601 string
+            if d.get("created_at") is not None and isinstance(d["created_at"], datetime):
+                val = d["created_at"]
+                if val.tzinfo is None:
+                    val = val.replace(tzinfo=timezone.utc)
+                d["created_at"] = val.isoformat()
+            results.append(d)
+        return results
+
+    if conn is not None:
+        return _run(conn)
+    store = _get_store()
+    with store._get_conn() as c:
+        return _run(c)
