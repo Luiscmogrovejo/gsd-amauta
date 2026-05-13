@@ -3628,52 +3628,80 @@ Examples:
 
     case 'module': {
       // Phase 48 MOD-01 + MOD-02: Module manifest validation + semver resolver.
-      // Operator-side wrapper around services/module_validator_cli.py.
+      // Phase 49 MOD-03/MOD-04: Extend with install/uninstall/upgrade dispatch.
+      // Operator-side wrapper around services/module_validator_cli.py (validate)
+      // and services/module_lifecycle_cli.py (install/uninstall/upgrade).
       // Subprocess invocation mirrors Phase 47 agent-hydrate pattern.
       // Usage: gsd-tools module <action> [args...]
-      // Phase 48 actions: validate (only). Phase 49 will add install/uninstall/upgrade.
       // Indexing: args[0] is the command name ('module'); args[1] is the first
       // positional after the command — mirrors agent-hydrate at L3587.
       const action = args[1];
       if (!action || action.startsWith('--')) {
         process.stderr.write(
-          'Usage: gsd-tools module validate <manifest.yaml> [<manifest.yaml> ...] [--json]\n'
+          'Usage:\n' +
+          '  gsd-tools module validate <manifest.yaml> [<manifest.yaml> ...] [--json]\n' +
+          '  gsd-tools module install <manifest.yaml> [--dry-run] [--json] [--force]\n' +
+          '  gsd-tools module uninstall <module-name> [--dry-run] [--json]\n' +
+          '  gsd-tools module upgrade <new-manifest.yaml> [--dry-run] [--json] [--force]\n'
         );
         process.exit(2);
       }
 
-      if (action !== 'validate') {
+      // Phase 49 MOD-03/MOD-04: extend action whitelist to install/uninstall/upgrade
+      const KNOWN_ACTIONS = new Set(['validate', 'install', 'uninstall', 'upgrade']);
+      if (!KNOWN_ACTIONS.has(action)) {
         process.stderr.write(
           `Unknown module action: ${action}\n` +
-          'Usage: gsd-tools module validate <manifest.yaml> [<manifest.yaml> ...] [--json]\n'
+          'Usage:\n' +
+          '  gsd-tools module validate <manifest.yaml> [<manifest.yaml> ...] [--json]\n' +
+          '  gsd-tools module install <manifest.yaml> [--dry-run] [--json] [--force]\n' +
+          '  gsd-tools module uninstall <module-name> [--dry-run] [--json]\n' +
+          '  gsd-tools module upgrade <new-manifest.yaml> [--dry-run] [--json] [--force]\n'
         );
         process.exit(2);
       }
 
-      // Collect manifest paths (positional args after 'validate') and the --json flag.
-      // args.slice(2) skips both the command ('module') and the action ('validate').
+      // args.slice(2) skips both the command ('module') and the action.
       const rest = args.slice(2);
-      const jsonFlag = rest.includes('--json');
-      const manifestPaths = rest.filter((a) => a !== '--json');
+      const repoRoot = path.resolve(__dirname, '..', '..');
 
-      if (manifestPaths.length === 0) {
-        process.stderr.write(
-          'Usage: gsd-tools module validate <manifest.yaml> [<manifest.yaml> ...] [--json]\n'
-        );
-        process.exit(2);
+      if (action === 'validate') {
+        // EXISTING Phase 48 dispatch — preserved unchanged.
+        const jsonFlag = rest.includes('--json');
+        const manifestPaths = rest.filter((a) => a !== '--json');
+
+        if (manifestPaths.length === 0) {
+          process.stderr.write(
+            'Usage: gsd-tools module validate <manifest.yaml> [<manifest.yaml> ...] [--json]\n'
+          );
+          process.exit(2);
+        }
+
+        const cliPath = path.join(repoRoot, 'services', 'module_validator_cli.py');
+        const subprocArgs = [cliPath, ...manifestPaths];
+        if (jsonFlag) subprocArgs.push('--json');
+
+        const result = spawnSync('python3', subprocArgs, { encoding: 'utf8', cwd: repoRoot });
+
+        if (result.error) {
+          process.stderr.write(`module validate subprocess failed: ${result.error.message}\n`);
+          process.exit(1);
+        }
+        if (result.stdout) process.stdout.write(result.stdout);
+        if (result.stderr) process.stderr.write(result.stderr);
+        process.exit(result.status === null ? 1 : result.status);
       }
 
-      const repoRoot = path.resolve(__dirname, '..', '..');
-      const cliPath = path.join(repoRoot, 'services', 'module_validator_cli.py');
-
-      const subprocArgs = [cliPath, ...manifestPaths];
-      if (jsonFlag) subprocArgs.push('--json');
-
+      // Phase 49 NEW: install / uninstall / upgrade dispatch
+      // Forward all rest args verbatim to module_lifecycle_cli.py — argparse
+      // on the Python side handles --dry-run, --json, --force, and the
+      // positional argument (manifest_path or module_name).
+      const lifecycleCli = path.join(repoRoot, 'services', 'module_lifecycle_cli.py');
+      const subprocArgs = [lifecycleCli, action, ...rest];
       const result = spawnSync('python3', subprocArgs, { encoding: 'utf8', cwd: repoRoot });
-
       if (result.error) {
-        process.stderr.write(`module validate subprocess failed: ${result.error.message}\n`);
-        process.exit(1);
+        process.stderr.write(`module ${action} subprocess failed: ${result.error.message}\n`);
+        process.exit(2);
       }
       if (result.stdout) process.stdout.write(result.stdout);
       if (result.stderr) process.stderr.write(result.stderr);
