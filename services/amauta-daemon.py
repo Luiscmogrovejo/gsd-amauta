@@ -290,6 +290,7 @@ RLM_PORT = int(os.environ.get("GSD_RLM_PORT", "18798"))
 RLM_MAX_RESTARTS = 3
 _rlm_process = None
 _rlm_restart_count = 0
+_rlm_restarts_lifetime = 0  # STAB-03: cumulative counter — never reset; tracks total restart events across session
 _rlm_last_successful_uptime = None  # epoch seconds of first healthy observation post-restart; resets to None after each restart event so the 300s uptime gate re-arms
 _rlm_enabled = os.environ.get("GSD_RLM_ENABLED", "true").lower() != "false"
 
@@ -456,7 +457,7 @@ def _rlm_watchdog():
         than abandoning forever (yesterday's failure mode: 1 restart → cap → 13h
         silence until manual intervention).
     """
-    global _rlm_restart_count, _rlm_last_successful_uptime
+    global _rlm_restart_count, _rlm_last_successful_uptime, _rlm_restarts_lifetime
     while True:
         if not _rlm_enabled or _rlm_process is None:
             time.sleep(30)
@@ -467,6 +468,7 @@ def _rlm_watchdog():
             reason = "process_exited" if process_dead else "health_check_failed"
             if _rlm_restart_count < RLM_MAX_RESTARTS:
                 _rlm_restart_count += 1
+                _rlm_restarts_lifetime += 1  # STAB-03: cumulative; not reset on success
                 backoff = min(2 ** (_rlm_restart_count - 1), 60)
                 log.warning(
                     "rlm_restart attempt=%d/%d reason=%s backoff=%ds",
@@ -1152,6 +1154,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 "rlm_running": _check_rlm_health() if _rlm_enabled else False,
                 "rlm_port": RLM_PORT if _rlm_enabled else None,
                 "rlm_restarts": _rlm_restart_count,
+                "rlm_restarts_lifetime": _rlm_restarts_lifetime,  # STAB-03: cumulative — never reset
                 "redis_managed": _redis_enabled and _HAS_REDIS,
                 "redis_running": _check_redis_health(),
                 "redis_url": (
