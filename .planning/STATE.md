@@ -2,16 +2,15 @@
 gsd_state_version: 1.0
 milestone: v3.2
 milestone_name: The Federation** — Phases 48-53
-status: Phase 55 in progress — plan 55-01 (A2A migration 024) shipped. Plans 55-02..N pending.
-stopped_at: Phase 55 plan 55-01 COMPLETE — migration 024-a2a-messages.sql UP+DOWN + 10 structural tests
-last_updated: "2026-05-14T00:00:00.000Z"
-last_activity: "2026-05-14 — Plan 55-01 executed (3 tasks, 3 commits: ca30aa9, 66b8966, d8849b3)"
+status: Phase 55 in progress — plans 55-01 + 55-02 shipped (A2A-01 migration + A2A-02 capability registry).
+stopped_at: Phase 55 plan 55-02 COMPLETE — capabilities field + a2a_registry + gsd-tools case 'a2a':
+last_updated: "2026-05-14T22:00:00.000Z"
+last_activity: "2026-05-14 — Plan 55-02 executed (4 tasks, 4 commits: f489756, f9d5d98, 02ea4c1, 50b581f)"
 progress:
   total_phases: 5
   completed_phases: 1
-  total_plans: 5
-  completed_plans: 5
-  plans_in_progress: 1
+  total_plans: 7
+  completed_plans: 7
   percent: 20
 ---
 
@@ -27,10 +26,10 @@ See: .planning/PROJECT.md (updated 2026-05-14 after v3.2 close + v3.3 definition
 ## Current Position
 
 Phase: 55 — A2A Protocol Foundation (in progress)
-Plan: 55-01 COMPLETE (A2A-01) — migration 024 a2a_messages UP+DOWN + structural tests
-Status: Phase 55 in progress — plan 55-01 shipped. Plans 55-02..N pending.
-Last activity: 2026-05-14 — Plan 55-01 executed (3 tasks, 3 commits: ca30aa9, 66b8966, d8849b3)
-Next step: Execute Phase 55 plans 55-02+ (capability registry, send/receive client, retry)
+Plan: 55-02 COMPLETE (A2A-02) — capabilities field + a2a_registry + gsd-tools a2a dispatch + 18 tests
+Status: Phase 55 in progress — plans 55-01 + 55-02 shipped. Plans 55-03..N pending.
+Last activity: 2026-05-14 — Plan 55-02 executed (4 tasks, 4 commits: f489756, f9d5d98, 02ea4c1, 50b581f)
+Next step: Execute Phase 55 plans 55-03+ (A2A send/receive client, timeout/retry)
 
 Progress: [##........] 20% (1/5 phases complete)
 
@@ -39,7 +38,7 @@ Progress: [##........] 20% (1/5 phases complete)
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
 | 54 | Stability & Hardening — FOUNDATION | STAB-01..06 | COMPLETE (2026-05-14) |
-| 55 | A2A Protocol Foundation | A2A-01..04 | In Progress (plan 55-01 shipped 2026-05-14) |
+| 55 | A2A Protocol Foundation | A2A-01..04 | In Progress (plans 55-01+55-02 shipped 2026-05-14) |
 | 56 | A2A Orchestration (breakers + threading + audit) | A2A-05..07 | Pending |
 | 57 | Module Marketplace | MARK-01..04 | Pending |
 | 58 | Public Launch (capstone) | PUB-01..05 | Pending |
@@ -79,9 +78,9 @@ Progress: [##........] 20% (1/5 phases complete)
 
 ## Session Continuity
 
-Last session: 2026-05-14T00:00:00.000Z
-Stopped at: Phase 55 plan 55-01 COMPLETE — migration 024 a2a_messages + structural tests
-Resume file: .planning/phases/55-a2a-protocol-foundation/ (Phase 55 plans 55-02+ next)
+Last session: 2026-05-14T22:00:00.000Z
+Stopped at: Phase 55 plan 55-02 COMPLETE — capabilities field + a2a_registry + gsd-tools dispatch + 18 tests
+Resume file: .planning/phases/55-a2a-protocol-foundation/ (Phase 55 plans 55-03+ next)
 
 ## Learnings
 
