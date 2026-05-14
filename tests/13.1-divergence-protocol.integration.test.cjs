@@ -48,6 +48,18 @@ const os = require('node:os');
 const path = require('node:path');
 const { execSync, spawnSync } = require('node:child_process');
 
+// STAB-05: Quarantine guard. LLM behavioral tests require a real `claude`
+// CLI binary and a live ANTHROPIC_API_KEY. In normal CI (npm test, c8
+// coverage) this env var is NOT set — all 4 tests skip with exit 0.
+// In the dedicated behavioral CI job (.github/workflows/behavioral-tests.yml)
+// GSD_LLM_INTEGRATION=true is set explicitly so real execution runs.
+const _LLM_INTEGRATION = process.env.GSD_LLM_INTEGRATION === 'true';
+if (!_LLM_INTEGRATION) {
+  console.log('[STAB-05] GSD_LLM_INTEGRATION not set — skipping all LLM behavioral tests.');
+  console.log('[STAB-05] Set GSD_LLM_INTEGRATION=true to run real LLM tests (requires claude CLI + ANTHROPIC_API_KEY).');
+  process.exit(0);  // node:test exits 0 with no tests collected
+}
+
 // Discovery manifest — printed at module load so `npm run test:behavioral`
 // output always includes every test name even when the default node --test
 // reporter only prints results after completion. Makes it grep-verifiable
