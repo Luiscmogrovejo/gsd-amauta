@@ -1,0 +1,501 @@
+#!/usr/bin/env python3
+"""
+services/a2a_client.py — Phase 55 A2A-03/A2A-04: A2A send/receive client.
+
+Direct agent-to-agent request/response over the a2a_messages PG table
+(migration 024, Phase 55 A2A-01). No daemon HTTP endpoints used — client
+talks directly to PG via pg_store._get_conn() (same pattern as party_session.py).
+
+SCHEMA_VERSION = "1.0" — locked for Phase 55.
+
+Core API:
+  send_request(to, capability, payload, timeout, from_agent, conn) -> str
+    Insert kind='request' row, return correlation_id UUID string.
+
+  await_response(correlation_id, timeout, poll_interval, conn) -> dict
+    Poll PG every poll_interval seconds until kind IN ('response','error')
+    appears (matched by parent_correlation_id) or timeout expires.
+    Raises A2ATimeoutError on timeout, A2AAgentUnavailableError on PG failure.
+
+  send_response(parent_correlation_id, payload, conn) -> None
+    Insert kind='response' row with a NEW uuid as correlation_id and
+    parent_correlation_id pointing at the original request uuid.
+    Used by the receiving agent to reply to a request.
+
+Risk §2 correction (MANDATORY — enforced by acceptance criteria):
+  Response rows MUST use a fresh UUID as their own correlation_id (PK).
+  They link back to the request via parent_correlation_id.
+  Attempting to reuse the request's correlation_id causes a PK unique-violation.
+
+  Request row:  correlation_id = <uuid_req>,  parent_correlation_id = NULL,      kind = 'request'
+  Response row: correlation_id = <uuid_NEW>,  parent_correlation_id = <uuid_req>, kind = 'response'
+
+  await_response(<uuid_req>) polls:
+    WHERE parent_correlation_id = <uuid_req> AND kind IN ('response','error')
+
+Frozen error vocabulary (A2A-04 — all 4 tokens defined here, raised in 55-04):
+  A2AError (base)
+  A2ATimeoutError(A2AError)            — a2a_timeout
+  A2AUnknownCapabilityError(A2AError)  — unknown_capability
+  A2AAgentUnavailableError(A2AError)   — agent_unavailable
+  A2APayloadInvalidError(A2AError)     — payload_invalid
+
+Retry semantics (A2A-04 Plan 55-04):
+  The retry loop lives in send_request_with_retry() added in Plan 55-04.
+  This module defines the FULL exception class hierarchy so 55-04 imports
+  from here — no circular imports.
+
+References:
+  - services/pg_store.py _get_conn() (Phase 47 connection pattern)
+  - services/party_session.py for_update + RealDictCursor pattern (Phase 50)
+  - migrations/024-a2a-messages.sql schema (Phase 55 A2A-01)
+  - services/a2a_registry.py get_capabilities() (Phase 55 A2A-02)
+"""
+
+import json
+import os
+import sys
+import time
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
+
+SCHEMA_VERSION = "1.0"
+
+# ── Polling constants ─────────────────────────────────────────────────────────
+# Mirrors Phase 50 party_session polling pattern (synchronous PG poll).
+# Phase 55 gray-area decision 3: 100ms interval, caller-specified timeout.
+
+DEFAULT_TIMEOUT_S: float = 30.0   # default caller-specified timeout seconds
+POLL_INTERVAL_S: float = 0.1       # 100ms polling interval (gray-area decision 3)
+
+# ── Import-safety: PG ─────────────────────────────────────────────────────────
+# Mirrors services/agent_hydrator.py L27-41 (Phase 47 pattern)
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_REPO_ROOT = os.path.dirname(_HERE)
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
+try:
+    from services.pg_store import PGStore  # type: ignore
+    _HAS_PG = True
+except Exception:
+    try:
+        from pg_store import PGStore  # type: ignore
+        _HAS_PG = True
+    except Exception:
+        PGStore = None  # type: ignore
+        _HAS_PG = False
+
+# ── Import-safety: a2a_registry (optional — degrades gracefully) ──────────────
+# Capability check: if registry unavailable, skip unknown_capability validation.
+# Plan 55-04 enforces the error path when PG+registry are both up.
+
+try:
+    from services.a2a_registry import get_capabilities, AgentNotFoundError  # type: ignore
+    _HAS_REGISTRY = True
+except Exception:
+    try:
+        from a2a_registry import get_capabilities, AgentNotFoundError  # type: ignore
+        _HAS_REGISTRY = True
+    except Exception:
+        _HAS_REGISTRY = False
+        get_capabilities = None  # type: ignore
+        AgentNotFoundError = None  # type: ignore
+
+
+# ── Exception hierarchy (FROZEN — A2A-04 error vocabulary) ───────────────────
+# All 4 error tokens defined here. Plan 55-04 exercises and tests each path.
+
+class A2AError(Exception):
+    """Base class for all A2A client errors.
+
+    Attributes:
+        error_code: frozen vocabulary token (e.g. 'a2a_timeout')
+        detail: human-readable detail string
+        correlation_id: associated message ID if applicable
+    """
+    error_code: str = "a2a_error"
+
+    def __init__(self, detail: str, correlation_id: Optional[str] = None):
+        super().__init__(detail)
+        self.detail = detail
+        self.correlation_id = correlation_id
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "error": self.error_code,
+            "detail": self.detail,
+            "correlation_id": self.correlation_id,
+            "schema_version": SCHEMA_VERSION,
+        }
+
+
+class A2ATimeoutError(A2AError):
+    """Raised when await_response() exceeds the caller-specified timeout.
+
+    error_code = 'a2a_timeout' (frozen vocabulary token A2A-04).
+    """
+    error_code = "a2a_timeout"
+
+
+class A2AUnknownCapabilityError(A2AError):
+    """Raised when the target agent has no such capability declared.
+
+    error_code = 'unknown_capability' (frozen vocabulary token A2A-04).
+    Only raised when a2a_registry is available AND agent is known AND
+    capability is not in its declared list.
+    """
+    error_code = "unknown_capability"
+
+
+class A2AAgentUnavailableError(A2AError):
+    """Raised when PG is unavailable mid-wait or agent has no AGENT.yaml.
+
+    error_code = 'agent_unavailable' (frozen vocabulary token A2A-04).
+    """
+    error_code = "agent_unavailable"
+
+
+class A2APayloadInvalidError(A2AError):
+    """Raised when payload is not a JSON-serializable dict.
+
+    error_code = 'payload_invalid' (frozen vocabulary token A2A-04).
+    payload MUST be a dict (serialized to jsonb). None or non-dict raises this.
+    """
+    error_code = "payload_invalid"
+
+
+# ── Internal helpers ──────────────────────────────────────────────────────────
+
+def _get_store():
+    """Return a PGStore instance. Only callable when _HAS_PG is True."""
+    if not _HAS_PG or PGStore is None:
+        raise RuntimeError("PG not available (_HAS_PG=False)")
+    return PGStore()
+
+
+def _validate_payload(payload: Any) -> str:
+    """Validate and serialize payload to JSON string.
+
+    Args:
+        payload: Must be a dict (empty dict {} is valid, None is not).
+
+    Returns:
+        JSON string representation of payload.
+
+    Raises:
+        A2APayloadInvalidError: If payload is None or not a dict or not serializable.
+    """
+    if payload is None:
+        raise A2APayloadInvalidError(
+            "payload must be a dict, got None. "
+            "Use {} for empty payload (gray-area decision 8)."
+        )
+    if not isinstance(payload, dict):
+        raise A2APayloadInvalidError(
+            f"payload must be a dict, got {type(payload).__name__}. "
+            "Use {} for empty payload."
+        )
+    try:
+        return json.dumps(payload)
+    except (TypeError, ValueError) as exc:
+        raise A2APayloadInvalidError(
+            f"payload is not JSON-serializable: {exc}"
+        ) from exc
+
+
+def _check_capability(to: str, capability: str) -> None:
+    """Check that capability is declared by agent `to`.
+
+    Silently returns when registry unavailable (graceful degradation).
+    Raises A2AUnknownCapabilityError when agent is known but capability absent.
+    Raises A2AAgentUnavailableError when agent has no AGENT.yaml (treated as
+    unavailable, not unknown capability — agent may not be compiled yet).
+
+    Args:
+        to: Target agent name (e.g. 'gsd-reviewer')
+        capability: Capability verb to check (e.g. 'review_file')
+
+    Raises:
+        A2AUnknownCapabilityError: Capability not in agent's declared list.
+        A2AAgentUnavailableError: Agent has no AGENT.yaml in registry.
+    """
+    if not _HAS_REGISTRY or get_capabilities is None:
+        # Registry not available — skip validation (graceful degradation)
+        return
+
+    try:
+        caps = get_capabilities(to)
+    except Exception as exc:
+        # AgentNotFoundError or RegistryError — treat as unavailable
+        if AgentNotFoundError is not None and isinstance(exc, AgentNotFoundError):
+            raise A2AAgentUnavailableError(
+                f"Agent '{to}' has no compiled AGENT.yaml in registry.",
+                correlation_id=None,
+            ) from exc
+        # RegistryError or other — degrade gracefully (don't block send)
+        return
+
+    # If agent declares NO capabilities, skip check (empty list = unconstrained)
+    # Phase 55 baseline: all agents have [] capabilities (backfill is Phase 56+).
+    if not caps:
+        return
+
+    if capability not in caps:
+        raise A2AUnknownCapabilityError(
+            f"Agent '{to}' does not declare capability '{capability}'. "
+            f"Declared: {caps}",
+            correlation_id=None,
+        )
+
+
+# ── Core API ──────────────────────────────────────────────────────────────────
+
+def send_request(
+    to: str,
+    capability: str,
+    payload: Dict[str, Any],
+    timeout: float = DEFAULT_TIMEOUT_S,
+    from_agent: str = "operator",
+    conn=None,
+) -> str:
+    """Insert a kind='request' row into a2a_messages. Return correlation_id.
+
+    Validates payload (must be dict), checks capability registry (when available),
+    then INSERTs to a2a_messages with kind='request', status='pending'.
+
+    Args:
+        to: Target agent name (e.g. 'gsd-reviewer').
+        capability: Capability verb to invoke (e.g. 'review_file').
+        payload: Request body dict. Use {} for empty. None is rejected.
+        timeout: Caller-specified timeout in seconds (stored in status for
+            await_response() reference, not enforced in DB). Default 30s.
+        from_agent: Requesting agent name. Default 'operator' for CLI use.
+        conn: Optional psycopg2 connection. If None, uses pg_store._get_conn().
+
+    Returns:
+        correlation_id as UUID string (36 chars).
+
+    Raises:
+        A2APayloadInvalidError: payload is None or not a dict.
+        A2AUnknownCapabilityError: capability not in agent's declared list
+            (only when registry has the agent AND it has declared capabilities).
+        A2AAgentUnavailableError: agent has no compiled AGENT.yaml.
+        RuntimeError: PG not available.
+    """
+    payload_json = _validate_payload(payload)
+    _check_capability(to, capability)
+
+    def _run(c):
+        import psycopg2.extras
+        with c.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                INSERT INTO a2a_messages
+                  (from_agent, to_agent, capability, payload, kind, status)
+                VALUES (%s, %s, %s, %s::jsonb, 'request', 'pending')
+                RETURNING correlation_id::text
+                """,
+                (from_agent, to, capability, payload_json),
+            )
+            row = cur.fetchone()
+        return row["correlation_id"]
+
+    if conn is not None:
+        return _run(conn)
+    store = _get_store()
+    with store._get_conn() as c:
+        return _run(c)
+
+
+def await_response(
+    correlation_id: str,
+    timeout: float = DEFAULT_TIMEOUT_S,
+    poll_interval: float = POLL_INTERVAL_S,
+    conn=None,
+) -> Dict[str, Any]:
+    """Poll PG until a response or error row appears for correlation_id.
+
+    Polls every poll_interval seconds (100ms default) until a row with
+    kind IN ('response','error') appears WHERE parent_correlation_id matches
+    the given correlation_id (the request's UUID), OR timeout expires.
+
+    If PG goes down during polling, raises A2AAgentUnavailableError immediately
+    (NOT A2ATimeoutError — per gray-area decision 3).
+
+    Risk §2 design: the response row has its own new UUID as correlation_id
+    and links back via parent_correlation_id. This function receives the
+    REQUEST's correlation_id and passes it to _poll_once which filters on
+    parent_correlation_id.
+
+    Args:
+        correlation_id: UUID string returned by send_request() — the REQUEST row's PK.
+        timeout: Maximum wait seconds. Default 30s.
+        poll_interval: PG poll interval seconds. Default 0.1 (100ms).
+        conn: Optional psycopg2 connection. If None, a new connection is used
+            per poll (connection checked each iteration to handle PG-down).
+
+    Returns:
+        payload dict from the response row. If the response kind is 'error',
+        the payload is returned as-is (caller inspects 'error' key).
+
+    Raises:
+        A2ATimeoutError: Timeout expired before response arrived.
+        A2AAgentUnavailableError: PG connection failed during polling.
+    """
+    deadline = time.monotonic() + timeout
+
+    while time.monotonic() < deadline:
+        try:
+            row = _poll_once(correlation_id, conn=conn)
+        except Exception as exc:
+            # PG error mid-poll → agent_unavailable (gray-area decision 3)
+            raise A2AAgentUnavailableError(
+                f"PG unavailable while awaiting response for {correlation_id}: {exc}",
+                correlation_id=correlation_id,
+            ) from exc
+
+        if row is not None:
+            # row.payload is already decoded by psycopg2 (jsonb → dict)
+            payload = row.get("payload") or {}
+            if isinstance(payload, str):
+                payload = json.loads(payload)
+            return payload
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(poll_interval, remaining))
+
+    raise A2ATimeoutError(
+        f"No response received for correlation_id={correlation_id} within {timeout}s.",
+        correlation_id=correlation_id,
+    )
+
+
+def _poll_once(correlation_id: str, conn=None):
+    """Single PG poll for a response or error row linked to correlation_id.
+
+    Risk §2 correction: response rows use their own new UUID as correlation_id
+    and link back to the request via parent_correlation_id. This function
+    MUST filter on parent_correlation_id (not correlation_id) to find the
+    response row for a given request.
+
+    Args:
+        correlation_id: The REQUEST row's UUID (used as parent_correlation_id filter).
+        conn: Optional psycopg2 connection.
+
+    Returns:
+        RealDictRow with payload/kind/status/responded_at, or None.
+    """
+    def _run(c):
+        import psycopg2.extras
+        with c.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT payload, kind, status, responded_at
+                  FROM a2a_messages
+                 WHERE parent_correlation_id = %s::uuid
+                   AND kind IN ('response', 'error')
+                 LIMIT 1
+                """,
+                (correlation_id,),
+            )
+            return cur.fetchone()
+
+    if conn is not None:
+        return _run(conn)
+    store = _get_store()
+    with store._get_conn() as c:
+        return _run(c)
+
+
+def send_response(
+    parent_correlation_id: str,
+    payload: Dict[str, Any],
+    conn=None,
+) -> None:
+    """Insert a kind='response' row for parent_correlation_id and set responded_at.
+
+    Risk §2 correction (MANDATORY): this function INSERTs a NEW row with:
+      - correlation_id = gen_random_uuid() — its own fresh PRIMARY KEY
+      - parent_correlation_id = <parent_correlation_id arg> — links to request
+
+    The parent_correlation_id argument is the request row's UUID (returned by
+    send_request()). Reusing that UUID as correlation_id would cause a PK
+    unique-violation since correlation_id is PRIMARY KEY.
+
+    Used by the receiving agent to reply to a send_request(). The
+    parent_correlation_id links the response to the original request row
+    so that await_response(<request_uuid>) can find it.
+
+    Args:
+        parent_correlation_id: UUID string from the original request row
+            (i.e. the value returned by send_request()).
+        payload: Response body dict. Use {} for empty.
+        conn: Optional psycopg2 connection.
+
+    Raises:
+        A2APayloadInvalidError: payload is None or not a dict.
+        RuntimeError: PG not available.
+    """
+    payload_json = _validate_payload(payload)
+
+    # Read request row to get from_agent/to_agent/capability for the response row
+    def _run(c):
+        import psycopg2.extras
+        with c.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT from_agent, to_agent, capability
+                  FROM a2a_messages
+                 WHERE correlation_id = %s::uuid
+                   AND kind = 'request'
+                 LIMIT 1
+                """,
+                (parent_correlation_id,),
+            )
+            req_row = cur.fetchone()
+
+        if req_row is None:
+            # No request row found — insert response with nulled agent fields
+            from_agent_resp = "unknown"
+            to_agent_resp = "unknown"
+            capability_resp = "unknown"
+        else:
+            # Response: from/to are reversed (responder is "to" in original request)
+            from_agent_resp = req_row["to_agent"]
+            to_agent_resp = req_row["from_agent"]
+            capability_resp = req_row["capability"]
+
+        # INSERT response row with:
+        #   - correlation_id = new UUID (DEFAULT gen_random_uuid())
+        #   - parent_correlation_id = <parent_correlation_id> (links to request)
+        #   - kind = 'response'
+        # This is the Risk §2 correction: response rows MUST NOT reuse the
+        # request's correlation_id since it is PRIMARY KEY on a2a_messages.
+        with c.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO a2a_messages
+                  (parent_correlation_id, from_agent, to_agent, capability,
+                   payload, kind, status, responded_at)
+                VALUES (%s::uuid, %s, %s, %s, %s::jsonb, 'response', 'delivered', NOW())
+                """,
+                (
+                    parent_correlation_id,
+                    from_agent_resp,
+                    to_agent_resp,
+                    capability_resp,
+                    payload_json,
+                ),
+            )
+
+    if conn is not None:
+        _run(conn)
+        return
+    store = _get_store()
+    with store._get_conn() as c:
+        _run(c)
