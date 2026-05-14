@@ -16,6 +16,10 @@ MEM="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-memory.cjs"
 RESEARCH="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-research.cjs"
 TOOLS="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-tools.cjs"
 
+# Phase 53 POLISH-05: hydration hook for workflow runner Task() spawn sites.
+# Honors GSD_HYDRATE_TASKS=off kill switch (default ON).
+HYDRATE_CMD="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-tools.cjs agent-hydrate"
+
 # Artifact paths — reference files agents Read at runtime
 LEARNING_FORMAT="/Users/luismogrovejo/.claude/get-shit-done/references/learning-format.md"
 TAG_RULES="/Users/luismogrovejo/.claude/get-shit-done/config/tag-rules.json"
@@ -51,6 +55,7 @@ PRE_EXECUTION_CHECKLIST="/Users/luismogrovejo/.claude/get-shit-done/references/p
 | `MEM`            | gsd-memory.cjs             | Memory queries, learnings, SKB promotion           |
 | `RESEARCH`       | gsd-research.cjs           | Research chain (memory -> SKB -> Perplexity)       |
 | `TOOLS`          | gsd-tools.cjs              | Routing, performance tiebreaker, audit utilities   |
+| `HYDRATE_CMD`    | gsd-tools.cjs agent-hydrate | Phase 47 agent hydration hook for workflow Task() spawn sites. Invoked as `$HYDRATE_CMD "${AGENT_NAME}" --task-id "${TASK_ID:-}" --terse`. Kill switch: `GSD_HYDRATE_TASKS=off` disables (default ON). Returns `## Current context` markdown block. |
 | `LEARNING_FORMAT`| references/learning-format.md | WHAT/WHY/WHEN/TAGS template (D-phase reference) |
 | `TAG_RULES`      | config/tag-rules.json      | Banned tags, synonyms, vocabulary, tiers           |
 | `PRE_EXECUTION_CHECKLIST` | references/pre-execution-checklist.md | E-phase query templates + security checklist (pre-exec mandate) |
