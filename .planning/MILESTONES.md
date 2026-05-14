@@ -1,5 +1,14 @@
 # Milestones
 
+## v3.2 The Federation (Shipped: 2026-05-14)
+
+**Phases completed:** 6 phases, 24 plans, 5 tasks
+
+**Key accomplishments:**
+- (none recorded)
+
+---
+
 ## v3.1 The Gathering (Shipped: 2026-05-13)
 
 **Phases completed:** 7 phases, 20 plans, 12 tasks
