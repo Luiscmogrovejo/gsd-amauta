@@ -5,13 +5,13 @@ milestone_name: The Federation** — Phases 48-53
 status: completed
 stopped_at: v3.2 roadmap defined; awaiting Phase 48 planning
 last_updated: "2026-05-14T00:00:00.000Z"
-last_activity: "2026-05-14 — Plan 53-02 complete: bin/init.cjs --upgrade (6 frozen steps, migration-delta, idempotent) + --uninstall (6 frozen steps, preservation contract) + mutual-exclusion guard + --dry-run + 8 integration tests. POLISH-02 fulfilled."
+last_activity: "2026-05-14 — Plan 53-03 complete: services/amauta-mcp.py extended with _subprocess_wrap_gsd_tools helper + amauta/bearings + amauta/agent-hydrate Tool entries inline in tools=[...] + 2 call_tool() handlers + 8 pytest tests. POLISH-03 + POLISH-04 fulfilled."
 progress:
   total_phases: 6
   completed_phases: 5
-  total_plans: 21
-  completed_plans: 21
-  percent: 88
+  total_plans: 23
+  completed_plans: 23
+  percent: 90
 ---
 
 # GSD-Amauta -- Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-13 after v3.1 milestone close + v3.2 
 
 ## Current Position
 
-Phase: 53 — v3.1 Carry-Forwards (IN PROGRESS — Plans 53-01 + 53-02 shipped)
-Plan: 53-02 COMPLETE (4 tasks, 4 commits — POLISH-02 bin/init.cjs --upgrade + --uninstall + 8 tests)
-Status: Phase 53 active. POLISH-01 + POLISH-02 fulfilled. POLISH-03..05 remain (plans 53-03..05).
-Last activity: 2026-05-14 — Plan 53-02 complete: bin/init.cjs --upgrade (6 frozen steps, migration-delta, idempotent) + --uninstall (6 frozen steps, preservation contract) + mutual-exclusion guard + --dry-run + 8 integration tests. POLISH-02 fulfilled.
+Phase: 53 — v3.1 Carry-Forwards (IN PROGRESS — Plans 53-01 + 53-02 + 53-03 shipped)
+Plan: 53-03 COMPLETE (2 tasks, 2 commits — POLISH-03 + POLISH-04 MCP amauta/bearings + amauta/agent-hydrate + 8 pytest tests)
+Status: Phase 53 active. POLISH-01 + POLISH-02 + POLISH-03 + POLISH-04 fulfilled. POLISH-05 remains (plan 53-05).
+Last activity: 2026-05-14 — Plan 53-03 complete: services/amauta-mcp.py extended with _subprocess_wrap_gsd_tools helper + amauta/bearings + amauta/agent-hydrate Tool entries inline in tools=[...] + 2 call_tool() handlers + 8 pytest tests. POLISH-03 + POLISH-04 fulfilled.
 
 Progress: [>>>>>>>>>  ] 83% (5/6 phases complete)
 
@@ -69,6 +69,7 @@ Progress: [>>>>>>>>>  ] 83% (5/6 phases complete)
 - Phase 48 Plan 48-01: Pydantic v2 model_config extra=forbid + field_validator + model_validator(mode=after) cross-field checks. SCHEMA_FIELD_ORDER tuple regression-locked by pytest introspection.
 - Phase 53 Plan 53-01: POLISH-01 COMPLETE. SkillFrontmatter extended with input_schema (position 8) + output_schema (position 9) — both Optional[dict], validated by _validate_json_schema helper (type presence + valid_types set). validateJsonSchemaShape() mirrored in skill-compiler.cjs validate() + exported. 3 canonical SKILL.md files backward-compat confirmed. Pydantic 2.x validates Optional[dict] type before field_validator for list input — "Input should be a valid dictionary" not "must be a dict". SHAs: e3dba59 (53-01-01), badb18a (53-01-02), 90612f0 (53-01-03), 01f2ae0 (53-01-04).
 - Phase 53 Plan 53-02: POLISH-02 COMPLETE. bin/init.cjs extended with --upgrade (6 frozen steps: detect_current_version, compute_migration_delta, apply_upgrade_migrations, update_install_record, restart_daemon, run_assertions) + --uninstall (6 frozen steps: read_install_record, remove_skills, remove_agents, remove_generated_config, clear_install_record, post_uninstall_verify) + mutual-exclusion guard + --dry-run + emitResults() helper. Phase 44 7-step install flow UNCHANGED. Key decisions: restart_daemon→start_daemon alias injection preserves FROZEN stepAssertions; PRESERVED_PATHS constant + post_uninstall_verify self-enforces preservation contract; dry-run warns (not fails) on missing record. 8 integration tests all pass. SHAs: 4e728e5 (53-02-01), b875eb3 (53-02-02), 535b3b0 (53-02-03), 98dc071 (53-02-04).
+- Phase 53 Plan 53-03: POLISH-03 + POLISH-04 COMPLETE. services/amauta-mcp.py extended with _subprocess_wrap_gsd_tools() helper (maps exit codes + TimeoutExpired to _MCP_ERROR_CODES vocabulary) + amauta/bearings Tool() entry (passes --terse + --token-budget) + amauta/agent-hydrate Tool() entry (requires agent_name, optional --task-id) appended inline to tools=[...] (NOT TOOLS.append — Phase 46 inline list). 2 elif dispatch branches in call_tool(). Phase 46 6-tool names UNCHANGED; _MCP_ERROR_CODES 5-tuple UNCHANGED. 8 pytest tests all pass. SHAs: df54a59 (53-03-01), 93bc91a (53-03-02).
 - Phase 48 Plan 48-02: case 'module': added to gsd-tools.cjs after case 'agent-hydrate':. args[1] for first positional, args.slice(2) for rest (mirrors Phase 47 pattern). Phase 49 reserved actions (install/uninstall/upgrade) exit 2. Micro runner pattern works with both node direct and node --test.
 
 ### Pending Todos
