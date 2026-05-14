@@ -444,6 +444,32 @@ function listSkills(source) {
   return skills;
 }
 
+// ─── Phase 53 POLISH-01: JSON Schema shape validator ──────────────────────
+
+/**
+ * Lightweight check that a value looks like a JSON Schema object.
+ * Mirrors Python-side _validate_json_schema in services/skill_schema.py.
+ * Phase 53 POLISH-01: used by validate() for input_schema / output_schema fields.
+ *
+ * @param {*} schema — value to check
+ * @param {string} fieldName — field name for error messages
+ * @returns {string|null} error string, or null if valid/absent
+ */
+function validateJsonSchemaShape(schema, fieldName) {
+  if (schema === null || schema === undefined) return null;
+  if (typeof schema !== 'object' || Array.isArray(schema)) {
+    return `${fieldName} must be a JSON Schema object, got ${typeof schema}`;
+  }
+  if (!('type' in schema)) {
+    return `${fieldName} missing required 'type' field`;
+  }
+  const validTypes = ['string', 'number', 'integer', 'boolean', 'array', 'object', 'null'];
+  if (typeof schema.type === 'string' && !validTypes.includes(schema.type)) {
+    return `${fieldName}.type must be one of ${JSON.stringify(validTypes)}, got ${JSON.stringify(schema.type)}`;
+  }
+  return null;
+}
+
 // ─── validate ─────────────────────────────────────────────────────────────
 
 /**
@@ -468,6 +494,11 @@ function validate(skillDir) {
   }
   const data = parseFrontmatter(split.frontmatterText);
   const errors = validateFrontmatterData(data);
+  // Phase 53 POLISH-01: validate optional JSON Schema fields when present
+  const inputErr = validateJsonSchemaShape(data.input_schema || data['input_schema'], 'input_schema');
+  if (inputErr) errors.push(inputErr);
+  const outputErr = validateJsonSchemaShape(data.output_schema || data['output_schema'], 'output_schema');
+  if (outputErr) errors.push(outputErr);
   return { ok: errors.length === 0, errors };
 }
 
@@ -592,7 +623,7 @@ function compile(target, opts) {
 
 // ─── Module exports ────────────────────────────────────────────────────────
 
-module.exports = { compile, validate, listSkills, loadPlatformCodes, TARGET_MAPS, SUPPORTED_TARGETS };
+module.exports = { compile, validate, listSkills, loadPlatformCodes, validateJsonSchemaShape, TARGET_MAPS, SUPPORTED_TARGETS };
 
 // ─── CLI entry-point ───────────────────────────────────────────────────────
 
