@@ -9,12 +9,12 @@
 
 ### Stability & Hardening (foundation — must complete before Public Launch)
 
-- [ ] **STAB-01**: Coverage baseline bootstrap — `.coverage_threshold.json` populated with real values via `npx c8 --reporter json-summary node scripts/run-tests.cjs`; threshold gate enforced in CI
-- [ ] **STAB-02**: Redis watchdog self-heal activation (commit `48728f1`) + counter-reset uptime-window live test (~7 min synthetic) closing the 2026-05-11 incident class
-- [ ] **STAB-03**: `rlm_restarts_lifetime` cumulative counter on daemon `/health` endpoint (current `rlm_restarts` resets on `_start_rlm` success — operators lose visibility)
-- [ ] **STAB-04**: PATH collision fix — bare `amauta` currently resolves to pipx `amauta-ai` package, not the plugin. Plugin binary renamed/aliased to `gsd-amauta` on PATH with shim
-- [ ] **STAB-05**: LLM behavioral test flakiness — `tests/13.1-divergence-protocol.integration.test.cjs` either quarantined behind explicit flag or determinized (mock LLM with frozen responses)
-- [ ] **STAB-06**: `gsd-amauta doctor` command — diagnoses install state (paths, daemon up, PG reachable, Valkey reachable, API keys present, migrations current, agents present, skills present)
+- [x] **STAB-01**: Coverage baseline bootstrap — `.coverage_threshold.json` populated with real values via `npx c8 --reporter json-summary node scripts/run-tests.cjs`; threshold gate enforced in CI
+- [x] **STAB-02**: Redis watchdog self-heal activation (commit `48728f1`) + counter-reset uptime-window live test (~7 min synthetic) closing the 2026-05-11 incident class
+- [x] **STAB-03**: `rlm_restarts_lifetime` cumulative counter on daemon `/health` endpoint (current `rlm_restarts` resets on `_start_rlm` success — operators lose visibility)
+- [x] **STAB-04**: PATH collision fix — bare `amauta` currently resolves to pipx `amauta-ai` package, not the plugin. Plugin binary renamed/aliased to `gsd-amauta` on PATH with shim
+- [x] **STAB-05**: LLM behavioral test flakiness — `tests/13.1-divergence-protocol.integration.test.cjs` either quarantined behind explicit flag or determinized (mock LLM with frozen responses)
+- [x] **STAB-06**: `gsd-amauta doctor` command — diagnoses install state (paths, daemon up, PG reachable, Valkey reachable, API keys present, migrations current, agents present, skills present)
 
 ### A2A Dialect (direct agent-to-agent protocol)
 
@@ -76,12 +76,12 @@ Mapped during roadmap creation. Each requirement maps to exactly one phase.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| STAB-01 | Phase 54 | Pending |
-| STAB-02 | Phase 54 | Pending |
-| STAB-03 | Phase 54 | Pending |
-| STAB-04 | Phase 54 | Pending |
-| STAB-05 | Phase 54 | Pending |
-| STAB-06 | Phase 54 | Pending |
+| STAB-01 | Phase 54 | Complete |
+| STAB-02 | Phase 54 | Complete |
+| STAB-03 | Phase 54 | Complete |
+| STAB-04 | Phase 54 | Complete |
+| STAB-05 | Phase 54 | Complete |
+| STAB-06 | Phase 54 | Complete |
 | A2A-01 | Phase 55 | Pending |
 | A2A-02 | Phase 55 | Pending |
 | A2A-03 | Phase 55 | Pending |

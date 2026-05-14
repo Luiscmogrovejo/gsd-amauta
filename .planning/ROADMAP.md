@@ -42,7 +42,7 @@ v3.3 "The Dialect" is underway. Five phases close the carry-forward debt accumul
 5. `tests/13.1-divergence-protocol.integration.test.cjs` either passes deterministically (mocked LLM with frozen responses) or is quarantined behind an explicit `GSD_LLM_INTEGRATION=true` flag so CI never fails on a missing API key.
 6. `gsd-amauta doctor` exits 0 and prints a one-screen status table covering: paths, daemon reachability, PG reachability, Valkey reachability, API keys present/absent, migrations current, agent files present, skill files present.
 
-**Plans:** 5 (54-01 through 54-05) — ALL SHIPPED. COMPLETE 2026-05-14.
+**Plans:** 5/5 plans complete
 
 **54-01 shipped 2026-05-14:** STAB-01+STAB-03 — coverage ratchet CI gate wired in test.yml; .coverage_threshold.json updated to real baseline (lines=70%, branches=68.7%); _rlm_restarts_lifetime cumulative counter added to /health endpoint; 5-test pytest suite passes.
 
@@ -130,7 +130,7 @@ v3.3 "The Dialect" is underway. Five phases close the carry-forward debt accumul
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 54. Stability & Hardening — FOUNDATION | 5/5 | COMPLETE | 2026-05-14 |
+| 54. Stability & Hardening — FOUNDATION | 5/5 | Complete    | 2026-05-14 |
 | 55. A2A Protocol Foundation | 0/? | Not started | - |
 | 56. A2A Orchestration | 0/? | Not started | - |
 | 57. Module Marketplace | 0/? | Not started | - |

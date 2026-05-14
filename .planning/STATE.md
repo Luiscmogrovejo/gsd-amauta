@@ -1,11 +1,11 @@
 ---
 gsd_state_version: 1.0
-milestone: v3.3
-milestone_name: The Dialect — Phases 54-58
-status: executing
-stopped_at: Phase 54 COMPLETE (all 5 plans shipped — STAB-01..06 closed); Phase 55 pending
-last_updated: "2026-05-14T21:40:00.000Z"
-last_activity: "2026-05-14 — Plan 54-05 executed: STAB-06 closed — gsd-amauta doctor command (services/doctor.py + bin/cli.cjs dispatch + 9-test suite). 3 tasks, 3 atomic commits (e816749, d2837e1, 1405c8c). Phase 54 COMPLETE."
+milestone: v3.2
+milestone_name: The Federation** — Phases 48-53
+status: All 5 plans shipped — STAB-01..06 all closed. Phase 55 (A2A Protocol Foundation) is next.
+stopped_at: Phase 54 COMPLETE — plan 54-05 shipped (STAB-06 doctor command)
+last_updated: "2026-05-14T21:10:53.574Z"
+last_activity: "2026-05-14 — Plan 54-05 executed (3 tasks, 3 commits: e816749, d2837e1, 1405c8c)"
 progress:
   total_phases: 5
   completed_phases: 1
@@ -90,6 +90,8 @@ Resume file: .planning/phases/55-a2a-protocol/ (Phase 55 is next — A2A Protoco
 
 
 
+
+- [learning] 2026-05-14T21:04:01.642Z: legacy regression test: free text learning
 - [learning] 2026-05-14T20:48:57.827Z: legacy regression test: free text learning
 - [learning] 2026-05-14T20:48:39.631Z: E2E test learning — cleanup after test
 - [learning] 2026-05-14T20:47:34.380Z: legacy regression test: free text learning
