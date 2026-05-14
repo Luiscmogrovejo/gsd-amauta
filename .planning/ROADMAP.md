@@ -93,7 +93,11 @@ v3.3 "The Dialect" is underway. Five phases close the carry-forward debt accumul
 2. A multi-turn dialogue between two agents (agent A asks, agent B responds, agent A follows up) produces a thread retrievable via `a2a_client.get_thread(root_correlation_id)` returning the exchanges in chronological order with correct `parent_correlation_id` linkage.
 3. Every A2A exchange is audit-logged before payload delivery; `GET /a2a/exchanges?from=gsd-executor&to=gsd-reviewer&since=<ISO>` returns a JSON list of all matching exchanges; `gsd-amauta a2a tail` streams new exchanges to the terminal in real time.
 
-**Plans:** TBD (est. 3)
+**Plans:** 2/3 complete (est. 3)
+
+**56-01 shipped 2026-05-14:** A2A-05 — services/a2a_breaker.py: Valkey-backed per-pair CLOSED/OPEN/HALF_OPEN state machine. 5 frozen constants (threshold=3, window=60s, open_duration=60s). SETNX probe lock for half-open single-probe discipline. Fail-open on Valkey unavailability. Wired into services/a2a_client.py: _check_breaker() in send_request() BEFORE PG INSERT; record_a2a_failure() in send_request_with_retry except A2ATimeoutError. 26-test mock suite passes. Commits: 95530e8, ed0a5e3, b32ff16.
+
+**56-02 shipped 2026-05-14:** A2A-06 — get_thread(root_correlation_id, depth_limit=10, conn=None) added to services/a2a_client.py. PostgreSQL WITH RECURSIVE CTE traverses parent_correlation_id chains from root. THREAD_DEFAULT_DEPTH_LIMIT=10 constant. Returns list of dicts (10 schema cols + depth + schema_version) ORDER BY created_at ASC. Empty list on PG unavailability or unknown root (no exception). 14-test suite (9 structural always-run, 5 GSD_PG_INTEGRATION-gated). Phase 55 frozen surface unchanged. Commits: 237f583, bc1896c.
 
 ---
 
@@ -140,7 +144,7 @@ v3.3 "The Dialect" is underway. Five phases close the carry-forward debt accumul
 |-------|----------------|--------|-----------|
 | 54. Stability & Hardening — FOUNDATION | 5/5 | Complete    | 2026-05-14 |
 | 55. A2A Protocol Foundation | 4/4 | Complete    | 2026-05-14 |
-| 56. A2A Orchestration | 0/? | Not started | - |
+| 56. A2A Orchestration | 2/3 | In progress | - |
 | 57. Module Marketplace | 0/? | Not started | - |
 | 58. Public Launch (capstone) | 0/? | Not started | - |
 
