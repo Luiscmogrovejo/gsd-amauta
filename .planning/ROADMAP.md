@@ -204,7 +204,7 @@ In practice, recommended serialization is 48 → 49 → 50 → 51 → 52 → 53 
   - Precedent: Phase 45 `gsd-tools bearings --json` schema_version 1.0 (POLISH-03 wraps as MCP tool)
   - Precedent: Phase 46 `services/amauta-mcp.py` direct-PG MCP tool registration pattern (POLISH-03 + POLISH-04 add two tools)
   - Precedent: Phase 47 `gsd-tools agent-hydrate` CLI + render_markdown frozen template (POLISH-04 wraps as MCP tool; POLISH-05 invokes at spawn sites)
-**Plans:** TBD
+**Plans:** 5/5 plans complete
 
 ---
 
@@ -219,7 +219,7 @@ In practice, recommended serialization is 48 → 49 → 50 → 51 → 52 → 53 
 | 50. Party Mode Foundation | 0/0 | Complete    | 2026-05-13 |
 | 51. Party Mode Decisions + Operator CLI | 3/4 | Complete    | 2026-05-13 |
 | 52. Agent Compilation | 0/0 | Complete    | 2026-05-13 |
-| 53. v3.1 Carry-Forwards | 5/5 | Complete | 2026-05-14 |
+| 53. v3.1 Carry-Forwards | 5/5 | Complete    | 2026-05-14 |
 
 ---
 
