@@ -140,6 +140,22 @@ if (command === 'agents') {
   process.exit(result.status === null ? 1 : result.status);
 }
 
+// ─── Doctor subcommand (Phase 54 STAB-06) ──────────────────────────────────
+//
+// gsd-amauta doctor
+//
+// Diagnoses install state: paths, daemon, PG, Valkey, API keys,
+// migrations, agents, skills. Exits 0 always.
+
+if (command === 'doctor') {
+  const doctorPath = path.resolve(__dirname, '../services/doctor.py');
+  const result = spawnSync('python3', [doctorPath, ...process.argv.slice(3)], {
+    stdio: 'inherit',
+    cwd: path.resolve(__dirname, '..'),
+  });
+  process.exit(result.status === null ? 1 : result.status);
+}
+
 // ─── Status routing ─────────────────────────────────────────────────────────
 
 // Detect whether "status" is system status (no id) or task status change (with id).
