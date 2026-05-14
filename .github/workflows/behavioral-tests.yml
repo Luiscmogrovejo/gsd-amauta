@@ -27,6 +27,7 @@ jobs:
         run: npm run test:behavioral
         env:
           GSD_TEST_MODE: behavioral
+          GSD_LLM_INTEGRATION: "true"
           # ANTHROPIC_API_KEY must be configured as repo secret for real LLM calls.
           # Fork PRs lack access to this secret and will fail — this is
           # deliberate per plan 13.1-05 Risk #3 (LLM invocation cost + security).
