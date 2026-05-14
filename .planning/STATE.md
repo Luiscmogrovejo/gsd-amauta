@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.3
 milestone_name: The Dialect — Phases 54-58
 status: executing
-stopped_at: Phase 54 plan 54-01 shipped (STAB-01+STAB-03); 54-04 and 54-05 pending
-last_updated: "2026-05-14T20:55:00.000Z"
-last_activity: "2026-05-14 — Plan 54-01 executed: coverage ratchet CI gate + .coverage_threshold.json real baseline + _rlm_restarts_lifetime cumulative counter (STAB-01+STAB-03 closed). 4 tasks, 4 atomic commits."
+stopped_at: Phase 54 plan 54-04 shipped (STAB-02); 54-05 pending
+last_updated: "2026-05-14T21:15:00.000Z"
+last_activity: "2026-05-14 — Plan 54-04 executed: STAB-02 closed — 11-test pytest suite for _redis_watchdog state machine (7 structural + 4 simulation); live-test procedure documented. 1 task, 1 atomic commit (bcea069)."
 progress:
   total_phases: 5
   completed_phases: 0
-  total_plans: 2
-  completed_plans: 2
+  total_plans: 4
+  completed_plans: 4
   percent: 0
 ---
 
@@ -26,10 +26,10 @@ See: .planning/PROJECT.md (updated 2026-05-14 after v3.2 close + v3.3 definition
 ## Current Position
 
 Phase: 54 — Stability & Hardening (in progress)
-Plan: 54-01 COMPLETE (STAB-01+STAB-03)
-Status: Plan 54-01 shipped — coverage ratchet CI gate + real baseline + _rlm_restarts_lifetime counter
-Last activity: 2026-05-14 — Plan 54-01 executed (4 tasks, 4 commits: 8a3f0bb, 3a5f37c, d1d1b0b, d4d5b0a)
-Next step: Execute remaining Phase 54 plans (54-04, 54-05) — 54-01 DONE (STAB-01+STAB-03), 54-02 DONE (STAB-04), 54-03 DONE (STAB-05)
+Plan: 54-04 COMPLETE (STAB-02)
+Status: Plan 54-04 shipped — 11-test redis watchdog state machine suite + live-test procedure documented
+Last activity: 2026-05-14 — Plan 54-04 executed (1 task, 1 commit: bcea069)
+Next step: Execute remaining Phase 54 plan (54-05 — STAB-06 doctor command) — 54-01 DONE (STAB-01+STAB-03), 54-02 DONE (STAB-04), 54-03 DONE (STAB-05), 54-04 DONE (STAB-02)
 
 Progress: [..........] 0% (0/5 phases complete)
 
