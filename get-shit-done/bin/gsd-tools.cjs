@@ -3881,6 +3881,46 @@ Options:
       break;
     }
 
+    case 'a2a': {
+      // Phase 55 A2A-02: A2A capability registry CLI dispatch.
+      // Mirrors Phase 50 party dispatch. args[1] is the action;
+      // args.slice(2) is forwarded verbatim to argparse on the Python side.
+      // Usage: gsd-tools a2a capabilities <agent_name> [--json]
+      //        gsd-tools a2a list [--json]
+      const action = args[1];
+      if (!action || action.startsWith('--')) {
+        process.stderr.write(
+          'Usage:\n' +
+          '  gsd-tools a2a capabilities <agent_name> [--json]\n' +
+          '  gsd-tools a2a list [--json]\n'
+        );
+        process.exit(2);
+      }
+      const KNOWN_ACTIONS = new Set(['capabilities', 'list']);
+      if (!KNOWN_ACTIONS.has(action)) {
+        process.stderr.write(
+          `Unknown a2a action: ${action}\n` +
+          'Usage:\n' +
+          '  gsd-tools a2a capabilities <agent_name> [--json]\n' +
+          '  gsd-tools a2a list [--json]\n'
+        );
+        process.exit(2);
+      }
+      const rest = args.slice(2);
+      const repoRoot = path.resolve(__dirname, '..', '..');
+      const a2aCli = path.join(repoRoot, 'services', 'a2a_registry_cli.py');
+      const subprocArgs = [a2aCli, action, ...rest];
+      const result = spawnSync('python3', subprocArgs, { encoding: 'utf8', cwd: repoRoot });
+      if (result.error) {
+        process.stderr.write(`a2a ${action} subprocess failed: ${result.error.message}\n`);
+        process.exit(2);
+      }
+      if (result.stdout) process.stdout.write(result.stdout);
+      if (result.stderr) process.stderr.write(result.stderr);
+      process.exit(result.status === null ? 1 : result.status);
+      break;
+    }
+
     default:
       error(`Unknown command: ${command}`);
   }
