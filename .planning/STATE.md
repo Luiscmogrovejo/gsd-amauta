@@ -4,14 +4,14 @@ milestone: v3.2
 milestone_name: The Federation** — Phases 48-53
 status: completed
 stopped_at: v3.2 roadmap defined; awaiting Phase 48 planning
-last_updated: "2026-05-13T22:41:11.818Z"
-last_activity: "2026-05-13 — Plan 52-05 complete: --hydrate integration + tests/agent-compiler-hydrate.test.cjs (6/6) + tests/phase-52-canary.test.cjs (11/11 NEVER SKIPS)."
+last_updated: "2026-05-14T00:00:00.000Z"
+last_activity: "2026-05-14 — Plan 53-01 complete: SkillFrontmatter input_schema + output_schema (positions 8+9) + validateJsonSchemaShape in skill-compiler.cjs + 13 Python tests + 11 Node tests. POLISH-01 fulfilled."
 progress:
   total_phases: 6
   completed_phases: 5
-  total_plans: 19
-  completed_plans: 19
-  percent: 83
+  total_plans: 20
+  completed_plans: 20
+  percent: 86
 ---
 
 # GSD-Amauta -- Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-13 after v3.1 milestone close + v3.2 
 
 ## Current Position
 
-Phase: 52 — Agent Compilation (COMPLETE — All 5 plans shipped)
-Plan: 52-05 COMPLETE (3 tasks, 3 commits — --hydrate wired + 6 hydration tests + 11-test canary)
-Status: Phase 52 COMPLETE. COMPILE-01 + COMPILE-02 + COMPILE-03 + COMPILE-04 all fulfilled. Phase 53 (v3.1 Carry-Forwards, POLISH-01..05) next.
-Last activity: 2026-05-13 — Plan 52-05 complete: --hydrate integration + tests/agent-compiler-hydrate.test.cjs (6/6) + tests/phase-52-canary.test.cjs (11/11 NEVER SKIPS).
+Phase: 53 — v3.1 Carry-Forwards (IN PROGRESS — Plan 53-01 shipped)
+Plan: 53-01 COMPLETE (4 tasks, 4 commits — POLISH-01 SkillFrontmatter input_schema/output_schema + validateJsonSchemaShape + 24 tests)
+Status: Phase 53 active. POLISH-01 fulfilled. POLISH-02..05 remain (plans 53-02..05).
+Last activity: 2026-05-14 — Plan 53-01 complete: SkillFrontmatter input_schema + output_schema (positions 8+9) + validateJsonSchemaShape in skill-compiler.cjs + 13 Python tests + 11 Node tests. POLISH-01 fulfilled.
 
 Progress: [>>>>>>>>>  ] 83% (5/6 phases complete)
 
@@ -41,7 +41,7 @@ Progress: [>>>>>>>>>  ] 83% (5/6 phases complete)
 | 50 | Party Mode Foundation | PARTY-01, PARTY-02 | COMPLETE — All 4 plans shipped (migration 021 + PartySession Pydantic + state machine + post_finding + list_findings + resume() replay + CLI dispatch + E2E SC4 + canary + 55 tests, 2026-05-13) |
 | 51 | Party Mode Decisions + Operator CLI | PARTY-03, PARTY-04 | COMPLETE — Plans 51-01 + 51-02 + 51-03 + 51-04 shipped 2026-05-13 |
 | 52 | Agent Compilation | COMPILE-01, COMPILE-02, COMPILE-03, COMPILE-04 | COMPLETE — All 5 plans shipped (2026-05-13) |
-| 53 | v3.1 Carry-Forwards | POLISH-01..05 | Not started |
+| 53 | v3.1 Carry-Forwards | POLISH-01..05 | IN PROGRESS — Plan 53-01 (POLISH-01) complete 2026-05-14 |
 
 **Execution order:** 48 → 49 → 50 → 51 → 52 → 53
 **Parallelizable:** After 48: 49, 50, 52, 53 are mutually independent; 51 must wait for 50
@@ -67,6 +67,7 @@ Progress: [>>>>>>>>>  ] 83% (5/6 phases complete)
 - Phase 52 Plan 52-05: --hydrate wired. invokeHydration(agentName): two-stage spawnSync pipeline (gsd-tools agent-hydrate --json → parse → python3 -c 'from agent_hydrate_cli import render_markdown; ...' with JSON as stdin). mergeHydration(outputContent, hydrationMd): second '---' delimiter scan → insert ## Current context block before first ## heading. Empty hydrateList = zero subprocess calls (SC4 offline-safe). SC1 17/17 PASS unchanged. 6 hydration tests (agent-compiler-hydrate.test.cjs) + 11-test cross-surface canary (phase-52-canary.test.cjs, PHASE_52_BASE=21438ae, NEVER SKIPS). SHAs: bed129a 52-05-01, 07e965b 52-05-02, 17a664a 52-05-03. COMPILE-04 fulfilled. Phase 52 COMPLETE.
 - Phase 48 Plan 48-01: Migration file on-disk check deferred to Phase 49 install logic. Pre-release ordering deferred to v3.3+. Committed conflict fixture (feature-wants-core-v2) for stable Phase 49 reference. Resolver fails-closed via return dict.
 - Phase 48 Plan 48-01: Pydantic v2 model_config extra=forbid + field_validator + model_validator(mode=after) cross-field checks. SCHEMA_FIELD_ORDER tuple regression-locked by pytest introspection.
+- Phase 53 Plan 53-01: POLISH-01 COMPLETE. SkillFrontmatter extended with input_schema (position 8) + output_schema (position 9) — both Optional[dict], validated by _validate_json_schema helper (type presence + valid_types set). validateJsonSchemaShape() mirrored in skill-compiler.cjs validate() + exported. 3 canonical SKILL.md files backward-compat confirmed. Pydantic 2.x validates Optional[dict] type before field_validator for list input — "Input should be a valid dictionary" not "must be a dict". SHAs: e3dba59 (53-01-01), badb18a (53-01-02), 90612f0 (53-01-03), 01f2ae0 (53-01-04).
 - Phase 48 Plan 48-02: case 'module': added to gsd-tools.cjs after case 'agent-hydrate':. args[1] for first positional, args.slice(2) for rest (mirrors Phase 47 pattern). Phase 49 reserved actions (install/uninstall/upgrade) exit 2. Micro runner pattern works with both node direct and node --test.
 
 ### Pending Todos
