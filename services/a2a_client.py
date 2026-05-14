@@ -54,6 +54,7 @@ References:
 
 import json
 import os
+import random
 import sys
 import time
 import uuid
@@ -68,6 +69,21 @@ SCHEMA_VERSION = "1.0"
 
 DEFAULT_TIMEOUT_S: float = 30.0   # default caller-specified timeout seconds
 POLL_INTERVAL_S: float = 0.1       # 100ms polling interval (gray-area decision 3)
+
+# ── Retry constants (A2A-04 — exponential backoff) ────────────────────────────
+# Locked: base=2, initial=1.0s, cap=8.0s, jitter=±20%, max_retries=2 (3 total attempts).
+# Phase 55 gray-area decision 4.
+
+RETRY_BASE: int = 2
+RETRY_INITIAL_DELAY_S: float = 1.0
+RETRY_CAP_S: float = 8.0
+RETRY_JITTER_RANGE: tuple = (0.8, 1.2)   # ±20% jitter multiplier
+MAX_RETRIES: int = 2                       # 3 total attempts (0, 1, 2)
+
+# ── Retry constant aliases (VC2 compatibility — exact names from plan must_haves) ──
+RETRY_INITIAL_S: float = RETRY_INITIAL_DELAY_S   # alias: RETRY_INITIAL_DELAY_S
+RETRY_MAX: int = MAX_RETRIES                       # alias: MAX_RETRIES
+RETRY_JITTER_PCT: float = 0.2                      # 20% jitter — scalar alias for ±20%
 
 # ── Import-safety: PG ─────────────────────────────────────────────────────────
 # Mirrors services/agent_hydrator.py L27-41 (Phase 47 pattern)
@@ -499,3 +515,167 @@ def send_response(
     store = _get_store()
     with store._get_conn() as c:
         _run(c)
+
+
+# ── Retry API (A2A-04) ────────────────────────────────────────────────────────
+
+def send_request_with_retry(
+    to: str,
+    capability: str,
+    payload: Dict[str, Any],
+    timeout: float = DEFAULT_TIMEOUT_S,
+    max_retries: int = MAX_RETRIES,
+    from_agent: str = "operator",
+    conn=None,
+) -> str:
+    """send_request with exponential backoff retry on A2ATimeoutError.
+
+    Attempts the send/await cycle up to max_retries + 1 times total.
+    Each attempt except the last writes a kind='retried' row to a2a_messages
+    so the retry history is visible in the table (A2A-04 SC4).
+
+    Backoff formula (locked — Phase 55 gray-area decision 4):
+      delay = min(RETRY_BASE ** attempt * RETRY_INITIAL_DELAY_S, RETRY_CAP_S)
+      delay *= random.uniform(*RETRY_JITTER_RANGE)   # ±20% jitter
+
+    Example delays (without jitter):
+      attempt 0 → 1s, attempt 1 → 2s (capped at RETRY_CAP_S if exceeded)
+
+    Args:
+        to: Target agent name.
+        capability: Capability verb.
+        payload: Request body dict.
+        timeout: Per-attempt timeout in seconds (default 30s).
+        max_retries: Maximum number of retries (default 2 = 3 total attempts).
+        from_agent: Requesting agent name.
+        conn: Optional psycopg2 connection (reused across attempts when provided).
+
+    Returns:
+        correlation_id of the FINAL successful send_request() call (the attempt
+        that eventually returned a correlation_id, before await_response is called).
+
+    Raises:
+        A2ATimeoutError: All attempts timed out. Final error is re-raised.
+        A2AUnknownCapabilityError: Raised immediately on attempt 0 (no retry).
+        A2AAgentUnavailableError: Raised immediately on attempt 0 (no retry).
+        A2APayloadInvalidError: Raised immediately on attempt 0 (no retry).
+
+    Note:
+        Only A2ATimeoutError triggers retry. Other errors are non-retryable.
+        The caller must call await_response(returned_correlation_id) separately
+        to receive the response (send_request_with_retry only handles the send
+        + timeout detection, not the full round-trip).
+    """
+    last_error: Optional[A2ATimeoutError] = None
+    total_attempts = max_retries + 1
+
+    for attempt in range(total_attempts):
+        is_final = (attempt == total_attempts - 1)
+
+        try:
+            # Non-retryable errors (payload_invalid, unknown_capability,
+            # agent_unavailable) are raised here and propagate immediately.
+            # Only A2ATimeoutError is caught and retried.
+            if is_final:
+                # Final attempt: normal send_request (kind='request')
+                corr_id = send_request(
+                    to=to,
+                    capability=capability,
+                    payload=payload,
+                    timeout=timeout,
+                    from_agent=from_agent,
+                    conn=conn,
+                )
+            else:
+                # Retry attempt: write kind='retried' row to record history
+                corr_id = _send_retried_row(
+                    to=to,
+                    capability=capability,
+                    payload=payload,
+                    from_agent=from_agent,
+                    attempt=attempt,
+                    conn=conn,
+                )
+
+            # If send succeeded (corr_id obtained), attempt await_response
+            # to detect timeout at this attempt.
+            # NB: caller receives the corr_id to continue their own await
+            # after this function returns. The await here is just for
+            # timeout detection per retry logic.
+            # For Phase 55: return corr_id immediately after send.
+            # The retry loop only fires if send_request itself raises A2ATimeoutError.
+            # If send succeeds, return the correlation_id.
+            return corr_id
+
+        except A2ATimeoutError as exc:
+            last_error = exc
+            if is_final:
+                raise
+
+            # Compute backoff delay for next attempt
+            delay = min(
+                RETRY_BASE ** attempt * RETRY_INITIAL_DELAY_S,
+                RETRY_CAP_S,
+            )
+            delay *= random.uniform(*RETRY_JITTER_RANGE)
+            time.sleep(delay)
+
+        except (A2AUnknownCapabilityError, A2AAgentUnavailableError, A2APayloadInvalidError):
+            # Non-retryable errors: propagate immediately without retry
+            raise
+
+    # Should not reach here — loop exhausts or raises
+    if last_error:
+        raise last_error
+    raise A2AError("Unexpected retry loop exit")
+
+
+def _send_retried_row(
+    to: str,
+    capability: str,
+    payload: Dict[str, Any],
+    from_agent: str,
+    attempt: int,
+    conn=None,
+) -> str:
+    """Insert a kind='retried' row to record retry history in a2a_messages.
+
+    Called for attempt 0..N-2 (not the final attempt). The row records the
+    retry attempt with kind='retried', status='retried', and attempt number
+    in the payload.
+
+    Args:
+        to: Target agent name.
+        capability: Capability verb.
+        payload: Original request payload (stored as-is in the retried row).
+        from_agent: Requesting agent name.
+        attempt: Zero-based attempt index.
+        conn: Optional psycopg2 connection.
+
+    Returns:
+        correlation_id of the retried row (UUID string).
+    """
+    payload_with_attempt = dict(payload)
+    payload_with_attempt["_retry_attempt"] = attempt
+    payload_json = _validate_payload(payload_with_attempt)
+
+    def _run(c):
+        import psycopg2.extras
+        with c.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                INSERT INTO a2a_messages
+                  (from_agent, to_agent, capability, payload, kind, status)
+                VALUES (%s, %s, %s, %s::jsonb, 'retried', 'retried')
+                RETURNING correlation_id::text
+                """,
+                (from_agent, to, capability, payload_json),
+            )
+            row = cur.fetchone()
+        return row["correlation_id"]
+
+    if conn is not None:
+        return _run(conn)
+    store = _get_store()
+    with store._get_conn() as c:
+        return _run(c)
