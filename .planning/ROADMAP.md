@@ -19,7 +19,7 @@ v3.3 "The Dialect" is underway. Five phases close the carry-forward debt accumul
 ## v3.3 Phases
 
 - [x] **Phase 54: Stability & Hardening — FOUNDATION** — Close v2.9→v3.2 carry-forwards before public ship
-- [ ] **Phase 55: A2A Protocol Foundation** — Migration 024 + capability registry + send/receive client + timeout/retry
+- [x] **Phase 55: A2A Protocol Foundation** — Migration 024 + capability registry + send/receive client + timeout/retry
 - [ ] **Phase 56: A2A Orchestration** — Circuit breakers per agent-pair + conversation threading + operator audit endpoint
 - [ ] **Phase 57: Module Marketplace** — Static JSON registry + search CLI + sha256/ed25519 manifest signing + install from URL
 - [ ] **Phase 58: Public Launch (capstone)** — README + CONTRIBUTING/LICENSE/SECURITY + npm publish + init UX polish + QUICKSTART walkthrough
@@ -68,13 +68,15 @@ v3.3 "The Dialect" is underway. Five phases close the carry-forward debt accumul
 3. An agent can call `a2a_client.send_request(to="gsd-reviewer", capability="review_file", payload={...}, timeout=30)` and receive a `correlation_id` back; a second agent can call `await_response(correlation_id)` and receive the result — round-trip visible in the `a2a_messages` table.
 4. When a request times out, the caller receives an `a2a_timeout` structured error; when retried twice with exponential backoff the retry history is visible in `a2a_messages` with `status=retried` rows; `unknown_capability`, `agent_unavailable`, and `payload_invalid` errors each produce distinct vocabulary tokens.
 
-**Plans:** 3 of TBD (est. 4)
+**Plans:** 4/4 COMPLETE
 
 **55-01 shipped 2026-05-14:** A2A-01 — migration 024-a2a-messages.sql (UP+DOWN). 10-column a2a_messages table: UUID PK, JSONB NOT NULL payload, frozen kind CHECK (request|response|error|retried), (to_agent,status) index, COMMENT ON TABLE. Structural test: 10 passed. Commits: ca30aa9, 66b8966, d8849b3.
 
 **55-02 shipped 2026-05-14:** A2A-02 — AgentDefinition extended with capabilities as 7th LOCKED field (default []); services/a2a_registry.py (get_capabilities/list_agents/all_capabilities); gsd-tools case 'a2a': dispatch; 18 tests pass. Phase 52 SC1 17/17 byte-match LOCK preserved. Commits: f489756, f9d5d98, 02ea4c1, 50b581f.
 
 **55-03 shipped 2026-05-14:** A2A-03 — services/a2a_client.py: send_request/await_response/send_response atop PG a2a_messages. Risk §2 correction applied (response rows use new UUID + parent_correlation_id link; _poll_once filters WHERE parent_correlation_id). POLL_INTERVAL_S=0.1, 4 frozen error classes (a2a_timeout/unknown_capability/agent_unavailable/payload_invalid), no daemon HTTP changes. 19 structural tests pass, 3 integration tests GSD_PG_INTEGRATION-gated. Commits: 658d1f7, 6ce493c.
+
+**55-04 shipped 2026-05-14:** A2A-04 — send_request_with_retry() with exponential backoff (BASE=2, INITIAL=1s, CAP=8s, ±20% jitter, max 2 retries = 3 total attempts). _send_retried_row() writes kind='retried'/status='retried' rows for retry audit trail. Pre-flight _validate_payload + _check_capability before retry loop (non-retryable fast-fail). 5 retry constants + 3 VC2 aliases. 25-test suite (24 pass, 1 PG-gated skip): TestRetryConstants, TestFrozenErrorVocabulary, TestExponentialBackoffFormula, TestRetryBehaviorSimulated, TestSendRetriedRowStructure, TestRetryPGIntegration. Phase 55 COMPLETE. Commits: 78ed59e, d9b5dbd.
 
 ---
 
@@ -137,7 +139,7 @@ v3.3 "The Dialect" is underway. Five phases close the carry-forward debt accumul
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 54. Stability & Hardening — FOUNDATION | 5/5 | Complete    | 2026-05-14 |
-| 55. A2A Protocol Foundation | 1/? | In progress | - |
+| 55. A2A Protocol Foundation | 4/4 | Complete    | 2026-05-14 |
 | 56. A2A Orchestration | 0/? | Not started | - |
 | 57. Module Marketplace | 0/? | Not started | - |
 | 58. Public Launch (capstone) | 0/? | Not started | - |
