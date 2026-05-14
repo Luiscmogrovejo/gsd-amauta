@@ -68,7 +68,9 @@ v3.3 "The Dialect" is underway. Five phases close the carry-forward debt accumul
 3. An agent can call `a2a_client.send_request(to="gsd-reviewer", capability="review_file", payload={...}, timeout=30)` and receive a `correlation_id` back; a second agent can call `await_response(correlation_id)` and receive the result — round-trip visible in the `a2a_messages` table.
 4. When a request times out, the caller receives an `a2a_timeout` structured error; when retried twice with exponential backoff the retry history is visible in `a2a_messages` with `status=retried` rows; `unknown_capability`, `agent_unavailable`, and `payload_invalid` errors each produce distinct vocabulary tokens.
 
-**Plans:** TBD (est. 3-4)
+**Plans:** 1 of TBD (est. 3-4)
+
+**55-01 shipped 2026-05-14:** A2A-01 — migration 024-a2a-messages.sql (UP+DOWN). 10-column a2a_messages table: UUID PK, JSONB NOT NULL payload, frozen kind CHECK (request|response|error|retried), (to_agent,status) index, COMMENT ON TABLE. Structural test: 10 passed. Commits: ca30aa9, 66b8966, d8849b3.
 
 ---
 
@@ -131,7 +133,7 @@ v3.3 "The Dialect" is underway. Five phases close the carry-forward debt accumul
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 54. Stability & Hardening — FOUNDATION | 5/5 | Complete    | 2026-05-14 |
-| 55. A2A Protocol Foundation | 0/? | Not started | - |
+| 55. A2A Protocol Foundation | 1/? | In progress | - |
 | 56. A2A Orchestration | 0/? | Not started | - |
 | 57. Module Marketplace | 0/? | Not started | - |
 | 58. Public Launch (capstone) | 0/? | Not started | - |
@@ -179,4 +181,4 @@ After v3.3 ships: `/amauta:new-milestone` to define v3.4 scope (hosted registry,
 
 ---
 
-*Roadmap updated: 2026-05-14 after plan 54-05 shipped (STAB-06 doctor command — Phase 54 COMPLETE). Pre-v3.2 history lives in `.planning/milestones/`.*
+*Roadmap updated: 2026-05-14 after plan 55-01 shipped (A2A-01 migration 024 a2a_messages — Phase 55 in progress). Pre-v3.2 history lives in `.planning/milestones/`.*
