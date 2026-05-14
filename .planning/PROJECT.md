@@ -39,15 +39,31 @@ Every RPETD phase must *see* what the other phases have already learned — past
 6. Standalone MCP Server — `services/amauta-mcp.py` daemon-independent + 6 tools + 3 resources
 7. Agent Dynamic Hydration — `gsd-tools agent-hydrate` + frozen `## Current context` injection
 
-## Current Milestone: v3.2 "The Federation"
+## Shipped: v3.2 "The Federation" (2026-05-14)
 
-**Goal:** Bind skills, agents, and infrastructure into installable modules; enable multi-agent collaboration on a shared blackboard; ship symmetric agent compilation to match skill compilation. Plus v3.1 carry-forwards (skill schema validation, installer upgrade/uninstall, MCP wrappers for bearings + agent-hydrate, hydration auto-invoke).
+**6 phases, 24 plans, ~336 tests, 22 requirements.** Modules + party mode + agent compilation + v3.1 carry-forward polish.
+
+**Shipped:**
+1. Module System Foundation — `ModuleManifest` Pydantic + semver resolver + 8-field locked frontmatter
+2. Module CLI + Lifecycle — `gsd-amauta module install/uninstall/upgrade` with 22 frozen step names
+3. Party Mode Foundation — `party_session` blackboard binding + 5 frozen state transitions
+4. Party Mode Decisions + Operator CLI — decision records (propose/agree/dissent/block) + `status/inspect/kill`
+5. Agent Compilation — `agent-compiler.cjs` symmetric with Phase 43 skill compiler, 17/17 byte-match LOCK
+6. v3.1 Carry-Forwards — skill input/output schemas, installer upgrade/uninstall, MCP wrappers, hydration auto-invoke
+
+**Body metaphor sequence:** brain → sight → hands → metabolism → nervous system → birth → gathering → **federation (v3.2)**
+
+## Current Milestone: v3.3 "The Dialect"
+
+**Goal:** Federation members start speaking directly to each other (A2A protocol on top of the blackboard), close real debt accumulated across v2.9 → v3.2, extend the module system into a marketplace, and ship the whole thing to the public via npm.
 
 **Target features:**
-- Module System: registry-based modules bundle migrations + Docker services + agent/skill configs as semver-resolved installable units
-- Party Mode: multi-agent collaboration session backed by blackboard with persistent session memory, structured decisions, operator supervision
-- Agent Compilation: YAML agent definitions compiled to per-IDE .md (symmetric with Phase 43 skill compiler), dynamic context hydration at compile time
-- v3.1 carry-forwards: input/output schemas for skills, installer upgrade/uninstall flow, MCP `amauta/bearings` + `amauta/agent-hydrate` tools, hydration auto-invoke across workflows
+- Stability & Hardening (foundation): close v2.9 → v3.2 carry-forwards (Redis self-heal, coverage bootstrap, PATH collision, observability gaps, LLM behavioral test flakiness, doctor command) — don't ship debt to public
+- A2A Dialect: direct agent-to-agent protocol layered on existing blackboard — correlation IDs, capability negotiation, timeout/retry, circuit breakers per agent-pair, conversation threading, full operator audit trail
+- Module Marketplace: extend Phase 48-49 module system — registry index, `gsd-amauta module search`, signed manifests (sha256 + maintainer key), install from URL/GitHub
+- Public Launch (capstone): npm publish workflow, public README rewrite, CONTRIBUTING + LICENSE audit, `npx gsd-amauta init` UX polish, demo walkthrough docs
+
+**Body metaphor sequence:** brain → sight → hands → metabolism → nervous system → birth → gathering → federation → **dialect (v3.3)**. The Dialect lets members speak directly to each other — then goes public.
 
 **Body metaphor sequence:** brain → sight → hands → metabolism → nervous system → birth → gathering → **federation (v3.2)**. The Federation binds individuals into operable, installable, cooperating units.
 
@@ -105,32 +121,43 @@ Every RPETD phase must *see* what the other phases have already learned — past
 - ✓ **LIFE-01..05**: Agent lifecycle, SemVer, canary suite, eval framework, tool integrity — v3.0
 - ✓ **ENG-01..05**: Engineering standards embedded in all agents — v3.0
 
-### Active — v3.2 "The Federation"
+#### v3.2 The Federation — Shipped 2026-05-14 (22/22 requirements)
+- ✓ **MOD-01..04**: Module system foundation, semver resolver, CLI lifecycle, manifest validation — v3.2
+- ✓ **PARTY-01..04**: Multi-agent sessions, persistent memory, decision records, operator CLI — v3.2
+- ✓ **COMPILE-01..04**: YAML agent definitions → per-IDE Markdown with optional hydration injection — v3.2
+- ✓ **POLISH-01..05**: Skill input/output schemas, installer upgrade/uninstall, MCP wrappers, hydration auto-invoke — v3.2
 
-#### Module System
-- [ ] **MOD-01**: Registry-based module architecture — manifest declares migrations, Docker services, agent/skill configs as one bundle
-- [ ] **MOD-02**: Semver dependency resolution between modules with conflict detection
-- [ ] **MOD-03**: `gsd-amauta module install/uninstall/upgrade <name>` CLI subcommands
-- [ ] **MOD-04**: Module manifest schema validation + reproducible install (idempotent, dry-run, rollback)
+### Active — v3.3 "The Dialect"
 
-#### Party Mode (Multi-Agent Collaboration)
-- [ ] **PARTY-01**: Multi-agent session backed by `agent_findings` blackboard with structured turn-taking
-- [ ] **PARTY-02**: Persistent session memory across agent invocations (resumable sessions)
-- [ ] **PARTY-03**: Structured decision records when agents agree/disagree (consensus + dissent captured)
-- [ ] **PARTY-04**: Operator supervision CLI (`gsd-amauta party status/inspect/kill`)
+#### Stability & Hardening (foundation)
+- [ ] **STAB-01**: Coverage baseline bootstrap — `.coverage_threshold.json` populated with real values via `npx c8`
+- [ ] **STAB-02**: Redis watchdog self-heal activation + counter-reset uptime-window live test (closes 2026-05-11 incident class)
+- [ ] **STAB-03**: `rlm_restarts_lifetime` cumulative counter on health endpoint (observability gap)
+- [ ] **STAB-04**: PATH collision fix — bare `amauta` resolves to plugin not pipx package
+- [ ] **STAB-05**: LLM behavioral test flakiness — quarantine or determinize `tests/13.1-divergence-protocol.integration.test.cjs`
+- [ ] **STAB-06**: `gsd-amauta doctor` command — diagnose install (paths, daemon, DB, keys)
 
-#### Agent Compilation
-- [ ] **COMPILE-01**: Agent definitions in YAML (canonical source) compiled to per-IDE Markdown
-- [ ] **COMPILE-02**: `gsd-tools agents compile --target=<ide>` (symmetric with Phase 43 skill-compiler)
-- [ ] **COMPILE-03**: Per-IDE alias tables for tool names + frontmatter (matches skill TARGET_MAPS pattern)
-- [ ] **COMPILE-04**: Optional compile-time hydration injection (reuses Phase 47 `agent_hydrator.hydrate`)
+#### A2A Dialect (direct agent-to-agent protocol)
+- [ ] **A2A-01**: `a2a_messages` PG migration — correlation_id, capability, request/response, parent_correlation
+- [ ] **A2A-02**: Capability negotiation schema — each agent publishes what it can do, queryable by other agents
+- [ ] **A2A-03**: Direct message send/receive between agents atop existing messages table (operator-mediated audit retained)
+- [ ] **A2A-04**: Timeout + retry semantics with structured error vocabulary
+- [ ] **A2A-05**: Circuit breaker per agent-pair (3-failure / 60s — mirrors Phase 28 Valkey breaker pattern)
+- [ ] **A2A-06**: Conversation threading + parent_correlation chains (multi-turn dialogue audit trail)
+- [ ] **A2A-07**: Operator audit endpoint — every A2A exchange viewable via daemon `/a2a/exchanges`
 
-#### v3.1 Carry-Forwards
-- [ ] **POLISH-01**: Skill `input_schema` / `output_schema` Pydantic-validated frontmatter fields
-- [ ] **POLISH-02**: Installer upgrade/uninstall flow extending `bin/init.cjs` with version-aware migration
-- [ ] **POLISH-03**: MCP `amauta/bearings` tool wrapping `gsd-tools bearings`
-- [ ] **POLISH-04**: MCP `amauta/agent-hydrate` tool wrapping `gsd-tools agent-hydrate`
-- [ ] **POLISH-05**: Hydration auto-invoke at every Task() spawn site in workflows (CLI hook in workflow runner)
+#### Module Marketplace
+- [ ] **MARK-01**: Static JSON registry index file format (versioned, signed by index maintainer)
+- [ ] **MARK-02**: `gsd-amauta module search <query>` — queries local or remote registry index
+- [ ] **MARK-03**: Manifest signing — sha256 of module + maintainer pubkey verification at install
+- [ ] **MARK-04**: Install from URL — `gsd-amauta module install https://...` or `github:owner/repo@tag`
+
+#### Public Launch (capstone)
+- [ ] **PUB-01**: Public README rewrite — audience is a developer evaluating an AI dev harness, not internal milestone log
+- [ ] **PUB-02**: CONTRIBUTING.md + LICENSE audit + SECURITY.md refresh
+- [ ] **PUB-03**: `npm publish` workflow — `npm publish` from CI on semver tag push, with provenance
+- [ ] **PUB-04**: `npx gsd-amauta init` UX polish — error messages, progress display, prompts (consumes Phase 44 + 53)
+- [ ] **PUB-05**: Demo walkthrough docs — first-task end-to-end with screenshots, install → first phase ship
 
 #### Legacy (carried forward — all validated in v2.5)
 ##### Memory & Embeddings Audit
@@ -197,7 +224,7 @@ Every RPETD phase must *see* what the other phases have already learned — past
 - Web UI — CLI-only
 - Changing database engine — PostgreSQL + pgvector stays
 - gVisor K3s sandbox — deferred indefinitely (not portable)
-- A2A protocol — v3.2+ scope
+- Hosted module registry service — v3.3 ships static JSON index + URL install; SaaS registry deferred to v3.4+
 
 ## Context
 
@@ -228,4 +255,4 @@ Every RPETD phase must *see* what the other phases have already learned — past
 | Code-based graders only in v3.0 | Keeps portable (no API key for evals); model-based = v3.1 | ✓ Good — 15/15 scenarios pass |
 
 ---
-*Last updated: 2026-05-13 after v3.1 "The Gathering" completion; v3.2 "The Federation" milestone defined*
+*Last updated: 2026-05-14 after v3.2 "The Federation" shipped; v3.3 "The Dialect" milestone defined (Phases 54-58)*
