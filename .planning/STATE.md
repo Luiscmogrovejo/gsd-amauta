@@ -5,13 +5,13 @@ milestone_name: The Federation** — Phases 48-53
 status: completed
 stopped_at: v3.2 roadmap defined; awaiting Phase 48 planning
 last_updated: "2026-05-14T00:00:00.000Z"
-last_activity: "2026-05-14 — Plan 53-03 complete: services/amauta-mcp.py extended with _subprocess_wrap_gsd_tools helper + amauta/bearings + amauta/agent-hydrate Tool entries inline in tools=[...] + 2 call_tool() handlers + 8 pytest tests. POLISH-03 + POLISH-04 fulfilled."
+last_activity: "2026-05-14 — Plan 53-04 complete: HYDRATE_CMD in cli-variables.md + hydration hook injected before all Task() spawn sites in execute-phase-legacy.md (3 sites) + step-03-execute.md (2 sites) + step-04-verify.md (1 site) + 5 node:test tests (all pass). POLISH-05 fulfilled. Phase 53 COMPLETE."
 progress:
   total_phases: 6
-  completed_phases: 5
-  total_plans: 23
-  completed_plans: 23
-  percent: 90
+  completed_phases: 6
+  total_plans: 24
+  completed_plans: 24
+  percent: 100
 ---
 
 # GSD-Amauta -- Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-13 after v3.1 milestone close + v3.2 
 
 ## Current Position
 
-Phase: 53 — v3.1 Carry-Forwards (IN PROGRESS — Plans 53-01 + 53-02 + 53-03 shipped)
-Plan: 53-03 COMPLETE (2 tasks, 2 commits — POLISH-03 + POLISH-04 MCP amauta/bearings + amauta/agent-hydrate + 8 pytest tests)
-Status: Phase 53 active. POLISH-01 + POLISH-02 + POLISH-03 + POLISH-04 fulfilled. POLISH-05 remains (plan 53-05).
-Last activity: 2026-05-14 — Plan 53-03 complete: services/amauta-mcp.py extended with _subprocess_wrap_gsd_tools helper + amauta/bearings + amauta/agent-hydrate Tool entries inline in tools=[...] + 2 call_tool() handlers + 8 pytest tests. POLISH-03 + POLISH-04 fulfilled.
+Phase: 53 — v3.1 Carry-Forwards (COMPLETE — All plans 53-01 through 53-04 shipped)
+Plan: 53-04 COMPLETE (4 tasks, 4 commits — POLISH-05 hydration hook at all Task() spawn sites)
+Status: Phase 53 COMPLETE. All 5 POLISH items (POLISH-01..05) fulfilled. v3.2 milestone "The Federation" COMPLETE.
+Last activity: 2026-05-14 — Plan 53-04 complete: HYDRATE_CMD in cli-variables.md + hydration hook at all Task() spawn sites in execute-phase-legacy.md (3) + step-03-execute.md (2) + step-04-verify.md (1) + 5 node:test tests (all pass). POLISH-05 fulfilled. Phase 53 COMPLETE.
 
 Progress: [>>>>>>>>>  ] 83% (5/6 phases complete)
 
