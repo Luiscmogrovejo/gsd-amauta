@@ -20,7 +20,7 @@ v3.3 "The Dialect" is underway. Five phases close the carry-forward debt accumul
 
 - [x] **Phase 54: Stability & Hardening — FOUNDATION** — Close v2.9→v3.2 carry-forwards before public ship
 - [x] **Phase 55: A2A Protocol Foundation** — Migration 024 + capability registry + send/receive client + timeout/retry
-- [ ] **Phase 56: A2A Orchestration** — Circuit breakers per agent-pair + conversation threading + operator audit endpoint
+- [x] **Phase 56: A2A Orchestration** — Circuit breakers per agent-pair + conversation threading + operator audit endpoint
 - [ ] **Phase 57: Module Marketplace** — Static JSON registry + search CLI + sha256/ed25519 manifest signing + install from URL
 - [ ] **Phase 58: Public Launch (capstone)** — README + CONTRIBUTING/LICENSE/SECURITY + npm publish + init UX polish + QUICKSTART walkthrough
 
@@ -99,6 +99,8 @@ v3.3 "The Dialect" is underway. Five phases close the carry-forward debt accumul
 
 **56-02 shipped 2026-05-14:** A2A-06 — get_thread(root_correlation_id, depth_limit=10, conn=None) added to services/a2a_client.py. PostgreSQL WITH RECURSIVE CTE traverses parent_correlation_id chains from root. THREAD_DEFAULT_DEPTH_LIMIT=10 constant. Returns list of dicts (10 schema cols + depth + schema_version) ORDER BY created_at ASC. Empty list on PG unavailability or unknown root (no exception). 14-test suite (9 structural always-run, 5 GSD_PG_INTEGRATION-gated). Phase 55 frozen surface unchanged. Commits: 237f583, bc1896c.
 
+**56-03 shipped 2026-05-14:** A2A-07 — GET /a2a/exchanges daemon endpoint in amauta-daemon.py do_GET: from/to/since filters, schema_version "1.0" response, next_cursor = max(created_at)+1ms, default since=NOW()-24h, pure READ on Phase 55 a2a_messages. gsd-tools case 'a2a' extended with tail action: 500ms setTimeout polling loop, sinceTs cursor tracking, SIGINT clean exit. 11-test audit suite + 12-test tail CLI suite (23 structural tests, all pass without daemon/PG). Phase 56 COMPLETE. Commits: 4ebb2ec, 1c3aaf2, a7f918a, 7fbc127.
+
 ---
 
 ### Phase 57: Module Marketplace
@@ -144,7 +146,7 @@ v3.3 "The Dialect" is underway. Five phases close the carry-forward debt accumul
 |-------|----------------|--------|-----------|
 | 54. Stability & Hardening — FOUNDATION | 5/5 | Complete    | 2026-05-14 |
 | 55. A2A Protocol Foundation | 4/4 | Complete    | 2026-05-14 |
-| 56. A2A Orchestration | 2/3 | In progress | - |
+| 56. A2A Orchestration | 3/3 | Complete    | 2026-05-14 |
 | 57. Module Marketplace | 0/? | Not started | - |
 | 58. Public Launch (capstone) | 0/? | Not started | - |
 
@@ -191,4 +193,4 @@ After v3.3 ships: `/amauta:new-milestone` to define v3.4 scope (hosted registry,
 
 ---
 
-*Roadmap updated: 2026-05-14 after plan 55-01 shipped (A2A-01 migration 024 a2a_messages — Phase 55 in progress). Pre-v3.2 history lives in `.planning/milestones/`.*
+*Roadmap updated: 2026-05-14 after plan 56-03 shipped (A2A-07 audit endpoint + tail CLI — Phase 56 COMPLETE). Pre-v3.2 history lives in `.planning/milestones/`.*
