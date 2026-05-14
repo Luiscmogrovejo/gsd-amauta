@@ -88,6 +88,18 @@ Options:
   --force-migrate        Bypass legacy-migration collision guard
   --json                 Output results as JSON
   --help, -h             Print this help and exit 0
+
+Upgrade / Uninstall (POLISH-02 — mutually exclusive):
+  --upgrade              Upgrade Amauta in-place: detect version, apply new migrations,
+                         update install record, restart daemon, run assertions.
+  --uninstall            Remove Amauta from project (preserves .planning/, agents/,
+                         skills/, tests/, source services/). Only deletes IDE-generated
+                         outputs in .claude/skills/, .cursor/rules/, .opencode/skills/ etc.
+  --dry-run              Preview what upgrade/uninstall WOULD do without making changes.
+                         State-modifying steps return status='skip' with would_apply /
+                         would_delete details.
+
+Note: --upgrade and --uninstall are mutually exclusive.
 `);
 }
 
@@ -110,6 +122,9 @@ const flags = {
   tools: [],                                     // NEW: comma-list of IDEs (parsed below)
   forceMigrate: args.includes('--force-migrate'), // NEW: bypass legacy-migration collision guard
   help: args.includes('--help') || args.includes('-h'), // NEW: print help and exit
+  upgrade: args.includes('--upgrade'),           // NEW POLISH-02: version-aware migration
+  uninstall: args.includes('--uninstall'),       // NEW POLISH-02: remove Amauta from project
+  dryRun: args.includes('--dry-run'),            // NEW POLISH-02: preview without state changes
 };
 
 const backendIdx = args.indexOf('--backend');
@@ -148,6 +163,15 @@ if (explicitTools) {
   // Legacy-only mode: build flags.tools from legacy flags without stderr note.
   if (hasLegacyClaude) flags.tools.push('claude-code');
   if (hasLegacyOpencode) flags.tools.push('opencode');
+}
+
+// ── POLISH-02: mutual exclusion guard (--upgrade XOR --uninstall) ────────────
+{
+  const modeFlags = [flags.upgrade, flags.uninstall].filter(Boolean).length;
+  if (modeFlags > 1) {
+    process.stderr.write('Error: --upgrade and --uninstall are mutually exclusive.\n');
+    process.exit(1);
+  }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1167,6 +1191,67 @@ function migrateLegacyCommands(opts) {
 }
 
 // ═══════════════════════════════════════════════════════
+// POLISH-02 helpers: emitResults + runUpgrade + runUninstall
+// ═══════════════════════════════════════════════════════
+
+/**
+ * Emit final results in JSON or human-readable table format.
+ * Mirrors main() output logic for upgrade/uninstall flows.
+ *
+ * @param {Array} results   — array of FROZEN per-step result objects
+ * @param {number} elapsed  — elapsed seconds
+ */
+function emitResults(results, elapsed) {
+  if (flags.json) {
+    console.log(JSON.stringify({
+      elapsed_seconds: parseFloat(elapsed.toFixed(1)),
+      results,
+    }, null, 2));
+  } else {
+    renderStepTable(results);
+    const allPass = results.every(r => r.status === 'pass' || r.status === 'skip' || r.status === 'warn');
+    if (allPass) {
+      console.log(`\n${green}Done!${reset} ${dim}(${elapsed.toFixed(1)}s)${reset}`);
+    } else {
+      console.log(`\n${red}Completed with errors.${reset} ${dim}(${elapsed.toFixed(1)}s)${reset}`);
+    }
+  }
+}
+
+/**
+ * POLISH-02: Run Amauta upgrade flow (6 frozen step names).
+ *
+ * Steps (FROZEN per 53-CONTEXT.md §Area 2):
+ *   detect_current_version → compute_migration_delta → apply_upgrade_migrations →
+ *   update_install_record → restart_daemon → run_assertions
+ *
+ * @param {object} f — flags object
+ * @returns {Promise<Array>} array of per-step result objects
+ */
+async function runUpgrade(f) {
+  // POLISH-02 stub — bodies filled in 53-02-02
+  return [buildStepResult('stub', 'skip', 'POLISH-02 wip', null)];
+}
+
+/**
+ * POLISH-02: Run Amauta uninstall flow (6 frozen step names).
+ *
+ * Steps (FROZEN per 53-CONTEXT.md §Area 2):
+ *   read_install_record → remove_skills → remove_agents → remove_generated_config →
+ *   clear_install_record → post_uninstall_verify
+ *
+ * PRESERVATION CONTRACT: NEVER deletes .planning/, services/*.py, tests/, agents/,
+ * migrations/, user .env, or source code files.
+ *
+ * @param {object} f — flags object
+ * @returns {Promise<Array>} array of per-step result objects
+ */
+async function runUninstall(f) {
+  // POLISH-02 stub — bodies filled in 53-02-03
+  return [buildStepResult('stub', 'skip', 'POLISH-02 wip', null)];
+}
+
+// ═══════════════════════════════════════════════════════
 // Main
 // ═══════════════════════════════════════════════════════
 
@@ -1175,6 +1260,22 @@ async function main() {
   if (flags.help) {
     printHelp();
     process.exit(0);
+  }
+
+  // ── POLISH-02: --uninstall and --upgrade dispatch (before 7-step install flow) ─
+  if (flags.uninstall) {
+    const startTime = Date.now();
+    const results = await runUninstall(flags);
+    const elapsed = (Date.now() - startTime) / 1000;
+    emitResults(results, elapsed);
+    process.exit(results.some(r => r.status === 'fail') ? 1 : 0);
+  }
+  if (flags.upgrade) {
+    const startTime = Date.now();
+    const results = await runUpgrade(flags);
+    const elapsed = (Date.now() - startTime) / 1000;
+    emitResults(results, elapsed);
+    process.exit(results.some(r => r.status === 'fail') ? 1 : 0);
   }
 
   const startTime = Date.now();
@@ -1265,4 +1366,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { stepDetectIdes, buildStepResult, renderStepTable, migrateLegacyCommands, stepAssertions };
+module.exports = { stepDetectIdes, buildStepResult, renderStepTable, migrateLegacyCommands, stepAssertions, runUpgrade, runUninstall };
