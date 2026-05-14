@@ -75,6 +75,32 @@ _MCP_ERROR_CODES = (
 )
 
 
+def _subprocess_wrap_gsd_tools(action: str, args: list, timeout: int = 30) -> dict:
+    """Shell out to `node get-shit-done/bin/gsd-tools.cjs <action> <args...> --json`.
+    Returns parsed JSON on success; structured error dict on failure.
+    Used by amauta/bearings (POLISH-03) and amauta/agent-hydrate (POLISH-04) wrapper tools."""
+    import subprocess
+    import json as _json
+    import os.path
+    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..',
+                          'get-shit-done', 'bin', 'gsd-tools.cjs')
+    cmd = ['node', script, action] + args + ['--json']
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return {"error": "internal_error", "detail": f"gsd-tools {action} timed out after {timeout}s"}
+    if proc.returncode != 0:
+        # Map Phase 45/47 exit codes to MCP error vocabulary
+        code = "pg_unavailable" if "pg_unavailable" in (proc.stderr or "") else \
+               "valkey_unavailable" if "valkey_unavailable" in (proc.stderr or "") else \
+               "invalid_input" if proc.returncode == 1 else "internal_error"
+        return {"error": code, "detail": (proc.stderr or proc.stdout).strip()[:500]}
+    try:
+        return _json.loads(proc.stdout)
+    except _json.JSONDecodeError as e:
+        return {"error": "internal_error", "detail": f"non-JSON stdout from gsd-tools {action}: {e}"}
+
+
 # ── MCPDatabase: direct psycopg2 SimpleConnectionPool + SQLite adapter ────────
 
 class MCPDatabase:
@@ -397,6 +423,29 @@ async def list_tools() -> ListToolsResult:
                 "required": ["task_meta"],
             },
         ),
+        Tool(
+            name="amauta/bearings",
+            description="Deterministic project bearings (state, recent activity, plan progress, pattern stats, recommendation). Wraps `gsd-tools bearings --json`.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "terse": {"type": "boolean", "default": False, "description": "Compress output to 400 tokens"},
+                    "token_budget": {"type": "integer", "default": 600, "description": "Max token budget for output"},
+                },
+            },
+        ),
+        Tool(
+            name="amauta/agent-hydrate",
+            description="Agent-specific hydration block: memory + blackboard + valkey + security. Wraps `gsd-tools agent-hydrate --json`.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "agent_name": {"type": "string", "description": "Agent name (e.g. gsd-planner)"},
+                    "task_id": {"type": "string", "description": "Optional task ID for task-scoped findings"},
+                },
+                "required": ["agent_name"],
+            },
+        ),
     ])
 
 @server.call_tool()
@@ -625,6 +674,26 @@ async def call_tool(name: str, arguments: dict) -> CallToolResult:
         except Exception as e:
             return CallToolResult(content=[TextContent(type="text",
                 text=json.dumps({"error": "internal_error", "detail": str(e)}))])
+
+    elif name == "amauta/bearings":
+        extra = []
+        if arguments.get("terse"):
+            extra.append("--terse")
+        if "token_budget" in arguments:
+            extra.extend(["--token-budget", str(arguments["token_budget"])])
+        result = _subprocess_wrap_gsd_tools("bearings", extra)
+        return CallToolResult(content=[TextContent(type="text", text=json.dumps(result))])
+
+    elif name == "amauta/agent-hydrate":
+        agent_name = arguments.get("agent_name")
+        if not agent_name:
+            return CallToolResult(content=[TextContent(type="text",
+                text=json.dumps({"error": "invalid_input", "detail": "agent_name is required"}))])
+        extra = [agent_name]
+        if arguments.get("task_id"):
+            extra.extend(["--task-id", arguments["task_id"]])
+        result = _subprocess_wrap_gsd_tools("agent-hydrate", extra)
+        return CallToolResult(content=[TextContent(type="text", text=json.dumps(result))])
 
     return CallToolResult(content=[TextContent(type="text", text=json.dumps({"error": f"unknown tool: {name}"}))])
 
