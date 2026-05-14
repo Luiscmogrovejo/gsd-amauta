@@ -47,3 +47,8 @@ jobs:
         if: matrix.node-version == 18
         shell: bash
         run: npm test
+
+      - name: Run coverage ratchet
+        if: matrix.node-version != 18
+        shell: bash
+        run: node scripts/coverage-ratchet.cjs
