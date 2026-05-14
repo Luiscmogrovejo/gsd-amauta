@@ -120,6 +120,25 @@ except Exception:
         get_capabilities = None  # type: ignore
         AgentNotFoundError = None  # type: ignore
 
+# ── Import-safety: a2a_breaker (optional — degrades gracefully) ───────────────
+# Breaker check fires in send_request() BEFORE the PG INSERT.
+# If breaker module unavailable, skip check (fail-open, mirrors Valkey fail-open).
+
+try:
+    from services.a2a_breaker import check_and_allow, record_failure, record_success  # type: ignore
+    _HAS_BREAKER = True
+except Exception:
+    try:
+        from a2a_breaker import check_and_allow, record_failure, record_success  # type: ignore
+        _HAS_BREAKER = True
+    except Exception:
+        _HAS_BREAKER = False
+        check_and_allow = None  # type: ignore
+        record_failure = None   # type: ignore
+        record_success = None   # type: ignore
+
+# Global redis_client injector (set by tests or daemon startup; None = use default)
+_A2A_REDIS_CLIENT = None
 
 # ── Exception hierarchy (FROZEN — A2A-04 error vocabulary) ───────────────────
 # All 4 error tokens defined here. Plan 55-04 exercises and tests each path.
@@ -267,6 +286,69 @@ def _check_capability(to: str, capability: str) -> None:
         )
 
 
+def _check_breaker(from_agent: str, to_agent: str) -> None:
+    """Check the per-pair circuit breaker before sending a request.
+
+    Calls check_and_allow(from_agent, to_agent). If the breaker is OPEN
+    (or HALF_OPEN with probe lock held), raises A2AAgentUnavailableError
+    immediately WITHOUT a PG INSERT.
+
+    Fails open if a2a_breaker module is not importable (graceful degradation).
+
+    Args:
+        from_agent: Source agent name.
+        to_agent: Target agent name.
+
+    Raises:
+        A2AAgentUnavailableError: Breaker is OPEN or HALF_OPEN with probe in flight.
+    """
+    if not _HAS_BREAKER or check_and_allow is None:
+        return  # fail-open: breaker unavailable, allow request
+
+    allowed = check_and_allow(from_agent, to_agent, redis_client=_A2A_REDIS_CLIENT)
+    if not allowed:
+        raise A2AAgentUnavailableError(
+            f"Circuit breaker OPEN for pair ({from_agent}, {to_agent}). "
+            "Request blocked without network round-trip.",
+            correlation_id=None,
+        )
+
+
+def record_a2a_failure(from_agent: str, to_agent: str) -> None:
+    """Record an A2ATimeoutError or A2AAgentUnavailableError as a breaker failure.
+
+    Call this when A2ATimeoutError or A2AAgentUnavailableError is caught after
+    a send/await cycle. A2APayloadInvalidError and A2AUnknownCapabilityError are
+    NOT recorded (caller errors, not target-agent problems — gray-area decision 4).
+
+    Fails silently if breaker module unavailable.
+    """
+    if not _HAS_BREAKER or record_failure is None:
+        return
+    try:
+        record_failure(from_agent, to_agent, redis_client=_A2A_REDIS_CLIENT)
+    except Exception:
+        pass  # fail-open
+
+
+def record_a2a_success(from_agent: str, to_agent: str) -> None:
+    """Record a successful A2A exchange as a breaker success.
+
+    Call this after a successful await_response(). Used to close the breaker
+    after a HALF_OPEN probe succeeds. Callers are responsible for calling this
+    function — send_request_with_retry only handles the send side, not the
+    full round-trip.
+
+    Fails silently if breaker module unavailable.
+    """
+    if not _HAS_BREAKER or record_success is None:
+        return
+    try:
+        record_success(from_agent, to_agent, redis_client=_A2A_REDIS_CLIENT)
+    except Exception:
+        pass  # fail-open
+
+
 # ── Core API ──────────────────────────────────────────────────────────────────
 
 def send_request(
@@ -303,6 +385,7 @@ def send_request(
     """
     payload_json = _validate_payload(payload)
     _check_capability(to, capability)
+    _check_breaker(from_agent, to)  # A2A-05: breaker check before PG INSERT
 
     def _run(c):
         import psycopg2.extras
@@ -566,6 +649,13 @@ def send_request_with_retry(
         to receive the response (send_request_with_retry only handles the send
         + timeout detection, not the full round-trip).
     """
+    # Pre-flight: validate payload + capability BEFORE entering retry loop.
+    # Non-retryable errors (payload_invalid, unknown_capability, agent_unavailable)
+    # MUST fail fast — they are not transient and should not consume retry budget.
+    # A2APayloadInvalidError and A2AUnknownCapabilityError propagate immediately here.
+    _validate_payload(payload)        # raises A2APayloadInvalidError if invalid
+    _check_capability(to, capability)  # raises A2AUnknownCapabilityError/A2AAgentUnavailableError
+
     last_error: Optional[A2ATimeoutError] = None
     total_attempts = max_retries + 1
 
@@ -608,6 +698,7 @@ def send_request_with_retry(
             return corr_id
 
         except A2ATimeoutError as exc:
+            record_a2a_failure(from_agent, to)  # A2A-05: record failure for breaker
             last_error = exc
             if is_final:
                 raise
