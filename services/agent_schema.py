@@ -3,7 +3,10 @@
 Agent Schema — Pydantic AgentDefinition model for Phase 52 Agent Compilation.
 Phase 52 / COMPILE-01. Field declaration order is locked per
 52-CONTEXT.md §Area 1 + §Area 3:
-  name, description, tools, color, memory, skills
+  name, description, tools, color, memory, skills, capabilities
+
+Phase 55 A2A-02: capabilities added as 7th LOCKED optional field (default []).
+Existing AGENT.yaml files without capabilities: parse cleanly (backward compat).
 
 Grep contract (enforced by tests/test_agent_schema.py):
   - name field MUST appear before description field
@@ -88,11 +91,12 @@ SECTION_KEY_ORDER = (
 
 
 class AgentDefinition(BaseModel):
-    """Canonical agent definition. 6-field locked frontmatter + body_preamble + sections.
+    """Canonical agent definition. 7-field locked frontmatter + body_preamble + sections.
 
     Frontmatter fields in LOCKED declaration order:
-      name, description, tools, color, memory, skills
+      name, description, tools, color, memory, skills, capabilities
     Phase 52 COMPILE-01 grep contract: name < description < tools < color < memory < skills.
+    Phase 55 A2A-02: capabilities added as 7th LOCKED optional field after skills.
 
     body_preamble: Optional verbatim Markdown text between frontmatter '---' and
     first '## ' heading. 16/17 agents have '# Agent: <name>' H1 here;
@@ -108,13 +112,17 @@ class AgentDefinition(BaseModel):
     if _HAS_PYDANTIC:
         model_config = {"populate_by_name": True, "extra": "forbid"}
 
-        # LOCKED field order: name: → description: → tools: → color: → memory: → skills:
+        # LOCKED field order: name: → description: → tools: → color: → memory: → skills: → capabilities:
         name: str = Field(..., description="Agent identifier, kebab-case")
         description: str = Field(..., min_length=10, max_length=500)
         tools: List[str] = Field(..., description="List of canonical tool names")
         color: str = Field(..., description="Single lowercase color word")
         memory: str = Field(..., description="Memory scope: user | project | none")
         skills: List[str] = Field(default_factory=list)
+        capabilities: List[str] = Field(
+            default_factory=list,
+            description="A2A capability verbs this agent can perform (Phase 55 A2A-02). Optional — default []. Backfilled per agent in Phase 56/v3.4.",
+        )
         body_preamble: Optional[str] = Field(
             default=None,
             description=(
@@ -188,17 +196,19 @@ class AgentDefinition(BaseModel):
             color: str = '',
             memory: str = '',
             skills: Optional[List[str]] = None,
+            capabilities: Optional[List[str]] = None,
             body_preamble: Optional[str] = None,
             sections: Optional[Dict[str, str]] = None,
             **kwargs,
         ):
-            # LOCKED field order: name: → description: → tools: → color: → memory: → skills:
+            # LOCKED field order: name: → description: → tools: → color: → memory: → skills: → capabilities:
             self.name = name
             self.description = description
             self.tools = tools or []
             self.color = color
             self.memory = memory
             self.skills = skills if skills is not None else []
+            self.capabilities = capabilities if capabilities is not None else []
             self.body_preamble = body_preamble
             self.sections = sections or {}
 
@@ -392,6 +402,10 @@ def load_agent_definition(path: str) -> 'AgentDefinition':
     if isinstance(skills, str):
         skills = [s.strip() for s in skills.split(',') if s.strip()]
 
+    capabilities = fm.get('capabilities', [])
+    if isinstance(capabilities, str):
+        capabilities = [c.strip() for c in capabilities.split(',') if c.strip()]
+
     if _HAS_PYDANTIC:
         return AgentDefinition(
             name=fm.get('name', ''),
@@ -400,6 +414,7 @@ def load_agent_definition(path: str) -> 'AgentDefinition':
             color=fm.get('color', ''),
             memory=fm.get('memory', ''),
             skills=skills,
+            capabilities=capabilities,
             body_preamble=body_preamble,
             sections=sections,
         )
@@ -411,6 +426,7 @@ def load_agent_definition(path: str) -> 'AgentDefinition':
             color=fm.get('color', ''),
             memory=fm.get('memory', ''),
             skills=skills,
+            capabilities=capabilities,
             body_preamble=body_preamble,
             sections=sections,
         )
