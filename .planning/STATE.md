@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v3.3
 milestone_name: The Dialect — Phases 54-58
-status: defining_requirements
-stopped_at: v3.3 milestone defined; awaiting Phase 54 roadmap creation
-last_updated: "2026-05-14T19:00:00.000Z"
-last_activity: "2026-05-14 — v3.2 shipped, pushed to Luiscmogrovejo/gsd-amauta master + tags v2.7/v2.9/v3.0/v3.1/v3.2. v3.3 The Dialect scoped: STAB (6) + A2A (7) + MARK (4) + PUB (5) = 22 requirements across 5 phases (54-58)."
+status: ready_to_execute
+stopped_at: v3.3 roadmap created; awaiting Phase 54 planning
+last_updated: "2026-05-14T19:30:00.000Z"
+last_activity: "2026-05-14 — v3.3 roadmap created (5 phases, 22 requirements). Execution order: 54 → 55 → 56 → (57 ‖ 58-prep) → 58."
 progress:
   total_phases: 5
   completed_phases: 0
@@ -25,15 +25,15 @@ See: .planning/PROJECT.md (updated 2026-05-14 after v3.2 close + v3.3 definition
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: Not started (ready to execute)
 Plan: —
-Status: Defining requirements (REQUIREMENTS.md drafted, awaiting roadmap)
-Last activity: 2026-05-14 — Milestone v3.3 "The Dialect" started
-Next step: Roadmapper spawn to create ROADMAP.md for Phases 54-58, then `/amauta:plan-phase 54`
+Status: Roadmap created; ready for `/amauta:plan-phase 54`
+Last activity: 2026-05-14 — Roadmap for v3.3 Phases 54-58 written
+Next step: `/amauta:plan-phase 54`
 
 Progress: [..........] 0% (0/5 phases complete)
 
-## v3.3 Phase Map (preliminary — confirmed by roadmapper)
+## v3.3 Phase Map
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
@@ -78,9 +78,9 @@ Progress: [..........] 0% (0/5 phases complete)
 
 ## Session Continuity
 
-Last session: 2026-05-14T19:00:00.000Z
-Stopped at: v3.3 milestone defined; PROJECT.md + STATE.md + REQUIREMENTS.md written; awaiting roadmapper spawn
-Resume file: .planning/REQUIREMENTS.md (v3.3 section) + .planning/PROJECT.md (v3.3 active reqs)
+Last session: 2026-05-14T19:30:00.000Z
+Stopped at: v3.3 roadmap created; awaiting Phase 54 planning
+Resume file: .planning/ROADMAP.md (v3.3 Phase Details) + .planning/REQUIREMENTS.md (v3.3 section)
 
 ## Learnings
 
