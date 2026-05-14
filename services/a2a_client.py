@@ -770,3 +770,126 @@ def _send_retried_row(
     store = _get_store()
     with store._get_conn() as c:
         return _run(c)
+
+
+# ── Threading constants (A2A-06) ──────────────────────────────────────────────
+THREAD_DEFAULT_DEPTH_LIMIT: int = 10    # default max recursion depth for get_thread()
+
+
+def get_thread(
+    root_correlation_id: str,
+    depth_limit: int = THREAD_DEFAULT_DEPTH_LIMIT,
+    conn=None,
+) -> list:
+    """Return ordered exchange history for a multi-turn dialogue thread.
+
+    Uses a PostgreSQL recursive CTE to traverse parent_correlation_id chains
+    starting from root_correlation_id (inclusive). Returns rows ordered by
+    created_at ASC (chronological).
+
+    Recursive CTE pattern:
+      WITH RECURSIVE thread AS (
+        -- Anchor: root row
+        SELECT ..., 0 AS depth FROM a2a_messages
+         WHERE correlation_id = %s::uuid
+        UNION ALL
+        -- Recursive: children of current level
+        SELECT m..., t.depth + 1 AS depth
+          FROM a2a_messages m
+          JOIN thread t ON m.parent_correlation_id = t.correlation_id
+         WHERE t.depth < %s
+      )
+      SELECT * FROM thread ORDER BY created_at ASC
+
+    Args:
+        root_correlation_id: UUID string of the root request row.
+        depth_limit: Maximum recursion depth. Default 10.
+            depth=0 is the root. depth=1 is direct children. etc.
+            Rows at depth > depth_limit are excluded.
+        conn: Optional psycopg2 connection. If None, uses pg_store._get_conn().
+
+    Returns:
+        List of dicts with keys:
+          correlation_id (str), parent_correlation_id (str|None),
+          from_agent (str), to_agent (str), capability (str),
+          payload (dict), kind (str), status (str),
+          created_at (str ISO8601), responded_at (str ISO8601 | None),
+          depth (int)
+        Empty list if root not found or PG unavailable.
+
+    Notes:
+        - Returns empty list (not an error) for stale/unknown root IDs.
+        - depth_limit prevents runaway traversal on malformed chains.
+        - schema_version "1.0" matches SCHEMA_VERSION module constant.
+    """
+    def _run(c):
+        import psycopg2.extras
+        with c.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                WITH RECURSIVE thread AS (
+                    SELECT
+                        correlation_id::text,
+                        parent_correlation_id::text,
+                        from_agent,
+                        to_agent,
+                        capability,
+                        payload,
+                        kind,
+                        status,
+                        created_at,
+                        responded_at,
+                        0 AS depth
+                    FROM a2a_messages
+                    WHERE correlation_id = %s::uuid
+                  UNION ALL
+                    SELECT
+                        m.correlation_id::text,
+                        m.parent_correlation_id::text,
+                        m.from_agent,
+                        m.to_agent,
+                        m.capability,
+                        m.payload,
+                        m.kind,
+                        m.status,
+                        m.created_at,
+                        m.responded_at,
+                        t.depth + 1
+                    FROM a2a_messages m
+                    JOIN thread t ON m.parent_correlation_id = t.correlation_id::uuid
+                    WHERE t.depth < %s
+                )
+                SELECT * FROM thread ORDER BY created_at ASC
+                """,
+                (root_correlation_id, depth_limit),
+            )
+            rows = cur.fetchall()
+        return [
+            {
+                "correlation_id": r["correlation_id"],
+                "parent_correlation_id": r["parent_correlation_id"],
+                "from_agent": r["from_agent"],
+                "to_agent": r["to_agent"],
+                "capability": r["capability"],
+                "payload": r["payload"] if isinstance(r["payload"], dict) else (
+                    json.loads(r["payload"]) if isinstance(r["payload"], str) else {}
+                ),
+                "kind": r["kind"],
+                "status": r["status"],
+                "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+                "responded_at": r["responded_at"].isoformat() if r["responded_at"] else None,
+                "depth": r["depth"],
+                "schema_version": SCHEMA_VERSION,
+            }
+            for r in rows
+        ]
+
+    try:
+        if conn is not None:
+            return _run(conn)
+        store = _get_store()
+        with store._get_conn() as c:
+            return _run(c)
+    except Exception:
+        # PG unavailable or bad root_correlation_id format — return empty list
+        return []
