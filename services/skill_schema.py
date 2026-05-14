@@ -8,6 +8,9 @@ security_class MUST appear BEFORE allowed-tools: the downstream Semgrep rule
 `skill-read-only-no-write` (Plan 43-03-02) uses a regex of the form
 ``(?ms)^security_class:\\s*read-only.*?^allowed-tools:`` which only matches when
 security_class appears BEFORE allowed-tools in the frontmatter.
+
+Phase 53 POLISH-01: input_schema + output_schema appended at positions 8+9.
+7-field LOCKED order (positions 1-7) is preserved byte-identical.
 """
 
 import logging
@@ -51,6 +54,23 @@ _CATEGORY_RE = re.compile(r'^[a-z][a-z0-9-]{1,32}$')
 _VERSION_RE = re.compile(r'^\d+\.\d+\.\d+$')
 _DEPENDS_ENTRY_RE = re.compile(r'^[a-z][a-z0-9-]+(@\d+\.\d+\.\d+|@latest)?$')
 _SECURITY_CLASSES = frozenset(['read-only', 'read-write', 'admin'])
+
+
+# ─── JSON Schema shape validator (Phase 53 POLISH-01) ────────────────────────
+
+def _validate_json_schema(schema: dict, field_name: str) -> None:
+    """Lightweight check that a dict looks like JSON Schema.
+    Phase 53 POLISH-01: optional fields use this when present.
+    Full draft-7 validation deferred to consumers (MCP, Semgrep)."""
+    if schema is None:
+        return
+    if not isinstance(schema, dict):
+        raise ValueError(f"{field_name} must be a dict (JSON Schema shape), got {type(schema).__name__}")
+    if "type" not in schema:
+        raise ValueError(f"{field_name} missing required 'type' field (JSON Schema requirement)")
+    valid_types = {"string", "number", "integer", "boolean", "array", "object", "null"}
+    if isinstance(schema["type"], str) and schema["type"] not in valid_types:
+        raise ValueError(f"{field_name}.type must be one of {sorted(valid_types)}, got {schema['type']!r}")
 
 
 # ─── CycleError ──────────────────────────────────────────────────────────────
@@ -138,6 +158,10 @@ class SkillFrontmatter(BaseModel):
         security_class: str = Field(..., description="read-only | read-write | admin")
         allowed_tools: List[str] = Field(..., alias="allowed-tools")
         depends_on: List[str] = Field(default_factory=list)
+        # Position 8 (NEW Phase 53 POLISH-01)
+        input_schema: Optional[dict] = Field(default=None, description="JSON Schema describing skill input shape. Optional.")
+        # Position 9 (NEW Phase 53 POLISH-01)
+        output_schema: Optional[dict] = Field(default=None, description="JSON Schema describing skill output shape. Optional.")
 
         @field_validator("name")
         @classmethod
@@ -182,12 +206,27 @@ class SkillFrontmatter(BaseModel):
                     raise ValueError(f"depends_on entry '{entry}' is invalid")
             return v
 
+        @field_validator("input_schema")
+        @classmethod
+        def _v_input_schema(cls, v):
+            _validate_json_schema(v, "input_schema")
+            return v
+
+        @field_validator("output_schema")
+        @classmethod
+        def _v_output_schema(cls, v):
+            _validate_json_schema(v, "output_schema")
+            return v
+
     else:
         def __init__(self, name: str = '', description: str = '',
                      category: str = '', version: str = '',
                      security_class: str = '',
                      allowed_tools: Optional[List[str]] = None,
-                     depends_on: Optional[List[str]] = None, **kwargs):
+                     depends_on: Optional[List[str]] = None,
+                     input_schema: Optional[dict] = None,
+                     output_schema: Optional[dict] = None,
+                     **kwargs):
             if 'allowed-tools' in kwargs:
                 allowed_tools = kwargs.pop('allowed-tools')
             self.name = name
@@ -198,6 +237,9 @@ class SkillFrontmatter(BaseModel):
             self.security_class = security_class
             self.allowed_tools = allowed_tools or []
             self.depends_on = depends_on if depends_on is not None else []
+            # Phase 53 POLISH-01: optional JSON Schema fields
+            self.input_schema = input_schema
+            self.output_schema = output_schema
 
             errs = []
             if not _NAME_RE.match(self.name):
@@ -279,6 +321,8 @@ def load_skill_frontmatter(path: str) -> SkillFrontmatter:
             'security_class': data.get('security_class', ''),
             'allowed-tools': data.get('allowed-tools', data.get('allowed_tools', [])),
             'depends_on': data.get('depends_on', []),
+            'input_schema': data.get('input_schema', None),
+            'output_schema': data.get('output_schema', None),
         })
     else:
         return SkillFrontmatter(
@@ -289,4 +333,6 @@ def load_skill_frontmatter(path: str) -> SkillFrontmatter:
             security_class=data.get('security_class', ''),
             allowed_tools=data.get('allowed-tools', data.get('allowed_tools', [])),
             depends_on=data.get('depends_on', []),
+            input_schema=data.get('input_schema', None),
+            output_schema=data.get('output_schema', None),
         )
