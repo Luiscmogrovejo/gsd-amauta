@@ -1496,15 +1496,307 @@ async function runUpgrade(f) {
  *   read_install_record → remove_skills → remove_agents → remove_generated_config →
  *   clear_install_record → post_uninstall_verify
  *
- * PRESERVATION CONTRACT: NEVER deletes .planning/, services/*.py, tests/, agents/,
- * migrations/, user .env, or source code files.
+ * PRESERVATION CONTRACT (load-bearing): NEVER deletes .planning/, services/*.py,
+ * tests/, agents/ source dir, migrations/, user .env, or source code files.
+ * ONLY deletes generated outputs in IDE-specific dirs (.claude/skills/, .cursor/rules/,
+ * .opencode/skills/ etc.) and Amauta-generated platform-codes.yaml.
+ *
+ * Idempotency: no install record → all steps skip, exit 0.
+ * Dry-run: state-modifying steps return status='skip' with would_delete details.
  *
  * @param {object} f — flags object
- * @returns {Promise<Array>} array of per-step result objects
+ * @returns {Promise<Array>} array of per-step result objects (FROZEN schema)
  */
 async function runUninstall(f) {
-  // POLISH-02 stub — bodies filled in 53-02-03
-  return [buildStepResult('stub', 'skip', 'POLISH-02 wip', null)];
+  const INSTALL_RECORD_PATH = path.join(os.homedir(), '.amauta', 'data', 'install_record.json');
+  const CWD = process.cwd();
+
+  // PRESERVATION CONTRACT: these paths are NEVER touched by uninstall
+  // (enforced by post_uninstall_verify — their existence is asserted at end)
+  const PRESERVED_PATHS = [
+    path.join(CWD, '.planning'),
+    path.join(CWD, 'tests'),
+    path.join(CWD, 'services'),
+    path.join(CWD, 'agents'),
+    path.join(CWD, 'migrations'),
+  ];
+
+  // Generated IDE skill output dirs (derived from platform-codes.yaml / frozen fallback)
+  const IDE_SKILL_DIRS = [
+    { ide: 'claude-code',  dir: path.join(CWD, '.claude', 'skills') },
+    { ide: 'cursor',       dir: path.join(CWD, '.cursor', 'rules') },
+    { ide: 'opencode',     dir: path.join(CWD, '.opencode', 'skills') },
+  ];
+
+  // Generated IDE agent output dirs
+  const IDE_AGENT_DIRS = [
+    { ide: 'claude-code',  dir: path.join(CWD, '.claude', 'agents') },
+    { ide: 'cursor',       dir: path.join(CWD, '.cursor', 'agents') },
+    { ide: 'opencode',     dir: path.join(CWD, '.opencode', 'agents') },
+  ];
+
+  const results = [];
+  let absent = false;
+  let installRecord = null;
+
+  // ── Step 1: read_install_record ────────────────────────────────────────────
+  {
+    const start = Date.now();
+    if (!fs.existsSync(INSTALL_RECORD_PATH)) {
+      absent = true;
+      const r = buildStepResult('read_install_record', 'skip',
+        'no install record found — nothing to uninstall (idempotent)',
+        { install_record_path: INSTALL_RECORD_PATH });
+      r.duration_ms = Date.now() - start;
+      results.push(r);
+    } else {
+      try {
+        const raw = fs.readFileSync(INSTALL_RECORD_PATH, 'utf-8');
+        installRecord = JSON.parse(raw);
+        const version = installRecord.version || '<unknown>';
+        const r = buildStepResult('read_install_record', 'pass',
+          `install record found for version ${version}`,
+          { version, install_record_path: INSTALL_RECORD_PATH });
+        r.duration_ms = Date.now() - start;
+        results.push(r);
+      } catch (err) {
+        const r = buildStepResult('read_install_record', 'fail',
+          `failed to read install record: ${err.message}`,
+          { install_record_path: INSTALL_RECORD_PATH, error: err.message });
+        r.duration_ms = Date.now() - start;
+        results.push(r);
+        return results;
+      }
+    }
+  }
+
+  // ── Step 2: remove_skills ─────────────────────────────────────────────────
+  {
+    const start = Date.now();
+    if (absent) {
+      const r = buildStepResult('remove_skills', 'skip', 'no install record — skipped', null);
+      r.duration_ms = Date.now() - start;
+      results.push(r);
+    } else {
+      // Collect generated skill files from IDE skill dirs
+      const toDelete = [];
+      for (const { ide, dir } of IDE_SKILL_DIRS) {
+        if (!fs.existsSync(dir)) continue;
+        try {
+          const entries = fs.readdirSync(dir, { withFileTypes: true });
+          for (const e of entries) {
+            if (e.isFile() && e.name.endsWith('.md')) {
+              toDelete.push(path.join(dir, e.name));
+            } else if (e.isDirectory()) {
+              // Also check skill subdirectories
+              const subDir = path.join(dir, e.name);
+              try {
+                const subEntries = fs.readdirSync(subDir);
+                for (const f2 of subEntries) {
+                  if (f2.endsWith('.md')) {
+                    toDelete.push(path.join(subDir, f2));
+                  }
+                }
+              } catch { /* ignore */ }
+            }
+          }
+        } catch { /* ignore */ }
+      }
+
+      if (f.dryRun) {
+        const r = buildStepResult('remove_skills', 'skip',
+          `dry-run: would delete ${toDelete.length} generated skill file(s)`,
+          { would_delete: toDelete });
+        r.duration_ms = Date.now() - start;
+        results.push(r);
+      } else {
+        let removed = 0;
+        for (const p of toDelete) {
+          try {
+            if (fs.existsSync(p)) { fs.unlinkSync(p); removed++; }
+          } catch { /* missing file tolerated */ }
+        }
+        const r = buildStepResult('remove_skills', 'pass',
+          `removed ${removed} generated skill file(s)`,
+          { removed, paths: toDelete });
+        r.duration_ms = Date.now() - start;
+        results.push(r);
+      }
+    }
+  }
+
+  // ── Step 3: remove_agents ─────────────────────────────────────────────────
+  {
+    const start = Date.now();
+    if (absent) {
+      const r = buildStepResult('remove_agents', 'skip', 'no install record — skipped', null);
+      r.duration_ms = Date.now() - start;
+      results.push(r);
+    } else {
+      // Collect generated agent files from IDE agent dirs (compiled outputs only)
+      const toDelete = [];
+      for (const { ide, dir } of IDE_AGENT_DIRS) {
+        if (!fs.existsSync(dir)) continue;
+        try {
+          const entries = fs.readdirSync(dir);
+          for (const entry of entries) {
+            if (entry.endsWith('.md') || entry.endsWith('.json')) {
+              toDelete.push(path.join(dir, entry));
+            }
+          }
+        } catch { /* ignore */ }
+      }
+
+      if (f.dryRun) {
+        const r = buildStepResult('remove_agents', 'skip',
+          `dry-run: would delete ${toDelete.length} generated agent file(s)`,
+          { would_delete: toDelete });
+        r.duration_ms = Date.now() - start;
+        results.push(r);
+      } else {
+        let removed = 0;
+        for (const p of toDelete) {
+          try {
+            if (fs.existsSync(p)) { fs.unlinkSync(p); removed++; }
+          } catch { /* missing file tolerated */ }
+        }
+        const r = buildStepResult('remove_agents', 'pass',
+          `removed ${removed} generated agent file(s)`,
+          { removed, paths: toDelete });
+        r.duration_ms = Date.now() - start;
+        results.push(r);
+      }
+    }
+  }
+
+  // ── Step 4: remove_generated_config ───────────────────────────────────────
+  {
+    const start = Date.now();
+    if (absent) {
+      const r = buildStepResult('remove_generated_config', 'skip', 'no install record — skipped', null);
+      r.duration_ms = Date.now() - start;
+      results.push(r);
+    } else {
+      // Only delete platform-codes.yaml if it was generated by Amauta.
+      // Detection: presence of an 'amauta_generated' or 'generated_by' marker in the file,
+      // or the file does not exist yet. We do NOT delete user-edited files.
+      const platformCodesPath = path.join(PLUGIN_ROOT, 'platform-codes.yaml');
+      const toDelete = [];
+      let isAmautaGenerated = false;
+
+      if (fs.existsSync(platformCodesPath)) {
+        try {
+          const content = fs.readFileSync(platformCodesPath, 'utf-8');
+          // Generated marker: any of these strings indicate Amauta generated the file
+          isAmautaGenerated = content.includes('amauta_generated') ||
+            content.includes('generated_by: amauta') ||
+            content.includes('# generated by amauta') ||
+            content.includes('# AUTO-GENERATED');
+        } catch { /* ignore */ }
+        if (isAmautaGenerated) {
+          toDelete.push(platformCodesPath);
+        }
+      }
+
+      if (f.dryRun) {
+        const r = buildStepResult('remove_generated_config', 'skip',
+          toDelete.length > 0
+            ? `dry-run: would delete ${toDelete.length} generated config file(s)`
+            : 'dry-run: no Amauta-generated config files found to delete',
+          { would_delete: toDelete });
+        r.duration_ms = Date.now() - start;
+        results.push(r);
+      } else {
+        let removed = 0;
+        for (const p of toDelete) {
+          try {
+            if (fs.existsSync(p)) { fs.unlinkSync(p); removed++; }
+          } catch { /* ignore */ }
+        }
+        const r = buildStepResult('remove_generated_config',
+          'pass',
+          removed > 0
+            ? `removed ${removed} generated config file(s)`
+            : 'no Amauta-generated config files found (user-edited files preserved)',
+          { removed, paths: toDelete });
+        r.duration_ms = Date.now() - start;
+        results.push(r);
+      }
+    }
+  }
+
+  // ── Step 5: clear_install_record ──────────────────────────────────────────
+  {
+    const start = Date.now();
+    if (absent) {
+      const r = buildStepResult('clear_install_record', 'skip',
+        'no install record to clear (idempotent)', null);
+      r.duration_ms = Date.now() - start;
+      results.push(r);
+    } else if (f.dryRun) {
+      const r = buildStepResult('clear_install_record', 'skip',
+        'dry-run: would delete install record',
+        { would_delete: [INSTALL_RECORD_PATH] });
+      r.duration_ms = Date.now() - start;
+      results.push(r);
+    } else {
+      try {
+        if (fs.existsSync(INSTALL_RECORD_PATH)) {
+          fs.unlinkSync(INSTALL_RECORD_PATH);
+        }
+        const r = buildStepResult('clear_install_record', 'pass',
+          'install record deleted',
+          { deleted: INSTALL_RECORD_PATH });
+        r.duration_ms = Date.now() - start;
+        results.push(r);
+      } catch (err) {
+        const r = buildStepResult('clear_install_record', 'fail',
+          `failed to delete install record: ${err.message}`,
+          { error: err.message, path: INSTALL_RECORD_PATH });
+        r.duration_ms = Date.now() - start;
+        results.push(r);
+        return results;
+      }
+    }
+  }
+
+  // ── Step 6: post_uninstall_verify ─────────────────────────────────────────
+  // PRESERVATION CONTRACT verification: confirm preserved paths still exist.
+  // This is a load-bearing assertion — fails if .planning/, tests/ etc. were
+  // accidentally deleted (should never happen given preservation logic above).
+  {
+    const start = Date.now();
+    if (absent || f.dryRun) {
+      const r = buildStepResult('post_uninstall_verify', 'skip',
+        absent ? 'skipped — nothing was uninstalled' : 'dry-run: skipped verification',
+        null);
+      r.duration_ms = Date.now() - start;
+      results.push(r);
+    } else {
+      const missing = [];
+      for (const p of PRESERVED_PATHS) {
+        if (!fs.existsSync(p)) {
+          missing.push(p);
+        }
+      }
+      if (missing.length > 0) {
+        // This should NEVER happen — preserved paths were deleted
+        const r = buildStepResult('post_uninstall_verify', 'fail',
+          `PRESERVATION CONTRACT VIOLATED: ${missing.length} preserved path(s) missing`,
+          { missing_preserved_paths: missing });
+        r.duration_ms = Date.now() - start;
+        results.push(r);
+      } else {
+        const r = buildStepResult('post_uninstall_verify', 'pass',
+          'uninstall complete — all preserved paths intact (.planning, tests, services, agents, migrations)',
+          { preserved: PRESERVED_PATHS.filter(p => fs.existsSync(p)) });
+        r.duration_ms = Date.now() - start;
+        results.push(r);
+      }
+    }
+  }
+
+  return results;
 }
 
 // ═══════════════════════════════════════════════════════
