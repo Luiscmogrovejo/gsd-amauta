@@ -42,7 +42,9 @@ v3.3 "The Dialect" is underway. Five phases close the carry-forward debt accumul
 5. `tests/13.1-divergence-protocol.integration.test.cjs` either passes deterministically (mocked LLM with frozen responses) or is quarantined behind an explicit `GSD_LLM_INTEGRATION=true` flag so CI never fails on a missing API key.
 6. `gsd-amauta doctor` exits 0 and prints a one-screen status table covering: paths, daemon reachability, PG reachability, Valkey reachability, API keys present/absent, migrations current, agent files present, skill files present.
 
-**Plans:** 5 (54-01 through 54-05); 54-02 SHIPPED (STAB-04), 54-03 SHIPPED (STAB-05); 54-01, 54-04, 54-05 pending
+**Plans:** 5 (54-01 through 54-05); 54-01 SHIPPED (STAB-01+STAB-03), 54-02 SHIPPED (STAB-04), 54-03 SHIPPED (STAB-05); 54-04, 54-05 pending
+
+**54-01 shipped 2026-05-14:** STAB-01+STAB-03 — coverage ratchet CI gate wired in test.yml; .coverage_threshold.json updated to real baseline (lines=70%, branches=68.7%); _rlm_restarts_lifetime cumulative counter added to /health endpoint; 5-test pytest suite passes.
 
 **54-03 shipped 2026-05-14:** STAB-05 — GSD_LLM_INTEGRATION skip guard added to tests/13.1-divergence-protocol.integration.test.cjs; GSD_LLM_INTEGRATION: "true" added to .github/workflows/behavioral-tests.yml. Default CI now exits 0 when Anthropic API key absent.
 

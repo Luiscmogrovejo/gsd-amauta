@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.3
 milestone_name: The Dialect — Phases 54-58
 status: executing
-stopped_at: Phase 54 plan 54-03 shipped (STAB-05 LLM quarantine guard)
-last_updated: "2026-05-14T20:15:00.000Z"
-last_activity: "2026-05-14 — Plan 54-03 executed: GSD_LLM_INTEGRATION skip guard + behavioral-tests.yml wired (STAB-05 closed)"
+stopped_at: Phase 54 plan 54-01 shipped (STAB-01+STAB-03); 54-04 and 54-05 pending
+last_updated: "2026-05-14T20:55:00.000Z"
+last_activity: "2026-05-14 — Plan 54-01 executed: coverage ratchet CI gate + .coverage_threshold.json real baseline + _rlm_restarts_lifetime cumulative counter (STAB-01+STAB-03 closed). 4 tasks, 4 atomic commits."
 progress:
   total_phases: 5
   completed_phases: 0
-  total_plans: 1
-  completed_plans: 1
+  total_plans: 2
+  completed_plans: 2
   percent: 0
 ---
 
@@ -26,10 +26,10 @@ See: .planning/PROJECT.md (updated 2026-05-14 after v3.2 close + v3.3 definition
 ## Current Position
 
 Phase: 54 — Stability & Hardening (in progress)
-Plan: 54-03 COMPLETE (STAB-05)
-Status: Plan 54-03 shipped — GSD_LLM_INTEGRATION skip guard + behavioral-tests.yml env var
-Last activity: 2026-05-14 — Plan 54-03 executed (2 tasks, 2 commits: 559a6b7, 6357606)
-Next step: Execute remaining Phase 54 plans (54-01, 54-04, 54-05) — 54-02 DONE (STAB-04), 54-03 DONE (STAB-05)
+Plan: 54-01 COMPLETE (STAB-01+STAB-03)
+Status: Plan 54-01 shipped — coverage ratchet CI gate + real baseline + _rlm_restarts_lifetime counter
+Last activity: 2026-05-14 — Plan 54-01 executed (4 tasks, 4 commits: 8a3f0bb, 3a5f37c, d1d1b0b, d4d5b0a)
+Next step: Execute remaining Phase 54 plans (54-04, 54-05) — 54-01 DONE (STAB-01+STAB-03), 54-02 DONE (STAB-04), 54-03 DONE (STAB-05)
 
 Progress: [..........] 0% (0/5 phases complete)
 
@@ -78,12 +78,22 @@ Progress: [..........] 0% (0/5 phases complete)
 
 ## Session Continuity
 
-Last session: 2026-05-14T20:15:00.000Z
-Stopped at: Phase 54 plan 54-03 shipped (STAB-05 closed)
-Resume file: .planning/phases/54-stability-hardening/ (plans 54-01, 54-02, 54-04, 54-05 pending)
+Last session: 2026-05-14T20:55:00.000Z
+Stopped at: Phase 54 plan 54-01 shipped (STAB-01+STAB-03 closed)
+Resume file: .planning/phases/54-stability-hardening/ (plans 54-04, 54-05 pending; 54-01, 54-02, 54-03 DONE)
 
 ## Learnings
 
 
+
+
+
+
+
+- [learning] 2026-05-14T20:48:57.827Z: legacy regression test: free text learning
+- [learning] 2026-05-14T20:48:39.631Z: E2E test learning — cleanup after test
+- [learning] 2026-05-14T20:47:34.380Z: legacy regression test: free text learning
+- [learning] 2026-05-14T20:46:22.904Z: legacy regression test: free text learning
+- [learning] 2026-05-14T20:45:05.270Z: legacy regression test: free text learning
 - [learning] 2026-05-14T20:43:21.566Z: legacy regression test: free text learning
 (New v3.3 learnings appended below as phases ship)
