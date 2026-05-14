@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v3.3
 milestone_name: The Dialect — Phases 54-58
-status: ready_to_execute
-stopped_at: v3.3 roadmap created; awaiting Phase 54 planning
-last_updated: "2026-05-14T19:30:00.000Z"
-last_activity: "2026-05-14 — v3.3 roadmap created (5 phases, 22 requirements). Execution order: 54 → 55 → 56 → (57 ‖ 58-prep) → 58."
+status: executing
+stopped_at: Phase 54 plan 54-03 shipped (STAB-05 LLM quarantine guard)
+last_updated: "2026-05-14T20:15:00.000Z"
+last_activity: "2026-05-14 — Plan 54-03 executed: GSD_LLM_INTEGRATION skip guard + behavioral-tests.yml wired (STAB-05 closed)"
 progress:
   total_phases: 5
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 1
+  completed_plans: 1
   percent: 0
 ---
 
@@ -25,11 +25,11 @@ See: .planning/PROJECT.md (updated 2026-05-14 after v3.2 close + v3.3 definition
 
 ## Current Position
 
-Phase: Not started (ready to execute)
-Plan: —
-Status: Roadmap created; ready for `/amauta:plan-phase 54`
-Last activity: 2026-05-14 — Roadmap for v3.3 Phases 54-58 written
-Next step: `/amauta:plan-phase 54`
+Phase: 54 — Stability & Hardening (in progress)
+Plan: 54-03 COMPLETE (STAB-05)
+Status: Plan 54-03 shipped — GSD_LLM_INTEGRATION skip guard + behavioral-tests.yml env var
+Last activity: 2026-05-14 — Plan 54-03 executed (2 tasks, 2 commits: 559a6b7, 6357606)
+Next step: Execute remaining Phase 54 plans (54-01, 54-04, 54-05) — 54-02 DONE (STAB-04), 54-03 DONE (STAB-05)
 
 Progress: [..........] 0% (0/5 phases complete)
 
@@ -74,14 +74,16 @@ Progress: [..........] 0% (0/5 phases complete)
 
 ### Blockers/Concerns
 
-- OBSERVATION: tests/13.1-divergence-protocol.integration.test.cjs LLM behavioral tests fail intermittently. STAB-05 closes this in Phase 54.
+- ~~OBSERVATION: tests/13.1-divergence-protocol.integration.test.cjs LLM behavioral tests fail intermittently. STAB-05 closes this in Phase 54.~~ CLOSED by plan 54-03 (2026-05-14).
 
 ## Session Continuity
 
-Last session: 2026-05-14T19:30:00.000Z
-Stopped at: v3.3 roadmap created; awaiting Phase 54 planning
-Resume file: .planning/ROADMAP.md (v3.3 Phase Details) + .planning/REQUIREMENTS.md (v3.3 section)
+Last session: 2026-05-14T20:15:00.000Z
+Stopped at: Phase 54 plan 54-03 shipped (STAB-05 closed)
+Resume file: .planning/phases/54-stability-hardening/ (plans 54-01, 54-02, 54-04, 54-05 pending)
 
 ## Learnings
 
+
+- [learning] 2026-05-14T20:43:21.566Z: legacy regression test: free text learning
 (New v3.3 learnings appended below as phases ship)
