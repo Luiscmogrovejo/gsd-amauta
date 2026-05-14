@@ -1,0 +1,109 @@
+# Requirements: GSD-Amauta v3.3 "The Dialect"
+
+**Defined:** 2026-05-14
+**Core Value:** Every RPETD phase must see what other phases have learned. The brain synthesizes, not accumulates. The Dialect lets Federation members speak directly to each other — then ships to the world.
+
+## v1 Requirements
+
+22 requirements across 4 categories. Each maps to exactly one phase (54-58).
+
+### Stability & Hardening (foundation — must complete before Public Launch)
+
+- [ ] **STAB-01**: Coverage baseline bootstrap — `.coverage_threshold.json` populated with real values via `npx c8 --reporter json-summary node scripts/run-tests.cjs`; threshold gate enforced in CI
+- [ ] **STAB-02**: Redis watchdog self-heal activation (commit `48728f1`) + counter-reset uptime-window live test (~7 min synthetic) closing the 2026-05-11 incident class
+- [ ] **STAB-03**: `rlm_restarts_lifetime` cumulative counter on daemon `/health` endpoint (current `rlm_restarts` resets on `_start_rlm` success — operators lose visibility)
+- [ ] **STAB-04**: PATH collision fix — bare `amauta` currently resolves to pipx `amauta-ai` package, not the plugin. Plugin binary renamed/aliased to `gsd-amauta` on PATH with shim
+- [ ] **STAB-05**: LLM behavioral test flakiness — `tests/13.1-divergence-protocol.integration.test.cjs` either quarantined behind explicit flag or determinized (mock LLM with frozen responses)
+- [ ] **STAB-06**: `gsd-amauta doctor` command — diagnoses install state (paths, daemon up, PG reachable, Valkey reachable, API keys present, migrations current, agents present, skills present)
+
+### A2A Dialect (direct agent-to-agent protocol)
+
+- [ ] **A2A-01**: `a2a_messages` PG migration (024) — fields: `correlation_id`, `parent_correlation_id`, `from_agent`, `to_agent`, `capability`, `payload jsonb`, `kind` (request|response|error), `status`, `created_at`, `responded_at`. Indexed on `(to_agent, status)` for inbox queries
+- [ ] **A2A-02**: Capability negotiation schema — each agent publishes a `capabilities` list (verbs it can perform); queryable via `gsd-tools a2a capabilities <agent>` and `services/a2a_registry.py`
+- [ ] **A2A-03**: Direct message send/receive between agents — `services/a2a_client.py` with `send_request(to, capability, payload, timeout)` / `await_response(correlation_id)` / `send_response(correlation_id, payload)` atop existing `agent_messages` infrastructure
+- [ ] **A2A-04**: Timeout + retry semantics — caller-specified timeout (default 30s), structured error vocabulary (`a2a_timeout`, `unknown_capability`, `agent_unavailable`, `payload_invalid`), max 2 retries with exponential backoff
+- [ ] **A2A-05**: Circuit breaker per agent-pair — 3 failures within 60s opens the breaker for that `(from, to)` tuple; mirrors Phase 28 Valkey breaker pattern; half-open probe after 60s
+- [ ] **A2A-06**: Conversation threading — `parent_correlation_id` chains multi-turn dialogues; `services/a2a_client.py` exposes `get_thread(root_correlation_id)` returning ordered exchange history
+- [ ] **A2A-07**: Operator audit endpoint — daemon `/a2a/exchanges?from=&to=&since=` returns recent exchanges; `gsd-amauta a2a tail` CLI for live monitoring. Every A2A call audit-logged before payload delivery
+
+### Module Marketplace
+
+- [ ] **MARK-01**: Static JSON registry index format — versioned schema (`registry_version: "1.0"`), array of `{name, version, sha256, manifest_url, maintainer, signed_by}` entries; reference index hosted in this repo at `registry/index.json`
+- [ ] **MARK-02**: `gsd-amauta module search <query>` CLI — queries local cached index or remote `--registry <url>`; ranks by name + description match; respects Phase 48 ModuleManifest schema
+- [ ] **MARK-03**: Manifest signing — `sha256(manifest_bundle)` + maintainer ed25519 pubkey verification at install time; install fails closed on signature mismatch; pubkey trust store at `~/.gsd-amauta/trusted-keys/`
+- [ ] **MARK-04**: Install from URL — `gsd-amauta module install <url-or-shorthand>` supports `https://...`, `github:owner/repo@tag`, and `registry:<name>@<version>`; download → verify signature → invoke Phase 49 lifecycle install
+
+### Public Launch (capstone — depends on STAB complete)
+
+- [ ] **PUB-01**: Public README rewrite — audience is a developer evaluating an AI dev harness for their team, not internal milestone log. Sections: what it is, quick start (30 seconds to first phase), how it differs from <existing tools>, install, link to docs
+- [ ] **PUB-02**: CONTRIBUTING.md (PR workflow, commit conventions, test policy) + LICENSE audit (verify MIT applies cleanly to all included code; document third-party deps in NOTICE) + SECURITY.md refresh (responsible disclosure address, supported versions)
+- [ ] **PUB-03**: `npm publish` workflow — GitHub Action triggered by semver tag push (`v3.3.0`), runs full test suite, publishes to npm with provenance (`--provenance`), syncs CHANGELOG.md
+- [ ] **PUB-04**: `npx gsd-amauta init` UX polish — friendly error messages (not stack traces), progress display per Phase 44 7-step flow, recovery hints on failure, `--verbose` flag for debug output
+- [ ] **PUB-05**: Demo walkthrough docs — end-to-end "first task" tutorial with terminal screenshots: install → init → discuss-phase → plan-phase → execute-phase → ship. Published to `docs/QUICKSTART.md` and linked from README
+
+## v2 Requirements
+
+Deferred to v3.4 or later. Tracked but not in current roadmap.
+
+### Hosted Marketplace
+- **HOST-01**: SaaS module registry (public hosted index + module hosting)
+- **HOST-02**: Module ratings + download counts
+- **HOST-03**: Maintainer authentication + namespace ownership
+
+### A2A Extensions
+- **A2A-08**: A2A protocol versioning + capability deprecation lifecycle
+- **A2A-09**: Streaming responses (currently request/response only)
+- **A2A-10**: Cross-process / cross-host A2A (currently same-daemon only)
+
+### Telemetry
+- **TEL-01**: Opt-in usage telemetry (which phases run, error rates) for improvement signals
+- **TEL-02**: Public dashboard of community-shipped phases
+
+## Out of Scope
+
+| Feature | Reason |
+|---------|--------|
+| Hosted SaaS registry service | v3.3 ships static JSON index + URL install; running a service has ongoing ops cost incompatible with portability constraint |
+| Web UI for A2A inspection | CLI-only project; `gsd-amauta a2a tail` covers operator need |
+| A2A across processes/hosts | Same-daemon only in v3.3; cross-daemon requires auth model not yet designed |
+| Cryptographic agent identity | Maintainer signing covers modules; agents are trusted within a daemon (operator-mediated) |
+| Auto-upgrading installs | `npm publish` ships but `gsd-amauta module upgrade` remains user-initiated (Phase 49 contract) |
+| Public telemetry | No data collection without explicit opt-in; opt-in deferred to v3.4+ |
+
+## Traceability
+
+Mapped during roadmap creation. Each requirement maps to exactly one phase.
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| STAB-01 | Phase 54 | Pending |
+| STAB-02 | Phase 54 | Pending |
+| STAB-03 | Phase 54 | Pending |
+| STAB-04 | Phase 54 | Pending |
+| STAB-05 | Phase 54 | Pending |
+| STAB-06 | Phase 54 | Pending |
+| A2A-01 | Phase 55 | Pending |
+| A2A-02 | Phase 55 | Pending |
+| A2A-03 | Phase 55 | Pending |
+| A2A-04 | Phase 55 | Pending |
+| A2A-05 | Phase 56 | Pending |
+| A2A-06 | Phase 56 | Pending |
+| A2A-07 | Phase 56 | Pending |
+| MARK-01 | Phase 57 | Pending |
+| MARK-02 | Phase 57 | Pending |
+| MARK-03 | Phase 57 | Pending |
+| MARK-04 | Phase 57 | Pending |
+| PUB-01 | Phase 58 | Pending |
+| PUB-02 | Phase 58 | Pending |
+| PUB-03 | Phase 58 | Pending |
+| PUB-04 | Phase 58 | Pending |
+| PUB-05 | Phase 58 | Pending |
+
+**Coverage:**
+- v1 requirements: 22 total
+- Mapped to phases: 22
+- Unmapped: 0 ✓
+
+---
+*Requirements defined: 2026-05-14*
+*Last updated: 2026-05-14 after milestone v3.3 scope confirmed (all 4 directions in)*
