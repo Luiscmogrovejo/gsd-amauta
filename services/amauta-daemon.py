@@ -1870,6 +1870,106 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": _safe_error(e)}, 500)
             return
 
+        # ── GET /a2a/exchanges — A2A audit endpoint (Phase 56 A2A-07) ────────────
+        # Returns all a2a_messages rows matching optional ?from=&to=&since= filters.
+        # Phase 55 already writes every exchange row before delivery — this is a
+        # pure READ on a2a_messages. No new rows written here.
+        #
+        # Query params:
+        #   from   — filter by from_agent (optional)
+        #   to     — filter by to_agent (optional)
+        #   since  — ISO8601 timestamp cursor (optional; default = NOW() - 24h)
+        #
+        # Response: {"schema_version": "1.0", "exchanges": [...], "next_cursor": <iso>}
+        # next_cursor = max(created_at) + 1ms (ISO string) for the next poll window.
+        # Returns empty exchanges list (not 404) when no matches.
+        if path == "/a2a/exchanges":
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
+                return
+            try:
+                from urllib.parse import urlparse, parse_qs
+                qs = parse_qs(urlparse(self.path).query)
+                from_filter = qs.get("from", [None])[0]
+                to_filter   = qs.get("to",   [None])[0]
+                since_raw   = qs.get("since", [None])[0]
+
+                import datetime as _dt
+                if since_raw:
+                    # Parse ISO8601 — accept both Z and +00:00 suffixes
+                    since_ts = _dt.datetime.fromisoformat(
+                        since_raw.replace("Z", "+00:00")
+                    )
+                else:
+                    since_ts = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(hours=24)
+
+                # Build WHERE clauses
+                conditions = ["created_at >= %s"]
+                params = [since_ts]
+                if from_filter:
+                    conditions.append("from_agent = %s")
+                    params.append(from_filter)
+                if to_filter:
+                    conditions.append("to_agent = %s")
+                    params.append(to_filter)
+
+                where_clause = " AND ".join(conditions)
+                sql = (
+                    "SELECT correlation_id::text, parent_correlation_id::text, "
+                    "from_agent, to_agent, capability, payload, kind, status, "
+                    "created_at, responded_at "
+                    "FROM a2a_messages "
+                    f"WHERE {where_clause} "
+                    "ORDER BY created_at ASC"
+                )
+
+                import psycopg2.extras as _pg_extras
+                conn = store._get_conn()
+                with conn.cursor(cursor_factory=_pg_extras.RealDictCursor) as cur:
+                    cur.execute(sql, params)
+                    rows = cur.fetchall()
+
+                exchanges = []
+                max_created_at = None
+                for r in rows:
+                    created_at_iso = r["created_at"].isoformat() if r["created_at"] else None
+                    if r["created_at"] and (max_created_at is None or r["created_at"] > max_created_at):
+                        max_created_at = r["created_at"]
+                    payload_val = r["payload"]
+                    if isinstance(payload_val, str):
+                        import json as _json
+                        payload_val = _json.loads(payload_val)
+                    exchanges.append({
+                        "correlation_id": r["correlation_id"],
+                        "parent_correlation_id": r["parent_correlation_id"],
+                        "from_agent": r["from_agent"],
+                        "to_agent": r["to_agent"],
+                        "capability": r["capability"],
+                        "payload": payload_val,
+                        "kind": r["kind"],
+                        "status": r["status"],
+                        "created_at": created_at_iso,
+                        "responded_at": r["responded_at"].isoformat() if r["responded_at"] else None,
+                    })
+
+                # next_cursor = max(created_at) + 1ms
+                if max_created_at:
+                    next_cursor = (
+                        max_created_at + _dt.timedelta(milliseconds=1)
+                    ).isoformat()
+                else:
+                    next_cursor = _dt.datetime.now(_dt.timezone.utc).isoformat()
+
+                self._send_json({
+                    "schema_version": "1.0",
+                    "exchanges": exchanges,
+                    "next_cursor": next_cursor,
+                })
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
         self._send_json({"error": f"Unknown GET route: {path}"}, 404)
 
     # ─── POST routes ─────────────────────────────────
