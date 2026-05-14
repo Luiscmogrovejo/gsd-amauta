@@ -69,11 +69,23 @@ fi
     - `{phase_dir}` = phase directory path (e.g. `.planning/phases/01-setup/`)
     - `{plan_file}` = plan filename (e.g. `01-03-PLAN.md`)
 
+    ```bash
+    # Phase 53 POLISH-05 hydration hook
+    # Phase 53 POLISH-05: hydration hook (honors GSD_HYDRATE_TASKS=off kill switch)
+    if [ "${GSD_HYDRATE_TASKS:-on}" != "off" ]; then
+      HYDRATION=$($HYDRATE_CMD "${AGENT_NAME}" --task-id "${TASK_ID:-}" --terse 2>/dev/null || echo "")
+    else
+      HYDRATION=""
+    fi
+    ```
+
     ```
      Task(
        subagent_type="{routed_executor}",
        model="{executor_model}",
        prompt="
+         <current_context>${HYDRATION}</current_context>
+
          <objective>
          Execute plan {plan_number} of phase {phase_number}-{phase_name}.
          Objective: {plan_objective}
@@ -357,10 +369,22 @@ fi
 
 **For each task in validation status, spawn a validator agent:**
 
+```bash
+# Phase 53 POLISH-05 hydration hook
+# Phase 53 POLISH-05: hydration hook (honors GSD_HYDRATE_TASKS=off kill switch)
+if [ "${GSD_HYDRATE_TASKS:-on}" != "off" ]; then
+  HYDRATION=$($HYDRATE_CMD "gsd-validator" --task-id "${TASK_ID:-}" --terse 2>/dev/null || echo "")
+else
+  HYDRATION=""
+fi
+```
+
 ```
 Task(
   subagent_type="gsd-validator",
-  prompt="You are gsd-validator. Validate task {TASK_ID}.
+  prompt="<current_context>${HYDRATION}</current_context>
+
+You are gsd-validator. Validate task {TASK_ID}.
 
   Read the validator protocol:
   @/Users/luismogrovejo/.claude/agents/gsd-validator.md

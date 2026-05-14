@@ -20,9 +20,21 @@ verifier_model, amauta_ok, phase_task_id, completed_plans, wave_results.
 
 Verify phase achieved its GOAL, not just completed tasks.
 
+```bash
+# Phase 53 POLISH-05 hydration hook
+# Phase 53 POLISH-05: hydration hook (honors GSD_HYDRATE_TASKS=off kill switch)
+if [ "${GSD_HYDRATE_TASKS:-on}" != "off" ]; then
+  HYDRATION=$($HYDRATE_CMD "gsd-validator" --task-id "" --terse 2>/dev/null || echo "")
+else
+  HYDRATION=""
+fi
+```
+
 ```
 Task(
-  prompt="Verify phase {phase_number} goal achievement.
+  prompt="<current_context>${HYDRATION}</current_context>
+
+Verify phase {phase_number} goal achievement.
 Phase directory: {phase_dir}
 Phase goal: {goal from ROADMAP.md}
 Phase requirement IDs: {phase_req_ids}
