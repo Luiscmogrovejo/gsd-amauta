@@ -1,16 +1,17 @@
 ---
 gsd_state_version: 1.0
 milestone: v3.2
-milestone_name: The Federation** — Phases 48-53
+milestone_name: The Federation — Phases 48-53
+milestone_status: completed
 status: completed
-stopped_at: v3.2 roadmap defined; awaiting Phase 48 planning
+stopped_at: v3.2 milestone complete; next step — /amauta:audit-milestone v3.2 then /amauta:complete-milestone v3.2
 last_updated: "2026-05-14T00:00:00.000Z"
-last_activity: "2026-05-14 — Plan 53-04 complete: HYDRATE_CMD in cli-variables.md + hydration hook injected before all Task() spawn sites in execute-phase-legacy.md (3 sites) + step-03-execute.md (2 sites) + step-04-verify.md (1 site) + 5 node:test tests (all pass). POLISH-05 fulfilled. Phase 53 COMPLETE."
+last_activity: "2026-05-14 — Plan 53-05 complete: tests/phase-53-canary.test.cjs (13/13 pass, NEVER SKIPS) + REQUIREMENTS.md all 22 reqs Complete + 53-SUMMARY.md + STATE.md + ROADMAP.md v3.2 SHIPPED. Phase 53 COMPLETE. Milestone v3.2 The Federation COMPLETE."
 progress:
   total_phases: 6
   completed_phases: 6
-  total_plans: 24
-  completed_plans: 24
+  total_plans: 25
+  completed_plans: 25
   percent: 100
 ---
 
@@ -25,12 +26,13 @@ See: .planning/PROJECT.md (updated 2026-05-13 after v3.1 milestone close + v3.2 
 
 ## Current Position
 
-Phase: 53 — v3.1 Carry-Forwards (COMPLETE — All plans 53-01 through 53-04 shipped)
-Plan: 53-04 COMPLETE (4 tasks, 4 commits — POLISH-05 hydration hook at all Task() spawn sites)
+Phase: 53 — v3.1 Carry-Forwards (COMPLETE — All plans 53-01 through 53-05 shipped)
+Plan: 53-05 COMPLETE (3 tasks: canary 13/13 pass + REQUIREMENTS.md 22/22 Complete + SUMMARY/STATE/ROADMAP closeout)
 Status: Phase 53 COMPLETE. All 5 POLISH items (POLISH-01..05) fulfilled. v3.2 milestone "The Federation" COMPLETE.
-Last activity: 2026-05-14 — Plan 53-04 complete: HYDRATE_CMD in cli-variables.md + hydration hook at all Task() spawn sites in execute-phase-legacy.md (3) + step-03-execute.md (2) + step-04-verify.md (1) + 5 node:test tests (all pass). POLISH-05 fulfilled. Phase 53 COMPLETE.
+Last activity: 2026-05-14 — Plan 53-05 complete: tests/phase-53-canary.test.cjs (13/13 pass, NEVER SKIPS, SC1 byte-match 17/17 PASS) + REQUIREMENTS.md all 22 reqs Complete (17 original + 5 POLISH) + 53-SUMMARY.md + STATE.md + ROADMAP.md. Phase 53 COMPLETE. v3.2 SHIPPED.
+Next step: /amauta:audit-milestone v3.2 then /amauta:complete-milestone v3.2
 
-Progress: [>>>>>>>>>  ] 83% (5/6 phases complete)
+Progress: [>>>>>>>>>>] 100% (6/6 phases complete)
 
 ## v3.2 Phase Map
 
@@ -41,7 +43,7 @@ Progress: [>>>>>>>>>  ] 83% (5/6 phases complete)
 | 50 | Party Mode Foundation | PARTY-01, PARTY-02 | COMPLETE — All 4 plans shipped (migration 021 + PartySession Pydantic + state machine + post_finding + list_findings + resume() replay + CLI dispatch + E2E SC4 + canary + 55 tests, 2026-05-13) |
 | 51 | Party Mode Decisions + Operator CLI | PARTY-03, PARTY-04 | COMPLETE — Plans 51-01 + 51-02 + 51-03 + 51-04 shipped 2026-05-13 |
 | 52 | Agent Compilation | COMPILE-01, COMPILE-02, COMPILE-03, COMPILE-04 | COMPLETE — All 5 plans shipped (2026-05-13) |
-| 53 | v3.1 Carry-Forwards | POLISH-01..05 | IN PROGRESS — Plan 53-01 (POLISH-01) complete 2026-05-14 |
+| 53 | v3.1 Carry-Forwards | POLISH-01..05 | COMPLETE — All 5 plans (53-01..05) shipped 2026-05-14. 58 total tests. |
 
 **Execution order:** 48 → 49 → 50 → 51 → 52 → 53
 **Parallelizable:** After 48: 49, 50, 52, 53 are mutually independent; 51 must wait for 50
