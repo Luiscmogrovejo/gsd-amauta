@@ -18,7 +18,7 @@ v3.3 "The Dialect" is underway. Five phases close the carry-forward debt accumul
 
 ## v3.3 Phases
 
-- [ ] **Phase 54: Stability & Hardening — FOUNDATION** — Close v2.9→v3.2 carry-forwards before public ship
+- [x] **Phase 54: Stability & Hardening — FOUNDATION** — Close v2.9→v3.2 carry-forwards before public ship
 - [ ] **Phase 55: A2A Protocol Foundation** — Migration 024 + capability registry + send/receive client + timeout/retry
 - [ ] **Phase 56: A2A Orchestration** — Circuit breakers per agent-pair + conversation threading + operator audit endpoint
 - [ ] **Phase 57: Module Marketplace** — Static JSON registry + search CLI + sha256/ed25519 manifest signing + install from URL
@@ -42,13 +42,15 @@ v3.3 "The Dialect" is underway. Five phases close the carry-forward debt accumul
 5. `tests/13.1-divergence-protocol.integration.test.cjs` either passes deterministically (mocked LLM with frozen responses) or is quarantined behind an explicit `GSD_LLM_INTEGRATION=true` flag so CI never fails on a missing API key.
 6. `gsd-amauta doctor` exits 0 and prints a one-screen status table covering: paths, daemon reachability, PG reachability, Valkey reachability, API keys present/absent, migrations current, agent files present, skill files present.
 
-**Plans:** 5 (54-01 through 54-05); 54-01 SHIPPED (STAB-01+STAB-03), 54-02 SHIPPED (STAB-04), 54-03 SHIPPED (STAB-05), 54-04 SHIPPED (STAB-02); 54-05 pending
+**Plans:** 5 (54-01 through 54-05) — ALL SHIPPED. COMPLETE 2026-05-14.
 
 **54-01 shipped 2026-05-14:** STAB-01+STAB-03 — coverage ratchet CI gate wired in test.yml; .coverage_threshold.json updated to real baseline (lines=70%, branches=68.7%); _rlm_restarts_lifetime cumulative counter added to /health endpoint; 5-test pytest suite passes.
 
 **54-03 shipped 2026-05-14:** STAB-05 — GSD_LLM_INTEGRATION skip guard added to tests/13.1-divergence-protocol.integration.test.cjs; GSD_LLM_INTEGRATION: "true" added to .github/workflows/behavioral-tests.yml. Default CI now exits 0 when Anthropic API key absent.
 
 **54-04 shipped 2026-05-14:** STAB-02 — 11-test pytest suite for _redis_watchdog state machine (7 structural + 4 inline simulation); live-test procedure (~7 min synthetic counter-reset) documented in module docstring. Closes 2026-05-11 incident class.
+
+**54-05 shipped 2026-05-14:** STAB-06 — gsd-amauta doctor command (services/doctor.py + bin/cli.cjs dispatch). One-screen status table: paths, daemon, PG, Valkey, API keys, migrations, agents, skills. Consumes rlm_restarts_lifetime from /health (STAB-03 consumer chain closed). 9-test pytest suite passes. Phase 54 COMPLETE.
 
 ---
 
@@ -128,7 +130,7 @@ v3.3 "The Dialect" is underway. Five phases close the carry-forward debt accumul
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 54. Stability & Hardening — FOUNDATION | 2/5 | In progress | 54-02 DONE (STAB-04), 54-03 DONE (STAB-05) |
+| 54. Stability & Hardening — FOUNDATION | 5/5 | COMPLETE | 2026-05-14 |
 | 55. A2A Protocol Foundation | 0/? | Not started | - |
 | 56. A2A Orchestration | 0/? | Not started | - |
 | 57. Module Marketplace | 0/? | Not started | - |
@@ -177,4 +179,4 @@ After v3.3 ships: `/amauta:new-milestone` to define v3.4 scope (hosted registry,
 
 ---
 
-*Roadmap updated: 2026-05-14 after plan 54-03 shipped (STAB-05 LLM quarantine). Pre-v3.2 history lives in `.planning/milestones/`.*
+*Roadmap updated: 2026-05-14 after plan 54-05 shipped (STAB-06 doctor command — Phase 54 COMPLETE). Pre-v3.2 history lives in `.planning/milestones/`.*
