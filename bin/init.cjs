@@ -31,7 +31,7 @@
 
 'use strict';
 
-const { execFileSync, spawn } = require('child_process');
+const { execFileSync, spawn, spawnSync } = require('child_process');
 const http = require('http');
 const path = require('path');
 const fs = require('fs');
@@ -400,6 +400,23 @@ async function stepDetectIdes() {
   const r = buildStepResult('detect_ides', status, message, { detections });
   r.duration_ms = Date.now() - start;
   return r;
+}
+
+/**
+ * STAB-04: Detect pipx amauta-ai PATH collision.
+ * Returns an object { conflict: bool, pipxPath: string|null }.
+ * Uses `which` (POSIX) / `where` (Windows) — same pattern as cliOnPath.
+ * Advisory only — never throws, never blocks startup.
+ */
+function detectAmautaAiConflict() {
+  try {
+    const whichCmd = process.platform === 'win32' ? 'where' : 'which';
+    const result = spawnSync(whichCmd, ['amauta-ai'], { stdio: 'pipe', encoding: 'utf-8' });
+    if (result.status === 0 && result.stdout.trim()) {
+      return { conflict: true, pipxPath: result.stdout.trim().split('\n')[0] };
+    }
+  } catch (_e) { /* advisory only */ }
+  return { conflict: false, pipxPath: null };
 }
 
 /**
@@ -1824,6 +1841,18 @@ async function main() {
     const elapsed = (Date.now() - startTime) / 1000;
     emitResults(results, elapsed);
     process.exit(results.some(r => r.status === 'fail') ? 1 : 0);
+  }
+
+  // STAB-04: PATH collision detection
+  const _amautaConflict = detectAmautaAiConflict();
+  if (_amautaConflict.conflict) {
+    process.stdout.write(
+      '\n[WARNING] PATH collision detected: `amauta-ai` (pipx package) is on PATH at:\n' +
+      `  ${_amautaConflict.pipxPath}\n` +
+      'When both are installed, bare `amauta` may resolve to `amauta-ai` instead of this plugin.\n' +
+      'Use `gsd-amauta` as the unambiguous canonical command for this tool.\n' +
+      'To remove the conflict: pipx uninstall amauta-ai\n\n'
+    );
   }
 
   const startTime = Date.now();
