@@ -68,7 +68,7 @@ v3.3 "The Dialect" is underway. Five phases close the carry-forward debt accumul
 3. An agent can call `a2a_client.send_request(to="gsd-reviewer", capability="review_file", payload={...}, timeout=30)` and receive a `correlation_id` back; a second agent can call `await_response(correlation_id)` and receive the result — round-trip visible in the `a2a_messages` table.
 4. When a request times out, the caller receives an `a2a_timeout` structured error; when retried twice with exponential backoff the retry history is visible in `a2a_messages` with `status=retried` rows; `unknown_capability`, `agent_unavailable`, and `payload_invalid` errors each produce distinct vocabulary tokens.
 
-**Plans:** 4/4 COMPLETE
+**Plans:** 4/4 plans complete
 
 **55-01 shipped 2026-05-14:** A2A-01 — migration 024-a2a-messages.sql (UP+DOWN). 10-column a2a_messages table: UUID PK, JSONB NOT NULL payload, frozen kind CHECK (request|response|error|retried), (to_agent,status) index, COMMENT ON TABLE. Structural test: 10 passed. Commits: ca30aa9, 66b8966, d8849b3.
 
