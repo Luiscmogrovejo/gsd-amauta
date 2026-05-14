@@ -93,7 +93,7 @@ v3.3 "The Dialect" is underway. Five phases close the carry-forward debt accumul
 2. A multi-turn dialogue between two agents (agent A asks, agent B responds, agent A follows up) produces a thread retrievable via `a2a_client.get_thread(root_correlation_id)` returning the exchanges in chronological order with correct `parent_correlation_id` linkage.
 3. Every A2A exchange is audit-logged before payload delivery; `GET /a2a/exchanges?from=gsd-executor&to=gsd-reviewer&since=<ISO>` returns a JSON list of all matching exchanges; `gsd-amauta a2a tail` streams new exchanges to the terminal in real time.
 
-**Plans:** 2/3 complete (est. 3)
+**Plans:** 3/3 plans complete
 
 **56-01 shipped 2026-05-14:** A2A-05 — services/a2a_breaker.py: Valkey-backed per-pair CLOSED/OPEN/HALF_OPEN state machine. 5 frozen constants (threshold=3, window=60s, open_duration=60s). SETNX probe lock for half-open single-probe discipline. Fail-open on Valkey unavailability. Wired into services/a2a_client.py: _check_breaker() in send_request() BEFORE PG INSERT; record_a2a_failure() in send_request_with_retry except A2ATimeoutError. 26-test mock suite passes. Commits: 95530e8, ed0a5e3, b32ff16.
 
