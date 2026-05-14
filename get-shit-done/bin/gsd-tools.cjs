@@ -3883,29 +3883,103 @@ Options:
 
     case 'a2a': {
       // Phase 55 A2A-02: A2A capability registry CLI dispatch.
+      // Phase 56 A2A-07: extended with tail action (Node.js polling loop).
       // Mirrors Phase 50 party dispatch. args[1] is the action;
       // args.slice(2) is forwarded verbatim to argparse on the Python side.
       // Usage: gsd-tools a2a capabilities <agent_name> [--json]
       //        gsd-tools a2a list [--json]
+      //        gsd-tools a2a tail [--from <agent>] [--to <agent>] [--since <ISO>]
       const action = args[1];
       if (!action || action.startsWith('--')) {
         process.stderr.write(
           'Usage:\n' +
           '  gsd-tools a2a capabilities <agent_name> [--json]\n' +
-          '  gsd-tools a2a list [--json]\n'
+          '  gsd-tools a2a list [--json]\n' +
+          '  gsd-tools a2a tail [--from <agent>] [--to <agent>] [--since <ISO>]\n'
         );
         process.exit(2);
       }
-      const KNOWN_ACTIONS = new Set(['capabilities', 'list']);
+      const KNOWN_ACTIONS = new Set(['capabilities', 'list', 'tail']);
       if (!KNOWN_ACTIONS.has(action)) {
         process.stderr.write(
           `Unknown a2a action: ${action}\n` +
           'Usage:\n' +
           '  gsd-tools a2a capabilities <agent_name> [--json]\n' +
-          '  gsd-tools a2a list [--json]\n'
+          '  gsd-tools a2a list [--json]\n' +
+          '  gsd-tools a2a tail [--from <agent>] [--to <agent>] [--since <ISO>]\n'
         );
         process.exit(2);
       }
+
+      // tail action: Node.js polling loop — NOT a Python subprocess dispatch
+      if (action === 'tail') {
+        // Parse optional flags: --from <agent>, --to <agent>, --since <ISO>
+        const tailArgs = args.slice(2);
+        let fromFilter = null;
+        let toFilter = null;
+        let sinceTs = null;
+        for (let i = 0; i < tailArgs.length; i++) {
+          if (tailArgs[i] === '--from' && tailArgs[i + 1]) { fromFilter = tailArgs[++i]; }
+          else if (tailArgs[i] === '--to' && tailArgs[i + 1]) { toFilter = tailArgs[++i]; }
+          else if (tailArgs[i] === '--since' && tailArgs[i + 1]) { sinceTs = tailArgs[++i]; }
+        }
+
+        const daemonPort = process.env.AMAUTA_PORT || 8899;
+        const http = require('http');
+
+        // Initial since = provided value or ISO now-24h
+        if (!sinceTs) {
+          const d = new Date(Date.now() - 24 * 60 * 60 * 1000);
+          sinceTs = d.toISOString();
+        }
+
+        process.stderr.write(`Tailing A2A exchanges (Ctrl-C to stop)...\n`);
+
+        function buildUrl(since) {
+          let q = `since=${encodeURIComponent(since)}`;
+          if (fromFilter) q += `&from=${encodeURIComponent(fromFilter)}`;
+          if (toFilter) q += `&to=${encodeURIComponent(toFilter)}`;
+          return `/a2a/exchanges?${q}`;
+        }
+
+        function poll() {
+          const urlPath = buildUrl(sinceTs);
+          const req = http.get({ host: '127.0.0.1', port: daemonPort, path: urlPath }, (res) => {
+            let body = '';
+            res.on('data', (chunk) => { body += chunk; });
+            res.on('end', () => {
+              try {
+                const data = JSON.parse(body);
+                const exchanges = data.exchanges || [];
+                for (const ex of exchanges) {
+                  process.stdout.write(JSON.stringify(ex) + '\n');
+                }
+                if (data.next_cursor) {
+                  sinceTs = data.next_cursor;
+                }
+              } catch (e) {
+                process.stderr.write(`parse error: ${e.message}\n`);
+              }
+              setTimeout(poll, 500);
+            });
+          });
+          req.on('error', (e) => {
+            process.stderr.write(`daemon unreachable: ${e.message}\n`);
+            setTimeout(poll, 500);
+          });
+          req.end();
+        }
+
+        // Handle SIGINT cleanly
+        process.on('SIGINT', () => {
+          process.stderr.write('\nStopped.\n');
+          process.exit(0);
+        });
+
+        poll();
+        break;
+      }
+
       const rest = args.slice(2);
       const repoRoot = path.resolve(__dirname, '..', '..');
       const a2aCli = path.join(repoRoot, 'services', 'a2a_registry_cli.py');
