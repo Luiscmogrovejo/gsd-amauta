@@ -117,7 +117,7 @@ v3.3 "The Dialect" is underway. Five phases close the carry-forward debt accumul
 3. Installing a module with a tampered manifest (sha256 mismatch or invalid ed25519 signature) fails closed with a clear error message and no files written to disk; the trusted public key store lives at `~/.gsd-amauta/trusted-keys/`.
 4. `gsd-amauta module install https://example.com/mymodule.zip`, `gsd-amauta module install github:owner/repo@v1.2.0`, and `gsd-amauta module install registry:mymodule@1.2.0` all resolve, download, verify signatures, and invoke the Phase 49 lifecycle install — indistinguishable from a local install after the signature check passes.
 
-**Plans:** 3/3 complete (57-01 + 57-02 + 57-03 shipped)
+**Plans:** 3/3 plans complete
 
 **57-01 shipped 2026-05-14:** MARK-01+MARK-03 — RegistryIndex/RegistryEntry Pydantic v2 schema (7-field LOCKED, version "1.0" frozen), 8-tuple _REGISTRY_ERROR_CODES, services/module_signer.py (sign_sha256/verify/load_trusted_key/generate_keypair/TRUST_STORE_DIR), registry/index.json structural fixture, 17 tests pass. cryptography>=42.0 sole new dep. Commits: cd521f8, 90d98d2, ac1c6c9, 5dba4d3.
 
@@ -155,7 +155,7 @@ v3.3 "The Dialect" is underway. Five phases close the carry-forward debt accumul
 | 54. Stability & Hardening — FOUNDATION | 5/5 | Complete    | 2026-05-14 |
 | 55. A2A Protocol Foundation | 4/4 | Complete    | 2026-05-14 |
 | 56. A2A Orchestration | 3/3 | Complete    | 2026-05-14 |
-| 57. Module Marketplace | 3/3 | Complete    | 2026-05-14 |
+| 57. Module Marketplace | 3/3 | Complete    | 2026-05-15 |
 | 58. Public Launch (capstone) | 2/5 | In Progress | - |
 
 ## v3.2 Phases (archived)
