@@ -148,6 +148,8 @@ v3.3 "The Dialect" is underway. Five phases close the carry-forward debt accumul
 
 **58-03 shipped 2026-05-14:** PUB-03 — .github/workflows/release.yml: semver tag-triggered npm publish with OIDC provenance (id-token:write at job level, not workflow level — required for attestation), pinned action SHAs (checkout@34e114..., setup-node@49933ea5...), npm test + coverage-ratchet + conditional pytest gate before publish, npm publish --provenance --access public, cancel-in-progress:false. package.json: version 2.8.0→3.3.0, description rewritten for external audience, engines node>=18→>=20 (Node 18 EOL April 2025), 18 keywords (4 added: agents/development/harness/module-system), registry added to files allowlist. 2 tasks, 2 commits: 7e1e201, 2458321.
 
+**58-04 shipped 2026-05-14:** PUB-04 — bin/init.cjs UX polish: friendlyError() function (6 error class patterns: ECONNREFUSED→PG hint, python ENOENT, migrations ENOENT, daemon ENOENT, EADDRINUSE→port 18799, EACCES→permissions); --verbose flag in flags object + printHelp; 3 catch blocks updated with verbose guard; final summary replaced with conditional 'gsd-amauta installed — run gsd-amauta doctor to verify'. All 7 frozen Phase 44 step names unchanged. tests/init-pub04-ux.test.cjs: 4-test regression lock. 2 tasks, 2 commits: 764adea, 0b24514.
+
 ---
 
 ## Progress
@@ -158,7 +160,7 @@ v3.3 "The Dialect" is underway. Five phases close the carry-forward debt accumul
 | 55. A2A Protocol Foundation | 4/4 | Complete    | 2026-05-14 |
 | 56. A2A Orchestration | 3/3 | Complete    | 2026-05-14 |
 | 57. Module Marketplace | 3/3 | Complete    | 2026-05-15 |
-| 58. Public Launch (capstone) | 3/5 | In Progress | - |
+| 58. Public Launch (capstone) | 4/5 | In Progress | - |
 
 ## v3.2 Phases (archived)
 

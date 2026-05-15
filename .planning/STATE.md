@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.2
 milestone_name: The Federation** — Phases 48-53
 status: completed
-stopped_at: Phase 58 plan 58-03 COMPLETE — release.yml (OIDC provenance) + package.json 3.3.0. Phase 58 3/5 done.
-last_updated: "2026-05-14T00:30:00.000Z"
-last_activity: "2026-05-14 — Plan 58-03 executed (2 tasks, 2 commits: 7e1e201, 2458321)"
+stopped_at: Phase 58 plan 58-04 COMPLETE — --verbose flag + friendlyError + gsd-amauta doctor summary in bin/init.cjs. Phase 58 4/5 done.
+last_updated: "2026-05-14T03:00:00.000Z"
+last_activity: "2026-05-14 — Plan 58-04 executed (2 tasks, 2 commits: 764adea, 0b24514)"
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 20
-  completed_plans: 18
-  percent: 88
+  completed_plans: 19
+  percent: 92
 ---
 
 # GSD-Amauta -- Project State
@@ -25,13 +25,13 @@ See: .planning/PROJECT.md (updated 2026-05-14 after v3.2 close + v3.3 definition
 
 ## Current Position
 
-Phase: 58 — Public Launch (capstone) — IN PROGRESS (3/5 plans shipped)
-Plan: 58-03 COMPLETE (PUB-03) — release.yml (semver tag-triggered, OIDC provenance) + package.json 3.3.0
-Status: Phase 57 COMPLETE. Phase 58 underway — 58-01 (README) + 58-02 (legal/security files) + 58-03 (npm publish workflow) shipped.
-Last activity: 2026-05-14 — Plan 58-03 executed (2 tasks, 2 commits: 7e1e201, 2458321)
-Next step: Execute Phase 58 plan 58-04 (init UX polish)
+Phase: 58 — Public Launch (capstone) — IN PROGRESS (4/5 plans shipped)
+Plan: 58-04 COMPLETE (PUB-04) — --verbose flag + friendlyError + gsd-amauta doctor summary in bin/init.cjs
+Status: Phase 57 COMPLETE. Phase 58 underway — 58-01 (README) + 58-02 (legal/security) + 58-03 (npm publish) + 58-04 (init UX polish) shipped.
+Last activity: 2026-05-14 — Plan 58-04 executed (2 tasks, 2 commits: 764adea, 0b24514)
+Next step: Execute Phase 58 plan 58-05 (QUICKSTART walkthrough)
 
-Progress: [#########.] 88% (4/5 phases complete, Phase 58 in progress)
+Progress: [##########] 92% (4/5 phases complete, Phase 58 in progress)
 
 ## v3.3 Phase Map
 
@@ -80,9 +80,9 @@ Progress: [#########.] 88% (4/5 phases complete, Phase 58 in progress)
 
 ## Session Continuity
 
-Last session: 2026-05-14T00:30:00.000Z
-Stopped at: Phase 58 plans 58-01 + 58-02 + 58-03 COMPLETE. 3/5 Phase 58 plans shipped.
-Resume file: .planning/phases/58-public-launch/58-04-PLAN.md (PUB-04 init UX polish)
+Last session: 2026-05-14T03:00:00.000Z
+Stopped at: Phase 58 plans 58-01 + 58-02 + 58-03 + 58-04 COMPLETE. 4/5 Phase 58 plans shipped.
+Resume file: .planning/phases/58-public-launch/58-05-PLAN.md (PUB-05 QUICKSTART walkthrough)
 
 ## Learnings
 
