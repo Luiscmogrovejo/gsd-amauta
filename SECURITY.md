@@ -4,30 +4,44 @@
 
 **Please do not report security vulnerabilities through public GitHub issues.**
 
-Instead, please report them via email to: **security@gsd.build** (or DM @glittercowboy on Discord/Twitter if email bounces)
+Report security issues by email to: **robertamautaai@gmail.com**
 
-Include:
+Include in your report:
 - Description of the vulnerability
 - Steps to reproduce
 - Potential impact
-- Any suggested fixes (optional)
+- Suggested fix (optional)
 
-## Response Timeline
+We acknowledge receipt within 48 hours and provide an initial assessment within 1 week.
 
-- **Acknowledgment**: Within 48 hours
-- **Initial assessment**: Within 1 week
-- **Fix timeline**: Depends on severity, but we aim for:
-  - Critical: 24-48 hours
-  - High: 1 week
-  - Medium/Low: Next release
+## Disclosure Timeline
+
+We follow a 90-day coordinated disclosure timeline from the date of acknowledgment.
+After 90 days, the issue may be disclosed publicly regardless of patch status (with reasonable
+extensions granted for critical infrastructure dependencies outside our control).
+
+## Supported Versions
+
+| Version | Support status |
+|---------|---------------|
+| v3.3.x  | Full support — security + bug fixes |
+| v3.2.x  | Security fixes only |
+| < v3.2  | Not supported — please upgrade |
 
 ## Scope
 
-Security issues in the GSD codebase that could:
-- Execute arbitrary code on user machines
-- Expose sensitive data (API keys, credentials)
-- Compromise the integrity of generated plans/code
+**In scope:**
+- Code in this repository (bin/, services/, get-shit-done/, scripts/, migrations/)
+- The `npx gsd-amauta init` installer and daemon startup
+- The A2A agent-to-agent protocol implementation
+- The module install/verify pipeline (signature verification, trusted-key store)
+
+**Out of scope:**
+- Vulnerabilities in third-party dependencies (PostgreSQL, Valkey, Node.js, Python)
+  — please report these to the upstream projects
+- Issues requiring physical access to the machine running the daemon
+- Social engineering attacks
 
 ## Recognition
 
-We appreciate responsible disclosure and will credit reporters in release notes (unless you prefer to remain anonymous).
+We credit security reporters in release notes unless you prefer anonymity.
