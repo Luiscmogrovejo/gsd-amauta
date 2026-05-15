@@ -142,7 +142,7 @@ v3.3 "The Dialect" is underway. Five phases close the carry-forward debt accumul
 
 **Plans:** est. 5 (58-01 + 58-02 + 58-03 + 58-04 + 58-05)
 
-**58-01 shipped 2026-05-14:** PUB-01 — README rewrite for external developer audience (capstone public docs).
+**58-01 shipped 2026-05-14:** PUB-01 — README rewrite for external developer audience. README.md: what-it-is paragraph, 30-second quick start, honest comparison table (Claude Code/Cursor/BMAD/npm), prereqs (Docker plainly stated), core concepts, module marketplace, A2A protocol, CLI ref, links to CONTRIBUTING/LICENSE/SECURITY/QUICKSTART. HISTORY.md created (67 lines, 8 milestones v2.5-v3.3). 2 tasks, 2 commits: 0ccfbb8 (HISTORY.md), b839a90 (README.md).
 
 **58-02 shipped 2026-05-14:** PUB-02 — LICENSE corrected (Luis Carlos Mogrovejo de Piérola, 2026; verbatim MIT). SECURITY.md refreshed (robertamautaai@gmail.com, 90-day disclosure, v3.3.x/v3.2.x matrix). CONTRIBUTING.md created (6 locked sections + how releases work). NOTICE created (psycopg2-binary LGPL v3+ dynamic-linking analysis, cryptography Apache 2.0+BSD-3-Clause). 4 tasks, 4 commits: bfa24a6, f97e2df, 5ce409a, f14c861.
 

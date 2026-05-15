@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v3.2
 milestone_name: The Federation** — Phases 48-53
 status: completed
-stopped_at: Phase 57 plan 57-02 COMPLETE — module search CLI + 3-tier ranking + 18 tests. Phase 57 2/3 done.
-last_updated: "2026-05-15T02:03:31.691Z"
-last_activity: "2026-05-14 — Plan 58-02 executed (4 tasks, 4 commits: bfa24a6, f97e2df, 5ce409a, f14c861)"
+stopped_at: Phase 58 plan 58-01 COMPLETE — README.md rewritten (external audience) + HISTORY.md created. Phase 58 1/5 plans (plus 58-02 from parallel executor = 2/5 plans shipped).
+last_updated: "2026-05-14T21:05:00.000Z"
+last_activity: "2026-05-14 — Plan 58-01 executed (2 tasks, 2 commits: 0ccfbb8 HISTORY.md, b839a90 README rewrite)"
 progress:
   total_phases: 5
   completed_phases: 4
@@ -79,9 +79,9 @@ Progress: [########..] 84% (4/5 phases complete, Phase 58 in progress)
 
 ## Session Continuity
 
-Last session: 2026-05-14T01:00:00.000Z
-Stopped at: Phase 57 plan 57-02 COMPLETE — module search CLI + 3-tier ranking + 18 tests. Phase 57 2/3 done.
-Resume file: .planning/phases/57-module-marketplace/57-03-PLAN.md (MARK-04 URL install)
+Last session: 2026-05-14T21:05:00.000Z
+Stopped at: Phase 58 plans 58-01 + 58-02 COMPLETE. 2/5 Phase 58 plans shipped.
+Resume file: .planning/phases/58-public-launch/58-03-PLAN.md (PUB-03 npm publish workflow)
 
 ## Learnings
 
