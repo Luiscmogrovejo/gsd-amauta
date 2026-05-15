@@ -1,7 +1,7 @@
 {
   "name": "gsd-amauta",
-  "version": "2.8.0",
-  "description": "Amauta v2: Claude Code plugin for multi-agent task management with RPETD pipeline, MCP integration, PostgreSQL/SQLite memory, RLM context engine, and GSD spec-driven development.",
+  "version": "3.3.0",
+  "description": "Quality-enforced AI development harness for Claude Code and MCP-compatible agents. RPETD pipeline, persistent PostgreSQL memory, 17 specialist agents, A2A protocol, and module marketplace.",
   "bin": {
     "gsd-amauta": "bin/cli.cjs",
     "gsd-amauta-install": "bin/install.js",
@@ -21,13 +21,15 @@
     "services",
     "docker",
     "migrations",
-    "references"
+    "references",
+    "registry"
   ],
   "keywords": [
     "claude",
     "claude-code",
     "opencode",
     "ai",
+    "agents",
     "multi-agent",
     "task-management",
     "rpetd",
@@ -35,6 +37,9 @@
     "amauta",
     "postgresql",
     "memory",
+    "development",
+    "harness",
+    "module-system",
     "spec-driven-development",
     "mcp",
     "ai-agent"
@@ -50,7 +55,7 @@
     "url": "https://github.com/Luiscmogrovejo/gsd-amauta/issues"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
   },
   "dependencies": {
     "pg": "^8.13.0",
