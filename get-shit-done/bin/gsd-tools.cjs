@@ -3841,6 +3841,42 @@ Options:
         break;
       }
 
+      // Phase 57 MARK-04: URL-shaped install sources dispatch to module_url_installer.py
+      // URL shapes: https://, github:owner/repo@tag, registry:<name>@<version>
+      // Local-path install (and uninstall/upgrade) fall through to Phase 49 module_lifecycle_cli.py UNCHANGED.
+      if (action === 'install') {
+        const source = rest[0] || '';
+        const isUrlShape = source.includes('://')
+                        || source.startsWith('github:')
+                        || source.startsWith('registry:');
+        if (isUrlShape) {
+          // New: URL install path (Phase 57 MARK-04)
+          const urlInstallerScript = [
+            'import sys',
+            'from services.module_url_installer import install_from_url, InstallError',
+            'src = sys.argv[1]',
+            'try:',
+            '    result = install_from_url(src)',
+            '    import json; print(json.dumps(result, default=str))',
+            '    sys.exit(0)',
+            'except InstallError as e:',
+            '    import sys as _sys; _sys.stderr.write(f"ERROR ({e.error_code}): {e.detail}\\n")',
+            '    sys.exit(2)',
+          ].join('\n');
+          const urlResult = spawnSync('python3', ['-c', urlInstallerScript, source], {
+            stdio: 'inherit',
+            cwd: repoRoot,
+          });
+          if (urlResult.error) {
+            process.stderr.write(`module install (url) subprocess failed: ${urlResult.error.message}\n`);
+            process.exit(2);
+          }
+          process.exit(urlResult.status === null ? 1 : urlResult.status);
+          break;
+        }
+        // Fall through: local-path install handled by Phase 49 module_lifecycle_cli.py below
+      }
+
       // Phase 49 NEW: install / uninstall / upgrade dispatch
       // Forward all rest args verbatim to module_lifecycle_cli.py — argparse
       // on the Python side handles --dry-run, --json, --force, and the
