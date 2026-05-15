@@ -3770,13 +3770,15 @@ Options:
           '  gsd-tools module validate <manifest.yaml> [<manifest.yaml> ...] [--json]\n' +
           '  gsd-tools module install <manifest.yaml> [--dry-run] [--json] [--force]\n' +
           '  gsd-tools module uninstall <module-name> [--dry-run] [--json]\n' +
-          '  gsd-tools module upgrade <new-manifest.yaml> [--dry-run] [--json] [--force]\n'
+          '  gsd-tools module upgrade <new-manifest.yaml> [--dry-run] [--json] [--force]\n' +
+          '  gsd-tools module search <query> [--registry <url>] [--json]\n'
         );
         process.exit(2);
       }
 
       // Phase 49 MOD-03/MOD-04: extend action whitelist to install/uninstall/upgrade
-      const KNOWN_ACTIONS = new Set(['validate', 'install', 'uninstall', 'upgrade']);
+      // Phase 57 MARK-02: add 'search' to KNOWN_ACTIONS whitelist
+      const KNOWN_ACTIONS = new Set(['validate', 'install', 'uninstall', 'upgrade', 'search']);
       if (!KNOWN_ACTIONS.has(action)) {
         process.stderr.write(
           `Unknown module action: ${action}\n` +
@@ -3784,7 +3786,8 @@ Options:
           '  gsd-tools module validate <manifest.yaml> [<manifest.yaml> ...] [--json]\n' +
           '  gsd-tools module install <manifest.yaml> [--dry-run] [--json] [--force]\n' +
           '  gsd-tools module uninstall <module-name> [--dry-run] [--json]\n' +
-          '  gsd-tools module upgrade <new-manifest.yaml> [--dry-run] [--json] [--force]\n'
+          '  gsd-tools module upgrade <new-manifest.yaml> [--dry-run] [--json] [--force]\n' +
+          '  gsd-tools module search <query> [--registry <url>] [--json]\n'
         );
         process.exit(2);
       }
@@ -3818,6 +3821,24 @@ Options:
         if (result.stdout) process.stdout.write(result.stdout);
         if (result.stderr) process.stderr.write(result.stderr);
         process.exit(result.status === null ? 1 : result.status);
+      }
+
+      // Phase 57 MARK-02: search action — wraps services/module_search_cli.py
+      if (action === 'search') {
+        const query = args[2] !== undefined ? args[2] : '';
+        const searchCli = path.join(repoRoot, 'services', 'module_search_cli.py');
+        const searchArgs = [searchCli, query];
+        // Forward --registry and --json flags from args[3]+
+        for (let i = 3; i < args.length; i++) {
+          searchArgs.push(args[i]);
+        }
+        const searchResult = spawnSync('python3', searchArgs, { stdio: 'inherit', cwd: repoRoot });
+        if (searchResult.error) {
+          process.stderr.write(`module search subprocess failed: ${searchResult.error.message}\n`);
+          process.exit(2);
+        }
+        process.exit(searchResult.status === null ? 1 : searchResult.status);
+        break;
       }
 
       // Phase 49 NEW: install / uninstall / upgrade dispatch
