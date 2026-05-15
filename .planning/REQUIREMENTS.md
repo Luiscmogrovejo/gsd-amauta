@@ -76,31 +76,30 @@ Mapped during roadmap creation by gsd-roadmapper. Each requirement maps to exact
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FIDEL-01 | TBD | Pending |
-| FIDEL-02 | TBD | Pending |
-| FIDEL-03 | TBD | Pending |
-| FIDEL-04 | TBD | Pending |
-| FIDEL-05 | TBD | Pending |
-| TOOL-01 | TBD | Pending |
-| TOOL-02 | TBD | Pending |
-| TOOL-03 | TBD | Pending |
-| PERS-01 | TBD | Pending |
-| PERS-02 | TBD | Pending |
-| TEL-01 | TBD | Pending |
-| TEL-02 | TBD | Pending |
-| TEL-03 | TBD | Pending |
-| POS-01 | TBD | Pending |
-| POS-02 | TBD | Pending |
-| POS-03 | TBD | Pending |
-| HARD-01 | TBD | Pending |
-| HARD-02 | TBD | Pending |
-| HARD-03 | TBD | Pending |
-| HARD-04 | TBD | Pending |
+| FIDEL-01 | 59 | Pending |
+| FIDEL-02 | 59 | Pending |
+| FIDEL-03 | 59 | Pending |
+| FIDEL-04 | 59 | Pending |
+| FIDEL-05 | 59 | Pending |
+| TOOL-01 | 60 | Pending |
+| TOOL-02 | 60 | Pending |
+| TOOL-03 | 60 | Pending |
+| PERS-01 | 61 | Pending |
+| PERS-02 | 61 | Pending |
+| TEL-01 | 62 | Pending |
+| TEL-02 | 62 | Pending |
+| TEL-03 | 62 | Pending |
+| POS-01 | 63 | Pending |
+| POS-02 | 63 | Pending |
+| POS-03 | 63 | Pending |
+| HARD-01 | 64 | Pending |
+| HARD-02 | 64 | Pending |
+| HARD-03 | 64 | Pending |
+| HARD-04 | 64 | Pending |
 
 **Coverage:**
 - v1 requirements: 20 total
-- Mapped to phases: 0 (roadmapper pending)
-- Unmapped: 20 ⚠️ (resolved by roadmapper)
+- Mapped to phases: 20 / Unmapped: 0 ✓
 
 **Execution-order constraints (for roadmapper):**
 - FIDEL track is the FOUNDATION — its phase(s) must be first and must complete before any TOOL/PERS/TEL/POS phase begins
@@ -110,4 +109,4 @@ Mapped during roadmap creation by gsd-roadmapper. Each requirement maps to exact
 
 ---
 *Requirements defined: 2026-05-15*
-*Last updated: 2026-05-15 after v3.4 "The Mirror" strategic-pivot scoping*
+*Last updated: 2026-05-15 — traceability filled by roadmapper; all 20 requirements mapped to Phases 59-64*
