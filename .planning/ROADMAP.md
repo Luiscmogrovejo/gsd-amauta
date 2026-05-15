@@ -140,7 +140,7 @@ v3.3 "The Dialect" is underway. Five phases close the carry-forward debt accumul
 4. Running `npx gsd-amauta init` in a fresh directory produces friendly progress output (no stack traces), recovery hints on failure, and respects `--verbose` for debug detail — exercising the 7-step Phase 44 flow end-to-end.
 5. `docs/QUICKSTART.md` guides a new user from install through their first shipped phase (install → init → discuss-phase → plan-phase → execute-phase → ship) with terminal screenshots at each step; the file is linked from the README.
 
-**Plans:** est. 5 (58-01 + 58-02 + 58-03 + 58-04 + 58-05)
+**Plans:** 5/5 plans complete
 
 **58-01 shipped 2026-05-14:** PUB-01 — README rewrite for external developer audience. README.md: what-it-is paragraph, 30-second quick start, honest comparison table (Claude Code/Cursor/BMAD/npm), prereqs (Docker plainly stated), core concepts, module marketplace, A2A protocol, CLI ref, links to CONTRIBUTING/LICENSE/SECURITY/QUICKSTART. HISTORY.md created (67 lines, 8 milestones v2.5-v3.3). 2 tasks, 2 commits: 0ccfbb8 (HISTORY.md), b839a90 (README.md).
 
@@ -162,7 +162,7 @@ v3.3 "The Dialect" is underway. Five phases close the carry-forward debt accumul
 | 55. A2A Protocol Foundation | 4/4 | Complete    | 2026-05-14 |
 | 56. A2A Orchestration | 3/3 | Complete    | 2026-05-14 |
 | 57. Module Marketplace | 3/3 | Complete    | 2026-05-15 |
-| 58. Public Launch (capstone) | 5/5 | Complete    | 2026-05-14 |
+| 58. Public Launch (capstone) | 5/5 | Complete    | 2026-05-15 |
 
 ## v3.2 Phases (archived)
 

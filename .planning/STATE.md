@@ -1,10 +1,10 @@
 ---
 gsd_state_version: 1.0
-milestone: v3.3
-milestone_name: The Dialect — Phases 54-58
+milestone: v3.2
+milestone_name: The Federation** — Phases 48-53
 status: completed
-stopped_at: Phase 58 plan 58-05 COMPLETE — docs/QUICKSTART.md created. Phase 58 5/5 done. v3.3 milestone COMPLETE.
-last_updated: "2026-05-14T04:00:00.000Z"
+stopped_at: Phase 58 plan 58-05 COMPLETE. All 5/5 Phase 58 plans shipped. v3.3 milestone COMPLETE.
+last_updated: "2026-05-15T02:41:06.656Z"
 last_activity: "2026-05-14 — Plan 58-05 executed (1 task, 1 commit: e28d8f5)"
 progress:
   total_phases: 5
@@ -89,6 +89,26 @@ Resume file: none — v3.3 closeout complete. Next: /amauta:new-milestone for v3
 
 
 
+
+
+
+
+
+
+
+
+
+
+- [learning] 2026-05-15T02:32:03.668Z: legacy regression test: free text learning
+- [learning] 2026-05-15T02:30:00.427Z: legacy regression test: free text learning
+- [learning] 2026-05-15T02:27:57.728Z: legacy regression test: free text learning
+- [learning] 2026-05-15T02:26:54.783Z: legacy with agent
+- [learning] 2026-05-15T02:26:53.727Z: legacy regression test: free text learning
+- [learning] 2026-05-15T02:25:31.568Z: E2E test learning — cleanup after test
+- [learning] 2026-05-15T02:24:29.285Z: legacy regression test: free text learning
+- [learning] 2026-05-15T02:23:12.328Z: legacy regression test: free text learning
+- [learning] 2026-05-15T02:21:10.621Z: legacy regression test: free text learning
+- [learning] 2026-05-15T02:18:56.280Z: legacy regression test: free text learning
 - [learning] 2026-05-15T02:06:38.508Z: legacy regression test: free text learning
 - [learning] 2026-05-14T23:44:09.428Z: Python Valkey circuit breaker pattern: INCR+EXPIRE for sliding failure window, SETNX EX 5s for half-open single-probe lock, fail-open (return True/STATE_CLOSED) on all Valkey exceptions, injectable redis_client param for test isolation, _HAS_BREAKER flag for graceful degradation
 - [learning] 2026-05-14T21:04:01.642Z: legacy regression test: free text learning
