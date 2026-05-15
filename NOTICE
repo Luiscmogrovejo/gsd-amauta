@@ -1,0 +1,51 @@
+GSD-Amauta
+Copyright (c) 2026 Luis Carlos Mogrovejo de Piérola
+Licensed under the MIT License (see LICENSE).
+
+────────────────────────────────────────────────────────
+Third-Party Dependencies
+────────────────────────────────────────────────────────
+
+This software bundles or depends on the following third-party packages:
+
+Node.js runtime dependencies (package.json "dependencies"):
+┌──────────────────────────────┬──────────────────────────────────────┐
+│ Package                      │ License                              │
+├──────────────────────────────┼──────────────────────────────────────┤
+│ pg                           │ MIT                                  │
+│ tree-sitter                  │ MIT                                  │
+│ tree-sitter-javascript       │ MIT                                  │
+│ tree-sitter-typescript       │ MIT                                  │
+└──────────────────────────────┴──────────────────────────────────────┘
+
+Python service dependencies (requirements.txt):
+┌──────────────────────────────┬──────────────────────────────────────┐
+│ Package                      │ License                              │
+├──────────────────────────────┼──────────────────────────────────────┤
+│ psycopg2-binary              │ GNU Lesser GPL v3+ (LGPL)            │
+│ cryptography                 │ Apache 2.0 + BSD-3-Clause            │
+│ tree-sitter                  │ MIT                                  │
+│ tree-sitter-javascript       │ MIT                                  │
+│ tree-sitter-python           │ MIT                                  │
+│ tree-sitter-typescript       │ MIT                                  │
+│ redis                        │ MIT                                  │
+│ networkx                     │ BSD-3-Clause                         │
+│ voyageai                     │ MIT                                  │
+│ sentence-transformers        │ Apache 2.0                           │
+│ mcp                          │ MIT                                  │
+└──────────────────────────────┴──────────────────────────────────────┘
+
+License compatibility notes:
+- psycopg2-binary: LGPL v3+. As a dynamically-linked library dependency (not
+  statically compiled into this software), LGPL terms permit use in MIT-licensed
+  software without imposing copyleft on GSD-Amauta itself. End users may replace
+  psycopg2-binary with any compatible PostgreSQL adapter.
+- cryptography: Apache 2.0 is compatible with MIT distribution. BSD-3-Clause is
+  compatible with MIT distribution. No additional restrictions apply.
+- networkx: BSD-3-Clause is compatible with MIT distribution. No additional
+  restrictions apply.
+- sentence-transformers: Apache 2.0 is compatible with MIT distribution. No
+  additional restrictions apply.
+
+All other dependencies listed above are MIT-licensed and compatible without
+restriction.
