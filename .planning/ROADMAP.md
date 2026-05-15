@@ -117,9 +117,11 @@ v3.3 "The Dialect" is underway. Five phases close the carry-forward debt accumul
 3. Installing a module with a tampered manifest (sha256 mismatch or invalid ed25519 signature) fails closed with a clear error message and no files written to disk; the trusted public key store lives at `~/.gsd-amauta/trusted-keys/`.
 4. `gsd-amauta module install https://example.com/mymodule.zip`, `gsd-amauta module install github:owner/repo@v1.2.0`, and `gsd-amauta module install registry:mymodule@1.2.0` all resolve, download, verify signatures, and invoke the Phase 49 lifecycle install — indistinguishable from a local install after the signature check passes.
 
-**Plans:** 3 (57-01 shipped; 57-02 + 57-03 pending)
+**Plans:** 3 (57-01 + 57-02 shipped; 57-03 pending)
 
 **57-01 shipped 2026-05-14:** MARK-01+MARK-03 — RegistryIndex/RegistryEntry Pydantic v2 schema (7-field LOCKED, version "1.0" frozen), 8-tuple _REGISTRY_ERROR_CODES, services/module_signer.py (sign_sha256/verify/load_trusted_key/generate_keypair/TRUST_STORE_DIR), registry/index.json structural fixture, 17 tests pass. cryptography>=42.0 sole new dep. Commits: cd521f8, 90d98d2, ac1c6c9, 5dba4d3.
+
+**57-02 shipped 2026-05-14:** MARK-02 — services/module_search.py (3-tier ranking: exact-name>name-sub>maintainer-sub, semver-descending via negated tuple), services/module_search_cli.py (argparse + --registry + --json, exit 0/2), gsd-tools.cjs extended with 'search' in KNOWN_ACTIONS + dispatch branch, 18 tests (>= 12 required). Zero new deps. Commits: b7570d9, b2f999a, 0aab898.
 
 ---
 
@@ -149,7 +151,7 @@ v3.3 "The Dialect" is underway. Five phases close the carry-forward debt accumul
 | 54. Stability & Hardening — FOUNDATION | 5/5 | Complete    | 2026-05-14 |
 | 55. A2A Protocol Foundation | 4/4 | Complete    | 2026-05-14 |
 | 56. A2A Orchestration | 3/3 | Complete    | 2026-05-14 |
-| 57. Module Marketplace | 1/3 | In Progress | - |
+| 57. Module Marketplace | 2/3 | In Progress | - |
 | 58. Public Launch (capstone) | 0/? | Not started | - |
 
 ## v3.2 Phases (archived)

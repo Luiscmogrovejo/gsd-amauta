@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v3.2
 milestone_name: The Federation** — Phases 48-53
 status: completed
-stopped_at: Phase 57 plan 57-01 COMPLETE — RegistryIndex/RegistryEntry schema + ed25519 signer + registry/index.json + 17 tests. Phase 57 1/3 plans done.
-last_updated: "2026-05-14T00:20:00.000Z"
-last_activity: "2026-05-14 — Plan 57-01 executed (4 tasks, 4 commits: cd521f8, 90d98d2, ac1c6c9, 5dba4d3)"
+stopped_at: Phase 57 plan 57-02 COMPLETE — module search CLI with 3-tier ranking + semver tie-break + 18 tests. Phase 57 2/3 plans done.
+last_updated: "2026-05-14T01:00:00.000Z"
+last_activity: "2026-05-14 — Plan 57-02 executed (3 tasks, 3 commits: b7570d9, b2f999a, 0aab898)"
 progress:
   total_phases: 5
   completed_phases: 3
@@ -25,13 +25,13 @@ See: .planning/PROJECT.md (updated 2026-05-14 after v3.2 close + v3.3 definition
 
 ## Current Position
 
-Phase: 57 — Module Marketplace (In Progress — 1/3 plans shipped)
-Plan: 57-01 COMPLETE (MARK-01+MARK-03) — RegistryIndex/RegistryEntry schema + ed25519 signer + 17 tests
-Status: Phase 57 in progress — 57-01 (schema + signing) shipped; 57-02 (search) and 57-03 (URL install) pending
-Last activity: 2026-05-14 — Plan 57-01 executed (4 tasks, 4 commits: cd521f8, 90d98d2, ac1c6c9, 5dba4d3)
-Next step: Execute Phase 57 plan 57-02 (MARK-02 — module search CLI)
+Phase: 57 — Module Marketplace (In Progress — 2/3 plans shipped)
+Plan: 57-02 COMPLETE (MARK-02) — module search CLI with 3-tier ranking + semver tie-break + 18 tests
+Status: Phase 57 in progress — 57-01 (schema + signing) + 57-02 (search) shipped; 57-03 (URL install) pending
+Last activity: 2026-05-14 — Plan 57-02 executed (3 tasks, 3 commits: b7570d9, b2f999a, 0aab898)
+Next step: Execute Phase 57 plan 57-03 (MARK-04 — URL install)
 
-Progress: [#####.....] 43% (3/5 phases complete, Phase 57 in progress)
+Progress: [######....] 50% (3/5 phases complete, Phase 57 in progress 2/3)
 
 ## v3.3 Phase Map
 
@@ -79,9 +79,9 @@ Progress: [#####.....] 43% (3/5 phases complete, Phase 57 in progress)
 
 ## Session Continuity
 
-Last session: 2026-05-14T00:20:00.000Z
-Stopped at: Phase 57 plan 57-01 COMPLETE — RegistryIndex/RegistryEntry schema + ed25519 signer + 17 tests.
-Resume file: .planning/phases/57-module-marketplace/57-02-PLAN.md (MARK-02 module search CLI)
+Last session: 2026-05-14T01:00:00.000Z
+Stopped at: Phase 57 plan 57-02 COMPLETE — module search CLI + 3-tier ranking + 18 tests. Phase 57 2/3 done.
+Resume file: .planning/phases/57-module-marketplace/57-03-PLAN.md (MARK-04 URL install)
 
 ## Learnings
 
