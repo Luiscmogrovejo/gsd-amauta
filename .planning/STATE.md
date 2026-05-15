@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.2
 milestone_name: The Federation** — Phases 48-53
 status: completed
-stopped_at: Phase 56 plan 56-02 COMPLETE — get_thread() recursive CTE + 14-test threading suite. Phase 56 2/3 plans done.
-last_updated: "2026-05-14T23:57:30.554Z"
-last_activity: "2026-05-14 — Plan 56-03 executed (4 tasks, 4 commits: 4ebb2ec, 1c3aaf2, a7f918a, 7fbc127)"
+stopped_at: Phase 57 plan 57-01 COMPLETE — RegistryIndex/RegistryEntry schema + ed25519 signer + registry/index.json + 17 tests. Phase 57 1/3 plans done.
+last_updated: "2026-05-14T00:20:00.000Z"
+last_activity: "2026-05-14 — Plan 57-01 executed (4 tasks, 4 commits: cd521f8, 90d98d2, ac1c6c9, 5dba4d3)"
 progress:
   total_phases: 5
   completed_phases: 3
-  total_plans: 12
-  completed_plans: 12
-  percent: 40
+  total_plans: 13
+  completed_plans: 13
+  percent: 43
 ---
 
 # GSD-Amauta -- Project State
@@ -25,13 +25,13 @@ See: .planning/PROJECT.md (updated 2026-05-14 after v3.2 close + v3.3 definition
 
 ## Current Position
 
-Phase: 56 — A2A Orchestration (COMPLETE — all 3 plans shipped)
-Plan: 56-03 COMPLETE (A2A-07) — GET /a2a/exchanges daemon endpoint + gsd-amauta a2a tail CLI
-Status: Phase 56 COMPLETE — 56-01 (circuit breaker), 56-02 (threading), 56-03 (audit endpoint) all shipped
-Last activity: 2026-05-14 — Plan 56-03 executed (4 tasks, 4 commits: 4ebb2ec, 1c3aaf2, a7f918a, 7fbc127)
-Next step: Execute Phase 57 (Module Marketplace — MARK-01..04)
+Phase: 57 — Module Marketplace (In Progress — 1/3 plans shipped)
+Plan: 57-01 COMPLETE (MARK-01+MARK-03) — RegistryIndex/RegistryEntry schema + ed25519 signer + 17 tests
+Status: Phase 57 in progress — 57-01 (schema + signing) shipped; 57-02 (search) and 57-03 (URL install) pending
+Last activity: 2026-05-14 — Plan 57-01 executed (4 tasks, 4 commits: cd521f8, 90d98d2, ac1c6c9, 5dba4d3)
+Next step: Execute Phase 57 plan 57-02 (MARK-02 — module search CLI)
 
-Progress: [####......] 40% (2/5 phases complete)
+Progress: [#####.....] 43% (3/5 phases complete, Phase 57 in progress)
 
 ## v3.3 Phase Map
 
@@ -40,7 +40,7 @@ Progress: [####......] 40% (2/5 phases complete)
 | 54 | Stability & Hardening — FOUNDATION | STAB-01..06 | COMPLETE (2026-05-14) |
 | 55 | A2A Protocol Foundation | A2A-01..04 | COMPLETE (plans 55-01+55-02+55-03+55-04 shipped 2026-05-14) |
 | 56 | A2A Orchestration (breakers + threading + audit) | A2A-05..07 | COMPLETE (plans 56-01+56-02+56-03 shipped 2026-05-14) |
-| 57 | Module Marketplace | MARK-01..04 | Pending |
+| 57 | Module Marketplace | MARK-01..04 | In Progress (1/3 plans) |
 | 58 | Public Launch (capstone) | PUB-01..05 | Pending |
 
 **Execution order:** 54 → 55 → 56 → (57 ‖ Phase 58 prep) → 58
@@ -61,6 +61,7 @@ Progress: [####......] 40% (2/5 phases complete)
 - v3.2 Phase 53 Plan 53-02: bin/init.cjs has --install + --upgrade + --uninstall with 19 frozen step names. PUB-04 builds on this (UX polish, not flow change).
 - v3.2 Phase 53 Plan 53-03: services/amauta-mcp.py uses inline tools=[...] inside @server.list_tools() (NOT module-level TOOLS list). _MCP_ERROR_CODES 5-tuple is the error vocabulary.
 - v3.2 Phase 48 Plan 48-01: Pydantic v2 model_config extra=forbid + field_validator + model_validator(mode=after). Module manifest LOCKED 8-field order. MARK-01 reuses this contract.
+- v3.3 Phase 57 Plan 57-01: RegistryEntry 7-field LOCKED order (name/version/sha256/manifest_url/maintainer/signed_by/signature). registry_version="1.0" frozen. 8-tuple _REGISTRY_ERROR_CODES. Signature = ed25519 over sha256 hex UTF-8 bytes. TRUST_STORE_DIR = ~/.gsd-amauta/trusted-keys (fail-closed). compute_manifest_hash reused from Phase 49 (not re-implemented). cryptography>=42.0 sole new dep.
 - v3.2 Phase 50/51: party_session blackboard + 5 frozen state transitions + decision records. A2A-01..07 builds on the same agent_findings + agent_messages PG infrastructure.
 - 17-agent ecosystem with standardized format. Anti-over-engineering rule: "Do not add features, refactor code, or make improvements beyond what was explicitly requested."
 
@@ -78,9 +79,9 @@ Progress: [####......] 40% (2/5 phases complete)
 
 ## Session Continuity
 
-Last session: 2026-05-14T23:45:00.000Z
-Stopped at: Phase 56 plan 56-02 COMPLETE — get_thread() recursive CTE + 14-test threading suite. Phase 56 2/3 plans done.
-Resume file: .planning/phases/56-a2a-orchestration/56-03-PLAN.md (A2A-07 operator audit endpoint)
+Last session: 2026-05-14T00:20:00.000Z
+Stopped at: Phase 57 plan 57-01 COMPLETE — RegistryIndex/RegistryEntry schema + ed25519 signer + 17 tests.
+Resume file: .planning/phases/57-module-marketplace/57-02-PLAN.md (MARK-02 module search CLI)
 
 ## Learnings
 
