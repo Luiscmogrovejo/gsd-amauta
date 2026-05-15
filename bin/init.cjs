@@ -70,6 +70,36 @@ const bold = '\x1b[1m';
 const reset = '\x1b[0m';
 
 /**
+ * Translate raw error messages to friendly one-liners with recovery hints.
+ * Used in step catch blocks when !flags.verbose.
+ * @param {Error|string} err
+ * @returns {string} friendly message
+ */
+function friendlyError(err) {
+  const msg = (err && err.message) ? err.message : String(err);
+  if (msg.includes('ECONNREFUSED') || msg.includes('connect ECONNREFUSED')) {
+    return 'PG not reachable — start with: docker compose -f docker/docker-compose.yml up -d';
+  }
+  if ((msg.includes('python') && msg.includes('not found')) || (msg.includes('ENOENT') && msg.includes('python'))) {
+    return 'Python 3.11+ required — install from https://www.python.org/downloads/';
+  }
+  if ((msg.includes('migrations') && msg.includes('not found')) || (msg.includes('ENOENT') && msg.includes('migrations'))) {
+    return 'Migrations directory missing — re-run: npm install -g gsd-amauta';
+  }
+  if ((msg.includes('amauta-daemon') && msg.includes('not found')) || (msg.includes('ENOENT') && msg.includes('daemon'))) {
+    return 'Daemon script missing — re-run: npm install -g gsd-amauta';
+  }
+  if (msg.includes('EADDRINUSE') || msg.includes('address already in use') || msg.includes('18799')) {
+    return 'Port 18799 in use — stop the conflicting process or set GSD_AMAUTA_PORT environment variable';
+  }
+  if (msg.includes('EACCES') || msg.includes('permission denied') || msg.includes('Permission denied')) {
+    return 'Permission denied — check file permissions or re-run with appropriate user';
+  }
+  // Default: first line of message, truncated at 120 chars
+  return msg.split('\n')[0].substring(0, 120);
+}
+
+/**
  * Print help text and exit 0.
  * Invoked when --help / -h is passed (Phase 44 INST-03 doc requirement).
  */
@@ -87,6 +117,7 @@ Options:
   --tools <list>         Comma-list of IDEs to install (e.g. claude-code,cursor)
   --force-migrate        Bypass legacy-migration collision guard
   --json                 Output results as JSON
+  --verbose              Print debug output (stack traces, raw error detail)
   --help, -h             Print this help and exit 0
 
 Upgrade / Uninstall (POLISH-02 — mutually exclusive):
@@ -125,6 +156,7 @@ const flags = {
   upgrade: args.includes('--upgrade'),           // NEW POLISH-02: version-aware migration
   uninstall: args.includes('--uninstall'),       // NEW POLISH-02: remove Amauta from project
   dryRun: args.includes('--dry-run'),            // NEW POLISH-02: preview without state changes
+  verbose: args.includes('--verbose'),           // NEW PUB-04: print debug output (stack traces, raw error detail)
 };
 
 const backendIdx = args.indexOf('--backend');
@@ -521,7 +553,8 @@ async function stepInstall(log, detections) {
       if (hasManifestSkip) anyManifestSkipWarn = true;
       compileResults.push({ ide_id: row.ide_id, compiled, skipped, errors: [] });
     } catch (err) {
-      log(`${yellow}Warning: compile for ${row.ide_id} failed (${err.message})${reset}`);
+      const compileErrMsg = flags.verbose ? (err.stack || err.message || String(err)) : friendlyError(err);
+      log(`${yellow}Warning: compile for ${row.ide_id} failed (${compileErrMsg})${reset}`);
       compileResults.push({ ide_id: row.ide_id, compiled: 0, skipped: 0, errors: [err.message] });
       anyCompileError = true;
     }
@@ -642,7 +675,8 @@ function stepDetectInfra(log) {
     r.duration_ms = Date.now() - start;
     return r;
   } catch (err) {
-    log(`${yellow}Warning: infra detection failed (${err.message})${reset}`);
+    const infraErrMsg = flags.verbose ? (err.stack || err.message || String(err)) : friendlyError(err);
+    log(`${yellow}Warning: infra detection failed (${infraErrMsg})${reset}`);
     const infraRaw = {
       backend: 'sqlite',
       connection_url: sqliteFallbackUrl(),
@@ -908,7 +942,8 @@ async function stepVerify(log) {
       return r;
     }
   } catch (err) {
-    log(`${red}Cannot reach daemon: ${err.message}${reset}`);
+    const verifyErrMsg = flags.verbose ? (err.stack || err.message || String(err)) : friendlyError(err);
+    log(`${red}Cannot reach daemon: ${verifyErrMsg}${reset}`);
     const r = buildStepResult('verify', 'fail', `cannot reach daemon: ${err.message}`, null);
     r.duration_ms = Date.now() - start;
     return r;
@@ -1924,7 +1959,12 @@ async function main() {
     }, null, 2));
   } else {
     renderStepTable(results);
-    console.log(`\n${green}Ready!${reset} ${dim}(${elapsed}s)${reset} Run ${cyan}\`amauta board\`${reset} to see your tasks.`);
+    const hasFailure = results.some(r => r.status === 'fail');
+    if (hasFailure) {
+      console.log(`\n${red}Setup completed with errors.${reset} ${dim}(${elapsed}s)${reset} Run ${cyan}\`gsd-amauta doctor\`${reset} to diagnose.`);
+    } else {
+      console.log(`\n${green}gsd-amauta installed${reset} ${dim}(${elapsed}s)${reset} — run ${cyan}\`gsd-amauta doctor\`${reset} to verify.`);
+    }
   }
 
   // FROZEN exit-code rule per 44-CONTEXT.md §Specifics.
