@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.2
 milestone_name: The Federation** — Phases 48-53
 status: completed
-stopped_at: Phase 57 plan 57-03 COMPLETE — URL installer (3 schemes + verify-before-install + 15 tests). Phase 57 COMPLETE (3/3 plans).
-last_updated: "2026-05-14T02:00:00.000Z"
-last_activity: "2026-05-14 — Plan 57-03 executed (3 tasks, 3 commits: 4c8ccbe, c288ca3, 6621ac6)"
+stopped_at: Phase 58 plan 58-02 COMPLETE — CONTRIBUTING.md + LICENSE fix + SECURITY.md refresh + NOTICE. Phase 58 2/5 plans done.
+last_updated: "2026-05-14T03:00:00.000Z"
+last_activity: "2026-05-14 — Plan 58-02 executed (4 tasks, 4 commits: bfa24a6, f97e2df, 5ce409a, f14c861)"
 progress:
   total_phases: 5
   completed_phases: 4
-  total_plans: 13
-  completed_plans: 13
-  percent: 80
+  total_plans: 15
+  completed_plans: 15
+  percent: 84
 ---
 
 # GSD-Amauta -- Project State
@@ -25,13 +25,13 @@ See: .planning/PROJECT.md (updated 2026-05-14 after v3.2 close + v3.3 definition
 
 ## Current Position
 
-Phase: 57 — Module Marketplace (COMPLETE — 3/3 plans shipped)
-Plan: 57-03 COMPLETE (MARK-04) — URL installer with 3 schemes + verify-before-install + 15 tests
-Status: Phase 57 COMPLETE — 57-01 (schema + signing) + 57-02 (search) + 57-03 (URL install) all shipped
-Last activity: 2026-05-14 — Plan 57-03 executed (3 tasks, 3 commits: 4c8ccbe, c288ca3, 6621ac6)
-Next step: Execute Phase 58 (Public Launch — capstone)
+Phase: 58 — Public Launch (capstone) — IN PROGRESS (2/5 plans shipped)
+Plan: 58-02 COMPLETE (PUB-02) — CONTRIBUTING.md + LICENSE fix + SECURITY.md refresh + NOTICE
+Status: Phase 57 COMPLETE. Phase 58 underway — 58-01 (README) + 58-02 (legal/security files) shipped.
+Last activity: 2026-05-14 — Plan 58-02 executed (4 tasks, 4 commits: bfa24a6, f97e2df, 5ce409a, f14c861)
+Next step: Execute Phase 58 plan 58-03 (npm publish workflow)
 
-Progress: [########..] 80% (4/5 phases complete)
+Progress: [########..] 84% (4/5 phases complete, Phase 58 in progress)
 
 ## v3.3 Phase Map
 

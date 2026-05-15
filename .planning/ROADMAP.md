@@ -117,7 +117,7 @@ v3.3 "The Dialect" is underway. Five phases close the carry-forward debt accumul
 3. Installing a module with a tampered manifest (sha256 mismatch or invalid ed25519 signature) fails closed with a clear error message and no files written to disk; the trusted public key store lives at `~/.gsd-amauta/trusted-keys/`.
 4. `gsd-amauta module install https://example.com/mymodule.zip`, `gsd-amauta module install github:owner/repo@v1.2.0`, and `gsd-amauta module install registry:mymodule@1.2.0` all resolve, download, verify signatures, and invoke the Phase 49 lifecycle install — indistinguishable from a local install after the signature check passes.
 
-**Plans:** 3 (57-01 + 57-02 shipped; 57-03 pending)
+**Plans:** 3/3 complete (57-01 + 57-02 + 57-03 shipped)
 
 **57-01 shipped 2026-05-14:** MARK-01+MARK-03 — RegistryIndex/RegistryEntry Pydantic v2 schema (7-field LOCKED, version "1.0" frozen), 8-tuple _REGISTRY_ERROR_CODES, services/module_signer.py (sign_sha256/verify/load_trusted_key/generate_keypair/TRUST_STORE_DIR), registry/index.json structural fixture, 17 tests pass. cryptography>=42.0 sole new dep. Commits: cd521f8, 90d98d2, ac1c6c9, 5dba4d3.
 
@@ -140,7 +140,11 @@ v3.3 "The Dialect" is underway. Five phases close the carry-forward debt accumul
 4. Running `npx gsd-amauta init` in a fresh directory produces friendly progress output (no stack traces), recovery hints on failure, and respects `--verbose` for debug detail — exercising the 7-step Phase 44 flow end-to-end.
 5. `docs/QUICKSTART.md` guides a new user from install through their first shipped phase (install → init → discuss-phase → plan-phase → execute-phase → ship) with terminal screenshots at each step; the file is linked from the README.
 
-**Plans:** TBD (est. 3-4)
+**Plans:** est. 5 (58-01 + 58-02 + 58-03 + 58-04 + 58-05)
+
+**58-01 shipped 2026-05-14:** PUB-01 — README rewrite for external developer audience (capstone public docs).
+
+**58-02 shipped 2026-05-14:** PUB-02 — LICENSE corrected (Luis Carlos Mogrovejo de Piérola, 2026; verbatim MIT). SECURITY.md refreshed (robertamautaai@gmail.com, 90-day disclosure, v3.3.x/v3.2.x matrix). CONTRIBUTING.md created (6 locked sections + how releases work). NOTICE created (psycopg2-binary LGPL v3+ dynamic-linking analysis, cryptography Apache 2.0+BSD-3-Clause). 4 tasks, 4 commits: bfa24a6, f97e2df, 5ce409a, f14c861.
 
 ---
 
@@ -151,8 +155,8 @@ v3.3 "The Dialect" is underway. Five phases close the carry-forward debt accumul
 | 54. Stability & Hardening — FOUNDATION | 5/5 | Complete    | 2026-05-14 |
 | 55. A2A Protocol Foundation | 4/4 | Complete    | 2026-05-14 |
 | 56. A2A Orchestration | 3/3 | Complete    | 2026-05-14 |
-| 57. Module Marketplace | 2/3 | In Progress | - |
-| 58. Public Launch (capstone) | 0/? | Not started | - |
+| 57. Module Marketplace | 3/3 | Complete    | 2026-05-14 |
+| 58. Public Launch (capstone) | 2/5 | In Progress | - |
 
 ## v3.2 Phases (archived)
 
