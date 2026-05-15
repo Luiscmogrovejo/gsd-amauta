@@ -1,37 +1,45 @@
 ---
 gsd_state_version: 1.0
-milestone: v3.2
-milestone_name: The Federation** — Phases 48-53
-status: completed
-stopped_at: Phase 58 plan 58-05 COMPLETE. All 5/5 Phase 58 plans shipped. v3.3 milestone COMPLETE.
-last_updated: "2026-05-15T02:41:37.923Z"
-last_activity: "2026-05-14 — Plan 58-05 executed (1 task, 1 commit: e28d8f5)"
+milestone: v3.4
+milestone_name: The Mirror
+status: defining_requirements
+stopped_at: v3.3 shipped + pushed (tag v3.3, SSH bypass). v3.4 "The Mirror" scoped — strategic pivot away from A2A/registry toward harness effectiveness. Awaiting roadmapper.
+last_updated: "2026-05-15T14:00:00.000Z"
+last_activity: "2026-05-15 — v3.3 milestone archived + pushed to origin via SSH; v3.4 scoped (6 tracks: FIDEL/TOOL/PERS/TEL/POS/HARD), BMAD prior-art positioning locked"
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 20
-  completed_plans: 20
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # GSD-Amauta -- Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-14 after v3.2 close + v3.3 definition)
+See: .planning/PROJECT.md (updated 2026-05-15 after v3.3 close + v3.4 "The Mirror" scoping)
 
-**Core value:** Every RPETD phase must see what other phases have learned. The brain synthesizes, not accumulates. The Dialect lets Federation members speak directly to each other — then ships to the world.
-**Current focus:** Milestone v3.3 — The Dialect. Stability/Harden (foundation) → A2A protocol → Module Marketplace → Public Launch.
+**Core value:** Every RPETD phase must see what other phases have learned. The brain synthesizes, not accumulates. v3.4 turns the mirror on the harness itself — fix how it works, then show what it is.
+**Current focus:** Milestone v3.4 — The Mirror. Phase-file fidelity (FOUNDATION) → tool reach → role personas → telemetry → positioning → post-launch hardening.
 
 ## Current Position
 
-Phase: 58 — Public Launch (capstone) — COMPLETE (5/5 plans shipped)
-Plan: 58-05 COMPLETE (PUB-05) — docs/QUICKSTART.md end-to-end first phase walkthrough
-Status: Phase 58 COMPLETE. All v3.3 phases complete. v3.3 milestone READY FOR CLOSEOUT.
-Last activity: 2026-05-14 — Plan 58-05 executed (1 task, 1 commit: e28d8f5)
-Next step: /amauta:new-milestone to define v3.4 scope (hosted registry, A2A extensions, opt-in telemetry)
+Phase: Not started (defining requirements → roadmap)
+Plan: —
+Status: v3.3 shipped & pushed (origin/master @ 5febb10, tag v3.3). v3.4 scoped — 6 tracks, ~20 requirements. Awaiting roadmapper.
+Last activity: 2026-05-15 — v3.4 "The Mirror" scoped; strategic pivot recorded (BMAD prior art → discipline-layer positioning, not feature-surface race)
+Next step: roadmapper spawn to derive Phases 59+ from v3.4 REQUIREMENTS, then `/amauta:plan-phase 59`
 
-Progress: [##########] 100% (5/5 phases complete, v3.3 COMPLETE)
+Progress: [..........] 0% (v3.4 scoping)
+
+## v3.4 Strategic Pivot (locked at scope-time)
+
+- **BMAD-METHOD is prior art** (47.2k★, v6.6.0). Do NOT race feature-surface. Differentiator = executor-discipline layer (RPETD/validator/divergence/manifest). Recorded in PROJECT.md "Competitive Landscape" so future milestones don't re-litigate.
+- **v3.4 is an effectiveness milestone, not a feature milestone.** Headline = fix the harness's own coding effectiveness + phase-file drift + tool reach.
+- **FOUNDATION-FIRST is non-negotiable:** FIDEL track (phase-file fidelity) must complete before TOOL/PERS/TEL/POS — locking scope on top of drifting phases is the test-runner trap (named risk from the user's own analysis, endorsed).
+- **HARD track gated** on v3.3.0 npm publish (not yet done — needs NPM_TOKEN + `git tag v3.3.0 && git push origin v3.3.0`) + a real-usage data window. HARD-* cannot start until issues actually arrive.
+- **Deferred to v3.5+:** A2A-09 streaming, A2A-10 cross-host, HOST-01..03 hosted registry, module-marketplace expansion. Revisit only if telemetry shows the usage.
 
 ## v3.3 Phase Map
 

@@ -66,9 +66,25 @@ Every RPETD phase must *see* what the other phases have already learned — past
 
 **Body metaphor sequence:** brain (v2.5) → sight (v2.6) → hands (v2.7) → metabolism (v2.8) → nervous system (v2.9) → birth (v3.0) → gathering (v3.1) → federation (v3.2) → **dialect (v3.3)**
 
-## Next Milestone
+## Current Milestone: v3.4 "The Mirror"
 
-`/amauta:new-milestone` to define v3.4. Likely candidates: hosted SaaS registry (HOST-01..03 deferred from v3.3), A2A streaming responses (A2A-09), cross-process/host A2A (A2A-10), opt-in telemetry (TEL-01..02).
+**Goal:** The harness sees itself and fixes how it actually works. v3.4 is NOT a feature-surface race against BMAD-METHOD — it's an effectiveness milestone: stop phases drifting from the files they should touch, give executors real reach into sources of truth (curl/ssh/live services), raise coding quality with role-shaped agent personas, instrument real usage with opt-in telemetry, and reposition the project around its actual differentiator (the executor-discipline layer).
+
+**Strategic context (locked decision):** BMAD-METHOD (47.2k★, v6.6.0, 143 contributors) ships overlapping surface — modules, party mode, agent compilation, scale-adaptive intelligence, help system, npx install. Competing on feature breadth is a losing bet against a 5k-fork community. gsd-amauta's asymmetric differentiator is **delivery discipline**: RPETD enforcement, validator-gated phase closes, the divergence protocol, manifest-violation detection, sharded-workflow HALT enforcement. v3.4 makes that the headline and fixes the harness's own coding effectiveness rather than chasing parity.
+
+**Target features (foundation-first ordering — fixing drift before building on it):**
+- **Phase-File Fidelity (FOUNDATION):** stricter planner manifests (reject broad `**/*` globs / missing modify-create-delete keys), route-executor↔planner agreement gate, RLM/memory freshness re-index, validator manifest-fidelity gate, phase-scope-width cap. Locking v3.4 on top of drifting phases is the test-runner trap — this comes first.
+- **Sources of Truth / Tool Reach:** declared capability catalog (curl endpoints, ssh operator-approved hosts, live PG/Redis/k3s state) with auth + security_class; executor tool-allowlist audit + expansion per the Phase 43 capability schema; live-state read tools.
+- **Coding Quality (role personas, pattern from BMAD):** role-shaped agent personas (Senior Backend Engineer, Architect, …) as a new agent class alongside file-extension executors — role-framed prompting, same model; router upgrade to select by task role/intent not just extension.
+- **Telemetry (see real usage):** opt-in framework (first-run consent, local default, `--enable-telemetry`, transparent payload), event taxonomy (phase start/complete, validator verdicts, divergence, escalation, error classes), offline-capable buffered ingest (portability constraint).
+- **Positioning (discipline layer as headline):** README repositioning, public RPETD compliance scorecard (per-task: phases ran / validator verdict / divergence count / manifest fidelity), honest BMAD comparison doc.
+- **Post-launch Hardening:** triage + close GitHub issues from the post-v3.3.0-publish window, `npx gsd-amauta init` + doctor UX hardening, doc gaps from real users, performance debt on slow paths. (Gated on v3.3.0 npm publish + a real-usage data window.)
+
+**Body metaphor sequence:** brain → sight → hands → metabolism → nervous system → birth → gathering → federation → dialect → **mirror (v3.4)**. The Mirror: the harness sees itself — both via telemetry and via positioning that names what it actually is — and fixes how it works.
+
+## Competitive Landscape
+
+**BMAD-METHOD** (github.com/bmad-code-org/BMAD-METHOD, MIT, 47.2k★, v6.6.0) — adjacent project, overlapping surface (scale-adaptive intelligence, skills, party/collaboration mode, agent compilation, help system, npx installer, public npm release). Recorded here so future milestones do NOT re-litigate the positioning question or attempt feature-parity races. gsd-amauta is a *different category*: BMAD is an agile-collaboration framework; gsd-amauta is harness-enforced delivery discipline (RPETD / validator gates / divergence protocol / manifest enforcement / sharded HALT). Steal *patterns* (role personas), never integrate codebases, never compete on adoption.
 
 ## Requirements
 
@@ -137,13 +153,46 @@ Every RPETD phase must *see* what the other phases have already learned — past
 - ✓ **MARK-01..04**: RegistryIndex Pydantic schema + ed25519 signer, 3-tier ranked `module search` CLI, fail-closed trust store at `~/.gsd-amauta/trusted-keys/`, 3-scheme URL installer (https/github/registry) with atomic verify-before-install — v3.3
 - ✓ **PUB-01..05**: README rewrite (1855→151 lines) + HISTORY.md, LICENSE attribution fix (Luis Carlos Mogrovejo de Piérola, 2026), CONTRIBUTING + SECURITY + NOTICE, `release.yml` npm publish with OIDC provenance, `bin/init.cjs` UX polish, `docs/QUICKSTART.md` walkthrough — v3.3
 
-### Active — v3.4 (TBD)
+### Active — v3.4 "The Mirror"
 
-Use `/amauta:new-milestone` to define v3.4 scope. Candidate carry-forwards from v3.3:
-- HOST-01..03 (hosted SaaS registry)
-- A2A-09 (streaming responses)
-- A2A-10 (cross-process / cross-host A2A)
-- TEL-01..02 (opt-in usage telemetry)
+#### Phase-File Fidelity (FOUNDATION — must precede all other v3.4 tracks)
+- [ ] **FIDEL-01**: Planner rejects plans whose `files_expected` uses broad globs (`**/*`) or omits any of modify/create/delete keys — concrete file lists only
+- [ ] **FIDEL-02**: `route-executor` ↔ planner agreement gate — `agent_assignment_conflict` blocks `plan-to-tasks` registration with an actionable diff (no silent absorption)
+- [ ] **FIDEL-03**: RLM/memory freshness — re-index after each milestone close; staleness detector flags executor citations to code that no longer exists
+- [ ] **FIDEL-04**: Validator manifest-fidelity gate — fail tasks where `files_actual` ≠ `files_expected`; `manifest_violation` cannot be closed without atomization
+- [ ] **FIDEL-05**: Phase-scope-width cap — Phase 42 scale-adaptive scoring flags phases spanning >N unrelated subsystems; verify it fires + add a hard ceiling
+
+#### Sources of Truth / Tool Reach
+- [ ] **TOOL-01**: Capability catalog — declared registry of systems amauta can reach (curl endpoints, ssh operator-approved hosts, PG/Redis/k3s live state) with auth method + `security_class`, surfaced to executors
+- [ ] **TOOL-02**: Executor tool-allowlist audit + expansion — each `gsd-executor-*` gets explicit operator-approved bash/ssh/curl capability per the Phase 43 capability schema
+- [ ] **TOOL-03**: Live-state read tools — ssh to operator-approved hosts + curl arbitrary endpoints + live PG/Redis/k3s state queries available to executors with audit trail
+
+#### Coding Quality (role personas)
+- [ ] **PERS-01**: Role-shaped agent personas (Senior Backend Engineer, Architect, …) as a new agent class alongside file-extension executors — role-framed prompting, same model
+- [ ] **PERS-02**: Router upgrade — `plan-to-tasks` selects persona by task role/intent, not just file extension; file-extension routing becomes a fallback
+
+#### Telemetry
+- [ ] **TEL-01**: Opt-in telemetry framework — first-run consent flow, local-storage default, `--enable-telemetry` flag, transparent payload disclosure
+- [ ] **TEL-02**: Event taxonomy — phase start/complete, validator verdicts, divergence reports, escalation fires, party-mode sessions, error classes
+- [ ] **TEL-03**: Offline-capable buffered ingest — self-hosted endpoint or vendor chosen once; buffering required so the portability constraint holds (no hard dependency on a live service)
+
+#### Positioning
+- [ ] **POS-01**: README repositioning — lead with executor discipline (RPETD enforcement, validator gates, divergence protocol, manifest-violation detection); name BMAD as adjacent-but-different category
+- [ ] **POS-02**: Public RPETD compliance scorecard — per-task report surfacing which RPETD phases ran, validator verdict, divergence count, manifest fidelity
+- [ ] **POS-03**: Honest gsd-amauta vs BMAD comparison doc — where they overlap, where they differ, helps users self-select
+
+#### Post-launch Hardening (gated on v3.3.0 npm publish + real-usage window)
+- [ ] **HARD-01**: Triage and close GitHub issues opened in the post-v3.3.0-publish window
+- [ ] **HARD-02**: `npx gsd-amauta init` + `gsd-amauta doctor` UX hardening — error messages, install-failure recovery
+- [ ] **HARD-03**: Documentation gaps surfaced by real users — README, getting-started, troubleshooting
+- [ ] **HARD-04**: Performance debt — slow paths users complain about (likely module install, party-mode startup, agent compile)
+
+### Deferred to v3.5+
+
+- A2A-09 (streaming responses) — revisit once telemetry shows whether A2A is actually used
+- A2A-10 (cross-process / cross-host A2A) — same gate as A2A-09
+- HOST-01..03 (hosted SaaS registry) — portability constraint conflict + BMAD installed base make this a weak bet; v3.5+ or never
+- Module marketplace expansion — v3.6+ only if telemetry shows a module ecosystem forming
 
 #### Legacy (carried forward — all validated in v2.5)
 ##### Memory & Embeddings Audit
@@ -241,4 +290,4 @@ Use `/amauta:new-milestone` to define v3.4 scope. Candidate carry-forwards from 
 | Code-based graders only in v3.0 | Keeps portable (no API key for evals); model-based = v3.1 | ✓ Good — 15/15 scenarios pass |
 
 ---
-*Last updated: 2026-05-15 after v3.3 "The Dialect" milestone shipped (Phases 54-58, 22/22 requirements, 214 passing tests, tag v3.3); v3.4 milestone awaits scoping via `/amauta:new-milestone`*
+*Last updated: 2026-05-15 after v3.3 "The Dialect" shipped + v3.4 "The Mirror" scoped — strategic pivot away from A2A/registry feature-surface (BMAD prior art) toward harness effectiveness: phase-file fidelity, tool reach, role personas, telemetry, discipline-layer positioning*
