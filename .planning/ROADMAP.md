@@ -146,6 +146,8 @@ v3.3 "The Dialect" is underway. Five phases close the carry-forward debt accumul
 
 **58-02 shipped 2026-05-14:** PUB-02 — LICENSE corrected (Luis Carlos Mogrovejo de Piérola, 2026; verbatim MIT). SECURITY.md refreshed (robertamautaai@gmail.com, 90-day disclosure, v3.3.x/v3.2.x matrix). CONTRIBUTING.md created (6 locked sections + how releases work). NOTICE created (psycopg2-binary LGPL v3+ dynamic-linking analysis, cryptography Apache 2.0+BSD-3-Clause). 4 tasks, 4 commits: bfa24a6, f97e2df, 5ce409a, f14c861.
 
+**58-03 shipped 2026-05-14:** PUB-03 — .github/workflows/release.yml: semver tag-triggered npm publish with OIDC provenance (id-token:write at job level, not workflow level — required for attestation), pinned action SHAs (checkout@34e114..., setup-node@49933ea5...), npm test + coverage-ratchet + conditional pytest gate before publish, npm publish --provenance --access public, cancel-in-progress:false. package.json: version 2.8.0→3.3.0, description rewritten for external audience, engines node>=18→>=20 (Node 18 EOL April 2025), 18 keywords (4 added: agents/development/harness/module-system), registry added to files allowlist. 2 tasks, 2 commits: 7e1e201, 2458321.
+
 ---
 
 ## Progress
@@ -156,7 +158,7 @@ v3.3 "The Dialect" is underway. Five phases close the carry-forward debt accumul
 | 55. A2A Protocol Foundation | 4/4 | Complete    | 2026-05-14 |
 | 56. A2A Orchestration | 3/3 | Complete    | 2026-05-14 |
 | 57. Module Marketplace | 3/3 | Complete    | 2026-05-15 |
-| 58. Public Launch (capstone) | 2/5 | In Progress | - |
+| 58. Public Launch (capstone) | 3/5 | In Progress | - |
 
 ## v3.2 Phases (archived)
 

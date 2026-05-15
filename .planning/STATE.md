@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.2
 milestone_name: The Federation** — Phases 48-53
 status: completed
-stopped_at: Phase 58 plan 58-01 COMPLETE — README.md rewritten (external audience) + HISTORY.md created. Phase 58 1/5 plans (plus 58-02 from parallel executor = 2/5 plans shipped).
-last_updated: "2026-05-14T21:05:00.000Z"
-last_activity: "2026-05-14 — Plan 58-01 executed (2 tasks, 2 commits: 0ccfbb8 HISTORY.md, b839a90 README rewrite)"
+stopped_at: Phase 58 plan 58-03 COMPLETE — release.yml (OIDC provenance) + package.json 3.3.0. Phase 58 3/5 done.
+last_updated: "2026-05-14T00:30:00.000Z"
+last_activity: "2026-05-14 — Plan 58-03 executed (2 tasks, 2 commits: 7e1e201, 2458321)"
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 20
-  completed_plans: 16
-  percent: 84
+  completed_plans: 18
+  percent: 88
 ---
 
 # GSD-Amauta -- Project State
@@ -25,13 +25,13 @@ See: .planning/PROJECT.md (updated 2026-05-14 after v3.2 close + v3.3 definition
 
 ## Current Position
 
-Phase: 58 — Public Launch (capstone) — IN PROGRESS (2/5 plans shipped)
-Plan: 58-02 COMPLETE (PUB-02) — CONTRIBUTING.md + LICENSE fix + SECURITY.md refresh + NOTICE
-Status: Phase 57 COMPLETE. Phase 58 underway — 58-01 (README) + 58-02 (legal/security files) shipped.
-Last activity: 2026-05-14 — Plan 58-02 executed (4 tasks, 4 commits: bfa24a6, f97e2df, 5ce409a, f14c861)
-Next step: Execute Phase 58 plan 58-03 (npm publish workflow)
+Phase: 58 — Public Launch (capstone) — IN PROGRESS (3/5 plans shipped)
+Plan: 58-03 COMPLETE (PUB-03) — release.yml (semver tag-triggered, OIDC provenance) + package.json 3.3.0
+Status: Phase 57 COMPLETE. Phase 58 underway — 58-01 (README) + 58-02 (legal/security files) + 58-03 (npm publish workflow) shipped.
+Last activity: 2026-05-14 — Plan 58-03 executed (2 tasks, 2 commits: 7e1e201, 2458321)
+Next step: Execute Phase 58 plan 58-04 (init UX polish)
 
-Progress: [########..] 84% (4/5 phases complete, Phase 58 in progress)
+Progress: [#########.] 88% (4/5 phases complete, Phase 58 in progress)
 
 ## v3.3 Phase Map
 
@@ -64,6 +64,7 @@ Progress: [########..] 84% (4/5 phases complete, Phase 58 in progress)
 - v3.3 Phase 57 Plan 57-01: RegistryEntry 7-field LOCKED order (name/version/sha256/manifest_url/maintainer/signed_by/signature). registry_version="1.0" frozen. 8-tuple _REGISTRY_ERROR_CODES. Signature = ed25519 over sha256 hex UTF-8 bytes. TRUST_STORE_DIR = ~/.gsd-amauta/trusted-keys (fail-closed). compute_manifest_hash reused from Phase 49 (not re-implemented). cryptography>=42.0 sole new dep.
 - v3.2 Phase 50/51: party_session blackboard + 5 frozen state transitions + decision records. A2A-01..07 builds on the same agent_findings + agent_messages PG infrastructure.
 - 17-agent ecosystem with standardized format. Anti-over-engineering rule: "Do not add features, refactor code, or make improvements beyond what was explicitly requested."
+- v3.3 Phase 58 Plan 58-03: npm OIDC provenance requires id-token:write at JOB level (not workflow level) — at workflow level it silently fails. cancel-in-progress:false for release job (no mid-publish cancellation). registry-url set in setup-node step for NODE_AUTH_TOKEN pickup. Python test steps guarded by file/dir existence checks.
 
 ### v3.3-Specific Constraints (locked at scope-time)
 
@@ -79,26 +80,23 @@ Progress: [########..] 84% (4/5 phases complete, Phase 58 in progress)
 
 ## Session Continuity
 
-Last session: 2026-05-14T21:05:00.000Z
-Stopped at: Phase 58 plans 58-01 + 58-02 COMPLETE. 2/5 Phase 58 plans shipped.
-Resume file: .planning/phases/58-public-launch/58-03-PLAN.md (PUB-03 npm publish workflow)
+Last session: 2026-05-14T00:30:00.000Z
+Stopped at: Phase 58 plans 58-01 + 58-02 + 58-03 COMPLETE. 3/5 Phase 58 plans shipped.
+Resume file: .planning/phases/58-public-launch/58-04-PLAN.md (PUB-04 init UX polish)
 
 ## Learnings
 
 
 
 
-
-
-
-
-
+- [learning] 2026-05-15T02:06:38.508Z: legacy regression test: free text learning
 - [learning] 2026-05-14T23:44:09.428Z: Python Valkey circuit breaker pattern: INCR+EXPIRE for sliding failure window, SETNX EX 5s for half-open single-probe lock, fail-open (return True/STATE_CLOSED) on all Valkey exceptions, injectable redis_client param for test isolation, _HAS_BREAKER flag for graceful degradation
 - [learning] 2026-05-14T21:04:01.642Z: legacy regression test: free text learning
 - [learning] 2026-05-14T20:48:57.827Z: legacy regression test: free text learning
-- [learning] 2026-05-14T20:48:39.631Z: E2E test learning — cleanup after test
+- [learning] 2026-05-14T20:48:39.531Z: E2E test learning — cleanup after test
 - [learning] 2026-05-14T20:47:34.380Z: legacy regression test: free text learning
 - [learning] 2026-05-14T20:46:22.904Z: legacy regression test: free text learning
 - [learning] 2026-05-14T20:45:05.270Z: legacy regression test: free text learning
 - [learning] 2026-05-14T20:43:21.566Z: legacy regression test: free text learning
+- [learning] 2026-05-14: npm OIDC provenance requires id-token:write at job level (not workflow level); at workflow level --provenance silently produces no attestation
 (New v3.3 learnings appended below as phases ship)
