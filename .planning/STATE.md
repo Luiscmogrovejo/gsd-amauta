@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v3.2
-milestone_name: The Federation** — Phases 48-53
+milestone: v3.3
+milestone_name: The Dialect — Phases 54-58
 status: completed
-stopped_at: Phase 58 plan 58-04 COMPLETE — --verbose flag + friendlyError + gsd-amauta doctor summary in bin/init.cjs. Phase 58 4/5 done.
-last_updated: "2026-05-14T03:00:00.000Z"
-last_activity: "2026-05-14 — Plan 58-04 executed (2 tasks, 2 commits: 764adea, 0b24514)"
+stopped_at: Phase 58 plan 58-05 COMPLETE — docs/QUICKSTART.md created. Phase 58 5/5 done. v3.3 milestone COMPLETE.
+last_updated: "2026-05-14T04:00:00.000Z"
+last_activity: "2026-05-14 — Plan 58-05 executed (1 task, 1 commit: e28d8f5)"
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 20
-  completed_plans: 19
-  percent: 92
+  completed_plans: 20
+  percent: 100
 ---
 
 # GSD-Amauta -- Project State
@@ -25,13 +25,13 @@ See: .planning/PROJECT.md (updated 2026-05-14 after v3.2 close + v3.3 definition
 
 ## Current Position
 
-Phase: 58 — Public Launch (capstone) — IN PROGRESS (4/5 plans shipped)
-Plan: 58-04 COMPLETE (PUB-04) — --verbose flag + friendlyError + gsd-amauta doctor summary in bin/init.cjs
-Status: Phase 57 COMPLETE. Phase 58 underway — 58-01 (README) + 58-02 (legal/security) + 58-03 (npm publish) + 58-04 (init UX polish) shipped.
-Last activity: 2026-05-14 — Plan 58-04 executed (2 tasks, 2 commits: 764adea, 0b24514)
-Next step: Execute Phase 58 plan 58-05 (QUICKSTART walkthrough)
+Phase: 58 — Public Launch (capstone) — COMPLETE (5/5 plans shipped)
+Plan: 58-05 COMPLETE (PUB-05) — docs/QUICKSTART.md end-to-end first phase walkthrough
+Status: Phase 58 COMPLETE. All v3.3 phases complete. v3.3 milestone READY FOR CLOSEOUT.
+Last activity: 2026-05-14 — Plan 58-05 executed (1 task, 1 commit: e28d8f5)
+Next step: /amauta:new-milestone to define v3.4 scope (hosted registry, A2A extensions, opt-in telemetry)
 
-Progress: [##########] 92% (4/5 phases complete, Phase 58 in progress)
+Progress: [##########] 100% (5/5 phases complete, v3.3 COMPLETE)
 
 ## v3.3 Phase Map
 
@@ -41,7 +41,7 @@ Progress: [##########] 92% (4/5 phases complete, Phase 58 in progress)
 | 55 | A2A Protocol Foundation | A2A-01..04 | COMPLETE (plans 55-01+55-02+55-03+55-04 shipped 2026-05-14) |
 | 56 | A2A Orchestration (breakers + threading + audit) | A2A-05..07 | COMPLETE (plans 56-01+56-02+56-03 shipped 2026-05-14) |
 | 57 | Module Marketplace | MARK-01..04 | COMPLETE (3/3 plans) |
-| 58 | Public Launch (capstone) | PUB-01..05 | Pending |
+| 58 | Public Launch (capstone) | PUB-01..05 | COMPLETE (2026-05-14) |
 
 **Execution order:** 54 → 55 → 56 → (57 ‖ Phase 58 prep) → 58
 **Parallelizable:** After 54 + 55: 56 and 57 are independent. 58 is capstone — needs 54 (no debt) + 57 (marketplace story).
@@ -80,9 +80,9 @@ Progress: [##########] 92% (4/5 phases complete, Phase 58 in progress)
 
 ## Session Continuity
 
-Last session: 2026-05-14T03:00:00.000Z
-Stopped at: Phase 58 plans 58-01 + 58-02 + 58-03 + 58-04 COMPLETE. 4/5 Phase 58 plans shipped.
-Resume file: .planning/phases/58-public-launch/58-05-PLAN.md (PUB-05 QUICKSTART walkthrough)
+Last session: 2026-05-14T04:00:00.000Z
+Stopped at: Phase 58 plan 58-05 COMPLETE. All 5/5 Phase 58 plans shipped. v3.3 milestone COMPLETE.
+Resume file: none — v3.3 closeout complete. Next: /amauta:new-milestone for v3.4.
 
 ## Learnings
 

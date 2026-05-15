@@ -8,7 +8,7 @@
 - ✅ **v3.0 The Birth** — Phases 31-40 (shipped 2026-04-14)
 - ✅ **v3.1 The Gathering** — Phases 41-47 (shipped 2026-05-13)
 - ✅ **v3.2 The Federation** — Phases 48-53 (shipped 2026-05-14)
-- 🔄 **v3.3 The Dialect** — Phases 54-58 (in progress)
+- ✅ **v3.3 The Dialect** — Phases 54-58 (shipped 2026-05-14)
 
 ## Current State
 
@@ -22,7 +22,7 @@ v3.3 "The Dialect" is underway. Five phases close the carry-forward debt accumul
 - [x] **Phase 55: A2A Protocol Foundation** — Migration 024 + capability registry + send/receive client + timeout/retry
 - [x] **Phase 56: A2A Orchestration** — Circuit breakers per agent-pair + conversation threading + operator audit endpoint
 - [x] **Phase 57: Module Marketplace** — Static JSON registry + search CLI + sha256/ed25519 manifest signing + install from URL
-- [ ] **Phase 58: Public Launch (capstone)** — README + CONTRIBUTING/LICENSE/SECURITY + npm publish + init UX polish + QUICKSTART walkthrough
+- [x] **Phase 58: Public Launch (capstone)** — README + CONTRIBUTING/LICENSE/SECURITY + npm publish + init UX polish + QUICKSTART walkthrough
 
 ## Phase Details
 
@@ -150,6 +150,8 @@ v3.3 "The Dialect" is underway. Five phases close the carry-forward debt accumul
 
 **58-04 shipped 2026-05-14:** PUB-04 — bin/init.cjs UX polish: friendlyError() function (6 error class patterns: ECONNREFUSED→PG hint, python ENOENT, migrations ENOENT, daemon ENOENT, EADDRINUSE→port 18799, EACCES→permissions); --verbose flag in flags object + printHelp; 3 catch blocks updated with verbose guard; final summary replaced with conditional 'gsd-amauta installed — run gsd-amauta doctor to verify'. All 7 frozen Phase 44 step names unchanged. tests/init-pub04-ux.test.cjs: 4-test regression lock. 2 tasks, 2 commits: 764adea, 0b24514.
 
+**58-05 shipped 2026-05-14:** PUB-05 — docs/QUICKSTART.md: 7-step external walkthrough (install→Docker infra→init→Claude Code project→plan-phase→execute-phase→verify+ship). ASCII output blocks matching actual renderStepTable format (Step/Status/Duration/Message header, ms durations, 'gsd-amauta installed' final summary). What's next section: module search (Phase 57 marketplace), a2a tail (v3.3), doctor, links to CONTRIBUTING/README/PRODUCTION/SECURITY. 250 lines. No PNG refs. GETTING-STARTED.md + PLAYBOOK.md untouched. 1 task, 1 commit: e28d8f5. Phase 58 COMPLETE. v3.3 milestone COMPLETE.
+
 ---
 
 ## Progress
@@ -160,7 +162,7 @@ v3.3 "The Dialect" is underway. Five phases close the carry-forward debt accumul
 | 55. A2A Protocol Foundation | 4/4 | Complete    | 2026-05-14 |
 | 56. A2A Orchestration | 3/3 | Complete    | 2026-05-14 |
 | 57. Module Marketplace | 3/3 | Complete    | 2026-05-15 |
-| 58. Public Launch (capstone) | 4/5 | In Progress | - |
+| 58. Public Launch (capstone) | 5/5 | Complete    | 2026-05-14 |
 
 ## v3.2 Phases (archived)
 
@@ -205,4 +207,4 @@ After v3.3 ships: `/amauta:new-milestone` to define v3.4 scope (hosted registry,
 
 ---
 
-*Roadmap updated: 2026-05-14 after plan 56-03 shipped (A2A-07 audit endpoint + tail CLI — Phase 56 COMPLETE). Pre-v3.2 history lives in `.planning/milestones/`.*
+*Roadmap updated: 2026-05-14 after plan 58-05 shipped (PUB-05 QUICKSTART walkthrough — Phase 58 COMPLETE, v3.3 milestone COMPLETE). Pre-v3.2 history lives in `.planning/milestones/`.*
