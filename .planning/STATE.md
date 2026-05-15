@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.2
 milestone_name: The Federation** — Phases 48-53
 status: completed
-stopped_at: Phase 57 plan 57-02 COMPLETE — module search CLI with 3-tier ranking + semver tie-break + 18 tests. Phase 57 2/3 plans done.
-last_updated: "2026-05-14T01:00:00.000Z"
-last_activity: "2026-05-14 — Plan 57-02 executed (3 tasks, 3 commits: b7570d9, b2f999a, 0aab898)"
+stopped_at: Phase 57 plan 57-03 COMPLETE — URL installer (3 schemes + verify-before-install + 15 tests). Phase 57 COMPLETE (3/3 plans).
+last_updated: "2026-05-14T02:00:00.000Z"
+last_activity: "2026-05-14 — Plan 57-03 executed (3 tasks, 3 commits: 4c8ccbe, c288ca3, 6621ac6)"
 progress:
   total_phases: 5
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 13
   completed_plans: 13
-  percent: 43
+  percent: 80
 ---
 
 # GSD-Amauta -- Project State
@@ -25,13 +25,13 @@ See: .planning/PROJECT.md (updated 2026-05-14 after v3.2 close + v3.3 definition
 
 ## Current Position
 
-Phase: 57 — Module Marketplace (In Progress — 2/3 plans shipped)
-Plan: 57-02 COMPLETE (MARK-02) — module search CLI with 3-tier ranking + semver tie-break + 18 tests
-Status: Phase 57 in progress — 57-01 (schema + signing) + 57-02 (search) shipped; 57-03 (URL install) pending
-Last activity: 2026-05-14 — Plan 57-02 executed (3 tasks, 3 commits: b7570d9, b2f999a, 0aab898)
-Next step: Execute Phase 57 plan 57-03 (MARK-04 — URL install)
+Phase: 57 — Module Marketplace (COMPLETE — 3/3 plans shipped)
+Plan: 57-03 COMPLETE (MARK-04) — URL installer with 3 schemes + verify-before-install + 15 tests
+Status: Phase 57 COMPLETE — 57-01 (schema + signing) + 57-02 (search) + 57-03 (URL install) all shipped
+Last activity: 2026-05-14 — Plan 57-03 executed (3 tasks, 3 commits: 4c8ccbe, c288ca3, 6621ac6)
+Next step: Execute Phase 58 (Public Launch — capstone)
 
-Progress: [######....] 50% (3/5 phases complete, Phase 57 in progress 2/3)
+Progress: [########..] 80% (4/5 phases complete)
 
 ## v3.3 Phase Map
 
@@ -40,7 +40,7 @@ Progress: [######....] 50% (3/5 phases complete, Phase 57 in progress 2/3)
 | 54 | Stability & Hardening — FOUNDATION | STAB-01..06 | COMPLETE (2026-05-14) |
 | 55 | A2A Protocol Foundation | A2A-01..04 | COMPLETE (plans 55-01+55-02+55-03+55-04 shipped 2026-05-14) |
 | 56 | A2A Orchestration (breakers + threading + audit) | A2A-05..07 | COMPLETE (plans 56-01+56-02+56-03 shipped 2026-05-14) |
-| 57 | Module Marketplace | MARK-01..04 | In Progress (1/3 plans) |
+| 57 | Module Marketplace | MARK-01..04 | COMPLETE (3/3 plans) |
 | 58 | Public Launch (capstone) | PUB-01..05 | Pending |
 
 **Execution order:** 54 → 55 → 56 → (57 ‖ Phase 58 prep) → 58
