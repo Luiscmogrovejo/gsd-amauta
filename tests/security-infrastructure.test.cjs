@@ -447,8 +447,9 @@ describe('Package.json Configuration', () => {
       'Must iterate over migration files');
   });
 
-  test('engine requirement is node >= 18', () => {
-    assert.ok(pkg.engines?.node?.includes('18'), 'Must require Node.js >= 18');
+  test('engine requirement is node >= 20', () => {
+    // Phase 58 PUB-03: bumped engines.node from >=18.0.0 to >=20.0.0 (matches CI matrix + npm publish workflow)
+    assert.ok(pkg.engines?.node?.includes('20'), 'Must require Node.js >= 20');
   });
 });
 
