@@ -1,0 +1,14 @@
+{
+  "registry_version": "1.0",
+  "entries": [
+    {
+      "name": "example-module",
+      "version": "1.0.0",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "manifest_url": "https://example.com/example-module/1.0.0/manifest.yaml",
+      "maintainer": "Phase 57 reference entry",
+      "signed_by": "phase57-test-key",
+      "signature": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ]
+}
