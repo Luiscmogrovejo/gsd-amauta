@@ -53,19 +53,22 @@ Every RPETD phase must *see* what the other phases have already learned — past
 
 **Body metaphor sequence:** brain → sight → hands → metabolism → nervous system → birth → gathering → **federation (v3.2)**
 
-## Current Milestone: v3.3 "The Dialect"
+## Shipped: v3.3 "The Dialect" (2026-05-15)
 
-**Goal:** Federation members start speaking directly to each other (A2A protocol on top of the blackboard), close real debt accumulated across v2.9 → v3.2, extend the module system into a marketplace, and ship the whole thing to the public via npm.
+**5 phases, 20 plans, 22/22 requirements, 214 passing tests, 87 commits.** Federation members start speaking directly to each other (A2A protocol on top of the blackboard), close real debt accumulated across v2.9 → v3.2, extend the module system into a signed marketplace, and ship the whole thing to the public via npm.
 
-**Target features:**
-- Stability & Hardening (foundation): close v2.9 → v3.2 carry-forwards (Redis self-heal, coverage bootstrap, PATH collision, observability gaps, LLM behavioral test flakiness, doctor command) — don't ship debt to public
-- A2A Dialect: direct agent-to-agent protocol layered on existing blackboard — correlation IDs, capability negotiation, timeout/retry, circuit breakers per agent-pair, conversation threading, full operator audit trail
-- Module Marketplace: extend Phase 48-49 module system — registry index, `gsd-amauta module search`, signed manifests (sha256 + maintainer key), install from URL/GitHub
-- Public Launch (capstone): npm publish workflow, public README rewrite, CONTRIBUTING + LICENSE audit, `npx gsd-amauta init` UX polish, demo walkthrough docs
+**Shipped:**
+1. Stability & Hardening (foundation) — coverage ratchet, `rlm_restarts_lifetime`, Redis watchdog tests, PATH collision detection, LLM behavioral test quarantine, `gsd-amauta doctor`
+2. A2A Protocol Foundation — `a2a_messages` migration 024, capability registry, send/await/respond client, exponential-backoff retry with 4 frozen error tokens
+3. A2A Orchestration — Valkey-backed per-pair circuit breakers, recursive-CTE conversation threading, `/a2a/exchanges` audit endpoint, `gsd-amauta a2a tail`
+4. Module Marketplace — signed registry index (sha256 + ed25519), 3-tier ranked search CLI, fail-closed trust store, 3-scheme URL installer (https/github/registry) with atomic verify-before-install
+5. Public Launch (capstone) — external README + HISTORY.md, MIT LICENSE corrected, CONTRIBUTING/SECURITY/NOTICE, npm publish workflow with OIDC provenance, `bin/init.cjs` UX polish, `docs/QUICKSTART.md` walkthrough
 
-**Body metaphor sequence:** brain → sight → hands → metabolism → nervous system → birth → gathering → federation → **dialect (v3.3)**. The Dialect lets members speak directly to each other — then goes public.
+**Body metaphor sequence:** brain (v2.5) → sight (v2.6) → hands (v2.7) → metabolism (v2.8) → nervous system (v2.9) → birth (v3.0) → gathering (v3.1) → federation (v3.2) → **dialect (v3.3)**
 
-**Body metaphor sequence:** brain → sight → hands → metabolism → nervous system → birth → gathering → **federation (v3.2)**. The Federation binds individuals into operable, installable, cooperating units.
+## Next Milestone
+
+`/amauta:new-milestone` to define v3.4. Likely candidates: hosted SaaS registry (HOST-01..03 deferred from v3.3), A2A streaming responses (A2A-09), cross-process/host A2A (A2A-10), opt-in telemetry (TEL-01..02).
 
 ## Requirements
 
@@ -127,37 +130,20 @@ Every RPETD phase must *see* what the other phases have already learned — past
 - ✓ **COMPILE-01..04**: YAML agent definitions → per-IDE Markdown with optional hydration injection — v3.2
 - ✓ **POLISH-01..05**: Skill input/output schemas, installer upgrade/uninstall, MCP wrappers, hydration auto-invoke — v3.2
 
-### Active — v3.3 "The Dialect"
+#### v3.3 The Dialect — Shipped 2026-05-15 (22/22 requirements)
+- ✓ **STAB-01..06**: Coverage ratchet, Redis watchdog self-heal tests, `rlm_restarts_lifetime` cumulative counter, PATH collision detection, LLM behavioral test quarantine, `gsd-amauta doctor` — v3.3
+- ✓ **A2A-01..04**: `a2a_messages` migration 024, capability registry as 7th LOCKED AgentDefinition field, send/await/respond client, exponential-backoff retry with 4 frozen error tokens — v3.3
+- ✓ **A2A-05..07**: Valkey CLOSED→OPEN→HALF_OPEN per-pair circuit breakers (SETNX probe lock + fail-open), recursive-CTE `get_thread()`, `GET /a2a/exchanges` daemon audit endpoint + `gsd-amauta a2a tail` — v3.3
+- ✓ **MARK-01..04**: RegistryIndex Pydantic schema + ed25519 signer, 3-tier ranked `module search` CLI, fail-closed trust store at `~/.gsd-amauta/trusted-keys/`, 3-scheme URL installer (https/github/registry) with atomic verify-before-install — v3.3
+- ✓ **PUB-01..05**: README rewrite (1855→151 lines) + HISTORY.md, LICENSE attribution fix (Luis Carlos Mogrovejo de Piérola, 2026), CONTRIBUTING + SECURITY + NOTICE, `release.yml` npm publish with OIDC provenance, `bin/init.cjs` UX polish, `docs/QUICKSTART.md` walkthrough — v3.3
 
-#### Stability & Hardening (foundation)
-- [ ] **STAB-01**: Coverage baseline bootstrap — `.coverage_threshold.json` populated with real values via `npx c8`
-- [ ] **STAB-02**: Redis watchdog self-heal activation + counter-reset uptime-window live test (closes 2026-05-11 incident class)
-- [ ] **STAB-03**: `rlm_restarts_lifetime` cumulative counter on health endpoint (observability gap)
-- [ ] **STAB-04**: PATH collision fix — bare `amauta` resolves to plugin not pipx package
-- [ ] **STAB-05**: LLM behavioral test flakiness — quarantine or determinize `tests/13.1-divergence-protocol.integration.test.cjs`
-- [ ] **STAB-06**: `gsd-amauta doctor` command — diagnose install (paths, daemon, DB, keys)
+### Active — v3.4 (TBD)
 
-#### A2A Dialect (direct agent-to-agent protocol)
-- [ ] **A2A-01**: `a2a_messages` PG migration — correlation_id, capability, request/response, parent_correlation
-- [ ] **A2A-02**: Capability negotiation schema — each agent publishes what it can do, queryable by other agents
-- [ ] **A2A-03**: Direct message send/receive between agents atop existing messages table (operator-mediated audit retained)
-- [ ] **A2A-04**: Timeout + retry semantics with structured error vocabulary
-- [ ] **A2A-05**: Circuit breaker per agent-pair (3-failure / 60s — mirrors Phase 28 Valkey breaker pattern)
-- [ ] **A2A-06**: Conversation threading + parent_correlation chains (multi-turn dialogue audit trail)
-- [ ] **A2A-07**: Operator audit endpoint — every A2A exchange viewable via daemon `/a2a/exchanges`
-
-#### Module Marketplace
-- [ ] **MARK-01**: Static JSON registry index file format (versioned, signed by index maintainer)
-- [ ] **MARK-02**: `gsd-amauta module search <query>` — queries local or remote registry index
-- [ ] **MARK-03**: Manifest signing — sha256 of module + maintainer pubkey verification at install
-- [ ] **MARK-04**: Install from URL — `gsd-amauta module install https://...` or `github:owner/repo@tag`
-
-#### Public Launch (capstone)
-- [ ] **PUB-01**: Public README rewrite — audience is a developer evaluating an AI dev harness, not internal milestone log
-- [ ] **PUB-02**: CONTRIBUTING.md + LICENSE audit + SECURITY.md refresh
-- [ ] **PUB-03**: `npm publish` workflow — `npm publish` from CI on semver tag push, with provenance
-- [ ] **PUB-04**: `npx gsd-amauta init` UX polish — error messages, progress display, prompts (consumes Phase 44 + 53)
-- [ ] **PUB-05**: Demo walkthrough docs — first-task end-to-end with screenshots, install → first phase ship
+Use `/amauta:new-milestone` to define v3.4 scope. Candidate carry-forwards from v3.3:
+- HOST-01..03 (hosted SaaS registry)
+- A2A-09 (streaming responses)
+- A2A-10 (cross-process / cross-host A2A)
+- TEL-01..02 (opt-in usage telemetry)
 
 #### Legacy (carried forward — all validated in v2.5)
 ##### Memory & Embeddings Audit
@@ -255,4 +241,4 @@ Every RPETD phase must *see* what the other phases have already learned — past
 | Code-based graders only in v3.0 | Keeps portable (no API key for evals); model-based = v3.1 | ✓ Good — 15/15 scenarios pass |
 
 ---
-*Last updated: 2026-05-14 after v3.2 "The Federation" shipped; v3.3 "The Dialect" milestone defined (Phases 54-58)*
+*Last updated: 2026-05-15 after v3.3 "The Dialect" milestone shipped (Phases 54-58, 22/22 requirements, 214 passing tests, tag v3.3); v3.4 milestone awaits scoping via `/amauta:new-milestone`*

@@ -12,157 +12,22 @@
 
 ## Current State
 
-v3.3 "The Dialect" is underway. Five phases close the carry-forward debt accumulated across v2.9 → v3.2, layer a direct agent-to-agent (A2A) protocol on top of the existing blackboard, extend the Phase 48-49 module system into a signed marketplace, and ship the whole platform publicly via npm. Phase 54 (Stability & Hardening) is the mandatory foundation — no debt ships to the public. Phase 58 (Public Launch) is the capstone and depends on both Phase 54 (clean install) and Phase 57 (marketplace story for README/docs).
+v3.3 "The Dialect" complete (2026-05-15): Stability & Hardening foundation closed every v2.9 → v3.2 carry-forward; A2A protocol shipped (foundation + orchestration with per-pair circuit breakers, conversation threading, operator audit endpoint); Module Marketplace shipped (signed registry index, search CLI, ed25519 manifest verification, install from URL); Public Launch capstone shipped (external README, MIT LICENSE corrected, CONTRIBUTING/SECURITY/NOTICE, npm publish workflow with provenance, init UX polish, QUICKSTART). 5 phases, 20 plans, 87 commits, +19,003 / −1,937 LOC, 22/22 requirements, 214 passing tests. Next: `/amauta:new-milestone` for v3.4.
 
-**Execution order:** 54 → 55 → 56 → (57 ‖ Phase 58 prep) → 58
+## v3.3 Phases (archived)
 
-## v3.3 Phases
+<details>
+<summary>✅ v3.3 The Dialect (Phases 54-58) — SHIPPED 2026-05-15</summary>
 
-- [x] **Phase 54: Stability & Hardening — FOUNDATION** — Close v2.9→v3.2 carry-forwards before public ship
-- [x] **Phase 55: A2A Protocol Foundation** — Migration 024 + capability registry + send/receive client + timeout/retry
-- [x] **Phase 56: A2A Orchestration** — Circuit breakers per agent-pair + conversation threading + operator audit endpoint
-- [x] **Phase 57: Module Marketplace** — Static JSON registry + search CLI + sha256/ed25519 manifest signing + install from URL
-- [x] **Phase 58: Public Launch (capstone)** — README + CONTRIBUTING/LICENSE/SECURITY + npm publish + init UX polish + QUICKSTART walkthrough
+- [x] Phase 54: Stability & Hardening — FOUNDATION — 5 plans, STAB-01..06 closed
+- [x] Phase 55: A2A Protocol Foundation — 4 plans, A2A-01..04 (migration 024 + capability registry + send/receive client + retry)
+- [x] Phase 56: A2A Orchestration — 3 plans, A2A-05..07 (Valkey breakers + recursive-CTE threading + /a2a/exchanges + tail CLI)
+- [x] Phase 57: Module Marketplace — 3 plans, MARK-01..04 (RegistryIndex Pydantic + ed25519 signer + search CLI + URL installer)
+- [x] Phase 58: Public Launch (capstone) — 5 plans, PUB-01..05 (README/CONTRIBUTING/LICENSE/SECURITY/NOTICE/release.yml/init UX/QUICKSTART)
 
-## Phase Details
+Archive: `.planning/milestones/v3.3-ROADMAP.md` · `.planning/milestones/v3.3-REQUIREMENTS.md`
 
-### Phase 54: Stability & Hardening — FOUNDATION
-
-**Goal:** Eliminate all carry-forward debt (coverage gaps, Redis self-heal, observability holes, PATH collision, flaky LLM tests, missing doctor command) so the platform ships to the public without known defects.
-
-**Depends on:** Nothing (first phase of v3.3)
-
-**Requirements:** STAB-01, STAB-02, STAB-03, STAB-04, STAB-05, STAB-06
-
-**Success Criteria** (what must be TRUE):
-1. Running `npx c8 --reporter json-summary node scripts/run-tests.cjs` produces a populated `.coverage_threshold.json` and CI fails if coverage drops below the recorded baseline.
-2. The Redis watchdog self-heals without manual intervention: a synthetic counter-reset / connection-drop test completes within 7 minutes and the uptime-window resets correctly (closes 2026-05-11 incident class).
-3. The daemon `/health` endpoint exposes `rlm_restarts_lifetime` as a cumulative counter that does not reset on successful `_start_rlm` calls — operators can track restart history across the session.
-4. Typing `amauta` in a fresh shell resolves to the GSD plugin binary (not the pipx `amauta-ai` package); the shim/alias is documented in install output.
-5. `tests/13.1-divergence-protocol.integration.test.cjs` either passes deterministically (mocked LLM with frozen responses) or is quarantined behind an explicit `GSD_LLM_INTEGRATION=true` flag so CI never fails on a missing API key.
-6. `gsd-amauta doctor` exits 0 and prints a one-screen status table covering: paths, daemon reachability, PG reachability, Valkey reachability, API keys present/absent, migrations current, agent files present, skill files present.
-
-**Plans:** 5/5 plans complete
-
-**54-01 shipped 2026-05-14:** STAB-01+STAB-03 — coverage ratchet CI gate wired in test.yml; .coverage_threshold.json updated to real baseline (lines=70%, branches=68.7%); _rlm_restarts_lifetime cumulative counter added to /health endpoint; 5-test pytest suite passes.
-
-**54-03 shipped 2026-05-14:** STAB-05 — GSD_LLM_INTEGRATION skip guard added to tests/13.1-divergence-protocol.integration.test.cjs; GSD_LLM_INTEGRATION: "true" added to .github/workflows/behavioral-tests.yml. Default CI now exits 0 when Anthropic API key absent.
-
-**54-04 shipped 2026-05-14:** STAB-02 — 11-test pytest suite for _redis_watchdog state machine (7 structural + 4 inline simulation); live-test procedure (~7 min synthetic counter-reset) documented in module docstring. Closes 2026-05-11 incident class.
-
-**54-05 shipped 2026-05-14:** STAB-06 — gsd-amauta doctor command (services/doctor.py + bin/cli.cjs dispatch). One-screen status table: paths, daemon, PG, Valkey, API keys, migrations, agents, skills. Consumes rlm_restarts_lifetime from /health (STAB-03 consumer chain closed). 9-test pytest suite passes. Phase 54 COMPLETE.
-
----
-
-### Phase 55: A2A Protocol Foundation
-
-**Goal:** Ship the `a2a_messages` PG table (migration 024), a capability negotiation registry, and a Python send/receive client with timeout and structured retry — the complete foundation layer that Phase 56 builds on.
-
-**Depends on:** Phase 54
-
-**Requirements:** A2A-01, A2A-02, A2A-03, A2A-04
-
-**Success Criteria** (what must be TRUE):
-1. Migration 024 runs cleanly on a fresh database and `a2a_messages` exists with the correct schema (`correlation_id`, `parent_correlation_id`, `from_agent`, `to_agent`, `capability`, `payload jsonb`, `kind`, `status`, `created_at`, `responded_at`) and the `(to_agent, status)` index.
-2. An operator can run `gsd-tools a2a capabilities gsd-executor` and receive a structured list of capability verbs that agent publishes; the backing `services/a2a_registry.py` is queryable programmatically.
-3. An agent can call `a2a_client.send_request(to="gsd-reviewer", capability="review_file", payload={...}, timeout=30)` and receive a `correlation_id` back; a second agent can call `await_response(correlation_id)` and receive the result — round-trip visible in the `a2a_messages` table.
-4. When a request times out, the caller receives an `a2a_timeout` structured error; when retried twice with exponential backoff the retry history is visible in `a2a_messages` with `status=retried` rows; `unknown_capability`, `agent_unavailable`, and `payload_invalid` errors each produce distinct vocabulary tokens.
-
-**Plans:** 4/4 plans complete
-
-**55-01 shipped 2026-05-14:** A2A-01 — migration 024-a2a-messages.sql (UP+DOWN). 10-column a2a_messages table: UUID PK, JSONB NOT NULL payload, frozen kind CHECK (request|response|error|retried), (to_agent,status) index, COMMENT ON TABLE. Structural test: 10 passed. Commits: ca30aa9, 66b8966, d8849b3.
-
-**55-02 shipped 2026-05-14:** A2A-02 — AgentDefinition extended with capabilities as 7th LOCKED field (default []); services/a2a_registry.py (get_capabilities/list_agents/all_capabilities); gsd-tools case 'a2a': dispatch; 18 tests pass. Phase 52 SC1 17/17 byte-match LOCK preserved. Commits: f489756, f9d5d98, 02ea4c1, 50b581f.
-
-**55-03 shipped 2026-05-14:** A2A-03 — services/a2a_client.py: send_request/await_response/send_response atop PG a2a_messages. Risk §2 correction applied (response rows use new UUID + parent_correlation_id link; _poll_once filters WHERE parent_correlation_id). POLL_INTERVAL_S=0.1, 4 frozen error classes (a2a_timeout/unknown_capability/agent_unavailable/payload_invalid), no daemon HTTP changes. 19 structural tests pass, 3 integration tests GSD_PG_INTEGRATION-gated. Commits: 658d1f7, 6ce493c.
-
-**55-04 shipped 2026-05-14:** A2A-04 — send_request_with_retry() with exponential backoff (BASE=2, INITIAL=1s, CAP=8s, ±20% jitter, max 2 retries = 3 total attempts). _send_retried_row() writes kind='retried'/status='retried' rows for retry audit trail. Pre-flight _validate_payload + _check_capability before retry loop (non-retryable fast-fail). 5 retry constants + 3 VC2 aliases. 25-test suite (24 pass, 1 PG-gated skip): TestRetryConstants, TestFrozenErrorVocabulary, TestExponentialBackoffFormula, TestRetryBehaviorSimulated, TestSendRetriedRowStructure, TestRetryPGIntegration. Phase 55 COMPLETE. Commits: 78ed59e, d9b5dbd.
-
----
-
-### Phase 56: A2A Orchestration
-
-**Goal:** Add circuit-breaker protection per agent-pair, multi-turn conversation threading via `parent_correlation_id` chains, and a daemon audit endpoint that gives operators full visibility into every A2A exchange.
-
-**Depends on:** Phase 55
-
-**Requirements:** A2A-05, A2A-06, A2A-07
-
-**Success Criteria** (what must be TRUE):
-1. After 3 failures within 60 seconds on the same `(from_agent, to_agent)` pair, the circuit breaker opens and subsequent calls return `agent_unavailable` immediately without hitting the target agent; the breaker transitions to half-open after 60 seconds and closes on a successful probe.
-2. A multi-turn dialogue between two agents (agent A asks, agent B responds, agent A follows up) produces a thread retrievable via `a2a_client.get_thread(root_correlation_id)` returning the exchanges in chronological order with correct `parent_correlation_id` linkage.
-3. Every A2A exchange is audit-logged before payload delivery; `GET /a2a/exchanges?from=gsd-executor&to=gsd-reviewer&since=<ISO>` returns a JSON list of all matching exchanges; `gsd-amauta a2a tail` streams new exchanges to the terminal in real time.
-
-**Plans:** 3/3 plans complete
-
-**56-01 shipped 2026-05-14:** A2A-05 — services/a2a_breaker.py: Valkey-backed per-pair CLOSED/OPEN/HALF_OPEN state machine. 5 frozen constants (threshold=3, window=60s, open_duration=60s). SETNX probe lock for half-open single-probe discipline. Fail-open on Valkey unavailability. Wired into services/a2a_client.py: _check_breaker() in send_request() BEFORE PG INSERT; record_a2a_failure() in send_request_with_retry except A2ATimeoutError. 26-test mock suite passes. Commits: 95530e8, ed0a5e3, b32ff16.
-
-**56-02 shipped 2026-05-14:** A2A-06 — get_thread(root_correlation_id, depth_limit=10, conn=None) added to services/a2a_client.py. PostgreSQL WITH RECURSIVE CTE traverses parent_correlation_id chains from root. THREAD_DEFAULT_DEPTH_LIMIT=10 constant. Returns list of dicts (10 schema cols + depth + schema_version) ORDER BY created_at ASC. Empty list on PG unavailability or unknown root (no exception). 14-test suite (9 structural always-run, 5 GSD_PG_INTEGRATION-gated). Phase 55 frozen surface unchanged. Commits: 237f583, bc1896c.
-
-**56-03 shipped 2026-05-14:** A2A-07 — GET /a2a/exchanges daemon endpoint in amauta-daemon.py do_GET: from/to/since filters, schema_version "1.0" response, next_cursor = max(created_at)+1ms, default since=NOW()-24h, pure READ on Phase 55 a2a_messages. gsd-tools case 'a2a' extended with tail action: 500ms setTimeout polling loop, sinceTs cursor tracking, SIGINT clean exit. 11-test audit suite + 12-test tail CLI suite (23 structural tests, all pass without daemon/PG). Phase 56 COMPLETE. Commits: 4ebb2ec, 1c3aaf2, a7f918a, 7fbc127.
-
----
-
-### Phase 57: Module Marketplace
-
-**Goal:** Extend the Phase 48-49 module system with a versioned signed registry index, a search CLI, sha256+ed25519 manifest signing with verification at install time, and URL/shorthand install support.
-
-**Depends on:** Phases 48-49 (module system — shipped in v3.2; no new phase dependency within v3.3)
-
-**Requirements:** MARK-01, MARK-02, MARK-03, MARK-04
-
-**Success Criteria** (what must be TRUE):
-1. `registry/index.json` exists in this repo, parses against the versioned schema (`registry_version: "1.0"`), and contains at least one entry with all required fields (`name`, `version`, `sha256`, `manifest_url`, `maintainer`, `signed_by`).
-2. `gsd-amauta module search <query>` returns ranked results from the local cached index and from a remote registry when `--registry <url>` is specified; results respect the Phase 48 `ModuleManifest` schema.
-3. Installing a module with a tampered manifest (sha256 mismatch or invalid ed25519 signature) fails closed with a clear error message and no files written to disk; the trusted public key store lives at `~/.gsd-amauta/trusted-keys/`.
-4. `gsd-amauta module install https://example.com/mymodule.zip`, `gsd-amauta module install github:owner/repo@v1.2.0`, and `gsd-amauta module install registry:mymodule@1.2.0` all resolve, download, verify signatures, and invoke the Phase 49 lifecycle install — indistinguishable from a local install after the signature check passes.
-
-**Plans:** 3/3 plans complete
-
-**57-01 shipped 2026-05-14:** MARK-01+MARK-03 — RegistryIndex/RegistryEntry Pydantic v2 schema (7-field LOCKED, version "1.0" frozen), 8-tuple _REGISTRY_ERROR_CODES, services/module_signer.py (sign_sha256/verify/load_trusted_key/generate_keypair/TRUST_STORE_DIR), registry/index.json structural fixture, 17 tests pass. cryptography>=42.0 sole new dep. Commits: cd521f8, 90d98d2, ac1c6c9, 5dba4d3.
-
-**57-02 shipped 2026-05-14:** MARK-02 — services/module_search.py (3-tier ranking: exact-name>name-sub>maintainer-sub, semver-descending via negated tuple), services/module_search_cli.py (argparse + --registry + --json, exit 0/2), gsd-tools.cjs extended with 'search' in KNOWN_ACTIONS + dispatch branch, 18 tests (>= 12 required). Zero new deps. Commits: b7570d9, b2f999a, 0aab898.
-
----
-
-### Phase 58: Public Launch (capstone)
-
-**Goal:** Rewrite public-facing documentation for an external developer audience, audit and refresh legal/security files, ship an automated npm publish workflow with provenance, polish the `npx gsd-amauta init` UX, and publish an end-to-end QUICKSTART walkthrough.
-
-**Depends on:** Phase 54 (no carry-forward debt) + Phase 57 (marketplace story for README/docs)
-
-**Requirements:** PUB-01, PUB-02, PUB-03, PUB-04, PUB-05
-
-**Success Criteria** (what must be TRUE):
-1. A developer who has never seen GSD-Amauta before can read the public README and understand what it is, how it differs from similar tools, and how to install it in under 30 seconds — without encountering milestone-log language or internal jargon.
-2. `CONTRIBUTING.md` describes the PR workflow, commit conventions, and test policy; `LICENSE` is verified MIT with no third-party conflicts; `SECURITY.md` lists a responsible-disclosure address and the supported version matrix.
-3. Pushing a semver tag (`v3.3.0`) triggers the GitHub Actions workflow that runs the full test suite, then publishes to npm with `--provenance`; the package appears on npmjs.com with a verified provenance attestation.
-4. Running `npx gsd-amauta init` in a fresh directory produces friendly progress output (no stack traces), recovery hints on failure, and respects `--verbose` for debug detail — exercising the 7-step Phase 44 flow end-to-end.
-5. `docs/QUICKSTART.md` guides a new user from install through their first shipped phase (install → init → discuss-phase → plan-phase → execute-phase → ship) with terminal screenshots at each step; the file is linked from the README.
-
-**Plans:** 5/5 plans complete
-
-**58-01 shipped 2026-05-14:** PUB-01 — README rewrite for external developer audience. README.md: what-it-is paragraph, 30-second quick start, honest comparison table (Claude Code/Cursor/BMAD/npm), prereqs (Docker plainly stated), core concepts, module marketplace, A2A protocol, CLI ref, links to CONTRIBUTING/LICENSE/SECURITY/QUICKSTART. HISTORY.md created (67 lines, 8 milestones v2.5-v3.3). 2 tasks, 2 commits: 0ccfbb8 (HISTORY.md), b839a90 (README.md).
-
-**58-02 shipped 2026-05-14:** PUB-02 — LICENSE corrected (Luis Carlos Mogrovejo de Piérola, 2026; verbatim MIT). SECURITY.md refreshed (robertamautaai@gmail.com, 90-day disclosure, v3.3.x/v3.2.x matrix). CONTRIBUTING.md created (6 locked sections + how releases work). NOTICE created (psycopg2-binary LGPL v3+ dynamic-linking analysis, cryptography Apache 2.0+BSD-3-Clause). 4 tasks, 4 commits: bfa24a6, f97e2df, 5ce409a, f14c861.
-
-**58-03 shipped 2026-05-14:** PUB-03 — .github/workflows/release.yml: semver tag-triggered npm publish with OIDC provenance (id-token:write at job level, not workflow level — required for attestation), pinned action SHAs (checkout@34e114..., setup-node@49933ea5...), npm test + coverage-ratchet + conditional pytest gate before publish, npm publish --provenance --access public, cancel-in-progress:false. package.json: version 2.8.0→3.3.0, description rewritten for external audience, engines node>=18→>=20 (Node 18 EOL April 2025), 18 keywords (4 added: agents/development/harness/module-system), registry added to files allowlist. 2 tasks, 2 commits: 7e1e201, 2458321.
-
-**58-04 shipped 2026-05-14:** PUB-04 — bin/init.cjs UX polish: friendlyError() function (6 error class patterns: ECONNREFUSED→PG hint, python ENOENT, migrations ENOENT, daemon ENOENT, EADDRINUSE→port 18799, EACCES→permissions); --verbose flag in flags object + printHelp; 3 catch blocks updated with verbose guard; final summary replaced with conditional 'gsd-amauta installed — run gsd-amauta doctor to verify'. All 7 frozen Phase 44 step names unchanged. tests/init-pub04-ux.test.cjs: 4-test regression lock. 2 tasks, 2 commits: 764adea, 0b24514.
-
-**58-05 shipped 2026-05-14:** PUB-05 — docs/QUICKSTART.md: 7-step external walkthrough (install→Docker infra→init→Claude Code project→plan-phase→execute-phase→verify+ship). ASCII output blocks matching actual renderStepTable format (Step/Status/Duration/Message header, ms durations, 'gsd-amauta installed' final summary). What's next section: module search (Phase 57 marketplace), a2a tail (v3.3), doctor, links to CONTRIBUTING/README/PRODUCTION/SECURITY. 250 lines. No PNG refs. GETTING-STARTED.md + PLAYBOOK.md untouched. 1 task, 1 commit: e28d8f5. Phase 58 COMPLETE. v3.3 milestone COMPLETE.
-
----
-
-## Progress
-
-| Phase | Plans Complete | Status | Completed |
-|-------|----------------|--------|-----------|
-| 54. Stability & Hardening — FOUNDATION | 5/5 | Complete    | 2026-05-14 |
-| 55. A2A Protocol Foundation | 4/4 | Complete    | 2026-05-14 |
-| 56. A2A Orchestration | 3/3 | Complete    | 2026-05-14 |
-| 57. Module Marketplace | 3/3 | Complete    | 2026-05-15 |
-| 58. Public Launch (capstone) | 5/5 | Complete    | 2026-05-15 |
+</details>
 
 ## v3.2 Phases (archived)
 

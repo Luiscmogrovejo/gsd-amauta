@@ -1,5 +1,23 @@
 # Milestones
 
+## v3.3 The Dialect (Shipped: 2026-05-15)
+
+**Phases:** 54-58 (5 phases, 20 plans, 22/22 requirements) | **Commits:** 87 | **LOC:** +19,003 / −1,937 across 96 files | **Tests:** 214 passing (13 PG/network-integration gated)
+**Timeline:** 2026-05-14 14:06 → 2026-05-14 21:41 (~7.5h single session) | **Tag:** v3.3
+
+**Key accomplishments:**
+1. **Stability foundation closed** — coverage ratchet wired in CI (real baseline 70%/68.7%), `rlm_restarts_lifetime` cumulative counter on /health, `_redis_watchdog` 11-test state machine + ~7min synthetic live-test procedure, PATH collision `detectAmautaAiConflict` advisory, LLM behavioral test quarantine guard, `gsd-amauta doctor` 8-category diagnostic — STAB-01..06 (Phase 54)
+2. **A2A protocol shipped** — migration 024 `a2a_messages` (UUID PK, frozen kind CHECK, jsonb NOT NULL payload), capability registry as 7th LOCKED AgentDefinition field, `send_request`/`await_response`/`send_response`/`send_request_with_retry` with exponential backoff (BASE=2, INITIAL=1s, CAP=8s, ±20% jitter, MAX=2), 4 frozen error tokens (a2a_timeout/unknown_capability/agent_unavailable/payload_invalid), `parent_correlation_id` linkage correction enforced — A2A-01..04 (Phase 55)
+3. **A2A orchestration shipped** — Valkey-backed CLOSED→OPEN→HALF_OPEN circuit breaker per agent-pair (3 failures/60s + SETNX probe lock + fail-open on Valkey down), `get_thread()` PG recursive CTE for multi-turn dialogue inspection, `GET /a2a/exchanges` daemon audit endpoint with cursor pagination, `gsd-amauta a2a tail` 500ms polling CLI — A2A-05..07 (Phase 56)
+4. **Module Marketplace shipped** — `RegistryIndex`/`RegistryEntry` Pydantic v2 schema (7-field LOCKED, registry_version frozen at "1.0"), ed25519 `module_signer` with `~/.gsd-amauta/trusted-keys/` fail-closed trust store, 3-tier ranked `module search` CLI (exact-name > name-substring > maintainer-substring, semver-descending), 3-scheme URL installer (https/github/registry) with atomic verify-before-install pipeline and defense-in-depth `InstallError` validation — MARK-01..04 (Phase 57). Only new pip dep: `cryptography>=42.0`
+5. **Public launch capstone** — README rewritten for external developer audience (1855→151 lines, honest comparison table, Docker prereq stated), HISTORY.md collects 8 milestone sections, LICENSE attribution corrected (2025 Lex Christopherson → 2026 Luis Carlos Mogrovejo de Piérola), CONTRIBUTING.md 6 locked sections, SECURITY.md (robertamautaai@gmail.com + 90-day disclosure + v3.3.x/v3.2.x matrix), NOTICE (psycopg2-binary LGPL v3+ dynamic-linking compatibility analysis), `.github/workflows/release.yml` semver-tag-triggered npm publish with OIDC provenance (id-token: write at JOB level), package.json bumped 2.8.0→3.3.0 (engines node>=20, 18 keywords, bin exposes gsd-amauta + amauta), `bin/init.cjs` UX polish (--verbose flag + `friendlyError` with 6 error class mappings + `gsd-amauta installed` final summary, 7 frozen step names preserved), docs/QUICKSTART.md 7-step external walkthrough — PUB-01..05 (Phase 58)
+
+**Body metaphor:** federation (v3.2) → **dialect (v3.3)**. Federation members start speaking directly to each other (A2A), the marketplace gives them a way to find each other, then we ship to the world.
+
+**Operator advisory:** Add `NPM_TOKEN` to GitHub repo secrets before `git tag v3.3.0 && git push origin v3.3.0` triggers the first public npm publish.
+
+---
+
 ## v3.2 The Federation (Shipped: 2026-05-14)
 
 **Phases completed:** 6 phases, 24 plans, 5 tasks
