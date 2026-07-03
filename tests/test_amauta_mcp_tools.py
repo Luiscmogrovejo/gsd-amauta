@@ -3,12 +3,19 @@ tests/test_amauta_mcp_tools.py — per-tool unit tests for all 6 MCP tools (Phas
 
 Loads amauta-mcp.py via importlib (handles hyphenated filename). Mocks _get_pg_store()
 and _get_mcp_valkey() to avoid DB dependency. Wraps async calls with asyncio.run().
+
+Phase 65 RETR-03: search-code tests reworked to assert hybrid_search delegation
+(query-forwarding, provenance, fallback chain) and a subprocess import proof
+that _HYBRID_SEARCH_AVAILABLE resolves True even with cwd outside the repo
+(Phase 60 silent-import-failure class).
 """
 
 import asyncio
 import importlib.util
 import json
 import os
+import subprocess
+import sys
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -158,38 +165,47 @@ class TestSearchCodeTool(unittest.TestCase):
             self.skipTest(f"Module failed to load: {_LOAD_ERROR}")
 
     def test_search_code_post_filter_directory(self):
-        """amauta/search-code directory filter retains only matching paths."""
+        """amauta/search-code forwards `directory` to hybrid_search as file_filter
+        and maps rlm_chunks rows to path/text/symbol_name/score keys."""
         fake_rows = [
-            {"path": "services/pg_store.py", "text": "PGStore class"},
-            {"path": "tests/test_pg.py", "text": "test file"},
-            {"path": "services/amauta-mcp.py", "text": "MCP server"},
+            {"file_path": "services/pg_store.py", "content": "PGStore class",
+             "symbol_name": "PGStore", "rrf_score": 0.9},
+            {"file_path": "services/amauta-mcp.py", "content": "MCP server",
+             "symbol_name": "call_tool", "rrf_score": 0.5},
         ]
-        store = _mock_store(memory_search_return=fake_rows)
-        # Make _get_conn a context manager returning a fake conn
+        recorder = {}
+
+        def _fake_hybrid_search(query, conn, top_k=5, file_filter=None):
+            recorder["file_filter"] = file_filter
+            return fake_rows
+
+        store = _mock_store()
         fake_conn = MagicMock()
-        fake_cur = MagicMock()
-        fake_cur.fetchone.return_value = None  # code_embeddings table absent
         fake_conn.__enter__ = MagicMock(return_value=fake_conn)
         fake_conn.__exit__ = MagicMock(return_value=False)
-        fake_conn.cursor.return_value.__enter__ = MagicMock(return_value=fake_cur)
-        fake_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
         store._get_conn.return_value = fake_conn
 
-        with patch.object(_mod, "_get_pg_store", return_value=store):
+        with patch.object(_mod, "_get_pg_store", return_value=store), \
+             patch.object(_mod, "hybrid_search", side_effect=_fake_hybrid_search), \
+             patch.object(_mod, "_HYBRID_SEARCH_AVAILABLE", True):
             result = _run(_mod.call_tool("amauta/search-code", {
                 "query": "test",
                 "directory": "services/",
             }))
         data = _result_json(result)
+        self.assertEqual(recorder.get("file_filter"), "services/",
+                          "directory argument must reach hybrid_search as file_filter")
         results = data.get("results", [])
+        self.assertEqual(len(results), 2, f"Expected 2 mapped rows, got: {results}")
         for r in results:
-            path = r.get("path", "")
-            self.assertTrue(
-                path.startswith("services/"),
-                f"Result path {path!r} does not start with 'services/'",
-            )
-        # At least one result expected from the two services/ rows
-        self.assertGreater(len(results), 0, "Expected at least 1 result after directory filter")
+            self.assertIn("path", r)
+            self.assertIn("text", r)
+            self.assertIn("symbol_name", r)
+            self.assertIn("score", r)
+        self.assertEqual(results[0]["path"], "services/pg_store.py")
+        self.assertEqual(results[0]["text"], "PGStore class")
+        self.assertEqual(results[0]["symbol_name"], "PGStore")
+        self.assertEqual(results[0]["score"], 0.9)
 
     def test_search_code_pg_unavailable(self):
         """amauta/search-code returns pg_unavailable when store is None."""
@@ -197,6 +213,122 @@ class TestSearchCodeTool(unittest.TestCase):
             result = _run(_mod.call_tool("amauta/search-code", {"query": "find something"}))
         data = _result_json(result)
         self.assertEqual(data.get("error"), "pg_unavailable")
+
+    def test_search_code_query_forwarded_and_ranked(self):
+        """Two different queries reach hybrid_search verbatim and produce distinct
+        results — proving search-code ranks by ITS query, not a static LIMIT probe."""
+        recorded_queries = []
+
+        def _fake_hybrid_search(query, conn, top_k=5, file_filter=None):
+            recorded_queries.append(query)
+            if query == "frobnicate widget":
+                return [{"file_path": "services/widget.py", "content": "frobnicate",
+                          "symbol_name": "frobnicate", "rrf_score": 0.8}]
+            return [{"file_path": "services/config.py", "content": "load config",
+                      "symbol_name": "load_config", "rrf_score": 0.7}]
+
+        store = _mock_store()
+        fake_conn = MagicMock()
+        fake_conn.__enter__ = MagicMock(return_value=fake_conn)
+        fake_conn.__exit__ = MagicMock(return_value=False)
+        store._get_conn.return_value = fake_conn
+
+        with patch.object(_mod, "_get_pg_store", return_value=store), \
+             patch.object(_mod, "hybrid_search", side_effect=_fake_hybrid_search), \
+             patch.object(_mod, "_HYBRID_SEARCH_AVAILABLE", True):
+            result1 = _run(_mod.call_tool("amauta/search-code", {"query": "frobnicate widget"}))
+            result2 = _run(_mod.call_tool("amauta/search-code", {"query": "load config"}))
+
+        data1 = _result_json(result1)
+        data2 = _result_json(result2)
+
+        self.assertEqual(recorded_queries, ["frobnicate widget", "load config"],
+                          "hybrid_search must receive the exact query string per call")
+        self.assertEqual(data1.get("engine"), "hybrid_rlm_chunks")
+        self.assertEqual(data2.get("engine"), "hybrid_rlm_chunks")
+        self.assertNotEqual(data1.get("results"), data2.get("results"),
+                             "Two different queries must produce two different result sets")
+        self.assertEqual(data1["results"][0]["path"], "services/widget.py")
+        self.assertEqual(data2["results"][0]["path"], "services/config.py")
+
+    def test_search_code_hybrid_raises_falls_back_to_memory(self):
+        """When hybrid_search raises, search-code falls back to memory_semantic_search
+        and reports engine=memory_fallback (never an unhandled exception)."""
+        def _raising_hybrid_search(query, conn, top_k=5, file_filter=None):
+            raise RuntimeError("hybrid boom")
+
+        known_rows = [{"path": "memory/note-1", "text": "some memory row"}]
+        store = _mock_store(memory_search_return=known_rows)
+        fake_conn = MagicMock()
+        fake_conn.__enter__ = MagicMock(return_value=fake_conn)
+        fake_conn.__exit__ = MagicMock(return_value=False)
+        store._get_conn.return_value = fake_conn
+
+        with patch.object(_mod, "_get_pg_store", return_value=store), \
+             patch.object(_mod, "hybrid_search", side_effect=_raising_hybrid_search), \
+             patch.object(_mod, "_HYBRID_SEARCH_AVAILABLE", True):
+            result = _run(_mod.call_tool("amauta/search-code", {"query": "anything"}))
+        data = _result_json(result)
+        self.assertEqual(data.get("engine"), "memory_fallback")
+        self.assertEqual(data.get("results"), known_rows)
+
+    def test_search_code_hybrid_empty_is_a_valid_answer(self):
+        """An empty hybrid_search result ([]) is a VALID terminal answer — it must
+        NOT silently fall through to memory_semantic_search."""
+        store = _mock_store(memory_search_return=[{"path": "should/not/appear", "text": "x"}])
+        fake_conn = MagicMock()
+        fake_conn.__enter__ = MagicMock(return_value=fake_conn)
+        fake_conn.__exit__ = MagicMock(return_value=False)
+        store._get_conn.return_value = fake_conn
+
+        with patch.object(_mod, "_get_pg_store", return_value=store), \
+             patch.object(_mod, "hybrid_search", return_value=[]), \
+             patch.object(_mod, "_HYBRID_SEARCH_AVAILABLE", True):
+            result = _run(_mod.call_tool("amauta/search-code", {"query": "no matches expected"}))
+        data = _result_json(result)
+        self.assertEqual(data.get("results"), [])
+        self.assertEqual(data.get("engine"), "hybrid_rlm_chunks")
+        store.memory_semantic_search.assert_not_called()
+
+    def test_no_unfiltered_select_regression(self):
+        """Structural lock on RETR-03: the dead code_embeddings probe must never
+        return, and hybrid_search delegation must remain present."""
+        with open(_MODULE_PATH) as f:
+            source = f.read()
+        self.assertNotIn("code_embeddings", source,
+                          "code_embeddings must not reappear in amauta-mcp.py")
+        self.assertIn("hybrid_search", source,
+                       "hybrid_search delegation must be present in amauta-mcp.py")
+
+    def test_hybrid_import_resolves_outside_repo_cwd(self):
+        """Subprocess proof of the Phase 60 silent-import-failure class: loading
+        amauta-mcp.py by absolute path with cwd OUTSIDE the repo must still
+        resolve _HYBRID_SEARCH_AVAILABLE to True (the sys.path fix works
+        regardless of the process's working directory)."""
+        try:
+            import mcp  # noqa: F401
+        except ImportError as e:
+            self.skipTest(f"mcp package unimportable in this venv: {e}")
+
+        script = (
+            "import importlib.util\n"
+            f"spec = importlib.util.spec_from_file_location('amauta_mcp_subproc', {_MODULE_PATH!r})\n"
+            "mod = importlib.util.module_from_spec(spec)\n"
+            "spec.loader.exec_module(mod)\n"
+            "print(mod._HYBRID_SEARCH_AVAILABLE)\n"
+        )
+        proc = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=os.path.expanduser("~"),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(
+            proc.stdout.strip(), "True",
+            f"Expected _HYBRID_SEARCH_AVAILABLE=True from subprocess with cwd outside repo. "
+            f"stdout={proc.stdout!r} stderr={proc.stderr!r}",
+        )
 
 
 class TestMemoryDistillTool(unittest.TestCase):
