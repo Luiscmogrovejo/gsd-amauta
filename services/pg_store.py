@@ -1926,12 +1926,19 @@ class PGStore:
                 metadata = None
 
         # Phase 10 LEARN-04 defense-in-depth tag governance
-        tag_result = normalize_tags(tags or [])
-        if tag_result.get("error"):
-            raise ValueError(tag_result["error"])
-        tags = tag_result.get("tags", [])
-        for w in tag_result.get("warnings", []):
-            print(f"[pg_store] {w}", file=sys.stderr)
+        # TK-1704: empty/None tag list is a valid "no tags" store, not a governance
+        # rejection — skip normalize_tags() entirely rather than calling it with []
+        # (normalize_tags([]) intentionally rejects empty input; see its own
+        # cross-runtime parity contract at line ~281 and its pinned tests).
+        if tags:
+            tag_result = normalize_tags(tags)
+            if tag_result.get("error"):
+                raise ValueError(tag_result["error"])
+            tags = tag_result.get("tags", [])
+            for w in tag_result.get("warnings", []):
+                print(f"[pg_store] {w}", file=sys.stderr)
+        else:
+            tags = []
 
         # MEM-03 AUDIT (2026-04-06): input_type="document" correct for storage path
         embedding = self.generate_embedding(text, input_type="document")
