@@ -550,6 +550,10 @@ async function cmdRpetd(useDaemon, id, flags, jsonMode) {
   if (!VALID_PHASES.has(phaseUpper)) die(`Invalid phase "${flags.phase}". Must be one of: R, P, E, T, D`);
   flags.phase = phaseUpper; // Normalize to uppercase before passing to daemon
   if (!flags.content) die('--content is required');
+  // Phase 68 MOBL-04: scrub build-log/evidence secrets BEFORE either
+  // transport (daemon POST or file-fallback) sees the content, so both
+  // inherit the scrub from this one choke point.
+  flags.content = scrubEvidence(flags.content);
   const body = { id, ...flags };
 
   let exitCode = 0;
@@ -1475,8 +1479,14 @@ async function promoteToSKB(useDaemon, taskId) {
 async function cmdNote(useDaemon, id, flags, jsonMode) {
   if (!id) die('Usage: amauta note <id> --content "..." [--agent A]');
   // amauta.py note subparser uses --content; also accept --text for backward compat
-  const noteText = flags.content || flags.text;
+  let noteText = flags.content || flags.text;
   if (!noteText) die('--content is required (also accepts --text)');
+  // Phase 68 MOBL-04: scrub build-log/evidence secrets BEFORE either
+  // transport (daemon POST or file-fallback) sees the content. Scrub the
+  // MERGED noteText (not flags.text alone) — --content is canonical and
+  // --text is only the back-compat alias, so scrubbing flags.text alone
+  // would miss every canonical --content invocation.
+  noteText = scrubEvidence(noteText);
   // Build body using --content as the canonical key for the daemon
   const body = { id, content: noteText };
   if (flags.agent) body.agent = flags.agent;
@@ -1710,6 +1720,102 @@ async function cmdDaemon(subcommand) {
   }
 
   die(`Unknown daemon subcommand: ${subcommand}`);
+}
+
+// ═══════════════════════════════════════════════════════
+// Evidence Scrub (Phase 68 MOBL-04) — Node twin of
+// services/evidence_scrub.py::scrub_text. BOTH runtimes read the SAME
+// get-shit-done/config/evidence-scrub-patterns.json registry; neither
+// hardcodes a second pattern list (single-source discipline).
+// ═══════════════════════════════════════════════════════
+
+const EVIDENCE_SCRUB_PATTERNS_ENV_OVERRIDE = 'GSD_EVIDENCE_SCRUB_PATTERNS_PATH';
+const _EVIDENCE_SCRUB_FAILURE_SENTINEL = Symbol('evidence-scrub-load-failed');
+let _evidenceScrubPatternsCache = null; // null (unloaded) | SENTINEL | compiled[]
+let _evidenceScrubWarned = false;
+
+function _warnEvidenceScrubOnce(message) {
+  if (!_evidenceScrubWarned) {
+    console.warn(`[gsd-amauta] ${message}`);
+    _evidenceScrubWarned = true;
+  }
+}
+
+/**
+ * Load + compile the shared scrub-pattern registry.
+ *
+ * Path resolution mirrors loadCapabilityCatalog() / capability_schema.py's
+ * load_capability_catalog(): env override (test/hook seam, AUTHORITATIVE
+ * when set — no fallthrough) -> repo-local candidate -> ~/.claude
+ * candidate. Caches a distinct FAILURE SENTINEL (not null) so a broken
+ * load short-circuits to "no patterns" on every subsequent call instead of
+ * re-reading (and re-failing) the file each time.
+ */
+function loadEvidenceScrubPatterns(forceReload = false) {
+  if (!forceReload) {
+    if (_evidenceScrubPatternsCache === _EVIDENCE_SCRUB_FAILURE_SENTINEL) return [];
+    if (_evidenceScrubPatternsCache !== null) return _evidenceScrubPatternsCache;
+  }
+
+  const envOverride = process.env[EVIDENCE_SCRUB_PATTERNS_ENV_OVERRIDE];
+  const candidates = envOverride
+    ? [envOverride]
+    : [
+        path.resolve(__dirname, '..', 'config', 'evidence-scrub-patterns.json'),
+        path.join(process.env.HOME || '', '.claude', 'get-shit-done', 'config', 'evidence-scrub-patterns.json'),
+      ];
+
+  for (const p of candidates) {
+    if (!p) continue;
+    try {
+      if (fs.existsSync(p)) {
+        const data = JSON.parse(fs.readFileSync(p, 'utf-8'));
+        const rawPatterns = Array.isArray(data.patterns) ? data.patterns : [];
+        const compiled = rawPatterns.map((entry) => ({
+          name: entry.name,
+          re: new RegExp(entry.regex, (entry.flags === 'i' ? 'i' : '') + 'g'),
+          replacement: entry.replacement || `[scrubbed:${entry.name}]`,
+        }));
+        _evidenceScrubPatternsCache = compiled;
+        return _evidenceScrubPatternsCache;
+      }
+    } catch {
+      // fall through to next candidate
+    }
+  }
+
+  _warnEvidenceScrubOnce(
+    'evidence-scrub-patterns.json not found in any candidate path — build-log/evidence secrets will NOT be scrubbed'
+  );
+  _evidenceScrubPatternsCache = _EVIDENCE_SCRUB_FAILURE_SENTINEL;
+  return [];
+}
+
+/**
+ * Scrub build-log/evidence secrets from text using the shared pattern
+ * registry. Returns text unchanged when GSD_EVIDENCE_SCRUB=off (kill
+ * switch) or when the registry is empty/unavailable (fail-open — a broken
+ * registry never blocks a write). Mirrors services/evidence_scrub.py's
+ * scrub_text() exactly (same pattern order, same replacement semantics)
+ * so the two runtimes produce byte-identical output — the twin-drift
+ * guard the cross-runtime parity test locks in.
+ */
+function scrubEvidence(text) {
+  if (text === null || text === undefined) return text;
+  if (process.env.GSD_EVIDENCE_SCRUB === 'off') return text;
+
+  const patterns = loadEvidenceScrubPatterns();
+  if (!patterns.length) return text;
+
+  let scrubbed = text;
+  for (const p of patterns) {
+    // Reset lastIndex — the compiled RegExp is reused (cached) across calls
+    // and carries the 'g' flag, so stale lastIndex state would otherwise
+    // corrupt subsequent replace() calls.
+    p.re.lastIndex = 0;
+    scrubbed = scrubbed.replace(p.re, p.replacement);
+  }
+  return scrubbed;
 }
 
 // ═══════════════════════════════════════════════════════
@@ -2856,5 +2962,5 @@ if (require.main === module || _isDelegatedEntry) {
 
 // Test-only exports — not used in production flow
 if (typeof module !== 'undefined' && require.main !== module) {
-  module.exports = { _checkEvidenceBlock, checkEvidenceAdvisory, _checkQaBlocks, _checkRedGreenOrder, checkSpecInheritanceAdvisory, writeGapsReport };
+  module.exports = { _checkEvidenceBlock, checkEvidenceAdvisory, _checkQaBlocks, _checkRedGreenOrder, checkSpecInheritanceAdvisory, writeGapsReport, scrubEvidence, loadEvidenceScrubPatterns };
 }
