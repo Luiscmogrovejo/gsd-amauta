@@ -7,6 +7,7 @@ Each chunk boundary is an AST node boundary -- no partial function definitions.
 
 Supported languages: Python, JavaScript, TypeScript, CJS
   (all use tree-sitter grammars confirmed present in Phase 26).
+  Phase 69 (ASTG-01/02) added Kotlin, Swift, Go, Rust, Java (mobile stack).
 Fallback: Non-code files use legacy_chunker (fixed-char split from rlm-service.py).
 
 Metadata schema per chunk:
@@ -21,7 +22,11 @@ from pathlib import Path
 log = logging.getLogger("amauta.ast_chunker")
 
 # Language targets supported by tree-sitter AST walker
-AST_CODE_EXTENSIONS = {".py", ".js", ".ts", ".tsx", ".jsx", ".cjs", ".mjs"}
+AST_CODE_EXTENSIONS = {
+    ".py", ".js", ".ts", ".tsx", ".jsx", ".cjs", ".mjs",
+    # Phase 69 (ASTG-01/02): mobile-stack grammars
+    ".kt", ".kts", ".swift", ".go", ".rs", ".java",
+}
 
 # Node types to extract as top-level symbols per language
 _PY_SYMBOL_TYPES = {
@@ -39,6 +44,92 @@ _JS_SYMBOL_TYPES = {
     "export_statement",
     "lexical_declaration",
 }
+
+# Phase 69 (ASTG-01/02): node types discovered via live-parse enumeration
+# against each installed grammar (wheels ship no node-types.json for any of
+# the 5 -- confirmed via pathlib.rglob at implementation time). See 69-01
+# R-phase evidence for the full discovery trace.
+_KT_SYMBOL_TYPES = {
+    "class_declaration",       # class / interface / data class (Kotlin unifies these)
+    "function_declaration",
+    "object_declaration",      # object singleton
+}
+_SWIFT_SYMBOL_TYPES = {
+    "class_declaration",              # class / struct / enum / actor (distinguished by
+                                       # a 'declaration_kind' field -- verified live)
+    "function_declaration",
+    "protocol_declaration",
+    "protocol_function_declaration",  # protocol method signature (no body)
+}
+_GO_SYMBOL_TYPES = {
+    "function_declaration",
+    "method_declaration",  # has a 'receiver' field; top-level, no class-body recursion
+    "type_spec",           # the actual named-type node; type_declaration is a
+                            # transparent wrapper with no fields of its own (verified)
+}
+_RS_SYMBOL_TYPES = {
+    "function_item",
+    "struct_item",
+    "enum_item",
+    "trait_item",
+    "impl_item",               # NOTE: has no 'name' field -- only 'type'/'trait'
+    "function_signature_item",  # trait method signature (no body)
+}
+_JAVA_SYMBOL_TYPES = {
+    "class_declaration",
+    "interface_declaration",
+    "enum_declaration",
+    "record_declaration",
+    "method_declaration",
+}
+
+# Node types whose symbol_type resolves to "class" when NOT nested inside a
+# container body (i.e. class_name is None). Python/JavaScript/TypeScript keep
+# the original "class" in node.type substring check (byte-identical behavior);
+# this dict covers only the 5 new languages, which lack "class" in their type
+# names (e.g. Rust's struct_item/trait_item/impl_item).
+_CLASS_LIKE_TYPES_BY_LANG = {
+    "kotlin": {"class_declaration", "object_declaration"},
+    "swift": {"class_declaration", "protocol_declaration"},
+    "go": {"type_spec"},
+    "rust": {"struct_item", "enum_item", "trait_item", "impl_item"},
+    "java": {"class_declaration", "interface_declaration", "enum_declaration", "record_declaration"},
+}
+
+# Transparent pass-through container node types: recurse into children without
+# emitting a chunk for the wrapper itself. Go's type_declaration wraps one or
+# more type_spec children and carries no fields of its own (verified live).
+_TRANSPARENT_TYPES_BY_LANG = {
+    "go": {"type_declaration"},
+}
+
+# Dict dispatch replacing the binary python/else-javascript ternary.
+# python and typescript/javascript entries are unchanged from Phase 27/28.
+_SYMBOL_TYPES_BY_LANG = {
+    "python": _PY_SYMBOL_TYPES,
+    "javascript": _JS_SYMBOL_TYPES,
+    "typescript": _JS_SYMBOL_TYPES,
+    "kotlin": _KT_SYMBOL_TYPES,
+    "swift": _SWIFT_SYMBOL_TYPES,
+    "go": _GO_SYMBOL_TYPES,
+    "rust": _RS_SYMBOL_TYPES,
+    "java": _JAVA_SYMBOL_TYPES,
+}
+
+
+def _is_class_like(node_type: str, lang: str) -> bool:
+    """
+    Return True if this node type should map to symbol_type "class" when
+    found at top level (not nested inside another symbol's container body).
+
+    Python/JavaScript/TypeScript preserve the original substring check
+    exactly (byte-identical behavior). The 5 mobile-stack languages use an
+    explicit discovered node-type set instead, since none of their class-like
+    node type names contain the substring "class" (e.g. Rust's struct_item).
+    """
+    if lang in ("python", "javascript", "typescript"):
+        return "class" in node_type
+    return node_type in _CLASS_LIKE_TYPES_BY_LANG.get(lang, frozenset())
 
 
 def is_code_file(filepath: str) -> bool:
@@ -73,6 +164,26 @@ def _load_parser(ext: str):
             import tree_sitter_typescript as ts_lang
             language = Language(ts_lang.language_tsx())
             lang_name = "typescript"
+        elif ext in {".kt", ".kts"}:
+            import tree_sitter_kotlin as ts_lang
+            language = Language(ts_lang.language())
+            lang_name = "kotlin"
+        elif ext == ".swift":
+            import tree_sitter_swift as ts_lang
+            language = Language(ts_lang.language())
+            lang_name = "swift"
+        elif ext == ".go":
+            import tree_sitter_go as ts_lang
+            language = Language(ts_lang.language())
+            lang_name = "go"
+        elif ext == ".rs":
+            import tree_sitter_rust as ts_lang
+            language = Language(ts_lang.language())
+            lang_name = "rust"
+        elif ext == ".java":
+            import tree_sitter_java as ts_lang
+            language = Language(ts_lang.language())
+            lang_name = "java"
         else:
             return None, None
     except ImportError as e:
@@ -94,11 +205,26 @@ def _load_parser(ext: str):
 def _extract_symbol_name(node, source_bytes: bytes) -> str:
     """
     Extract the symbol name from an AST node.
-    Looks for an 'identifier' or 'name' child node.
-    Falls back to a position-based placeholder for anonymous nodes.
+
+    Tries the grammar's 'name' field first (works across all supported
+    languages -- verified live for python/js/kotlin/swift/go/rust/java).
+    Rust's impl_item is a documented exception: it carries no 'name' field,
+    only 'type' (and optionally 'trait') -- verified live (ambient-state
+    flag). Falls back to the original child-type scan, extended with the
+    identifier node types discovered for the 5 mobile-stack grammars, then a
+    position-based placeholder for anonymous nodes (unchanged from Phase 27).
     """
+    name_node = node.child_by_field_name("name")
+    if name_node is not None:
+        return source_bytes[name_node.start_byte:name_node.end_byte].decode("utf-8", errors="replace")
+
+    if node.type == "impl_item":
+        type_node = node.child_by_field_name("type")
+        if type_node is not None:
+            return source_bytes[type_node.start_byte:type_node.end_byte].decode("utf-8", errors="replace")
+
     for child in node.children:
-        if child.type in ("identifier", "name"):
+        if child.type in ("identifier", "name", "simple_identifier", "type_identifier", "field_identifier"):
             return source_bytes[child.start_byte:child.end_byte].decode("utf-8", errors="replace")
     # Arrow functions and anonymous expressions: use position
     return f"<{node.type}@L{node.start_point[0] + 1}>"
@@ -166,7 +292,7 @@ def _extract_top_level_symbols(root_node, source_bytes: bytes, lang: str, filepa
     Each chunk is a complete AST-node-bounded symbol -- no partial definitions.
     """
     chunks = []
-    symbol_types = _PY_SYMBOL_TYPES if lang == "python" else _JS_SYMBOL_TYPES
+    symbol_types = _SYMBOL_TYPES_BY_LANG.get(lang, _JS_SYMBOL_TYPES)
 
     def walk_top(node, class_name=None):
         if node.type in symbol_types:
@@ -184,8 +310,14 @@ def _extract_top_level_symbols(root_node, source_bytes: bytes, lang: str, filepa
             if class_name:
                 full_name = f"{class_name}.{name}"
                 sym_type = "method"
+            elif lang == "go" and inner_node.type == "method_declaration":
+                # Go receiver methods are top-level (no class-body recursion);
+                # a method_declaration always represents a method, not a
+                # standalone function -- verified live (has a 'receiver' field).
+                sym_type = "method"
+                full_name = name
             else:
-                if "class" in inner_node.type:
+                if _is_class_like(inner_node.type, lang):
                     sym_type = "class"
                     full_name = name
                 else:
@@ -215,10 +347,17 @@ def _extract_top_level_symbols(root_node, source_bytes: bytes, lang: str, filepa
             }
             chunks.append(chunk)
 
-            # Recurse into class bodies to find methods as separate chunks
-            next_class = full_name if "class" in inner_node.type else class_name
+            # Recurse into class bodies to find methods as separate chunks.
+            # Container types extended (Phase 69): declaration_list (Rust
+            # impl/trait bodies), protocol_body + enum_class_body (Swift),
+            # interface_body + enum_body (Java) -- all verified live.
+            next_class = full_name if _is_class_like(inner_node.type, lang) else class_name
             for child in inner_node.children:
-                if child.type in ("block", "class_body", "statement_block"):
+                if child.type in (
+                    "block", "class_body", "statement_block",
+                    "declaration_list", "protocol_body", "enum_class_body",
+                    "interface_body", "enum_body",
+                ):
                     for grandchild in child.children:
                         walk_top(grandchild, class_name=next_class)
 
@@ -226,6 +365,13 @@ def _extract_top_level_symbols(root_node, source_bytes: bytes, lang: str, filepa
             # Only recurse at module/program level
             for child in node.children:
                 walk_top(child)
+
+        elif node.type in _TRANSPARENT_TYPES_BY_LANG.get(lang, frozenset()):
+            # Transparent pass-through wrapper (Go's type_declaration wraps
+            # one or more type_spec children and carries no fields of its
+            # own -- verified live). No chunk emitted for the wrapper itself.
+            for child in node.children:
+                walk_top(child, class_name=class_name)
 
     walk_top(root_node)
     return chunks
