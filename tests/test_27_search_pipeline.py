@@ -108,11 +108,15 @@ def test_rlm06_graph_key_prefix():
 
 
 def test_rlm02_rlm_service_deprecated_markers():
-    """rlm-service.py must have >= 2 DEPRECATED Phase 27 markers."""
+    """Phase 65 / RETR-04: rlm-service.py has exactly 1 DEPRECATED Phase 27
+    marker (the BM25 fallback scorer) and the retired mtime-based index no
+    longer appears anywhere in the source."""
     import pathlib
     src = pathlib.Path('services/rlm-service.py').read_text()
     count = src.count('DEPRECATED Phase 27')
-    assert count >= 2, f'Expected >= 2 DEPRECATED Phase 27 markers, got {count}'
+    assert count == 1, f'Expected exactly 1 DEPRECATED Phase 27 marker, got {count}'
+    assert 'MtimeIndex' not in src, 'MtimeIndex must not appear in source -- SHA-256 is the single staleness authority'
+    assert 'MTIME_INDEX' not in src, 'MTIME_INDEX must not appear in source -- SHA-256 is the single staleness authority'
 
 
 def test_rlm02_rlm_service_wires_pipeline():

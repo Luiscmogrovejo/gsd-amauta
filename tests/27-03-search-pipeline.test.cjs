@@ -55,11 +55,12 @@ test('27-03: rlm_graph.py has expand_chunks_with_graph and get_hub_files', () =>
   assert.ok(src.includes('def rebuild_graph'), 'rebuild_graph required');
 });
 
-// RLM-02: rlm-service.py transformation checks
-test('27-03: rlm-service.py marks BM25 scorer and MtimeIndex as DEPRECATED', () => {
+// RLM-02 / Phase 65 RETR-04: rlm-service.py transformation checks
+test('27-03: rlm-service.py marks BM25 scorer as DEPRECATED, mtime index fully retired', () => {
   const src = fs.readFileSync('services/rlm-service.py', 'utf8');
   const deprecatedCount = (src.match(/DEPRECATED Phase 27/g) || []).length;
-  assert.ok(deprecatedCount >= 2, `Expected >= 2 DEPRECATED markers, got ${deprecatedCount}`);
+  assert.strictEqual(deprecatedCount, 1, `Expected exactly 1 DEPRECATED marker (BM25 fallback scorer), got ${deprecatedCount}`);
+  assert.ok(!/MtimeIndex/.test(src), 'MtimeIndex must not appear in source -- SHA-256 is the single staleness authority');
 });
 
 test('27-03: rlm-service.py /search uses hybrid_rrf_reranked engine', () => {
