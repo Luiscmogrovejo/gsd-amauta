@@ -28,6 +28,7 @@ import math
 import os
 import re
 import signal
+import threading
 
 # ── Load .env file (project root) ─────────────────────────────────────────────
 def _load_dotenv():
@@ -242,6 +243,42 @@ def _trigger_lazy_ingestion(paths: list):
                 ingest_directory(path, pg_conn)
     except Exception as e:
         log.warning("lazy_ingestion_failed error=%s — continuing with in-memory BM25", str(e))
+    finally:
+        try:
+            pg_conn.close()
+        except Exception:
+            pass
+
+
+def _rebuild_graph_safe():
+    """
+    Guarded dependency-graph rebuild (RETR-05). Wired into service startup
+    (non-blocking daemon thread), /reindex completion, and the /query hybrid
+    branch when new chunks were ingested. NEVER raises -- any failure is
+    logged and swallowed so a graph rebuild can never break a request or
+    startup.
+
+    Returns the rebuild_graph() stats dict on success, or None (PG
+    unavailable or rebuild failed).
+    """
+    try:
+        from services.rlm_graph import rebuild_graph, _get_cache_client
+    except ImportError:
+        from rlm_graph import rebuild_graph, _get_cache_client
+
+    pg_conn = _get_pg_conn()
+    if pg_conn is None:
+        return None
+    try:
+        stats = rebuild_graph(pg_conn, _get_cache_client())
+        log.info(
+            "graph_rebuilt nodes=%d edges=%d dependents_updated=%d",
+            stats.get("nodes", 0), stats.get("edges", 0), stats.get("dependents_updated", 0),
+        )
+        return stats
+    except Exception as e:
+        log.warning("graph_rebuild_failed error=%s", str(e))
+        return None
     finally:
         try:
             pg_conn.close()
@@ -1066,10 +1103,12 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
             try:
                 if os.path.isfile(target_path):
                     result = ingest_file(target_path, pg_conn, force=force)
-                    self._send_json({"ok": True, "result": result})
+                    graph_stats = _rebuild_graph_safe()
+                    self._send_json({"ok": True, "result": result, "graph": graph_stats})
                 else:
                     stats = ingest_directory(target_path, pg_conn, force=force)
-                    self._send_json({"ok": True, "stats": stats})
+                    graph_stats = _rebuild_graph_safe()
+                    self._send_json({"ok": True, "stats": stats, "graph": graph_stats})
             finally:
                 pg_conn.close()
         except Exception as e:
@@ -1182,6 +1221,10 @@ def start_server(foreground=False):
 
     server = ThreadedHTTPServer((HOST, PORT), RLMHandler)
     PID_FILE.write_text(str(os.getpid()))
+
+    # RETR-05: rebuild the dependency graph on startup, non-blocking (never
+    # delays serving requests on PG cold-start/unavailability).
+    threading.Thread(target=_rebuild_graph_safe, daemon=True).start()
 
     def shutdown_handler(signum, frame):
         # Two bugs to avoid here:
