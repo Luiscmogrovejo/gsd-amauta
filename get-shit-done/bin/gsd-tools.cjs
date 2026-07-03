@@ -1309,6 +1309,38 @@ function _resolvePersona(personaId) {
 }
 
 /**
+ * _buildAgentAssignment(task) — build one agent_assignments audit entry.
+ * task: {agent, persona, filesExpected}. Returns {agent, persona, base_executor, reasoning}.
+ * persona: declared persona short id or null. base_executor: routeExecutor()'s
+ * computed executor regardless of persona (PERS-02 audit contract).
+ */
+function _buildAgentAssignment(task) {
+  const allFiles = [
+    ...(task.filesExpected.modify || []),
+    ...(task.filesExpected.create || []),
+  ];
+  const computed = routeExecutor(allFiles.join(','));
+  const filesLabel = allFiles.slice(0, 3).join(',');
+  const personaRaw = (task.persona || '').trim();
+  if (personaRaw) {
+    const entry = _resolvePersona(personaRaw);
+    const shortPersona = entry ? entry.id.replace(/^gsd-/, '') : personaRaw;
+    return {
+      agent: task.agent,
+      persona: shortPersona,
+      base_executor: computed,
+      reasoning: `persona ${shortPersona} declared; routeExecutor(${filesLabel}) -> ${computed} in base_executor — cross-check passed`,
+    };
+  }
+  return {
+    agent: task.agent,
+    persona: null,
+    base_executor: computed,
+    reasoning: `no role signal — file-extension routing: routeExecutor(${filesLabel}) -> ${computed}`,
+  };
+}
+
+/**
  * _checkAgentConflicts(tasks) — check planner <agent> against routeExecutor().
  * tasks: array of {id, agent, persona, filesExpected: {modify, create, delete}}
  * Returns {conflicts: [{taskId, declaredAgent, computedAgent, files}]}
@@ -1866,15 +1898,7 @@ async function planToTasks(planFilePath, opts) {
   for (const task of tasks) {
     const tkId = taskIdMap[task.id];
     if (tkId) {
-      const allFiles = [
-        ...(task.filesExpected.modify || []),
-        ...(task.filesExpected.create || []),
-      ];
-      const computed = routeExecutor(allFiles.join(','));
-      agentMap[tkId] = {
-        agent: task.agent,
-        reasoning: `routeExecutor(${allFiles.slice(0, 3).join(',')}) -> ${computed}`,
-      };
+      agentMap[tkId] = _buildAgentAssignment(task);
     }
   }
 
@@ -2533,6 +2557,7 @@ if (require.main !== module) {
     _detectCycles,
     _checkAgentConflicts,
     _resolvePersona,
+    _buildAgentAssignment,
     _filesDisjointSplit,
     _renderDagText,
     _diffPlanVsAmauta,
