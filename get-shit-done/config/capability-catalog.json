@@ -1,0 +1,39 @@
+{
+  "_comment": "Capability catalog (TOOL-01) — versioned registry of systems the harness may reach. Read by BOTH gsd-tools.cjs (Node) and capability_schema.py (Python). Entry 'name' is a STABLE ID: Phase 67's PreToolUse hook consumes this catalog as its allowlist — never rename/remove a name without a catalog_version bump. Auth stores method + env-var NAME only, never secret values. Author entries via 'gsd-amauta capability add'; 'gsd-amauta capability audit' catches hand-edit schema drift.",
+  "catalog_version": "1.0",
+  "entries": [
+    {
+      "name": "amauta-daemon-http",
+      "kind": "curl-endpoint",
+      "target": "http://127.0.0.1:18799",
+      "auth": { "method": "none" },
+      "security_class": "read-write",
+      "owner": "operator",
+      "grants": ["gsd-executor-*"],
+      "added_at": "2026-07-03",
+      "notes": "Local Amauta daemon HTTP API (tasks, memory, audit). Port override: GSD_AMAUTA_PORT."
+    },
+    {
+      "name": "amauta-postgres",
+      "kind": "pg",
+      "target": "GSD_POSTGRES_URL",
+      "auth": { "method": "dsn-env", "env": "GSD_POSTGRES_URL" },
+      "security_class": "secret-bearing",
+      "owner": "operator",
+      "grants": ["gsd-executor-backend", "gsd-executor-data"],
+      "added_at": "2026-07-03",
+      "notes": "Primary PG store. DSN carries credentials — responses are evidence-scrub targets (MOBL-04 foundation)."
+    },
+    {
+      "name": "amauta-valkey",
+      "kind": "redis",
+      "target": "GSD_REDIS_URL",
+      "auth": { "method": "dsn-env", "env": "GSD_REDIS_URL" },
+      "security_class": "read-write",
+      "owner": "operator",
+      "grants": ["gsd-executor-backend", "gsd-executor-infra"],
+      "added_at": "2026-07-03",
+      "notes": "Valkey/Redis — circuit breakers, semantic cache. Default redis://127.0.0.1:6379/0."
+    }
+  ]
+}
