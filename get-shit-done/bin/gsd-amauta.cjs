@@ -43,6 +43,12 @@ const { execFileSync, spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
+// Phase 62 TEL-02: fire-and-forget telemetry emit. Fail-open — a
+// missing/broken telemetry module must never change CLI behavior.
+function _telemetryEmit(eventType, payload) {
+  try { require('./lib/telemetry.cjs').emit(eventType, payload); } catch { /* fail-open */ }
+}
+
 // ── Load .env file (skipped in test mode) ─────────────
 (function loadDotenv() {
   if (process.env.GSD_AMAUTA_NO_AUTO_START) return;
@@ -1211,6 +1217,7 @@ async function cmdValidate(useDaemon, id, flags, jsonMode) {
       process.stderr.write(`ERROR: failed to write gaps report: ${err.message}\n`);
       return 1;
     }
+    _telemetryEmit('validator_verdict', { task_id: id, verdict: 'gaps', gate_failures: 0, gaps: gaps.length });
     return 2;
   }
 
@@ -1226,6 +1233,7 @@ async function cmdValidate(useDaemon, id, flags, jsonMode) {
       } else {
         console.error(msg);
       }
+      _telemetryEmit('validator_verdict', { task_id: id, verdict: 'fail', gate_failures: gateFailures.length, gaps: 0 });
       return 1;
     }
   }
@@ -1304,6 +1312,7 @@ async function cmdValidate(useDaemon, id, flags, jsonMode) {
       }).catch(e => process.stderr.write(`[best-effort] validation audit write failed: ${e.message || e}\n`));
     }
 
+    _telemetryEmit('validator_verdict', { task_id: id, verdict: flags.pass_result ? 'pass' : 'fail', gate_failures: 0, gaps: 0 });
     return data.exit_code || 0;
   }
   const args = ['validate', id];
@@ -1335,6 +1344,7 @@ async function cmdValidate(useDaemon, id, flags, jsonMode) {
     } catch { /* best-effort */ }
   }
 
+  _telemetryEmit('validator_verdict', { task_id: id, verdict: flags.pass_result ? 'pass' : 'fail', gate_failures: 0, gaps: 0 });
   return result.exit_code;
 }
 
@@ -2783,6 +2793,11 @@ const _isDelegatedEntry = process.argv[1] &&
 
 if (require.main === module || _isDelegatedEntry) {
   main().catch((err) => {
+    _telemetryEmit('error_class', {
+      error_class: (err && err.constructor && err.constructor.name) || 'Error',
+      code: (err && err.code) || null,
+      verb: process.argv[2] || null,
+    });
     process.stderr.write(`FATAL: ${err.message}\n`);
     process.exit(1);
   });
