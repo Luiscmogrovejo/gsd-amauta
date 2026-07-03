@@ -20,8 +20,16 @@ Frozen Markdown template (load-bearing strings — grep-asserted by tests):
     ### Recent memory for <agent_name>
     ### Blackboard findings
     ### Recent activity
+    ### Capability reach
     ### Security alerts (24h)
     ---
+
+Phase 60 TOOL-02/TOOL-03: "### Capability reach" surfaces catalog entries
+granted to the hydrated agent (see _capability_reach_lines below). It sits
+between "### Recent activity" and "### Security alerts (24h)" and is
+dropped from the truncation ladder at the same point Recent activity is
+dropped (see render_markdown docstring) so the memory-only floor is
+preserved under tight budgets.
 
 DO NOT MODIFY services/agent_hydrator.py — this file is the thin entry-point.
 """
@@ -76,6 +84,39 @@ def _resolve_agent_path(agent_name: str):
     return None
 
 
+# ── Capability reach (Phase 60 TOOL-02/TOOL-03) ────────────────────────────────
+
+def _capability_reach_lines(agent_name: str):
+    """Return Markdown bullet lines for catalog entries granted to agent_name.
+
+    Env-var NAMES only — auth METHOD values and env-var NAMES are surfaced;
+    secret values are never read or printed. Wrapped in try/except returning
+    [] — hydration must never fail because the capability catalog layer is
+    broken (fail-open, same discipline as the rest of this module).
+    """
+    try:
+        from services.capability_schema import load_capability_catalog
+        from services.capability_access import resolve_grants, _executor_agents
+
+        catalog = load_capability_catalog()
+        executors = _executor_agents()
+        lines = []
+        for entry in catalog.get("entries", []):
+            if agent_name in resolve_grants(entry, executors):
+                auth = entry.get("auth", {}) or {}
+                auth_txt = auth.get("method", "none")
+                if auth.get("env"):
+                    auth_txt += f" env={auth['env']}"
+                lines.append(
+                    f"- {entry.get('name')} ({entry.get('kind')}, "
+                    f"{entry.get('security_class')}) -> {entry.get('target')} "
+                    f"[auth: {auth_txt}]"
+                )
+        return lines
+    except Exception:
+        return []
+
+
 # ── Markdown renderer ──────────────────────────────────────────────────────────
 
 def render_markdown(payload: dict, budget: int = 800, terse: bool = False) -> str:
@@ -99,6 +140,10 @@ def render_markdown(payload: dict, budget: int = 800, terse: bool = False) -> st
         Last spawn: <timestamp> · Last task: <task_id> · Last verdict: <pass|fail|n/a>
         _(unavailable — Valkey not reachable)_
 
+        ### Capability reach
+        - <entry name> (<kind>, <security_class>) -> <target> [auth: <method> env=<ENV_NAME>]
+        - _(omitted entirely when the agent has no grants)_
+
         ### Security alerts (24h)
         - [<id>] <severity> · <finding_type> · <summary>
         - _(no security alerts in last 24h)_
@@ -106,7 +151,10 @@ def render_markdown(payload: dict, budget: int = 800, terse: bool = False) -> st
         ---
 
     Token budget enforcement (rough: chars/4 ≈ tokens):
-    Truncation order: Security alerts first, then Recent activity, then Blackboard.
+    Truncation order: Security alerts first, then Recent activity AND
+    Capability reach together (Phase 60 TOOL-02/TOOL-03 — dropped at the
+    same tier as Recent activity so the memory-only floor is preserved),
+    then Blackboard.
     NEVER truncate ## Current context heading or the header line.
 
     Args:
@@ -184,6 +232,10 @@ def render_markdown(payload: dict, budget: int = 800, terse: bool = False) -> st
             f"· Last verdict: {last_verdict}"
         )
 
+    # ── Section 3b: Capability reach (Phase 60 TOOL-02/TOOL-03) ─────────────────
+    cap_lines = _capability_reach_lines(agent_name)
+    cap_body = "\n".join(cap_lines)
+
     # ── Section 4: Security alerts ─────────────────────────────────────────────
     sec_status = sources_status.get("security", "unavailable")
     if sec_status == "unavailable":
@@ -201,13 +253,16 @@ def render_markdown(payload: dict, budget: int = 800, terse: bool = False) -> st
         sec_body = "\n".join(lines)
 
     # ── Assemble full block ────────────────────────────────────────────────────
-    def _build_block(include_security: bool, include_activity: bool, include_blackboard: bool) -> str:
+    def _build_block(include_security: bool, include_activity: bool, include_blackboard: bool,
+                      include_capability: bool = True) -> str:
         parts = ["## Current context", "", header_line, ""]
         parts += [f"### Recent memory for {agent_name}", mem_body, ""]
         if include_blackboard:
             parts += ["### Blackboard findings", bb_body, ""]
         if include_activity:
             parts += ["### Recent activity", activity_body, ""]
+        if include_capability and cap_lines:
+            parts += ["### Capability reach", cap_body, ""]
         if include_security:
             parts += ["### Security alerts (24h)", sec_body, ""]
         parts += ["---"]
@@ -218,6 +273,7 @@ def render_markdown(payload: dict, budget: int = 800, terse: bool = False) -> st
         include_security=True,
         include_activity=True,
         include_blackboard=True,
+        include_capability=True,
     )
 
     # Token budget enforcement: chars/4 ≈ tokens (rough estimate)
@@ -227,18 +283,23 @@ def render_markdown(payload: dict, budget: int = 800, terse: bool = False) -> st
     if _token_estimate(full_block) <= budget:
         return full_block
 
-    # Truncate security first
-    no_sec = _build_block(include_security=False, include_activity=True, include_blackboard=True)
+    # Truncate security first (capability reach unchanged — step 2)
+    no_sec = _build_block(include_security=False, include_activity=True, include_blackboard=True,
+                           include_capability=True)
     if _token_estimate(no_sec) <= budget:
         return no_sec
 
-    # Truncate activity next
-    no_sec_act = _build_block(include_security=False, include_activity=False, include_blackboard=True)
+    # Truncate activity next — capability reach drops at the SAME tier as
+    # Recent activity (Phase 60 TOOL-02/TOOL-03), preserving the memory-only
+    # floor at the last-resort stage below.
+    no_sec_act = _build_block(include_security=False, include_activity=False, include_blackboard=True,
+                               include_capability=False)
     if _token_estimate(no_sec_act) <= budget:
         return no_sec_act
 
     # Truncate blackboard last resort
-    no_bb = _build_block(include_security=False, include_activity=False, include_blackboard=False)
+    no_bb = _build_block(include_security=False, include_activity=False, include_blackboard=False,
+                          include_capability=False)
     return no_bb
 
 
