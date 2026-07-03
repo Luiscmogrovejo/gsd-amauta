@@ -1,0 +1,60 @@
+{
+  "_comment": "Phase 68 MOBL-04 single-sourced scrub-pattern registry. Read by BOTH runtimes: services/evidence_scrub.py::load_patterns() (Python) and scrubEvidence() in get-shit-done/bin/gsd-amauta.cjs (Node). Regexes are restricted to the JS-RegExp/Python-re COMMON dialect -- no variable-width backward assertions, no unicode-property escapes, no possessive quantifiers -- so the cross-runtime parity test can assert byte-identical output. Replacement format is frozen: '[scrubbed:<name>]', greppable and diffable. Extend this list additively; never remove/rename a name without a scrub_version bump (mirrors the capability-catalog.json versioning discipline).",
+  "scrub_version": "1.0",
+  "patterns": [
+    {
+      "name": "apple-signing-identity",
+      "regex": "(iPhone|Mac|Apple) (Distribution|Developer|Application|Installer)(: )?[^()\\n]{0,100}\\([A-Z0-9]{10}\\)",
+      "flags": "",
+      "replacement": "[scrubbed:apple-signing-identity]"
+    },
+    {
+      "name": "provisioning-profile",
+      "regex": "provisioning profile[^\\n(]{0,120}\\([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\)",
+      "flags": "i",
+      "replacement": "[scrubbed:provisioning-profile]"
+    },
+    {
+      "name": "keystore-password",
+      "regex": "(storePassword|keyPassword|-Pandroid\\.injected\\.signing\\.(store|key)\\.password)\\s*=\\s*[^\\s]+",
+      "flags": "i",
+      "replacement": "[scrubbed:keystore-password]"
+    },
+    {
+      "name": "github-token",
+      "regex": "(ghp_[A-Za-z0-9]{36,255}|github_pat_[A-Za-z0-9_]{20,255})",
+      "flags": "",
+      "replacement": "[scrubbed:github-token]"
+    },
+    {
+      "name": "slack-token",
+      "regex": "xox[baprs]-[A-Za-z0-9-]{10,72}",
+      "flags": "",
+      "replacement": "[scrubbed:slack-token]"
+    },
+    {
+      "name": "aws-access-key",
+      "regex": "AKIA[0-9A-Z]{16}",
+      "flags": "",
+      "replacement": "[scrubbed:aws-access-key]"
+    },
+    {
+      "name": "bearer-token",
+      "regex": "Bearer\\s+[A-Za-z0-9\\-_.=]{10,500}",
+      "flags": "i",
+      "replacement": "[scrubbed:bearer-token]"
+    },
+    {
+      "name": "generic-api-key",
+      "regex": "(api[_-]?key|apikey|access[_-]?token|secret)[\"']?\\s*[:=]\\s*[\"']?[A-Za-z0-9_\\-]{12,}",
+      "flags": "i",
+      "replacement": "[scrubbed:generic-api-key]"
+    },
+    {
+      "name": "postgres-dsn",
+      "regex": "postgres(ql)?://[^@/\\s]+@",
+      "flags": "i",
+      "replacement": "[scrubbed:postgres-dsn]"
+    }
+  ]
+}
