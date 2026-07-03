@@ -16,6 +16,30 @@ const os = require('os');
 const { spawn } = require('child_process');
 
 const HOOK_COMMON_PATH = path.resolve(__dirname, '../hooks/lib/hook-common.cjs');
+const hookCommon = require(HOOK_COMMON_PATH);
+
+test('67-01-04: resolveMode() — off/block pass through, unset AND garbage values both resolve to warn', () => {
+  const original = process.env.GSD_HOOKS_ENFORCE;
+  try {
+    delete process.env.GSD_HOOKS_ENFORCE;
+    assert.equal(hookCommon.resolveMode(), 'warn', 'unset must resolve to warn');
+
+    process.env.GSD_HOOKS_ENFORCE = 'banana';
+    assert.equal(hookCommon.resolveMode(), 'warn', 'garbage value must resolve to warn, never block');
+
+    process.env.GSD_HOOKS_ENFORCE = '';
+    assert.equal(hookCommon.resolveMode(), 'warn', 'empty string must resolve to warn');
+
+    process.env.GSD_HOOKS_ENFORCE = 'block';
+    assert.equal(hookCommon.resolveMode(), 'block');
+
+    process.env.GSD_HOOKS_ENFORCE = 'off';
+    assert.equal(hookCommon.resolveMode(), 'off');
+  } finally {
+    if (original === undefined) delete process.env.GSD_HOOKS_ENFORCE;
+    else process.env.GSD_HOOKS_ENFORCE = original;
+  }
+});
 
 function freshTmpDir(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
