@@ -1530,6 +1530,35 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": _safe_error(e)}, 500)
             return
 
+        # ─── Capability catalog GET routes (Phase 60 TOOL-02/TOOL-03) ──
+        if path == "/api/capability/list":
+            try:
+                from services.capability_schema import load_capability_catalog, validate_catalog
+                catalog = load_capability_catalog()
+                try:
+                    validate_catalog(dict(catalog))
+                except ValueError as ve:
+                    self._send_json({"error": "capability_catalog_invalid", "detail": str(ve)}, 500)
+                    return
+                self._send_json({
+                    "catalog_version": catalog.get("catalog_version"),
+                    "entries": catalog.get("entries", []),
+                    "count": len(catalog.get("entries", [])),
+                })
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
+        if path == "/api/capability/audit":
+            try:
+                from services.capability_access import audit_diff
+                store = _get_store()   # may be None — audit_diff degrades to declared-only
+                result = audit_diff(store=store)
+                self._send_json(result)   # HTTP 200 either way; 'drift' bool drives CLI exit code
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
         # ─── Validation GET routes (PG or SQLite) ──────
         if path.startswith("/api/validation/"):
             store = _get_store()
@@ -2498,6 +2527,54 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     metadata=body.get("metadata"),
                 )
                 self._send_json({"id": row_id, "logged": True})
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
+        # ─── Capability access POST route (Phase 60 TOOL-02/TOOL-03) ──
+        # Note the deliberate contrast with /api/audit/log above: that route
+        # 503s on no-store; THIS route must not (TOOL-03 degraded-mode
+        # guarantee — check_access/log_access are fail-open).
+        if path == "/api/capability/access":
+            entry_name = body.get("entry")
+            agent_id = body.get("agent_id")
+            if not entry_name or not agent_id:
+                self._send_json({"error": "entry and agent_id are required"}, 400)
+                return
+            try:
+                from services.capability_access import check_access, log_access, flush_buffer, get_enforce_mode
+                store = _get_store()   # None is FINE here — log_access buffers; do NOT 503
+                if store:
+                    flush_buffer(store)   # flush-on-recovery; fail-open inside
+                result = check_access(entry_name, agent_id, confirm=bool(body.get("confirm")))
+                entry = result.get("entry") or {}
+                if result["outcome"] != "skipped_off":
+                    logged = log_access(
+                        store, agent_id, entry_name,
+                        entry.get("target", entry_name),
+                        entry.get("security_class", "unknown"),
+                        result["outcome"], task_id=body.get("task_id"),
+                        enforce_mode=result["enforce_mode"],
+                    )
+                else:
+                    logged = {"logged": False}
+                resp = {
+                    "allowed": result["allowed"], "outcome": result["outcome"],
+                    "enforce_mode": result["enforce_mode"], **logged,
+                }
+                if result.get("code"):
+                    resp["code"] = result["code"]
+                if result.get("env"):
+                    resp["env"] = result["env"]
+                if result.get("warning"):
+                    resp["warning"] = result["warning"]
+                if result["allowed"] and entry:
+                    resp["entry"] = {
+                        "name": entry["name"], "kind": entry["kind"],
+                        "target": entry["target"], "auth": entry["auth"],
+                        "security_class": entry["security_class"],
+                    }
+                self._send_json(resp)
             except Exception as e:
                 self._send_json({"error": _safe_error(e)}, 500)
             return
