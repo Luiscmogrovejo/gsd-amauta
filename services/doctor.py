@@ -166,6 +166,37 @@ try:
 except Exception as e:
     row(WARN, "skills", f"Check error: {e}")
 
+# ── Check 9: Mobile toolchain (MOBL-03) ──────────────────────────────────────
+try:
+    repo_root_str = str(REPO_ROOT)
+    if repo_root_str not in sys.path:
+        sys.path.insert(0, repo_root_str)
+    try:
+        from services.mobile_toolchain import detect_all
+    except ImportError:
+        import mobile_toolchain
+        detect_all = mobile_toolchain.detect_all
+
+    _mobile_result = detect_all()
+
+    _ios = _mobile_result["ios"]
+    _ios_outcome = _ios["outcome"]
+    _ios_detail = f"outcome={_ios_outcome}"
+    if _ios_outcome != "full":
+        _ios_detail += f" | {_ios['skip_reason']}"
+    row(OK if _ios_outcome == "full" else WARN, "mobile-ios", _ios_detail)
+
+    _android = _mobile_result["android"]
+    _android_outcome = _android["outcome"]
+    _android_detail = f"outcome={_android_outcome}"
+    if _android_outcome != "full":
+        _android_detail += f" | {_android['skip_reason']}"
+    row(OK if _android_outcome == "full" else WARN, "mobile-android", _android_detail)
+except ImportError as e:
+    row(WARN, "mobile", f"mobile_toolchain unavailable: {e}")
+except Exception as e:
+    row(WARN, "mobile", f"Check error: {e}")
+
 # ── Render table ──────────────────────────────────────────────────────────────
 WIDTH = 80
 print()
