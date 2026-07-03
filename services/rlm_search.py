@@ -19,9 +19,25 @@ RRF formula: 1/(k + rank_bm25) + 1/(k + rank_vector) with k=60.
 All fusion happens inside PostgreSQL — no application-level merging.
 Falls back to BM25-only when embedding_code IS NULL for returned chunks.
 
-BM25 tuning (applied at query time, not index time for pg_search 0.22.6):
-  - Column boost: searches description field (caveman desc) with higher weight than content
-  - b=0.6 equivalent: pg_search's BM25 uses Okapi BM25 internally; tuning note preserved in comment
+BM25 tuning (Phase 65 / RETR-06, RETR-07):
+  - Column boost (RETR-06, real as of this phase — audit RLM-M4 flagged the
+    prior header comment as a claim with no implementation): every rlm_chunks
+    `@@@` query is expanded by `_boosted_rlm_query()` into a field-qualified
+    match string that weights the Phase 22 caveman `description` field ~2x
+    over `content` (symbol_name rides at 1x). Verified live against the
+    installed pg_search 0.24.1 (`SELECT extversion FROM pg_extension WHERE
+    extname='pg_search'`) on 2026-07-03: `content:TERM OR
+    description:TERM^2.0 OR symbol_name:TERM` parses and measurably reorders
+    results (synthetic description-only-token row outscored a
+    content-only-token row, 16.08 vs 14.23 via paradedb.score). Applied to
+    BOTH `@@@` legs: hybrid_search's bm25 leg (via hybrid_search_generic's
+    bm25_query kwarg) and bm25_only_search.
+  - RETR-07 (documented divergence, not reconciled this phase): the pg_search
+    leg runs Tantivy's default BM25 b=0.75; the in-memory fallback scorer in
+    rlm-service.py tunes b=0.6. The two engines never rank the same request
+    (hybrid pipeline vs. legacy in-memory scan are mutually exclusive per
+    query per RETR-01 routing), so the divergence is aligned-or-documented
+    rather than reconciled — this comment is that documentation.
   - position_decay=0.05: applied as post-score penalty in Python (WHERE start_line > N -> reduce score)
 """
 
@@ -219,6 +235,42 @@ def _generic_bm25_only(bm25_query: str, pg_conn, *, table: str, id_column: str,
         return []
 
 
+def _boosted_rlm_query(safe_query: str) -> str:
+    """
+    Expand a sanitized rlm_chunks term string into a field-qualified,
+    description-weighted pg_search match string (Phase 65 / RETR-06).
+
+    Weights the caveman `description` field ~2x over `content`; `symbol_name`
+    rides at 1x (plain, unboosted term). Each whitespace-separated term gets
+    its own boost group so multi-term queries stay robust — pg_search's
+    default query parser combines space-separated groups with implicit OR,
+    matching the interpretation a plain (un-field-qualified) `@@@ %s` query
+    would have had.
+
+    Live-verified against the installed pg_search 0.24.1 (2026-07-03,
+    `SELECT extversion FROM pg_extension WHERE extname='pg_search'` ->
+    0.24.1): `rlm_chunks @@@ 'content:foo OR description:foo^2.0 OR
+    symbol_name:foo'` parses and the description boost has a real ranking
+    effect. Smoke-tested against a synthetic row pair inserted directly into
+    rlm_chunks (description-only-token row scored 16.08 vs the
+    content-only-token row's 14.23 via paradedb.score(id)); rows deleted and
+    cleanup verified with a COUNT(*)=0 check afterward.
+
+    Note: pg_search 0.24.1 requires a field-qualified query — a bare
+    unqualified string (no `field:` prefix) is parsed against the `id`
+    key_field and errors on any non-numeric term (audit RLM-M4). Every term
+    emitted here is field-qualified, which also resolves that gap as a
+    side effect of the boost.
+    """
+    terms = safe_query.split()
+    if not terms:
+        return ""
+    return " ".join(
+        f"(content:{term} OR description:{term}^2.0 OR symbol_name:{term})"
+        for term in terms
+    )
+
+
 def hybrid_search(query: str, pg_conn, top_k: int = DEFAULT_TOP_K,
                   file_filter: Optional[str] = None) -> list:
     """
@@ -252,12 +304,14 @@ def hybrid_search(query: str, pg_conn, top_k: int = DEFAULT_TOP_K,
     ]
     filter_sql = "AND c.file_path LIKE %s" if file_filter else ""
     filter_params = (f"{file_filter}%",) if file_filter else ()
+    bm25_query = _boosted_rlm_query(_sanitize_query(query))
 
     results = hybrid_search_generic(
         query, pg_conn,
         table="rlm_chunks", id_column="id", select_columns=select_columns,
         vector_column="embedding_code", query_embedding=query_embedding_256,
-        filter_sql=filter_sql, filter_params=filter_params, top_k=top_k,
+        bm25_query=bm25_query, filter_sql=filter_sql, filter_params=filter_params,
+        top_k=top_k,
     )
 
     # Apply position_decay=0.05 penalty (replicate rlm-service.py BM25 tuning)
@@ -277,9 +331,14 @@ def bm25_only_search(query: str, pg_conn, top_k: int = DEFAULT_TOP_K,
                      file_filter: Optional[str] = None) -> list:
     """
     BM25-only search via pg_search — used for MRR comparison and BM25-only fallback.
+
+    Uses the same description-weighted, field-qualified match string as
+    hybrid_search's bm25 leg (Phase 65 / RETR-06 _boosted_rlm_query) — a boost
+    on only one of the two `@@@` call sites would rank the same corpus two
+    different ways within this module.
     """
-    # Sanitize query for pg_search @@@ operator
-    safe_query = _sanitize_query(query)
+    # Sanitize + field-qualify/boost query for pg_search @@@ operator
+    safe_query = _boosted_rlm_query(_sanitize_query(query))
     if not safe_query:
         return []
 
