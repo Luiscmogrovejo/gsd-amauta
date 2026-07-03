@@ -285,6 +285,42 @@ def chunk_file_ast(filepath: str) -> list:
     return chunks
 
 
+# Module-level cache for the lazily-loaded rlm-service module (RETR-07 / RLM-M5).
+# None = not yet attempted; _RLM_SERVICE_LOAD_FAILED = attempted and failed
+# (cached so repeated calls short-circuit to [] without retrying importlib);
+# any other value = the successfully loaded module object.
+_RLM_SERVICE_MOD = None
+_RLM_SERVICE_LOAD_FAILED = object()
+
+
+def _get_rlm_service_module():
+    """
+    Return the rlm-service.py module, loading and caching it on first call.
+
+    Subsequent calls return the cached module object without touching
+    importlib again (RETR-07 / RLM-M5: one exec per process instead of one
+    exec per non-code file). A failed load is cached as a sentinel so repeated
+    calls do not retry-exec per file; the warning is logged once, at load time.
+    """
+    global _RLM_SERVICE_MOD
+
+    if _RLM_SERVICE_MOD is not None:
+        return _RLM_SERVICE_MOD
+
+    try:
+        import importlib.util
+        rlm_path = os.path.join(os.path.dirname(__file__), "rlm-service.py")
+        spec = importlib.util.spec_from_file_location("rlm_service", rlm_path)
+        rlm_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(rlm_mod)
+        _RLM_SERVICE_MOD = rlm_mod
+    except Exception as e:
+        log.warning("legacy_chunker_fallback_failed error=%s", str(e))
+        _RLM_SERVICE_MOD = _RLM_SERVICE_LOAD_FAILED
+
+    return _RLM_SERVICE_MOD
+
+
 def legacy_chunker(filepath: str, max_chars: int = 4000) -> list:
     """
     Fall back to rlm-service.py's fixed-char chunker for non-code files
@@ -292,14 +328,14 @@ def legacy_chunker(filepath: str, max_chars: int = 4000) -> list:
 
     Imports chunk_file from rlm-service.py to avoid code duplication.
     Non-code files get BM25 indexing only -- no embeddings, no dependency graph edges.
+    The rlm-service module is loaded ONCE per process (RETR-07 / RLM-M5) via
+    _get_rlm_service_module(), not re-exec'd on every call.
     """
+    mod = _get_rlm_service_module()
+    if mod is _RLM_SERVICE_LOAD_FAILED:
+        return []
     try:
-        import importlib.util
-        rlm_path = os.path.join(os.path.dirname(__file__), "rlm-service.py")
-        spec = importlib.util.spec_from_file_location("rlm_service", rlm_path)
-        rlm_mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(rlm_mod)
-        return rlm_mod.chunk_file(filepath, max_chars)
+        return mod.chunk_file(filepath, max_chars)
     except Exception as e:
         log.warning("legacy_chunker_fallback_failed path=%s error=%s", filepath, str(e))
         return []
