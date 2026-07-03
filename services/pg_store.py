@@ -2176,6 +2176,62 @@ class PGStore:
         scored.sort(key=lambda x: x["score"], reverse=True)
         return scored
 
+    def memory_top1_concentration(self, queries, limit=5):
+        """Echo-chamber canary metric (Phase 66, research pitfall 3).
+
+        The citation boost (MEMR-02) intentionally rewards heavily-cited
+        memories, which risks one entry dominating every unrelated query
+        ("echo chamber") if the boost is not bounded correctly. This method
+        runs memory_search() over a fixed set of queries and measures how
+        concentrated the top-1 result is:
+
+        - max_top1_share close to 1.0 means one memory wins almost every
+          query — a red flag the boost/carry formula is too aggressive.
+        - max_top1_share close to 1/answered means a healthy spread across
+          distinct top-1 winners.
+
+        Record this metric (before/after) whenever the ranking formula in
+        _score_memories / _score_semantic_results changes — it is the
+        required companion canary for any citation/source-bonus tuning.
+
+        Args:
+            queries: iterable of query strings.
+            limit: per-query memory_search() limit (default 5, matching the
+                   shadow-mode snapshot convention).
+
+        Returns:
+            {
+              "total_queries": int,
+              "answered": int,            # queries with >=1 result
+              "distinct_top1": int,       # distinct ids that won rank 1
+              "max_top1_share": float,    # 0.0 when answered == 0
+              "top1_ids": {id: count},
+            }
+        """
+        queries = list(queries or [])
+        top1_ids = {}
+        answered = 0
+        for q in queries:
+            try:
+                results = self.memory_search(q, limit=limit)
+            except Exception:
+                results = []
+            if not results:
+                continue
+            answered += 1
+            top1 = results[0].get("id")
+            top1_ids[top1] = top1_ids.get(top1, 0) + 1
+
+        max_top1_share = round(max(top1_ids.values()) / answered, 4) if answered > 0 else 0.0
+
+        return {
+            "total_queries": len(queries),
+            "answered": answered,
+            "distinct_top1": len(top1_ids),
+            "max_top1_share": max_top1_share,
+            "top1_ids": top1_ids,
+        }
+
     def memory_backfill_embeddings(self, batch_size=50):
         """Backfill embeddings for memories that don't have one yet.
 
