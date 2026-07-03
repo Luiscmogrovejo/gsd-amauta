@@ -538,7 +538,7 @@ class PGStore:
     # ═══════════════════════════════════════════════════════
 
     def memory_store(self, text, source="agent", agent_id=None, tags=None,
-                     metadata=None, project_id=None):
+                     metadata=None, project_id=None, applied_count=0):
         """Store a memory entry.
 
         Phase 10 LEARN-02/04: metadata dict may contain structured fields:
@@ -559,6 +559,12 @@ class PGStore:
         Kill switch: if env var GSD_D_STRUCTURED=false, structured metadata is
         flattened to plain {} before insert (operator stores the LEARNING body
         as free-text in the `text` column).
+
+        Phase 66 MEMR-02/05: applied_count seeds the citation count on insert —
+        used by the distill merge path (gsd-memory.cjs) to carry forward the
+        SUM of applied_count across merged entries so citation signal survives
+        distillation instead of resetting to zero. Coerced to a non-negative
+        int; any bad value (None, non-numeric) silently defaults to 0.
 
         Returns the new memory ID.
         """
@@ -582,11 +588,16 @@ class PGStore:
         for w in tag_result.get("warnings", []):
             print(f"[pg_store] {w}", file=sys.stderr)
 
+        try:
+            applied_count = max(0, int(applied_count or 0))
+        except (TypeError, ValueError):
+            applied_count = 0
+
         with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
-                    INSERT INTO gsd_memory (text, source, agent_id, tags, metadata, project_id)
-                    VALUES (%s, %s, %s, %s::jsonb, %s::jsonb, %s)
+                    INSERT INTO gsd_memory (text, source, agent_id, tags, metadata, project_id, applied_count)
+                    VALUES (%s, %s, %s, %s::jsonb, %s::jsonb, %s, %s)
                     RETURNING id
                 """, (
                     text,
@@ -595,6 +606,7 @@ class PGStore:
                     json.dumps(tags),
                     json.dumps(metadata or {}),
                     project_id,
+                    applied_count,
                 ))
                 return cur.fetchone()[0]
 
@@ -772,7 +784,8 @@ class PGStore:
 
                 where = " AND ".join(conditions) if conditions else "TRUE"
                 sql = f"""
-                    SELECT id, text, source, agent_id, tags, project_id, created_at
+                    SELECT id, text, source, agent_id, tags, metadata, applied_count,
+                           project_id, created_at
                     FROM gsd_memory
                     WHERE {where}
                     ORDER BY created_at DESC
@@ -784,6 +797,8 @@ class PGStore:
                     for key in ("created_at",):
                         if key in r and isinstance(r[key], datetime):
                             r[key] = r[key].isoformat()
+                # RealDictCursor decodes jsonb metadata to a dict automatically —
+                # no extra serialization needed for the daemon's JSON response.
                 return [dict(r) for r in results]
 
     def memory_count(self, project_id=None, exclude_source=None):
@@ -1954,7 +1969,8 @@ class PGStore:
             return None
 
     def memory_store_with_embedding(self, text, source="agent", agent_id=None,
-                                     tags=None, metadata=None, project_id=None):
+                                     tags=None, metadata=None, project_id=None,
+                                     applied_count=0):
         """Store a memory entry with auto-generated embedding.
 
         Falls back to memory_store() without embedding if no API key is set.
@@ -1966,8 +1982,16 @@ class PGStore:
 
         Phase 10 LEARN-02/04: honors GSD_D_STRUCTURED=false kill switch and runs
         defense-in-depth tag validation (raises ValueError if all tags are banned).
+
+        Phase 66 MEMR-02/05: applied_count mirrors memory_store()'s semantics —
+        coerced to a non-negative int, defaulting to 0 on any bad value.
         """
         import sys
+
+        try:
+            applied_count = max(0, int(applied_count or 0))
+        except (TypeError, ValueError):
+            applied_count = 0
 
         # Phase 10 LEARN-02 kill switch — mirrors memory_store() semantics
         if os.environ.get("GSD_D_STRUCTURED") == "false":
@@ -2001,7 +2025,8 @@ class PGStore:
             # No API key or embedding failed — store without embedding.
             # Pass pre-normalized tags through so memory_store doesn't re-run
             # validation (it will no-op since tags are already clean).
-            return self.memory_store(text, source, agent_id, tags, metadata, project_id)
+            return self.memory_store(text, source, agent_id, tags, metadata, project_id,
+                                      applied_count=applied_count)
 
         # DATA-04: Pre-store dedup — skip insert if near-duplicate exists (cosine > threshold)
         dedup_threshold = float(os.environ.get("GSD_DEDUP_THRESHOLD", "0.95"))
@@ -2025,8 +2050,8 @@ class PGStore:
             # Sub-block 2: insert (same conn, no nested _get_conn)
             with conn.cursor() as cur:
                 cur.execute("""
-                    INSERT INTO gsd_memory (text, source, agent_id, tags, metadata, project_id, embedding)
-                    VALUES (%s, %s, %s, %s::jsonb, %s::jsonb, %s, %s::vector)
+                    INSERT INTO gsd_memory (text, source, agent_id, tags, metadata, project_id, embedding, applied_count)
+                    VALUES (%s, %s, %s, %s::jsonb, %s::jsonb, %s, %s::vector, %s)
                     RETURNING id
                 """, (
                     text,
@@ -2036,6 +2061,7 @@ class PGStore:
                     json.dumps(metadata or {}),
                     project_id,
                     str(embedding),
+                    applied_count,
                 ))
                 return cur.fetchone()[0]
 

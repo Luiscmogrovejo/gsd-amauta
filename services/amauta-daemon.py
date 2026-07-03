@@ -2278,6 +2278,13 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 use_embedding = body.get("embed", True) and (
                     os.environ.get("VOYAGE_API_KEY") or os.environ.get("OPENAI_API_KEY")
                 )
+                # Phase 66 MEMR-02/05: applied_count passthrough — PGStore's
+                # memory_store()/memory_store_with_embedding() accept it (used by
+                # the distill carry-forward path); SQLiteStore's do NOT (fallback
+                # path predates Phase 66 and is not in this plan's manifest), so
+                # this is only passed for the PG-backed store to avoid a
+                # TypeError on the SQLite degraded-mode path.
+                store_kwargs = {"applied_count": body.get("applied_count", 0)} if store is _pg_store else {}
                 if use_embedding and hasattr(store, 'memory_store_with_embedding'):
                     mem_id = store.memory_store_with_embedding(
                         text=text,
@@ -2286,6 +2293,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                         tags=body.get("tags"),
                         metadata=body.get("metadata"),
                         project_id=project_id,
+                        **store_kwargs,
                     )
                     # DATA-04: Handle dedup response from pre-store similarity check
                     if isinstance(mem_id, dict) and mem_id.get("dedup_skipped"):
@@ -2304,6 +2312,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                         tags=body.get("tags"),
                         metadata=body.get("metadata"),
                         project_id=project_id,
+                        **store_kwargs,
                     )
                 self._send_json({"id": mem_id, "stored": True, "embedded": bool(use_embedding and _pg_store), "project_id": project_id})
             except Exception as e:
