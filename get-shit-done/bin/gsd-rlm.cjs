@@ -229,6 +229,14 @@ const YELLOW = '\x1b[33m';
 const RESET = '\x1b[0m';
 const BOLD = '\x1b[1m';
 
+// Phase 65 / RETR-01: surface which engine served a query (hybrid pipeline
+// vs the explicit legacy in-memory fallback). '' for old servers that don't
+// send an engine field yet (backward compatible).
+function engineMarker(engine) {
+  if (!engine) return '';
+  return String(engine).startsWith('hybrid') ? '[HYBRID]' : '[LEGACY-FALLBACK]';
+}
+
 function formatResults(results, compact = false) {
   if (!results || results.length === 0) {
     console.log(`${DIM}No relevant chunks found.${RESET}`);
@@ -317,7 +325,7 @@ async function cmdQuery(args, flags) {
     if (jsonMode) {
       console.log(JSON.stringify(data, null, 2));
     } else {
-      console.log(`${DIM}Query: "${query}" in ${flags.dir} — ${data.files_scanned} files, ${data.total_chunks} chunks, ${data.elapsed_ms}ms${RESET}\n`);
+      console.log(`${engineMarker(data.engine)} ${DIM}Query: "${query}" in ${flags.dir} — ${data.files_scanned} files, ${data.total_chunks} chunks, ${data.elapsed_ms}ms${RESET}\n`);
       formatResults(data.results, compact);
     }
     return data.ok ? 0 : 1;
@@ -341,7 +349,7 @@ async function cmdQuery(args, flags) {
     if (jsonMode) {
       console.log(JSON.stringify(data, null, 2));
     } else {
-      console.log(`${DIM}Query: "${query}" in ${flags.path} — ${data.total_chunks} chunks, ${data.elapsed_ms}ms${RESET}\n`);
+      console.log(`${engineMarker(data.engine)} ${DIM}Query: "${query}" in ${flags.path} — ${data.total_chunks} chunks, ${data.elapsed_ms}ms${RESET}\n`);
       formatResults(data.results, compact);
     }
     return data.ok ? 0 : 1;
@@ -365,7 +373,7 @@ async function cmdQuery(args, flags) {
     if (jsonMode) {
       console.log(JSON.stringify(data, null, 2));
     } else {
-      console.log(`${DIM}Query: "${query}" across ${flags.paths.length} files — ${data.total_chunks} chunks, ${data.elapsed_ms}ms${RESET}\n`);
+      console.log(`${engineMarker(data.engine)} ${DIM}Query: "${query}" across ${flags.paths.length} files — ${data.total_chunks} chunks, ${data.elapsed_ms}ms${RESET}\n`);
       formatResults(data.results, compact);
     }
     return data.ok ? 0 : 1;
