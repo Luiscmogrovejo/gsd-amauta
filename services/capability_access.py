@@ -307,3 +307,172 @@ def flush_buffer(store, max_lines=1000):
         return {"flushed": flushed}
     except Exception as e:
         return {"flushed": flushed, "error": str(e)}
+
+
+# ─── audit_diff() declared-vs-actual engine ─────────────────────────────────
+# Dynamic gsd-executor-* enumeration (a2a_registry.py pattern) — NEVER a
+# hardcoded roster. The roster is 10 today (backend/frontend/infra/general/
+# ai/data/mobile-android/mobile-cross/mobile-ios/wearables) and is explicitly
+# expected to grow; this module must not name any of them.
+
+def _executor_agents(agents_root=None):
+    """Return sorted directory basenames matching gsd-executor-* under
+    agents_root (default: <repo_root>/get-shit-done/agents, derived the same
+    way a2a_registry.py's _agents_root() does). agents_root param exists for
+    test injection (avoids repo pollution)."""
+    root = agents_root or os.path.join(_REPO_ROOT, "get-shit-done", "agents")
+    pattern = os.path.join(root, "gsd-executor-*")
+    return sorted(
+        os.path.basename(os.path.normpath(p))
+        for p in glob.glob(pattern)
+        if os.path.isdir(p)
+    )
+
+
+def resolve_grants(entry, executors):
+    """Expand entry's 'grants' list into a set of concrete agent names.
+
+    Exact names pass through unchanged. Any grant string containing a glob
+    wildcard character (the literal "gsd-executor-*" and any fnmatch
+    pattern starting "gsd-executor-") expands against the passed executors
+    list. NEVER hardcode agent names here.
+    """
+    grants = entry.get("grants", []) if hasattr(entry, "get") else []
+    resolved = set()
+    for g in grants:
+        if not isinstance(g, str):
+            continue
+        if any(ch in g for ch in "*?["):
+            for ex in executors:
+                if fnmatch.fnmatch(ex, g):
+                    resolved.add(ex)
+        else:
+            resolved.add(g)
+    return resolved
+
+
+def _agent_declared_grants(agent_name, agents_root=None):
+    """Read <agents_root>/<agent_name>/AGENT.yaml's capability_grants field.
+
+    On ANY failure (missing file, parse error, agent_schema unavailable),
+    print a stderr warning and return an empty set — never raise to the
+    caller (a2a_registry.py all_capabilities discipline).
+    """
+    root = agents_root or os.path.join(_REPO_ROOT, "get-shit-done", "agents")
+    yaml_path = os.path.join(root, agent_name, "AGENT.yaml")
+    try:
+        if not _HAS_AGENT_SCHEMA or load_agent_definition is None:
+            raise RuntimeError("agent_schema not available")
+        defn = load_agent_definition(yaml_path)
+        return set(getattr(defn, "capability_grants", []) or [])
+    except Exception as exc:
+        print(f"[capability_access] WARNING: skipping '{agent_name}': {exc}", file=sys.stderr)
+        return set()
+
+
+def audit_diff(store=None, agents_root=None, catalog=None, lookback_limit=10000):
+    """Declared-vs-actual capability audit engine.
+
+    Returns a dict:
+      {"agents": [per-agent reports for ALL executors, even all-empty ones],
+       "executor_count": N, "unexplained_total": N,
+       "catalog_schema_errors": [...], "drift": bool,
+       "actual_available": bool, "catalog_version": ...,
+       "buffered_pending": <line count of buffer file, else 0>}
+
+    Semantics (LOCKED): declared-but-unused is informational, NOT drift.
+    Actual-but-undeclared (unexplained) and unlisted accesses ARE drift.
+    Catalog schema drift (hand-edit errors) also counts as drift.
+
+    Shape normalization (REQUIRED): the per-executor walk below operates on
+    `raw` with DICT-style access ONLY (raw.get/entry.get) — NEVER attribute
+    access — because on validation failure `raw` is an unvalidated plain
+    dict, and even on success validate_catalog's return type varies with
+    _HAS_PYDANTIC. Its return value is therefore discarded; we always walk
+    `raw` itself.
+    """
+    raw = catalog if catalog is not None else load_capability_catalog()
+
+    catalog_schema_errors = []
+    try:
+        validate_catalog(dict(raw))
+    except ValueError as ve:
+        catalog_schema_errors.append(str(ve))
+    except Exception as exc:  # defensive: any other validation blow-up counts as schema drift too
+        catalog_schema_errors.append(str(exc))
+
+    executors = _executor_agents(agents_root)
+
+    actual_available = bool(store)
+    used_by_agent = {a: set() for a in executors}
+    unlisted_by_agent = {a: set() for a in executors}
+
+    if store:
+        try:
+            access_rows = store.audit_query(event_type=EVENT_ACCESS, limit=lookback_limit)
+        except Exception:
+            access_rows = []
+        try:
+            unlisted_rows = store.audit_query(event_type=EVENT_UNLISTED, limit=lookback_limit)
+        except Exception:
+            unlisted_rows = []
+
+        for row in access_rows:
+            agent_id = row.get("agent_id")
+            meta = row.get("metadata") or {}
+            entry_name = meta.get("catalog_entry")
+            if entry_name and agent_id in used_by_agent:
+                used_by_agent[agent_id].add(entry_name)
+
+        for row in unlisted_rows:
+            agent_id = row.get("agent_id")
+            meta = row.get("metadata") or {}
+            entry_name = meta.get("catalog_entry")
+            if entry_name and agent_id in unlisted_by_agent:
+                unlisted_by_agent[agent_id].add(entry_name)
+
+    agents_report = []
+    unexplained_total = 0
+    for a in executors:
+        declared = {
+            entry.get("name")
+            for entry in raw.get("entries", [])
+            if entry.get("name") and a in resolve_grants(entry, executors)
+        }
+        declared |= _agent_declared_grants(a, agents_root)
+
+        used = used_by_agent.get(a, set())
+        unlisted = unlisted_by_agent.get(a, set())
+        used_or_unlisted = used | unlisted
+
+        declared_unused = declared - used  # INFORMATIONAL — not drift
+        unexplained = used_or_unlisted - declared  # THE gap — drift
+        unexplained_total += len(unexplained)
+
+        agents_report.append({
+            "agent": a,
+            "declared": sorted(declared),
+            "used": sorted(used),
+            "declared_unused": sorted(declared_unused),
+            "unexplained": sorted(unexplained),
+        })
+
+    buffered_pending = 0
+    try:
+        bpath = buffer_path()
+        if os.path.isfile(bpath):
+            with open(bpath, "r") as f:
+                buffered_pending = sum(1 for _ in f)
+    except Exception:
+        buffered_pending = 0
+
+    return {
+        "agents": agents_report,
+        "executor_count": len(executors),
+        "unexplained_total": unexplained_total,
+        "catalog_schema_errors": catalog_schema_errors,
+        "drift": (unexplained_total > 0) or bool(catalog_schema_errors),
+        "actual_available": actual_available,
+        "catalog_version": raw.get("catalog_version"),
+        "buffered_pending": buffered_pending,
+    }
