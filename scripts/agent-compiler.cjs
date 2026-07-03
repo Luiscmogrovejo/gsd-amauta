@@ -55,14 +55,22 @@ const HOOKS_COMMENT_BLOCK = `# hooks:
 // Agents that have the hooks comment block in their claude-code frontmatter.
 // Locked per HEAD 21438ae (Wave 1 conversion reference).
 const AGENTS_WITH_HOOKS = new Set([
+  'gsd-architect',
   'gsd-debugger',
+  'gsd-executor-ai',
   'gsd-executor-backend',
+  'gsd-executor-data',
   'gsd-executor-frontend',
   'gsd-executor-general',
   'gsd-executor-infra',
+  'gsd-executor-mobile-android',
+  'gsd-executor-mobile-cross',
+  'gsd-executor-mobile-ios',
+  'gsd-executor-wearables',
   'gsd-operator',
   'gsd-planner',
   'gsd-roadmapper',
+  'gsd-tester',
 ]);
 
 // Agents whose description field appears UNQUOTED in the claude-code agents/*.md.
