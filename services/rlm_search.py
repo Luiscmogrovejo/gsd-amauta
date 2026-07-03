@@ -19,6 +19,25 @@ RRF formula: 1/(k + rank_bm25) + 1/(k + rank_vector) with k=60.
 All fusion happens inside PostgreSQL — no application-level merging.
 Falls back to BM25-only when embedding_code IS NULL for returned chunks.
 
+TK-1741 (audit RLM-L4, live-confirmed): the vector leg previously cast BOTH
+the query literal and the stored column to ::vector(256), but the column is
+genuinely vector(1024) end to end (migration 013; every populated row
+live-reports vector_dims()=1024) -- pgvector's vector(N) cast enforces an
+EXACT dimension match rather than slicing to the leading Matryoshka
+dimensions, so the leg raised on every call and silently fell back to
+BM25-only. Fixed by comparing at the caller-supplied dimensionality (bare
+::vector cast, no modifier) and by having hybrid_search() request a full
+1024-dim query embedding instead of a 256-dim truncation. Fixing the cast
+also activated two previously-dormant bugs in the same code that had never
+been exercised (the vector leg had never once succeeded before this fix):
+an aborted-transaction error on the fallback query (missing
+pg_conn.rollback() in both except branches), and a Decimal-vs-float
+TypeError in position_decay (PostgreSQL's bare `1.0` literal is `numeric`,
+not `double precision`, so rrf_score arrived as decimal.Decimal once the
+CTE actually returned rows; the None-rrf_score BM25-only-degradation path
+had the same class of bug against its own sort/decay code). All three fixed
+together — see the inline comments at each site.
+
 BM25 tuning (Phase 65 / RETR-06, RETR-07):
   - Column boost (RETR-06, real as of this phase — audit RLM-M4 flagged the
     prior header comment as a claim with no implementation): every rlm_chunks
@@ -131,10 +150,20 @@ def hybrid_search_generic(query: str, pg_conn, *, table: str, id_column: str,
 
     select_cols_sql = ", ".join(f"c.{col}" for col in select_columns)
 
-    # Convert query embedding to a PostgreSQL vector literal.
-    # We truncate stored higher-dim vectors to 256-dim for fast lookup using the
-    # Matryoshka property: cosine similarity is preserved in leading dimensions.
-    vec_literal = "[" + ",".join(f"{v:.6f}" for v in query_embedding[:256]) + "]"
+    # Convert query embedding to a PostgreSQL vector literal at its FULL
+    # dimensionality. TK-1741: a prior version truncated to [:256] and cast
+    # both sides to ::vector(256) on the theory that pgvector's cast would
+    # slice down to the leading Matryoshka dimensions. It does not -- vector
+    # type-modifier casts enforce an EXACT dimension match and raise
+    # ("expected 256 dimensions, not 1024") against any caller-supplied
+    # column whose stored vectors don't already match 256 dims exactly.
+    # This primitive has no opinion on caller dimensionality: callers must
+    # pass query_embedding at the same dimension their vector_column stores
+    # (see hybrid_search()'s wrapper-level fix for its table's case).
+    # Casting the literal to a bare `vector` (no dimension modifier) is
+    # sufficient for the <=> operator and preserves whatever dimensionality
+    # the caller supplied -- no silent truncation, no modifier mismatch.
+    vec_literal = "[" + ",".join(f"{v:.6f}" for v in query_embedding) + "]"
 
     sql = f"""
         WITH bm25_leg AS (
@@ -149,7 +178,7 @@ def hybrid_search_generic(query: str, pg_conn, *, table: str, id_column: str,
         vector_leg AS (
             SELECT
                 c.{id_column} AS id,
-                RANK() OVER (ORDER BY (c.{vector_column}::vector(256)) <=> %s::vector(256)) AS rank_vector
+                RANK() OVER (ORDER BY c.{vector_column} <=> %s::vector) AS rank_vector
             FROM {table} c
             WHERE c.{vector_column} IS NOT NULL
             {filter_sql}
@@ -160,8 +189,8 @@ def hybrid_search_generic(query: str, pg_conn, *, table: str, id_column: str,
                 COALESCE(b.id, v.id) AS id,
                 COALESCE(b.rank_bm25, {candidate_k + 1}) AS rank_bm25,
                 COALESCE(v.rank_vector, {candidate_k + 1}) AS rank_vector,
-                (1.0 / ({rrf_k} + COALESCE(b.rank_bm25, {candidate_k + 1})) +
-                 1.0 / ({rrf_k} + COALESCE(v.rank_vector, {candidate_k + 1}))) AS rrf_score
+                (1.0::float8 / ({rrf_k} + COALESCE(b.rank_bm25, {candidate_k + 1})) +
+                 1.0::float8 / ({rrf_k} + COALESCE(v.rank_vector, {candidate_k + 1}))) AS rrf_score
             FROM bm25_leg b
             FULL OUTER JOIN vector_leg v ON b.id = v.id
         )
@@ -189,6 +218,19 @@ def hybrid_search_generic(query: str, pg_conn, *, table: str, id_column: str,
         return rows
     except Exception as e:
         log.warning("hybrid_search_generic_failed table=%s error=%s — falling back to BM25", table, str(e))
+        # TK-1741: a failed cur.execute() leaves the psycopg2 transaction
+        # aborted (PostgreSQL requires ROLLBACK before any further statement
+        # on the same connection/transaction). Without this, the fallback
+        # query issued immediately below would itself raise
+        # "current transaction is aborted, commands ignored until end of
+        # transaction block" and mask the real error. rollback() is
+        # best-effort: pg_conn may be a stub/fake in unit tests with no
+        # rollback method, or already closed — swallow those cases and let
+        # the fallback path's own try/except handle whatever comes next.
+        try:
+            pg_conn.rollback()
+        except Exception as rollback_err:
+            log.debug("hybrid_search_generic_rollback_skipped table=%s error=%s", table, str(rollback_err))
         return _generic_bm25_only(bm25_query, pg_conn, table=table, id_column=id_column,
                                    select_columns=select_columns, filter_sql=filter_sql,
                                    filter_params=filter_params, top_k=top_k)
@@ -239,6 +281,15 @@ def _generic_bm25_only(bm25_query: str, pg_conn, *, table: str, id_column: str,
         return rows
     except Exception as e:
         log.warning("generic_bm25_only_failed table=%s error=%s", table, str(e))
+        # TK-1741: mirror the rollback in hybrid_search_generic's except --
+        # this branch is both the graceful-degradation path (no
+        # query_embedding) and the exception-fallback path, either of which
+        # can be called again on the same pg_conn by a subsequent request,
+        # so leaving the transaction aborted here is just as harmful.
+        try:
+            pg_conn.rollback()
+        except Exception as rollback_err:
+            log.debug("generic_bm25_only_rollback_skipped table=%s error=%s", table, str(rollback_err))
         return []
 
 
@@ -301,9 +352,21 @@ def hybrid_search(query: str, pg_conn, top_k: int = DEFAULT_TOP_K,
 
     Graceful degradation: falls back to BM25-only when no embedding model is available.
     """
-    # Generate query embedding for vector leg
-    from services.rlm_embeddings import embed_for_query
-    query_embedding_256 = embed_for_query(query)  # 256-dim for fast lookup, or None
+    # Generate query embedding for vector leg.
+    # TK-1741: previously used embed_for_query() which truncates to 256 dims
+    # under the (incorrect, for a plain vector(N) cast) assumption that
+    # pgvector's ::vector(256) cast would slice the leading Matryoshka
+    # dimensions out of a stored 1024-dim vector. It doesn't -- the cast
+    # requires an EXACT dimension match and raised on every call, live-
+    # confirmed against migration 013's embedding_code vector(1024) column
+    # (every populated row is genuinely 1024-dim). generate_code_embedding()
+    # returns the full 1024-dim embedding that matches the column's actual
+    # stored dimensionality, so the leg now compares like-for-like without
+    # a cast-dimension mismatch. embed_for_query() has no other call sites
+    # (only a callable-existence check in tests/test_27_ingestion.py) so this
+    # redirect is scoped to this one call site.
+    from services.rlm_embeddings import generate_code_embedding
+    query_embedding = generate_code_embedding(query)  # full 1024-dim, or None
 
     select_columns = [
         "id", "file_path", "symbol_name", "symbol_type", "start_line", "end_line",
@@ -316,20 +379,30 @@ def hybrid_search(query: str, pg_conn, top_k: int = DEFAULT_TOP_K,
     results = hybrid_search_generic(
         query, pg_conn,
         table="rlm_chunks", id_column="id", select_columns=select_columns,
-        vector_column="embedding_code", query_embedding=query_embedding_256,
+        vector_column="embedding_code", query_embedding=query_embedding,
         bm25_query=bm25_query, filter_sql=filter_sql, filter_params=filter_params,
         top_k=top_k,
     )
 
     # Apply position_decay=0.05 penalty (replicate rlm-service.py BM25 tuning)
     # Later chunks (higher start_line) score lower: penalty = 0.05 * (start_line / max_line)
+    # TK-1741: rrf_score is None for rows returned by the BM25-only degradation
+    # branch (no query_embedding available, or the vector leg's exception
+    # fallback) -- live-reproduced this crashing `-None` in the sort key and
+    # `None * float` in the decay multiply, which directly contradicts this
+    # function's own documented "graceful degradation" contract. Guard both:
+    # skip the decay multiply for None-score rows, and sort None-score rows
+    # after all real-score rows (stable sort preserves their original
+    # paradedb.score() DESC ordering from the BM25-only SQL).
     if results:
         max_line = max(r.get('end_line', 1) or 1 for r in results)
         for r in results:
+            if r.get('rrf_score') is None:
+                continue
             start = r.get('start_line', 0) or 0
             depth_ratio = min(1.0, start / max(1, max_line))
             r['rrf_score'] = r['rrf_score'] * (1 - 0.05 * depth_ratio)
-        results.sort(key=lambda x: -x['rrf_score'])
+        results.sort(key=lambda x: (x.get('rrf_score') is None, -(x.get('rrf_score') or 0)))
 
     return results[:top_k]
 
