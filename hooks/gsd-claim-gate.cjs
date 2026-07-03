@@ -22,6 +22,9 @@
  *   1. Mode off             -> exit 0 (handled by runGate before this file runs).
  *   2. No file_path          -> allow.
  *   3. Not a code file       -> allow (planning/docs/config exemption).
+ *   3a. Marker file present but corrupt/unparseable -> allow + warn
+ *       (fail-open; Verification Criteria #5 — a missing marker is the
+ *       normal not-yet-claimed state and is NOT corruption).
  *   4. >=1 fresh marker entry -> allow.
  *   5. Otherwise             -> violation (deny in block mode, warn otherwise).
  *
@@ -32,6 +35,7 @@
  * this file's contract.
  */
 
+const fs = require('fs');
 const path = require('path');
 const hookCommon = require('./lib/hook-common.cjs');
 
@@ -72,6 +76,39 @@ function isCodeFile(relPath) {
   return CODE_EXTENSIONS.has(ext);
 }
 
+/**
+ * _markerIsCorrupt() — distinguishes "marker file absent" (the NORMAL
+ * not-yet-claimed state — must still deny in step 5) from "marker file
+ * present but unparseable" (genuine corruption — must fail OPEN to allow,
+ * per Verification Criteria #5). hook-state.readActiveTasks() collapses
+ * both cases to the same empty-tasks result, so this gate does its own
+ * defensive probe of the raw file rather than relying on ctx.activeTasks
+ * for this specific distinction. Never throws.
+ */
+function _markerIsCorrupt() {
+  let hookState;
+  try {
+    // eslint-disable-next-line global-require
+    hookState = require('../get-shit-done/bin/lib/hook-state.cjs');
+  } catch {
+    return false; // Can't even resolve the module — treat as "no signal", not corruption.
+  }
+
+  let raw;
+  try {
+    raw = fs.readFileSync(hookState.markerPath(), 'utf8');
+  } catch {
+    return false; // File missing/unreadable — the normal "nothing claimed yet" state.
+  }
+
+  try {
+    JSON.parse(raw);
+    return false;
+  } catch {
+    return true; // File exists but is not valid JSON — genuine corruption.
+  }
+}
+
 function _freshMarkerCount(ctx) {
   const tasks = (ctx.activeTasks && ctx.activeTasks.tasks && typeof ctx.activeTasks.tasks === 'object')
     ? ctx.activeTasks.tasks
@@ -95,6 +132,18 @@ function _runClaimGate() {
     // Step 3: non-code files (planning/docs/config/markdown) are always
     // orchestrator-writable without a claim.
     if (!isCodeFile(relPath)) return;
+
+    // Step 3a: marker file present but corrupt/unparseable -> fail-open
+    // allow (Verification Criteria #5). A MISSING marker is the normal
+    // not-yet-claimed state and falls through to step 5 below.
+    const toolNameForWarn = (input && typeof input.tool_name === 'string') ? input.tool_name : 'unknown-tool';
+    if (_markerIsCorrupt()) {
+      hookCommon.warn(
+        `gsd-claim-gate: hook-active-tasks.json marker is corrupt/unreadable — allowing ` +
+        `${toolNameForWarn} on '${relPath}' without denial (fail-open).`
+      );
+      return;
+    }
 
     // Step 4: at least one fresh marker entry -> allow. This gate does not
     // check WHICH task's manifest covers the path — that is the manifest
