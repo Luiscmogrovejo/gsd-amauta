@@ -2061,7 +2061,11 @@ async function maybeAutoDistill() {
     if (needsDistill) {
       _lastAutoDistillAt = now;
       process.stderr.write(`\x1b[2mAuto-distill: ${count} entries exceed threshold. Running distill...\x1b[0m\n`);
-      await cmdDistill({ threshold: '0.7', 'dry-run': false, _positional: [] });
+      // MEM-M5: auto-distill must use the LLM provider chain (Claude Sonnet >
+      // Haiku > Ollama > concatenation) — the canary from plan 66-01 proved
+      // the path executes; without 'use-llm' every auto-triggered distill
+      // silently degraded to concatenation (signal-lossy, never surfaced).
+      await cmdDistill({ threshold: '0.7', 'dry-run': false, 'use-llm': true, _positional: [] });
     }
   } catch { /* silent */ }
 }
@@ -2132,6 +2136,17 @@ function llmSummarize(entries, model) {
  * @param {string} model - Claude model shortname: 'sonnet' or 'haiku'
  * @returns {string|null}
  */
+// Rate-limit backoff (live evidence: `gsd-memory learn` hit "Too many
+// requests" during this milestone). Only rate-limit-shaped errors get a
+// synchronous retry; every other error falls through immediately to the
+// existing provider chain (Haiku > Ollama > concatenation) unchanged.
+const CLAUDE_RATE_LIMIT_PATTERN = /too many requests|rate.?limit|429/i;
+const CLAUDE_RATE_LIMIT_BACKOFF_MS = [2000, 8000]; // max 2 retries, exponential
+
+function _sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
 function claudeSummarize(entries, model) {
   const { execSync } = require('child_process');
   const combinedText = entries.map((e, i) =>
@@ -2140,17 +2155,32 @@ function claudeSummarize(entries, model) {
 
   const prompt = `You are a knowledge distillation assistant. Summarize these ${entries.length} related memory entries into ONE coherent entry that preserves all key facts, decisions, and lessons learned. Output ONLY the summary, no preamble.\n\n${combinedText}`;
 
-  // Try claude CLI first (available in Claude Code sessions, no API key needed)
-  try {
-    const result = execSync(
-      `claude --print --model ${model}`,
-      { input: prompt, timeout: 60000, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
-    );
-    const summary = (result || '').trim();
-    if (summary.length >= 20) return summary.slice(0, 4000);
-    process.stderr.write(`[distill] Claude CLI (${model}) returned short output (${summary.length} chars)\n`);
-  } catch (cliErr) {
-    process.stderr.write(`[distill] Claude CLI (${model}) unavailable: ${cliErr.message.split('\n')[0]}\n`);
+  // Try claude CLI first (available in Claude Code sessions, no API key needed).
+  // Retry loop: max 2 retries (3 total attempts), only on rate-limit-shaped errors.
+  for (let attempt = 0; attempt <= CLAUDE_RATE_LIMIT_BACKOFF_MS.length; attempt++) {
+    try {
+      const result = execSync(
+        `claude --print --model ${model}`,
+        { input: prompt, timeout: 60000, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
+      );
+      const summary = (result || '').trim();
+      if (summary.length >= 20) return summary.slice(0, 4000);
+      process.stderr.write(`[distill] Claude CLI (${model}) returned short output (${summary.length} chars)\n`);
+      break; // short output is not a rate-limit condition — fall through to API fallback
+    } catch (cliErr) {
+      const cliMsg = cliErr.message || '';
+      if (CLAUDE_RATE_LIMIT_PATTERN.test(cliMsg) && attempt < CLAUDE_RATE_LIMIT_BACKOFF_MS.length) {
+        const backoffMs = CLAUDE_RATE_LIMIT_BACKOFF_MS[attempt];
+        process.stderr.write(
+          `[distill] Claude CLI (${model}) rate-limited — retrying in ${backoffMs}ms ` +
+          `(attempt ${attempt + 1}/${CLAUDE_RATE_LIMIT_BACKOFF_MS.length})\n`
+        );
+        _sleepSync(backoffMs);
+        continue;
+      }
+      process.stderr.write(`[distill] Claude CLI (${model}) unavailable: ${cliMsg.split('\n')[0]}\n`);
+      break;
+    }
   }
 
   // Fall back to Anthropic HTTP API if key is available
@@ -2180,19 +2210,43 @@ function claudeSummarize(entries, model) {
   return null;
 }
 
+// MEM-L3: distill eligibility pagination — a single limit=1000 fetch capped
+// eligibility at the newest 1000 rows, silently ignoring older duplicates in
+// a large table. Page through offset=0,500,1000,... until a page returns
+// fewer than PAGE_SIZE rows OR the hard cap is reached, whichever comes
+// first — bounded so this can never become an unbounded loop against a
+// huge gsd_memory table.
+const DISTILL_ELIGIBILITY_PAGE_SIZE = 500;
+const DISTILL_ELIGIBILITY_HARD_CAP = 5000; // hard cap: max rows considered per distill run
+
 async function cmdDistill(args) {
   const threshold = parseFloat(args.threshold || '0.7');
   const dryRun = !!args['dry-run'];
 
   // DATA-03: Never re-merge distilled entries — they are output of prior distill runs.
   // Including them causes cascading mega-entries with nested [merged from distilled] markers.
-  const res = await tryDaemon('GET', '/api/memory/list?limit=1000&exclude_source=distilled');
-  if (!res || res.status !== 200) {
-    console.error('Error: Cannot fetch memories (daemon unavailable or error).');
-    process.exit(1);
+  const rawEntries = [];
+  let offset = 0;
+  while (rawEntries.length < DISTILL_ELIGIBILITY_HARD_CAP) {
+    const pageRes = await tryDaemon(
+      'GET',
+      `/api/memory/list?limit=${DISTILL_ELIGIBILITY_PAGE_SIZE}&offset=${offset}&exclude_source=distilled`
+    );
+    if (!pageRes || pageRes.status !== 200) {
+      if (offset === 0) {
+        console.error('Error: Cannot fetch memories (daemon unavailable or error).');
+        process.exit(1);
+      }
+      break; // later page failed — proceed with what we already have
+    }
+    const page = pageRes.data.results || [];
+    rawEntries.push(...page);
+    if (page.length < DISTILL_ELIGIBILITY_PAGE_SIZE) break; // last page
+    offset += DISTILL_ELIGIBILITY_PAGE_SIZE;
   }
-
-  const rawEntries = res.data.results || [];
+  if (rawEntries.length > DISTILL_ELIGIBILITY_HARD_CAP) {
+    rawEntries.length = DISTILL_ELIGIBILITY_HARD_CAP;
+  }
 
   // Phase 10 LEARN-02: skip structured entries — they are already concise
   // (<=120 char WHAT) and merging would destroy the WHAT/WHY/WHEN/TAGS structure.
@@ -2327,10 +2381,38 @@ async function cmdDistill(args) {
         distillStrategy = 'concatenation';
       }
 
+      // Kill-switch rule: never silently degrade. If the caller asked for the
+      // LLM path (use-llm) but every provider in the chain failed and we fell
+      // back to concatenation (signal-lossy — loses the distinct facts LLM
+      // summarization would have preserved), say so loudly.
+      if (useLlm && distillStrategy === 'concatenation') {
+        process.stderr.write('[distill] WARNING: LLM unavailable — degraded to concatenation (signal-lossy)\n');
+      }
+
+      // MEMR-05 (MEM-M4): signal-preserving merge — carry forward the SUM of
+      // applied_count across the group (citations must not reset to zero on
+      // distill), the distinct original source strings (merged_sources — read
+      // by pg_store.py's _carried_source_bonus to keep the citation/source
+      // ranking advantage alive post-merge), and the union of citation
+      // records (deduped by task_id so re-distilling an already-merged group
+      // doesn't create duplicate citation entries).
+      const appliedCountSum = group.reduce((sum, e) => sum + (e.applied_count || 0), 0);
+      const mergedSources = [...new Set(group.map(e => e.source))];
+      const citationsByTaskId = new Map();
+      for (const e of group) {
+        const cites = (e.metadata && e.metadata.citations) || [];
+        for (const c of cites) {
+          const key = (c && c.task_id) || JSON.stringify(c);
+          if (!citationsByTaskId.has(key)) citationsByTaskId.set(key, c);
+        }
+      }
+      const mergedCitations = [...citationsByTaskId.values()];
+
       const mergeBody = {
         text: mergedText,
         source: 'distilled',
         agent_id: keep.agent_id || '',
+        applied_count: appliedCountSum,
         // Send metadata as object — the daemon/pg_store.py handles JSON.stringify internally.
         // Previously this was JSON.stringify'd here, causing double-encoding in PG.
         metadata: {
@@ -2342,6 +2424,8 @@ async function cmdDistill(args) {
             : distillStrategy === 'claude-haiku' ? 'claude-haiku-4-5-20251001'
             : distillStrategy === 'ollama' ? ollamaModel
             : null,
+          merged_sources: mergedSources,
+          citations: mergedCitations,
         },
       };
 
