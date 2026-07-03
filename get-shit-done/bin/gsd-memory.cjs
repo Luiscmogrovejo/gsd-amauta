@@ -1144,7 +1144,7 @@ async function cmdSKBSearch(args) {
   const res = await tryDaemon('POST', '/api/skb/search', body);
 
   if (!res) {
-    console.error('SKB requires PostgreSQL. Daemon unavailable — start with: python3 ~/.claude/get-shit-done/services/amauta-daemon.py start');
+    console.error('SKB requires PostgreSQL. Daemon unavailable — start the Amauta daemon and retry.');
     process.exit(1);
   }
   if (res.status !== 200) {
@@ -1193,7 +1193,7 @@ async function cmdSKBAdd(args) {
   const res = await tryDaemon('POST', '/api/skb/store', body);
 
   if (!res) {
-    console.error('SKB requires PostgreSQL. Daemon unavailable — start with: python3 ~/.claude/get-shit-done/services/amauta-daemon.py start');
+    console.error('SKB requires PostgreSQL. Daemon unavailable — start the Amauta daemon and retry.');
     process.exit(1);
   }
   if (res.status !== 200) {
@@ -1219,7 +1219,7 @@ async function cmdSKBList(args) {
   const res = await tryDaemon('GET', url);
 
   if (!res) {
-    console.error('SKB requires PostgreSQL. Daemon unavailable — start with: python3 ~/.claude/get-shit-done/services/amauta-daemon.py start');
+    console.error('SKB requires PostgreSQL. Daemon unavailable — start the Amauta daemon and retry.');
     process.exit(1);
   }
   if (res.status !== 200) {
@@ -2133,6 +2133,7 @@ function llmSummarize(entries, model) {
  * @returns {string|null}
  */
 function claudeSummarize(entries, model) {
+  const { execSync } = require('child_process');
   const combinedText = entries.map((e, i) =>
     `[Entry ${i + 1} | source: ${e.source || 'unknown'}]:\n${(e.text || '').slice(0, 800)}`
   ).join('\n\n');
@@ -2142,7 +2143,7 @@ function claudeSummarize(entries, model) {
   // Try claude CLI first (available in Claude Code sessions, no API key needed)
   try {
     const result = execSync(
-      `claude --print --model ${model} --max-tokens 500`,
+      `claude --print --model ${model}`,
       { input: prompt, timeout: 60000, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
     );
     const summary = (result || '').trim();
