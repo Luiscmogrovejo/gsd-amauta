@@ -774,6 +774,13 @@ function _matchesAny(pathStr, patterns) {
  *   - inline empty lists: `key: []`
  *   - multi-line lists with `- item` entries
  *
+ * Key lines may carry a common leading indent (e.g. the 4-space style used by
+ * plan-task-xml-schema.md's own <files_expected> example) — indentation is
+ * NOT semantically meaningful for this flat 2-level structure (key -> list of
+ * items), so leading whitespace before a `key:` line is tolerated. Only
+ * `- item` lines (list entries) are structurally distinct, matched via their
+ * own dash-prefixed pattern below.
+ *
  * Any unsupported construct yields `null` for that key (missing field), which
  * triggers the "must declare all of modify, create, delete" error upstream.
  */
@@ -788,9 +795,9 @@ function _parseFilesExpectedYaml(yamlText) {
     const line = raw.replace(/\s+$/, '');
     if (!line.trim()) continue;
 
-    // Top-level key
-    const topMatch = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(line);
-    if (topMatch && !line.startsWith(' ') && !line.startsWith('\t') && !line.startsWith('-')) {
+    // Top-level key (leading indentation tolerated — see doc comment above)
+    const topMatch = /^\s*([A-Za-z_][\w-]*):\s*(.*)$/.exec(line);
+    if (topMatch) {
       currentKey = topMatch[1];
       const rest = topMatch[2];
       if (rest === '' || rest === undefined) {
