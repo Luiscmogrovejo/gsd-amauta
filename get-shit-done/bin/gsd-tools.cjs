@@ -168,6 +168,12 @@ const commands = require('./lib/commands.cjs');
 const init = require('./lib/init.cjs');
 const frontmatter = require('./lib/frontmatter.cjs');
 
+// Phase 62 TEL-02: fire-and-forget telemetry emit. Fail-open — a
+// missing/broken telemetry module must never change CLI behavior.
+function _telemetryEmit(eventType, payload) {
+  try { require('./lib/telemetry.cjs').emit(eventType, payload); } catch { /* fail-open */ }
+}
+
 // ─── Routing Helper ───────────────────────────────────────────────────────────
 
 // Routing data flow (AGT-07):
@@ -1566,11 +1572,15 @@ function _diffPlanVsAmauta(planTasks, amautaTasks) {
     }
   }
 
-  return {
+  const _diffResult = {
     drifted: diffs.length > 0,
     divergence_type: diffs.length > 0 ? 'plan_amauta_drift' : null,
     diffs,
   };
+  if (_diffResult.divergence_type) {
+    _telemetryEmit('divergence_filed', { divergence_type: _diffResult.divergence_type, diff_count: diffs.length });
+  }
+  return _diffResult;
 }
 
 /**
@@ -1632,6 +1642,7 @@ async function planToTasks(planFilePath, opts) {
     const conflictSummary = conflictResult.conflicts
       .map(c => `  Task ${c.taskId}: declared=${c.declaredAgent}, computed=${c.computedAgent}, files=[${c.files.slice(0, 3).join(', ')}${c.files.length > 3 ? '...' : ''}]${c.persona ? `, persona=${c.persona}` : ''}${c.reason ? `, reason=${c.reason}` : ''}`)
       .join('\n');
+    _telemetryEmit('divergence_filed', { divergence_type: 'agent_assignment_conflict', diff_count: conflictResult.conflicts.length });
     return {
       error: 'agent_assignment_conflict',
       divergence_type: 'agent_assignment_conflict',
@@ -1747,6 +1758,7 @@ async function planToTasks(planFilePath, opts) {
     const amautaTaskList = planTaskIds.map(id => existingByPlanLocalId[id]).filter(Boolean);
     const driftResult = _diffPlanVsAmauta(tasks, amautaTaskList);
     if (driftResult.drifted) {
+      _telemetryEmit('divergence_filed', { divergence_type: 'plan_amauta_drift', diff_count: driftResult.diffs.length });
       return {
         error: 'plan_amauta_drift',
         divergence_type: 'plan_amauta_drift',
@@ -2876,6 +2888,7 @@ async function main() {
         phase.cmdPhaseRemove(cwd, args[2], { force: forceFlag }, raw);
       } else if (subcommand === 'complete') {
         phase.cmdPhaseComplete(cwd, args[2], raw);
+        _telemetryEmit('phase_complete', { phase: String(args[2] || '') });
       } else {
         error('Unknown phase subcommand. Available: next-decimal, add, insert, remove, complete');
       }
@@ -3184,6 +3197,7 @@ Examples:
 
       switch (workflow) {
         case 'execute-phase':
+          _telemetryEmit('phase_start', { phase: String(args[2] || '') });
           init.cmdInitExecutePhase(cwd, args[2], raw, phaseDirOverride);
           break;
         case 'plan-phase':
@@ -3768,10 +3782,12 @@ Examples:
         try { _valRpt = JSON.parse(fs.readFileSync(valPath, 'utf8')); } catch { _valRpt = null; }
       }
 
+      const escWorkflowName = escWfIdx !== -1 ? args[escWfIdx + 1] : 'execute-phase';
+
       const escalateBody = JSON.stringify({
         task_id:          escTaskId,
         phase_number:     escPhaseIdx !== -1 ? parseInt(args[escPhaseIdx + 1], 10) : 0,
-        workflow_name:    escWfIdx !== -1 ? args[escWfIdx + 1] : 'execute-phase',
+        workflow_name:    escWorkflowName,
         executor_report:  _execRpt,
         validator_report: _valRpt,
       });
@@ -3816,6 +3832,7 @@ Examples:
         req.write(escalateBody);
         req.end();
       });
+      _telemetryEmit('escalation_fired', { task_id: escTaskId, workflow: escWorkflowName || null });
       break;
     }
 
