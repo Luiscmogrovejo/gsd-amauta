@@ -36,6 +36,29 @@ JINA_RERANK_MODEL = "jina-reranker-v2-base-multilingual"
 SBERT_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
 
+def _stable_chunk_key(chunk: dict) -> str:
+    """
+    Derive a stable cache key component for a chunk (RETR-07 / RLM-M6).
+
+    If the chunk carries a real `id`, that id is the key (byte-identical to
+    today's behavior, keeping existing Valkey entries valid). Otherwise the
+    key derives from content identity (file_path + start_line + content
+    prefix hash) rather than list position, so the same id-less chunk hits
+    the same cache entry regardless of where it lands in a candidate list --
+    and two DIFFERENT id-less chunks never collide on a shared `0` key.
+    """
+    chunk_id = chunk.get("id")
+    if chunk_id:
+        return str(chunk_id)
+    file_path = chunk.get("file_path", chunk.get("filepath", ""))
+    start_line = chunk.get("start_line", 0)
+    content_prefix = (chunk.get("content") or chunk.get("text") or "")[:80]
+    digest = hashlib.sha256(
+        f"{file_path}:{start_line}:{content_prefix}".encode("utf-8")
+    ).hexdigest()[:16]
+    return f"h{digest}"
+
+
 def rerank(query: str, chunks: list, top_k: int = RERANK_TOP_K) -> list:
     """
     Rerank chunks by cross-encoder relevance to query.
@@ -57,12 +80,12 @@ def rerank(query: str, chunks: list, top_k: int = RERANK_TOP_K) -> list:
 
     if cache_client is not None:
         for chunk in chunks[:RERANK_CANDIDATE_K]:
-            chunk_id = chunk.get("id", 0)
-            cache_key = f"{CACHE_KEY_PREFIX}{query_hash}:{chunk_id}"
+            chunk_key = _stable_chunk_key(chunk)
+            cache_key = f"{CACHE_KEY_PREFIX}{query_hash}:{chunk_key}"
             try:
                 val = cache_client.get(cache_key)
                 if val is not None:
-                    cached_scores[chunk_id] = float(json.loads(val))
+                    cached_scores[chunk_key] = float(json.loads(val))
                 else:
                     uncached_chunks.append(chunk)
             except Exception:
@@ -84,10 +107,10 @@ def rerank(query: str, chunks: list, top_k: int = RERANK_TOP_K) -> list:
         # Write new scores to cache
         if cache_client is not None:
             for chunk in uncached_chunks:
-                chunk_id = chunk.get("id", 0)
-                score = new_scores.get(chunk_id)
+                chunk_key = _stable_chunk_key(chunk)
+                score = new_scores.get(chunk_key)
                 if score is not None:
-                    cache_key = f"{CACHE_KEY_PREFIX}{query_hash}:{chunk_id}"
+                    cache_key = f"{CACHE_KEY_PREFIX}{query_hash}:{chunk_key}"
                     try:
                         cache_client.set(cache_key, json.dumps(score), ex=CACHE_TTL)
                     except Exception:
@@ -102,8 +125,8 @@ def rerank(query: str, chunks: list, top_k: int = RERANK_TOP_K) -> list:
 
     scored = []
     for chunk in chunks[:RERANK_CANDIDATE_K]:
-        chunk_id = chunk.get("id", 0)
-        score = all_scores.get(chunk_id, chunk.get("rrf_score", 0.0) or 0.0)
+        chunk_key = _stable_chunk_key(chunk)
+        score = all_scores.get(chunk_key, chunk.get("rrf_score", 0.0) or 0.0)
         c = dict(chunk)
         c["reranker_score"] = float(score)
         scored.append(c)
@@ -152,7 +175,7 @@ def _try_jina(query: str, chunks: list, texts: list) -> Optional[dict]:
             idx = item.get("index", -1)
             score = item.get("relevance_score", 0.0)
             if 0 <= idx < len(chunks):
-                scores[chunks[idx].get("id", idx)] = score
+                scores[_stable_chunk_key(chunks[idx])] = score
         log.debug("jina_rerank_ok count=%d", len(scores))
         return scores if scores else None
     except Exception as e:
@@ -170,7 +193,7 @@ def _try_sbert(query: str, chunks: list, texts: list) -> Optional[dict]:
         scores = {}
         for i, score in enumerate(raw_scores):
             if i < len(chunks):
-                scores[chunks[i].get("id", i)] = float(score)
+                scores[_stable_chunk_key(chunks[i])] = float(score)
         log.debug("sbert_rerank_ok count=%d", len(scores))
         return scores if scores else None
     except Exception as e:
