@@ -1907,10 +1907,112 @@ async function cmdCapabilityAccess(useDaemon, flags, jsonMode) {
   return 1;
 }
 
+/**
+ * Resolve the capability-catalog write path for `capability add`:
+ * GSD_CAPABILITY_CATALOG_PATH override first, else the repo-local
+ * config/capability-catalog.json if it exists, else the ~/.claude candidate.
+ * Mirrors gsd-tools.cjs's loadCapabilityCatalog() candidate order.
+ */
+function _resolveCapabilityCatalogWritePath() {
+  const envOverride = process.env.GSD_CAPABILITY_CATALOG_PATH;
+  if (envOverride) return envOverride;
+  const repoLocal = path.resolve(__dirname, '..', 'config', 'capability-catalog.json');
+  if (fs.existsSync(repoLocal)) return repoLocal;
+  return path.join(process.env.HOME || '', '.claude', 'get-shit-done', 'config', 'capability-catalog.json');
+}
+
 async function cmdCapabilityAdd(flags, jsonMode) {
-  // TODO(60-04-02): implement schema-validated, confirm-gated catalog authoring.
-  process.stderr.write('capability add: not yet implemented\n');
-  return 1;
+  const name = flags.name;
+  const kind = flags.kind;
+  const target = flags.target;
+  const authMethod = flags['auth-method'] || 'none';
+  const authEnv = flags['auth-env'];
+  const keyRef = flags['key-ref'];
+  const securityClass = flags.class;
+  const owner = flags.owner || 'operator';
+  const grants = flags.grants ? String(flags.grants).split(',').map((g) => g.trim()).filter(Boolean) : [];
+  const notes = flags.notes || '';
+  const autoYes = !!flags.yes;
+
+  const fail = (error, extra = {}) => {
+    process.stderr.write(JSON.stringify({ error, ...extra }) + '\n');
+    return 1;
+  };
+
+  if (!name || !CAPABILITY_NAME_RE.test(name)) {
+    return fail('capability_invalid_name', { name });
+  }
+  if (!kind || !CAPABILITY_KIND_VALUES.includes(kind)) {
+    return fail('capability_invalid_kind', { kind });
+  }
+  if (!securityClass || !CAPABILITY_SECURITY_CLASS_VALUES.includes(securityClass)) {
+    return fail('capability_invalid_security_class', { class: securityClass });
+  }
+  if (!CAPABILITY_AUTH_METHOD_VALUES.includes(authMethod)) {
+    return fail('capability_invalid_auth_method', { method: authMethod });
+  }
+  if (authMethod.endsWith('-env')) {
+    if (!authEnv) return fail('capability_auth_env_required', { method: authMethod });
+    if (/:\/\/|\s/.test(authEnv)) return fail('capability_auth_env_not_a_name', { value: authEnv });
+  }
+  if (authMethod === 'ssh-key' && !keyRef) {
+    return fail('capability_key_ref_required', { method: authMethod });
+  }
+  if (!target || !String(target).trim()) {
+    return fail('capability_invalid_target', { target });
+  }
+
+  const catalogPath = _resolveCapabilityCatalogWritePath();
+  let catalog;
+  try {
+    catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf-8'));
+  } catch (err) {
+    return fail('capability_catalog_unreadable', { path: catalogPath, detail: err.message });
+  }
+  const entries = catalog.entries || (catalog.entries = []);
+
+  if (entries.some((e) => e.name === name)) {
+    return fail('capability_duplicate_name', { name });
+  }
+
+  const auth = { method: authMethod };
+  if (authEnv) auth.env = authEnv;
+  if (keyRef) auth.key_ref = keyRef;
+
+  // LOCKED key order: name, kind, target, auth, security_class, owner, grants, added_at, notes
+  const newEntry = {
+    name,
+    kind,
+    target,
+    auth,
+    security_class: securityClass,
+    owner,
+    grants,
+    added_at: new Date().toISOString().slice(0, 10),
+    notes,
+  };
+
+  process.stdout.write(JSON.stringify(newEntry, null, 2) + '\n');
+
+  if (!autoYes) {
+    const readline = require('readline');
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    const answer = await new Promise((resolve) => {
+      rl.question('Add this capability entry to the catalog? [y/N] ', (a) => {
+        rl.close();
+        resolve(a);
+      });
+    });
+    if (!/^y(es)?$/i.test((answer || '').trim())) {
+      process.stdout.write('Aborted.\n');
+      return 1;
+    }
+  }
+
+  entries.push(newEntry);
+  fs.writeFileSync(catalogPath, JSON.stringify(catalog, null, 2) + '\n');
+  process.stdout.write(`Added '${name}' to capability catalog (${catalogPath})\n`);
+  return 0;
 }
 
 // ═══════════════════════════════════════════════════════
