@@ -18,6 +18,7 @@ Source-aware scoring (from Amauta spec):
 
 import hashlib
 import json
+import math
 import os
 import re
 import threading
@@ -90,6 +91,51 @@ RETENTION_DAYS = {
     "rpetd_phase": 90,
     "web_search_result": 180,
 }
+
+# MEMR-02/05 (Phase 66): citation boost + merged-source carry-forward
+# ─────────────────────────────────────────────────────────────────
+# citation_boost = min(log1p(applied_count), CITATION_BOOST_CAP) — bounded so a
+# single heavily-cited memory cannot dominate ranking on its own (research
+# pitfall 3, "echo chamber"). log1p(0) == 0, so never-cited rows are
+# byte-identical to pre-Phase-66 scores.
+CITATION_BOOST_CAP = 3.0
+
+
+def _citation_boost(applied_count):
+    """Bounded log1p citation boost. NULL/absent applied_count treated as 0."""
+    try:
+        n = float(applied_count or 0)
+    except (TypeError, ValueError):
+        n = 0.0
+    if n < 0:
+        n = 0.0
+    return min(math.log1p(n), CITATION_BOOST_CAP)
+
+
+def _carried_source_bonus(d, source_bonus):
+    """Carry-forward source bonus from a distill merge's metadata.merged_sources.
+
+    Distilled entries keep source='distilled' (+2, DATA-03 exclusion contract
+    stays intact) but their metadata may carry `merged_sources` — the list of
+    distinct original source strings folded into this entry. The carried bonus
+    is the MAX of the entry's own bonus and every merged source's bonus, capped
+    at the SOURCE_SCORES ceiling (4) — it can only raise, never lower, the
+    entry's own bonus.
+    """
+    meta = d.get("metadata")
+    if isinstance(meta, str):
+        try:
+            meta = json.loads(meta)
+        except (TypeError, ValueError):
+            meta = None
+    if not isinstance(meta, dict):
+        return source_bonus
+    merged = meta.get("merged_sources") or []
+    if not isinstance(merged, list):
+        return source_bonus
+    carried_max = max((SOURCE_SCORES.get(s, 0) for s in merged), default=0)
+    return min(max(source_bonus, carried_max), 4)
+
 
 # ═══════════════════════════════════════════════════════
 # Tag synonym normalization (shared with sqlite_store.py)
@@ -648,14 +694,21 @@ class PGStore:
     def _score_memories(self, rows):
         """Apply source-aware scoring with recency decay to memory results.
 
-        Score = text_rank * 10 + source_bonus - recency_penalty
+        Score = text_rank * 10 + source_bonus + citation_boost - recency_penalty
         Recency penalty = min(RECENCY_DECAY_PER_30D * (days_old / 30), MAX_RECENCY_PENALTY)
+        citation_boost (MEMR-02) = min(log1p(applied_count), CITATION_BOOST_CAP) —
+        bounded so citation count alone cannot dominate ranking (echo-chamber guard,
+        paired with memory_top1_concentration()). source_bonus (MEMR-05) is carried
+        forward from metadata.merged_sources on distilled entries — see
+        _carried_source_bonus().
         """
         now = datetime.now(timezone.utc)
         scored = []
         for row in rows:
             d = dict(row)
             source_bonus = SOURCE_SCORES.get(d.get("source", "agent"), 0)
+            source_bonus = _carried_source_bonus(d, source_bonus)
+            citation_boost = _citation_boost(d.get("applied_count"))
             text_rank = float(d.get("text_rank", 0))
             # MEM-03: Recency decay
             recency_penalty = 0.0
@@ -675,8 +728,9 @@ class PGStore:
                     )
                 except (ValueError, TypeError, AttributeError):
                     pass  # unparseable — no decay
-            # Composite score: text relevance (0-1 range) * 10 + source bonus - recency decay
-            d["score"] = round(text_rank * 10 + source_bonus - recency_penalty, 2)
+            # Composite score: text relevance (0-1 range) * 10 + source bonus
+            # + citation boost (MEMR-02, bounded) - recency decay
+            d["score"] = round(text_rank * 10 + source_bonus + citation_boost - recency_penalty, 2)
             # Convert Decimal text_rank to float for JSON serialization
             if "text_rank" in d and isinstance(d["text_rank"], Decimal):
                 d["text_rank"] = float(d["text_rank"])
@@ -2072,13 +2126,20 @@ class PGStore:
     def _score_semantic_results(self, rows):
         """Score semantic search results with source bonuses and recency decay.
 
-        Score = similarity * 10 + source_bonus - recency_penalty
+        Score = similarity * 10 + source_bonus + citation_boost - recency_penalty
+        citation_boost (MEMR-02) = min(log1p(applied_count), CITATION_BOOST_CAP) —
+        identical bounded formula to _score_memories(), so a memory ranks
+        consistently whether retrieved via FTS or vector search. source_bonus
+        (MEMR-05) is carried forward from metadata.merged_sources — see
+        _carried_source_bonus().
         """
         now = datetime.now(timezone.utc)
         scored = []
         for row in rows:
             d = dict(row)
             source_bonus = SOURCE_SCORES.get(d.get("source", "agent"), 0)
+            source_bonus = _carried_source_bonus(d, source_bonus)
+            citation_boost = _citation_boost(d.get("applied_count"))
             similarity = float(d.get("semantic_similarity", 0))
             # MEM-03: Recency decay
             recency_penalty = 0.0
@@ -2098,8 +2159,9 @@ class PGStore:
                     )
                 except (ValueError, TypeError, AttributeError):
                     pass  # unparseable — no decay
-            # Composite: semantic similarity (0-1) * 10 + source bonus (0-4) - recency
-            d["score"] = round(similarity * 10 + source_bonus - recency_penalty, 2)
+            # Composite: semantic similarity (0-1) * 10 + source bonus (0-4)
+            # + citation boost (MEMR-02, bounded) - recency
+            d["score"] = round(similarity * 10 + source_bonus + citation_boost - recency_penalty, 2)
             d["semantic_similarity"] = round(similarity, 4)
             # Convert types that don't JSON-serialize
             for key in ("created_at", "updated_at"):
