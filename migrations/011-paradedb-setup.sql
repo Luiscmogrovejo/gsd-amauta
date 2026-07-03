@@ -36,7 +36,9 @@ END $$;
 -- INFRA-02: Enable iterative index scans for filtered vector queries.
 -- This session-level SET is also applied in pg_store.py _get_conn() for application connections.
 -- Setting it here ensures it is applied for any psql session during migration testing.
-SET ivfflat.iterative_scan = relaxed_order;
+-- Phase 66 MEMR-07: corrected from ivfflat (the only vector index is HNSW;
+-- session-scoped SET -- safe to edit in an applied migration).
+SET hnsw.iterative_scan = relaxed_order;
 
 -- INFRA-03: Install ParadeDB pg_search extension (BM25 full-text search in PostgreSQL).
 -- Requires paradedb/paradedb:latest-pg16 image with pg_search in shared_preload_libraries.

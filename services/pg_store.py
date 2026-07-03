@@ -97,6 +97,14 @@ DEFAULT_EXCLUDE_SOURCES = ("task_event", "rpetd_phase")
 RECENCY_DECAY_PER_30D = float(os.environ.get("GSD_RECENCY_DECAY_PER_30D", "0.5"))
 MAX_RECENCY_PENALTY = 3.0  # Cap at 6 months of decay
 
+# Phase 66 MEMR-07: rerank BLENDS with composite score instead of replacing
+# it — a stale task_event should not be able to outrank a fresh cited
+# lesson-learned merely because Voyage's cross-encoder slightly prefers it.
+# final = score_composite + RERANK_BLEND_WEIGHT * rerank_relevance_score
+# (rerank_relevance_score in [0, 1], scaled up to compete with the
+# source-bonus/citation-boost range in _score_semantic_results).
+RERANK_BLEND_WEIGHT = float(os.environ.get("GSD_RERANK_BLEND_WEIGHT", "4.0"))
+
 # MEM-05: Dedup thresholds (audited 2026-04-06)
 # - Pre-store cosine dedup: 0.95 (env: GSD_DEDUP_THRESHOLD) -- near-identical detection
 #   Threshold 0.95 is correct per industry benchmarks; values >0.98 miss paraphrases,
@@ -664,9 +672,12 @@ class PGStore:
             conn.autocommit = False
             reconnected = True
         # INFRA-02: Enable iterative index scans for filtered vector queries (pgvector >= 0.8.0)
+        # Phase 66 MEMR-07: corrected from ivfflat -- the only vector index on
+        # gsd_memory is idx_gsd_memory_embedding_hnsw (HNSW); the ivfflat GUC
+        # was a no-op for every filtered query this connection ever ran.
         with conn.cursor() as _setup_cur:
             try:
-                _setup_cur.execute("SET ivfflat.iterative_scan = relaxed_order")
+                _setup_cur.execute("SET hnsw.iterative_scan = relaxed_order")
             except Exception:
                 pass  # Gracefully skip if pgvector not installed (e.g., SQLite fallback)
         try:
@@ -2414,8 +2425,10 @@ class PGStore:
         every limit*4 candidate would be 4x the API spend for no benefit,
         since anything outside the top limit*2 by composite score is
         vanishingly unlikely to be rerank-promoted into the final limit).
-        Rerank output still REPLACES scored ordering this wave — blending the
-        two signals is MEMR-07 (plan 66-04), not implemented here.
+        MEMR-07 (plan 66-04): rerank output BLENDS with the composite score
+        (final = score_composite + RERANK_BLEND_WEIGHT * rerank relevance)
+        rather than replacing it, so a stale task_event cannot outrank a
+        fresh cited lesson-learned merely because the reranker prefers it.
 
         Args:
             exclude_sources: Tuple/list of source strings to exclude from results.
@@ -2489,19 +2502,36 @@ class PGStore:
                 rerank_window = scored[:limit * 2]
 
                 # Post-retrieval reranking via Voyage rerank-2.5 (free tier: 200M tokens)
-                # Improves precision by cross-encoder scoring on top-K candidates
+                # Improves precision by cross-encoder scoring on top-K candidates.
+                # MEMR-07: rerank BLENDS with composite score, it does not
+                # replace ordering wholesale — every entry in rerank_window
+                # keeps score_composite; entries the reranker actually scored
+                # get final score = score_composite + RERANK_BLEND_WEIGHT *
+                # relevance_score; entries outside the reranker's own top_k
+                # (it is asked for `limit` out of a `limit*2` window) keep a
+                # composite-only score. The full window is then re-sorted by
+                # final score and truncated to `limit`.
                 try:
                     docs = [r.get("text", "")[:500] for r in rerank_window]
                     reranked = PGStore.rerank(query, docs, top_k=limit)
                     if reranked:
-                        reordered = []
+                        reranked_idx = set()
                         for item in reranked:
                             idx = item.get("index", 0)
                             if idx < len(rerank_window):
                                 entry = rerank_window[idx]
-                                entry["rerank_score"] = round(float(item.get("relevance_score", 0)), 4)
-                                reordered.append(entry)
-                        return reordered[:limit], "vector+rerank"
+                                entry["score_composite"] = entry["score"]
+                                relevance = float(item.get("relevance_score", 0))
+                                entry["rerank_score"] = round(relevance, 4)
+                                entry["score"] = round(
+                                    entry["score_composite"] + RERANK_BLEND_WEIGHT * relevance, 2
+                                )
+                                reranked_idx.add(idx)
+                        for idx, entry in enumerate(rerank_window):
+                            if idx not in reranked_idx:
+                                entry["score_composite"] = entry["score"]
+                        blended = sorted(rerank_window, key=lambda e: e["score"], reverse=True)
+                        return blended[:limit], "vector+rerank"
                 except Exception:
                     pass  # Reranking is optional — fall back to vector-only
 
