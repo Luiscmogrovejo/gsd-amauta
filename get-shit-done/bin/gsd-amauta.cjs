@@ -1643,6 +1643,277 @@ async function cmdDaemon(subcommand) {
 }
 
 // ═══════════════════════════════════════════════════════
+// Capability Commands (Phase 60 TOOL-01/TOOL-02/TOOL-03)
+// ═══════════════════════════════════════════════════════
+//
+// NOTE: 'capability' MUST be an explicit case in the command switch below
+// (never fall through to default:) — the default passthrough hits
+// /api/exec whose _EXEC_ALLOWLIST (amauta-daemon.py) does not include
+// 'capability' and would 403 (60-RESEARCH finding #8).
+
+const CAPABILITY_KIND_VALUES = ['curl-endpoint', 'ssh-host', 'pg', 'redis', 'k3s'];
+const CAPABILITY_SECURITY_CLASS_VALUES = ['read-only', 'read-write', 'secret-bearing', 'destructive'];
+const CAPABILITY_AUTH_METHOD_VALUES = ['none', 'bearer-env', 'basic-env', 'dsn-env', 'ssh-key'];
+const CAPABILITY_NAME_RE = /^[a-z][a-z0-9-]{1,63}$/;
+const CAPABILITY_BUFFER_FILENAME = 'capability-audit-buffer.jsonl';
+
+async function cmdCapability(useDaemon, rest, jsonMode) {
+  const subCmd = rest[0];
+  if (subCmd === 'list') return cmdCapabilityList(jsonMode);
+  if (subCmd === 'audit') return await cmdCapabilityAudit(useDaemon, jsonMode);
+  if (subCmd === 'access') return await cmdCapabilityAccess(useDaemon, parseFlags(rest, 1), jsonMode);
+  if (subCmd === 'add') return await cmdCapabilityAdd(parseFlags(rest, 1), jsonMode);
+  process.stderr.write(
+    'Usage:\n' +
+    '  amauta capability list [--json]                     Registered reachable systems\n' +
+    '  amauta capability audit [--json]                    Declared-vs-actual per executor (exit 0 clean / 2 drift)\n' +
+    '  amauta capability access --entry N --agent A [--task TK] [--confirm] [--json]\n' +
+    '                                                      Check + audit-log a live-state access\n' +
+    '  amauta capability add --name N --kind K --target T --auth-method M [...] [--yes]\n'
+  );
+  return 1;
+}
+
+/**
+ * Structural validation of a capability catalog entry. Returns null when
+ * valid, else { field } naming the first violation — loud, never a silent
+ * omission of the bad entry.
+ */
+function _validateCapabilityEntryShape(entry) {
+  if (!entry || typeof entry !== 'object') return { field: 'entry' };
+  if (!entry.name) return { field: 'name' };
+  if (!entry.kind || !CAPABILITY_KIND_VALUES.includes(entry.kind)) return { field: 'kind' };
+  if (!entry.target) return { field: 'target' };
+  if (!entry.auth || !entry.auth.method) return { field: 'auth.method' };
+  if (!entry.security_class || !CAPABILITY_SECURITY_CLASS_VALUES.includes(entry.security_class)) return { field: 'security_class' };
+  if (!entry.owner) return { field: 'owner' };
+  if (!entry.added_at) return { field: 'added_at' };
+  return null;
+}
+
+function cmdCapabilityList(jsonMode) {
+  const { loadCapabilityCatalog } = require(path.join(__dirname, 'gsd-tools.cjs'));
+  const catalog = loadCapabilityCatalog();
+  const entries = catalog.entries || [];
+
+  for (let i = 0; i < entries.length; i++) {
+    const violation = _validateCapabilityEntryShape(entries[i]);
+    if (violation) {
+      process.stderr.write(JSON.stringify({
+        error: 'capability_catalog_invalid',
+        entry: entries[i] && entries[i].name ? entries[i].name : i,
+        field: violation.field,
+      }) + '\n');
+      return 1;
+    }
+  }
+
+  if (jsonMode) {
+    process.stdout.write(JSON.stringify(catalog, null, 2) + '\n');
+    return 0;
+  }
+
+  process.stdout.write(`Capability Catalog v${catalog.catalog_version} (${entries.length} entries)\n`);
+  const rows = entries.map((e) => ({
+    name: e.name,
+    kind: e.kind,
+    security: e.security_class,
+    auth: e.auth.env ? `${e.auth.method} env=${e.auth.env}` : e.auth.method,
+    target: e.target,
+    grants: (e.grants || []).join(','),
+  }));
+  const cols = [
+    ['NAME', 'name'], ['KIND', 'kind'], ['SECURITY', 'security'],
+    ['AUTH', 'auth'], ['TARGET', 'target'], ['GRANTS', 'grants'],
+  ];
+  const widths = cols.map(([header, key]) =>
+    Math.max(header.length, ...rows.map((r) => String(r[key] || '').length))
+  );
+  const renderRow = (vals) => vals.map((v, i) => String(v).padEnd(widths[i])).join('  ').trimEnd();
+  process.stdout.write(renderRow(cols.map(([h]) => h)) + '\n');
+  for (const r of rows) {
+    process.stdout.write(renderRow(cols.map(([, key]) => r[key])) + '\n');
+  }
+  return 0;
+}
+
+async function cmdCapabilityAudit(useDaemon, jsonMode) {
+  let resp = null;
+  try {
+    resp = await httpRequest('GET', '/api/capability/audit');
+  } catch { /* daemon unreachable — fall through below */ }
+
+  if (!resp || resp.statusCode !== 200 || (resp.data && resp.data.error)) {
+    process.stderr.write('Warning: daemon unreachable — declared-only view (actual-access data unavailable)\n');
+    const { loadCapabilityCatalog } = require(path.join(__dirname, 'gsd-tools.cjs'));
+    const catalog = loadCapabilityCatalog();
+    if (jsonMode) {
+      process.stdout.write(JSON.stringify({ declared_only: true, catalog }, null, 2) + '\n');
+    } else {
+      process.stdout.write(`Capability Catalog v${catalog.catalog_version} (declared-only view)\n`);
+      for (const e of (catalog.entries || [])) {
+        const grants = (e.grants || []).join(',') || '(none)';
+        process.stdout.write(`  ${e.name}  grants=${grants}\n`);
+      }
+    }
+    return 0;
+  }
+
+  const { data } = resp;
+  if (jsonMode) {
+    process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+  } else {
+    process.stdout.write('AGENT'.padEnd(28) + 'DECLARED'.padEnd(10) + 'USED'.padEnd(8) + 'UNUSED(info)'.padEnd(14) + 'UNEXPLAINED\n');
+    for (const a of (data.agents || [])) {
+      process.stdout.write(
+        String(a.agent).padEnd(28) +
+        String(a.declared.length).padEnd(10) +
+        String(a.used.length).padEnd(8) +
+        String(a.declared_unused.length).padEnd(14) +
+        String(a.unexplained.length) + '\n'
+      );
+    }
+    process.stdout.write(`Executors audited: ${data.executor_count}\n`);
+    if (data.catalog_schema_errors && data.catalog_schema_errors.length) {
+      for (const err of data.catalog_schema_errors) {
+        process.stdout.write(`CATALOG SCHEMA DRIFT: ${err}\n`);
+      }
+    }
+    if (data.buffered_pending > 0) {
+      process.stdout.write(`Note: ${data.buffered_pending} buffered audit events pending PG flush\n`);
+    }
+  }
+  return data.drift ? 2 : 0;
+}
+
+/**
+ * Append one JSONL record to the capability-access buffer (fail-open —
+ * a write failure here must never block the caller). Mirrors
+ * services/capability_access.py's _buffer_access().
+ */
+function _bufferCapabilityAccess(record) {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.appendFileSync(path.join(DATA_DIR, CAPABILITY_BUFFER_FILENAME), JSON.stringify(record) + '\n');
+  } catch { /* fail-open: never block the caller on a buffer-write failure */ }
+}
+
+/**
+ * Local-only fail-open re-implementation of services/capability_access.py's
+ * check_access() decision table, used when the daemon is unreachable.
+ */
+function _localCapabilityCheckAccess(entryName, catalog, confirm) {
+  const mode = (process.env.GSD_CAPABILITY_ENFORCE || 'warn').toLowerCase();
+  const enforceMode = ['warn', 'block', 'off'].includes(mode) ? mode : 'warn';
+  const entry = (catalog.entries || []).find((e) => e.name === entryName) || null;
+
+  if (entry && entry.security_class === 'destructive' && !confirm) {
+    return { allowed: false, outcome: 'destructive_unconfirmed', enforce_mode: enforceMode, entry, code: 'capability_destructive_unconfirmed', warning: null };
+  }
+
+  if (enforceMode === 'off') {
+    return { allowed: true, outcome: 'skipped_off', enforce_mode: enforceMode, entry, warning: null };
+  }
+
+  if (!entry) {
+    if (enforceMode === 'warn') {
+      return {
+        allowed: true, outcome: 'unlisted_warn', enforce_mode: enforceMode, entry: null,
+        warning: `capability_unlisted: '${entryName}' is not in the capability catalog — file a divergence observation`,
+      };
+    }
+    return { allowed: false, outcome: 'unlisted_blocked', enforce_mode: enforceMode, entry: null, code: 'capability_unlisted_blocked', warning: null };
+  }
+
+  const method = (entry.auth && entry.auth.method) || '';
+  if (method.endsWith('-env')) {
+    const envName = entry.auth.env;
+    if (!process.env[envName]) {
+      return { allowed: false, outcome: 'auth_missing', enforce_mode: enforceMode, entry, code: 'capability_auth_missing', warning: null, env: envName };
+    }
+  }
+
+  return { allowed: true, outcome: 'allowed', enforce_mode: enforceMode, entry, warning: null };
+}
+
+async function cmdCapabilityAccess(useDaemon, flags, jsonMode) {
+  const entryName = flags.entry;
+  const agentId = flags.agent;
+  if (!entryName || !agentId) {
+    process.stderr.write('Usage: amauta capability access --entry <name> --agent <agent> [--task <id>] [--confirm] [--json]\n');
+    return 1;
+  }
+
+  let resp = null;
+  try {
+    resp = await httpRequest('POST', '/api/capability/access', {
+      entry: entryName,
+      agent_id: agentId,
+      task_id: flags.task,
+      confirm: !!flags.confirm,
+    });
+  } catch { /* daemon unreachable — fall through to local fallback below */ }
+
+  if (resp && resp.statusCode === 200 && resp.data && !resp.data.error) {
+    const data = resp.data;
+    if (jsonMode) {
+      process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+      return data.allowed ? 0 : 1;
+    }
+    if (data.allowed) {
+      const entry = data.entry || {};
+      const auth = entry.auth ? ` [auth: ${entry.auth.method}${entry.auth.env ? ` env=${entry.auth.env}` : ''}]` : '';
+      process.stdout.write(`ALLOWED (${data.outcome}) ${entry.name || entryName} -> ${entry.target || ''}${auth}\n`);
+      if (data.warning) process.stdout.write(`warning: ${data.warning}\n`);
+      return 0;
+    }
+    process.stdout.write(`REFUSED ${data.code || data.outcome}${data.env ? ` env=${data.env}` : ''}\n`);
+    return 1;
+  }
+
+  // Daemon-unreachable fallback: fail-open local catalog check + JSONL buffer.
+  process.stderr.write('Warning: daemon unreachable — buffered locally\n');
+  const { loadCapabilityCatalog } = require(path.join(__dirname, 'gsd-tools.cjs'));
+  const catalog = loadCapabilityCatalog();
+  const result = _localCapabilityCheckAccess(entryName, catalog, !!flags.confirm);
+
+  if (result.outcome !== 'skipped_off') {
+    const entry = result.entry || {};
+    _bufferCapabilityAccess({
+      ts: new Date().toISOString(),
+      task_id: flags.task || 'SYSTEM',
+      event_type: result.outcome.startsWith('unlisted') ? 'capability_unlisted' : 'capability_access',
+      agent_id: agentId,
+      catalog_entry: entryName,
+      target: entry.target || entryName,
+      security_class: entry.security_class || 'unknown',
+      outcome: result.outcome,
+      enforce_mode: result.enforce_mode,
+    });
+  }
+
+  if (jsonMode) {
+    process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+    return result.allowed ? 0 : 1;
+  }
+  if (result.allowed) {
+    const entry = result.entry || {};
+    const auth = entry.auth ? ` [auth: ${entry.auth.method}${entry.auth.env ? ` env=${entry.auth.env}` : ''}]` : '';
+    process.stdout.write(`ALLOWED (${result.outcome}) ${entry.name || entryName} -> ${entry.target || ''}${auth}\n`);
+    if (result.warning) process.stdout.write(`warning: ${result.warning}\n`);
+    return 0;
+  }
+  process.stdout.write(`REFUSED ${result.code || result.outcome}${result.env ? ` env=${result.env}` : ''}\n`);
+  return 1;
+}
+
+async function cmdCapabilityAdd(flags, jsonMode) {
+  // TODO(60-04-02): implement schema-validated, confirm-gated catalog authoring.
+  process.stderr.write('capability add: not yet implemented\n');
+  return 1;
+}
+
+// ═══════════════════════════════════════════════════════
 // Audit Commands (Phase 6)
 // ═══════════════════════════════════════════════════════
 
@@ -2163,6 +2434,13 @@ async function main() {
 
     case 'cache-stats':
       exitCode = await cmdCacheStats(useDaemon);
+      break;
+
+    // Phase 60 TOOL-01/02/03: capability verb group — MUST be an explicit
+    // case: the default passthrough hits /api/exec whose _EXEC_ALLOWLIST
+    // does not include 'capability' and would 403.
+    case 'capability':
+      exitCode = await cmdCapability(useDaemon, rest, jsonMode);
       break;
 
     default:
