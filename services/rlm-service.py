@@ -666,6 +666,37 @@ def _chunk_generic(content, filepath, max_chars):
 
 
 # ═══════════════════════════════════════════════════════
+# Hybrid Result Normalization (Phase 65 / RETR-01)
+# ═══════════════════════════════════════════════════════
+
+def _normalize_hybrid_chunks(chunks):
+    """
+    Add legacy-compatible compat fields to hybrid (PG rlm_chunks) result rows
+    WITHOUT removing the hybrid fields. gsd-rlm.cjs formatResults() reads
+    r.filepath/r.label/r.text/r.char_count/r.relevance_score; amauta.py
+    _rlm_query reads filepath/label. Hybrid rows instead carry file_path/
+    symbol_name/content/rrf_score/reranker_score/graph_callers/graph_callees.
+
+    Mutates and returns the same list (chunks may already carry compat
+    fields from earlier callers; this is idempotent).
+    """
+    for chunk in chunks:
+        chunk["filepath"] = chunk.get("file_path", chunk.get("filepath", ""))
+        chunk["label"] = chunk.get("symbol_name") or chunk.get("label") or ""
+        chunk["text"] = chunk.get("content") or chunk.get("text") or ""
+        chunk["char_count"] = len(chunk["text"])
+        reranker_score = chunk.get("reranker_score")
+        rrf_score = chunk.get("rrf_score")
+        score = reranker_score if reranker_score is not None else (rrf_score or 0.0)
+        chunk["relevance_score"] = round(score, 3)
+        if chunk.get("start_line") is None:
+            chunk["start_line"] = 0
+        if chunk.get("end_line") is None:
+            chunk["end_line"] = 0
+    return chunks
+
+
+# ═══════════════════════════════════════════════════════
 # Relevance Scoring
 # ═══════════════════════════════════════════════════════
 
@@ -1039,7 +1070,8 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
 
                     from services.rlm_graph import expand_chunks_with_graph, _get_cache_client
                     cache_client = _get_cache_client()
-                    results = expand_chunks_with_graph(reranked, cache_client)
+                    expanded = expand_chunks_with_graph(reranked, cache_client)
+                    results = _normalize_hybrid_chunks(expanded)
 
                     used_engine = "hybrid_rrf_reranked"
             except Exception as e:
@@ -1117,7 +1149,13 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
 
     def _handle_query(self, body):
         """
-        POST /query
+        POST /query — router (Phase 65 / RETR-01).
+        Hybrid branch: same scan->ingest->BM25+vector RRF->rerank->graph-expand
+        chain as _handle_search, when PG is available and returns non-empty
+        results. Legacy branch: explicit in-memory BM25 scan fallback (PG
+        down, or hybrid pipeline returned no results for an unindexed dir) --
+        NEVER deleted, its non-empty-result behavior is a tested AC.
+
         Body: {
             "query": "search terms",
             "directory": "/path/to/project",
@@ -1126,7 +1164,7 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
             "extensions": [".py", ".js"],
             "max_files": 500
         }
-        Returns: { "results": [...], "files_scanned": N, "total_chunks": N }
+        Returns: { "results": [...], "files_scanned": N, "total_chunks": N, "engine": "..." }
         """
         query = body.get("query")
         directory = body.get("directory")
@@ -1154,53 +1192,111 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
 
         t0 = time.time()
 
-        # Convert extension list to set if provided
-        ext_set = None
-        if extensions:
-            ext_set = set(extensions)
+        results = []
+        used_engine = "legacy_in_memory_fallback"
+        files_scanned = 0
+        files_changed = 0
+        files_cached = 0
+        total_chunks = 0
 
-        files = scan_directory(directory, ext_set, max_files)
+        # ── Hybrid branch: scan -> ingest -> BM25+vector RRF -> rerank -> graph-expand ──
+        pg_conn = _get_pg_conn()
+        if pg_conn is not None:
+            try:
+                try:
+                    from services.rlm_ingestion import ingest_directory
+                    from services.rlm_search import hybrid_search
+                    from services.rlm_reranker import rerank
+                    from services.rlm_graph import expand_chunks_with_graph, _get_cache_client
+                except ImportError:
+                    from rlm_ingestion import ingest_directory
+                    from rlm_search import hybrid_search
+                    from rlm_reranker import rerank
+                    from rlm_graph import expand_chunks_with_graph, _get_cache_client
 
-        # Incremental indexing: only re-chunk changed files
-        existing_set = set(files)
-        MTIME_INDEX.prune(existing_set)
+                stats = ingest_directory(directory, pg_conn)
+                if stats.get("inserted", 0) > 0:
+                    _rebuild_graph_safe()
 
-        if fresh:
+                hybrid_results = hybrid_search(
+                    query, pg_conn, top_k=20, file_filter=os.path.abspath(directory)
+                )
+
+                if hybrid_results:
+                    reranked = rerank(query, hybrid_results, top_k=top_k)
+                    expanded = expand_chunks_with_graph(reranked, _get_cache_client())
+                    results = _normalize_hybrid_chunks(expanded)
+                    used_engine = "hybrid_rrf_reranked"
+
+                files_scanned = stats.get("total_files", 0)
+                files_changed = stats.get("inserted", 0)
+                files_cached = stats.get("skipped", 0)
+                total_chunks = len(results)
+            except Exception as e:
+                log.warning("query_hybrid_pipeline_failed error=%s — falling back to legacy scan", str(e))
+                results = []
+            finally:
+                try:
+                    pg_conn.close()
+                except Exception:
+                    pass
+
+        # ── Legacy fallback branch: explicit in-memory BM25 scan (never deleted) ──
+        if not results:
+            ext_set = None
+            if extensions:
+                ext_set = set(extensions)
+
+            files = scan_directory(directory, ext_set, max_files)
+
+            # Incremental indexing: only re-chunk changed files
+            existing_set = set(files)
+            MTIME_INDEX.prune(existing_set)
+
+            if fresh:
+                for f in files:
+                    CHUNK_CACHE.clear_file(f)
+                log.debug("rlm_fresh_bypass cleared=%d files", len(files))
+
+            all_chunks = []
+            changed_count = 0
+            cached_count = 0
             for f in files:
-                CHUNK_CACHE.clear_file(f)
-            log.debug("rlm_fresh_bypass cleared=%d files", len(files))
+                if MTIME_INDEX.is_changed(f):
+                    chunks = chunk_file(f, max_chars)
+                    MTIME_INDEX.update(f)
+                    changed_count += 1
+                else:
+                    # File hasn't changed -- still need chunks from cache
+                    chunks = chunk_file(f, max_chars)  # ChunkCache handles the actual skip
+                    cached_count += 1
+                all_chunks.extend(chunks)
 
-        all_chunks = []
-        changed_count = 0
-        cached_count = 0
-        for f in files:
-            if MTIME_INDEX.is_changed(f):
-                chunks = chunk_file(f, max_chars)
-                MTIME_INDEX.update(f)
-                changed_count += 1
-            else:
-                # File hasn't changed -- still need chunks from cache
-                chunks = chunk_file(f, max_chars)  # ChunkCache handles the actual skip
-                cached_count += 1
-            all_chunks.extend(chunks)
+            MTIME_INDEX.save_if_dirty()
 
-        MTIME_INDEX.save_if_dirty()
+            results = score_chunks(all_chunks, query, top_k)
+            files_scanned = len(files)
+            files_changed = changed_count
+            files_cached = cached_count
+            total_chunks = len(all_chunks)
 
-        results = score_chunks(all_chunks, query, top_k)
         elapsed_ms = round((time.time() - t0) * 1000, 1)
+        log.info("query_done query=%s engine=%s results=%d elapsed_ms=%.1f",
+                 query[:50], used_engine, len(results), elapsed_ms)
 
         self._send_json({
             "ok": True,
             "query": query,
             "directory": directory,
             "results": results,
-            "files_scanned": len(files),
-            "files_changed": changed_count,
-            "files_cached": cached_count,
-            "total_chunks": len(all_chunks),
+            "files_scanned": files_scanned,
+            "files_changed": files_changed,
+            "files_cached": files_cached,
+            "total_chunks": total_chunks,
             "returned": len(results),
             "elapsed_ms": elapsed_ms,
             "index_size": MTIME_INDEX.size,
+            "engine": used_engine,
         })
 
 
