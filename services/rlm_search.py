@@ -1,10 +1,21 @@
 #!/usr/bin/env python3
 """
-Hybrid RRF search for GSD-Amauta RLM — Phase 27 / RLM-04.
+Hybrid RRF search for GSD-Amauta RLM — Phase 27 / RLM-04, generalized Phase 65 / RETR-06.
 
-Fuses pg_search BM25 + pgvector cosine similarity using Reciprocal Rank Fusion.
+hybrid_search_generic() fuses pg_search BM25 + pgvector cosine similarity using
+Reciprocal Rank Fusion against ANY table/column set supplied by the caller.
+Table and column names arrive as parameters ONLY, validated against _IDENT_RE
+before SQL interpolation — Phase 66 (memory ranking) reuses this primitive
+unmodified against memory tables (locked shared-primitive constraint,
+CONTEXT.md).
+
+hybrid_search() is the rlm_chunks-specific wrapper. Its public signature
+`hybrid_search(query, pg_conn, top_k, file_filter)` and return shape (list of
+rlm_chunks row dicts + rrf_score/rank_bm25/rank_vector) are FROZEN for the
+duration of the Phase 65 wave — 65-01 (/query router) and 65-03 (MCP
+delegation) call it in parallel.
+
 RRF formula: 1/(k + rank_bm25) + 1/(k + rank_vector) with k=60.
-
 All fusion happens inside PostgreSQL — no application-level merging.
 Falls back to BM25-only when embedding_code IS NULL for returned chunks.
 
@@ -30,11 +41,192 @@ RRF_CANDIDATE_K = 20
 # Default top-k returned to caller
 DEFAULT_TOP_K = 5
 
+# Table/column identifier guard for hybrid_search_generic (SQL-injection defense:
+# table/column names cannot be bound parameters, so they are validated instead).
+_IDENT_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+
+
+def _check_ident(name: str) -> None:
+    """Raise ValueError if `name` is not a safe bare SQL identifier."""
+    if not isinstance(name, str) or not _IDENT_RE.match(name):
+        raise ValueError(f"unsafe SQL identifier: {name!r}")
+
+
+def hybrid_search_generic(query: str, pg_conn, *, table: str, id_column: str,
+                           select_columns, vector_column: Optional[str] = None,
+                           query_embedding: Optional[list] = None,
+                           bm25_query: Optional[str] = None,
+                           filter_sql: str = "", filter_params=(),
+                           top_k: int = DEFAULT_TOP_K,
+                           candidate_k: int = RRF_CANDIDATE_K,
+                           rrf_k: int = RRF_K) -> list:
+    """
+    Table/column-agnostic RRF fusion of a pg_search BM25 leg and a pgvector
+    cosine-similarity leg (Phase 66 shared-primitive contract, CONTEXT.md).
+
+    Every table/column identifier arrives as a parameter and is validated via
+    _check_ident before interpolation — this function must never contain a
+    literal reference to any specific caller's schema.
+
+    Args:
+        query: raw query string (only used to derive bm25_query when it is None)
+        pg_conn: psycopg2 connection
+        table: source table name (validated identifier)
+        id_column: primary key column name (validated identifier)
+        select_columns: iterable of column names returned in the result rows
+            (validated identifiers)
+        vector_column: optional embedding column name for the vector leg
+            (validated identifier); None disables the vector leg
+        query_embedding: optional query embedding vector; None runs BM25-only
+            (graceful degradation, same semantics as today's Phase 27 path)
+        bm25_query: pre-built pg_search match string (already sanitized/boosted
+            by the caller); derived via _sanitize_query(query) when None
+        filter_sql: optional SQL fragment appended to BOTH legs (e.g.
+            "AND c.file_path LIKE %s")
+        filter_params: positional params for filter_sql, applied once per leg
+        top_k: rows returned after RRF fusion
+        candidate_k: candidate pool size per leg before fusion
+        rrf_k: RRF k constant
+
+    Returns a list of row dicts: select_columns plus rrf_score, rank_bm25,
+    rank_vector. On any SQL failure, falls back to the BM25-only branch
+    (never raises up to the caller — mirrors the pre-Phase-65 degradation
+    contract).
+    """
+    _check_ident(table)
+    _check_ident(id_column)
+    for col in select_columns:
+        _check_ident(col)
+    if vector_column is not None:
+        _check_ident(vector_column)
+
+    if bm25_query is None:
+        bm25_query = _sanitize_query(query)
+    if not bm25_query:
+        return []
+
+    filter_params = list(filter_params)
+
+    if query_embedding is None or vector_column is None:
+        log.debug("hybrid_search_generic_bm25_only_mode table=%s reason=no_query_embedding", table)
+        return _generic_bm25_only(bm25_query, pg_conn, table=table, id_column=id_column,
+                                   select_columns=select_columns, filter_sql=filter_sql,
+                                   filter_params=filter_params, top_k=top_k)
+
+    select_cols_sql = ", ".join(f"c.{col}" for col in select_columns)
+
+    # Convert query embedding to a PostgreSQL vector literal.
+    # We truncate stored higher-dim vectors to 256-dim for fast lookup using the
+    # Matryoshka property: cosine similarity is preserved in leading dimensions.
+    vec_literal = "[" + ",".join(f"{v:.6f}" for v in query_embedding[:256]) + "]"
+
+    sql = f"""
+        WITH bm25_leg AS (
+            SELECT
+                c.{id_column} AS id,
+                RANK() OVER (ORDER BY paradedb.score(c.{id_column}) DESC) AS rank_bm25
+            FROM {table} c
+            WHERE c @@@ %s
+            {filter_sql}
+            LIMIT {candidate_k}
+        ),
+        vector_leg AS (
+            SELECT
+                c.{id_column} AS id,
+                RANK() OVER (ORDER BY (c.{vector_column}::vector(256)) <=> %s::vector(256)) AS rank_vector
+            FROM {table} c
+            WHERE c.{vector_column} IS NOT NULL
+            {filter_sql}
+            LIMIT {candidate_k}
+        ),
+        rrf_fused AS (
+            SELECT
+                COALESCE(b.id, v.id) AS id,
+                COALESCE(b.rank_bm25, {candidate_k + 1}) AS rank_bm25,
+                COALESCE(v.rank_vector, {candidate_k + 1}) AS rank_vector,
+                (1.0 / ({rrf_k} + COALESCE(b.rank_bm25, {candidate_k + 1})) +
+                 1.0 / ({rrf_k} + COALESCE(v.rank_vector, {candidate_k + 1}))) AS rrf_score
+            FROM bm25_leg b
+            FULL OUTER JOIN vector_leg v ON b.id = v.id
+        )
+        SELECT
+            {select_cols_sql},
+            r.rrf_score, r.rank_bm25, r.rank_vector
+        FROM rrf_fused r
+        JOIN {table} c ON c.{id_column} = r.id
+        ORDER BY r.rrf_score DESC
+        LIMIT %s
+    """
+
+    params = [bm25_query] + filter_params + [vec_literal] + filter_params + [top_k]
+
+    try:
+        with pg_conn.cursor() as cur:
+            cur.execute(sql, params)
+            cols = [d[0] for d in cur.description]
+            rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+        log.debug("hybrid_search_generic_ok table=%s results=%d", table, len(rows))
+        return rows
+    except Exception as e:
+        log.warning("hybrid_search_generic_failed table=%s error=%s — falling back to BM25", table, str(e))
+        return _generic_bm25_only(bm25_query, pg_conn, table=table, id_column=id_column,
+                                   select_columns=select_columns, filter_sql=filter_sql,
+                                   filter_params=filter_params, top_k=top_k)
+
+
+def _generic_bm25_only(bm25_query: str, pg_conn, *, table: str, id_column: str,
+                        select_columns, filter_sql: str = "", filter_params=(),
+                        top_k: int = DEFAULT_TOP_K) -> list:
+    """
+    BM25-only branch shared by hybrid_search_generic's graceful-degradation path
+    (no query_embedding) and its exception fallback (hybrid SQL failed). Same
+    table/column-agnostic contract as hybrid_search_generic — no literal schema
+    references.
+    """
+    _check_ident(table)
+    _check_ident(id_column)
+    for col in select_columns:
+        _check_ident(col)
+
+    if not bm25_query:
+        return []
+
+    select_cols_sql = ", ".join(select_columns)
+    filter_params = list(filter_params)
+
+    sql = f"""
+        SELECT
+            {select_cols_sql},
+            NULL::float AS rrf_score,
+            1 AS rank_bm25,
+            NULL::int AS rank_vector
+        FROM {table}
+        WHERE {table} @@@ %s
+        {filter_sql}
+        ORDER BY paradedb.score({id_column}) DESC
+        LIMIT %s
+    """
+    params = [bm25_query] + filter_params + [top_k]
+
+    try:
+        with pg_conn.cursor() as cur:
+            cur.execute(sql, params)
+            cols = [d[0] for d in cur.description]
+            rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+        return rows
+    except Exception as e:
+        log.warning("generic_bm25_only_failed table=%s error=%s", table, str(e))
+        return []
+
 
 def hybrid_search(query: str, pg_conn, top_k: int = DEFAULT_TOP_K,
                   file_filter: Optional[str] = None) -> list:
     """
     Perform hybrid RRF search: pg_search BM25 + pgvector cosine in one SQL transaction.
+
+    Thin rlm_chunks-specific wrapper over hybrid_search_generic() (Phase 65 /
+    RETR-06). FROZEN public signature and return shape — 65-01 and 65-03 depend
+    on it as-is in the same wave.
 
     Returns a list of chunk dicts (up to top_k), sorted by RRF score descending.
     Each chunk includes all rlm_chunks columns plus 'rrf_score', 'rank_bm25', 'rank_vector'.
@@ -54,7 +246,19 @@ def hybrid_search(query: str, pg_conn, top_k: int = DEFAULT_TOP_K,
     from services.rlm_embeddings import embed_for_query
     query_embedding_256 = embed_for_query(query)  # 256-dim for fast lookup, or None
 
-    results = _run_hybrid_sql(query, query_embedding_256, pg_conn, top_k, file_filter)
+    select_columns = [
+        "id", "file_path", "symbol_name", "symbol_type", "start_line", "end_line",
+        "content", "description", "dependencies", "dependents",
+    ]
+    filter_sql = "AND c.file_path LIKE %s" if file_filter else ""
+    filter_params = (f"{file_filter}%",) if file_filter else ()
+
+    results = hybrid_search_generic(
+        query, pg_conn,
+        table="rlm_chunks", id_column="id", select_columns=select_columns,
+        vector_column="embedding_code", query_embedding=query_embedding_256,
+        filter_sql=filter_sql, filter_params=filter_params, top_k=top_k,
+    )
 
     # Apply position_decay=0.05 penalty (replicate rlm-service.py BM25 tuning)
     # Later chunks (higher start_line) score lower: penalty = 0.05 * (start_line / max_line)
@@ -107,93 +311,6 @@ def bm25_only_search(query: str, pg_conn, top_k: int = DEFAULT_TOP_K,
     except Exception as e:
         log.warning("bm25_only_search_failed query=%s error=%s", query[:50], str(e))
         return []
-
-
-def _run_hybrid_sql(query: str, query_embedding: Optional[list],
-                    pg_conn, top_k: int, file_filter: Optional[str]) -> list:
-    """
-    Execute the hybrid RRF SQL query.
-
-    Two strategies:
-    1. Full hybrid (BM25 + vector): when query_embedding is not None
-    2. BM25-only: when query_embedding is None (graceful degradation)
-    """
-    safe_query = _sanitize_query(query)
-    if not safe_query:
-        return []
-
-    if query_embedding is None:
-        # Graceful degradation: BM25-only when no embedding model available
-        log.debug("hybrid_search_bm25_only_mode reason=no_query_embedding")
-        return bm25_only_search(query, pg_conn, top_k, file_filter)
-
-    file_clause_bm25 = "AND c.file_path LIKE %s" if file_filter else ""
-    file_clause_vec = "AND c.file_path LIKE %s" if file_filter else ""
-
-    # Convert 256-dim query embedding to PostgreSQL vector literal
-    # We truncate stored 1024-dim to 256-dim for fast lookup using Matryoshka property:
-    # cosine similarity is preserved in leading dimensions.
-    # pg_store uses <=> (cosine distance) operator.
-    vec_literal = "[" + ",".join(f"{v:.6f}" for v in query_embedding[:256]) + "]"
-
-    sql = f"""
-        WITH bm25_leg AS (
-            SELECT
-                c.id,
-                RANK() OVER (ORDER BY paradedb.score(c.id) DESC) AS rank_bm25
-            FROM rlm_chunks c
-            WHERE c @@@ %s
-            {file_clause_bm25}
-            LIMIT {RRF_CANDIDATE_K}
-        ),
-        vector_leg AS (
-            SELECT
-                c.id,
-                RANK() OVER (ORDER BY (c.embedding_code::vector(256)) <=> %s::vector(256)) AS rank_vector
-            FROM rlm_chunks c
-            WHERE c.embedding_code IS NOT NULL
-            {file_clause_vec}
-            LIMIT {RRF_CANDIDATE_K}
-        ),
-        rrf_fused AS (
-            SELECT
-                COALESCE(b.id, v.id) AS id,
-                COALESCE(b.rank_bm25, {RRF_CANDIDATE_K + 1}) AS rank_bm25,
-                COALESCE(v.rank_vector, {RRF_CANDIDATE_K + 1}) AS rank_vector,
-                (1.0 / ({RRF_K} + COALESCE(b.rank_bm25, {RRF_CANDIDATE_K + 1})) +
-                 1.0 / ({RRF_K} + COALESCE(v.rank_vector, {RRF_CANDIDATE_K + 1}))) AS rrf_score
-            FROM bm25_leg b
-            FULL OUTER JOIN vector_leg v ON b.id = v.id
-        )
-        SELECT
-            c.id, c.file_path, c.symbol_name, c.symbol_type,
-            c.start_line, c.end_line, c.content, c.description,
-            c.dependencies, c.dependents,
-            r.rrf_score, r.rank_bm25, r.rank_vector
-        FROM rrf_fused r
-        JOIN rlm_chunks c ON c.id = r.id
-        ORDER BY r.rrf_score DESC
-        LIMIT %s
-    """
-
-    params = [safe_query]
-    if file_filter:
-        params.append(f"{file_filter}%")
-    params.append(vec_literal)
-    if file_filter:
-        params.append(f"{file_filter}%")
-    params.append(top_k)
-
-    try:
-        with pg_conn.cursor() as cur:
-            cur.execute(sql, params)
-            cols = [d[0] for d in cur.description]
-            rows = [dict(zip(cols, row)) for row in cur.fetchall()]
-        log.debug("hybrid_search_ok query=%s results=%d", query[:50], len(rows))
-        return rows
-    except Exception as e:
-        log.warning("hybrid_search_failed query=%s error=%s — falling back to BM25", query[:50], str(e))
-        return bm25_only_search(query, pg_conn, top_k, file_filter)
 
 
 def _sanitize_query(query: str) -> str:
