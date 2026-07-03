@@ -96,11 +96,17 @@ CACHE_MAX_BYTES = int(os.environ.get("RLM_CACHE_MAX_MB", "512")) * 1024 * 1024  
 POSITION_DECAY = float(os.environ.get("RLM_POSITION_DECAY", "0.05"))
 PID_FILE = Path(__file__).resolve().parent / "rlm-service.pid"
 
-# File extensions we know how to chunk
+# File extensions we know how to chunk.
+# AST-handled membership is canonically owned by services/ast_chunker.py's
+# AST_CODE_EXTENSIONS — this set must be a superset of that one (Phase 69 /
+# ASTG-03, locked by tests/test_69_extension_coherence.py).
 CODE_EXTENSIONS = {
+    # AST-handled (tree-sitter grammar available via services/ast_chunker.py):
     ".py", ".js", ".ts", ".jsx", ".tsx", ".cjs", ".mjs",
+    ".kt", ".kts", ".swift", ".go", ".rs", ".java",
+    # HEURISTIC-ONLY (paragraph/fixed-char chunking, no AST grammar):
     ".sql", ".sh", ".bash", ".zsh",
-    ".rb", ".go", ".rs", ".java", ".kt", ".swift", ".c", ".cpp", ".h",
+    ".rb", ".c", ".cpp", ".h",
     ".css", ".scss", ".less",
 }
 MARKDOWN_EXTENSIONS = {".md", ".mdx", ".markdown"}
