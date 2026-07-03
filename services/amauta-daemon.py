@@ -1533,7 +1533,10 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
         # ─── Capability catalog GET routes (Phase 60 TOOL-02/TOOL-03) ──
         if path == "/api/capability/list":
             try:
-                from services.capability_schema import load_capability_catalog, validate_catalog
+                try:
+                    from services.capability_schema import load_capability_catalog, validate_catalog
+                except ImportError:
+                    from capability_schema import load_capability_catalog, validate_catalog
                 catalog = load_capability_catalog()
                 try:
                     validate_catalog(dict(catalog))
@@ -1551,7 +1554,10 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
 
         if path == "/api/capability/audit":
             try:
-                from services.capability_access import audit_diff
+                try:
+                    from services.capability_access import audit_diff
+                except ImportError:
+                    from capability_access import audit_diff
                 store = _get_store()   # may be None — audit_diff degrades to declared-only
                 result = audit_diff(store=store)
                 self._send_json(result)   # HTTP 200 either way; 'drift' bool drives CLI exit code
@@ -2542,7 +2548,10 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": "entry and agent_id are required"}, 400)
                 return
             try:
-                from services.capability_access import check_access, log_access, flush_buffer, get_enforce_mode
+                try:
+                    from services.capability_access import check_access, log_access, flush_buffer, get_enforce_mode
+                except ImportError:
+                    from capability_access import check_access, log_access, flush_buffer, get_enforce_mode
                 store = _get_store()   # None is FINE here — log_access buffers; do NOT 503
                 if store:
                     flush_buffer(store)   # flush-on-recovery; fail-open inside
