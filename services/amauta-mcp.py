@@ -491,53 +491,55 @@ async def call_tool(name: str, arguments: dict) -> CallToolResult:
             return CallToolResult(content=[TextContent(type="text",
                 text=json.dumps({"error": "pg_unavailable", "detail": "PGStore unavailable"}))])
         try:
-            # Try code_embeddings table first via direct SQL, fall back to memory_semantic_search
+            # Phase 65 RETR-03: delegate to rlm_search.hybrid_search over rlm_chunks
+            # (the same single retrieval stack /search and /query use) instead of
+            # the removed dead-table SELECT probe (no migration ever created that
+            # legacy table — the old branch never fired and silently fell through
+            # to memory_semantic_search on every call).
             results = None
-            try:
-                with store._get_conn() as conn:
-                    with conn.cursor() as cur:
-                        cur.execute(
-                            "SELECT 1 FROM information_schema.tables "
-                            "WHERE table_name = 'code_embeddings' LIMIT 1"
+            engine = None
+            if _HYBRID_SEARCH_AVAILABLE and store is not None:
+                try:
+                    with store._get_conn() as conn:
+                        rows = hybrid_search(
+                            query, conn, top_k=top_k, file_filter=directory or None,
                         )
-                        if cur.fetchone():
-                            # code_embeddings table exists — use direct query
-                            cur.execute(
-                                "SELECT file_path as path, chunk_text as text, "
-                                "symbol_name, 1.0 as score "
-                                "FROM code_embeddings "
-                                "LIMIT %s",
-                                (top_k,),
-                            )
-                            rows = cur.fetchall()
-                            results = [
-                                {
-                                    "path": r[0] or "",
-                                    "text": r[1] or "",
-                                    "symbol_name": r[2] or "",
-                                    "score": float(r[3] or 0),
-                                }
-                                for r in rows
-                            ]
-            except Exception as _e:
-                import sys as _sys
-                print(f"[amauta-mcp] code_embeddings query failed, falling back: {_e}", file=_sys.stderr)
-                results = None
+                    results = [
+                        {
+                            "path": row.get("file_path", "") or "",
+                            "text": row.get("content", "") or "",
+                            "symbol_name": row.get("symbol_name", "") or "",
+                            "score": float(row.get("reranker_score") or row.get("rrf_score") or 0.0),
+                        }
+                        for row in rows
+                    ]
+                    engine = "hybrid_rlm_chunks"
+                except Exception as _e:
+                    print(f"[amauta-mcp] hybrid_search failed, falling back: {_e}", file=sys.stderr)
+                    results = None
+                    engine = None
 
             if results is None:
-                # Fallback: memory_semantic_search (broader codebase memory)
+                # Fallback: memory_semantic_search (broader codebase memory) — used
+                # when hybrid_search is unavailable, PG is down, or hybrid raised.
+                # An empty hybrid answer ([]) is a VALID answer and does NOT fall
+                # through here — only `results is None` triggers this branch.
                 raw = store.memory_semantic_search(query=query, project_id=None, source=None, limit=top_k)
                 raw_results, _ = raw if isinstance(raw, tuple) else (raw, "unknown")
                 results = raw_results if isinstance(raw_results, list) else []
+                engine = "memory_fallback"
 
-            # Post-filter: file_filter (substring on path) and directory (prefix on path)
+            # Post-filter: file_filter (substring on path) and directory (prefix on path).
+            # hybrid_search already applies the directory prefix filter server-side;
+            # these remain as a no-op safety net there, and the active filter on the
+            # memory_fallback path (which has no server-side directory filtering).
             if file_filter:
                 results = [r for r in results if file_filter in str(r.get("path", "") or r.get("file", ""))]
             if directory:
                 results = [r for r in results if str(r.get("path", "") or r.get("file", "")).startswith(directory)]
 
             return CallToolResult(content=[TextContent(type="text",
-                text=json.dumps({"results": results, "top_k": top_k}))])
+                text=json.dumps({"results": results, "top_k": top_k, "engine": engine}))])
         except Exception as e:
             return CallToolResult(content=[TextContent(type="text",
                 text=json.dumps({"error": "internal_error", "detail": str(e)}))])
