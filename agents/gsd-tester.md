@@ -6,6 +6,12 @@ color: green
 memory: user
 skills:
   - gsd-executor-backend-workflow
+# hooks:
+#   PostToolUse:
+#     - matcher: "Write|Edit"
+#       hooks:
+#         - type: command
+#           command: "npx eslint --fix $FILE 2>/dev/null || true"
 ---
 
 # Agent: gsd-tester

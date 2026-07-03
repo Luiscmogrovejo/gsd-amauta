@@ -84,7 +84,7 @@ npx gsd-amauta init --uninstall
 
 **Persistent memory** — Every completed task, validated pattern, and agent learning is stored in PostgreSQL with pgvector embeddings. Future agents query this memory before starting work, so the system improves with every phase shipped.
 
-**Specialist agents** — 17 agents with file-pattern routing: planner, executor-backend, executor-frontend, executor-infra, reviewer, security, architect, tester, and more. The orchestrator routes tasks to the right agent based on file types and complexity.
+**Specialist agents** — 22 agents with file-pattern routing: planner, executor-backend, executor-frontend, executor-infra, executor-mobile-android, executor-mobile-ios, executor-mobile-cross (Flutter/React Native), executor-wearables (watchOS/Wear OS), executor-ai (LLM apps, prompts, MCP servers, evals), reviewer, security, architect, tester, and more. The orchestrator routes tasks to the right agent based on file types and complexity.
 
 **Divergence protocol** — When an executor discovers a plan-vs-reality mismatch, it surfaces it as a first-class observation (not a silent fix). The orchestrator decides: absorb, escalate, or replan.
 

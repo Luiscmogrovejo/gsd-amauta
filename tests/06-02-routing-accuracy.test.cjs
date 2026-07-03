@@ -100,6 +100,24 @@ describe('ROUTE-06: Mixed file routing (priority order)', () => {
   it('23. Dockerfile + .ts mix routes to infra', () => assert.equal(route('Dockerfile,src/server.ts'), 'executor-infra'));
 });
 
+describe('ROUTE-07: Mobile / wearables / AI specialist routing (v3.4)', () => {
+  it('28. .kt routes to mobile-android', () => assert.equal(route('app/src/main/Main.kt'), 'executor-mobile-android'));
+  it('29. build.gradle.kts routes to mobile-android', () => assert.equal(route('app/build.gradle.kts'), 'executor-mobile-android'));
+  it('30. AndroidManifest.xml routes to mobile-android', () => assert.equal(route('app/src/main/AndroidManifest.xml'), 'executor-mobile-android'));
+  it('31. .java still routes to backend (not android)', () => assert.equal(route('src/Main.java'), 'executor-backend'));
+  it('32. .swift routes to mobile-ios', () => assert.equal(route('Sources/App/ContentView.swift'), 'executor-mobile-ios'));
+  it('33. .xcconfig routes to mobile-ios', () => assert.equal(route('Config/Release.xcconfig'), 'executor-mobile-ios'));
+  it('34. .dart routes to mobile-cross', () => assert.equal(route('lib/main.dart'), 'executor-mobile-cross'));
+  it('35. pubspec.yaml routes to mobile-cross', () => assert.equal(route('pubspec.yaml'), 'executor-mobile-cross'));
+  it('36. wear/ dir beats .kt extension (wearables wins)', () => assert.equal(route('wear/src/main/TileService.kt'), 'executor-wearables'));
+  it('37. watchos/ dir beats .swift extension (wearables wins)', () => assert.equal(route('watchos/Complications/Provider.swift'), 'executor-wearables'));
+  it('38. prompts/ dir routes to ai', () => assert.equal(route('prompts/system-reviewer.md'), 'executor-ai'));
+  it('39. evals/ dir beats .py extension (ai wins)', () => assert.equal(route('evals/rag_golden_set.py'), 'executor-ai'));
+  it('40. plain .py still routes to backend (not ai)', () => assert.equal(route('services/pipeline.py'), 'executor-backend'));
+  it('41. android/ shell dir in Flutter repo routes to mobile-android', () => assert.equal(route('android/app/build.gradle'), 'executor-mobile-android'));
+  it('42. .tsx still beats .dart-adjacent configs on RN work (frontend by extension)', () => assert.equal(route('src/screens/Home.tsx'), 'executor-frontend'));
+});
+
 describe('DEDUP-01: Routing is single source of truth', () => {
   it('24. execute-phase.md references route-executor', () => {
     assert.ok(EXEC_PHASE.includes('route-executor'), 'execute-phase.md missing route-executor reference');

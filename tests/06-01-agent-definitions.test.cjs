@@ -40,7 +40,9 @@ const AGENTS_DIR = path.resolve(__dirname, '..', 'agents');
 const AGENT_NAMES = [
   'gsd-operator', 'gsd-planner', 'gsd-researcher', 'gsd-roadmapper',
   'gsd-executor-backend', 'gsd-executor-frontend', 'gsd-executor-infra',
-  'gsd-executor-general', 'gsd-checker', 'gsd-validator', 'gsd-debugger'
+  'gsd-executor-general', 'gsd-checker', 'gsd-validator', 'gsd-debugger',
+  'gsd-executor-mobile-android', 'gsd-executor-mobile-ios',
+  'gsd-executor-mobile-cross', 'gsd-executor-wearables', 'gsd-executor-ai'
 ];
 
 const agents = {};

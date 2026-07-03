@@ -159,9 +159,14 @@ const AGENT_FILES = [
   'agents/gsd-tester.md',
   'agents/gsd-qa.md',
   'agents/gsd-security.md',
+  'agents/gsd-executor-mobile-android.md',
+  'agents/gsd-executor-mobile-ios.md',
+  'agents/gsd-executor-mobile-cross.md',
+  'agents/gsd-executor-wearables.md',
+  'agents/gsd-executor-ai.md',
 ];
 
-describe('[SEC-04] Supply chain rule propagation: all 14 agents have "npm ci" + 10 sections', () => {
+describe('[SEC-04] Supply chain rule propagation: all 19 agents have "npm ci" + 10 sections', () => {
   for (const agentFile of AGENT_FILES) {
     const filePath = path.join(ROOT, agentFile);
 

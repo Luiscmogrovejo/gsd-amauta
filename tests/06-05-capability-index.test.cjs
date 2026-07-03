@@ -45,11 +45,17 @@ const index = JSON.parse(fs.readFileSync(INDEX_PATH, 'utf-8'));
 const ALL_IDS = [
   'gsd-operator', 'gsd-planner', 'gsd-researcher', 'gsd-roadmapper',
   'gsd-executor-frontend', 'gsd-executor-backend', 'gsd-executor-infra',
-  'gsd-executor-general', 'gsd-checker', 'gsd-validator', 'gsd-debugger'
+  'gsd-executor-general', 'gsd-checker', 'gsd-validator', 'gsd-debugger',
+  'gsd-executor-mobile-android', 'gsd-executor-mobile-ios',
+  'gsd-executor-mobile-cross', 'gsd-executor-wearables', 'gsd-executor-ai'
 ];
 
 const NON_CODE = ['gsd-operator', 'gsd-planner', 'gsd-researcher', 'gsd-roadmapper', 'gsd-checker', 'gsd-validator'];
-const CODE = ['gsd-executor-frontend', 'gsd-executor-backend', 'gsd-executor-infra', 'gsd-executor-general', 'gsd-debugger'];
+const CODE = [
+  'gsd-executor-frontend', 'gsd-executor-backend', 'gsd-executor-infra', 'gsd-executor-general', 'gsd-debugger',
+  'gsd-executor-mobile-android', 'gsd-executor-mobile-ios', 'gsd-executor-mobile-cross',
+  'gsd-executor-wearables', 'gsd-executor-ai'
+];
 
 describe('INDEX-01: File existence and validity', () => {
   it('1. agent-capabilities.json exists', () => {
@@ -67,10 +73,10 @@ describe('INDEX-01: File existence and validity', () => {
 });
 
 describe('INDEX-02: Completeness', () => {
-  it('5. Exactly 11 agent entries', () => {
-    assert.equal(index.agents.length, 11, `Expected 11 agents, got ${index.agents.length}`);
+  it('5. Exactly 16 agent entries', () => {
+    assert.equal(index.agents.length, 16, `Expected 16 agents, got ${index.agents.length}`);
   });
-  it('6. All 11 agent IDs present', () => {
+  it('6. All 16 agent IDs present', () => {
     const ids = index.agents.map(a => a.id);
     for (const id of ALL_IDS) {
       assert.ok(ids.includes(id), `Missing agent: ${id}`);

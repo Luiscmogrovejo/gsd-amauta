@@ -71,6 +71,50 @@
       "patterns": ["P4", "P7", "P11", "P12"]
     },
     {
+      "id": "gsd-executor-mobile-android",
+      "lane": "code",
+      "file_patterns": ["*.kt", "*.kts", "*.gradle", "*.aidl", "AndroidManifest.xml", "proguard-rules.pro", "android/*"],
+      "task_types": ["execution", "implementation", "testing"],
+      "tools": ["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
+      "patterns": ["P4", "P7", "P11", "P12"],
+      "notes": "Android specialist (Kotlin/Compose/Gradle). *.java stays with executor-backend; Android-Java work is assigned explicitly by the planner."
+    },
+    {
+      "id": "gsd-executor-mobile-ios",
+      "lane": "code",
+      "file_patterns": ["*.swift", "*.storyboard", "*.xib", "*.xcconfig", "*.pbxproj", "*.entitlements", "*.xcstrings", "Podfile", "ios/*"],
+      "task_types": ["execution", "implementation", "testing"],
+      "tools": ["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
+      "patterns": ["P4", "P7", "P11", "P12"]
+    },
+    {
+      "id": "gsd-executor-mobile-cross",
+      "lane": "code",
+      "file_patterns": ["*.dart", "*.podspec", "pubspec.yaml", "analysis_options.yaml", "metro.config.js", "eas.json", "react-native.config.js"],
+      "task_types": ["execution", "implementation", "testing"],
+      "tools": ["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
+      "patterns": ["P4", "P7", "P11", "P12"],
+      "notes": "Flutter/Dart routes here deterministically. React Native .ts/.tsx routes to executor-frontend by extension; RN work is assigned explicitly by the planner."
+    },
+    {
+      "id": "gsd-executor-wearables",
+      "lane": "code",
+      "file_patterns": ["wear/*", "wearos/*", "watchos/*", "watch/*", "tiles/*", "complications/*", "*.watchface"],
+      "task_types": ["execution", "implementation", "testing"],
+      "tools": ["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
+      "patterns": ["P4", "P7", "P11", "P12"],
+      "notes": "Directory-pattern routed: dir patterns (+100 specificity) beat the mobile executors' extension patterns for files under wearable directories. Also receives explicit planner assignments."
+    },
+    {
+      "id": "gsd-executor-ai",
+      "lane": "code",
+      "file_patterns": ["prompts/*", "evals/*", "*.prompt"],
+      "task_types": ["execution", "implementation", "testing"],
+      "tools": ["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
+      "patterns": ["P4", "P7", "P11", "P12"],
+      "notes": "LLM/agent-app specialist (prompts, MCP tools, evals, RAG). General .py/.ts AI code stays with executor-backend; LLM-specific work is assigned explicitly by the planner."
+    },
+    {
       "id": "gsd-executor-general",
       "lane": "code",
       "file_patterns": [],

@@ -14,6 +14,11 @@ Model profiles control which Claude model each GSD agent uses. This allows balan
 | gsd-executor-backend | opus | sonnet | sonnet |
 | gsd-executor-infra | opus | sonnet | sonnet |
 | gsd-executor-general | opus | sonnet | sonnet |
+| gsd-executor-mobile-android | opus | sonnet | sonnet |
+| gsd-executor-mobile-ios | opus | sonnet | sonnet |
+| gsd-executor-mobile-cross | opus | sonnet | sonnet |
+| gsd-executor-wearables | opus | sonnet | sonnet |
+| gsd-executor-ai | opus | sonnet | sonnet |
 | gsd-checker | sonnet | sonnet | haiku |
 | gsd-validator | sonnet | sonnet | haiku |
 | gsd-debugger | opus | sonnet | sonnet |
