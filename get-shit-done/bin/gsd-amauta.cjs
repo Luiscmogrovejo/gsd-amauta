@@ -495,16 +495,50 @@ async function cmdClaim(useDaemon, id, flags, jsonMode) {
   const body = { id, ...flags };
   body.project_dir = process.cwd();
 
+  let exitCode;
   if (useDaemon) {
     const { data } = await httpRequest('POST', '/api/claim', body);
     printResponse(data, jsonMode);
-    return data.exit_code || 0;
+    exitCode = data.exit_code || 0;
+  } else {
+    const args = ['claim', id];
+    if (flags.agent) args.push('--agent', flags.agent);
+    const result = runDirect(args);
+    printResponse(result, jsonMode);
+    exitCode = result.exit_code;
   }
-  const args = ['claim', id];
-  if (flags.agent) args.push('--agent', flags.agent);
-  const result = runDirect(args);
-  printResponse(result, jsonMode);
-  return result.exit_code;
+
+  // Phase 67 HOOK-05: best-effort claim-marker write. The daemon/direct
+  // response never carries the task's tags (just {output,error,exit_code}),
+  // so the marker's manifest resolution ALWAYS reads data/tasks.json
+  // locally via hook-state's findTaskItem/resolveManifestForTask (zero
+  // extra daemon calls, per TK-1747). Wrapped so any failure here — missing
+  // module, unreadable tasks.json, read-only marker dir — changes NOTHING
+  // about claim's exit code or stdout.
+  if (exitCode === 0) {
+    try {
+      const hookState = require('./lib/hook-state.cjs');
+      const item = hookState.findTaskItem(id);
+      const tags = (item && Array.isArray(item.tags)) ? item.tags : [];
+      const planTag = tags.find((t) => typeof t === 'string' && t.startsWith('plan:'));
+      const taskTag = tags.find((t) => typeof t === 'string' && t.startsWith('task:'));
+      const planId = planTag ? planTag.slice('plan:'.length) : null;
+      const phaseMatch = planId ? /^(\d+)/.exec(planId) : null;
+      const filesExpected = item ? hookState.resolveManifestForTask(item) : null;
+      hookState.writeActiveTask(id, {
+        plan_task_id: taskTag ? taskTag.slice('task:'.length) : null,
+        plan_id: planId,
+        phase: phaseMatch ? phaseMatch[1] : null,
+        agent: flags.agent || (item && item.assigned_to) || null,
+        claimed_at: new Date().toISOString(),
+        files_expected: filesExpected,
+      });
+    } catch {
+      // Best-effort — marker write failure must never affect claim behavior.
+    }
+  }
+
+  return exitCode;
 }
 
 const VALID_PHASES = new Set(['R', 'P', 'E', 'T', 'D']);
@@ -1464,16 +1498,33 @@ async function cmdStatus(useDaemon, id, statusTo, flags, jsonMode) {
   if (!id || !statusTo) die('Usage: amauta status <id> <new-status> [--agent A]');
   const body = { id, status_to: statusTo, ...flags };
 
+  let exitCode;
   if (useDaemon) {
     const { data } = await httpRequest('POST', '/api/status', body);
     printResponse(data, jsonMode);
-    return data.exit_code || 0;
+    exitCode = data.exit_code || 0;
+  } else {
+    const args = ['status', id, statusTo];
+    if (flags.agent) args.push('--agent', flags.agent);
+    const result = runDirect(args);
+    printResponse(result, jsonMode);
+    exitCode = result.exit_code;
   }
-  const args = ['status', id, statusTo];
-  if (flags.agent) args.push('--agent', flags.agent);
-  const result = runDirect(args);
-  printResponse(result, jsonMode);
-  return result.exit_code;
+
+  // Phase 67 HOOK-05: best-effort claim-marker prune on terminal status.
+  // Wrapped so any failure here changes nothing about status's exit code.
+  if (exitCode === 0) {
+    const normalized = String(statusTo || '').toLowerCase();
+    if (normalized === 'done' || normalized === 'completed' || normalized === 'cancelled') {
+      try {
+        require('./lib/hook-state.cjs').pruneActiveTask(id);
+      } catch {
+        // Best-effort — prune failure must never affect status behavior.
+      }
+    }
+  }
+
+  return exitCode;
 }
 
 async function cmdSearch(useDaemon, query, jsonMode) {
