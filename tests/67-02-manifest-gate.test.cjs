@@ -238,6 +238,39 @@ test('67-02-02(7b): block mode, Edit .planning/STATE.md with an operator (non-ex
   }
 });
 
+test('67-02-02(7c): block mode, path present in BOTH orchestrator_owned AND global_allowlist -> orchestrator-owned deny wins (TK-1803 continuation)', async () => {
+  // Reproduces the real committed get-shit-done/config/hook-allowlists.json
+  // shape, where '.planning/STATE.md' is a member of BOTH lists. Before the
+  // TK-1803 fix, gsd-manifest-gate.cjs checked global_allowlist (old Step 4)
+  // before orchestrator_owned (old Step 5), so this overlap silently
+  // allowed the write. The fix checks orchestrator_owned FIRST — this case
+  // proves the ordering directly rather than relying on disjoint fixtures.
+  const fx = setupFixtures({ 'TK-9001': fixtureEntry({ agent: 'executor-backend' }) });
+  fx.allowlistsPath && fs.writeFileSync(fx.allowlistsPath, JSON.stringify({
+    artifact_version: 1,
+    generated_by: 'test-fixture-overlap',
+    orchestrator_owned: ['.planning/STATE.md'],
+    global_allowlist: ['.planning/STATE.md', 'package-lock.json'],
+    capability_catalog: { catalog_version: '1.0', entry_names: [] },
+  }, null, 2));
+  try {
+    const result = await runGate({
+      env: baseEnv({ ...fx, mode: 'block' }),
+      stdin: editStdin('.planning/STATE.md'),
+    });
+    assert.equal(result.code, 0, result.stderr);
+    const parsed = JSON.parse(result.stdout || '{}');
+    assert.equal(
+      parsed.hookSpecificOutput && parsed.hookSpecificOutput.permissionDecision,
+      'deny',
+      `overlap path must hit the orchestrator-owned hard-halt, not the global_allowlist allow. ${result.stdout}`
+    );
+    assert.match(parsed.hookSpecificOutput.permissionDecisionReason, /orchestrator-owned/);
+  } finally {
+    cleanup(fx);
+  }
+});
+
 // ─── Case 8: files_expected null -> allow + warn ───────────────────────────
 
 test('67-02-02(8): block mode, rogue path with files_expected:null in marker -> allow + systemMessage', async () => {

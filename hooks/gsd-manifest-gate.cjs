@@ -22,15 +22,21 @@
  * via runGate()'s try/catch — this handler is never invoked outside that
  * wrapper's guarantees.
  *
- * Decision order (locked, .planning/phases/67-enforcement-hooks/67-02-PLAN.md):
+ * Decision order (locked, .planning/phases/67-enforcement-hooks/67-02-PLAN.md;
+ * reordered per TK-1803 continuation — orchestrator_owned is now checked
+ * BEFORE global_allowlist so a path present in BOTH lists — e.g.
+ * .planning/STATE.md, which the real committed hook-allowlists.json artifact
+ * lists in both — still hits the orchestrator-owned hard-halt instead of
+ * being silently allowed by the global_allowlist branch first):
  *   1. Mode off            -> exit 0 (handled by runGate before this file runs).
  *   2. No file_path         -> allow.
  *   3. No fresh marker entries -> allow silently (the claim gate owns this case).
  *   3a. Allowlists artifact unavailable/corrupt -> allow + warn (fail-open;
  *       Verification Criteria #5 — never crash or deny on missing/corrupt data).
- *   4. Path in global_allowlist -> allow.
- *   5. Path in orchestrator_owned -> deny iff an active entry's agent is an
- *      executor; else allow.
+ *   4. Path in orchestrator_owned -> deny iff an active entry's agent is an
+ *      executor; else allow. Checked FIRST — this is the one invariant that
+ *      must win regardless of global_allowlist/manifest overlap.
+ *   5. Path in global_allowlist -> allow.
  *   6. Path in the union of active tasks' modify/create -> allow.
  *   7. Any active task has files_expected: null -> allow + warn (unenforceable).
  *   8. Otherwise -> violation (deny in block mode, warn otherwise).
@@ -112,11 +118,12 @@ hookCommon.runGate('manifest', (input, ctx) => {
   const globalAllowlist = Array.isArray(allowlists.global_allowlist) ? allowlists.global_allowlist : [];
   const orchestratorOwned = Array.isArray(allowlists.orchestrator_owned) ? allowlists.orchestrator_owned : [];
 
-  // Step 4: global allowlist.
-  if (hookCommon.matchesAny(relPath, globalAllowlist)) return;
-
-  // Step 5: orchestrator-owned invariant — applies ONLY when an active claim
-  // belongs to an executor agent (orchestrator/operator sessions are unaffected).
+  // Step 4: orchestrator-owned invariant — checked BEFORE global_allowlist so
+  // a path present in BOTH lists (e.g. .planning/STATE.md in the real
+  // committed hook-allowlists.json artifact) still hits this hard-halt
+  // instead of being silently allowed by Step 5's global_allowlist branch.
+  // Applies ONLY when an active claim belongs to an executor agent
+  // (orchestrator/operator sessions are unaffected).
   if (hookCommon.matchesAny(relPath, orchestratorOwned)) {
     const executorActive = activeEntries.some(({ entry }) => _isExecutorAgent(entry && entry.agent));
     if (!executorActive) return;
@@ -130,6 +137,9 @@ hookCommon.runGate('manifest', (input, ctx) => {
     hookCommon.denyPreToolUse(reason);
     return;
   }
+
+  // Step 5: global allowlist.
+  if (hookCommon.matchesAny(relPath, globalAllowlist)) return;
 
   // Step 6: union of active tasks' modify + create.
   const unionPatterns = [];
