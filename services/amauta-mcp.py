@@ -44,6 +44,34 @@ import hashlib
 import urllib.request
 import urllib.error
 import urllib.parse
+
+# ── Phase 65 RETR-03: repo-root sys.path insertion ─────────────────────────────
+# Phase 60 lesson: script-launched daemons never get the repo root on sys.path,
+# so any `from services.X import Y` is latently broken and can fail SILENTLY
+# at call time (caught by a broad except, degrading behavior with no error
+# surfaced). Mirrors services/rlm-service.py:60-63.
+from pathlib import Path as _Path
+_PROJECT_ROOT = str(_Path(__file__).resolve().parent.parent)
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+
+# ── Dual-import of hybrid_search with a loud availability flag (TK-1691/1692 convention) ──
+try:
+    from services.rlm_search import hybrid_search
+except ImportError:
+    try:
+        from rlm_search import hybrid_search
+    except ImportError:
+        hybrid_search = None
+
+_HYBRID_SEARCH_AVAILABLE = hybrid_search is not None
+if not _HYBRID_SEARCH_AVAILABLE:
+    print(
+        "[amauta-mcp] rlm_search.hybrid_search unavailable — search-code will "
+        "fall back to memory_semantic_search",
+        file=sys.stderr,
+    )
+
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import (
