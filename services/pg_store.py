@@ -2318,6 +2318,18 @@ class PGStore:
         Returns (results, method) tuple — method is 'vector' or 'text_fallback'.
         Falls back to text-based memory_search() if embeddings unavailable.
 
+        MEMR-04 (Phase 66, over-fetch-then-score, second site — the first is
+        memory_search's hybrid router): fetches limit * 4 candidates from the
+        vector SQL below (was `limit`), composite-scores ALL of them via
+        _score_semantic_results (source bonus/citation boost/recency, same
+        formula memory_search uses), then keeps the top limit * 2 as the
+        rerank window (a cost cap on the Voyage rerank API call — reranking
+        every limit*4 candidate would be 4x the API spend for no benefit,
+        since anything outside the top limit*2 by composite score is
+        vanishingly unlikely to be rerank-promoted into the final limit).
+        Rerank output still REPLACES scored ordering this wave — blending the
+        two signals is MEMR-07 (plan 66-04), not implemented here.
+
         Args:
             exclude_sources: Tuple/list of source strings to exclude from results.
                              Defaults to DEFAULT_EXCLUDE_SOURCES (task_event, rpetd_phase).
@@ -2357,6 +2369,9 @@ class PGStore:
                 where = " AND ".join(conditions)
 
                 # Cosine distance: 1 - (a <=> b) gives similarity in [0, 1]
+                # MEMR-04: over-fetch limit * 4 candidates (was `limit`) so
+                # composite scoring below can rescue a high-bonus/cited entry
+                # ranked outside the raw top-`limit` cosine window.
                 sql = f"""
                     SELECT *,
                         (1 - (embedding <=> %s::vector)) as semantic_similarity
@@ -2366,33 +2381,45 @@ class PGStore:
                     LIMIT %s
                 """
                 vec_str = str(query_embedding)
-                cur.execute(sql, [vec_str] + params + [vec_str] + [limit])
+                cur.execute(sql, [vec_str] + params + [vec_str] + [limit * 4])
                 results = cur.fetchall()
 
                 if not results:
-                    # No embeddings stored yet — fall back to text search
-                    return self.memory_search(query, project_id, source, limit), "text_fallback"
+                    # No embeddings stored yet — fall back to text search.
+                    # TK-1763 (:2049 bug): exclude_sources was silently
+                    # dropped on this branch — the caller's source filter
+                    # (e.g. a distill-status caller excluding 'distilled')
+                    # would vanish on the no-embeddings fallback path. Fixed:
+                    # forwarded identically to the query_embedding-is-None
+                    # fallback above, which already did this correctly.
+                    return self.memory_search(query, project_id, source, limit,
+                                              exclude_sources=exclude_sources), "text_fallback"
 
                 scored = self._score_semantic_results(results)
+                # MEMR-04: rerank window is the top limit*2 by composite
+                # score, not the full limit*4 over-fetch pool (rerank API
+                # cost cap).
+                rerank_window = scored[:limit * 2]
 
                 # Post-retrieval reranking via Voyage rerank-2.5 (free tier: 200M tokens)
                 # Improves precision by cross-encoder scoring on top-K candidates
                 try:
-                    docs = [r.get("text", "")[:500] for r in scored]
+                    docs = [r.get("text", "")[:500] for r in rerank_window]
                     reranked = PGStore.rerank(query, docs, top_k=limit)
                     if reranked:
                         reordered = []
                         for item in reranked:
                             idx = item.get("index", 0)
-                            if idx < len(scored):
-                                entry = scored[idx]
+                            if idx < len(rerank_window):
+                                entry = rerank_window[idx]
                                 entry["rerank_score"] = round(float(item.get("relevance_score", 0)), 4)
                                 reordered.append(entry)
-                        return reordered, "vector+rerank"
+                        return reordered[:limit], "vector+rerank"
                 except Exception:
                     pass  # Reranking is optional — fall back to vector-only
 
-                return scored, "vector"
+                # Non-rerank return path truncates the scored list to `limit`.
+                return scored[:limit], "vector"
 
     def _score_semantic_results(self, rows):
         """Score semantic search results with source bonuses and recency decay.
