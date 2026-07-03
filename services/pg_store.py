@@ -37,6 +37,41 @@ try:
 except ImportError:
     HAS_PG = False
 
+# Phase 66 MEMR-03: dual-import of the Phase 65 shared-primitive
+# hybrid_search_generic (services/rlm_search.py). Script-launched daemons
+# may run with a different sys.path root than pytest/module imports (Phase
+# 60/65 silent-import class), so both `services.rlm_search` (package-relative,
+# the normal case) and bare `rlm_search` (script launched from services/ with
+# services/ itself on sys.path) are tried before giving up. On total failure,
+# _HYBRID_GENERIC_AVAILABLE is set False and memory_search's router degrades
+# straight to its rung-2 legacy FTS path -- loud stderr warning, never silent.
+try:
+    from services.rlm_search import hybrid_search_generic, _sanitize_query as _rlm_sanitize_query
+    _HYBRID_GENERIC_AVAILABLE = True
+except ImportError:
+    try:
+        from rlm_search import hybrid_search_generic, _sanitize_query as _rlm_sanitize_query
+        _HYBRID_GENERIC_AVAILABLE = True
+    except ImportError as _hybrid_import_err:
+        import sys as _sys
+        print(
+            f"[pg_store] WARNING: hybrid_search_generic import failed "
+            f"({_hybrid_import_err}) -- memory_search will degrade to the "
+            f"legacy FTS/ILIKE ranking rungs only. Check sys.path includes "
+            f"the repo root (services.rlm_search) or services/ itself "
+            f"(rlm_search).",
+            file=_sys.stderr,
+        )
+        _HYBRID_GENERIC_AVAILABLE = False
+
+        def hybrid_search_generic(*_args, **_kwargs):  # pragma: no cover
+            """Stub — never called; _HYBRID_GENERIC_AVAILABLE gates all call sites."""
+            raise ImportError("hybrid_search_generic unavailable (see startup warning)")
+
+        def _rlm_sanitize_query(q):  # pragma: no cover
+            """Stub sanitizer — never called; _HYBRID_GENERIC_AVAILABLE gates rung 1."""
+            return q
+
 # ═══════════════════════════════════════════════════════
 # Configuration
 # ═══════════════════════════════════════════════════════
@@ -100,6 +135,16 @@ RETENTION_DAYS = {
 # byte-identical to pre-Phase-66 scores.
 CITATION_BOOST_CAP = 3.0
 
+# MEMR-03/04 (Phase 66): RRF-fused relevance scale.
+# hybrid_search_generic's rrf_score (1/(k+rank_bm25) + 1/(k+rank_vector), k=60)
+# tops out around 2/61 ~= 0.033 for a rank-1-both-legs hit. RRF_SCALE maps
+# that ceiling to ~10, matching the 0-10 scale _score_memories/
+# _score_semantic_results already use for their own relevance term
+# (text_rank*10 / similarity*10) -- one scoring vocabulary, not a third
+# formula (CONTEXT must_have). Tunable; exact weight is Claude's-discretion
+# per CONTEXT.md.
+RRF_SCALE = 300.0
+
 
 def _citation_boost(applied_count):
     """Bounded log1p citation boost. NULL/absent applied_count treated as 0."""
@@ -135,6 +180,153 @@ def _carried_source_bonus(d, source_bonus):
         return source_bonus
     carried_max = max((SOURCE_SCORES.get(s, 0) for s in merged), default=0)
     return min(max(source_bonus, carried_max), 4)
+
+
+# ═══════════════════════════════════════════════════════
+# Phase 66 MEMR-03/04: memory hybrid router shared helpers
+# ═══════════════════════════════════════════════════════
+
+def _memory_bm25_query(safe_query):
+    """Field-qualify a sanitized query against gsd_memory's `text` column for
+    the pg_search `@@@` operator.
+
+    Live-verified (2026-07-03) against pg_search 0.24.1: an unqualified bare
+    term (no `field:` prefix) parses against the BM25 index's key_field
+    (`id`, a `mem-<hex>` VARCHAR string on gsd_memory) instead of the `text`
+    column, so a plain-English query word matches zero rows every time
+    (`gsd_memory @@@ 'hybrid'` -> 0 rows; `gsd_memory @@@ 'text:hybrid'` ->
+    real matches). rlm_chunks' `_boosted_rlm_query` solves the same
+    requirement with per-field weighting across three columns; gsd_memory's
+    BM25 index only covers (id, text), so this helper just field-qualifies
+    against `text` -- no column-boost needed here.
+    """
+    terms = safe_query.split()
+    if not terms:
+        return ""
+    return " ".join(f"text:{term}" for term in terms)
+
+
+def _memory_filter_sql(project_id=None, source=None,
+                        exclude_sources=DEFAULT_EXCLUDE_SOURCES,
+                        tags=None, category=None):
+    """Build the (filter_sql, filter_params) pair every memory_search rung
+    applies -- test-row exclusion, project_id, source, exclude_sources,
+    tags ?|, category. Identical condition set to pre-66-03 memory_search,
+    rendered as " AND ..." fragments for hybrid_search_generic's filter_sql
+    contract instead of a WHERE-joined list.
+
+    Column names are intentionally NOT table-alias-qualified: every SQL
+    context this fragment is spliced into (hybrid_search_generic's per-leg
+    CTEs, aliased `c`, and its _generic_bm25_only degradation branch, which
+    queries the bare unaliased table name) has exactly one table in scope at
+    the splice point, so a bare column name resolves unambiguously in both --
+    an alias-qualified fragment would break the unaliased degradation branch.
+
+    Single builder (rather than duplicated inline condition lists per rung)
+    is what lets a later wave extend the filter set from one place
+    (CONTEXT.md instruction).
+    """
+    conditions = []
+    params = []
+
+    # DATA-06: exclude test entries from default search
+    if project_id != '__test__':
+        conditions.append("(project_id IS NULL OR project_id != '__test__')")
+
+    if project_id:
+        conditions.append("project_id = %s")
+        params.append(project_id)
+
+    if source:
+        conditions.append("source = %s")
+        params.append(source)
+
+    # MEM-01: exclude low-signal sources by default
+    if exclude_sources:
+        placeholders = ", ".join(["%s"] * len(exclude_sources))
+        conditions.append(f"source NOT IN ({placeholders})")
+        params.extend(exclude_sources)
+
+    # Phase 10 LEARN-03 -- tags filter via GIN ?| jsonb operator
+    if tags:
+        filter_tags = normalize_tags_list(tags)
+        if filter_tags:
+            conditions.append("tags ?| %s::text[]")
+            params.append(filter_tags)
+
+    # Phase 10 LEARN-03 -- category filter via metadata->>'category'
+    if category:
+        conditions.append("metadata->>'category' = %s")
+        params.append(str(category).lower())
+
+    filter_sql = "".join(f" AND {c}" for c in conditions)
+    return filter_sql, params
+
+
+def _jaccard(a, b):
+    """Token-set Jaccard similarity, used by memory_search's rung-3 rescue
+    scoring (when pg_trgm's similarity() is unavailable) and reused by
+    wave 4's no-embedding write-time dedup fallback (MEMR-06).
+
+    Empty-input safe: returns 0.0 rather than dividing by zero when both
+    inputs are blank/tokenless (never raises on a degenerate query/text pair).
+    """
+    set_a = set((a or "").lower().split())
+    set_b = set((b or "").lower().split())
+    union = set_a | set_b
+    if not union:
+        return 0.0
+    return len(set_a & set_b) / len(union)
+
+
+def _score_core(d, relevance, now):
+    """Shared scoring core (Phase 66 MEMR-02/03/04/05), factored out of
+    _score_memories/_score_semantic_results so every ranking path (FTS,
+    ILIKE-trigram, ILIKE-jaccard, RRF-fused) applies the SAME source bonus
+    (incl. merged_sources carry), citation boost, and recency decay -- one
+    scoring vocabulary, not a third formula.
+
+    `relevance` is the caller's ALREADY 0-10-scaled relevance term
+    (text_rank*10, similarity*10, or the RRF_SCALE-mapped fused score) --
+    this function only adds the bonus/boost/penalty terms on top and does
+    not itself apply a *10 multiplier.
+
+    Mutates and returns `d` in place: sets d["score"], serializes
+    datetime/Decimal values, and drops the (large, binary) embedding column
+    from the output.
+    """
+    source_bonus = SOURCE_SCORES.get(d.get("source", "agent"), 0)
+    source_bonus = _carried_source_bonus(d, source_bonus)
+    citation_boost = _citation_boost(d.get("applied_count"))
+
+    recency_penalty = 0.0
+    created_at = d.get("created_at")
+    if RECENCY_DECAY_PER_30D > 0 and created_at is not None:
+        try:
+            if isinstance(created_at, str):
+                ca = datetime.fromisoformat(created_at)
+            else:
+                ca = created_at
+            if ca.tzinfo is None:
+                ca = ca.replace(tzinfo=timezone.utc)
+            days_old = max((now - ca).days, 0)
+            recency_penalty = min(
+                RECENCY_DECAY_PER_30D * (days_old / 30.0),
+                MAX_RECENCY_PENALTY,
+            )
+        except (ValueError, TypeError, AttributeError):
+            pass  # unparseable -- no decay
+
+    d["score"] = round(relevance + source_bonus + citation_boost - recency_penalty, 2)
+
+    for key in ("created_at", "updated_at"):
+        if key in d and isinstance(d[key], datetime):
+            d[key] = d[key].isoformat()
+    for key, val in list(d.items()):
+        if isinstance(val, Decimal):
+            d[key] = float(val)
+    d.pop("embedding", None)
+    return d
 
 
 # ═══════════════════════════════════════════════════════
@@ -613,10 +805,27 @@ class PGStore:
     def memory_search(self, query, project_id=None, source=None, limit=20,
                       exclude_sources=DEFAULT_EXCLUDE_SOURCES,
                       tags=None, category=None):
-        """Search memories with source-aware scoring.
+        """Search memories -- routed onto Phase 65's hybrid_search_generic
+        (MEMR-03/04, over-fetch-then-score, relevance-aware at every rung).
 
-        Scoring: text relevance (ts_rank) + source bonus - recency decay.
-        Falls back to ILIKE if full-text search returns nothing.
+        Degradation ladder (kill-switch rule, CONTEXT.md) -- every rung is
+        exception-guarded, no rung ever raises to the caller, and no rung
+        orders results by recency alone:
+
+          Rung 1 (default): hybrid_search_generic RRF fusion (BM25 + vector),
+              or its native BM25-only mode when no query embedding is
+              available, over a `limit*4` fused/vector candidate pool.
+              Scored via `_score_fused_memories` (RRF_SCALE-mapped relevance
+              + the shared bonus/citation/recency core).
+          Rung 2: legacy FTS `ts_rank` (unchanged SQL/semantics), but
+              over-fetching `limit*4` candidates before truncating to
+              `limit` post-score (MEMR-04). Reached when the hybrid helper
+              is unavailable, raises, or returns no rows.
+          Rung 3: ILIKE candidates (`limit*4`), scored by trigram
+              `similarity()` when pg_trgm is installed, else a Python
+              `_jaccard` token-overlap fallback. Reached when FTS returns
+              nothing. This replaces the pre-66-03 timestamp-ordered ILIKE
+              fallback -- every rung here is relevance-aware.
 
         Args:
             exclude_sources: Tuple/list of source strings to exclude from results.
@@ -627,131 +836,167 @@ class PGStore:
                   <50ms even on large gsd_memory tables.
             category: Phase 10 LEARN-03 — optional metadata->>'category' filter
                       (e.g. 'pattern', 'workflow'). Stored in metadata jsonb.
+                      Applies on every rung via `_memory_filter_sql`.
         """
-        with self._get_conn() as conn:
-            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                # Build base conditions
-                conditions = []
-                params = []
+        import sys
 
-                # DATA-06: Exclude test entries from default search
-                if project_id != '__test__':
-                    conditions.append("(project_id IS NULL OR project_id != '__test__')")
+        filter_sql, filter_params = _memory_filter_sql(
+            project_id=project_id, source=source, exclude_sources=exclude_sources,
+            tags=tags, category=category,
+        )
 
-                if project_id:
-                    conditions.append("project_id = %s")
-                    params.append(project_id)
+        # Rung 1: hybrid RRF fusion via Phase 65's table-agnostic primitive.
+        if _HYBRID_GENERIC_AVAILABLE:
+            try:
+                query_embedding = self.generate_embedding(query, input_type="query")
+                bm25_query = _memory_bm25_query(_rlm_sanitize_query(query))
+                with self._get_conn() as conn:
+                    rows = hybrid_search_generic(
+                        query, conn,
+                        table="gsd_memory", id_column="id",
+                        select_columns=["id", "text", "source", "agent_id", "tags",
+                                        "metadata", "project_id", "created_at",
+                                        "updated_at", "applied_count"],
+                        vector_column="embedding",
+                        query_embedding=query_embedding,
+                        bm25_query=bm25_query,
+                        filter_sql=filter_sql, filter_params=filter_params,
+                        top_k=limit * 4, candidate_k=max(40, limit * 8),
+                    )
+                if rows:
+                    return self._score_fused_memories(rows)[:limit]
+                print(
+                    f"[pg_store] memory_search rung1->rung2: hybrid_search_generic "
+                    f"returned 0 rows for query={query!r}", file=sys.stderr,
+                )
+            except Exception as e:
+                print(
+                    f"[pg_store] memory_search rung1->rung2: hybrid_search_generic "
+                    f"raised {type(e).__name__}: {e}", file=sys.stderr,
+                )
+        else:
+            print(
+                "[pg_store] memory_search rung1 skipped: hybrid_search_generic "
+                "unavailable (see module-load warning)", file=sys.stderr,
+            )
 
-                if source:
-                    conditions.append("source = %s")
-                    params.append(source)
+        # Rung 2: legacy FTS ts_rank -- MEMR-04 over-fetch limit*4, truncate to limit.
+        where = "TRUE" + filter_sql
+        tsquery = " & ".join(re.sub(r'[^\w\s]', '', query).split())
+        if tsquery:
+            try:
+                with self._get_conn() as conn:
+                    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                        sql = f"""
+                            SELECT *,
+                                ts_rank(to_tsvector('english', text), plainto_tsquery('english', %s)) as text_rank
+                            FROM gsd_memory
+                            WHERE {where}
+                              AND to_tsvector('english', text) @@ plainto_tsquery('english', %s)
+                            ORDER BY text_rank DESC
+                            LIMIT %s
+                        """
+                        cur.execute(sql, [tsquery] + filter_params + [tsquery] + [limit * 4])
+                        results = cur.fetchall()
+                if results:
+                    return self._score_memories(results)[:limit]
+            except Exception as e:
+                print(
+                    f"[pg_store] memory_search rung2->rung3: FTS raised "
+                    f"{type(e).__name__}: {e}", file=sys.stderr,
+                )
 
-                # MEM-01: Exclude low-signal sources by default
-                if exclude_sources:
-                    placeholders = ", ".join(["%s"] * len(exclude_sources))
-                    conditions.append(f"source NOT IN ({placeholders})")
-                    params.extend(exclude_sources)
+        # Rung 3: ILIKE candidates, over-fetched limit*4, relevance-scored via
+        # trigram similarity() (pg_trgm) or Python _jaccard -- never ordered
+        # by timestamp alone (MEM-H3: the prior recency-only fallback is gone).
+        keywords = [kw.replace('%', '').replace('_', '') for kw in query.split()]
+        keywords = [kw for kw in keywords if kw]
+        if not keywords:
+            return []
+        ilike_conditions = " OR ".join(["text ILIKE %s"] * len(keywords))
+        ilike_params = [f"%{kw}%" for kw in keywords]
 
-                # Phase 10 LEARN-03 — tags filter via GIN ?| jsonb operator
-                if tags:
-                    filter_tags = normalize_tags_list(tags)
-                    if filter_tags:
-                        conditions.append("tags ?| %s::text[]")
-                        params.append(filter_tags)
-
-                # Phase 10 LEARN-03 — category filter via metadata->>'category'
-                if category:
-                    conditions.append("metadata->>'category' = %s")
-                    params.append(str(category).lower())
-
-                where = " AND ".join(conditions) if conditions else "TRUE"
-
-                # Try full-text search first
-                tsquery = " & ".join(re.sub(r'[^\w\s]', '', query).split())
-                if tsquery:
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                     sql = f"""
-                        SELECT *,
-                            ts_rank(to_tsvector('english', text), plainto_tsquery('english', %s)) as text_rank
+                        SELECT *, similarity(text, %s) AS text_rank
                         FROM gsd_memory
-                        WHERE {where}
-                          AND to_tsvector('english', text) @@ plainto_tsquery('english', %s)
+                        WHERE {where} AND ({ilike_conditions})
                         ORDER BY text_rank DESC
                         LIMIT %s
                     """
-                    cur.execute(sql, [tsquery] + params + [tsquery] + [limit])
+                    cur.execute(sql, [query] + filter_params + ilike_params + [limit * 4])
                     results = cur.fetchall()
+            return self._score_memories(results)[:limit]
+        except Exception as e:
+            print(
+                f"[pg_store] memory_search rung3(trigram)->rung3(jaccard): "
+                f"{type(e).__name__}: {e}", file=sys.stderr,
+            )
 
-                    if results:
-                        return self._score_memories(results)
-
-                # Fallback: ILIKE search
-                keywords = [kw.replace('%', '').replace('_', '') for kw in query.split()]
-                keywords = [kw for kw in keywords if kw]
-                if not keywords:
-                    return []
-                ilike_conditions = " OR ".join(["text ILIKE %s"] * len(keywords))
-                ilike_params = [f"%{kw}%" for kw in keywords]
-
+        # pg_trgm unavailable (or the query above raised) -- Python Jaccard.
+        with self._get_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 sql = f"""
-                    SELECT *, 0.0 as text_rank
+                    SELECT *
                     FROM gsd_memory
                     WHERE {where} AND ({ilike_conditions})
-                    ORDER BY created_at DESC
                     LIMIT %s
                 """
-                cur.execute(sql, params + ilike_params + [limit])
+                cur.execute(sql, filter_params + ilike_params + [limit * 4])
                 results = cur.fetchall()
-                return self._score_memories(results)
+        for r in results:
+            r["text_rank"] = _jaccard(query, r.get("text", ""))
+        return self._score_memories(results)[:limit]
 
-    def _score_memories(self, rows):
-        """Apply source-aware scoring with recency decay to memory results.
+    def _score_fused_memories(self, rows):
+        """Score RRF-fused (or BM25-only-degraded) rows from
+        hybrid_search_generic (MEMR-03/04).
 
-        Score = text_rank * 10 + source_bonus + citation_boost - recency_penalty
-        Recency penalty = min(RECENCY_DECAY_PER_30D * (days_old / 30), MAX_RECENCY_PENALTY)
-        citation_boost (MEMR-02) = min(log1p(applied_count), CITATION_BOOST_CAP) —
-        bounded so citation count alone cannot dominate ranking (echo-chamber guard,
-        paired with memory_top1_concentration()). source_bonus (MEMR-05) is carried
-        forward from metadata.merged_sources on distilled entries — see
-        _carried_source_bonus().
+        relevance = min(float(rrf_score) * RRF_SCALE, 10.0) -- see RRF_SCALE's
+        own comment for the scale rationale. `_generic_bm25_only`'s
+        degradation SQL (no query embedding, or the hybrid SQL raised) returns
+        `rrf_score=NULL` for every row -- it has no numeric RRF value to
+        report, only a paradedb.score-ordered row position -- treated as
+        relevance=0.0 rather than raising: those rows still rank on source
+        bonus/citation/recency (the shared _score_core terms), never crash.
+        Every Decimal rrf_score is float()-cast before arithmetic (STATE
+        learning: PostgreSQL's bare numeric literals in the RRF SQL arrive as
+        decimal.Decimal via psycopg2).
         """
         now = datetime.now(timezone.utc)
         scored = []
         for row in rows:
             d = dict(row)
-            source_bonus = SOURCE_SCORES.get(d.get("source", "agent"), 0)
-            source_bonus = _carried_source_bonus(d, source_bonus)
-            citation_boost = _citation_boost(d.get("applied_count"))
-            text_rank = float(d.get("text_rank", 0))
-            # MEM-03: Recency decay
-            recency_penalty = 0.0
-            created_at = d.get("created_at")
-            if RECENCY_DECAY_PER_30D > 0 and created_at is not None:
-                try:
-                    if isinstance(created_at, str):
-                        ca = datetime.fromisoformat(created_at)
-                    else:
-                        ca = created_at
-                    if ca.tzinfo is None:
-                        ca = ca.replace(tzinfo=timezone.utc)
-                    days_old = max((now - ca).days, 0)
-                    recency_penalty = min(
-                        RECENCY_DECAY_PER_30D * (days_old / 30.0),
-                        MAX_RECENCY_PENALTY,
-                    )
-                except (ValueError, TypeError, AttributeError):
-                    pass  # unparseable — no decay
-            # Composite score: text relevance (0-1 range) * 10 + source bonus
-            # + citation boost (MEMR-02, bounded) - recency decay
-            d["score"] = round(text_rank * 10 + source_bonus + citation_boost - recency_penalty, 2)
-            # Convert Decimal text_rank to float for JSON serialization
+            rrf_score = d.get("rrf_score")
+            relevance = min(float(rrf_score) * RRF_SCALE, 10.0) if rrf_score is not None else 0.0
+            _score_core(d, relevance, now)
+            scored.append(d)
+        scored.sort(key=lambda x: x["score"], reverse=True)
+        return scored
+
+    def _score_memories(self, rows):
+        """Apply source-aware scoring with recency decay to memory results
+        retrieved via the FTS (rung 2) or ILIKE-trigram/jaccard (rung 3)
+        legacy-shaped rows (a `text_rank` key in 0-1 range on every row).
+
+        Score = text_rank * 10 + source_bonus + citation_boost - recency_penalty
+        (delegated to the shared `_score_core` -- see its docstring for the
+        bonus/boost/penalty formulas). citation_boost (MEMR-02) is bounded so
+        citation count alone cannot dominate ranking (echo-chamber guard,
+        paired with memory_top1_concentration()). source_bonus (MEMR-05) is
+        carried forward from metadata.merged_sources on distilled entries —
+        see _carried_source_bonus().
+        """
+        now = datetime.now(timezone.utc)
+        scored = []
+        for row in rows:
+            d = dict(row)
+            text_rank = float(d.get("text_rank", 0) or 0)
             if "text_rank" in d and isinstance(d["text_rank"], Decimal):
                 d["text_rank"] = float(d["text_rank"])
-            # Convert datetime objects to strings for JSON serialization
-            for key in ("created_at", "updated_at"):
-                if key in d and isinstance(d[key], datetime):
-                    d[key] = d[key].isoformat()
-            # Remove embedding from output (large binary)
-            d.pop("embedding", None)
+            _score_core(d, text_rank * 10, now)
             scored.append(d)
         scored.sort(key=lambda x: x["score"], reverse=True)
         return scored
