@@ -473,25 +473,59 @@ function fileCount() {
   return count;
 }
 
-/** Try daemon request; if fails, switch to file mode */
+/**
+ * Try daemon request; if fails, switch to file mode.
+ *
+ * Phase 66 MEMR-07 (CLI PG-detection diagnosis): every daemon route handler
+ * wraps its body in a blanket `except Exception: 500` (amauta-daemon.py),
+ * so a 500 can be caused by ANY unrelated bug -- not just PG being down.
+ * The ONLY genuinely-PG-down signal a route emits is 503 ("No database
+ * available", from `_get_store()` returning None). Labeling every 5xx as
+ * "PG unavailable" was therefore untruthful. This also ADDS an explicit
+ * 404 branch: a long-lived daemon that predates a route addition returns
+ * 404 today, and previously fell through silently (callers just printed a
+ * generic "Error: Unknown POST route..." and exited, with no diagnosis of
+ * why and no graceful degrade). Preserves the resolved-non-2xx-degrades-
+ * like-a-connection-failure contract (STATE learning 2026-07-03T12:54):
+ * 503 / other 5xx / 404 all still return null (file-mode fallback) -- only
+ * the stderr message differs per class, truthfully. 400 and other client
+ * errors are left untouched (returned as-is; a validation error should
+ * surface directly, not silently degrade to file mode).
+ */
 async function tryDaemon(method, urlPath, body = null) {
+  const target = `${method} ${urlPath} @ ${HOST}:${PORT}`;
   try {
     const res = await httpRequest(method, urlPath, body);
-    // 503 = daemon up but PG unavailable; 5xx = PG mid-request failure
-    // Both trigger file-mode fallback
-    if (res.status === 503 || res.status >= 500) {
+    const warn = (method === 'POST' || method === 'PUT');
+    if (res.status === 503) {
+      // The only route class that actually means "PG unavailable".
       _fileMode = true;
-      // Warn on write operations so operators know data was not stored in PG
-      if (method === 'POST' || method === 'PUT') {
-        process.stderr.write(`\x1b[93m[memory]\x1b[0m PG unavailable (${res.status}) — write falling back to file mode.\n`);
+      if (warn) {
+        process.stderr.write(`\x1b[93m[memory]\x1b[0m PG unavailable (${res.status}) — ${target} — write falling back to file mode.\n`);
       }
-      return null; // PG unavailable or daemon error
+      return null;
+    }
+    if (res.status >= 500) {
+      // Any other 5xx is a route-handler exception -- do NOT claim PG is down.
+      _fileMode = true;
+      if (warn) {
+        process.stderr.write(`\x1b[93m[memory]\x1b[0m daemon error (${res.status}) — ${target} — write falling back to file mode.\n`);
+      }
+      return null;
+    }
+    if (res.status === 404) {
+      // Stale daemon: route doesn't exist on the running process yet.
+      _fileMode = true;
+      if (warn) {
+        process.stderr.write(`\x1b[93m[memory]\x1b[0m daemon does not know this route (stale daemon? restart it) — ${target} (${res.status}) — write falling back to file mode.\n`);
+      }
+      return null;
     }
     return res;
   } catch {
     _fileMode = true;
     if (method === 'POST' || method === 'PUT') {
-      process.stderr.write('\x1b[93m[memory]\x1b[0m Daemon unreachable — write falling back to file mode.\n');
+      process.stderr.write(`\x1b[93m[memory]\x1b[0m Daemon unreachable — ${target} — write falling back to file mode.\n`);
     }
     return null; // Daemon unreachable
   }
