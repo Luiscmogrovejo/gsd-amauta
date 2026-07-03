@@ -2326,6 +2326,43 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                         "similarity": mem_id["similarity"],
                     })
                     return
+                # TK-1773 (Phase 66-05 follow-up): MEMR-08's write-time
+                # classifier can return three MORE dict sentinel shapes from
+                # the same store paths — noop/deleted_target (no row
+                # inserted) and {"id": ..., "superseded_id": ...} (UPDATE —
+                # a row WAS inserted after closing the target's validity
+                # window). None of these matched the dedup_skipped check
+                # above, so they fell through to the plain-id branch below
+                # and leaked as {"id": <dict>, "stored": true}. Handled
+                # explicitly so each shape reports an honest top-level
+                # `stored` and passes its sentinel fields through untouched.
+                if isinstance(mem_id, dict) and mem_id.get("noop"):
+                    self._send_json({
+                        "stored": False,
+                        "noop": True,
+                        "existing_id": mem_id.get("existing_id"),
+                    })
+                    return
+                if isinstance(mem_id, dict) and "deleted_target" in mem_id:
+                    self._send_json({
+                        "stored": False,
+                        "deleted_target": mem_id["deleted_target"],
+                    })
+                    return
+                if isinstance(mem_id, dict) and "superseded_id" in mem_id:
+                    self._send_json({
+                        "id": mem_id.get("id"),
+                        "stored": True,
+                        "superseded_id": mem_id["superseded_id"],
+                        "embedded": bool(use_embedding and _pg_store),
+                        "project_id": project_id,
+                    })
+                    return
+                if isinstance(mem_id, dict):
+                    # Unenumerated future sentinel shape — pass through
+                    # verbatim rather than nesting it as {"id": <dict>}.
+                    self._send_json({"stored": bool(mem_id.get("id")), **mem_id})
+                    return
                 self._send_json({"id": mem_id, "stored": True, "embedded": bool(use_embedding and _pg_store), "project_id": project_id})
             except Exception as e:
                 self._send_json({"error": _safe_error(e)}, 500)

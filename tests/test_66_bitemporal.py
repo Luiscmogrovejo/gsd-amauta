@@ -22,8 +22,14 @@ correct and coexist by design; this fixture isolates the classifier for
 these tests without touching the default in production.
 """
 import contextlib
+import importlib.util
+import json
 import os
 import sys
+import threading
+import urllib.error
+import urllib.request
+import uuid
 
 import pytest
 
@@ -429,3 +435,186 @@ def test_live_llm_classifier_smoke():
         "the team meeting is scheduled for 3pm Tuesday, same as before", candidates,
     )
     assert result["op"] in ("ADD", "UPDATE", "DELETE", "NOOP"), result
+
+
+# ═══════════════════════════════════════════════════════
+# Daemon-route-level HTTP tests (TK-1773 — Phase 66-05 follow-up): MEMR-08's
+# write-time classifier returns THREE dict sentinel shapes
+# (noop/deleted_target/{"id":...,"superseded_id":...}) that the daemon's
+# dedup-dict check (LOAD-BEARING fix, commit d029ff7) does not recognize --
+# they fell through to the plain-id branch and leaked as
+# {"id": <dict>, "stored": true}. Mirrors
+# tests/test_66_store_dedup.py::test_daemon_route_dedup_shape's HTTP-level
+# pattern for the dedup_skipped shape.
+# ═══════════════════════════════════════════════════════
+
+def _start_daemon_server():
+    """Load amauta-daemon.py as a standalone module (hyphenated filename,
+    not importable by name) wired to a real PGStore, and start it on an
+    ephemeral port. Returns (amauta_daemon module, server, thread, port)."""
+    repo_root = os.path.join(os.path.dirname(__file__), "..")
+    services_dir = os.path.abspath(os.path.join(repo_root, "services"))
+    if services_dir not in sys.path:
+        sys.path.insert(0, services_dir)
+
+    spec = importlib.util.spec_from_file_location(
+        "amauta_daemon_66_05_test", os.path.join(services_dir, "amauta-daemon.py")
+    )
+    amauta_daemon = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(amauta_daemon)
+
+    from pg_store import PGStore
+
+    # Module-level import in amauta-daemon.py only sets _HAS_PG_MODULE --
+    # _pg_store itself is only populated by main()/start_daemon(), which we
+    # deliberately do NOT run here. Wire it directly so _get_store() returns
+    # a real PGStore instance.
+    amauta_daemon._pg_store = PGStore()
+    amauta_daemon._sqlite_store = None
+    # Force-open regardless of ambient env (test isolation, not a real auth bypass).
+    amauta_daemon.DAEMON_AUTH_TOKEN = ""
+    amauta_daemon._oidc = None
+
+    server = amauta_daemon.ThreadedHTTPServer(("127.0.0.1", 0), amauta_daemon.AmautaHandler)
+    port = server.server_address[1]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return amauta_daemon, server, thread, port
+
+
+def _post_json(port, body):
+    payload = json.dumps(body).encode()
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{port}/api/memory/store",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return resp.status, json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read().decode())
+
+
+def _cleanup_by_ids(*ids):
+    """Verified-by-id cleanup -- DATA-06 forces project_id="__test__" under
+    pytest (PYTEST_CURRENT_TEST is set), NOT the project_id sent in the
+    request body, so TEST_PROJECT-scoped DELETEs would miss these rows."""
+    conn = _pg_conn_or_none()
+    if conn is None:
+        return
+    try:
+        with conn.cursor() as cur:
+            for _id in ids:
+                if _id is not None:
+                    cur.execute("DELETE FROM gsd_memory WHERE id = %s", (_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+@pytest.mark.skipif(not _PG_AVAILABLE, reason="live PostgreSQL unavailable (GSD_POSTGRES_URL)")
+def test_daemon_route_noop_shape(monkeypatch):
+    """POST /api/memory/store with a classifier stub returning NOOP must
+    surface {"stored": false, "noop": true, "existing_id": ...} at the top
+    level -- NEVER {"id": {"noop": true, ...}, "stored": true}."""
+    import pg_store as pg_store_mod  # bare import -- matches the daemon's own `from pg_store import PGStore`
+
+    amauta_daemon, server, thread, port = _start_daemon_server()
+    base_id = None
+    try:
+        base_text = f"__test66b__ TK-1773 noop base {uuid.uuid4().hex}"
+        status0, data0 = _post_json(port, {"text": base_text, "embed": False, "project_id": TEST_PROJECT})
+        assert status0 == 200 and data0.get("stored") is True, data0
+        base_id = data0.get("id")
+
+        def _stub(new_text, candidates, llm_call=None):
+            return {"op": "NOOP", "target_id": base_id, "reason": "synthetic-restatement"}
+
+        monkeypatch.setattr(pg_store_mod, "classify_memory_op", _stub)
+
+        status1, data1 = _post_json(
+            port, {"text": f"{base_text} restated", "embed": False, "project_id": TEST_PROJECT}
+        )
+        assert status1 == 200, data1
+        assert data1.get("stored") is False, f"NOOP must report stored:false, got: {data1}"
+        assert data1.get("noop") is True, f"NOOP shape must surface noop:true, got: {data1}"
+        assert data1.get("existing_id") == base_id
+        assert not isinstance(data1.get("id"), dict), f"NOOP dict must never leak as the 'id' field: {data1}"
+    finally:
+        server.shutdown()
+        server.server_close()
+        _cleanup_by_ids(base_id)
+
+
+@pytest.mark.skipif(not _PG_AVAILABLE, reason="live PostgreSQL unavailable (GSD_POSTGRES_URL)")
+def test_daemon_route_deleted_target_shape(monkeypatch):
+    """POST /api/memory/store with a classifier stub returning DELETE must
+    surface {"stored": false, "deleted_target": ...} at the top level --
+    NEVER {"id": {"deleted_target": ...}, "stored": true}."""
+    import pg_store as pg_store_mod
+
+    amauta_daemon, server, thread, port = _start_daemon_server()
+    base_id = None
+    try:
+        base_text = f"__test66b__ TK-1773 delete base {uuid.uuid4().hex}"
+        status0, data0 = _post_json(port, {"text": base_text, "embed": False, "project_id": TEST_PROJECT})
+        assert status0 == 200 and data0.get("stored") is True, data0
+        base_id = data0.get("id")
+
+        def _stub(new_text, candidates, llm_call=None):
+            return {"op": "DELETE", "target_id": base_id, "reason": "synthetic-negation"}
+
+        monkeypatch.setattr(pg_store_mod, "classify_memory_op", _stub)
+
+        status1, data1 = _post_json(
+            port, {"text": f"{base_text} negated", "embed": False, "project_id": TEST_PROJECT}
+        )
+        assert status1 == 200, data1
+        assert data1.get("stored") is False, f"DELETE must report stored:false, got: {data1}"
+        assert data1.get("deleted_target") == base_id, f"DELETE shape must surface deleted_target, got: {data1}"
+        assert not isinstance(data1.get("id"), dict), f"DELETE dict must never leak as the 'id' field: {data1}"
+    finally:
+        server.shutdown()
+        server.server_close()
+        _cleanup_by_ids(base_id)
+
+
+@pytest.mark.skipif(not _PG_AVAILABLE, reason="live PostgreSQL unavailable (GSD_POSTGRES_URL)")
+def test_daemon_route_superseded_id_shape(monkeypatch):
+    """POST /api/memory/store with a classifier stub returning UPDATE must
+    surface {"id": <new id>, "stored": true, "superseded_id": ...} -- a
+    successful store (a new row WAS inserted), NEVER
+    {"id": {"id": ..., "superseded_id": ...}, "stored": true}."""
+    import pg_store as pg_store_mod
+
+    amauta_daemon, server, thread, port = _start_daemon_server()
+    base_id = None
+    new_id = None
+    try:
+        base_text = f"__test66b__ TK-1773 update base {uuid.uuid4().hex}"
+        status0, data0 = _post_json(port, {"text": base_text, "embed": False, "project_id": TEST_PROJECT})
+        assert status0 == 200 and data0.get("stored") is True, data0
+        base_id = data0.get("id")
+
+        def _stub(new_text, candidates, llm_call=None):
+            return {"op": "UPDATE", "target_id": base_id, "reason": "synthetic-contradiction"}
+
+        monkeypatch.setattr(pg_store_mod, "classify_memory_op", _stub)
+
+        status1, data1 = _post_json(
+            port, {"text": f"{base_text} updated", "embed": False, "project_id": TEST_PROJECT}
+        )
+        assert status1 == 200, data1
+        assert data1.get("stored") is True, f"UPDATE must report stored:true (a row WAS inserted), got: {data1}"
+        assert data1.get("superseded_id") == base_id, f"UPDATE shape must surface superseded_id, got: {data1}"
+        new_id = data1.get("id")
+        assert new_id is not None and not isinstance(new_id, dict), (
+            f"UPDATE's new id must be a plain scalar, never a nested dict: {data1}"
+        )
+        assert new_id != base_id
+    finally:
+        server.shutdown()
+        server.server_close()
+        _cleanup_by_ids(base_id, new_id)
