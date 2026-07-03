@@ -19,6 +19,11 @@ Tests:
     8.  test_sections_extra_key                — extra section key raises ValueError
     9.  test_load_agent_definition_from_yaml_str — round-trip via temp YAML file
     10. test_pydantic_extra_forbidden          — unknown frontmatter field rejected
+
+Phase 60 TOOL-02 (schema-side declaration hook):
+    11. test_capability_grants_default_empty          — defaults to [] when absent
+    12. test_capability_grants_roundtrip                — YAML round-trip via load_agent_definition
+    13. test_capability_grants_appended_after_capabilities — LOCKED-order structural guard
 """
 
 import os
@@ -73,6 +78,8 @@ frontmatter:
   memory: project
   skills:
     - gsd-planner-workflow
+  capability_grants:
+    - amauta-postgres
 
 body_preamble: |
   # Agent: gsd-roundtrip
@@ -252,6 +259,49 @@ class TestLoadAgentDefinition(unittest.TestCase):
         # body_preamble captured
         self.assertIsNotNone(agent.body_preamble)
         self.assertIn("gsd-roundtrip", agent.body_preamble)
+
+
+class TestCapabilityGrants(unittest.TestCase):
+    """Phase 60 TOOL-02: capability_grants is the 8th LOCKED optional field.
+
+    Mirrors the Phase 55 `capabilities` precedent (see
+    tests/test_agent_schema_capabilities.py). capability_grants is the
+    agent-side declaration hook the audit command (Plan 60-03) reads as
+    the union's second source.
+    """
+
+    def test_capability_grants_default_empty(self):
+        """AgentDefinition without capability_grants kwarg defaults to []."""
+        agent = AgentDefinition(**_minimal_kwargs())
+        self.assertEqual(agent.capability_grants, [])
+
+    @unittest.skipUnless(_HAS_YAML, "requires pyyaml")
+    def test_capability_grants_roundtrip(self):
+        """load_agent_definition round-trips capability_grants from YAML frontmatter."""
+        with tempfile.NamedTemporaryFile(
+            mode='w', suffix='.yaml', delete=False, encoding='utf-8'
+        ) as f:
+            f.write(_MINIMAL_AGENT_YAML)
+            tmp_path = f.name
+
+        try:
+            agent = load_agent_definition(tmp_path)
+        finally:
+            os.unlink(tmp_path)
+
+        self.assertIn("amauta-postgres", agent.capability_grants)
+
+    def test_capability_grants_appended_after_capabilities(self):
+        """Structural guard: capability_grants field is declared AFTER capabilities,
+        never inserted mid-order (LOCKED-order risk per 60-RESEARCH.md pitfall #6)."""
+        schema_path = os.path.join(_ROOT, "services", "agent_schema.py")
+        with open(schema_path, "r", encoding="utf-8") as f:
+            source = f.read()
+        self.assertGreater(
+            source.index("capability_grants: List[str]"),
+            source.index("capabilities: List[str]"),
+            "capability_grants must be declared after capabilities (never mid-order)",
+        )
 
 
 class TestPydanticExtraForbidden(unittest.TestCase):
