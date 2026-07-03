@@ -72,6 +72,41 @@ except ImportError:
             """Stub sanitizer — never called; _HYBRID_GENERIC_AVAILABLE gates rung 1."""
             return q
 
+# Phase 66 MEMR-08: dual-import of services/memory_classifier.py's
+# classify_memory_op (fail-open write-time ADD/UPDATE/DELETE/NOOP
+# classifier), following the SAME services.-prefixed/bare fallback
+# convention as the rlm_search import above (script-launched daemons may
+# run with a different sys.path root than pytest/module imports). Imported
+# as a bare module-level name so tests can monkeypatch
+# `services.pg_store.classify_memory_op` directly (the store methods below
+# call the bare name, not a qualified `memory_classifier.classify_memory_op`,
+# so a monkeypatched replacement is actually honored). On total failure,
+# _MEMORY_CLASSIFIER_AVAILABLE is False and both store methods skip
+# classification entirely (plain ADD path only) -- loud stderr warning,
+# never silent.
+try:
+    from services.memory_classifier import classify_memory_op
+    _MEMORY_CLASSIFIER_AVAILABLE = True
+except ImportError:
+    try:
+        from memory_classifier import classify_memory_op
+        _MEMORY_CLASSIFIER_AVAILABLE = True
+    except ImportError as _classifier_import_err:
+        import sys as _sys3
+        print(
+            f"[pg_store] WARNING: memory_classifier import failed "
+            f"({_classifier_import_err}) -- memory_store/memory_store_with_embedding "
+            f"will skip write-time classification (plain ADD path only). Check "
+            f"sys.path includes the repo root (services.memory_classifier) or "
+            f"services/ itself (memory_classifier).",
+            file=_sys3.stderr,
+        )
+        _MEMORY_CLASSIFIER_AVAILABLE = False
+
+        def classify_memory_op(*_args, **_kwargs):  # pragma: no cover
+            """Stub — never called; _MEMORY_CLASSIFIER_AVAILABLE gates all call sites."""
+            return {"op": "ADD", "target_id": None, "reason": "classifier-unavailable"}
+
 # ═══════════════════════════════════════════════════════
 # Configuration
 # ═══════════════════════════════════════════════════════
@@ -216,12 +251,13 @@ def _memory_bm25_query(safe_query):
 
 def _memory_filter_sql(project_id=None, source=None,
                         exclude_sources=DEFAULT_EXCLUDE_SOURCES,
-                        tags=None, category=None):
+                        tags=None, category=None, valid_only=False):
     """Build the (filter_sql, filter_params) pair every memory_search rung
     applies -- test-row exclusion, project_id, source, exclude_sources,
-    tags ?|, category. Identical condition set to pre-66-03 memory_search,
-    rendered as " AND ..." fragments for hybrid_search_generic's filter_sql
-    contract instead of a WHERE-joined list.
+    tags ?|, category, and (Phase 66 MEMR-08) validity. Identical condition
+    set to pre-66-03 memory_search, rendered as " AND ..." fragments for
+    hybrid_search_generic's filter_sql contract instead of a WHERE-joined
+    list.
 
     Column names are intentionally NOT table-alias-qualified: every SQL
     context this fragment is spliced into (hybrid_search_generic's per-leg
@@ -233,6 +269,14 @@ def _memory_filter_sql(project_id=None, source=None,
     Single builder (rather than duplicated inline condition lists per rung)
     is what lets a later wave extend the filter set from one place
     (CONTEXT.md instruction).
+
+    Args:
+        valid_only: Phase 66 MEMR-08 -- when True, appends
+            "AND invalid_at IS NULL" so only currently-valid memories are
+            returned. Callers MUST pass this as `self._has_bitemporal()`
+            (never hardcode True) so an un-migrated database (no
+            valid_at/invalid_at columns) degrades gracefully instead of
+            raising a column-does-not-exist error.
     """
     conditions = []
     params = []
@@ -266,6 +310,11 @@ def _memory_filter_sql(project_id=None, source=None,
     if category:
         conditions.append("metadata->>'category' = %s")
         params.append(str(category).lower())
+
+    # Phase 66 MEMR-08 -- validity filter (guarded by caller's
+    # _has_bitemporal() check; see the `valid_only` docstring above).
+    if valid_only:
+        conditions.append("invalid_at IS NULL")
 
     filter_sql = "".join(f" AND {c}" for c in conditions)
     return filter_sql, params
@@ -726,6 +775,35 @@ class PGStore:
         msg = _re.sub(r'postgres://[^@]+@', 'postgres://[redacted]@', msg)
         return msg
 
+    def _has_bitemporal(self):
+        """Phase 66 MEMR-08: cached (per-instance) check for whether
+        migration 026's valid_at/invalid_at columns exist on gsd_memory.
+
+        An un-migrated database must degrade gracefully -- every validity
+        SQL fragment (the `valid_only` flag on `_memory_filter_sql`, the
+        `invalid_at IS NULL` guard in memory_semantic_search and the
+        dedup/NN candidate queries) becomes a no-op rather than raising a
+        column-does-not-exist error. Cached on `self._bitemporal_cache`
+        after the first check (one information_schema query per instance
+        lifetime, not per call) -- tests force the un-migrated path by
+        setting `store._bitemporal_cache = False` directly.
+        """
+        if hasattr(self, "_bitemporal_cache"):
+            return self._bitemporal_cache
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT COUNT(*) FROM information_schema.columns "
+                        "WHERE table_name = 'gsd_memory' "
+                        "AND column_name IN ('valid_at', 'invalid_at')"
+                    )
+                    count = cur.fetchone()[0]
+            self._bitemporal_cache = (count == 2)
+        except Exception:
+            self._bitemporal_cache = False
+        return self._bitemporal_cache
+
     def health(self):
         """Check PG connection health."""
         try:
@@ -818,26 +896,34 @@ class PGStore:
 
         # Phase 66 MEMR-06: no-embedding write-time dedup (trigram rung, then
         # Jaccard rung). Never blocks a write.
+        # Phase 66 MEMR-08: the trigram rung's SELECT is also the candidate
+        # source for the write-time classifier below (LIMIT widened 1 -> 3,
+        # `text` column added) -- one query serves both the dedup check
+        # (row 0) and the classifier's top-3 nearest valid candidates, not
+        # a second query.
+        _trigram_top3 = []
         if not skip_dedup:
             dedup_hit = None
             trigram_threshold = float(os.environ.get("GSD_TEXT_DEDUP_THRESHOLD", "0.6"))
+            _validity_clause = " AND invalid_at IS NULL" if self._has_bitemporal() else ""
             try:
                 with self._get_conn() as conn:
                     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                        cur.execute("""
-                            SELECT id, similarity(text, %s) AS sim
+                        cur.execute(f"""
+                            SELECT id, text, similarity(text, %s) AS sim
                             FROM gsd_memory
                             WHERE (project_id = %s OR (project_id IS NULL AND %s IS NULL))
                               AND text %% %s
+                              {_validity_clause}
                             ORDER BY sim DESC
-                            LIMIT 1
+                            LIMIT 3
                         """, (text, project_id, project_id, text))
-                        row = cur.fetchone()
-                        if row and float(row["sim"]) >= trigram_threshold:
+                        _trigram_top3 = cur.fetchall()
+                        if _trigram_top3 and float(_trigram_top3[0]["sim"]) >= trigram_threshold:
                             dedup_hit = {
                                 "dedup_skipped": True,
-                                "existing_id": row["id"],
-                                "similarity": round(float(row["sim"]), 4),
+                                "existing_id": _trigram_top3[0]["id"],
+                                "similarity": round(float(_trigram_top3[0]["sim"]), 4),
                             }
             except Exception as e:
                 print(
@@ -845,6 +931,7 @@ class PGStore:
                     f"({type(e).__name__}: {e}) — falling back to Jaccard rung",
                     file=sys.stderr,
                 )
+                _trigram_top3 = []  # rung failed -- no classifier candidates either
                 jaccard_threshold = float(
                     os.environ.get("GSD_TEXT_DEDUP_JACCARD_THRESHOLD", "0.85")
                 )
@@ -878,6 +965,54 @@ class PGStore:
             if dedup_hit:
                 return dedup_hit
 
+        # Phase 66 MEMR-08: write-time classifier (ADD/UPDATE/DELETE/NOOP).
+        # skip_dedup writes (distill merges) also skip classification -- a
+        # distill merge legitimately writes text similar to what it is
+        # replacing and must not be classified against its own originals.
+        # Zero candidates (empty _trigram_top3, e.g. the trigram rung raised
+        # above) skips straight to ADD -- no LLM call wasted.
+        _superseded_id = None
+        if not skip_dedup and _MEMORY_CLASSIFIER_AVAILABLE and _trigram_top3:
+            _classifier_candidates = [
+                {"id": r["id"], "text": r["text"]} for r in _trigram_top3
+            ]
+            try:
+                _decision = classify_memory_op(text, _classifier_candidates)
+            except Exception as e:
+                print(
+                    f"[pg_store] memory_store classifier raised "
+                    f"({type(e).__name__}: {e}) — proceeding as ADD",
+                    file=sys.stderr,
+                )
+                _decision = {"op": "ADD"}
+            _op = _decision.get("op", "ADD")
+            _target_id = _decision.get("target_id")
+            if _op == "NOOP":
+                return {
+                    "noop": True,
+                    "existing_id": _target_id or _classifier_candidates[0]["id"],
+                }
+            if _op == "DELETE" and _target_id is not None:
+                with self._get_conn() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "UPDATE gsd_memory SET invalid_at = now() "
+                            "WHERE id = %s AND invalid_at IS NULL",
+                            (_target_id,),
+                        )
+                return {"deleted_target": _target_id}
+            if _op == "UPDATE" and _target_id is not None:
+                with self._get_conn() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "UPDATE gsd_memory SET invalid_at = now() "
+                            "WHERE id = %s AND invalid_at IS NULL",
+                            (_target_id,),
+                        )
+                _superseded_id = _target_id
+            # ADD (and any other/failure outcome) falls through to the
+            # plain INSERT below, unchanged.
+
         with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
@@ -893,7 +1028,10 @@ class PGStore:
                     project_id,
                     applied_count,
                 ))
-                return cur.fetchone()[0]
+                new_id = cur.fetchone()[0]
+        if _superseded_id is not None:
+            return {"id": new_id, "superseded_id": _superseded_id}
+        return new_id
 
     def memory_search(self, query, project_id=None, source=None, limit=20,
                       exclude_sources=DEFAULT_EXCLUDE_SOURCES,
@@ -930,12 +1068,18 @@ class PGStore:
             category: Phase 10 LEARN-03 — optional metadata->>'category' filter
                       (e.g. 'pattern', 'workflow'). Stored in metadata jsonb.
                       Applies on every rung via `_memory_filter_sql`.
+
+        Phase 66 MEMR-08: every rung (hybrid RRF, legacy FTS, ILIKE) shares
+        the SAME `_memory_filter_sql` builder, so passing `valid_only` here
+        applies the `invalid_at IS NULL` currently-valid filter to all three
+        rungs from one call site -- guarded by `_has_bitemporal()` so an
+        un-migrated database (no valid_at/invalid_at columns) never raises.
         """
         import sys
 
         filter_sql, filter_params = _memory_filter_sql(
             project_id=project_id, source=source, exclude_sources=exclude_sources,
-            tags=tags, category=category,
+            tags=tags, category=category, valid_only=self._has_bitemporal(),
         )
 
         # Rung 1: hybrid RRF fusion via Phase 65's table-agnostic primitive.
@@ -1100,6 +1244,12 @@ class PGStore:
         Args:
             exclude_source: Single source string or list of sources to exclude from results.
                             Used by distill to skip re-merging source='distilled' entries (DATA-03).
+
+        Phase 66 MEMR-08: intentionally NOT filtered by invalid_at -- unlike
+        memory_search/memory_semantic_search, memory_list is lifecycle
+        tooling (distill eligibility paging, skb-candidates, etc.) and MUST
+        see the full history, including invalidated (superseded/deleted)
+        rows, not just currently-valid ones.
         """
         with self._get_conn() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -2375,20 +2525,74 @@ class PGStore:
 
         with self._get_conn() as conn:
             # Sub-block 1: dedup check (Phase 66 MEMR-06: skip_dedup bypasses this)
+            # Phase 66 MEMR-08: the SAME nearest-neighbor query also supplies
+            # the top-3 currently-valid candidates for the write-time
+            # classifier below (LIMIT widened 1 -> 3) -- a byproduct of the
+            # existing dedup lookup, not a second query.
+            _nn_rows = []
             if not skip_dedup:
+                _validity_clause = " AND invalid_at IS NULL" if self._has_bitemporal() else ""
                 with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                    cur.execute("""
+                    cur.execute(f"""
                         SELECT id, text, (1 - (embedding <=> %s::vector)) as similarity
                         FROM gsd_memory
                         WHERE embedding IS NOT NULL
                           AND (project_id = %s OR (project_id IS NULL AND %s IS NULL))
+                          {_validity_clause}
                         ORDER BY embedding <=> %s::vector
-                        LIMIT 1
+                        LIMIT 3
                     """, (str(embedding), project_id, project_id, str(embedding)))
-                    row = cur.fetchone()
-                    if row and float(row["similarity"]) >= dedup_threshold:
-                        return {"dedup_skipped": True, "existing_id": row["id"],
-                                "similarity": round(float(row["similarity"]), 4)}
+                    _nn_rows = cur.fetchall()
+                    if _nn_rows and float(_nn_rows[0]["similarity"]) >= dedup_threshold:
+                        top = _nn_rows[0]
+                        return {"dedup_skipped": True, "existing_id": top["id"],
+                                "similarity": round(float(top["similarity"]), 4)}
+
+            # Phase 66 MEMR-08: write-time classifier (ADD/UPDATE/DELETE/NOOP).
+            # skip_dedup writes (distill merges) also skip classification --
+            # a distill merge legitimately writes text similar to what it is
+            # replacing and must not be classified against its own
+            # originals. Zero candidates (no rows / skip_dedup) skips
+            # straight to ADD -- no LLM call wasted.
+            _superseded_id = None
+            if not skip_dedup and _MEMORY_CLASSIFIER_AVAILABLE and _nn_rows:
+                _classifier_candidates = [
+                    {"id": r["id"], "text": r["text"]} for r in _nn_rows
+                ]
+                try:
+                    _decision = classify_memory_op(text, _classifier_candidates)
+                except Exception as e:
+                    print(
+                        f"[pg_store] memory_store_with_embedding classifier raised "
+                        f"({type(e).__name__}: {e}) — proceeding as ADD",
+                        file=sys.stderr,
+                    )
+                    _decision = {"op": "ADD"}
+                _op = _decision.get("op", "ADD")
+                _target_id = _decision.get("target_id")
+                if _op == "NOOP":
+                    return {
+                        "noop": True,
+                        "existing_id": _target_id or _classifier_candidates[0]["id"],
+                    }
+                if _op == "DELETE" and _target_id is not None:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "UPDATE gsd_memory SET invalid_at = now() "
+                            "WHERE id = %s AND invalid_at IS NULL",
+                            (_target_id,),
+                        )
+                    return {"deleted_target": _target_id}
+                if _op == "UPDATE" and _target_id is not None:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "UPDATE gsd_memory SET invalid_at = now() "
+                            "WHERE id = %s AND invalid_at IS NULL",
+                            (_target_id,),
+                        )
+                    _superseded_id = _target_id
+                # ADD (and any other/failure outcome) falls through to the
+                # plain INSERT below, unchanged.
 
             # Sub-block 2: insert (same conn, no nested _get_conn)
             with conn.cursor() as cur:
@@ -2406,7 +2610,10 @@ class PGStore:
                     str(embedding),
                     applied_count,
                 ))
-                return cur.fetchone()[0]
+                new_id = cur.fetchone()[0]
+            if _superseded_id is not None:
+                return {"id": new_id, "superseded_id": _superseded_id}
+            return new_id
 
     def memory_semantic_search(self, query, project_id=None, source=None, limit=20,
                                exclude_sources=DEFAULT_EXCLUDE_SOURCES):
@@ -2465,6 +2672,12 @@ class PGStore:
                     placeholders = ", ".join(["%s"] * len(exclude_sources))
                     conditions.append(f"source NOT IN ({placeholders})")
                     params.extend(exclude_sources)
+
+                # Phase 66 MEMR-08: currently-valid filter, guarded by
+                # _has_bitemporal() so an un-migrated database (no
+                # valid_at/invalid_at columns) never raises.
+                if self._has_bitemporal():
+                    conditions.append("invalid_at IS NULL")
 
                 where = " AND ".join(conditions)
 
