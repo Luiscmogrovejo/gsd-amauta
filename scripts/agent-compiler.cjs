@@ -54,6 +54,7 @@ const HOOKS_COMMENT_BLOCK = `# hooks:
 
 // Agents that have the hooks comment block in their claude-code frontmatter.
 // Locked per HEAD 21438ae (Wave 1 conversion reference).
+// Phase 61 PERS-01: gsd-persona-* roster added per the maintenance rule above.
 const AGENTS_WITH_HOOKS = new Set([
   'gsd-architect',
   'gsd-debugger',
@@ -71,6 +72,9 @@ const AGENTS_WITH_HOOKS = new Set([
   'gsd-planner',
   'gsd-roadmapper',
   'gsd-tester',
+  'gsd-persona-senior-backend',
+  'gsd-persona-frontend-specialist',
+  'gsd-persona-systems-architect',
 ]);
 
 // Agents whose description field appears UNQUOTED in the claude-code agents/*.md.
