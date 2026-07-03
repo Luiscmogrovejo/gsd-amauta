@@ -6,7 +6,8 @@ CLAUDE.md
 commands.html
 
 # Local test installs
-.claude/
+.claude/*
+!.claude/settings.json
 
 # Build artifacts (committed to npm, not git)
 hooks/dist/
