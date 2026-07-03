@@ -1134,7 +1134,7 @@ async function _runManifestCheckCli(args, cwd) {
 
 /**
  * _validatePlanShape(planContent) — Pass 0 shape validation.
- * Returns {valid: bool, errors: [], taskCount: N, tasks: [{id,agent,files,depends_on}]}.
+ * Returns {valid: bool, errors: [], taskCount: N, tasks: [{id,agent,persona,files,depends_on}]}.
  *
  * Checks:
  *  - <story> block is present
@@ -1171,6 +1171,7 @@ function _validatePlanShape(planContent) {
     const criteriaField = getField('acceptance_criteria');
     const filesField = getField('files_expected');
     const dependsOnField = getField('depends_on');
+    const personaField = getField('persona');
 
     // Parse depends_on as JSON array
     let dependsOn = [];
@@ -1193,7 +1194,7 @@ function _validatePlanShape(planContent) {
       }
     }
 
-    tasks.push({ id, title: titleField, agent: agentField, filesExpected, dependsOn, hasFiles: !!filesField, hasCriteria: !!criteriaField });
+    tasks.push({ id, title: titleField, agent: agentField, persona: personaField, filesExpected, dependsOn, hasFiles: !!filesField, hasCriteria: !!criteriaField });
   }
 
   // Validate each task has required fields
@@ -1294,9 +1295,26 @@ function _detectCycles(tasks) {
 }
 
 /**
+ * _resolvePersona(personaId) — look up a declared persona in the agent registry.
+ * Accepts short form ("persona-senior-backend") or full id; returns the
+ * agent-capabilities.json entry with kind === 'persona', or null.
+ * Deterministic registry lookup only — no inference (Phase 61 PERS-02).
+ */
+function _resolvePersona(personaId) {
+  const raw = (personaId || '').trim();
+  if (!raw) return null;
+  const fullId = raw.startsWith('gsd-') ? raw : `gsd-${raw}`;
+  const caps = getCapabilityIndex();
+  return (caps.agents || []).find(a => a.id === fullId && a.kind === 'persona') || null;
+}
+
+/**
  * _checkAgentConflicts(tasks) — check planner <agent> against routeExecutor().
- * tasks: array of {id, agent, filesExpected: {modify, create, delete}}
+ * tasks: array of {id, agent, persona, filesExpected: {modify, create, delete}}
  * Returns {conflicts: [{taskId, declaredAgent, computedAgent, files}]}
+ * When <persona> is declared (Phase 61 PERS-02), conflicts additionally carry
+ * {persona, reason} (and {base_executor} for persona_base_executor_mismatch).
+ * Absent <persona>, this function is byte-identical to pre-Phase-61 behavior.
  */
 function _checkAgentConflicts(tasks) {
   const conflicts = [];
@@ -1308,6 +1326,25 @@ function _checkAgentConflicts(tasks) {
     if (files.length === 0) continue;
     const computedAgent = routeExecutor(files.join(','));
     const planAgent = (task.agent || '').trim();
+
+    const personaRaw = (task.persona || '').trim();
+    if (personaRaw) {
+      const entry = _resolvePersona(personaRaw);
+      if (!entry) {
+        conflicts.push({ taskId: task.id, declaredAgent: planAgent, computedAgent, files, persona: personaRaw, reason: 'unknown_persona' });
+        continue;
+      }
+      const shortPersona = entry.id.replace(/^gsd-/, '');
+      if (planAgent !== shortPersona) {
+        conflicts.push({ taskId: task.id, declaredAgent: planAgent, computedAgent, files, persona: shortPersona, reason: 'agent_persona_mismatch' });
+        continue;
+      }
+      const baseShort = (entry.base_executor || []).map(b => String(b).replace(/^gsd-/, ''));
+      if (!baseShort.includes(computedAgent)) {
+        conflicts.push({ taskId: task.id, declaredAgent: planAgent, computedAgent, files, persona: shortPersona, base_executor: entry.base_executor, reason: 'persona_base_executor_mismatch' });
+      }
+      continue; // persona path fully handled — never falls through to exact-match
+    }
 
     if (planAgent && computedAgent && planAgent !== computedAgent) {
       conflicts.push({ taskId: task.id, declaredAgent: planAgent, computedAgent, files });
@@ -1561,7 +1598,7 @@ async function planToTasks(planFilePath, opts) {
   const conflictResult = _checkAgentConflicts(tasks);
   if (conflictResult.conflicts.length > 0) {
     const conflictSummary = conflictResult.conflicts
-      .map(c => `  Task ${c.taskId}: declared=${c.declaredAgent}, computed=${c.computedAgent}, files=[${c.files.slice(0, 3).join(', ')}${c.files.length > 3 ? '...' : ''}]`)
+      .map(c => `  Task ${c.taskId}: declared=${c.declaredAgent}, computed=${c.computedAgent}, files=[${c.files.slice(0, 3).join(', ')}${c.files.length > 3 ? '...' : ''}]${c.persona ? `, persona=${c.persona}` : ''}${c.reason ? `, reason=${c.reason}` : ''}`)
       .join('\n');
     return {
       error: 'agent_assignment_conflict',
@@ -2495,6 +2532,7 @@ if (require.main !== module) {
     _validatePlanShape,
     _detectCycles,
     _checkAgentConflicts,
+    _resolvePersona,
     _filesDisjointSplit,
     _renderDagText,
     _diffPlanVsAmauta,
