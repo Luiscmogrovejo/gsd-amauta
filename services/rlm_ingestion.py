@@ -24,8 +24,14 @@ from typing import Optional
 
 log = logging.getLogger("amauta.rlm_ingestion")
 
-# File extensions handled by AST chunker (vs legacy fallback)
-AST_EXTENSIONS = {".py", ".js", ".ts", ".tsx", ".jsx", ".cjs", ".mjs"}
+# File extensions handled by AST chunker (vs legacy fallback).
+# Phase 69: single-sourced from services.ast_chunker -- a hardcoded duplicate
+# here previously drifted out of sync and silently skipped the Kotlin/Swift/
+# Go/Rust/Java mobile-stack grammars at the skip gate below. Do NOT wrap this
+# import in try/except: if services.ast_chunker cannot import, ingest_file's
+# own `from services.ast_chunker import ...` (below, at call time) is already
+# broken and must fail loudly, not silently degrade (Phase 60/65 learning).
+from services.ast_chunker import AST_CODE_EXTENSIONS as AST_EXTENSIONS
 
 # Extensions that get BM25 only (no embeddings, no dependency graph edges)
 LEGACY_EXTENSIONS = {
