@@ -1,6 +1,7 @@
-version: "1.0.0"
+version: "1.1.0"
 reference_type: runtime-read
 scope: gsd-planner
+# v1.1.0: +optional <persona> element (PERS-02), agent-enum drift fix (4 -> 9)
 
 # Plan Task XML Schema
 
@@ -63,6 +64,7 @@ attribute on the `<task>` element itself is `id`.
 <task id="{plan_id}-{NN}">
   <title>Task title</title>
   <agent>executor-backend</agent>
+  <persona>persona-senior-backend</persona> <!-- OPTIONAL — see field table -->
   <depends_on>[]</depends_on>
   <read_first>
     - path/to/file-1.md
@@ -89,7 +91,8 @@ attribute on the `<task>` element itself is `id`.
 |-------|----------|-------------|
 | `id` attribute | YES | Format: `"{plan_id}-{NN}"`, e.g. `"14-01-01"`. Two-digit zero-padded task number. |
 | `<title>` | YES | Task title. |
-| `<agent>` | YES | Executor agent short name (no `gsd-` prefix). Valid values: `executor-backend`, `executor-frontend`, `executor-infra`, `executor-general`. Must match `routeExecutor()` result over `<files_expected>.modify + .create`. |
+| `<agent>` | YES | Executor agent short name (no `gsd-` prefix). Valid values (9 routable identifiers, mirrors `routeExecutor()` `routingOrder` + fallback): `executor-frontend`, `executor-infra`, `executor-wearables`, `executor-mobile-android`, `executor-mobile-ios`, `executor-mobile-cross`, `executor-ai`, `executor-backend`, `executor-general`. EXCEPTION: when `<persona>` is declared, `<agent>` carries the persona id instead (e.g. `persona-senior-backend`). Must match `routeExecutor()` result over `<files_expected>.modify + .create` (or, with `<persona>`, `routeExecutor()`'s result must be a member of the persona's `base_executor` list). |
+| `<persona>` | NO (optional) | Role persona short name, no `gsd-` prefix (e.g. `persona-senior-backend`). Must resolve to an `agent-capabilities.json` entry with `"kind": "persona"`. When present, `<agent>` MUST carry the same persona id, and `plan-to-tasks` validates that `routeExecutor()` over the `files_expected` modify + create lists is a member of the persona's `base_executor` list. When absent or empty, behavior is byte-identical to pre-persona routing: `<agent>` must exactly equal the `routeExecutor()` output. The chosen persona and resolved base executor are recorded in the registration's `agent_assignments` audit map (`persona`, `base_executor`, `reasoning` keys). |
 | `<depends_on>` | YES | JSON array of task IDs within the same plan. Use `[]` for no deps. Dependencies are explicit-only (EXPLICIT ONLY) — tasks without `<depends_on>` entries are parallel-eligible by default. No implicit N+1 ordering. |
 | `<read_first>` | YES | Dash-prefixed list of files the executor must read before working. |
 | `<action>` | YES | Concrete instructions with exact values, commands, and file paths. |
@@ -108,7 +111,8 @@ attribute on the `<task>` element itself is `id`.
    `<files_expected>` block with all three sublists declared. Tasks missing
    this block are rejected. (HARDEN-01 mandate.)
 3. **Non-empty `<agent>`** — Every `<task>` must have a non-empty `<agent>`
-   field matching one of the four valid executor names.
+   field matching one of the nine routable executor names — or a registered
+   persona id when `<persona>` is present.
 4. **`<depends_on>` references must be intra-plan** — All task IDs listed in
    `<depends_on>` must reference IDs within the same PLAN.md. Cross-plan
    dependencies are not supported.
@@ -120,7 +124,13 @@ attribute on the `<task>` element itself is `id`.
 7. **`<agent>` must match `routeExecutor()`** — `plan-to-tasks` computes
    `routeExecutor()` over `<files_expected>.modify + .create` and compares
    against the planner-emitted `<agent>`. Mismatch halts registration with a
-   `divergence_report` (`divergence_type: "agent_assignment_conflict"`).
+   `divergence_report` (`divergence_type: "agent_assignment_conflict"`). When
+   `<persona>` is declared and registered, the conflict check validates
+   base_executor MEMBERSHIP instead of exact string equality: conflict fires
+   when the computed executor is outside the persona's `base_executor` list,
+   when the persona id is unknown (`unknown_persona`), or when `<agent>`
+   differs from the declared persona id (`agent_persona_mismatch`). Absent
+   `<persona>`: exact-match behavior unchanged.
 
 ---
 
@@ -203,3 +213,5 @@ attribute on the `<task>` element itself is `id`.
 - **`<files_expected>` with missing sublists:** All three of `modify:`, `create:`, `delete:` must be present even if empty (`[]`). A partial `<files_expected>` is rejected.
 - **`<agent>` with `gsd-` prefix:** Use `executor-backend`, NOT `gsd-executor-backend`.
 - **Cross-plan `<depends_on>` references:** Only intra-plan task IDs are valid in `<depends_on>`.
+- **`<persona>` with `gsd-` prefix is wrong:** use `persona-senior-backend`, NOT `gsd-persona-senior-backend` (same no-prefix rule as `<agent>`).
+- **`<persona>` without matching `<agent>` is rejected:** when a persona is declared, `<agent>` must carry the identical persona id — `plan-to-tasks` halts with `agent_assignment_conflict` otherwise.
