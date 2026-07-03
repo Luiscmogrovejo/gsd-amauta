@@ -2546,6 +2546,90 @@ function loadCapabilityCatalog(forceReload = false) {
   return _capabilityCatalogCache;
 }
 
+// ─── Phase 67 HOOK-05: hook-config emit|check — generated allowlists
+//     artifact single-sourced from GLOBAL_ALLOWLIST/ORCHESTRATOR_OWNED
+//     (defined above) + the TOOL-01 capability catalog identity ─────────────
+const HOOK_ALLOWLISTS_RELATIVE_PATH = path.join('get-shit-done', 'config', 'hook-allowlists.json');
+
+function _buildHookAllowlistsArtifact() {
+  const catalog = loadCapabilityCatalog();
+  const entryNames = Array.isArray(catalog.entries)
+    ? catalog.entries.map((e) => e && e.name).filter((n) => typeof n === 'string')
+    : [];
+  return {
+    artifact_version: 1,
+    generated_by: 'gsd-tools hook-config emit',
+    generated_at: new Date().toISOString(),
+    orchestrator_owned: [...ORCHESTRATOR_OWNED],
+    global_allowlist: [...GLOBAL_ALLOWLIST],
+    capability_catalog: {
+      catalog_version: catalog.catalog_version,
+      entry_names: entryNames,
+    },
+  };
+}
+
+function _stripGeneratedAt(obj) {
+  if (!obj || typeof obj !== 'object') return obj;
+  const { generated_at, ...rest } = obj;
+  return rest;
+}
+
+/**
+ * hookConfigEmit({cwd}) — write get-shit-done/config/hook-allowlists.json
+ * from the single-source constants. IDEMPOTENT: if the existing file's
+ * content (minus generated_at) already deep-equals the freshly built
+ * content, the existing file is left byte-identical (generated_at is never
+ * churned on a no-op emit).
+ */
+function hookConfigEmit({ cwd } = {}) {
+  cwd = cwd || process.cwd();
+  const artifactPath = path.join(cwd, HOOK_ALLOWLISTS_RELATIVE_PATH);
+  const next = _buildHookAllowlistsArtifact();
+
+  let existing = null;
+  try {
+    existing = JSON.parse(fs.readFileSync(artifactPath, 'utf-8'));
+  } catch {
+    existing = null;
+  }
+
+  if (existing && JSON.stringify(_stripGeneratedAt(existing)) === JSON.stringify(_stripGeneratedAt(next))) {
+    return { written: false, path: artifactPath, artifact: existing };
+  }
+
+  fs.mkdirSync(path.dirname(artifactPath), { recursive: true });
+  fs.writeFileSync(artifactPath, JSON.stringify(next, null, 2) + '\n');
+  return { written: true, path: artifactPath, artifact: next };
+}
+
+/**
+ * hookConfigCheck({cwd}) — regenerate the artifact in memory and compare
+ * against the committed file, ignoring generated_at. Returns
+ * {ok, drift: [<top-level keys that differ>]}. Missing/unreadable artifact
+ * is reported as drift (ok: false) rather than thrown.
+ */
+function hookConfigCheck({ cwd } = {}) {
+  cwd = cwd || process.cwd();
+  const artifactPath = path.join(cwd, HOOK_ALLOWLISTS_RELATIVE_PATH);
+  const next = _stripGeneratedAt(_buildHookAllowlistsArtifact());
+
+  let existingRaw;
+  try {
+    existingRaw = JSON.parse(fs.readFileSync(artifactPath, 'utf-8'));
+  } catch (err) {
+    return { ok: false, drift: ['<missing-or-unreadable-artifact>'], error: err.message };
+  }
+  const existing = _stripGeneratedAt(existingRaw);
+
+  const drift = [];
+  const keys = new Set([...Object.keys(existing), ...Object.keys(next)]);
+  for (const key of keys) {
+    if (JSON.stringify(existing[key]) !== JSON.stringify(next[key])) drift.push(key);
+  }
+  return { ok: drift.length === 0, drift };
+}
+
 // Export test-only entry points when imported (not invoked) as a module.
 if (require.main !== module) {
   module.exports = {
@@ -2584,6 +2668,9 @@ if (require.main !== module) {
     // Phase 60 TOOL-01: capability catalog
     loadCapabilityCatalog,
     CAPABILITY_CATALOG_VERSION,
+    // Phase 67 HOOK-05: generated hook-allowlists artifact
+    hookConfigEmit,
+    hookConfigCheck,
   };
 }
 
@@ -3336,6 +3423,29 @@ Examples:
       // See manifestCheck() above for the locked API shape.
       const code = await _runManifestCheckCli(args.slice(1), cwd);
       process.exit(code);
+      break;
+    }
+
+    case 'hook-config': {
+      // HOOK-05: generated, versioned hook-allowlists.json artifact,
+      // single-sourced from GLOBAL_ALLOWLIST/ORCHESTRATOR_OWNED + the
+      // capability catalog identity. Never hand-maintained in a hook.
+      const sub = args[1];
+      if (sub === 'emit') {
+        const result = hookConfigEmit({ cwd });
+        process.stdout.write(JSON.stringify({ written: result.written, path: result.path }, null, 2) + '\n');
+        process.exit(0);
+      } else if (sub === 'check') {
+        const result = hookConfigCheck({ cwd });
+        if (!result.ok) {
+          process.stderr.write(`hook-config check: drift detected in keys: ${result.drift.join(', ')}\n`);
+          process.exit(1);
+        }
+        process.stdout.write('hook-config check: OK (no drift)\n');
+        process.exit(0);
+      } else {
+        error('Usage: gsd-tools hook-config emit|check');
+      }
       break;
     }
 

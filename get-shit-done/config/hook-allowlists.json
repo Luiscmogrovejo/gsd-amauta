@@ -1,0 +1,25 @@
+{
+  "artifact_version": 1,
+  "generated_by": "gsd-tools hook-config emit",
+  "generated_at": "2026-07-03T20:03:38.636Z",
+  "orchestrator_owned": [
+    ".planning/STATE.md",
+    ".planning/ROADMAP.md",
+    ".planning/REQUIREMENTS.md"
+  ],
+  "global_allowlist": [
+    "package-lock.json",
+    ".planning/STATE.md",
+    "coverage/**",
+    ".planning/milestones/**/manifest-violation-*.json",
+    ".planning/milestones/**/gaps-report-*.json"
+  ],
+  "capability_catalog": {
+    "catalog_version": "1.0",
+    "entry_names": [
+      "amauta-daemon-http",
+      "amauta-postgres",
+      "amauta-valkey"
+    ]
+  }
+}
