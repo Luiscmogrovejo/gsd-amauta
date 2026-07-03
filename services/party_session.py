@@ -202,6 +202,19 @@ def create(participants: list, conn=None) -> dict:
                 (participants_json,),
             )
             row = cur.fetchone()
+        # Phase 62 TEL-02: party_session telemetry (fail-open — session
+        # creation must never fail or slow because of telemetry).
+        try:
+            try:
+                from services.telemetry import emit_event as _tel_emit
+            except Exception:
+                from telemetry import emit_event as _tel_emit  # type: ignore
+            _tel_emit("party_session", {
+                "session_id": str(row["session_id"]),
+                "participants_count": len(participants or []),
+            })
+        except Exception:
+            pass
         return _row_to_dict(row)
 
     if conn is not None:
