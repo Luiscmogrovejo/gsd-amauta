@@ -131,6 +131,22 @@ try:
 except ImportError:
     OIDCAuth = None  # type: ignore
 
+# Evidence scrub (optional — graceful degradation, Phase 68 MOBL-04).
+# Guarded import per the Phase 60 sys.path learning: NEVER a silent
+# except-pass — a missing module gets a loud one-time stderr warning so a
+# broken evidence-scrub wiring is visible instead of silently unscrubbed.
+_EVIDENCE_SCRUB_AVAILABLE = False
+try:
+    from evidence_scrub import scrub_text
+    _EVIDENCE_SCRUB_AVAILABLE = True
+except ImportError as _evidence_scrub_import_err:
+    print(
+        f"[amauta-daemon] evidence_scrub module unavailable ({_evidence_scrub_import_err}) "
+        f"— build-log/evidence secrets will NOT be scrubbed",
+        file=sys.stderr,
+    )
+    scrub_text = None  # type: ignore
+
 # ═══════════════════════════════════════════════════════
 # Configuration
 # ═══════════════════════════════════════════════════════
@@ -832,6 +848,38 @@ def _safe_error(e):
     return msg
 
 
+def _scrub_evidence_args(args):
+    """Scrub rpetd/note evidence content BEFORE python3 amauta.py runs.
+
+    Phase 68 MOBL-04: ONE Python choke point at the top of _run_amauta
+    covers every daemon-borne transport that reaches it -- /api/rpetd,
+    /api/note, /api/exec (rpetd/note allowlisted), and bin/mcp-server.cjs's
+    rpetd-log transport (POSTs /api/rpetd directly; there is no Node CLI in
+    that path, so the Node-side scrubEvidence() in gsd-amauta.cjs never
+    sees MCP-borne evidence). Only rpetd/note args are touched -- every
+    other command (search, show, board, ...) passes through byte-unchanged.
+    Direct-CLI rpetd/note content that also passed through the Node-side
+    scrub is scrubbed again here; that is fine (idempotent by construction
+    -- markers contain no secrets to re-match).
+
+    Fail-open: if evidence_scrub failed to import, args pass through
+    unscrubbed. The GSD_EVIDENCE_SCRUB=off kill switch is honored inside
+    scrub_text() itself, so no separate check is needed here.
+    """
+    if not args or args[0] not in ("rpetd", "note"):
+        return args
+    if not _EVIDENCE_SCRUB_AVAILABLE:
+        return args
+    scrubbed_args = list(args)
+    for flag in ("--content", "--text"):
+        if flag in scrubbed_args:
+            idx = scrubbed_args.index(flag)
+            if idx + 1 < len(scrubbed_args):
+                scrubbed_value, _hits = scrub_text(scrubbed_args[idx + 1])
+                scrubbed_args[idx + 1] = scrubbed_value
+    return scrubbed_args
+
+
 def _get_store():
     """Return the active store (PGStore or SQLiteStore), or None."""
     return _pg_store or _sqlite_store
@@ -995,6 +1043,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
 
     def _run_amauta(self, args):
         """Run amauta.py with given args, return (stdout, stderr, returncode)."""
+        args = _scrub_evidence_args(args)
         env = os.environ.copy()
         env["AMAUTA_DATA_DIR"] = DATA_DIR
         # Strip ANSI codes for clean JSON parsing
@@ -2271,6 +2320,23 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             if not text:
                 self._send_json({"error": "text is required"}, 400)
                 return
+            # Phase 68 MOBL-04: scrub build-log/evidence secrets BEFORE any
+            # store call. Fail-open when the module didn't import at
+            # startup; the GSD_EVIDENCE_SCRUB=off kill switch is honored
+            # inside scrub_text() itself.
+            _scrub_hits = []
+            if _EVIDENCE_SCRUB_AVAILABLE:
+                text, _scrub_hits = scrub_text(text)
+
+            def _send_memory_store_response(payload, status=200):
+                # Additive-only: append 'scrubbed' ONLY when hits occurred,
+                # never disturbing the existing polymorphic dict shapes this
+                # route already returns (dedup_skipped / noop /
+                # deleted_target / superseded_id / plain passthrough).
+                if _scrub_hits:
+                    payload = {**payload, "scrubbed": _scrub_hits}
+                self._send_json(payload, status)
+
             # DATA-05/DATA-06: Auto-set project_id from CWD or test mode
             project_id = self._resolve_project_id(body)
             try:
@@ -2319,7 +2385,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 # branches so a dedup hit on either path returns the same
                 # {"stored": false, "dedup_skipped": true, ...} shape.
                 if isinstance(mem_id, dict) and mem_id.get("dedup_skipped"):
-                    self._send_json({
+                    _send_memory_store_response({
                         "stored": False,
                         "dedup_skipped": True,
                         "existing_id": mem_id["existing_id"],
@@ -2337,20 +2403,20 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 # explicitly so each shape reports an honest top-level
                 # `stored` and passes its sentinel fields through untouched.
                 if isinstance(mem_id, dict) and mem_id.get("noop"):
-                    self._send_json({
+                    _send_memory_store_response({
                         "stored": False,
                         "noop": True,
                         "existing_id": mem_id.get("existing_id"),
                     })
                     return
                 if isinstance(mem_id, dict) and "deleted_target" in mem_id:
-                    self._send_json({
+                    _send_memory_store_response({
                         "stored": False,
                         "deleted_target": mem_id["deleted_target"],
                     })
                     return
                 if isinstance(mem_id, dict) and "superseded_id" in mem_id:
-                    self._send_json({
+                    _send_memory_store_response({
                         "id": mem_id.get("id"),
                         "stored": True,
                         "superseded_id": mem_id["superseded_id"],
@@ -2361,9 +2427,9 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 if isinstance(mem_id, dict):
                     # Unenumerated future sentinel shape — pass through
                     # verbatim rather than nesting it as {"id": <dict>}.
-                    self._send_json({"stored": bool(mem_id.get("id")), **mem_id})
+                    _send_memory_store_response({"stored": bool(mem_id.get("id")), **mem_id})
                     return
-                self._send_json({"id": mem_id, "stored": True, "embedded": bool(use_embedding and _pg_store), "project_id": project_id})
+                _send_memory_store_response({"id": mem_id, "stored": True, "embedded": bool(use_embedding and _pg_store), "project_id": project_id})
             except Exception as e:
                 self._send_json({"error": _safe_error(e)}, 500)
             return
