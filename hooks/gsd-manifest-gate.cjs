@@ -26,6 +26,8 @@
  *   1. Mode off            -> exit 0 (handled by runGate before this file runs).
  *   2. No file_path         -> allow.
  *   3. No fresh marker entries -> allow silently (the claim gate owns this case).
+ *   3a. Allowlists artifact unavailable/corrupt -> allow + warn (fail-open;
+ *       Verification Criteria #5 — never crash or deny on missing/corrupt data).
  *   4. Path in global_allowlist -> allow.
  *   5. Path in orchestrator_owned -> deny iff an active entry's agent is an
  *      executor; else allow.
@@ -91,15 +93,24 @@ hookCommon.runGate('manifest', (input, ctx) => {
   const activeEntries = _activeEntries(ctx);
   if (activeEntries.length === 0) return;
 
-  const allowlists = ctx.allowlists;
-  const globalAllowlist = (allowlists && Array.isArray(allowlists.global_allowlist))
-    ? allowlists.global_allowlist
-    : [];
-  const orchestratorOwned = (allowlists && Array.isArray(allowlists.orchestrator_owned))
-    ? allowlists.orchestrator_owned
-    : [];
-
   const toolName = (input && typeof input.tool_name === 'string') ? input.tool_name : 'unknown-tool';
+
+  // Fail-open: hookCommon.loadAllowlists() returns null on ANY read/parse
+  // failure (missing/corrupt artifact). Without a valid global_allowlist /
+  // orchestrator_owned list we cannot safely evaluate a violation, so this
+  // gate allows with a warning rather than risk a deny built on absent data
+  // (Verification Criteria #5 — corrupting the allowlists artifact must
+  // yield allow, never a crash or deny).
+  const allowlists = ctx.allowlists;
+  if (!allowlists || typeof allowlists !== 'object') {
+    hookCommon.warn(
+      `gsd-manifest-gate: hook-allowlists.json unavailable or unparseable — allowing ${toolName} on ` +
+      `'${relPath}' without denial (fail-open).`
+    );
+    return;
+  }
+  const globalAllowlist = Array.isArray(allowlists.global_allowlist) ? allowlists.global_allowlist : [];
+  const orchestratorOwned = Array.isArray(allowlists.orchestrator_owned) ? allowlists.orchestrator_owned : [];
 
   // Step 4: global allowlist.
   if (hookCommon.matchesAny(relPath, globalAllowlist)) return;
