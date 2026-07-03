@@ -730,7 +730,8 @@ class PGStore:
     # ═══════════════════════════════════════════════════════
 
     def memory_store(self, text, source="agent", agent_id=None, tags=None,
-                     metadata=None, project_id=None, applied_count=0):
+                     metadata=None, project_id=None, applied_count=0,
+                     skip_dedup=False):
         """Store a memory entry.
 
         Phase 10 LEARN-02/04: metadata dict may contain structured fields:
@@ -758,7 +759,19 @@ class PGStore:
         distillation instead of resetting to zero. Coerced to a non-negative
         int; any bad value (None, non-numeric) silently defaults to 0.
 
-        Returns the new memory ID.
+        Phase 66 MEMR-06: no-API-key/no-embedding writes land here directly
+        (memory_store_with_embedding falls back to this method when
+        generate_embedding() returns None), so THIS path needs its own
+        write-time dedup — trigram similarity first, Jaccard token-overlap
+        second. Kill-switch semantics: dedup NEVER blocks a write. Any
+        exception at either rung is logged (one stderr line) and execution
+        falls through to the plain INSERT. Pass skip_dedup=True to bypass
+        entirely (e.g. distill's merge-store, which legitimately writes text
+        similar to what it is replacing).
+
+        Returns the new memory ID, or a dedup dict identical in shape to
+        memory_store_with_embedding's DATA-04 dedup response:
+        {"dedup_skipped": True, "existing_id": ..., "similarity": ...}
         """
         import sys
 
@@ -773,17 +786,86 @@ class PGStore:
                 metadata = None
 
         # Phase 10 LEARN-04 defense-in-depth tag governance
-        tag_result = normalize_tags(tags or [])
-        if tag_result.get("error"):
-            raise ValueError(tag_result["error"])
-        tags = tag_result.get("tags", [])
-        for w in tag_result.get("warnings", []):
-            print(f"[pg_store] {w}", file=sys.stderr)
+        # TK-1704: empty/None tag list is a valid "no tags" store, not a governance
+        # rejection — skip normalize_tags() entirely rather than calling it with []
+        # (normalize_tags([]) intentionally rejects empty input; see its own
+        # cross-runtime parity contract at line ~281 and its pinned tests).
+        if tags:
+            tag_result = normalize_tags(tags)
+            if tag_result.get("error"):
+                raise ValueError(tag_result["error"])
+            tags = tag_result.get("tags", [])
+            for w in tag_result.get("warnings", []):
+                print(f"[pg_store] {w}", file=sys.stderr)
+        else:
+            tags = []
 
         try:
             applied_count = max(0, int(applied_count or 0))
         except (TypeError, ValueError):
             applied_count = 0
+
+        # Phase 66 MEMR-06: no-embedding write-time dedup (trigram rung, then
+        # Jaccard rung). Never blocks a write.
+        if not skip_dedup:
+            dedup_hit = None
+            trigram_threshold = float(os.environ.get("GSD_TEXT_DEDUP_THRESHOLD", "0.6"))
+            try:
+                with self._get_conn() as conn:
+                    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                        cur.execute("""
+                            SELECT id, similarity(text, %s) AS sim
+                            FROM gsd_memory
+                            WHERE (project_id = %s OR (project_id IS NULL AND %s IS NULL))
+                              AND text %% %s
+                            ORDER BY sim DESC
+                            LIMIT 1
+                        """, (text, project_id, project_id, text))
+                        row = cur.fetchone()
+                        if row and float(row["sim"]) >= trigram_threshold:
+                            dedup_hit = {
+                                "dedup_skipped": True,
+                                "existing_id": row["id"],
+                                "similarity": round(float(row["sim"]), 4),
+                            }
+            except Exception as e:
+                print(
+                    f"[pg_store] memory_store trigram dedup rung failed "
+                    f"({type(e).__name__}: {e}) — falling back to Jaccard rung",
+                    file=sys.stderr,
+                )
+                jaccard_threshold = float(
+                    os.environ.get("GSD_TEXT_DEDUP_JACCARD_THRESHOLD", "0.85")
+                )
+                try:
+                    with self._get_conn() as conn:
+                        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                            cur.execute("""
+                                SELECT id, text FROM gsd_memory
+                                WHERE (project_id = %s OR (project_id IS NULL AND %s IS NULL))
+                                ORDER BY created_at DESC
+                                LIMIT 200
+                            """, (project_id, project_id))
+                            candidates = cur.fetchall()
+                    best_id, best_sim = None, 0.0
+                    for cand in candidates:
+                        sim = _jaccard(text, cand["text"])
+                        if sim > best_sim:
+                            best_sim, best_id = sim, cand["id"]
+                    if best_id is not None and best_sim >= jaccard_threshold:
+                        dedup_hit = {
+                            "dedup_skipped": True,
+                            "existing_id": best_id,
+                            "similarity": round(best_sim, 4),
+                        }
+                except Exception as e2:
+                    print(
+                        f"[pg_store] memory_store jaccard dedup rung failed "
+                        f"({type(e2).__name__}: {e2}) — proceeding to insert without dedup",
+                        file=sys.stderr,
+                    )
+            if dedup_hit:
+                return dedup_hit
 
         with self._get_conn() as conn:
             with conn.cursor() as cur:
@@ -2215,7 +2297,7 @@ class PGStore:
 
     def memory_store_with_embedding(self, text, source="agent", agent_id=None,
                                      tags=None, metadata=None, project_id=None,
-                                     applied_count=0):
+                                     applied_count=0, skip_dedup=False):
         """Store a memory entry with auto-generated embedding.
 
         Falls back to memory_store() without embedding if no API key is set.
@@ -2230,6 +2312,10 @@ class PGStore:
 
         Phase 66 MEMR-02/05: applied_count mirrors memory_store()'s semantics —
         coerced to a non-negative int, defaulting to 0 on any bad value.
+
+        Phase 66 MEMR-06: skip_dedup=True bypasses the cosine dedup check below
+        AND is forwarded to the no-embedding memory_store() fallback (so the
+        seam is honored regardless of which write path is actually taken).
         """
         import sys
 
@@ -2271,26 +2357,27 @@ class PGStore:
             # Pass pre-normalized tags through so memory_store doesn't re-run
             # validation (it will no-op since tags are already clean).
             return self.memory_store(text, source, agent_id, tags, metadata, project_id,
-                                      applied_count=applied_count)
+                                      applied_count=applied_count, skip_dedup=skip_dedup)
 
         # DATA-04: Pre-store dedup — skip insert if near-duplicate exists (cosine > threshold)
         dedup_threshold = float(os.environ.get("GSD_DEDUP_THRESHOLD", "0.95"))
 
         with self._get_conn() as conn:
-            # Sub-block 1: dedup check
-            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute("""
-                    SELECT id, text, (1 - (embedding <=> %s::vector)) as similarity
-                    FROM gsd_memory
-                    WHERE embedding IS NOT NULL
-                      AND (project_id = %s OR (project_id IS NULL AND %s IS NULL))
-                    ORDER BY embedding <=> %s::vector
-                    LIMIT 1
-                """, (str(embedding), project_id, project_id, str(embedding)))
-                row = cur.fetchone()
-                if row and float(row["similarity"]) >= dedup_threshold:
-                    return {"dedup_skipped": True, "existing_id": row["id"],
-                            "similarity": round(float(row["similarity"]), 4)}
+            # Sub-block 1: dedup check (Phase 66 MEMR-06: skip_dedup bypasses this)
+            if not skip_dedup:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    cur.execute("""
+                        SELECT id, text, (1 - (embedding <=> %s::vector)) as similarity
+                        FROM gsd_memory
+                        WHERE embedding IS NOT NULL
+                          AND (project_id = %s OR (project_id IS NULL AND %s IS NULL))
+                        ORDER BY embedding <=> %s::vector
+                        LIMIT 1
+                    """, (str(embedding), project_id, project_id, str(embedding)))
+                    row = cur.fetchone()
+                    if row and float(row["similarity"]) >= dedup_threshold:
+                        return {"dedup_skipped": True, "existing_id": row["id"],
+                                "similarity": round(float(row["similarity"]), 4)}
 
             # Sub-block 2: insert (same conn, no nested _get_conn)
             with conn.cursor() as cur:

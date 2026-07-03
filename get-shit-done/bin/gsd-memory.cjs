@@ -2413,6 +2413,11 @@ async function cmdDistill(args) {
         source: 'distilled',
         agent_id: keep.agent_id || '',
         applied_count: appliedCountSum,
+        // Phase 66 MEMR-06: distill's merge-store legitimately writes text
+        // similar to what it is replacing (the merged group's own members) —
+        // opt out of write-time dedup so the merge is never mistaken for a
+        // near-duplicate of the entry it is about to supersede.
+        dedup: false,
         // Send metadata as object — the daemon/pg_store.py handles JSON.stringify internally.
         // Previously this was JSON.stringify'd here, causing double-encoding in PG.
         metadata: {
@@ -2435,7 +2440,15 @@ async function cmdDistill(args) {
 
       // Only delete originals if the merged entry was stored successfully
       // This prevents leaving orphaned merged entries with no originals on store failure
-      if (storeRes && storeRes.status === 200) {
+      //
+      // Phase 66 MEMR-06 (data-loss trap): a 200 response with dedup_skipped
+      // means NOTHING was stored (the write-time dedup fired and returned
+      // {stored:false, dedup_skipped:true} at HTTP 200) — treat that the
+      // SAME as a store failure, otherwise this would delete ALL originals
+      // (including `keep`) while the merged replacement was never written.
+      // The dedup-opt-out flag on mergeBody above is the primary defense; this is
+      // belt-for-the-suspenders in case that seam is ever bypassed.
+      if (storeRes && storeRes.status === 200 && !(storeRes.data && storeRes.data.dedup_skipped)) {
         // Delete ONLY the duplicate entries, NOT the 'keep' entry (which is merged into the new one)
         for (const entry of remove) {
           if (entry.id) {
