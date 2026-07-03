@@ -34,6 +34,9 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const http = require('http');
+const https = require('https');
+const { spawn } = require('child_process');
 
 // ─── LOCKED constants ───────────────────────────────────────────────────────
 
@@ -53,6 +56,11 @@ const EVENT_TYPES = Object.freeze([
 const BUFFER_FILENAME = 'telemetry-buffer.jsonl';
 const BUFFER_CAP_DEFAULT = 2000;
 
+const FLUSH_STATE_FILENAME = 'telemetry-flush-state.json';
+const FLUSH_MIN_INTERVAL_MS = 300000; // 5 min
+const FLUSH_TIMEOUT_MS = 3000;
+const FLUSH_BATCH_MAX = 500;
+
 // ─── Path resolution ────────────────────────────────────────────────────────
 
 /**
@@ -70,6 +78,10 @@ function dataDir() {
 
 function bufferPath() {
   return path.join(dataDir(), BUFFER_FILENAME);
+}
+
+function flushStatePath() {
+  return path.join(dataDir(), FLUSH_STATE_FILENAME);
 }
 
 /**
@@ -285,13 +297,213 @@ function emit(eventType, payload) {
   }
 }
 
+// ─── Flush engine (TEL-03 — dead sink NEVER blocks or slows the harness) ───
+//
+// emit() itself NEVER performs network I/O. flushNow() is the only function
+// in this module that opens a socket, and it is invoked ONLY from the
+// explicit `telemetry flush` verb or from the detached __flush child spawned
+// by maybeScheduleFlush() below — never synchronously from emit()'s caller.
+
+function _writeFlushState(record) {
+  try {
+    fs.mkdirSync(dataDir(), { recursive: true });
+    fs.writeFileSync(flushStatePath(), JSON.stringify(record, null, 2) + '\n');
+  } catch {
+    // Fail-open: a flush-state write failure must never propagate.
+  }
+}
+
+function _readFlushState() {
+  try {
+    const raw = fs.readFileSync(flushStatePath(), 'utf8');
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Stub in this task (62-01-01) — always returns false. The real
- * fire-and-forget detached-spawn implementation lands in 62-01-02
- * (TK-1708), which replaces this function entirely.
+ * POST body to urlStr with a hard FLUSH_TIMEOUT_MS timeout (both the
+ * request's `timeout` option AND an explicit req.destroy() on timeout).
+ * Resolves — NEVER rejects. On success: {ok:true}. On any failure
+ * (timeout, refused, non-2xx, DNS, invalid URL): {ok:false, error:'<short
+ * code>'} — the error is a status/error CODE only, never the response body
+ * or any request/response content (privacy: metadata only).
+ */
+function _postJson(urlStr, body) {
+  return new Promise((resolve) => {
+    let url;
+    try {
+      url = new URL(urlStr);
+    } catch {
+      resolve({ ok: false, error: 'invalid_sink_url' });
+      return;
+    }
+
+    const isHttps = url.protocol === 'https:';
+    const lib = isHttps ? https : http;
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+
+    let req;
+    try {
+      req = lib.request({
+        hostname: url.hostname,
+        port: url.port || (isHttps ? 443 : 80),
+        path: (url.pathname || '/') + (url.search || ''),
+        method: 'POST',
+        timeout: FLUSH_TIMEOUT_MS,
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body),
+        },
+      }, (res) => {
+        res.on('data', () => {}); // drain, never inspect body content
+        res.on('end', () => {
+          const status = res.statusCode || 0;
+          if (status >= 200 && status < 300) finish({ ok: true });
+          else finish({ ok: false, error: `http_${status}` });
+        });
+      });
+    } catch {
+      finish({ ok: false, error: 'request_setup_failed' });
+      return;
+    }
+
+    req.on('timeout', () => {
+      req.destroy();
+      finish({ ok: false, error: 'timeout' });
+    });
+    req.on('error', (err) => {
+      finish({ ok: false, error: (err && err.code) || 'request_error' });
+    });
+
+    // Belt-and-suspenders: guarantee resolution even if 'timeout' never fires.
+    const hardTimer = setTimeout(() => {
+      try { req.destroy(); } catch { /* ignore */ }
+      finish({ ok: false, error: 'timeout' });
+    }, FLUSH_TIMEOUT_MS + 250);
+    if (typeof hardTimer.unref === 'function') hardTimer.unref();
+
+    try {
+      req.write(body);
+      req.end();
+    } catch {
+      finish({ ok: false, error: 'request_write_failed' });
+    }
+  });
+}
+
+/**
+ * flushNow() — drain up to FLUSH_BATCH_MAX buffered events to
+ * readTelemetryConfig().sink_url. NEVER rejects, NEVER throws.
+ *
+ * - No sink configured: {flushed:0, remaining:bufferedCount(), reason:'no_sink'}
+ * - Empty buffer: {flushed:0, remaining:0}
+ * - Success (2xx): buffer is rewritten to keep only the remainder lines,
+ *   flush-state records {last_flush_at, last_result:'ok'}, returns
+ *   {flushed:N, remaining:M}.
+ * - Any failure: buffer is left BYTE-UNTOUCHED, flush-state records
+ *   {last_flush_at, last_result:'error', last_error:'<short code>'},
+ *   returns {flushed:0, remaining:N, error:'<same short code>'}.
+ */
+async function flushNow() {
+  try {
+    const cfg = readTelemetryConfig();
+    const sinkUrl = cfg.sink_url;
+    if (!sinkUrl) {
+      return { flushed: 0, remaining: bufferedCount(), reason: 'no_sink' };
+    }
+
+    const bPath = bufferPath();
+    let lines;
+    try {
+      const raw = fs.readFileSync(bPath, 'utf8');
+      lines = raw.split('\n').filter((l) => l.trim().length > 0);
+    } catch {
+      lines = [];
+    }
+
+    if (lines.length === 0) {
+      return { flushed: 0, remaining: 0 };
+    }
+
+    const batchLines = lines.slice(0, FLUSH_BATCH_MAX);
+    const remainderLines = lines.slice(FLUSH_BATCH_MAX);
+    const events = batchLines
+      .map((l) => { try { return JSON.parse(l); } catch { return null; } })
+      .filter((e) => e !== null);
+    const body = JSON.stringify({ schema_version: SCHEMA_VERSION, events });
+
+    const result = await _postJson(sinkUrl, body);
+    const nowIso = new Date().toISOString();
+
+    if (result.ok) {
+      try {
+        fs.writeFileSync(bPath, remainderLines.length ? remainderLines.join('\n') + '\n' : '');
+      } catch {
+        // Fail-open: even if the rewrite fails, the POST succeeded — report
+        // the drain as successful; the next emit() will re-establish the file.
+      }
+      _writeFlushState({ last_flush_at: nowIso, last_result: 'ok' });
+      return { flushed: batchLines.length, remaining: remainderLines.length };
+    }
+
+    // Failure: buffer is left byte-untouched (no write to bPath at all).
+    _writeFlushState({ last_flush_at: nowIso, last_result: 'error', last_error: result.error });
+    return { flushed: 0, remaining: lines.length, error: result.error };
+  } catch {
+    return { flushed: 0, remaining: bufferedCount(), error: 'flush_internal_error' };
+  }
+}
+
+/**
+ * shouldFlush() — true when telemetry is enabled, a sink_url is configured,
+ * the buffer is non-empty, and either no prior flush-state exists or
+ * FLUSH_MIN_INTERVAL_MS has elapsed since last_flush_at. This throttles
+ * retry storms against unreachable sinks (the flush-state write happens
+ * even on failure, per flushNow() above).
+ */
+function shouldFlush() {
+  try {
+    if (!isEnabled()) return false;
+    const cfg = readTelemetryConfig();
+    if (!cfg.sink_url) return false;
+    if (bufferedCount() === 0) return false;
+
+    const state = _readFlushState();
+    if (!state || !state.last_flush_at) return true;
+    const lastMs = Date.parse(state.last_flush_at);
+    if (Number.isNaN(lastMs)) return true;
+    return (Date.now() - lastMs) > FLUSH_MIN_INTERVAL_MS;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * maybeScheduleFlush() — replaces the 62-01-01 stub. When shouldFlush() is
+ * false, returns false synchronously (no child spawned). Otherwise spawns a
+ * DETACHED, unref()'d child running this same file with `__flush` as its
+ * sole argument, and returns true immediately — the parent process NEVER
+ * waits on the child. This is the ONLY thing emit() triggers.
  */
 function maybeScheduleFlush() {
-  return false;
+  try {
+    if (!shouldFlush()) return false;
+    const child = spawn(process.execPath, [__filename, '__flush'], {
+      detached: true,
+      stdio: 'ignore',
+    });
+    child.unref();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // ─── Exports ────────────────────────────────────────────────────────────────
@@ -302,6 +514,7 @@ module.exports = {
   dataDir,
   bufferPath,
   configPath,
+  flushStatePath,
   readTelemetryConfig,
   writeTelemetryConfig,
   isEnabled,
@@ -312,5 +525,16 @@ module.exports = {
   sampleEvent,
   bufferedCount,
   bufferCap,
+  flushNow,
+  shouldFlush,
   maybeScheduleFlush,
 };
+
+// ─── __flush self-entry ─────────────────────────────────────────────────────
+// Invoked only by the detached child spawned from maybeScheduleFlush() above
+// (or manually via `node get-shit-done/bin/lib/telemetry.cjs __flush`).
+// Always exits 0 — a flush failure is reported inside flushNow()'s return
+// value via the flush-state file, never as a nonzero process exit here.
+if (require.main === module && process.argv[2] === '__flush') {
+  flushNow().then(() => process.exit(0), () => process.exit(0));
+}
