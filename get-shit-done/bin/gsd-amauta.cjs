@@ -99,6 +99,15 @@ const PLUGIN_ROOT = _resolvePluginRoot();
 const AMAUTA_PY = process.env.GSD_AMAUTA_PY || path.join(PLUGIN_ROOT, 'amauta.py');
 const DATA_DIR = process.env.AMAUTA_DATA_DIR || path.join(PLUGIN_ROOT, 'data');
 
+// Phase 62 TEL-01/TEL-03: consent-gated local telemetry core (lazy-required
+// below at first use so a missing/broken telemetry.cjs never blocks any
+// other amauta command).
+let _telemetry = null;
+function _tel() {
+  if (!_telemetry) _telemetry = require(path.join(__dirname, 'lib', 'telemetry.cjs'));
+  return _telemetry;
+}
+
 function resolveReferencePath(relPath) {
   const candidates = [
     path.join(PLUGIN_ROOT, 'get-shit-done', relPath),
@@ -2016,6 +2025,160 @@ async function cmdCapabilityAdd(flags, jsonMode) {
 }
 
 // ═══════════════════════════════════════════════════════
+// Telemetry Commands (Phase 62 TEL-01/TEL-03)
+// ═══════════════════════════════════════════════════════
+
+/**
+ * The boringly explicit pre-consent disclosure block (TEL-01 — the trust
+ * surface, no marketing language). Names all 8 EVENT_TYPES verbatim and
+ * states exactly what is / is not collected.
+ */
+function _telemetryDisclosureText(eventTypes) {
+  return (
+    'Telemetry disclosure — what would be collected if you enable this:\n' +
+    '  Event types: ' + eventTypes.join(', ') + '\n' +
+    '  Collected: metadata only -- ids, types, counts, durations, error classes\n' +
+    '  Project identity: sent only as a salted hash, never the raw project name\n' +
+    '  Never collected: file contents, prompts, memory text, secrets, error messages\n'
+  );
+}
+
+async function _telemetryEnable(flags, jsonMode) {
+  const t = _tel();
+  process.stdout.write(_telemetryDisclosureText(t.EVENT_TYPES));
+
+  if (!flags.yes) {
+    const readline = require('readline');
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    const answer = await new Promise((resolve) => {
+      rl.question('Enable telemetry? [y/N] ', (a) => {
+        rl.close();
+        resolve(a);
+      });
+    });
+    if (!/^y(es)?$/i.test((answer || '').trim())) {
+      process.stdout.write('telemetry remains OFF\n');
+      return 0;
+    }
+  }
+
+  const cfg = t.readTelemetryConfig();
+  const salt = cfg.salt || require('crypto').randomBytes(8).toString('hex');
+  const patch = {
+    enabled: true,
+    consented_at: new Date().toISOString(),
+    salt,
+  };
+  if (flags.sink) patch.sink_url = flags.sink;
+
+  const ok = t.writeTelemetryConfig(patch);
+  if (!ok) {
+    process.stderr.write('Failed to write telemetry config (no .planning/config.json in this cwd?)\n');
+    return 1;
+  }
+  if (jsonMode) {
+    process.stdout.write(JSON.stringify({ enabled: true, consented_at: patch.consented_at }) + '\n');
+  } else {
+    process.stdout.write('telemetry ENABLED\n');
+  }
+  return 0;
+}
+
+function _telemetryDisable(jsonMode) {
+  const t = _tel();
+  t.writeTelemetryConfig({ enabled: false });
+  if (jsonMode) {
+    process.stdout.write(JSON.stringify({ enabled: false }) + '\n');
+  } else {
+    process.stdout.write('telemetry DISABLED\n');
+  }
+  return 0;
+}
+
+function _telemetryStatus(jsonMode) {
+  const t = _tel();
+  const cfg = t.readTelemetryConfig();
+  let flushState = null;
+  try {
+    flushState = JSON.parse(fs.readFileSync(t.flushStatePath(), 'utf8'));
+  } catch { /* no flush yet */ }
+
+  const result = {
+    enabled: !!cfg.enabled,
+    consented_at: cfg.consented_at || null,
+    sink_url: cfg.sink_url || null,
+    buffered_count: t.bufferedCount(),
+    last_flush_at: (flushState && flushState.last_flush_at) || null,
+    schema_version: t.SCHEMA_VERSION,
+  };
+
+  if (jsonMode) {
+    process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+    return 0;
+  }
+  process.stdout.write(
+    `enabled:        ${result.enabled}\n` +
+    `consented_at:   ${result.consented_at || '(none)'}\n` +
+    `sink_url:       ${result.sink_url || '(none)'}\n` +
+    `buffered_count: ${result.buffered_count}\n` +
+    `last_flush_at:  ${result.last_flush_at || '(never)'}\n` +
+    `schema_version: ${result.schema_version}\n`
+  );
+  return 0;
+}
+
+function _telemetryPreview() {
+  const t = _tel();
+  const last = t.readLastEvent();
+  if (last) {
+    process.stdout.write(JSON.stringify(last, null, 2) + '\n');
+    return 0;
+  }
+  process.stdout.write(JSON.stringify(t.sampleEvent(), null, 2) + '\n');
+  process.stderr.write('(no captured events yet — synthesized sample of the exact envelope shape)\n');
+  return 0;
+}
+
+async function _telemetryFlush(jsonMode) {
+  const t = _tel();
+  const result = await t.flushNow();
+  if (jsonMode) {
+    process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+  } else {
+    process.stdout.write(
+      `flushed:   ${result.flushed}\n` +
+      `remaining: ${result.remaining}\n` +
+      (result.reason ? `reason:    ${result.reason}\n` : '') +
+      (result.error ? `error:     ${result.error}\n` : '')
+    );
+  }
+  // A dead sink is reported in the `error` field, never as a failing exit
+  // (TEL-03 — a flush attempt against an unreachable sink is not a failure).
+  return 0;
+}
+
+async function cmdTelemetry(rest, jsonMode) {
+  const subCmd = rest[0];
+  const flags = parseFlags(rest, 1);
+
+  if (subCmd === 'enable') return await _telemetryEnable(flags, jsonMode);
+  if (subCmd === 'disable') return _telemetryDisable(jsonMode);
+  if (subCmd === 'status') return _telemetryStatus(jsonMode);
+  if (subCmd === 'preview' || subCmd === 'show-payload') return _telemetryPreview();
+  if (subCmd === 'flush') return await _telemetryFlush(jsonMode);
+
+  process.stderr.write(
+    'Usage:\n' +
+    '  amauta telemetry enable [--yes] [--sink URL]   Show disclosure, opt in\n' +
+    '  amauta telemetry disable                       Opt out\n' +
+    '  amauta telemetry status [--json]                Current consent/buffer state\n' +
+    '  amauta telemetry preview  (alias show-payload)  Exact payload preview\n' +
+    '  amauta telemetry flush [--json]                 Attempt a sink flush now\n'
+  );
+  return 1;
+}
+
+// ═══════════════════════════════════════════════════════
 // Audit Commands (Phase 6)
 // ═══════════════════════════════════════════════════════
 
@@ -2295,8 +2458,57 @@ async function main() {
     process.env.GSD_FORCE_PHASES = forcePhasesValue;
   }
 
+  // --enable-telemetry: Phase 62 TEL-01 global flag, works on ANY invocation.
+  // Stripped from rawArgs before command/rest are derived (mirrors
+  // --no-inherit above) so it never leaks into command dispatch or the
+  // exec/amauta.py passthrough.
+  const enableTelemetryIdx = rawArgs.indexOf('--enable-telemetry');
+  const enableTelemetryRequested = enableTelemetryIdx !== -1;
+  if (enableTelemetryIdx !== -1) rawArgs.splice(enableTelemetryIdx, 1);
+
   const command = rawArgs[0];
   const rest = rawArgs.slice(1);
+
+  // --enable-telemetry runs the consent-enable path non-interactively (same
+  // effect as `telemetry enable --yes`) BEFORE dispatch. If it was the only
+  // argument on the invocation, exit 0 immediately after enabling; otherwise
+  // fall through so the rest of the command still dispatches normally.
+  if (enableTelemetryRequested) {
+    await _telemetryEnable({ yes: true }, jsonMode);
+    if (!command) {
+      process.exit(0);
+    }
+  }
+
+  // Phase 62 TEL-01 first-run consent notice (ROADMAP SC1). Fires AT MOST
+  // ONCE: if the config file exists but its parsed JSON has no `telemetry`
+  // key yet, record {enabled:false, prompted_at, salt} and print a
+  // non-blocking notice to stderr (never a readline prompt here —
+  // automation-safe). Never creates the config file when it does not
+  // exist (non-project cwd safety). Wrapped fail-open: a failure here must
+  // never block or crash any other command.
+  try {
+    const t = _tel();
+    const cfgPath = t.configPath();
+    if (fs.existsSync(cfgPath)) {
+      const parsed = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+      if (parsed && typeof parsed === 'object' && !('telemetry' in parsed)) {
+        t.writeTelemetryConfig({
+          enabled: false,
+          consented_at: null,
+          prompted_at: new Date().toISOString(),
+          salt: require('crypto').randomBytes(8).toString('hex'),
+          sink_url: null,
+        });
+        process.stderr.write(
+          'telemetry is OFF by default -- `amauta telemetry enable` opts in; ' +
+          '`amauta telemetry preview` shows exactly what would be sent\n'
+        );
+      }
+    }
+  } catch {
+    // fail-open: the consent notice must never block any command
+  }
 
   if (!command || command === '--help' || command === 'help') {
     process.stdout.write(
@@ -2543,6 +2755,14 @@ async function main() {
     // does not include 'capability' and would 403.
     case 'capability':
       exitCode = await cmdCapability(useDaemon, rest, jsonMode);
+      break;
+
+    // Phase 62 TEL-01/TEL-03: telemetry verb group — MUST be an explicit
+    // case: the default passthrough hits /api/exec whose _EXEC_ALLOWLIST
+    // does not include 'telemetry' and would 403 (Phase 60 capability
+    // precedent). All-local, no daemon calls.
+    case 'telemetry':
+      exitCode = await cmdTelemetry(rest, jsonMode);
       break;
 
     default:
