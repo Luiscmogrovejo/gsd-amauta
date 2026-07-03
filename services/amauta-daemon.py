@@ -279,7 +279,10 @@ _metrics = _Metrics()
 
 # ── Prompt Cache Metrics (Phase 23 / CACHE-04) ────────────────────────────────
 try:
-    from services.prompt_cache import PromptCacheMetrics as _PromptCacheMetrics
+    try:
+        from services.prompt_cache import PromptCacheMetrics as _PromptCacheMetrics
+    except ImportError:
+        from prompt_cache import PromptCacheMetrics as _PromptCacheMetrics
     _prompt_cache_metrics = _PromptCacheMetrics()
 except ImportError:
     _prompt_cache_metrics = None
@@ -1126,7 +1129,10 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
         # ── GET /cache/stats — Semantic cache performance (Phase 24 / SEMANTIC-03) ──
         if path == "/cache/stats":
             try:
-                from services.semantic_cache import _semantic_cache_manager
+                try:
+                    from services.semantic_cache import _semantic_cache_manager
+                except ImportError:
+                    from semantic_cache import _semantic_cache_manager
                 if _semantic_cache_manager:
                     store = _get_store()
                     db_stats = store.semantic_cache_stats() if store and hasattr(store, "semantic_cache_stats") else {"entries": 0, "valid_entries": 0}
@@ -2073,7 +2079,10 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": "query is required"}, 400)
                 return
             try:
-                from services.semantic_cache import _semantic_cache_manager
+                try:
+                    from services.semantic_cache import _semantic_cache_manager
+                except ImportError:
+                    from semantic_cache import _semantic_cache_manager
                 store = _get_store()
                 if not store or not _semantic_cache_manager:
                     self._send_json({"hit": False, "reason": "cache_unavailable"})
@@ -2098,7 +2107,10 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": "query and response are required"}, 400)
                 return
             try:
-                from services.semantic_cache import _semantic_cache_manager
+                try:
+                    from services.semantic_cache import _semantic_cache_manager
+                except ImportError:
+                    from semantic_cache import _semantic_cache_manager
                 store = _get_store()
                 if not store or not _semantic_cache_manager:
                     self._send_json({"stored": False, "reason": "cache_unavailable"})
@@ -2746,7 +2758,10 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 return
 
             try:
-                from services.rpetd_context import compact_conversation
+                try:
+                    from services.rpetd_context import compact_conversation
+                except ImportError:
+                    from rpetd_context import compact_conversation
 
                 # Compaction uses no LLM call in v1 — fallback extraction only.
                 # LLM-backed compaction will be wired when model routing is available (Phase 24 ROUTE-02).
@@ -2761,7 +2776,10 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 # Compute file hashes for staleness detection (Phase 21 STALE-01)
                 ctx_file_hashes = {}
                 try:
-                    from services.context_validator import ContextValidator
+                    try:
+                        from services.context_validator import ContextValidator
+                    except ImportError:
+                        from context_validator import ContextValidator
                     relevant = context.relevant_files if hasattr(context, 'relevant_files') else []
                     if relevant:
                         ctx_file_hashes = ContextValidator.compute_file_hashes(relevant)
@@ -2811,12 +2829,18 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 return
 
             try:
-                from services.context_validator import validate_context
+                try:
+                    from services.context_validator import validate_context
+                except ImportError:
+                    from context_validator import validate_context
 
                 # Phase 22 CAVE-01: wire caveman description generator
                 cave_description_fn = None
                 try:
-                    from services.caveman_descriptions import generate_caveman_description
+                    try:
+                        from services.caveman_descriptions import generate_caveman_description
+                    except ImportError:
+                        from caveman_descriptions import generate_caveman_description
                     cave_description_fn = generate_caveman_description
                 except ImportError:
                     log.warning("caveman_descriptions not available — descriptions disabled")
