@@ -98,7 +98,7 @@ def hybrid_search_generic(query: str, pg_conn, *, table: str, id_column: str,
         bm25_query: pre-built pg_search match string (already sanitized/boosted
             by the caller); derived via _sanitize_query(query) when None
         filter_sql: optional SQL fragment appended to BOTH legs (e.g.
-            "AND c.file_path LIKE %s")
+            "AND c.some_column LIKE %s")
         filter_params: positional params for filter_sql, applied once per leg
         top_k: rows returned after RRF fusion
         candidate_k: candidate pool size per leg before fusion
@@ -176,11 +176,15 @@ def hybrid_search_generic(query: str, pg_conn, *, table: str, id_column: str,
 
     params = [bm25_query] + filter_params + [vec_literal] + filter_params + [top_k]
 
+    # Output column order is deterministic from the SELECT list we just built
+    # (select_columns, then the three fusion aliases) — no cursor metadata
+    # round-trip needed to name the result dict keys.
+    result_cols = list(select_columns) + ["rrf_score", "rank_bm25", "rank_vector"]
+
     try:
         with pg_conn.cursor() as cur:
             cur.execute(sql, params)
-            cols = [d[0] for d in cur.description]
-            rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+            rows = [dict(zip(result_cols, row)) for row in cur.fetchall()]
         log.debug("hybrid_search_generic_ok table=%s results=%d", table, len(rows))
         return rows
     except Exception as e:
@@ -224,11 +228,14 @@ def _generic_bm25_only(bm25_query: str, pg_conn, *, table: str, id_column: str,
     """
     params = [bm25_query] + filter_params + [top_k]
 
+    # Same deterministic-column-order approach as hybrid_search_generic — no
+    # cursor metadata round-trip needed to name the result dict keys.
+    result_cols = list(select_columns) + ["rrf_score", "rank_bm25", "rank_vector"]
+
     try:
         with pg_conn.cursor() as cur:
             cur.execute(sql, params)
-            cols = [d[0] for d in cur.description]
-            rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+            rows = [dict(zip(result_cols, row)) for row in cur.fetchall()]
         return rows
     except Exception as e:
         log.warning("generic_bm25_only_failed table=%s error=%s", table, str(e))
