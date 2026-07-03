@@ -1924,7 +1924,6 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": "No database available"}, 503)
                 return
             try:
-                from urllib.parse import urlparse, parse_qs
                 qs = parse_qs(urlparse(self.path).query)
                 from_filter = qs.get("from", [None])[0]
                 to_filter   = qs.get("to",   [None])[0]
