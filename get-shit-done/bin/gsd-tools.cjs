@@ -2887,8 +2887,15 @@ async function main() {
         const forceFlag = args.includes('--force');
         phase.cmdPhaseRemove(cwd, args[2], { force: forceFlag }, raw);
       } else if (subcommand === 'complete') {
-        phase.cmdPhaseComplete(cwd, args[2], raw);
+        // Phase 62 TEL-02 / TK-1715 divergence resolution (2026-07-03,
+        // orchestrator decision: expand-scope, option A amended): emit
+        // BEFORE the call (attempt semantics, mirroring phase_start's
+        // established precedent). core.cjs's output()/error() helpers both
+        // call process.exit() unconditionally, so cmdPhaseComplete NEVER
+        // returns control to this call site — code placed after the call
+        // is unreachable dead code on every path (success AND error).
         _telemetryEmit('phase_complete', { phase: String(args[2] || '') });
+        phase.cmdPhaseComplete(cwd, args[2], raw);
       } else {
         error('Unknown phase subcommand. Available: next-decimal, add, insert, remove, complete');
       }

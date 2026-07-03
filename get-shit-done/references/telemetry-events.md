@@ -56,7 +56,19 @@ types (section 1).
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `phase` | string | The phase number/id that completed. |
+
+**Semantics (TK-1715 divergence resolution, 2026-07-03):** emitted at CLI
+invocation of `phase complete` (attempt) — BEFORE
+`phase.cmdPhaseComplete(...)` is called, mirroring `phase_start`'s
+established attempt-semantics precedent. This is NOT a confirmed-success
+signal: `core.cjs`'s `output()`/`error()` helpers both call `process.exit()`
+unconditionally, so `cmdPhaseComplete` never returns control to its caller —
+code placed after the call is unreachable on every path (success and
+error). Success is inferable from the absence of a subsequent `error_class`
+event for the same invocation. `schema_version` stays `"1.0"` — the payload
+shape is unchanged, this is a semantics clarification only.
+
+| `phase` | string | The phase number/id whose `complete` invocation fired this event. |
 
 ### `validator_verdict`
 
@@ -121,7 +133,7 @@ Wave 2 against `gsd-tools.cjs` / `gsd-amauta.cjs` HEAD).
 | Event | File | Anchor symbol |
 |-------|------|---------------|
 | `phase_start` | `gsd-tools.cjs` | `case 'execute-phase':` inside the `init` dispatch |
-| `phase_complete` | `gsd-tools.cjs` | `case 'phase'` → `subcommand === 'complete'` → `phase.cmdPhaseComplete` |
+| `phase_complete` | `gsd-tools.cjs` | `case 'phase'` → `subcommand === 'complete'` — emitted BEFORE `phase.cmdPhaseComplete` is called (attempt semantics; see section 2) |
 | `escalation_fired` | `gsd-tools.cjs` | `case 'complexity-escalate':` |
 | `divergence_filed` | `gsd-tools.cjs` | the `divergence_type:` construction sites in `_diffPlanVsAmauta` and `planToTasks` (`plan_amauta_drift`, `agent_assignment_conflict`) |
 | `validator_verdict` | `gsd-amauta.cjs` | `cmdValidate` — gaps path (returns 2), gate-failure path (returns 1), pass/fail outcome path (daemon + direct branches) |
