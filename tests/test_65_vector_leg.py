@@ -11,15 +11,37 @@ search to BM25-only, and the except branch never rolled back the aborted
 transaction before issuing the BM25-only fallback query on the same
 connection.
 
-Two tests here:
+Second bug (TK-1736 re-route, same file/task): fixing the cast activates the
+RRF-fusion CTE for the first time ever, exposing a previously-dormant type
+bug -- PostgreSQL's bare `1.0` literal defaults to `numeric`, not
+`double precision`, so `rrf_score` arrives via psycopg2 as
+`decimal.Decimal` once the fused CTE actually returns rows. hybrid_search()'s
+position_decay step then does `Decimal * float`, raising TypeError on every
+real hybrid call -- swallowed by outer callers (e.g. amauta-mcp.py's
+try/except), silently degrading to legacy/memory fallback. The same
+None-rrf_score BM25-only-degradation path had an equivalent crash in its own
+sort/decay code, contradicting hybrid_search()'s own documented graceful-
+degradation contract.
+
+Tests here:
   - test_vector_leg_rollback_on_failure: unit-level, fake connection, proves
     pg_conn.rollback() is invoked before the BM25-only fallback fires when
     the vector-leg execute() raises.
+  - test_rollback_is_best_effort_on_stub_without_rollback: a pg_conn stub
+    with no .rollback() method must not crash hybrid_search_generic.
   - test_vector_leg_executes_and_ranks_live: PG-gated, proves the vector leg
     now runs to completion (no exception, no silent BM25-only fallback) and
     that a lexically-unmatched-but-embedding-close row is surfaced purely via
     the vector leg (rank_bm25 falls back to the candidate_k+1 placeholder,
     rank_vector is a real rank).
+  - test_rrf_score_is_python_float_not_decimal_live: PG-gated, proves
+    hybrid_search_generic's rrf_score is a plain Python float (not
+    decimal.Decimal) once the fused CTE actually returns rows.
+  - test_hybrid_search_end_to_end_rrf_score_is_float_live: PG-gated + skipped
+    without a configured embedding provider, proves the full public
+    hybrid_search() wrapper round-trips rrf_score as a Python float with no
+    exception (the literal end-to-end acceptance oracle for the TK-1736
+    re-route).
 
 Import/fixture style follows tests/test_65_hybrid_generic.py.
 """
@@ -278,6 +300,11 @@ def test_vector_leg_executes_and_ranks_live():
         assert near['rrf_score'] is not None and near['rrf_score'] > 0, (
             "fused row must carry a positive rrf_score"
         )
+        assert isinstance(near['rrf_score'], float), (
+            f"rrf_score must be a plain Python float (TK-1736 re-route: PostgreSQL's "
+            f"bare 1.0 literal is numeric, not double precision, unless explicitly cast) "
+            f"-- got {type(near['rrf_score'])!r}"
+        )
     finally:
         with conn.cursor() as cur:
             cur.execute("DELETE FROM rlm_chunks WHERE file_path LIKE %s", [f"{prefix}%"])
@@ -287,4 +314,150 @@ def test_vector_leg_executes_and_ranks_live():
             cur.execute("SELECT COUNT(*) FROM rlm_chunks WHERE file_path LIKE %s", [f"{prefix}%"])
             remaining = cur.fetchone()[0]
         assert remaining == 0, f"__test1741_vecleg__/ cleanup failed to verify: {remaining} rows remain"
+        conn.close()
+
+
+@pytest.mark.skipif(not _PG_AVAILABLE, reason="live PostgreSQL unavailable (GSD_POSTGRES_URL)")
+def test_rrf_score_is_python_float_not_decimal_live():
+    """
+    TK-1736 re-route: fixing the vector-leg cast activates the RRF fusion
+    CTE for the first time -- PostgreSQL's bare `1.0` literal defaults to
+    `numeric`, which psycopg2 returns as decimal.Decimal, not float. This
+    directly breaks hybrid_search()'s position_decay step
+    (`Decimal * float` raises TypeError), which was previously never
+    exercised because the vector leg always fell back to BM25-only before
+    the fused CTE could ever return a row.
+
+    Proof, independent of any embedding provider: insert a single fixture
+    row and query hybrid_search_generic with a crafted query_embedding
+    matching its stored vector exactly, forcing the CTE to fuse a real row
+    and produce a real (non-placeholder) rrf_score.
+    """
+    from services.rlm_search import hybrid_search_generic
+
+    conn = _pg_conn_or_none()
+    assert conn is not None, "PG must be reachable — skipif should have gated this test"
+
+    prefix = '__test1736_decimal__/'
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO rlm_chunks
+                    (file_path, symbol_name, symbol_type, start_line, end_line,
+                     content, description, sha256, embedding_code)
+                VALUES (%s, %s, 'function', 1, 5, %s, %s, 'tk1736A', %s::vector)
+                """,
+                [
+                    f"{prefix}a.py", "row_a_tk1736",
+                    "def row_a_tk1736(): return 'unrelated content'",
+                    "unrelated description, no shared token",
+                    _vec_literal(2),
+                ],
+            )
+        conn.commit()
+
+        select_columns = ['id', 'file_path', 'symbol_name', 'symbol_type',
+                           'start_line', 'end_line', 'content', 'description',
+                           'dependencies', 'dependents']
+
+        results = hybrid_search_generic(
+            'zzznomatch_tk1736', conn,
+            table='rlm_chunks', id_column='id', select_columns=select_columns,
+            vector_column='embedding_code',
+            query_embedding=[0.0, 0.0, 1.0] + [0.0] * 1021,  # matches basis vector e2 exactly
+            bm25_query='content:zzznomatch_tk1736',
+            filter_sql="AND c.file_path LIKE %s", filter_params=(f"{prefix}%",),
+            top_k=5,
+        )
+
+        by_symbol = {r['symbol_name']: r for r in results}
+        assert 'row_a_tk1736' in by_symbol, f"fixture row missing from results: {list(by_symbol.keys())}"
+        row = by_symbol['row_a_tk1736']
+        assert row['rrf_score'] is not None
+        assert isinstance(row['rrf_score'], float), (
+            f"rrf_score must be a plain Python float, not decimal.Decimal -- got {type(row['rrf_score'])!r}"
+        )
+    finally:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM rlm_chunks WHERE file_path LIKE %s", [f"{prefix}%"])
+        conn.commit()
+
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM rlm_chunks WHERE file_path LIKE %s", [f"{prefix}%"])
+            remaining = cur.fetchone()[0]
+        assert remaining == 0, f"__test1736_decimal__/ cleanup failed to verify: {remaining} rows remain"
+        conn.close()
+
+
+def _embedding_provider_available() -> bool:
+    """Best-effort check for a configured embedding provider, mirroring
+    rlm_embeddings.py's priority order (Voyage API key, then local Ollama).
+    Used only to skip the true end-to-end hybrid_search() test when neither
+    is reachable -- the deterministic tests above already cover the fix
+    without any external dependency."""
+    if os.environ.get("VOYAGE_API_KEY"):
+        return True
+    try:
+        import urllib.request
+        url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434") + "/api/tags"
+        with urllib.request.urlopen(url, timeout=2):
+            return True
+    except Exception:
+        return False
+
+
+_EMBEDDING_PROVIDER_AVAILABLE = _embedding_provider_available()
+
+
+@pytest.mark.skipif(not _PG_AVAILABLE, reason="live PostgreSQL unavailable (GSD_POSTGRES_URL)")
+@pytest.mark.skipif(not _EMBEDDING_PROVIDER_AVAILABLE, reason="no embedding provider configured (VOYAGE_API_KEY/Ollama)")
+def test_hybrid_search_end_to_end_rrf_score_is_float_live():
+    """
+    TK-1736 acceptance oracle: the full public hybrid_search() wrapper
+    (query -> real embedding -> hybrid_search_generic -> position_decay)
+    must round-trip without exception and return rrf_score as a plain
+    Python float, using a real embedding provider end to end.
+    """
+    from services.rlm_search import hybrid_search
+
+    conn = _pg_conn_or_none()
+    assert conn is not None, "PG must be reachable — skipif should have gated this test"
+
+    prefix = '__test1736_e2e__/'
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO rlm_chunks
+                    (file_path, symbol_name, symbol_type, start_line, end_line, content, description, sha256)
+                VALUES (%s, %s, 'function', 1, 5, %s, %s, 'tk1736E2E')
+                """,
+                [
+                    f"{prefix}a.py", "row_e2e_tk1736zzy",
+                    "def row_e2e_tk1736zzy(): return 'zzytk1736e2etoken content'",
+                    "description mentioning zzytk1736e2etoken as well",
+                ],
+            )
+        conn.commit()
+
+        results = hybrid_search('zzytk1736e2etoken', conn, top_k=5, file_filter=prefix)
+
+        assert results, f"expected at least one result for the seeded fixture row, got: {results}"
+        for row in results:
+            assert row.get('rrf_score') is None or isinstance(row['rrf_score'], float), (
+                f"hybrid_search() must never return a non-float rrf_score -- got "
+                f"{type(row.get('rrf_score'))!r} for {row.get('symbol_name')!r}"
+            )
+    finally:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM rlm_chunks WHERE file_path LIKE %s", [f"{prefix}%"])
+        conn.commit()
+
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM rlm_chunks WHERE file_path LIKE %s", [f"{prefix}%"])
+            remaining = cur.fetchone()[0]
+        assert remaining == 0, f"__test1736_e2e__/ cleanup failed to verify: {remaining} rows remain"
         conn.close()
