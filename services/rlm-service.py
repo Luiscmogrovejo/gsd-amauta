@@ -689,22 +689,40 @@ def _split_identifiers(text):
     return text
 
 
+# RETR-07 / RLM-L2: token pattern keeps short (2-char) and digit-leading
+# identifiers (s3, db, v2, id) which the prior 3+-char letter-leading pattern
+# dropped; pure-digit tokens (bare numbers like "42") are filtered separately
+# below since they carry no lexical signal for code search.
+_TOKEN_RE = re.compile(r"\b\w{2,}\b")
+
+
 def _tokenize(text):
     """Extract lowercase word tokens from text, splitting camelCase and snake_case."""
     text = _split_identifiers(text)
-    return set(re.findall(r"\b[a-zA-Z]\w{2,}\b", text.lower()))
+    tokens = _TOKEN_RE.findall(text.lower())
+    return set(t for t in tokens if not t.isdigit())
 
 
 def _tokenize_list(text):
     """Extract lowercase word tokens as a list (preserves duplicates for TF counting)."""
     text = _split_identifiers(text)
-    return re.findall(r"\b[a-zA-Z]\w{2,}\b", text.lower())
+    tokens = _TOKEN_RE.findall(text.lower())
+    return [t for t in tokens if not t.isdigit()]
 
 
 # DEPRECATED Phase 27: Standalone BM25 scorer replaced by ParadeDB pg_search in rlm_search.py.
 # Phase 65: this is now the explicit fallback engine (legacy_in_memory_fallback) --
 # the hybrid pipeline is primary for both /query and /search; this scorer only
 # ever runs when PG is down or the hybrid pipeline returned no results.
+#
+# RETR-07 / BM25 `b` divergence (documented, not aligned): pg_search's BM25 leg
+# (rlm_search.py, the hybrid pipeline) uses its installed default b=0.75 and is
+# not configurable at query time in the installed pg_search version. This
+# in-memory scorer deliberately uses a different b=0.6, tuned for code chunks
+# (less length-normalization penalty on large classes than prose's 0.75
+# default). Post-Phase-65 the two engines never rank the same request --
+# hybrid is primary for both /query and /search, this scorer is fallback-only
+# -- so the divergence is safe to leave documented-not-unified.
 BM25_K1 = 1.5   # Term frequency saturation — higher = more weight to repeated terms
 BM25_B = 0.6    # Length normalization — reduced from 0.75 for code (less penalty on large classes)
 
@@ -719,13 +737,21 @@ def _compute_score(chunk, query_terms, doc_freq, n_docs, total_lines=1,
     text = chunk["text"].lower()
     label = chunk.get("label", "")
     label_tokens = _tokenize(label)
+    label_list = _tokenize_list(label)
 
     score = 0.0
 
     for term in query_terms:
-        # Term frequency in this chunk's text (word-boundary aware via token list)
-        tf = chunk_token_list.count(term) if chunk_token_list else text.count(term)
-        if tf == 0 and term not in label_tokens:
+        # RETR-02: label tokens seed TF before BM25 saturation -- a query term
+        # that ONLY appears in the label (function/class name), never in the
+        # body, now has tf > 0 instead of short-circuiting to 0 before the
+        # label boost below ever runs (boost * 0 == 0).
+        # RETR-07 / RLM-L3: the else-branch counts TOKENS, not raw substring
+        # occurrences in the lowercased body -- a substring-based fallback
+        # would overcount "get" inside "getting"/"forget"/"budget".
+        tf = (chunk_token_list.count(term) if chunk_token_list else _tokenize_list(text).count(term)) \
+            + label_list.count(term)
+        if tf == 0:
             continue
 
         # BM25 IDF: log((N - df + 0.5) / (df + 0.5) + 1)

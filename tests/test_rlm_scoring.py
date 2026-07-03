@@ -81,12 +81,23 @@ class TestTokenize(unittest.TestCase):
         self.assertIn("data", tokens)
 
     def test_min_length_filter(self):
-        """Tokens shorter than 3 chars should be excluded."""
+        """RETR-07: 2-char floor -- single-char tokens excluded, 2+ char kept
+        (widened from the old 3-char floor to preserve short identifiers)."""
         tokens = _tokenize("a ab abc abcd")
         self.assertNotIn("a", tokens)
-        self.assertNotIn("ab", tokens)
+        self.assertIn("ab", tokens)
         self.assertIn("abc", tokens)
         self.assertIn("abcd", tokens)
+
+    def test_short_identifier_tokens(self):
+        """RETR-07 / RLM-L2: short and digit-leading identifiers are kept;
+        bare numeric tokens are dropped (no lexical signal for code search)."""
+        tokens = _tokenize("s3 db v2 id 42")
+        self.assertIn("s3", tokens)
+        self.assertIn("db", tokens)
+        self.assertIn("v2", tokens)
+        self.assertIn("id", tokens)
+        self.assertNotIn("42", tokens)
 
 
 class TestBM25Scoring(unittest.TestCase):
@@ -260,6 +271,38 @@ class TestBM25Scoring(unittest.TestCase):
         content_idx = next(i for i, r in enumerate(results) if r["label"] == "middleware")
         self.assertLessEqual(content_idx, 1,
                              "Content-rich chunk should be in top 2 despite lacking label match")
+
+    def test_label_only_match_scores_nonzero(self):
+        """RETR-02 / RLM-H2: a query matching ONLY the label (never the body)
+        must score non-zero. At HEAD 117bf05 this exact fixture scored 0.0
+        because tf=0 short-circuited before the label boost ever ran (a boost
+        multiplying zero is still zero) -- label tokens now seed TF directly."""
+        chunks = [
+            {"text": "return checksum(data)", "label": "compute_frame_digest",
+             "start_line": 1, "end_line": 2},
+            {"text": "parse config values from disk", "label": "load_config",
+             "start_line": 10, "end_line": 12},
+        ]
+        results = score_chunks(chunks, "compute_frame_digest", top_k=2)
+        self.assertEqual(results[0]["label"], "compute_frame_digest")
+        self.assertGreater(results[0]["relevance_score"], 0)
+
+    def test_label_seeding_does_not_outrank_body_rich_chunk(self):
+        """RETR-02: label-seeded TF must not let a label-only match outrank a
+        chunk whose BODY repeats the query term -- saturation + the 3x IDF
+        label-boost cap still apply after seeding."""
+        body_rich = self._make_chunk(
+            "widget widget widget factory implementation details",
+            label="factoryHelper"
+        )
+        label_only = self._make_chunk(
+            "totally unrelated stub with no matching body content",
+            label="widget"
+        )
+        results = score_chunks([label_only, body_rich], "widget", top_k=2)
+        self.assertEqual(results[0]["label"], "factoryHelper",
+                         "Body-rich chunk (3x term repetition) should rank at or above the label-only match")
+        self.assertGreaterEqual(results[0]["relevance_score"], results[1]["relevance_score"])
 
 
 class TestChunkCache(unittest.TestCase):
