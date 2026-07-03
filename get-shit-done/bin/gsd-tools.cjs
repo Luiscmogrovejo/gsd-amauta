@@ -259,8 +259,21 @@ function routeExecutor(filesStr) {
   const caps = getCapabilityIndex();
   const joined = files.join('\n');
 
-  // Priority order as tiebreaker: frontend (0) > infra (1) > backend (2)
-  const routingOrder = ['gsd-executor-frontend', 'gsd-executor-infra', 'gsd-executor-backend'];
+  // Priority order as tiebreaker: frontend > infra > wearables > mobile-android >
+  // mobile-ios > mobile-cross > ai > backend. Specialists sit between the original
+  // frontend/infra head and the backend catch-all so that specificity ties
+  // (e.g. *.aidl vs *.java, both length 6) resolve toward the specialist while the
+  // legacy frontend > infra > backend ordering is preserved.
+  const routingOrder = [
+    'gsd-executor-frontend',
+    'gsd-executor-infra',
+    'gsd-executor-wearables',
+    'gsd-executor-mobile-android',
+    'gsd-executor-mobile-ios',
+    'gsd-executor-mobile-cross',
+    'gsd-executor-ai',
+    'gsd-executor-backend',
+  ];
   const priorityMap = Object.fromEntries(routingOrder.map((id, i) => [id, i]));
 
   // Collect ALL matching (agentId, pattern, specificityScore) across all agents
@@ -676,7 +689,7 @@ const ORCHESTRATOR_OWNED = [
 // Overly broad globs that defeat the purpose of a manifest. Any manifest
 // containing one of these strings as a declared path is rejected before the
 // diff is compared.
-const MANIFEST_GLOB_BLOCKLIST = ['**/*.md', '**/*', '*'];
+const MANIFEST_GLOB_BLOCKLIST = ['**/*.md', '**/*', '*', '**/?*', '**/*[*'];
 
 /**
  * Canonical phase-directory resolver. Resolution order:
@@ -1003,6 +1016,7 @@ async function manifestCheck({ phase, wave, taskId, filesExpected, gitShaBefore,
     git_sha_after: gitShaAfter,
     timestamp: new Date().toISOString(),
     orchestrator_action: action,
+    atomization_reconciliation_required: action === 'halt',
   };
   if (orchestratorHits.length > 0) {
     report.orchestrator_owned_hits = orchestratorHits;
@@ -1040,7 +1054,8 @@ function _manifestCheckHelp() {
     '',
     'Exit codes:',
     '  0  pass or warn',
-    '  1  halt or halt_orchestrator_owned',
+    '  1  halt_orchestrator_owned',
+    '  2  halt (manifest_violation / gaps_found floor)',
     '',
   ].join('\n');
 }
@@ -1095,7 +1110,10 @@ async function _runManifestCheckCli(args, cwd) {
       cwd,
     });
     process.stdout.write(JSON.stringify(result) + '\n');
-    if (result.action === 'halt' || result.action === 'halt_orchestrator_owned') {
+    if (result.action === 'halt') {
+      return 2;
+    }
+    if (result.action === 'halt_orchestrator_owned') {
       return 1;
     }
     return 0;
@@ -1119,6 +1137,7 @@ async function _runManifestCheckCli(args, cwd) {
  */
 function _validatePlanShape(planContent) {
   const errors = [];
+  const GLOB_METACHARS = ['*', '?', '[', '{'];
 
   // Check <story> block
   if (!/<story[\s>]/i.test(planContent)) {
@@ -1172,6 +1191,19 @@ function _validatePlanShape(planContent) {
 
   // Validate each task has required fields
   for (const task of tasks) {
+    for (const bucket of ['modify', 'create', 'delete']) {
+      const entries = Array.isArray(task.filesExpected?.[bucket]) ? task.filesExpected[bucket] : [];
+      for (const entry of entries) {
+        if (GLOB_METACHARS.some(ch => String(entry).includes(ch))) {
+          errors.push({
+            code: 'over_broad_files_expected',
+            taskId: task.id,
+            offendingPath: entry,
+            message: `Task ${task.id} files_expected contains over-broad glob "${entry}" — use concrete file paths only.`,
+          });
+        }
+      }
+    }
     if (!task.agent) {
       errors.push({ code: 'missing_agent', taskId: task.id, message: `Task ${task.id} is missing <agent> field.` });
     }
@@ -1257,7 +1289,7 @@ function _detectCycles(tasks) {
 /**
  * _checkAgentConflicts(tasks) — check planner <agent> against routeExecutor().
  * tasks: array of {id, agent, filesExpected: {modify, create, delete}}
- * Returns {conflicts: [{taskId, planAgent, computedAgent, files}]}
+ * Returns {conflicts: [{taskId, declaredAgent, computedAgent, files}]}
  */
 function _checkAgentConflicts(tasks) {
   const conflicts = [];
@@ -1271,7 +1303,7 @@ function _checkAgentConflicts(tasks) {
     const planAgent = (task.agent || '').trim();
 
     if (planAgent && computedAgent && planAgent !== computedAgent) {
-      conflicts.push({ taskId: task.id, planAgent, computedAgent, files });
+      conflicts.push({ taskId: task.id, declaredAgent: planAgent, computedAgent, files });
     }
   }
   return { conflicts };
@@ -1521,11 +1553,14 @@ async function planToTasks(planFilePath, opts) {
   // Run _checkAgentConflicts — halt if any conflict
   const conflictResult = _checkAgentConflicts(tasks);
   if (conflictResult.conflicts.length > 0) {
+    const conflictSummary = conflictResult.conflicts
+      .map(c => `  Task ${c.taskId}: declared=${c.declaredAgent}, computed=${c.computedAgent}, files=[${c.files.slice(0, 3).join(', ')}${c.files.length > 3 ? '...' : ''}]`)
+      .join('\n');
     return {
       error: 'agent_assignment_conflict',
       divergence_type: 'agent_assignment_conflict',
       conflicts: conflictResult.conflicts,
-      message: `Agent assignment conflicts detected. Plan must be corrected before registration.`,
+      message: `Agent assignment conflicts detected — plan must be corrected before registration.\n${conflictSummary}`,
     };
   }
 
@@ -2390,6 +2425,47 @@ async function generateBearings({ tokenBudget = 600, terse = false, json = false
   return { structured, markdown, exitCode: 0 };
 }
 
+// ─── Phase 60 TOOL-01: capability catalog loader (dual-runtime mirror of
+//     services/capability_schema.py::load_capability_catalog) ───────────────
+const CAPABILITY_CATALOG_VERSION = '1.0';
+let _capabilityCatalogCache = null;
+function loadCapabilityCatalog(forceReload = false) {
+  if (_capabilityCatalogCache && !forceReload) return _capabilityCatalogCache;
+
+  // GSD_CAPABILITY_CATALOG_PATH (test/hook seam) is AUTHORITATIVE when set:
+  // no fallthrough to repo-local/~/.claude candidates if it's missing or
+  // unparseable — mirrors capability_schema.py's load_capability_catalog()
+  // design (a test forcing a specific/nonexistent path must never silently
+  // pick up the real repo catalog).
+  const envOverride = process.env.GSD_CAPABILITY_CATALOG_PATH;
+  const candidates = envOverride
+    ? [envOverride]
+    : [
+        path.resolve(__dirname, '..', 'config', 'capability-catalog.json'),
+        path.join(process.env.HOME || '', '.claude', 'get-shit-done', 'config', 'capability-catalog.json'),
+      ];
+
+  for (const p of candidates) {
+    try {
+      if (fs.existsSync(p)) {
+        const data = JSON.parse(fs.readFileSync(p, 'utf-8'));
+        if (data.catalog_version !== CAPABILITY_CATALOG_VERSION && !loadCapabilityCatalog._versionWarned) {
+          console.warn(`[gsd-tools] capability-catalog version ${data.catalog_version} != supported ${CAPABILITY_CATALOG_VERSION} — entries may not be interpreted correctly`);
+          loadCapabilityCatalog._versionWarned = true;
+        }
+        _capabilityCatalogCache = data;
+        return _capabilityCatalogCache;
+      }
+    } catch { /* fall through to next candidate */ }
+  }
+  if (!loadCapabilityCatalog._warned) {
+    console.warn('[gsd-tools] capability-catalog.json not found — using EMPTY catalog (all systems unlisted)');
+    loadCapabilityCatalog._warned = true;
+  }
+  _capabilityCatalogCache = { catalog_version: CAPABILITY_CATALOG_VERSION, entries: [] };
+  return _capabilityCatalogCache;
+}
+
 // Export test-only entry points when imported (not invoked) as a module.
 if (require.main !== module) {
   module.exports = {
@@ -2423,6 +2499,9 @@ if (require.main !== module) {
     computePatternStats,
     chooseRecommendation,
     renderBearings,
+    // Phase 60 TOOL-01: capability catalog
+    loadCapabilityCatalog,
+    CAPABILITY_CATALOG_VERSION,
   };
 }
 
@@ -3204,6 +3283,125 @@ Examples:
         req.write(body);
         req.end();
       });
+      break;
+    }
+
+    case 'staleness': {
+      const phaseFlagIndex = args.indexOf('--phase');
+      const phaseFilter = phaseFlagIndex !== -1 && args[phaseFlagIndex + 1] !== undefined
+        ? String(args[phaseFlagIndex + 1])
+        : null;
+      const jsonFlag = args.includes('--json') || !args.includes('--human');
+      const phasesDir = path.join(cwd, '.planning', 'phases');
+      const staleEntries = [];
+
+      function shouldIgnoreCitation(filePath) {
+        if (!filePath) return true;
+        if (filePath.startsWith('.planning/')) return true;
+        if (filePath.endsWith('.md') && !filePath.startsWith('tests/') && !filePath.startsWith('services/')) {
+          return true;
+        }
+        return false;
+      }
+
+      function extractCitedPaths(taskBody) {
+        const cited = [];
+        const blockRegexes = [
+          /^\s{2}<read_first>\s*$([\s\S]*?)^\s{2}<\/read_first>\s*$/gmi,
+          /^\s{2}<files_expected>\s*$([\s\S]*?)^\s{2}<\/files_expected>\s*$/gmi,
+        ];
+
+        for (const re of blockRegexes) {
+          const matches = [...taskBody.matchAll(re)];
+          const match = matches.length > 0 ? matches[matches.length - 1] : null;
+          if (!match) continue;
+          const block = match[1] || '';
+          for (const line of block.split(/\r?\n/)) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith('- ') || trimmed.startsWith('- []')) continue;
+            const raw = trimmed.slice(2).split(' (')[0].trim();
+            if (!raw || raw === '[]' || raw.endsWith(':')) continue;
+            cited.push(raw);
+          }
+        }
+
+        return [...new Set(cited)];
+      }
+
+      function inWorkingTree(filePath) {
+        if (shouldIgnoreCitation(filePath)) return true;
+        if (fs.existsSync(path.join(cwd, filePath))) return true;
+        try {
+          const out = spawnSync('git', ['ls-files', '--error-unmatch', filePath], {
+            cwd,
+            encoding: 'utf-8',
+            timeout: 5000,
+          });
+          return out.status === 0;
+        } catch (_) {
+          return true;
+        }
+      }
+
+      let phaseDirs = [];
+      try {
+        phaseDirs = fs.readdirSync(phasesDir, { withFileTypes: true })
+          .filter(entry => entry.isDirectory())
+          .map(entry => entry.name);
+      } catch (_) {
+        phaseDirs = [];
+      }
+
+      if (phaseFilter) {
+        phaseDirs = phaseDirs.filter(dir => dir === phaseFilter || dir.startsWith(`${phaseFilter}-`));
+      }
+
+      for (const dirName of phaseDirs) {
+        const dirPath = path.join(phasesDir, dirName);
+        let planFiles = [];
+        try {
+          planFiles = fs.readdirSync(dirPath).filter(file => file.endsWith('-PLAN.md') || file === 'PLAN.md');
+        } catch (_) {
+          continue;
+        }
+
+        for (const planFile of planFiles) {
+          const fullPath = path.join(dirPath, planFile);
+          let content = '';
+          try {
+            content = fs.readFileSync(fullPath, 'utf-8');
+          } catch (_) {
+            continue;
+          }
+
+          const relPlanFile = path.relative(cwd, fullPath).replace(/\\/g, '/');
+          const taskMatches = [...content.matchAll(/^<task\s+id="([^"]+)">([\s\S]*?)^<\/task>/gm)];
+          for (const [, taskId, taskBody] of taskMatches) {
+            const citedPaths = extractCitedPaths(taskBody || '');
+            for (const citedPath of citedPaths) {
+              if (!inWorkingTree(citedPath)) {
+                staleEntries.push({
+                  planFile: relPlanFile,
+                  taskId,
+                  citedPath,
+                  reason: 'not_in_working_tree',
+                });
+              }
+            }
+          }
+        }
+      }
+
+      if (jsonFlag) {
+        process.stdout.write(JSON.stringify(staleEntries, null, 2) + '\n');
+      } else if (staleEntries.length === 0) {
+        process.stdout.write('No stale citations found.\n');
+      } else {
+        process.stdout.write(`Stale citations found: ${staleEntries.length}\n`);
+        for (const entry of staleEntries) {
+          process.stdout.write(`  ${entry.planFile} (${entry.taskId || 'unknown'}): ${entry.citedPath}\n`);
+        }
+      }
       break;
     }
 
