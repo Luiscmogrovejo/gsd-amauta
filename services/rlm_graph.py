@@ -8,7 +8,8 @@ Edges: symbol_name -> dependency (calls, imports, inherits).
 Stores adjacency lists in Valkey as JSON at key rlm:graph:{symbol_name}.
 PageRank identifies architectural hub files (top-20).
 
-Build trigger: called from rlm_ingestion.ingest_file() after upsert.
+Build triggers: rlm-service.py startup (non-blocking), /reindex completion,
+and /query post-ingest when new chunks were inserted.
 Storage: Valkey only (ephemeral — acceptable; rebuilt on service restart or explicit reindex).
 Key prefix: rlm:graph: (distinct from rlm:rerank: prefix used by reranker).
 """
@@ -37,7 +38,12 @@ def build_graph_from_pg(pg_conn) -> Optional[object]:
     Build a NetworkX DiGraph from all rlm_chunks rows in PostgreSQL.
 
     Nodes: all symbol_names.
-    Edges: symbol_name -> each dependency in dependencies[].
+    Edges: symbol_name -> resolved dependency, ONLY when the raw dependency
+    string (a bare call/import name, e.g. "helper") resolves to a known
+    symbol_name -- either an exact match, or a unique match via the
+    last-dotted-segment suffix map (e.g. "helper" -> "Cls.helper" when that
+    is the only symbol ending in ".helper"). Ambiguous or unresolved deps are
+    counted and logged once per build; self-edges are skipped.
 
     Returns the DiGraph, or None if networkx unavailable.
     """
@@ -56,16 +62,92 @@ def build_graph_from_pg(pg_conn) -> Optional[object]:
         log.warning("build_graph_query_failed error=%s", str(e))
         return None
 
+    # First pass: collect all known symbol names + a suffix map keyed by the
+    # last "." segment (e.g. "Cls.helper" registers under "helper").
+    symbol_set = set()
+    suffix_map: dict = {}
+    for symbol_name, _deps, _file_path in rows:
+        symbol_set.add(symbol_name)
+        suffix = symbol_name.rsplit(".", 1)[-1]
+        suffix_map.setdefault(suffix, []).append(symbol_name)
+
     G = nx.DiGraph()
+    resolved_count = 0
+    unresolved_count = 0
+    ambiguous_count = 0
+
     for symbol_name, deps, file_path in rows:
         G.add_node(symbol_name, file_path=file_path or "")
-        if deps:
-            for dep in deps:
-                if dep and dep.strip():
-                    G.add_edge(symbol_name, dep.strip())
+        if not deps:
+            continue
+        for dep in deps:
+            if not dep or not dep.strip():
+                continue
+            dep = dep.strip()
 
+            resolved = None
+            if dep in symbol_set:
+                resolved = dep
+            else:
+                candidates = suffix_map.get(dep)
+                if candidates and len(candidates) == 1:
+                    resolved = candidates[0]
+                elif candidates and len(candidates) > 1:
+                    ambiguous_count += 1
+                    continue
+
+            if resolved is None:
+                unresolved_count += 1
+                continue
+
+            if resolved == symbol_name:
+                continue  # skip self-edges
+
+            resolved_count += 1
+            G.add_edge(symbol_name, resolved)
+
+    log.info(
+        "graph_edges_resolved resolved=%d unresolved=%d ambiguous=%d",
+        resolved_count, unresolved_count, ambiguous_count,
+    )
     log.info("graph_built nodes=%d edges=%d", G.number_of_nodes(), G.number_of_edges())
     return G
+
+
+def update_dependents_in_pg(G, pg_conn) -> int:
+    """
+    Reverse-pass: for every node with at least one predecessor (caller),
+    write the sorted, capped (50) predecessor list into rlm_chunks.dependents
+    via UPDATE ... WHERE symbol_name = %s. Commits once at the end.
+
+    Returns the count of symbols updated. Never raises -- rolls back and
+    returns 0 on any exception (log.warning).
+    """
+    if G is None or pg_conn is None:
+        return 0
+
+    updated = 0
+    try:
+        with pg_conn.cursor() as cur:
+            for node in G.nodes():
+                predecessors = sorted(G.predecessors(node))
+                if not predecessors:
+                    continue
+                capped = predecessors[:50]
+                cur.execute(
+                    "UPDATE rlm_chunks SET dependents = %s WHERE symbol_name = %s",
+                    (capped, node),
+                )
+                updated += 1
+        pg_conn.commit()
+        return updated
+    except Exception as e:
+        log.warning("update_dependents_failed error=%s", str(e))
+        try:
+            pg_conn.rollback()
+        except Exception:
+            pass
+        return 0
 
 
 def store_graph_in_valkey(G, cache_client) -> int:
@@ -177,21 +259,25 @@ def get_hub_files(cache_client) -> list:
 
 def rebuild_graph(pg_conn, cache_client) -> dict:
     """
-    Full graph rebuild: query all rlm_chunks, build DiGraph, store to Valkey.
-    Called by /reindex endpoint and on service startup (non-blocking).
+    Full graph rebuild: query all rlm_chunks, build DiGraph, store to Valkey,
+    reverse-pass dependents into PG.
+    Called by rlm-service.py startup (non-blocking), /reindex completion,
+    and /query post-ingest when new chunks were inserted.
 
-    Returns {nodes, edges, stored, hub_files_count}.
+    Returns {nodes, edges, stored, hub_files_count, dependents_updated}.
     """
     G = build_graph_from_pg(pg_conn)
     if G is None:
-        return {"nodes": 0, "edges": 0, "stored": 0, "hub_files_count": 0}
+        return {"nodes": 0, "edges": 0, "stored": 0, "hub_files_count": 0, "dependents_updated": 0}
     stored = store_graph_in_valkey(G, cache_client)
     hubs = get_hub_files(cache_client)
+    dependents_updated = update_dependents_in_pg(G, pg_conn)
     return {
         "nodes": G.number_of_nodes(),
         "edges": G.number_of_edges(),
         "stored": stored,
         "hub_files_count": len(hubs),
+        "dependents_updated": dependents_updated,
     }
 
 
