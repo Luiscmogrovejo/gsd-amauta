@@ -146,6 +146,39 @@
       "task_types": ["debugging", "diagnosis", "fix"],
       "tools": ["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
       "patterns": ["P4", "P7", "P11", "P13", "P15"]
+    },
+    {
+      "id": "gsd-persona-senior-backend",
+      "lane": "code",
+      "kind": "persona",
+      "base_executor": ["gsd-executor-backend"],
+      "file_patterns": [],
+      "task_types": ["execution", "implementation", "testing"],
+      "tools": ["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
+      "patterns": ["P4", "P7", "P11", "P12"],
+      "notes": "Role persona (Phase 61 PERS-01): senior backend engineer voice overlaying gsd-executor-backend. file_patterns intentionally empty — personas never participate in routeExecutor(); file-extension routing stays the sole routing authority."
+    },
+    {
+      "id": "gsd-persona-frontend-specialist",
+      "lane": "code",
+      "kind": "persona",
+      "base_executor": ["gsd-executor-frontend"],
+      "file_patterns": [],
+      "task_types": ["execution", "implementation", "testing"],
+      "tools": ["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
+      "patterns": ["P4", "P7", "P11", "P12"],
+      "notes": "Role persona (Phase 61 PERS-01): accessibility-first, design-system-disciplined UI voice overlaying gsd-executor-frontend. file_patterns intentionally empty — personas never participate in routeExecutor(); file-extension routing stays the sole routing authority."
+    },
+    {
+      "id": "gsd-persona-systems-architect",
+      "lane": "code",
+      "kind": "persona",
+      "base_executor": ["gsd-executor-backend", "gsd-executor-frontend", "gsd-executor-infra"],
+      "file_patterns": [],
+      "task_types": ["execution", "implementation", "testing"],
+      "tools": ["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
+      "patterns": ["P4", "P7", "P11", "P12"],
+      "notes": "Role persona (Phase 61 PERS-01): cross-cutting code-writing systems architect — multi-base overlay; concrete lane per task is whatever routeExecutor() computes from the task's files. Distinct from the advisory-only gsd-architect agent. file_patterns intentionally empty."
     }
   ]
 }
