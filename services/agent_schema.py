@@ -3,10 +3,14 @@
 Agent Schema — Pydantic AgentDefinition model for Phase 52 Agent Compilation.
 Phase 52 / COMPILE-01. Field declaration order is locked per
 52-CONTEXT.md §Area 1 + §Area 3:
-  name, description, tools, color, memory, skills, capabilities
+  name, description, tools, color, memory, skills, capabilities, capability_grants
 
 Phase 55 A2A-02: capabilities added as 7th LOCKED optional field (default []).
 Existing AGENT.yaml files without capabilities: parse cleanly (backward compat).
+
+Phase 60 TOOL-02: capability_grants added as 8th LOCKED optional field
+(default []) after capabilities. Existing AGENT.yaml files without
+capability_grants: parse cleanly (backward compat).
 
 Grep contract (enforced by tests/test_agent_schema.py):
   - name field MUST appear before description field
@@ -86,17 +90,18 @@ SECTION_KEY_ORDER = (
 
 # ─── AgentDefinition ──────────────────────────────────────────────────────────
 # NOTE: frontmatter field declaration order is LOCKED:
-#   name: → description: → tools: → color: → memory: → skills:
+#   name: → description: → tools: → color: → memory: → skills: → capabilities: → capability_grants:
 # grep contract above ensures this order is maintained.
 
 
 class AgentDefinition(BaseModel):
-    """Canonical agent definition. 7-field locked frontmatter + body_preamble + sections.
+    """Canonical agent definition. 8-field locked frontmatter + body_preamble + sections.
 
     Frontmatter fields in LOCKED declaration order:
-      name, description, tools, color, memory, skills, capabilities
+      name, description, tools, color, memory, skills, capabilities, capability_grants
     Phase 52 COMPILE-01 grep contract: name < description < tools < color < memory < skills.
     Phase 55 A2A-02: capabilities added as 7th LOCKED optional field after skills.
+    Phase 60 TOOL-02: capability_grants added as 8th LOCKED optional field after capabilities.
 
     body_preamble: Optional verbatim Markdown text between frontmatter '---' and
     first '## ' heading. 16/17 agents have '# Agent: <name>' H1 here;
@@ -112,7 +117,7 @@ class AgentDefinition(BaseModel):
     if _HAS_PYDANTIC:
         model_config = {"populate_by_name": True, "extra": "forbid"}
 
-        # LOCKED field order: name: → description: → tools: → color: → memory: → skills: → capabilities:
+        # LOCKED field order: name: → description: → tools: → color: → memory: → skills: → capabilities: → capability_grants:
         name: str = Field(..., description="Agent identifier, kebab-case")
         description: str = Field(..., min_length=10, max_length=500)
         tools: List[str] = Field(..., description="List of canonical tool names")
@@ -122,6 +127,16 @@ class AgentDefinition(BaseModel):
         capabilities: List[str] = Field(
             default_factory=list,
             description="A2A capability verbs this agent can perform (Phase 55 A2A-02). Optional — default []. Backfilled per agent in Phase 56/v3.4.",
+        )
+        capability_grants: List[str] = Field(
+            default_factory=list,
+            description=(
+                "Capability-catalog entry names this agent is granted "
+                "(Phase 60 TOOL-02). Values reference 'name' fields in "
+                "get-shit-done/config/capability-catalog.json. Optional — "
+                "default []. Audited by 'gsd-amauta capability audit' as the "
+                "union's second source alongside catalog-side grants."
+            ),
         )
         body_preamble: Optional[str] = Field(
             default=None,
@@ -197,11 +212,12 @@ class AgentDefinition(BaseModel):
             memory: str = '',
             skills: Optional[List[str]] = None,
             capabilities: Optional[List[str]] = None,
+            capability_grants: Optional[List[str]] = None,
             body_preamble: Optional[str] = None,
             sections: Optional[Dict[str, str]] = None,
             **kwargs,
         ):
-            # LOCKED field order: name: → description: → tools: → color: → memory: → skills: → capabilities:
+            # LOCKED field order: name: → description: → tools: → color: → memory: → skills: → capabilities: → capability_grants:
             self.name = name
             self.description = description
             self.tools = tools or []
@@ -209,6 +225,7 @@ class AgentDefinition(BaseModel):
             self.memory = memory
             self.skills = skills if skills is not None else []
             self.capabilities = capabilities if capabilities is not None else []
+            self.capability_grants = capability_grants if capability_grants is not None else []
             self.body_preamble = body_preamble
             self.sections = sections or {}
 
@@ -406,6 +423,10 @@ def load_agent_definition(path: str) -> 'AgentDefinition':
     if isinstance(capabilities, str):
         capabilities = [c.strip() for c in capabilities.split(',') if c.strip()]
 
+    capability_grants = fm.get('capability_grants', [])
+    if isinstance(capability_grants, str):
+        capability_grants = [c.strip() for c in capability_grants.split(',') if c.strip()]
+
     if _HAS_PYDANTIC:
         return AgentDefinition(
             name=fm.get('name', ''),
@@ -415,6 +436,7 @@ def load_agent_definition(path: str) -> 'AgentDefinition':
             memory=fm.get('memory', ''),
             skills=skills,
             capabilities=capabilities,
+            capability_grants=capability_grants,
             body_preamble=body_preamble,
             sections=sections,
         )
@@ -427,6 +449,7 @@ def load_agent_definition(path: str) -> 'AgentDefinition':
             memory=fm.get('memory', ''),
             skills=skills,
             capabilities=capabilities,
+            capability_grants=capability_grants,
             body_preamble=body_preamble,
             sections=sections,
         )
