@@ -1,0 +1,87 @@
+{
+  "fixture_version": "1.0",
+  "description": "Shared build-log/evidence fixtures for Phase 68 MOBL-04 cross-runtime scrub parity. Both tests/test_68_evidence_scrub.py and tests/68-evidence-scrub-node.test.cjs read THIS file -- single source, no drifting duplicate literals. `expected` is the exact scrubbed output both runtimes must produce byte-identically; `expected_hits` is the ordered list of pattern names that must fire.",
+  "fixtures": [
+    {
+      "name": "xcodebuild-signing-identity",
+      "input": "CodeSign /Users/ci/build/App.app\n  signing identity: iPhone Distribution: Acme Corp (ABCDE12345)\n  provider profile:  Locating provisioning profile \"MyApp AdHoc\" (12345678-1234-1234-1234-123456789012) for signing\n",
+      "expected": "CodeSign /Users/ci/build/App.app\n  signing identity: [scrubbed:apple-signing-identity]\n  provider profile:  Locating [scrubbed:provisioning-profile] for signing\n",
+      "expected_hits": [
+        "apple-signing-identity",
+        "provisioning-profile"
+      ]
+    },
+    {
+      "name": "gradle-keystore-and-tokens",
+      "input": "> Task :app:assembleRelease\n./gradlew assembleRelease -Pandroid.injected.signing.store.password=s3cr3t -Pandroid.injected.signing.key.password=s3cr3t2\nstorePassword=hunter2\nkeyPassword=swordfish123\nexport GH_TOKEN=ghp_0123456789abcdef0123456789abcdef0123\nAWS_ACCESS_KEY_ID=AKIAABCDEFGHIJKLMNOP\n",
+      "expected": "> Task :app:assembleRelease\n./gradlew assembleRelease [scrubbed:keystore-password] [scrubbed:keystore-password]\n[scrubbed:keystore-password]\n[scrubbed:keystore-password]\nexport GH_TOKEN=[scrubbed:github-token]\nAWS_ACCESS_KEY_ID=[scrubbed:aws-access-key]\n",
+      "expected_hits": [
+        "keystore-password",
+        "github-token",
+        "aws-access-key"
+      ]
+    },
+    {
+      "name": "github-token-classic",
+      "input": "export GH_TOKEN=ghp_0123456789abcdef0123456789abcdef0123",
+      "expected": "export GH_TOKEN=[scrubbed:github-token]",
+      "expected_hits": [
+        "github-token"
+      ]
+    },
+    {
+      "name": "github-token-fine-grained",
+      "input": "github_pat_11ABCDEFG0123456789_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+      "expected": "[scrubbed:github-token]",
+      "expected_hits": [
+        "github-token"
+      ]
+    },
+    {
+      "name": "slack-token",
+      "input": "SLACK_TOKEN=xoxb-1234567890-abcdefghijklmno",
+      "expected": "SLACK_TOKEN=[scrubbed:slack-token]",
+      "expected_hits": [
+        "slack-token"
+      ]
+    },
+    {
+      "name": "aws-access-key",
+      "input": "AWS_ACCESS_KEY_ID=AKIAABCDEFGHIJKLMNOP",
+      "expected": "AWS_ACCESS_KEY_ID=[scrubbed:aws-access-key]",
+      "expected_hits": [
+        "aws-access-key"
+      ]
+    },
+    {
+      "name": "bearer-token",
+      "input": "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.abc123.def456",
+      "expected": "Authorization: [scrubbed:bearer-token]",
+      "expected_hits": [
+        "bearer-token"
+      ]
+    },
+    {
+      "name": "generic-api-key",
+      "input": "api_key=abcdef1234567890ABCDEF1234567890",
+      "expected": "[scrubbed:generic-api-key]",
+      "expected_hits": [
+        "generic-api-key"
+      ]
+    },
+    {
+      "name": "postgres-dsn",
+      "input": "DATABASE_URL=postgresql://gsd:supersecretpass@127.0.0.1:5433/gsd_amauta",
+      "expected": "DATABASE_URL=[scrubbed:postgres-dsn]127.0.0.1:5433/gsd_amauta",
+      "expected_hits": [
+        "postgres-dsn"
+      ]
+    },
+    {
+      "name": "benign-line-unchanged",
+      "input": "BUILD SUCCESSFUL in 42s\n17 actionable tasks: 17 executed",
+      "expected": "BUILD SUCCESSFUL in 42s\n17 actionable tasks: 17 executed",
+      "expected_hits": []
+    }
+  ]
+}
