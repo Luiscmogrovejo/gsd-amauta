@@ -6,10 +6,14 @@
       "name": "amauta-daemon-http",
       "kind": "curl-endpoint",
       "target": "http://127.0.0.1:18799",
-      "auth": { "method": "none" },
+      "auth": {
+        "method": "none"
+      },
       "security_class": "read-write",
       "owner": "operator",
-      "grants": ["gsd-executor-*"],
+      "grants": [
+        "gsd-executor-*"
+      ],
       "added_at": "2026-07-03",
       "notes": "Local Amauta daemon HTTP API (tasks, memory, audit). Port override: GSD_AMAUTA_PORT."
     },
@@ -17,10 +21,16 @@
       "name": "amauta-postgres",
       "kind": "pg",
       "target": "GSD_POSTGRES_URL",
-      "auth": { "method": "dsn-env", "env": "GSD_POSTGRES_URL" },
+      "auth": {
+        "method": "dsn-env",
+        "env": "GSD_POSTGRES_URL"
+      },
       "security_class": "secret-bearing",
       "owner": "operator",
-      "grants": ["gsd-executor-backend", "gsd-executor-data"],
+      "grants": [
+        "gsd-executor-backend",
+        "gsd-executor-data"
+      ],
       "added_at": "2026-07-03",
       "notes": "Primary PG store. DSN carries credentials — responses are evidence-scrub targets (MOBL-04 foundation)."
     },
@@ -28,12 +38,87 @@
       "name": "amauta-valkey",
       "kind": "redis",
       "target": "GSD_REDIS_URL",
-      "auth": { "method": "dsn-env", "env": "GSD_REDIS_URL" },
+      "auth": {
+        "method": "dsn-env",
+        "env": "GSD_REDIS_URL"
+      },
       "security_class": "read-write",
       "owner": "operator",
-      "grants": ["gsd-executor-backend", "gsd-executor-infra"],
+      "grants": [
+        "gsd-executor-backend",
+        "gsd-executor-infra"
+      ],
       "added_at": "2026-07-03",
       "notes": "Valkey/Redis — circuit breakers, semantic cache. Default redis://127.0.0.1:6379/0."
+    },
+    {
+      "name": "xcodebuildmcp-server",
+      "kind": "local-tool",
+      "target": "npx -y xcodebuildmcp@2.6.2 mcp",
+      "auth": {
+        "method": "none"
+      },
+      "security_class": "secret-bearing",
+      "owner": "operator",
+      "grants": [
+        "gsd-executor-mobile-ios",
+        "gsd-executor-wearables",
+        "gsd-executor-mobile-cross"
+      ],
+      "added_at": "2026-07-04",
+      "notes": "iOS/watchOS build-test-simulator MCP loop; registration gated on mobile executors installed (bin/install.js); build output is an evidence-scrub target (MOBL-04); degraded per services/mobile_toolchain.py when no simulator."
+    },
+    {
+      "name": "mobile-mcp-server",
+      "kind": "local-tool",
+      "target": "npx -y @mobilenext/mobile-mcp@0.0.61",
+      "auth": {
+        "method": "none"
+      },
+      "security_class": "read-write",
+      "owner": "operator",
+      "grants": [
+        "gsd-executor-mobile-android",
+        "gsd-executor-mobile-ios",
+        "gsd-executor-wearables",
+        "gsd-executor-mobile-cross"
+      ],
+      "added_at": "2026-07-04",
+      "notes": "OPT-IN (--enable-mobile-mcp / GSD_MOBILE_MCP=on), pre-1.0 pinned EXACTLY 0.0.61 never a floating/unpinned tag, accessibility-tree snapshots = deterministic UAT ground truth (MOBL-05)."
+    },
+    {
+      "name": "gradlew-android-loop",
+      "kind": "local-tool",
+      "target": "./gradlew",
+      "auth": {
+        "method": "none"
+      },
+      "security_class": "secret-bearing",
+      "owner": "operator",
+      "grants": [
+        "gsd-executor-mobile-android",
+        "gsd-executor-wearables",
+        "gsd-executor-mobile-cross"
+      ],
+      "added_at": "2026-07-04",
+      "notes": "Target-repo wrapper only, never a global Gradle. Allowlisted Bash commands assembleDebug / testDebugUnitTest / lint -- NO Gradle MCP (locked anti-feature); Phase 67 PreToolUse consumes this entry as the allowlist source."
+    },
+    {
+      "name": "xcodebuild-ios-cli",
+      "kind": "local-tool",
+      "target": "xcodebuild / xcrun simctl",
+      "auth": {
+        "method": "none"
+      },
+      "security_class": "secret-bearing",
+      "owner": "operator",
+      "grants": [
+        "gsd-executor-mobile-ios",
+        "gsd-executor-wearables",
+        "gsd-executor-mobile-cross"
+      ],
+      "added_at": "2026-07-04",
+      "notes": "Raw CLI loop already described in the executors' build-loop sections (headings vary per file); simulator destinations only (no signing)."
     }
   ]
 }
