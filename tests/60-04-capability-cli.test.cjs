@@ -31,7 +31,7 @@ test('capability list --json returns 3 seeded entries with the 3 required fields
 test('capability list fails loudly on malformed catalog', () => {
   const tmpFile = path.join(os.tmpdir(), `capability-catalog-malformed-${Date.now()}.json`);
   const malformed = {
-    catalog_version: '1.0',
+    catalog_version: '1.1',
     entries: [
       {
         name: 'bad-entry',

@@ -29,7 +29,7 @@ test('loads seeded repo catalog', () => {
 test('env override wins', () => {
   const tmpFile = path.join(os.tmpdir(), `capability-catalog-override-${Date.now()}.json`);
   const override = {
-    catalog_version: '1.0',
+    catalog_version: '1.1',
     entries: [
       {
         name: 'override-entry',
@@ -62,7 +62,7 @@ test('missing file yields empty catalog', () => {
   try {
     process.env.GSD_CAPABILITY_CATALOG_PATH = '/nonexistent/never-here.json';
     const catalog = loadCapabilityCatalog(true);
-    assert.deepEqual(catalog, { catalog_version: '1.0', entries: [] });
+    assert.deepEqual(catalog, { catalog_version: '1.1', entries: [] });
   } finally {
     delete process.env.GSD_CAPABILITY_CATALOG_PATH;
     loadCapabilityCatalog(true);

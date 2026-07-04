@@ -78,20 +78,25 @@ def test_seeded_catalog_validates():
 
 
 def test_all_kind_and_class_values_accepted():
-    """Synthetic catalog with 5 entries spanning all 5 kind values and
-    (across them) all 4 security_class values validates cleanly."""
-    assert len(KIND_VALUES) == 5
+    """Synthetic catalog with 6 entries spanning all 6 kind values
+    (including the Phase 68 additive 'local-tool' kind) and (across them)
+    all 4 security_class values validates cleanly."""
+    assert len(KIND_VALUES) == 6
+    assert "local-tool" in KIND_VALUES
     assert len(SECURITY_CLASS_VALUES) == 4
 
-    classes_cycle = list(SECURITY_CLASS_VALUES) + [SECURITY_CLASS_VALUES[0]]
     entries = [
-        _base_entry(name=f"synthetic-{i}", kind=kind, security_class=classes_cycle[i])
+        _base_entry(
+            name=f"synthetic-{i}",
+            kind=kind,
+            security_class=SECURITY_CLASS_VALUES[i % len(SECURITY_CLASS_VALUES)],
+        )
         for i, kind in enumerate(KIND_VALUES)
     ]
 
-    data = {"catalog_version": "1.0", "entries": entries}
+    data = {"catalog_version": "1.1", "entries": entries}
     catalog = validate_catalog(data)
-    assert len(catalog.entries) == 5
+    assert len(catalog.entries) == 6
 
     seen_kinds = {e.kind for e in catalog.entries}
     seen_classes = {e.security_class for e in catalog.entries}
@@ -99,12 +104,31 @@ def test_all_kind_and_class_values_accepted():
     assert seen_classes == set(SECURITY_CLASS_VALUES)
 
 
+def test_local_tool_kind_accepted():
+    """kind: 'local-tool' validates OK (Phase 68 additive kind)."""
+    entry = _base_entry(name="local-tool-entry", kind="local-tool")
+    data = {"catalog_version": "1.1", "entries": [entry]}
+    catalog = validate_catalog(data)
+    assert len(catalog.entries) == 1
+    assert catalog.entries[0].kind == "local-tool"
+
+
+def test_unknown_kind_still_rejected():
+    """kind: 'gradle-mcp' (an unenumerated kind) still raises — additive
+    extension does not open the enum to arbitrary values (fail-closed
+    preserved)."""
+    bad_entry = _base_entry(kind="gradle-mcp")
+    data = {"catalog_version": "1.1", "entries": [bad_entry]}
+    with pytest.raises((ValueError, Exception)):
+        validate_catalog(data)
+
+
 def test_unknown_field_rejected():
     """An entry with extra key 'token': 'x' raises (extra=forbid — the
     no-secret-values guarantee)."""
     bad_entry = _base_entry()
     bad_entry["token"] = "x"
-    data = {"catalog_version": "1.0", "entries": [bad_entry]}
+    data = {"catalog_version": "1.1", "entries": [bad_entry]}
     with pytest.raises((ValueError, Exception)):
         validate_catalog(data)
 
@@ -114,7 +138,7 @@ def test_missing_security_class_rejected():
     'capability_catalog_invalid'."""
     bad_entry = _base_entry()
     del bad_entry["security_class"]
-    data = {"catalog_version": "1.0", "entries": [bad_entry]}
+    data = {"catalog_version": "1.1", "entries": [bad_entry]}
     with pytest.raises(ValueError, match="capability_catalog_invalid"):
         validate_catalog(data)
 
@@ -122,7 +146,7 @@ def test_missing_security_class_rejected():
 def test_bad_kind_rejected():
     """kind: 'http' raises."""
     bad_entry = _base_entry(kind="http")
-    data = {"catalog_version": "1.0", "entries": [bad_entry]}
+    data = {"catalog_version": "1.1", "entries": [bad_entry]}
     with pytest.raises((ValueError, Exception)):
         validate_catalog(data)
 
@@ -131,7 +155,7 @@ def test_duplicate_names_rejected():
     """Two entries named 'dup-entry' raise with message containing
     'dup-entry'."""
     data = {
-        "catalog_version": "1.0",
+        "catalog_version": "1.1",
         "entries": [_base_entry(name="dup-entry"), _base_entry(name="dup-entry")],
     }
     with pytest.raises(ValueError, match="dup-entry"):
@@ -153,10 +177,10 @@ def test_auth_env_required_for_bearer_env():
 
 def test_missing_file_empty_fallback(monkeypatch):
     """env override to nonexistent path -> result equals
-    {'catalog_version': '1.0', 'entries': []} and no exception."""
+    {'catalog_version': '1.1', 'entries': []} and no exception."""
     monkeypatch.setenv("GSD_CAPABILITY_CATALOG_PATH", "/nonexistent/never-here-capability.json")
     data = load_capability_catalog(force_reload=True)
-    assert data == {"catalog_version": "1.0", "entries": []}
+    assert data == {"catalog_version": "1.1", "entries": []}
 
 
 def test_malformed_json_falls_through_to_empty(monkeypatch, tmp_path):
@@ -167,7 +191,7 @@ def test_malformed_json_falls_through_to_empty(monkeypatch, tmp_path):
     monkeypatch.setenv("GSD_CAPABILITY_CATALOG_PATH", str(bad_file))
 
     data = load_capability_catalog(force_reload=True)
-    assert data == {"catalog_version": "1.0", "entries": []}
+    assert data == {"catalog_version": "1.1", "entries": []}
 
 
 def test_version_mismatch_warns_but_loads(monkeypatch, tmp_path, capsys):

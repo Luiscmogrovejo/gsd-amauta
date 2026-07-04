@@ -1,6 +1,6 @@
 {
-  "_comment": "Capability catalog (TOOL-01) — versioned registry of systems the harness may reach. Read by BOTH gsd-tools.cjs (Node) and capability_schema.py (Python). Entry 'name' is a STABLE ID: Phase 67's PreToolUse hook consumes this catalog as its allowlist — never rename/remove a name without a catalog_version bump. Auth stores method + env-var NAME only, never secret values. Author entries via 'gsd-amauta capability add'; 'gsd-amauta capability audit' catches hand-edit schema drift.",
-  "catalog_version": "1.0",
+  "_comment": "Capability catalog (TOOL-01) — versioned registry of systems the harness may reach. Read by BOTH gsd-tools.cjs (Node) and capability_schema.py (Python). Entry 'name' is a STABLE ID: Phase 67's PreToolUse hook consumes this catalog as its allowlist — never rename/remove a name without a catalog_version bump. Auth stores method + env-var NAME only, never secret values. Author entries via 'gsd-amauta capability add'; 'gsd-amauta capability audit' catches hand-edit schema drift. v1.1 (Phase 68): added the additive 'local-tool' kind for mobile/wearable build-loop registrations (xcodebuildmcp, mobile-mcp, gradlew, xcodebuild).",
+  "catalog_version": "1.1",
   "entries": [
     {
       "name": "amauta-daemon-http",

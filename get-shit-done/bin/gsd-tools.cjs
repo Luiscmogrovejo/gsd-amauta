@@ -2507,7 +2507,7 @@ async function generateBearings({ tokenBudget = 600, terse = false, json = false
 
 // ─── Phase 60 TOOL-01: capability catalog loader (dual-runtime mirror of
 //     services/capability_schema.py::load_capability_catalog) ───────────────
-const CAPABILITY_CATALOG_VERSION = '1.0';
+const CAPABILITY_CATALOG_VERSION = '1.1';
 let _capabilityCatalogCache = null;
 function loadCapabilityCatalog(forceReload = false) {
   if (_capabilityCatalogCache && !forceReload) return _capabilityCatalogCache;

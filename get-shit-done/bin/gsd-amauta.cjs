@@ -1827,7 +1827,7 @@ function scrubEvidence(text) {
 // /api/exec whose _EXEC_ALLOWLIST (amauta-daemon.py) does not include
 // 'capability' and would 403 (60-RESEARCH finding #8).
 
-const CAPABILITY_KIND_VALUES = ['curl-endpoint', 'ssh-host', 'pg', 'redis', 'k3s'];
+const CAPABILITY_KIND_VALUES = ['curl-endpoint', 'ssh-host', 'pg', 'redis', 'k3s', 'local-tool'];
 const CAPABILITY_SECURITY_CLASS_VALUES = ['read-only', 'read-write', 'secret-bearing', 'destructive'];
 const CAPABILITY_AUTH_METHOD_VALUES = ['none', 'bearer-env', 'basic-env', 'dsn-env', 'ssh-key'];
 const CAPABILITY_NAME_RE = /^[a-z][a-z0-9-]{1,63}$/;

@@ -58,8 +58,8 @@ except ImportError:
 
 # ─── Module-level constants (exact values — LOCKED) ───────────────────────────
 
-CATALOG_VERSION = "1.0"
-KIND_VALUES = ("curl-endpoint", "ssh-host", "pg", "redis", "k3s")
+CATALOG_VERSION = "1.1"
+KIND_VALUES = ("curl-endpoint", "ssh-host", "pg", "redis", "k3s", "local-tool")
 SECURITY_CLASS_VALUES = ("read-only", "read-write", "secret-bearing", "destructive")
 AUTH_METHOD_VALUES = ("none", "bearer-env", "basic-env", "dsn-env", "ssh-key")
 _NAME_RE = re.compile(r"^[a-z][a-z0-9-]{1,63}$")
