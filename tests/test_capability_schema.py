@@ -62,14 +62,15 @@ def _reset_catalog_cache():
 
 def test_seeded_catalog_validates():
     """load_capability_catalog(force_reload=True) (no env override) +
-    validate_catalog passes; exactly 3 entries; every entry has non-empty
-    auth.method, security_class, target (the Nyquist 'zero entries missing
-    any of the three fields' floor)."""
+    validate_catalog passes; exactly 7 entries (3 Phase 60 seed entries +
+    4 Phase 68 mobile-tool entries added by 68-03-02); every entry has
+    non-empty auth.method, security_class, target (the Nyquist 'zero
+    entries missing any of the three fields' floor)."""
     os.environ.pop("GSD_CAPABILITY_CATALOG_PATH", None)
     data = load_capability_catalog(force_reload=True)
     catalog = validate_catalog(data)
 
-    assert len(catalog.entries) == 3
+    assert len(catalog.entries) == 7
 
     for entry in catalog.entries:
         assert entry.auth.method, f"entry {entry.name} missing auth.method"

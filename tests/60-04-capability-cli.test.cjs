@@ -16,11 +16,11 @@ function runCli(args, envOverrides = {}) {
   });
 }
 
-test('capability list --json returns 3 seeded entries with the 3 required fields', () => {
+test('capability list --json returns 7 seeded entries with the 3 required fields', () => {
   const result = runCli(['capability', 'list', '--json']);
   assert.equal(result.status, 0, result.stderr);
   const data = JSON.parse(result.stdout);
-  assert.equal(data.entries.length, 3);
+  assert.equal(data.entries.length, 7);
   for (const entry of data.entries) {
     assert.ok(entry.auth && entry.auth.method, `entry ${entry.name} missing auth.method`);
     assert.ok(entry.security_class, `entry ${entry.name} missing security_class`);
@@ -73,6 +73,8 @@ test('capability audit exit code is 0 or 2', () => {
 test('capability add --yes appends to an override catalog', () => {
   const tmpFile = path.join(os.tmpdir(), `capability-catalog-add-${Date.now()}.json`);
   const realCatalogPath = path.resolve(__dirname, '../get-shit-done/config/capability-catalog.json');
+  const realCatalog = JSON.parse(fs.readFileSync(realCatalogPath, 'utf-8'));
+  const seededCount = realCatalog.entries.length;
   fs.copyFileSync(realCatalogPath, tmpFile);
   try {
     const result = runCli([
@@ -87,7 +89,9 @@ test('capability add --yes appends to an override catalog', () => {
     assert.equal(result.status, 0, result.stderr);
 
     const written = JSON.parse(fs.readFileSync(tmpFile, 'utf-8'));
-    assert.equal(written.entries.length, 4);
+    // Delta-of-1 assertion (not an absolute catalog size): robust to future
+    // seeded-catalog growth, unlike the hardcoded ==4 this replaced.
+    assert.equal(written.entries.length, seededCount + 1);
     const added = written.entries.find((e) => e.name === 'test-k3s-cluster');
     assert.ok(added, 'new entry not found in written catalog');
     assert.deepEqual(
