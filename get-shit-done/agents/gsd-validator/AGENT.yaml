@@ -233,7 +233,14 @@ sections:
     ```bash
     $CLI note TK-XXXX --text "[ADVISORY] P-phase PLAN_REGISTRATION block absent — plan-to-tasks may not have run" --agent validator
     ```
-    
+
+    ### Mobile-UAT Ground Truth (MOBL-05)
+
+    Accessibility-tree snapshot diffs are the only hard-gate mobile-UAT artifact;
+    pixel/screenshot checks are advisory only and can never fail a task alone.
+    Full checklist: runtime Read
+    `get-shit-done/references/mobile-uat-checklist.md`.
+
     ### D-phase: Structured LEARNING Output (Phase 10 LEARN-06)
     
     ```
