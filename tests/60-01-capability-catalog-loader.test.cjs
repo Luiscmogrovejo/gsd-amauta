@@ -13,7 +13,7 @@ test('loads seeded repo catalog', () => {
   delete process.env.GSD_CAPABILITY_CATALOG_PATH;
   const catalog = loadCapabilityCatalog(true);
 
-  assert.equal(catalog.entries.length, 3);
+  assert.equal(catalog.entries.length, 7);
   for (const entry of catalog.entries) {
     assert.ok(entry.auth.method, `entry ${entry.name} missing auth.method`);
     assert.ok(entry.security_class, `entry ${entry.name} missing security_class`);
