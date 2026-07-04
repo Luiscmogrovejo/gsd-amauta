@@ -218,6 +218,7 @@ function parseConfigDirArg() {
 const explicitConfigDir = parseConfigDirArg();
 const hasHelp = args.includes('--help') || args.includes('-h');
 const forceStatusline = args.includes('--force-statusline');
+const enableMobileMcp = args.includes('--enable-mobile-mcp') || process.env.GSD_MOBILE_MCP === 'on';
 
 console.log(banner);
 
@@ -2622,6 +2623,36 @@ function install(isGlobal, runtime = 'claude') {
       disabled: false,
     };
     console.log(`  ${green}\u2713${reset} Registered MCP server (6 tools)`);
+
+    // Phase 68 MOBL-01/MOBL-02: mobile/wearable build-tool MCP registration --
+    // gated on the mobile executor agents actually being installed (readdir
+    // check against the INSTALLED agents dir, not the source tree).
+    const mobileAgentsDir = path.join(targetDir, 'agents');
+    const mobileAgentsInstalled = ['gsd-executor-mobile-ios.md', 'gsd-executor-wearables.md'].some(
+      (f) => fs.existsSync(path.join(mobileAgentsDir, f))
+    );
+
+    if (mobileAgentsInstalled) {
+      settings.mcpServers['xcodebuildmcp'] = {
+        command: 'npx',
+        args: ['-y', 'xcodebuildmcp@2.6.2', 'mcp'],
+        disabled: false,
+      };
+      console.log(`  ${green}\u2713${reset} Registered MCP server xcodebuildmcp (iOS/watchOS build-test-simulator loop)`);
+    }
+
+    // mobile-mcp is OPT-IN (accessibility-tree device control) -- never registered
+    // silently, and always pinned to an exact version (pre-1.0, never a floating tag).
+    if (mobileAgentsInstalled && enableMobileMcp) {
+      settings.mcpServers['mobile-mcp'] = {
+        command: 'npx',
+        args: ['-y', '@mobilenext/mobile-mcp@0.0.61'],
+        disabled: false,
+      };
+      console.log(`  ${green}\u2713${reset} Registered MCP server mobile-mcp (--enable-mobile-mcp)`);
+    } else if (mobileAgentsInstalled && !enableMobileMcp) {
+      console.log(`  ${dim}Skipped mobile-mcp (opt-in) -- pass --enable-mobile-mcp or set GSD_MOBILE_MCP=on to register it${reset}`);
+    }
   }
 
   return { settingsPath, settings, statuslineCommand, runtime };
