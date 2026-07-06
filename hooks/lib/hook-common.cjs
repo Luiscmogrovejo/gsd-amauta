@@ -310,6 +310,84 @@ function runGate(gateName, handler) {
   });
 }
 
+// ─── v3.5 compression rewrite primitives (additive — existing exports untouched) ─────
+
+/**
+ * readCompressionConfig() — GSD_COMPRESS_CONFIG_PATH is an authoritative test
+ * seam (mirrors GSD_HOOK_ALLOWLISTS_PATH). Reads the `compression` block from
+ * the resolved config; any failure -> { enabled: false } (fail-open to OFF,
+ * opt-in default). INTERNAL — deliberately not exported.
+ */
+function readCompressionConfig() {
+  try {
+    const p = process.env.GSD_COMPRESS_CONFIG_PATH ||
+      path.join(repoRoot(), '.planning', 'config.json');
+    const cfg = JSON.parse(fs.readFileSync(p, 'utf8'));
+    const c = cfg && cfg.compression;
+    return (c && typeof c === 'object') ? c : { enabled: false };
+  } catch {
+    return { enabled: false };
+  }
+}
+
+/**
+ * resolveCompressMode() — 'off' | 'on'; default 'off' (opt-in). GSD_COMPRESS=on|off
+ * overrides config; any other/unset value falls back to config.compression.enabled.
+ * Deliberately NOT keyed on GSD_HOOKS_ENFORCE — compression is orthogonal to
+ * enforcement (ARCHITECTURE.md Pattern 1 / Anti-Pattern 1).
+ */
+function resolveCompressMode() {
+  const raw = process.env.GSD_COMPRESS;
+  if (raw === 'off') return 'off';
+  if (raw === 'on') return 'on';
+  return readCompressionConfig().enabled ? 'on' : 'off';
+}
+
+/**
+ * extractBashCommand(input) — the Bash tool_input.command string, or null for
+ * any non-Bash / malformed shape (fail-open to passthrough in the caller).
+ */
+function extractBashCommand(input) {
+  const ti = input && input.tool_input;
+  return (ti && typeof ti.command === 'string') ? ti.command : null;
+}
+
+/**
+ * rewriteBashInput(newCommand) — PRIMARY PreToolUse input-rewrite emitter. Emits
+ * the doc-verified shape (HOOK-MECHANISM §1). permissionDecision is ALWAYS
+ * 'allow' — this primitive can NEVER deny (that is denyPreToolUse's job; rewrite
+ * is not enforcement).
+ */
+function rewriteBashInput(newCommand) {
+  return _writeAndExit({
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'allow',
+      updatedInput: { command: newCommand },
+    },
+  });
+}
+
+/**
+ * runRewriteGate(gateName, handler) — the compression sibling of runGate().
+ * Resolves its OWN mode from resolveCompressMode(); when 'off' exits 0
+ * immediately (zero side effects, opt-in default). Otherwise reads stdin
+ * fail-open, calls handler(input, ctx); a handler that returns without emitting
+ * defaults to a silent allow(); any throw fails OPEN. There is NO deny path here
+ * — a compression bug can waste tokens, never block a command.
+ */
+function runRewriteGate(gateName, handler) {
+  if (resolveCompressMode() === 'off') { process.exit(0); return; }
+  readStdinJson((input) => {
+    try {
+      handler(input, { mode: 'on', repoRoot: repoRoot() });
+      allow();
+    } catch (err) {
+      _failOpen(gateName, 'on', err);
+    }
+  });
+}
+
 module.exports = {
   resolveMode,
   repoRoot,
@@ -324,4 +402,8 @@ module.exports = {
   matchesAny,
   emitGateTelemetry,
   normalizeToolPath,
+  resolveCompressMode,
+  extractBashCommand,
+  rewriteBashInput,
+  runRewriteGate,
 };
