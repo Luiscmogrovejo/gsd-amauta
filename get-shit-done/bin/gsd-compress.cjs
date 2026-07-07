@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
-const { selectChain } = require('./lib/compress-filters/index.cjs');
+const { selectChain, selectFilterId } = require('./lib/compress-filters/index.cjs');
 const { writeRawChannel, formatRawRef } = require('./lib/evidence-raw-channel.cjs');
 
 // _parseCommand(argv) — everything after the first `--` is the wrapped command.
@@ -47,6 +47,13 @@ function applyChain(commandName, rawOut, rawErr, code, _chainOverride) {
 function neverWorse(compressed, rawOut) {
   if (typeof compressed !== 'string') return rawOut;
   return compressed.length >= rawOut.length ? rawOut : compressed;
+}
+
+// GAIN-03: metadata-only payload. Takes byte COUNTS + a filter id — NEVER a command
+// string or output. savings_pct rounded to 0.1; 0 when raw_bytes is 0.
+function buildCompressionPayload(rawBytes, compressedBytes, filterId) {
+  const pct = rawBytes > 0 ? Math.round((1 - compressedBytes / rawBytes) * 1000) / 10 : 0;
+  return { raw_bytes: rawBytes, compressed_bytes: compressedBytes, filter_id: filterId, savings_pct: pct };
 }
 
 // COMP-02: tee full raw output to a DETERMINISTIC, discoverable path BEFORE filtering.
@@ -106,6 +113,7 @@ function main() {
 
   // COMP-04 then COMP-03. TOGL-04: raw mode skips the chain + never-worse entirely (raw stdout).
   let out = rawMode ? rawOut : neverWorse(applyChain(cmd, rawOut, rawErr, code), rawOut);
+  const compressedBody = out;   // GAIN-03: capture pre-marker compressed body for telemetry
 
   // DISC-03: when compression actually occurred (out !== rawOut, not --raw), write the raw
   // side-channel and append a resolvable marker so downstream evidence can recover the raw.
@@ -115,10 +123,20 @@ function main() {
   // Discovery line goes to STDOUT (not stderr) so COMP-05 keeps stderr byte-exact.
   if (teePath) out += '\n[gsd-compress] raw output teed to: ' + teePath + '\n';
 
+  // GAIN-03: record a metadata-only compression_run ONLY when compression actually shrank
+  // output (not --raw). emit() is a no-op when telemetry is unconsented -> opt-in/local-only;
+  // it performs zero network I/O. Wrapped so analytics can NEVER break the wrapper.
+  try {
+    if (!rawMode && compressedBody !== rawOut) {
+      require('./lib/telemetry.cjs').emit('compression_run', buildCompressionPayload(
+        Buffer.byteLength(rawOut), Buffer.byteLength(compressedBody), selectFilterId(cmd)));
+    }
+  } catch { /* fail-open: analytics must never affect the wrapper's result */ }
+
   process.stdout.write(out);
   process.stderr.write(rawErr);      // COMP-05: child stderr VERBATIM, distinct stream
   process.exit(code);                // COMP-01: exact child exit code on every path
 }
 
 if (require.main === module) main();
-module.exports = { _parseCommand, parseRawFlag, applyChain, neverWorse, teeRaw, rawRefLine };
+module.exports = { _parseCommand, parseRawFlag, applyChain, neverWorse, teeRaw, rawRefLine, buildCompressionPayload };

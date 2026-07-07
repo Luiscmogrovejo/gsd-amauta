@@ -32,4 +32,16 @@ function selectChain(commandName) {
     return _passthroughChain();
   }
 }
-module.exports = { selectChain, loadRegistry, registryPath };
+// selectFilterId(commandName) -> the matched entry's filter basename, or '_passthrough'.
+// Returns a FILTER id (class label like 'git'|'test'|'_passthrough'), NEVER the command
+// string — this is what keeps the compression_run payload command-content-free. Never throws.
+function selectFilterId(commandName) {
+  try {
+    const reg = loadRegistry();
+    const entries = Array.isArray(reg.entries) ? reg.entries : [];
+    const entry = entries.find((e) =>
+      e && e.enabled !== false && Array.isArray(e.heads) && e.heads.includes(commandName));
+    return (entry && entry.filter) ? entry.filter : '_passthrough';
+  } catch { return '_passthrough'; }
+}
+module.exports = { selectChain, selectFilterId, loadRegistry, registryPath };
