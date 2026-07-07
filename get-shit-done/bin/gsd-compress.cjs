@@ -6,6 +6,7 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 const { selectChain } = require('./lib/compress-filters/index.cjs');
+const { writeRawChannel, formatRawRef } = require('./lib/evidence-raw-channel.cjs');
 
 // _parseCommand(argv) — everything after the first `--` is the wrapped command.
 // Returns { cmd, args } or null when there is no command to run.
@@ -64,6 +65,17 @@ function teeRaw(cmd, args, rawOut, rawErr) {
   } catch { return null; }
 }
 
+// DISC-03: when compression ACTUALLY shrank output (and not --raw), write the full raw to
+// the deterministic side-channel and return the resolvable marker line; else return ''.
+// Reuses the Phase-72 path scheme via the shared lib (one file per command). teePath, when
+// the command also FAILED, is the SAME path — pass it so we reuse it instead of rewriting.
+function rawRefLine(rawMode, filtered, rawOut, rawErr, cmd, args, teePath) {
+  if (rawMode) return '';                 // TOGL-04 raw bypass -> no marker
+  if (filtered === rawOut) return '';     // never-worse/identity -> output already raw
+  const p = teePath || writeRawChannel(cmd, args, rawOut, rawErr);
+  return p ? formatRawRef(p) : '';        // fail-open: no channel -> no marker
+}
+
 function main() {
   const argv = process.argv.slice(2);
   const rawMode = parseRawFlag(argv);          // TOGL-04: pre-`--` --raw/--no-compress bypass
@@ -95,6 +107,11 @@ function main() {
   // COMP-04 then COMP-03. TOGL-04: raw mode skips the chain + never-worse entirely (raw stdout).
   let out = rawMode ? rawOut : neverWorse(applyChain(cmd, rawOut, rawErr, code), rawOut);
 
+  // DISC-03: when compression actually occurred (out !== rawOut, not --raw), write the raw
+  // side-channel and append a resolvable marker so downstream evidence can recover the raw.
+  const ref = rawRefLine(rawMode, out, rawOut, rawErr, cmd, args, teePath);
+  if (ref) out += '\n' + ref + '\n';
+
   // Discovery line goes to STDOUT (not stderr) so COMP-05 keeps stderr byte-exact.
   if (teePath) out += '\n[gsd-compress] raw output teed to: ' + teePath + '\n';
 
@@ -104,4 +121,4 @@ function main() {
 }
 
 if (require.main === module) main();
-module.exports = { _parseCommand, parseRawFlag, applyChain, neverWorse, teeRaw };
+module.exports = { _parseCommand, parseRawFlag, applyChain, neverWorse, teeRaw, rawRefLine };
