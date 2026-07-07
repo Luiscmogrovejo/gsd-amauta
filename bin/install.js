@@ -219,12 +219,13 @@ const explicitConfigDir = parseConfigDirArg();
 const hasHelp = args.includes('--help') || args.includes('-h');
 const forceStatusline = args.includes('--force-statusline');
 const enableMobileMcp = args.includes('--enable-mobile-mcp') || process.env.GSD_MOBILE_MCP === 'on';
+const enableCompression = args.includes('--enable-compression') || process.env.GSD_COMPRESS === 'on';
 
 console.log(banner);
 
 // Show help if requested
 if (hasHelp) {
-  console.log(`  ${yellow}Usage:${reset} node bin/install.js [options]\n\n  ${yellow}Options:${reset}\n    ${cyan}-g, --global${reset}              Install globally (to config directory)\n    ${cyan}-l, --local${reset}               Install locally (to current directory)\n    ${cyan}--claude${reset}                  Install for Claude Code only\n    ${cyan}--opencode${reset}                Install for OpenCode only\n    ${cyan}--gemini${reset}                  Install for Gemini only\n    ${cyan}--codex${reset}                   Install for Codex only\n    ${cyan}--all${reset}                     Install for all runtimes\n    ${cyan}-u, --uninstall${reset}           Uninstall Amauta (remove all files)\n    ${cyan}-c, --config-dir <path>${reset}   Specify custom config directory\n    ${cyan}-h, --help${reset}                Show this help message\n    ${cyan}--force-statusline${reset}        Replace existing statusline config\n\n  ${yellow}Examples:${reset}\n    ${dim}# Interactive install (prompts for runtime and location)${reset}\n    npx get-shit-done-cc\n\n    ${dim}# Install for Claude Code globally${reset}\n    npx get-shit-done-cc --claude --global\n\n    ${dim}# Install for Gemini globally${reset}\n    npx get-shit-done-cc --gemini --global\n\n    ${dim}# Install for Codex globally${reset}\n    npx get-shit-done-cc --codex --global\n\n    ${dim}# Install for all runtimes globally${reset}\n    npx get-shit-done-cc --all --global\n\n    ${dim}# Install to custom config directory${reset}\n    npx get-shit-done-cc --codex --global --config-dir ~/.codex-work\n\n    ${dim}# Install to current project only${reset}\n    npx get-shit-done-cc --claude --local\n\n    ${dim}# Uninstall GSD from Codex globally${reset}\n    npx get-shit-done-cc --codex --global --uninstall\n\n  ${yellow}Notes:${reset}\n    The --config-dir option is useful when you have multiple configurations.\n    It takes priority over CLAUDE_CONFIG_DIR / GEMINI_CONFIG_DIR / CODEX_HOME environment variables.\n`);
+  console.log(`  ${yellow}Usage:${reset} node bin/install.js [options]\n\n  ${yellow}Options:${reset}\n    ${cyan}-g, --global${reset}              Install globally (to config directory)\n    ${cyan}-l, --local${reset}               Install locally (to current directory)\n    ${cyan}--claude${reset}                  Install for Claude Code only\n    ${cyan}--opencode${reset}                Install for OpenCode only\n    ${cyan}--gemini${reset}                  Install for Gemini only\n    ${cyan}--codex${reset}                   Install for Codex only\n    ${cyan}--all${reset}                     Install for all runtimes\n    ${cyan}-u, --uninstall${reset}           Uninstall Amauta (remove all files)\n    ${cyan}-c, --config-dir <path>${reset}   Specify custom config directory\n    ${cyan}-h, --help${reset}                Show this help message\n    ${cyan}--force-statusline${reset}        Replace existing statusline config\n    ${cyan}--enable-compression${reset}      Opt in to output-compression hooks (Claude only; default off)\n\n  ${yellow}Examples:${reset}\n    ${dim}# Interactive install (prompts for runtime and location)${reset}\n    npx get-shit-done-cc\n\n    ${dim}# Install for Claude Code globally${reset}\n    npx get-shit-done-cc --claude --global\n\n    ${dim}# Install for Gemini globally${reset}\n    npx get-shit-done-cc --gemini --global\n\n    ${dim}# Install for Codex globally${reset}\n    npx get-shit-done-cc --codex --global\n\n    ${dim}# Install for all runtimes globally${reset}\n    npx get-shit-done-cc --all --global\n\n    ${dim}# Install to custom config directory${reset}\n    npx get-shit-done-cc --codex --global --config-dir ~/.codex-work\n\n    ${dim}# Install to current project only${reset}\n    npx get-shit-done-cc --claude --local\n\n    ${dim}# Uninstall GSD from Codex globally${reset}\n    npx get-shit-done-cc --codex --global --uninstall\n\n  ${yellow}Notes:${reset}\n    The --config-dir option is useful when you have multiple configurations.\n    It takes priority over CLAUDE_CONFIG_DIR / GEMINI_CONFIG_DIR / CODEX_HOME environment variables.\n`);
   process.exit(0);
 }
 
@@ -1674,13 +1675,14 @@ function uninstall(isGlobal, runtime = 'claude') {
     }
 
     // Remove GSD hooks from PostToolUse and AfterTool (Gemini uses AfterTool)
+    // Phase 75 TOGL-03: also strip the output-compression post hook (symmetric with install).
     for (const eventName of ['PostToolUse', 'AfterTool']) {
       if (settings.hooks && settings.hooks[eventName]) {
         const before = settings.hooks[eventName].length;
         settings.hooks[eventName] = settings.hooks[eventName].filter(entry => {
           if (entry.hooks && Array.isArray(entry.hooks)) {
             const hasGsdHook = entry.hooks.some(h =>
-              h.command && h.command.includes('gsd-context-monitor')
+              h.command && (h.command.includes('gsd-context-monitor') || h.command.includes('gsd-compress-post'))
             );
             return !hasGsdHook;
           }
@@ -1693,6 +1695,27 @@ function uninstall(isGlobal, runtime = 'claude') {
         if (settings.hooks[eventName].length === 0) {
           delete settings.hooks[eventName];
         }
+      }
+    }
+
+    // Phase 75 TOGL-03: remove the output-compression PreToolUse gate (symmetric with install).
+    if (settings.hooks && settings.hooks.PreToolUse) {
+      const before = settings.hooks.PreToolUse.length;
+      settings.hooks.PreToolUse = settings.hooks.PreToolUse.filter(entry => {
+        if (entry.hooks && Array.isArray(entry.hooks)) {
+          const hasGsdHook = entry.hooks.some(h =>
+            h.command && h.command.includes('gsd-compress-gate')
+          );
+          return !hasGsdHook;
+        }
+        return true;
+      });
+      if (settings.hooks.PreToolUse.length < before) {
+        settingsModified = true;
+        console.log(`  ${green}✓${reset} Removed compression gate hook from settings`);
+      }
+      if (settings.hooks.PreToolUse.length === 0) {
+        delete settings.hooks.PreToolUse;
       }
     }
 
@@ -2455,6 +2478,17 @@ function install(isGlobal, runtime = 'claude') {
           } else {
             fs.copyFileSync(srcFile, destFile);
           }
+        } else if (entry === 'lib' && fs.statSync(srcFile).isDirectory()) {
+          // Phase 75: one-level recurse for hooks/dist/lib/ so the compression hooks can
+          // require('./lib/...') at runtime. Files-only, .cjs deps copied verbatim.
+          const libDest = path.join(hooksDest, 'lib');
+          fs.mkdirSync(libDest, { recursive: true });
+          for (const libEntry of fs.readdirSync(srcFile)) {
+            const libSrcFile = path.join(srcFile, libEntry);
+            if (fs.statSync(libSrcFile).isFile()) {
+              fs.copyFileSync(libSrcFile, path.join(libDest, libEntry));
+            }
+          }
         }
       }
       if (verifyInstalled(hooksDest, 'hooks')) {
@@ -2608,6 +2642,53 @@ function install(isGlobal, runtime = 'claude') {
         ]
       });
       console.log(`  ${green}✓${reset} Configured context window monitor hook`);
+    }
+
+    // Phase 75 TOGL-01/03: output-compression hooks (PreToolUse gate + PostToolUse post).
+    // Claude-only, OPT-IN (default OFF) behind --enable-compression / GSD_COMPRESS=on, and
+    // idempotent (has-hook guards mirror hasContextMonitorHook). Never auto-enabled.
+    if (runtime === 'claude' && enableCompression) {
+      if (!settings.hooks.PreToolUse) {
+        settings.hooks.PreToolUse = [];
+      }
+      const compressGateCommand = isGlobal
+        ? buildHookCommand(targetDir, 'gsd-compress-gate.cjs')
+        : 'node ' + dirName + '/hooks/gsd-compress-gate.cjs';
+      const hasCompressGateHook = settings.hooks.PreToolUse.some(entry =>
+        entry.hooks && entry.hooks.some(h => h.command && h.command.includes('gsd-compress-gate'))
+      );
+      if (!hasCompressGateHook) {
+        settings.hooks.PreToolUse.push({
+          matcher: 'Bash',
+          hooks: [
+            {
+              type: 'command',
+              command: compressGateCommand
+            }
+          ]
+        });
+      }
+
+      const compressPostCommand = isGlobal
+        ? buildHookCommand(targetDir, 'gsd-compress-post.cjs')
+        : 'node ' + dirName + '/hooks/gsd-compress-post.cjs';
+      const hasCompressPostHook = settings.hooks[postToolEvent].some(entry =>
+        entry.hooks && entry.hooks.some(h => h.command && h.command.includes('gsd-compress-post'))
+      );
+      if (!hasCompressPostHook) {
+        settings.hooks[postToolEvent].push({
+          matcher: 'Bash',
+          hooks: [
+            {
+              type: 'command',
+              command: compressPostCommand
+            }
+          ]
+        });
+      }
+      console.log(`  ${green}✓${reset} Registered output-compression hooks (--enable-compression)`);
+    } else if (runtime === 'claude') {
+      console.log(`  ${dim}Skipped compression (opt-in) -- pass --enable-compression or set GSD_COMPRESS=on to register it${reset}`);
     }
   }
 
