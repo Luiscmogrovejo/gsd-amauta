@@ -2243,7 +2243,7 @@ async function cmdCapabilityAdd(flags, jsonMode) {
 
 /**
  * The boringly explicit pre-consent disclosure block (TEL-01 — the trust
- * surface, no marketing language). Names all 8 EVENT_TYPES verbatim and
+ * surface, no marketing language). Names all 9 EVENT_TYPES verbatim and
  * states exactly what is / is not collected.
  */
 function _telemetryDisclosureText(eventTypes) {
@@ -2630,6 +2630,116 @@ async function cmdCacheStats(useDaemon) {
   return statusCode === 200 ? 0 : 1;
 }
 
+// ── compress: local-only savings analytics (Phase 77 / GAIN-01) ─────────────
+//
+// Read-only report over the LOCAL telemetry buffer — no daemon, no network.
+// Aggregates the metadata-only `compression_run` events (raw_bytes,
+// compressed_bytes, filter_id, savings_pct) written by gsd-compress.cjs and
+// prints total bytes saved + overall savings % + a per-filter breakdown.
+
+/**
+ * cmdCompress — dispatch the `compress` sub-verb. Only `gain` is defined;
+ * anything else prints a short usage line to stderr and returns 1.
+ */
+async function cmdCompress(rest, jsonMode) {
+  const sub = rest[0];
+  if (sub === 'gain') return cmdCompressGain(jsonMode);
+  process.stderr.write('usage: amauta compress gain [--json]\n');
+  return 1;
+}
+
+/**
+ * cmdCompressGain — read the local telemetry buffer, aggregate every
+ * `compression_run` event, and print token/byte savings. LOCAL-ONLY: reads
+ * the buffer file directly (never the daemon, never the network). Every
+ * fs/JSON read is fail-open — a missing or corrupt buffer prints the clean
+ * empty-state advisory and exits 0, never throws.
+ *
+ * @param {boolean} jsonMode - when true, emit the aggregate as a JSON object.
+ * @returns {number} process exit code (0 on success).
+ */
+function cmdCompressGain(jsonMode) {
+  const t = _tel();
+
+  // Read + parse the buffer fail-open; keep only compression_run events.
+  let runsEvents = [];
+  try {
+    const raw = fs.readFileSync(t.bufferPath(), 'utf8');
+    runsEvents = raw
+      .split('\n')
+      .filter((l) => l.trim().length > 0)
+      .map((l) => { try { return JSON.parse(l); } catch { return null; } })
+      .filter((e) => e && e.event_type === 'compression_run');
+  } catch {
+    runsEvents = [];
+  }
+
+  if (runsEvents.length === 0) {
+    if (jsonMode) {
+      process.stdout.write(JSON.stringify(
+        { runs: 0, raw_bytes: 0, compressed_bytes: 0, savings_pct: 0, by_filter: {} }
+      ) + '\n');
+    } else {
+      process.stdout.write(
+        'No compression runs recorded yet (enable telemetry + compression to collect savings).\n'
+      );
+    }
+    return 0;
+  }
+
+  let sumRaw = 0;
+  let sumCompressed = 0;
+  const byFilter = {};
+  for (const e of runsEvents) {
+    const p = (e && e.payload) || {};
+    const rb = Number(p.raw_bytes) || 0;
+    const cb = Number(p.compressed_bytes) || 0;
+    const fid = (typeof p.filter_id === 'string' && p.filter_id) || 'unknown';
+    sumRaw += rb;
+    sumCompressed += cb;
+    if (!byFilter[fid]) byFilter[fid] = { runs: 0, raw_bytes: 0, compressed_bytes: 0 };
+    byFilter[fid].runs += 1;
+    byFilter[fid].raw_bytes += rb;
+    byFilter[fid].compressed_bytes += cb;
+  }
+
+  const savingsPct = sumRaw > 0
+    ? Math.round((1 - sumCompressed / sumRaw) * 1000) / 10
+    : 0;
+
+  if (jsonMode) {
+    process.stdout.write(JSON.stringify({
+      runs: runsEvents.length,
+      raw_bytes: sumRaw,
+      compressed_bytes: sumCompressed,
+      savings_pct: savingsPct,
+      by_filter: byFilter,
+    }) + '\n');
+    return 0;
+  }
+
+  const lines = [
+    'Compression Savings',
+    '===================',
+    `Runs:              ${runsEvents.length}`,
+    `Raw bytes:         ${sumRaw}`,
+    `Compressed bytes:  ${sumCompressed}`,
+    `Bytes saved:       ${sumRaw - sumCompressed}`,
+    `Savings:           ${savingsPct}%`,
+    '',
+    'By filter:',
+  ];
+  for (const fid of Object.keys(byFilter).sort()) {
+    const f = byFilter[fid];
+    const pct = f.raw_bytes > 0
+      ? Math.round((1 - f.compressed_bytes / f.raw_bytes) * 1000) / 10
+      : 0;
+    lines.push(`  ${fid}: ${f.runs} runs, ${pct}% saved`);
+  }
+  process.stdout.write(lines.join('\n') + '\n');
+  return 0;
+}
+
 // ═══════════════════════════════════════════════════════
 // CLI Router
 // ═══════════════════════════════════════════════════════
@@ -2782,6 +2892,7 @@ async function main() {
       '\n' +
       '  \x1b[33mCache:\x1b[0m\n' +
       '    cache-stats                 Show prompt cache hit rate and cost savings\n' +
+      '    compress gain               Show token/byte savings from the local buffer\n' +
       '\n' +
       '  \x1b[33mDaemon:\x1b[0m\n' +
       '    daemon start|stop|status|run\n' +
@@ -2961,6 +3072,14 @@ async function main() {
 
     case 'cache-stats':
       exitCode = await cmdCacheStats(useDaemon);
+      break;
+
+    // Phase 77 GAIN-01: read-only, local-only savings analytics over the
+    // telemetry buffer — MUST be an explicit case so it never falls through
+    // to the /api/exec passthrough (which would 403; capability/telemetry
+    // precedent). No daemon, no network.
+    case 'compress':
+      exitCode = await cmdCompress(rest, jsonMode);
       break;
 
     // Phase 60 TOOL-01/02/03: capability verb group — MUST be an explicit
