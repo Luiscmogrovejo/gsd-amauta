@@ -42,6 +42,11 @@ const http = require('http');
 const { execFileSync, spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+// Phase 76 DISC-01/02/03: shared raw-evidence side-channel resolver (single
+// source; scrub injected — the lib never requires this CLI back). Follows
+// [gsd-compress:raw-ref <path>] markers to their raw file so evidence stored
+// and validated here is raw, never the compressed summary.
+const { resolveRawFromText } = require('./lib/evidence-raw-channel.cjs');
 
 // Phase 62 TEL-02: fire-and-forget telemetry emit. Fail-open — a
 // missing/broken telemetry module must never change CLI behavior.
@@ -553,7 +558,8 @@ async function cmdRpetd(useDaemon, id, flags, jsonMode) {
   // Phase 68 MOBL-04: scrub build-log/evidence secrets BEFORE either
   // transport (daemon POST or file-fallback) sees the content, so both
   // inherit the scrub from this one choke point.
-  flags.content = scrubEvidence(flags.content);
+  flags.content = resolveRawEvidence(flags.content);  // DISC-01/03: splice raw + scrub side-channel
+  flags.content = scrubEvidence(flags.content);        // DISC-02: scrub-last over the whole content
   const body = { id, ...flags };
 
   let exitCode = 0;
@@ -795,6 +801,14 @@ async function checkValidationGates(useDaemon, id, flags) {
 
   // Check if this is a code task (not epic/story)
   const isCodeTask = !NON_CODE_TYPES.has(taskType);
+
+  // Phase 76 DISC-01 (explicit read-path): resolve any [gsd-compress:raw-ref]
+  // markers in the phases the gates read, so the validator reasons about RAW
+  // evidence even if raw was stored by an older ingestion path. Fail-safe:
+  // marker-free phases are returned byte-identical.
+  phases.E = resolveRawEvidence(phases.E || '');
+  phases.T = resolveRawEvidence(phases.T || '');
+  phases.D = resolveRawEvidence(phases.D || '');
 
   // Gate 1: Branch evidence in E-phase (empty E-phase always fails for code tasks)
   // Skipped when gitflow is globally disabled (trunk-based repo).
@@ -1503,7 +1517,8 @@ async function cmdNote(useDaemon, id, flags, jsonMode) {
   // MERGED noteText (not flags.text alone) — --content is canonical and
   // --text is only the back-compat alias, so scrubbing flags.text alone
   // would miss every canonical --content invocation.
-  noteText = scrubEvidence(noteText);
+  noteText = resolveRawEvidence(noteText);   // DISC-01/03: splice raw + scrub side-channel
+  noteText = scrubEvidence(noteText);         // DISC-02: scrub-last over the whole content
   // Build body using --content as the canonical key for the daemon
   const body = { id, content: noteText };
   if (flags.agent) body.agent = flags.agent;
@@ -1833,6 +1848,20 @@ function scrubEvidence(text) {
     scrubbed = scrubbed.replace(p.re, p.replacement);
   }
   return scrubbed;
+}
+
+/**
+ * DISC-01/02/03: follow every [gsd-compress:raw-ref <path>] marker to its raw
+ * side-channel file, splice the raw content back in (so validator/FIDEL/gates
+ * read RAW, never the compressed summary), and scrub the side-channel file IN
+ * PLACE via scrubEvidence (the single-registry Node twin — no third pattern
+ * copy). Text without a marker is returned unchanged. Never throws. MUST run
+ * BEFORE scrubEvidence so scrub stays the last transform.
+ */
+function resolveRawEvidence(text) {
+  if (typeof text !== 'string' || !text) return text;
+  try { return resolveRawFromText(text, { scrubFn: scrubEvidence }).text; }
+  catch { return text; }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -2979,5 +3008,5 @@ if (require.main === module || _isDelegatedEntry) {
 
 // Test-only exports — not used in production flow
 if (typeof module !== 'undefined' && require.main !== module) {
-  module.exports = { _checkEvidenceBlock, checkEvidenceAdvisory, _checkQaBlocks, _checkRedGreenOrder, checkSpecInheritanceAdvisory, writeGapsReport, scrubEvidence, loadEvidenceScrubPatterns };
+  module.exports = { _checkEvidenceBlock, checkEvidenceAdvisory, _checkQaBlocks, _checkRedGreenOrder, checkSpecInheritanceAdvisory, writeGapsReport, scrubEvidence, loadEvidenceScrubPatterns, resolveRawEvidence, TEST_EVIDENCE_PATTERNS };
 }
