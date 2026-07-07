@@ -388,6 +388,43 @@ function runRewriteGate(gateName, handler) {
   });
 }
 
+// ─── v3.5 PostToolUse compression net primitives (additive — existing exports untouched) ───
+
+/**
+ * rewriteToolOutput(text) — PostToolUse output-replacement emitter. Emits the doc-verified
+ * shape (code.claude.com/docs/en/hooks, verified 2026-07-06): replaces the tool result the
+ * model sees with `text`. Like rewriteBashInput this can NEVER deny — a compression bug can
+ * only waste tokens, never block. Exits 0.
+ */
+function rewriteToolOutput(text) {
+  return _writeAndExit({
+    hookSpecificOutput: {
+      hookEventName: 'PostToolUse',
+      updatedToolOutput: { type: 'text', text: String(text) },
+    },
+  });
+}
+
+/**
+ * runPostGate(gateName, handler) — the PostToolUse sibling of runRewriteGate(). Resolves its
+ * OWN mode from resolveCompressMode(); when 'off' exits 0 immediately (zero side effects,
+ * opt-in default — the original output is kept). Otherwise reads stdin fail-open and calls
+ * handler(input, ctx). A handler that returns without emitting defaults to a silent exit(0)
+ * (passthrough — original output kept, NO empty updatedToolOutput). Any throw fails OPEN
+ * (exit 0, original output kept). There is NO deny path.
+ */
+function runPostGate(gateName, handler) {
+  if (resolveCompressMode() === 'off') { process.exit(0); return; }
+  readStdinJson((input) => {
+    try {
+      handler(input, { mode: 'on', repoRoot: repoRoot() });
+      process.exit(0);
+    } catch (err) {
+      _failOpen(gateName, 'on', err);
+    }
+  });
+}
+
 module.exports = {
   resolveMode,
   repoRoot,
@@ -406,4 +443,6 @@ module.exports = {
   extractBashCommand,
   rewriteBashInput,
   runRewriteGate,
+  rewriteToolOutput,
+  runPostGate,
 };
