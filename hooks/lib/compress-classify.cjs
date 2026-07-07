@@ -131,8 +131,30 @@ function classifyForPost(command) {
   return 'compress';
 }
 
+// TOGL-04: --raw / --no-compress single-invocation bypass. A LEADING marker (after any
+// leading VAR=val env assignments) — chosen leading-only to avoid colliding with real
+// flags like `git log --raw`. hasRawBypass detects it; stripRawBypass removes it.
+const RAW_MARKERS = ['--raw', '--no-compress'];
+function _leadTokens(command) {
+  const toks = String(command == null ? '' : command).trim().split(/\s+/).filter(Boolean);
+  let i = 0;
+  while (i < toks.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(toks[i])) i++;
+  return { toks, i };
+}
+function hasRawBypass(command) {
+  if (typeof command !== 'string') return false;
+  const { toks, i } = _leadTokens(command);
+  return i < toks.length && RAW_MARKERS.includes(toks[i]);
+}
+function stripRawBypass(command) {
+  const { toks, i } = _leadTokens(command);
+  if (i < toks.length && RAW_MARKERS.includes(toks[i])) toks.splice(i, 1);
+  return toks.join(' ');
+}
+
 module.exports = {
   isAlreadyWrapped, isCompound, extractHead, extractVerb,
   loadDenylist, isDestructive, isExcluded, lookupAllowlist,
   classifyForRewrite, classifyForPost, WRAPPER_SENTINEL,
+  hasRawBypass, stripRawBypass, RAW_MARKERS,
 };

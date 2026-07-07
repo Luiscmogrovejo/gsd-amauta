@@ -16,6 +16,15 @@ function _parseCommand(argv) {
   return { cmd: rest[0], args: rest.slice(1) };
 }
 
+// TOGL-04: --raw / --no-compress single-invocation bypass. Detected ONLY in the pre-`--`
+// argv slice (the wrapper's own flags) so it never collides with a wrapped command's flags
+// (e.g. `-- git log --raw`). Returns true when raw output must be emitted unfiltered.
+function parseRawFlag(argv) {
+  const sep = argv.indexOf('--');
+  const preSep = sep === -1 ? argv : argv.slice(0, sep);
+  return preSep.includes('--raw') || preSep.includes('--no-compress');
+}
+
 // COMP-04: run the whole chain inside try/catch → raw stdout on ANY error.
 // _chainOverride is a test seam (array of transforms); prod passes undefined.
 function applyChain(commandName, rawOut, rawErr, code, _chainOverride) {
@@ -56,7 +65,9 @@ function teeRaw(cmd, args, rawOut, rawErr) {
 }
 
 function main() {
-  const parsed = _parseCommand(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  const rawMode = parseRawFlag(argv);          // TOGL-04: pre-`--` --raw/--no-compress bypass
+  const parsed = _parseCommand(argv);
   if (!parsed) {
     process.stderr.write('Usage: gsd-compress -- <command> [args...]\n');
     process.exit(1);
@@ -81,9 +92,8 @@ function main() {
   let teePath = null;
   if (code !== 0) teePath = teeRaw(cmd, args, rawOut, rawErr);
 
-  // COMP-04 then COMP-03.
-  const filtered = applyChain(cmd, rawOut, rawErr, code);
-  let out = neverWorse(filtered, rawOut);
+  // COMP-04 then COMP-03. TOGL-04: raw mode skips the chain + never-worse entirely (raw stdout).
+  let out = rawMode ? rawOut : neverWorse(applyChain(cmd, rawOut, rawErr, code), rawOut);
 
   // Discovery line goes to STDOUT (not stderr) so COMP-05 keeps stderr byte-exact.
   if (teePath) out += '\n[gsd-compress] raw output teed to: ' + teePath + '\n';
@@ -94,4 +104,4 @@ function main() {
 }
 
 if (require.main === module) main();
-module.exports = { _parseCommand, applyChain, neverWorse, teeRaw };
+module.exports = { _parseCommand, parseRawFlag, applyChain, neverWorse, teeRaw };

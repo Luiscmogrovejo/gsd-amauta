@@ -39,11 +39,13 @@ function resolveWrapper() {
   try { return fs.existsSync(p) ? p : null; } catch { return null; }
 }
 
-// buildWrappedCommand(original, wrapperPath) — prepend the wrapper invocation to the ORIGINAL
-// command string (string concat, NOT re-tokenized — preserves quoting; safe because the
-// classifier already rejected every shell metacharacter). Absolute wrapper path.
-function buildWrappedCommand(original, wrapperPath) {
-  return 'node ' + wrapperPath + ' -- ' + original;
+// buildWrappedCommand(original, wrapperPath, opts) — prepend the wrapper invocation to the
+// ORIGINAL command string (string concat, NOT re-tokenized — preserves quoting; safe because
+// the classifier already rejected every shell metacharacter). Absolute wrapper path.
+// TOGL-04: opts.raw emits the `--raw` form so the wrapper bypasses compression for this run.
+function buildWrappedCommand(original, wrapperPath, opts) {
+  const rawFlag = opts && opts.raw ? '--raw ' : '';
+  return 'node ' + wrapperPath + ' ' + rawFlag + '-- ' + original;
 }
 
 function _runGate() {
@@ -51,6 +53,18 @@ function _runGate() {
   hookCommon.runRewriteGate('compress-gate', (input) => {
     const command = hookCommon.extractBashCommand(input);
     if (command === null) return;                       // non-Bash / no command -> allow passthrough
+    // TOGL-04: a LEADING --raw/--no-compress marker routes the bare command THROUGH the wrapper
+    // in raw mode so the PostToolUse hook skips it via isAlreadyWrapped (RWRT-05, no post change).
+    if (classify.hasRawBypass(command)) {
+      const bare = classify.stripRawBypass(command);
+      const wrapper = resolveWrapper();
+      if (wrapper && !classify.isCompound(bare)) {
+        hookCommon.rewriteBashInput(buildWrappedCommand(bare, wrapper, { raw: true }));
+      } else {
+        hookCommon.rewriteBashInput(bare);              // no wrapper / compound -> strip marker, passthrough
+      }
+      return;
+    }
     const decision = classify.classifyForRewrite(command);
     if (decision === 'passthrough') return;             // RWRT-03/04/05 -> allow passthrough
     const wrapper = resolveWrapper();
