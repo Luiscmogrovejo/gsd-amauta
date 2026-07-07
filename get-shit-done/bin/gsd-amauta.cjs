@@ -708,6 +708,21 @@ const TEST_EVIDENCE_PATTERNS = [
   /\bRan\s+\d+\s+tests?\b/i,                              // "Ran 42 tests"
 ];
 
+// Mirror of amauta.py _gitflow_globally_disabled(): trunk-based repos opt out of
+// PR/branch gating via GSD_GITFLOW env (off/false/0/no) or .planning/config.json
+// workflow.gitflow:false. Default ENABLED. Keeps the Node gate consistent with the
+// Python gate so validators don't need --force-reason on direct-to-master repos.
+function _gitflowDisabled() {
+  const env = (process.env.GSD_GITFLOW || '').trim().toLowerCase();
+  if (['off', 'false', '0', 'no'].includes(env)) return true;
+  try {
+    const cfgPath = path.join(process.cwd(), '.planning', 'config.json');
+    const wf = (JSON.parse(fs.readFileSync(cfgPath, 'utf8')) || {}).workflow || {};
+    if (wf.gitflow === false) return true;
+  } catch { /* no config → gate stays enabled */ }
+  return false;
+}
+
 async function checkValidationGates(useDaemon, id, flags) {
   if (!flags.pass_result) return []; // Only check gates on --pass
 
@@ -782,7 +797,8 @@ async function checkValidationGates(useDaemon, id, flags) {
   const isCodeTask = !NON_CODE_TYPES.has(taskType);
 
   // Gate 1: Branch evidence in E-phase (empty E-phase always fails for code tasks)
-  if (isCodeTask) {
+  // Skipped when gitflow is globally disabled (trunk-based repo).
+  if (isCodeTask && !_gitflowDisabled()) {
     const eContent = (phases.E || '').trim();
     if (!eContent) {
       gateFailures.push('BRANCH_EVIDENCE: E-phase is empty. Code tasks require execution evidence with branch name.');
@@ -825,7 +841,8 @@ async function checkValidationGates(useDaemon, id, flags) {
   }
 
   // Gate 4: PR URL evidence in D-phase, E-phase, notes, or text fallback (code tasks only)
-  if (isCodeTask) {
+  // Skipped when gitflow is globally disabled (trunk-based repo).
+  if (isCodeTask && !_gitflowDisabled()) {
     // Include notes — PR URLs are often posted as notes after E-phase completes
     const allContent = `${phases.D || ''} ${phases.E || ''} ${notesText} ${taskData || ''}`;
     // Check for PR merge evidence: require past tense "merged" or explicit PR references

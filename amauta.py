@@ -2704,7 +2704,32 @@ def cmd_update(args):
         print(c(f"Updated {args.id}: {', '.join(changed)}", GREEN))
 
 
+def _gitflow_globally_disabled() -> bool:
+    """True when this repo opts out of PR-gating (trunk-based development).
+
+    Precedence: GSD_GITFLOW env (off/false/0 → disabled) > .planning/config.json
+    workflow.gitflow (false → disabled). Default is ENABLED — the gate stays on
+    for end-user projects; only a repo that explicitly develops direct-to-master
+    (e.g. gsd-amauta's own tree) turns it off. Read fresh per call (no restart).
+    """
+    env = os.environ.get("GSD_GITFLOW")
+    if env is not None and env.strip().lower() in {"off", "false", "0", "no"}:
+        return True
+    try:
+        cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                ".planning", "config.json")
+        with open(cfg_path) as f:
+            wf = (json.load(f) or {}).get("workflow", {}) or {}
+        if wf.get("gitflow") is False:
+            return True
+    except Exception:
+        pass
+    return False
+
+
 def _needs_gitflow_gate(item: dict) -> bool:
+    if _gitflow_globally_disabled():
+        return False
     tags = {str(t).strip().lower() for t in (item.get("tags") or [])}
     if {"no-gitflow", "no_gitflow", "non-code", "non_code"} & tags:
         return False

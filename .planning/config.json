@@ -14,13 +14,14 @@
     "compaction": "haiku"
   },
   "workflow": {
-    "research": false,
+    "research": true,
     "plan_check": true,
     "verifier": true,
     "nyquist_validation": true,
     "auto_advance": false,
     "_auto_chain_active": false,
-    "force_phases": null
+    "force_phases": null,
+    "gitflow": false
   },
   "complexity_buckets": [
     {
@@ -80,5 +81,17 @@
       "executor_self_report": true,
       "validator_divergence": true
     }
+  },
+  "fidelity": {
+    "glob_ban": true,
+    "scope_width_ceiling": 4,
+    "post_milestone_reindex": true
+  },
+  "telemetry": {
+    "enabled": false,
+    "consented_at": null,
+    "prompted_at": "2026-07-03T14:42:48.854Z",
+    "salt": "05084410d91d3bc7",
+    "sink_url": null
   }
 }
