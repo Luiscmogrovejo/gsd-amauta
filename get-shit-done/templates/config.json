@@ -69,5 +69,12 @@
       "executor_self_report": true,
       "validator_divergence": true
     }
+  },
+  "compression": {
+    "enabled": false,
+    "prompted_at": null,
+    "exclude_commands": [],
+    "max_output_lines": 200,
+    "emit_savings_telemetry": false
   }
 }
