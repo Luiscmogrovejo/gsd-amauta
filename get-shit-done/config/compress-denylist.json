@@ -1,0 +1,32 @@
+{
+  "_comment": "Destructive/non-idempotent command denylist for the v3.5 'The Diet' compressor. DENY-BEFORE-ALLOW: hooks/lib/compress-classify.cjs consults this BEFORE the compress-registry allowlist, so a side-effecting command is NEVER rewritten (PreToolUse) or re-run even after Phase 73 allowlists its program. Program+verb scoped: deny_all_programs = deny regardless of verb; deny_verbs = deny only these subcommands of an otherwise-allowlistable program (read-only verbs like 'git status/diff/log/show' are intentionally ABSENT so Phase 73 can allowlist them); deny_patterns = full-command regexes for verb-less side effects (curl POST, SQL, migrations). Unreadable/missing denylist => classifier passthrough-all (fail toward NO rewrite, never toward rewriting an unverifiable command). Test seam: GSD_COMPRESS_DENYLIST_PATH.",
+  "denylist_version": "1.0",
+  "deny_all_programs": ["rm", "rmdir", "mv", "cp", "dd", "shred", "truncate", "kill", "pkill", "killall", "reboot", "shutdown", "halt", "mkfs", "chmod", "chown", "ln"],
+  "deny_verbs": {
+    "git": ["push", "reset", "clean", "checkout", "switch", "restore", "commit", "merge", "rebase", "pull", "fetch", "stash", "tag", "cherry-pick", "revert", "am", "apply", "gc", "prune", "branch", "filter-branch", "worktree", "remote", "config"],
+    "docker": ["rm", "rmi", "prune", "kill", "stop", "start", "restart", "run", "exec", "build", "push", "pull", "create", "commit", "cp", "volume", "network", "system", "compose", "container", "image"],
+    "kubectl": ["delete", "apply", "create", "edit", "patch", "replace", "scale", "drain", "cordon", "uncordon", "rollout", "exec", "cp", "label", "annotate"],
+    "npm": ["publish", "install", "i", "uninstall", "ci", "update", "link", "unlink", "dedupe", "prune", "audit", "run", "exec", "rebuild"],
+    "pnpm": ["publish", "install", "add", "remove", "update", "prune", "rebuild", "run", "exec"],
+    "yarn": ["publish", "install", "add", "remove", "upgrade", "run"],
+    "pip": ["install", "uninstall"],
+    "pip3": ["install", "uninstall"],
+    "cargo": ["publish", "install", "uninstall", "run", "build"],
+    "go": ["install", "get", "mod", "clean", "run", "build"],
+    "brew": ["install", "uninstall", "upgrade", "remove", "cleanup"],
+    "apt": ["install", "remove", "purge", "upgrade"],
+    "apt-get": ["install", "remove", "purge", "upgrade"],
+    "terraform": ["apply", "destroy", "import", "taint", "untaint", "state"],
+    "systemctl": ["start", "stop", "restart", "enable", "disable", "reload", "mask", "unmask"],
+    "amauta": ["migrate"]
+  },
+  "deny_patterns": [
+    "(^|\\s)-X\\s*(POST|PUT|DELETE|PATCH)\\b",
+    "(^|\\s)(--data|--data-raw|--data-binary|--data-urlencode|-d)(=|\\s)",
+    "(^|\\s)(alembic|flyway|liquibase)\\b",
+    "(^|\\s)\\S*migrate\\b",
+    "(^|\\s)psql\\b.*(\\s-c\\b|\\s--command\\b)",
+    "\\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE)\\s",
+    "(^|\\s)(rm|shred)\\s+-\\S*[rf]"
+  ]
+}
