@@ -1,5 +1,5 @@
 ---
-version: "1.0"
+version: "1.1"
 reference_type: contract
 scope: telemetry
 ---
@@ -22,9 +22,9 @@ at the top level:
 
 | Key | Type | Description |
 |-----|------|-------------|
-| `schema_version` | string | Currently `"1.0"`. Governs the shape of the envelope and per-type payloads. |
+| `schema_version` | string | Currently `"1.1"`. Governs the shape of the envelope and per-type payloads. |
 | `event_id` | string (uuid4) | Unique id for this event, generated via `crypto.randomUUID()`. |
-| `event_type` | string | One of the 8 frozen `EVENT_TYPES` (section 2). |
+| `event_type` | string | One of the 9 frozen `EVENT_TYPES` (section 2). |
 | `ts` | string (ISO-8601 UTC) | Event creation time, `new Date().toISOString()`. |
 | `project_hash` | string (16 hex chars) | `sha256(salt + repo_basename).slice(0,16)` — see below. NEVER the raw repo/project name. |
 | `payload` | object | Per-type metadata-only body. See section 2. |
@@ -41,7 +41,7 @@ per-project across runs (same salt + same repo = same hash every time).
 
 ## 2. Event types
 
-All 8 members of the frozen `EVENT_TYPES` array
+All 9 members of the frozen `EVENT_TYPES` array
 (`get-shit-done/bin/lib/telemetry.cjs`). Each type below lists its
 `payload` shape — the envelope's other 5 keys are identical across all
 types (section 1).
@@ -123,6 +123,19 @@ consumable event).
 | `code` | string \| null | `err.code` when present (e.g. Node's `ENOENT`), else `null`. |
 | `verb` | string \| null | The CLI verb being run (`process.argv[2]`) when the fatal fired. |
 
+### `compression_run`
+
+Metadata-only record of a single wrapper compression pass (v3.5 GAIN-02).
+Carries byte COUNTS and a filter CLASS label ONLY — NEVER the command
+string, its arguments, or any command output.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `raw_bytes` | int | `Buffer.byteLength` of the child's raw stdout. A count, never the content. |
+| `compressed_bytes` | int | `Buffer.byteLength` of the compressed body (post never-worse, pre-marker). A count, never the content. |
+| `filter_id` | string | The selected FILTER module basename — a class label (`"git"`, `"test"`, ..., `"_passthrough"`), NEVER argv or the command line. |
+| `savings_pct` | number | `round((1 - compressed_bytes/raw_bytes) * 100, 1)`; `0` when `raw_bytes` is 0. |
+
 ---
 
 ## 3. Emit-point map
@@ -139,6 +152,7 @@ Wave 2 against `gsd-tools.cjs` / `gsd-amauta.cjs` HEAD).
 | `validator_verdict` | `gsd-amauta.cjs` | `cmdValidate` — gaps path (returns 2), gate-failure path (returns 1), pass/fail outcome path (daemon + direct branches) |
 | `error_class` | `gsd-amauta.cjs` | `main().catch` FATAL handler |
 | `party_session` | `services/party_session.py` | `def create` — delivered by plan 62-03 |
+| `compression_run` | `get-shit-done/bin/gsd-compress.cjs` | `main()` — metadata-only emission after a shrinking compression pass; delivered by plan 77-01-02 (v3.5 GAIN-03) |
 | `divergence_resolved` | — | RESERVED — no current writer surface; wired when a resolution surface exists (Phase 63/67) |
 
 ---
@@ -181,6 +195,14 @@ conditionally.
   major version they were not built against, rather than guessing at a
   changed shape.
 
+### Migration notes
+
+- `1.0` → `1.1`: added `compression_run` (v3.5 GAIN-02), metadata-only,
+  dual-runtime byte-identical. Additive taxonomy change — a new frozen
+  `EVENT_TYPES` member with a metadata-only payload; the envelope key set is
+  unchanged, so `1.x` consumers reading the six-key envelope keep working and
+  simply skip the unknown type.
+
 ---
 
 ## 6. Consumers
@@ -196,7 +218,7 @@ conditionally.
 
   ```json
   {
-    "schema_version": "1.0",
+    "schema_version": "1.1",
     "events": [ /* array of envelope objects, section 1 */ ]
   }
   ```

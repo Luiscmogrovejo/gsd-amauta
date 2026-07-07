@@ -48,7 +48,7 @@ if _REPO_ROOT not in sys.path:
 
 # ─── LOCKED constants (byte-identical to get-shit-done/bin/lib/telemetry.cjs) ─
 
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"
 
 EVENT_TYPES = (
     "phase_start",
@@ -59,6 +59,7 @@ EVENT_TYPES = (
     "escalation_fired",
     "party_session",
     "error_class",
+    "compression_run",
 )
 
 BUFFER_FILENAME = "telemetry-buffer.jsonl"

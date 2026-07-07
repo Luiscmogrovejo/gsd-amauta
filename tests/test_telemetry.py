@@ -109,7 +109,7 @@ def test_envelope_keys_locked(tmp_path, monkeypatch):
     assert sorted(event.keys()) == [
         "event_id", "event_type", "payload", "project_hash", "schema_version", "ts",
     ]
-    assert event["schema_version"] == "1.0" == SCHEMA_VERSION
+    assert event["schema_version"] == "1.1" == SCHEMA_VERSION
 
 
 # ═══════════════════════════ 3. Unknown event type dropped ══════════════════

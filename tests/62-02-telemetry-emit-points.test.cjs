@@ -139,7 +139,7 @@ describe('[TEL-02] phase_start emits before init.cmdInitExecutePhase runs', () =
     const events = eventsOfType(sandbox, 'phase_start');
     assert.equal(events.length, 1, `expected exactly one phase_start event, got ${events.length}`);
     assert.equal(events[0].payload.phase, '62');
-    assert.equal(events[0].schema_version, '1.0');
+    assert.equal(events[0].schema_version, '1.1');
   });
 });
 

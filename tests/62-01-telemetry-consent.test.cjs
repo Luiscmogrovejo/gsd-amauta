@@ -131,7 +131,7 @@ describe('[TEL-01] No config file: non-project cwd safety', () => {
 // ─── Case 4: ENABLE ─────────────────────────────────────────────────────────
 
 describe('[TEL-01] telemetry enable --yes', () => {
-  test('writes enabled:true + ISO consented_at + 16-hex salt; discloses all 8 event types', () => {
+  test('writes enabled:true + ISO consented_at + 16-hex salt; discloses all 9 event types', () => {
     const sandbox = makeSandbox({});
     const { stdout, status } = runCli(['telemetry', 'enable', '--yes'], sandbox);
     assert.equal(status, 0);
@@ -139,7 +139,7 @@ describe('[TEL-01] telemetry enable --yes', () => {
     const EVENT_TYPES = [
       'phase_start', 'phase_complete', 'validator_verdict',
       'divergence_filed', 'divergence_resolved', 'escalation_fired',
-      'party_session', 'error_class',
+      'party_session', 'error_class', 'compression_run',
     ];
     for (const evt of EVENT_TYPES) {
       assert.ok(stdout.includes(evt), `disclosure output must name event type '${evt}'`);

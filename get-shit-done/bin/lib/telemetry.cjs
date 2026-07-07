@@ -40,7 +40,7 @@ const { spawn } = require('child_process');
 
 // ─── LOCKED constants ───────────────────────────────────────────────────────
 
-const SCHEMA_VERSION = '1.0';
+const SCHEMA_VERSION = '1.1';
 
 const EVENT_TYPES = Object.freeze([
   'phase_start',
@@ -51,6 +51,7 @@ const EVENT_TYPES = Object.freeze([
   'escalation_fired',
   'party_session',
   'error_class',
+  'compression_run',
 ]);
 
 const BUFFER_FILENAME = 'telemetry-buffer.jsonl';
