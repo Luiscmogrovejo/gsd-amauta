@@ -1,5 +1,12 @@
 {
   "_comment": "Command->filter registry for the RTK-style output compressor (v3.5 'The Diet'). Read at runtime by get-shit-done/bin/lib/compress-filters/index.cjs and the gsd-compress.cjs wrapper. Each entry: { name (STABLE id), heads: [argv-head strings], filter: <module basename in compress-filters/>, enabled }. Phase 72 ships the FRAMEWORK with an empty entries list (default behavior = _passthrough identity). The six starter filters register here in Phase 73. registry_version bumps on any entry change. NEVER map a non-idempotent/destructive command here: the Phase 74 PreToolUse rewrite path re-runs mapped commands, so only read-only/idempotent reporting commands are eligible. Test seam: GSD_COMPRESS_REGISTRY_PATH.",
-  "registry_version": "1.0",
-  "entries": []
+  "registry_version": "1.1",
+  "entries": [
+    { "name": "git",     "heads": ["git"],                          "filter": "git",     "enabled": true },
+    { "name": "test",    "heads": ["node", "pytest", "go", "cargo"], "filter": "test",    "enabled": true },
+    { "name": "list",    "heads": ["ls", "find"],                    "filter": "list",    "enabled": true },
+    { "name": "search",  "heads": ["grep", "rg"],                    "filter": "search",  "enabled": true },
+    { "name": "docker",  "heads": ["docker"],                        "filter": "docker",  "enabled": true },
+    { "name": "generic", "heads": ["npm", "yarn", "pnpm", "pip", "pip3", "make", "gradle", "mvn", "tsc", "eslint"], "filter": "generic", "enabled": true }
+  ]
 }
