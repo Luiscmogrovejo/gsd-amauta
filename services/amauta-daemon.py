@@ -1824,8 +1824,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     clauses.append("created_at >= %s")
                     args.append(since)
                 where = " AND ".join(clauses)
-                conn = store._get_conn()
-                with conn.cursor() as cur:
+                with store._get_conn() as conn, conn.cursor() as cur:
                     cur.execute(
                         "SELECT id, agent_name, task_id, finding_type, severity, domain,"
                         " file_path, rule_id, status, content, created_at"
@@ -1865,8 +1864,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": "No database available"}, 503)
                 return
             try:
-                conn = store._get_conn()
-                with conn.cursor() as cur:
+                with store._get_conn() as conn, conn.cursor() as cur:
                     cur.execute(
                         "SELECT id, agent_name, task_id, finding_type, content, confidence, created_at"
                         " FROM agent_findings WHERE task_id = %s ORDER BY created_at DESC",
@@ -1900,8 +1898,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": "No database available"}, 503)
                 return
             try:
-                conn = store._get_conn()
-                with conn.cursor() as cur:
+                with store._get_conn() as conn, conn.cursor() as cur:
                     cur.execute(
                         "SELECT id, from_agent, to_agent, task_id, message_type, content,"
                         " response, status, operator_approved, created_at, responded_at"
@@ -1942,8 +1939,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": "No database available"}, 503)
                 return
             try:
-                conn = store._get_conn()
-                with conn.cursor() as cur:
+                with store._get_conn() as conn, conn.cursor() as cur:
                     cur.execute(
                         "SELECT agent_name,"
                         " COUNT(*) AS tasks_completed,"
@@ -1992,8 +1988,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": "No database available"}, 503)
                 return
             try:
-                conn = store._get_conn()
-                with conn.cursor() as cur:
+                with store._get_conn() as conn, conn.cursor() as cur:
                     cur.execute(
                         "SELECT id, workflow_name, step_id, task_id, phase_number,"
                         " completed_steps, context_snapshot, artifacts, decisions,"
@@ -2082,8 +2077,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 )
 
                 import psycopg2.extras as _pg_extras
-                conn = store._get_conn()
-                with conn.cursor(cursor_factory=_pg_extras.RealDictCursor) as cur:
+                with store._get_conn() as conn, conn.cursor(cursor_factory=_pg_extras.RealDictCursor) as cur:
                     cur.execute(sql, params)
                     rows = cur.fetchall()
 
@@ -3141,8 +3135,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             try:
                 import json as _json
                 body_data = _json.loads(self._read_body())
-                conn = store._get_conn()
-                with conn.cursor() as cur:
+                with store._get_conn() as conn, conn.cursor() as cur:
                     cur.execute(
                         "INSERT INTO step_handoffs"
                         " (workflow_name, step_id, task_id, phase_number,"
@@ -3434,8 +3427,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
 
                 _handoff_dict = None
                 try:
-                    conn = store._get_conn()
-                    with conn.cursor() as cur:
+                    with store._get_conn() as conn, conn.cursor() as cur:
                         cur.execute(
                             "SELECT id, workflow_name, step_id, task_id, phase_number,"
                             " completed_steps, context_snapshot, artifacts, decisions,"
@@ -3496,8 +3488,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 _new_context["complexity_score"] = _new_score
                 _new_context["chosen_phases"] = _new_phases
                 try:
-                    conn = store._get_conn()
-                    with conn.cursor() as cur:
+                    with store._get_conn() as conn, conn.cursor() as cur:
                         cur.execute(
                             "INSERT INTO step_handoffs"
                             " (workflow_name, step_id, task_id, phase_number,"
@@ -3698,8 +3689,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             else:
                 dedup_key = None
             try:
-                conn = store._get_conn()
-                with conn.cursor() as cur:
+                with store._get_conn() as conn, conn.cursor() as cur:
                     # SUBS-05 Layer-A: an open/ticketed finding with the same dedup_key
                     # deduplicates instead of inserting a second row.
                     if dedup_key is not None:
@@ -3762,8 +3752,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": "No database available"}, 503)
                 return
             try:
-                conn = store._get_conn()
-                with conn.cursor() as cur:
+                with store._get_conn() as conn, conn.cursor() as cur:
                     cur.execute(
                         "INSERT INTO agent_messages"
                         " (from_agent, to_agent, task_id, message_type, content, status, operator_approved)"
@@ -3851,8 +3840,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": "No database available"}, 503)
                 return
             try:
-                conn = store._get_conn()
-                with conn.cursor() as cur:
+                with store._get_conn() as conn, conn.cursor() as cur:
                     cur.execute(
                         "INSERT INTO agent_metrics"
                         " (agent_name, task_id, completion_time_ms, token_usage, error_count, outcome)"
@@ -3950,8 +3938,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": "No database available"}, 503)
                 return
             try:
-                conn = store._get_conn()
-                with conn.cursor() as cur:
+                with store._get_conn() as conn, conn.cursor() as cur:
                     # Build update SET clauses from provided fields
                     updates = []
                     params = []
