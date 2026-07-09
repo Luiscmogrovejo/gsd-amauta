@@ -32,6 +32,8 @@
  *   route-executor <files>             Determine executor agent for comma-separated file list
  *                                      Output: {"executor": "executor-backend"} etc.
  *   reindex [path] [--force]           Trigger rlm-service /reindex for code files in path
+ *   audit-close-loop <task-id>         Re-audit a finding:-tagged task's file → clear or reopen+divergence
+ *     [--finding-id id] [--reaudit-file path]
  *   agent-stats [--raw]                Fetch per-agent metrics summary from daemon
  *                                      Output: human-readable table (default) or JSON (--raw)
  *
@@ -3835,6 +3837,180 @@ Examples:
         deduped: dedupedCount,
       }) + '\n');
       break;
+    }
+
+    case 'audit-close-loop': {
+      // Phase 79 ROUT-05 (control half): fired on a `finding:`-tagged task's validator-pass.
+      // Deterministic control flow — the re-audit ITSELF is PLUGGABLE via --reaudit-file until the
+      // Phase 80 auditors exist. (1) resolve the task's finding:<dedup_key> tag, (2) reindex the
+      // file (FIDEL-03 freshness), (3) re-run that one rule (read from --reaudit-file), (4) decide:
+      // empty result → PATCH /api/findings/<id> {status:'cleared'}; still-present → reopen
+      // ({status:'open'}) + a divergence message. Green validator + persistent defect = a
+      // reportable mismatch — surface, never silently absorb.
+      const acGetFlag = (name) => {
+        const i = args.indexOf(name);
+        return i !== -1 && args[i + 1] !== undefined ? args[i + 1] : null;
+      };
+      const taskId = args[1] && !args[1].startsWith('--') ? args[1] : null;
+      const reauditFile = acGetFlag('--reaudit-file');
+      const tasksFileArg = acGetFlag('--tasks-file');
+      let findingId = acGetFlag('--finding-id');
+      let filePathArg = acGetFlag('--file-path');
+      let ruleIdArg = acGetFlag('--rule-id');
+      const acPort = parseInt(process.env.AMAUTA_PORT || '18799');
+
+      if (!taskId) {
+        process.stdout.write(JSON.stringify({ error: 'usage: audit-close-loop <task-id> [--finding-id id] [--reaudit-file path]' }) + '\n');
+        process.exit(1);
+      }
+
+      // ── 1. Resolve the task + its finding:<dedup_key> tag ──────────────────
+      let taskItem = null;
+      try {
+        let storeItems = [];
+        if (tasksFileArg) {
+          storeItems = (JSON.parse(fs.readFileSync(tasksFileArg, 'utf-8')).items) || [];
+        } else {
+          const pluginRoot = path.resolve(__dirname, '..', '..');
+          const dataDir = process.env.AMAUTA_DATA_DIR || path.join(pluginRoot, 'data');
+          storeItems = (JSON.parse(fs.readFileSync(path.join(dataDir, 'tasks.json'), 'utf-8')).items) || [];
+        }
+        taskItem = storeItems.find((it) => it && it.id === taskId) || null;
+      } catch (_) { taskItem = null; }
+
+      const findingTag = taskItem && Array.isArray(taskItem.tags)
+        ? taskItem.tags.find((t) => typeof t === 'string' && t.startsWith('finding:'))
+        : null;
+
+      if (!findingTag) {
+        // Only `finding:`-tagged tasks close-loop — everything else is a no-op.
+        process.stdout.write(JSON.stringify({ skipped: true, reason: 'no_finding_tag', task_id: taskId }) + '\n');
+        process.exit(0);
+      }
+
+      // dedup_key = rule_id + ':' + sha1(file_path)[:12] → rule_id is everything before the LAST ':'.
+      const dedupKey = findingTag.slice('finding:'.length);
+      const lastColon = dedupKey.lastIndexOf(':');
+      const ruleId = ruleIdArg || (lastColon > 0 ? dedupKey.slice(0, lastColon) : dedupKey);
+
+      // ── 2. Read the re-audit result (pluggable stub until Phase 80 auditors) ─
+      // Shape: { findings: [{ rule_id, file_path, id, ... }] } — from --reaudit-file in Phase 79.
+      let reauditFindings = [];
+      if (reauditFile) {
+        try {
+          const parsed = JSON.parse(fs.readFileSync(reauditFile, 'utf-8'));
+          reauditFindings = Array.isArray(parsed) ? parsed : (parsed.findings || []);
+        } catch (e) {
+          process.stdout.write(JSON.stringify({ error: `failed to read --reaudit-file: ${e.message}`, task_id: taskId }) + '\n');
+          process.exit(1);
+        }
+      } else {
+        // No injected re-audit source and the Phase 80 auditors don't exist yet → cannot decide.
+        process.stdout.write(JSON.stringify({
+          error: 'no re-audit source — pass --reaudit-file (Phase 80 auditors not yet available)',
+          task_id: taskId, finding_tag: findingTag,
+        }) + '\n');
+        process.exit(1);
+      }
+
+      // Derive file_path (for reindex + the divergence message) best-effort from the re-audit rows.
+      if (!filePathArg && reauditFindings.length > 0 && reauditFindings[0].file_path) {
+        filePathArg = reauditFindings[0].file_path;
+      }
+      const filePath = filePathArg || null;
+
+      // Resolve the finding UUID to PATCH: explicit flag wins, else a matching re-audit row's id.
+      if (!findingId) {
+        const match = reauditFindings.find((f) => f && f.id && (!ruleId || !f.rule_id || f.rule_id === ruleId));
+        if (match) findingId = String(match.id);
+      }
+
+      // ── 3. Reindex the file so the re-audit reads current code (best-effort, non-fatal) ─────────
+      let reindexed = false;
+      if (filePath) {
+        try {
+          const http = require('http');
+          const body = JSON.stringify({ path: filePath, force: true });
+          await new Promise((resolve) => {
+            const req = http.request({
+              hostname: '127.0.0.1',
+              port: parseInt(process.env.GSD_RLM_PORT || '18798'),
+              path: '/reindex', method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+            }, (res) => { res.on('data', () => {}); res.on('end', () => { reindexed = res.statusCode < 400; resolve(); }); });
+            req.on('error', () => resolve()); // reindex down → warn (below), continue
+            req.write(body); req.end();
+          });
+        } catch (_) { reindexed = false; }
+      }
+      if (!reindexed) {
+        process.stderr.write(`[audit-close-loop] warning: reindex of ${filePath || '(unknown file)'} skipped/failed — re-audit may read a stale index\n`);
+      }
+
+      // ── 4. Re-run that ONE rule: filter the re-audit result to this rule_id ─────────────────────
+      const stillPresent = reauditFindings.filter((f) => f && (!ruleId || !f.rule_id || f.rule_id === ruleId));
+
+      // Shared daemon PATCH /api/findings/<id> helper (mirrors the findings-to-plan http idiom).
+      const _patchFinding = async (id, status) => {
+        if (!id) return { ok: false, daemon: null, reason: 'no_finding_id' };
+        const http = require('http');
+        const body = JSON.stringify({ status });
+        return await new Promise((resolve) => {
+          const req = http.request({
+            hostname: '127.0.0.1', port: acPort,
+            path: `/api/findings/${encodeURIComponent(id)}`, method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+          }, (res) => {
+            let data = ''; res.on('data', (c) => { data += c; });
+            res.on('end', () => resolve({ ok: res.statusCode < 400, daemon: true, status: res.statusCode, body: data }));
+          });
+          req.on('error', () => resolve({ ok: false, daemon: false }));
+          req.write(body); req.end();
+        });
+      };
+
+      // ── 5. Decision ────────────────────────────────────────────────────────
+      if (stillPresent.length === 0) {
+        // Defect GONE → clear the finding.
+        const res = await _patchFinding(findingId, 'cleared');
+        const out = { cleared: true, finding_id: findingId, rule_id: ruleId, task_id: taskId };
+        if (res.daemon === false) { out.daemon = false; }
+        process.stdout.write(JSON.stringify(out) + '\n');
+        // Daemon unreachable → we could NOT persist the clear → do not silently succeed.
+        process.exit(res.daemon === false ? 2 : 0);
+      } else {
+        // Defect STILL PRESENT after a passing validator → reopen + a reportable divergence.
+        const patchRes = await _patchFinding(findingId, 'open');
+        const divergenceContent =
+          `validator passed but defect persists — validator/finding divergence (rule ${ruleId} at ${filePath || 'unknown'})`;
+        // Emit the divergence as an operator-gated ASK_QUESTION (best-effort — printed regardless).
+        let messagePosted = false;
+        try {
+          const http = require('http');
+          const mbody = JSON.stringify({
+            from_agent: 'remediation-router', to_agent: 'operator',
+            task_id: taskId, message_type: 'ASK_QUESTION', content: divergenceContent,
+          });
+          await new Promise((resolve) => {
+            const req = http.request({
+              hostname: '127.0.0.1', port: acPort,
+              path: '/api/messages', method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(mbody) },
+            }, (res) => { res.on('data', () => {}); res.on('end', () => { messagePosted = res.statusCode < 400; resolve(); }); });
+            req.on('error', () => resolve());
+            req.write(mbody); req.end();
+          });
+        } catch (_) { messagePosted = false; }
+        const out = {
+          reopened: true, divergence: true, finding_id: findingId, rule_id: ruleId,
+          task_id: taskId, content: divergenceContent, message_posted: messagePosted,
+        };
+        if (patchRes.daemon === false) { out.daemon = false; }
+        process.stdout.write(JSON.stringify(out) + '\n');
+        process.stderr.write(`[audit-close-loop] DIVERGENCE: ${divergenceContent}\n`);
+        // Surface, never absorb: a green validator + a persistent defect is a non-zero condition.
+        process.exit(1);
+      }
     }
 
     case 'reindex': {
