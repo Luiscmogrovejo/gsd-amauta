@@ -36,9 +36,49 @@ function compressRg(objs, stdout) {
   return out.length < stdout.length ? out : stdout;
 }
 
+// Single-file `grep -n` (`lineno:content`, no path): no per-file grouping is meaningful
+// because there is exactly one implicit file. Report the match count as matches (NOT files)
+// and keep the byte-identical dedup `(×N)` collapse + raw escape hatch.
+function compressGrepSingleStream(lines, totalMatches, stdout) {
+  const dedupeOrder = [];
+  const dedupeCounts = new Map(); // fullLine -> n
+  for (const line of lines) {
+    if (!dedupeCounts.has(line)) dedupeOrder.push(line);
+    dedupeCounts.set(line, (dedupeCounts.get(line) || 0) + 1);
+  }
+  const repeats = dedupeOrder
+    .map((l) => [l, dedupeCounts.get(l)])
+    .filter(([, n]) => n > 1)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, TOP_DEDUPES)
+    .map(([l, n]) => `${l} (×${n})`);
+
+  const parts = [`search: ${totalMatches} matches (single file/stream)`];
+  if (repeats.length) parts.push(repeats.join('\n'));
+  parts.push(`[gsd-compress] ${totalMatches} matches — raw: grep`);
+  const out = parts.join('\n') + '\n';
+  return out.length < stdout.length ? out : stdout;
+}
+
 // grep text: lines shaped `path:lineno:content` / `path:content` / `path:count`.
 // Group by the pre-first-colon file; dedup byte-identical full lines with (×N).
 function compressGrep(lines, stdout) {
+  const totalMatches = lines.length;
+
+  // Single-file `grep -n` emits `lineno:content` with NO path — the pre-first-colon
+  // token is a bare LINE NUMBER, not a file. Grouping by it fabricates one "file" per
+  // distinct line number (`31 files, 31 matches` for 31 lines in ONE file). Detect the
+  // numeric-first-field case and collapse to a single stream instead of per-file groups.
+  // Multi-file `path:line:content` (a real path is present) still runs the per-file path.
+  let numericFirst = 0;
+  for (const line of lines) {
+    const idx = line.indexOf(':');
+    if (idx > 0 && /^\d+$/.test(line.slice(0, idx))) numericFirst++;
+  }
+  if (totalMatches > 0 && numericFirst >= totalMatches * 0.8) {
+    return compressGrepSingleStream(lines, totalMatches, stdout);
+  }
+
   const fileOrder = [];
   const fileMap = new Map(); // file -> { count, lineMap: Map(fullLine -> n) }
   const dedupeOrder = [];
@@ -54,7 +94,6 @@ function compressGrep(lines, stdout) {
     if (!dedupeCounts.has(line)) dedupeOrder.push(line);
     dedupeCounts.set(line, (dedupeCounts.get(line) || 0) + 1);
   }
-  const totalMatches = lines.length;
   const sortedFiles = [...fileMap.entries()].sort((a, b) => b[1].count - a[1].count);
   const fileSummary = sortedFiles.slice(0, TOP_FILES).map(([f, r]) => `${f} (${r.count})`);
   const moreFiles = sortedFiles.length > TOP_FILES ? `\n… ${sortedFiles.length - TOP_FILES} more files` : '';
