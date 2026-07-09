@@ -12,6 +12,7 @@ Usage:
     python3 services/amauta-daemon.py run     # Run in foreground (debug)
 """
 
+import hashlib
 import http.server
 import json
 import os
@@ -3594,8 +3595,12 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
         # POST /api/handoff  — generate structured handoff JSON via handoff.cjs.
 
         if path == "/api/findings":
-            _VALID_FINDING_TYPES = {"observation", "decision", "warning", "blocker"}
-            required = ["agent_name", "task_id", "finding_type", "content"]
+            # Phase 78 SUBS-03/05: audit-aware write. 'audit' joins the four legacy
+            # finding_types (additive); task_id is now optional (standalone audit
+            # findings predate any task); severity + the audit columns are persisted;
+            # dedup_key is computed server-side and enforced at write time.
+            _VALID_FINDING_TYPES = {"observation", "decision", "warning", "blocker", "audit"}
+            required = ["agent_name", "finding_type", "content"]
             missing = [f for f in required if not body.get(f)]
             if missing:
                 self._send_json({"error": f"Missing required fields: {', '.join(missing)}"}, 400)
@@ -3609,18 +3614,57 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             if not store:
                 self._send_json({"error": "No database available"}, 503)
                 return
+            # SUBS-03: optional audit fields (all default None); task_id may now be NULL.
+            task_id = body.get("task_id")
+            severity = body.get("severity")
+            rule_id = body.get("rule_id")
+            domain = body.get("domain")
+            file_path = body.get("file_path")
+            evidence = body.get("evidence")
+            suggested_fix = body.get("suggested_fix")
+            audit_run_id = body.get("audit_run_id")
+            status = body.get("status", "open")
+            # SUBS-05: dedup_key computed SERVER-SIDE (never trusted from the client),
+            # only when both rule_id and file_path are present.
+            if rule_id and file_path:
+                dedup_key = f"{rule_id}:{hashlib.sha1(file_path.encode('utf-8')).hexdigest()}"
+            else:
+                dedup_key = None
             try:
                 conn = store._get_conn()
                 with conn.cursor() as cur:
+                    # SUBS-05 Layer-A: an open/ticketed finding with the same dedup_key
+                    # deduplicates instead of inserting a second row.
+                    if dedup_key is not None:
+                        cur.execute(
+                            "SELECT id FROM agent_findings WHERE dedup_key = %s AND status IN ('open','ticketed')"
+                            " ORDER BY created_at DESC LIMIT 1",
+                            (dedup_key,),
+                        )
+                        existing = cur.fetchone()
+                        if existing:
+                            self._send_json({"deduped": True, "created": False, "existing_id": str(existing[0])}, 200)
+                            return
                     cur.execute(
-                        "INSERT INTO agent_findings (agent_name, task_id, finding_type, content, confidence)"
-                        " VALUES (%s, %s, %s, %s, %s) RETURNING id, created_at",
+                        "INSERT INTO agent_findings"
+                        " (agent_name, task_id, finding_type, content, confidence, severity,"
+                        "  rule_id, domain, file_path, evidence, suggested_fix, status, audit_run_id, dedup_key)"
+                        " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id, created_at",
                         (
                             body["agent_name"],
-                            body["task_id"],
+                            task_id,
                             body["finding_type"],
                             body["content"],
                             float(body.get("confidence", 0.8)),
+                            severity,
+                            rule_id,
+                            domain,
+                            file_path,
+                            evidence,
+                            suggested_fix,
+                            status,
+                            audit_run_id,
+                            dedup_key,
                         ),
                     )
                     row = cur.fetchone()
