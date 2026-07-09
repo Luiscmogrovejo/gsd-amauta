@@ -88,10 +88,25 @@
     "post_milestone_reindex": true
   },
   "telemetry": {
-    "enabled": false,
-    "consented_at": null,
+    "enabled": true,
+    "consented_at": "2026-07-07T02:45:16.829Z",
     "prompted_at": "2026-07-03T14:42:48.854Z",
     "salt": "05084410d91d3bc7",
     "sink_url": null
+  },
+  "compression": {
+    "enabled": false,
+    "prompted_at": null,
+    "exclude_commands": [],
+    "max_output_lines": 200,
+    "emit_savings_telemetry": false
+  },
+  "audit": {
+    "routing": {
+      "phase_count": 8,
+      "phase_blockers": 3,
+      "milestone_domains": 3,
+      "milestone_critical_arch": true
+    }
   }
 }
