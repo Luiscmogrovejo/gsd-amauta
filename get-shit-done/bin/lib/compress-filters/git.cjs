@@ -131,9 +131,111 @@ function compressOneline(recs) {
   return lines.join('\n');
 }
 
+/**
+ * Compress plain human `git status` output (no --porcelain flag) into the same
+ * grouped count summary shape as `compressStatus`. Detected from the section
+ * headers "Changes to be committed:" / "Changes not staged for commit:" /
+ * "Untracked files:"; entry lines are TAB-indented (hint lines are 2-space
+ * indented and skipped). Preserves the exact changed-file count and per-state
+ * counts, with a `raw: git status` escape hatch. Returns `stdout` unchanged if
+ * nothing was classified or the summary is not smaller (local never-worse).
+ *
+ * @param {string} stdout - raw human `git status` output.
+ * @returns {string} summary + escape-hatch line, or `stdout` (raw fallback).
+ */
+function compressHumanStatus(stdout) {
+  const lines = stdout.split('\n');
+  let section = null; // 'staged' | 'unstaged' | 'untracked'
+  let staged = 0;
+  let unstaged = 0;
+  let untracked = 0;
+  const byDir = Object.create(null);
+  const addPath = (p) => {
+    if (p) {
+      const d = topSegment(p);
+      byDir[d] = (byDir[d] || 0) + 1;
+    }
+  };
+  for (const line of lines) {
+    if (line.startsWith('Changes to be committed:')) { section = 'staged'; continue; }
+    if (line.startsWith('Changes not staged for commit:')) { section = 'unstaged'; continue; }
+    if (line.startsWith('Untracked files:')) { section = 'untracked'; continue; }
+    if (line[0] !== '\t') continue; // skip branch/hint/blank lines
+    const content = line.slice(1);
+    if (section === 'untracked') {
+      untracked++;
+      addPath(content);
+    } else if (section === 'staged' || section === 'unstaged') {
+      const m = content.match(/^(new file|modified|deleted|renamed|copied|typechange):\s+(.+)$/);
+      if (!m) continue;
+      let p = m[2];
+      const arrow = p.indexOf(' -> '); // renamed/copied: take the NEW path
+      if (arrow !== -1) p = p.slice(arrow + 4);
+      if (section === 'staged') staged++; else unstaged++;
+      addPath(p);
+    }
+  }
+  const total = staged + unstaged + untracked;
+  if (total === 0) return stdout;
+  const parts = [];
+  if (staged) parts.push(`${staged} staged`);
+  if (unstaged) parts.push(`${unstaged} unstaged`);
+  if (untracked) parts.push(`${untracked} untracked`);
+  const groups = topGroups(byDir, 5);
+  const out =
+    `git status: ${total} changed (${parts.join(', ')}) — ${groups}\n` +
+    `[gsd-compress] ${total} files — raw: git status`;
+  return out.length < stdout.length ? out : stdout;
+}
+
+/**
+ * Compress plain human `git diff` output into a churn summary. Detected from
+ * `diff --git ` header lines; counts files, hunks, additions/deletions (guarding
+ * the `+++ `/`--- ` file headers) and attributes churn to each file's b-path
+ * top-dir. Preserves the exact file count with a `raw: git diff` escape hatch.
+ * Returns `stdout` unchanged if no file headers or the summary is not smaller.
+ *
+ * @param {string} stdout - raw human `git diff` output.
+ * @returns {string} summary + escape-hatch line, or `stdout` (raw fallback).
+ */
+function compressHumanDiff(stdout) {
+  const lines = stdout.split('\n');
+  let files = 0;
+  let hunks = 0;
+  let adds = 0;
+  let dels = 0;
+  let curDir = null;
+  const churn = Object.create(null);
+  for (const line of lines) {
+    if (line.startsWith('diff --git ')) {
+      files++;
+      const m = line.match(/ b\/(.*)$/);
+      curDir = m ? topSegment(m[1]) : '(root)';
+      continue;
+    }
+    if (line.startsWith('@@ ')) { hunks++; continue; }
+    if (line.startsWith('+++ ') || line.startsWith('--- ')) continue;
+    if (line[0] === '+') {
+      adds++;
+      if (curDir) churn[curDir] = (churn[curDir] || 0) + 1;
+    } else if (line[0] === '-') {
+      dels++;
+      if (curDir) churn[curDir] = (churn[curDir] || 0) + 1;
+    }
+  }
+  if (files === 0) return stdout;
+  const top = topGroups(churn, 5);
+  const out =
+    `git diff: ${files} files, +${adds}/-${dels} across ${hunks} hunks — top: ${top}\n` +
+    `[gsd-compress] ${files} files — raw: git diff`;
+  return out.length < stdout.length ? out : stdout;
+}
+
 const RE_STATUS = /^[12u?!] /;
 const RE_NUMSTAT = /^(-|\d+)\t(-|\d+)\t/;
 const RE_ONELINE = /^[0-9a-f]{7,40} /;
+const RE_DIFF_HEADER = /^diff --git /m;
+const RE_STATUS_SECTION = /^(Changes to be committed:|Changes not staged for commit:|Untracked files:)/m;
 
 /**
  * Detect the git structured format of `stdout` and compress it to a grouped
@@ -152,6 +254,18 @@ const RE_ONELINE = /^[0-9a-f]{7,40} /;
 function transform(stdout /* , stderr, code */) {
   if (typeof stdout !== 'string') return '';
   try {
+    // Human-format branches run FIRST, anchored on markers the structured
+    // porcelain/numstat/oneline formats never emit (so no structured sample is
+    // re-routed). Diff is tested first (most specific anchor). Each helper
+    // returns `stdout` unchanged on a parse miss or a non-shrinking summary.
+    if (RE_DIFF_HEADER.test(stdout)) {
+      const out = compressHumanDiff(stdout);
+      return typeof out === 'string' ? out : stdout;
+    }
+    if (RE_STATUS_SECTION.test(stdout)) {
+      const out = compressHumanStatus(stdout);
+      return typeof out === 'string' ? out : stdout;
+    }
     // Drop porcelain header lines ("# branch.oid ...") before counting.
     const recs = splitRecords(stdout).filter((r) => !r.startsWith('# '));
     const nonHeader = recs.length;
