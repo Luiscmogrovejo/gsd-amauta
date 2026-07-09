@@ -32,8 +32,10 @@
  *   route-executor <files>             Determine executor agent for comma-separated file list
  *                                      Output: {"executor": "executor-backend"} etc.
  *   reindex [path] [--force]           Trigger rlm-service /reindex for code files in path
+ *   audit [domain]                     Run a domain's (or all) read-only detects → POST findings, report sweep
+ *     [--scope f1,f2] [--dry-run] [--port N]   --dry-run prints findings JSON without POSTing (daemon-optional)
  *   audit-close-loop <task-id>         Re-audit a finding:-tagged task's file → clear or reopen+divergence
- *     [--finding-id id] [--reaudit-file path]
+ *     [--finding-id id] [--reaudit-file path] [--file-path path]
  *   agent-stats [--raw]                Fetch per-agent metrics summary from daemon
  *                                      Output: human-readable table (default) or JSON (--raw)
  *
@@ -2689,6 +2691,53 @@ function readAuditRouting(cwd) {
 }
 
 /**
+ * resolvePhaseBlastRadius(cwd, phaseArg) — best-effort resolve the just-closed phase's
+ * blast-radius files (the LOOP-02 on-phase-close audit scope). Locates the phase directory
+ * by prefix, reads every `*-PLAN.md`, and unions the `files_modified:` / `files_created:`
+ * frontmatter lists (the aggregate manifest). Returns absolute paths to files that exist on
+ * disk. PURE + advisory: any failure returns `[]` (the hook skips) — it NEVER throws, so it
+ * can never block a phase completion.
+ *
+ * @param {string} cwd - project root
+ * @param {string} phaseArg - the phase number/name being completed (e.g. "83")
+ * @returns {string[]} absolute paths of existing blast-radius files (possibly empty)
+ */
+function resolvePhaseBlastRadius(cwd, phaseArg) {
+  const rels = new Set();
+  try {
+    const phasesDir = path.join(cwd, '.planning', 'phases');
+    const pfx = String(phaseArg == null ? '' : phaseArg);
+    if (!pfx) return [];
+    const dirs = fs.readdirSync(phasesDir, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name);
+    const match = dirs.find((d) => d === pfx || d.startsWith(pfx + '-') || d.split('-')[0] === pfx);
+    if (!match) return [];
+    const phaseDir = path.join(phasesDir, match);
+    const planFiles = fs.readdirSync(phaseDir)
+      .filter((f) => f.endsWith('-PLAN.md') || f === 'PLAN.md');
+    const listRe = /(?:files_modified|files_created|files-modified|files-created):[ \t]*\n((?:[ \t]*-[ \t]*[^\n]+\n?)*)/g;
+    for (const pf of planFiles) {
+      let content;
+      try { content = fs.readFileSync(path.join(phaseDir, pf), 'utf-8'); } catch (_) { continue; }
+      let m;
+      while ((m = listRe.exec(content)) !== null) {
+        for (const line of m[1].split('\n')) {
+          const item = line.replace(/^[ \t]*-[ \t]*/, '').trim();
+          if (item && !item.startsWith('[')) rels.add(item);
+        }
+      }
+    }
+  } catch (_) { return []; }
+  const out = [];
+  for (const rel of rels) {
+    const abs = path.isAbsolute(rel) ? rel : path.join(cwd, rel);
+    try { if (fs.statSync(abs).isFile()) out.push(abs); } catch (_) { /* skip missing */ }
+  }
+  return out;
+}
+
+/**
  * _isBlockerFinding(f) — a finding counts as a blocker when it is a declared blocker at
  * error/critical severity, or any critical-severity finding.
  */
@@ -3221,6 +3270,33 @@ async function main() {
         // returns control to this call site — code placed after the call
         // is unreachable dead code on every path (success AND error).
         _telemetryEmit('phase_complete', { phase: String(args[2] || '') });
+        // Phase 83 LOOP-02 (TK-1877): ADVISORY, NON-BLOCKING on-phase-close audit.
+        // Runs the engine's read-only detects over the just-closed phase's blast
+        // radius and files findings to the substrate. Config-gated by
+        // `audit.on_phase_close` (default ON when absent; suppressible by setting
+        // it false — this hook NEVER writes config). Placed AFTER _telemetryEmit
+        // and BEFORE cmdPhaseComplete (which output()/error() → process.exit() and
+        // never returns), identical attempt-semantics to the telemetry emit above.
+        // The ENTIRE hook is wrapped in try/catch that swallows EVERY error — it
+        // files findings, it is never a gate: a down daemon / unresolvable blast
+        // radius / any detect error is a swallowed no-op. It MUST NOT throw and
+        // MUST NOT change the phase-complete exit code.
+        try {
+          let onPhaseClose = true; // default on when the flag/config is absent
+          try {
+            const _cfg = JSON.parse(fs.readFileSync(path.join(cwd, '.planning', 'config.json'), 'utf-8'));
+            if (_cfg && _cfg.audit && _cfg.audit.on_phase_close === false) onPhaseClose = false;
+          } catch (_) { onPhaseClose = true; }
+          if (onPhaseClose) {
+            const _blastRadius = resolvePhaseBlastRadius(cwd, args[2]);
+            if (_blastRadius.length > 0) {
+              const _auditRunner = require('./lib/audit-runner.cjs');
+              // Best-effort POST; runAudit's http is timeout-bounded and resolves
+              // (never rejects) when the daemon is down → advisory no-op.
+              await _auditRunner.runAudit(null, { files: _blastRadius, post: true });
+            }
+          }
+        } catch (_) { /* advisory — swallow every error, NEVER block the phase */ }
         phase.cmdPhaseComplete(cwd, args[2], raw);
       } else {
         error('Unknown phase subcommand. Available: next-decimal, add, insert, remove, complete');
@@ -3697,6 +3773,70 @@ Examples:
       break;
     }
 
+    case 'audit': {
+      // Phase 83 LOOP-01 (TK-1877): the on-demand `/amauta:audit [domain]` verb.
+      // Drives the read-only audit-runner engine over a domain's (or all domains')
+      // documented detects, POSTs each hit as finding_type='audit' to the Phase-78
+      // substrate, then GETs the SUBS-04 sweep to report what landed. READ-ONLY —
+      // it never writes/patches code. --dry-run prints the detected findings JSON
+      // without POSTing (daemon-optional); a down daemon is reported, never fatal.
+      const auditRunner = require('./lib/audit-runner.cjs');
+      const avGetFlag = (name) => {
+        const i = args.indexOf(name);
+        return i !== -1 && args[i + 1] !== undefined ? args[i + 1] : null;
+      };
+      const auditDomain = args[1] && !args[1].startsWith('--') ? args[1] : null;
+      const scopeRaw = avGetFlag('--scope');
+      const dryRun = args.includes('--dry-run');
+      const avPort = parseInt(avGetFlag('--port') || process.env.AMAUTA_PORT || '18799', 10);
+      const scope = scopeRaw ? scopeRaw.split(',').filter(Boolean) : null;
+
+      // Engine run (pure detect + optional POST). runAudit resolves --scope files
+      // for per-file detects; repo-scope detects (agentic-flow) inspect the tree.
+      const { findings, posted } = await auditRunner.runAudit(auditDomain, {
+        scope, post: !dryRun, port: avPort,
+      });
+
+      if (dryRun) {
+        process.stdout.write(JSON.stringify({
+          domain: auditDomain || 'all', dry_run: true, detected: findings.length, findings,
+        }) + '\n');
+        process.exit(0);
+      }
+
+      // Report the SUBS-04 sweep: GET /api/findings?status=open&type=audit (domain-filtered).
+      const _http = require('http');
+      const sweepQs = ['status=open', 'type=audit'];
+      if (auditDomain) sweepQs.push(`domain=${encodeURIComponent(auditDomain)}`);
+      const openFindings = await new Promise((resolve) => {
+        const req = _http.request({
+          hostname: '127.0.0.1', port: avPort,
+          path: `/api/findings?${sweepQs.join('&')}`, method: 'GET',
+        }, (res) => {
+          let data = '';
+          res.on('data', (c) => { data += c; });
+          res.on('end', () => {
+            try { const p = JSON.parse(data); resolve(Array.isArray(p) ? p : (p.findings || [])); }
+            catch { resolve(null); }
+          });
+        });
+        req.on('error', () => resolve(null));
+        req.end();
+      });
+
+      if (openFindings === null) {
+        // Substrate down — report the detection, note the daemon was unreachable.
+        process.stdout.write(JSON.stringify({
+          domain: auditDomain || 'all', detected: findings.length, posted: 0, daemon: false,
+        }) + '\n');
+        process.exit(0);
+      }
+      process.stdout.write(JSON.stringify({
+        domain: auditDomain || 'all', detected: findings.length, posted, open_findings: openFindings,
+      }) + '\n');
+      process.exit(0);
+    }
+
     case 'findings-to-plan': {
       // Phase 79 ROUT-01/02/03/04: read open findings → route (config-driven severity table) →
       // synthesize a PLAN.md for the FIDEL-gated plan-to-tasks path; phase/milestone routes are
@@ -3893,8 +4033,12 @@ Examples:
       const lastColon = dedupKey.lastIndexOf(':');
       const ruleId = ruleIdArg || (lastColon > 0 ? dedupKey.slice(0, lastColon) : dedupKey);
 
-      // ── 2. Read the re-audit result (pluggable stub until Phase 80 auditors) ─
-      // Shape: { findings: [{ rule_id, file_path, id, ... }] } — from --reaudit-file in Phase 79.
+      // ── 2. Read the re-audit result ─────────────────────────────────────────
+      // Shape: { findings: [{ rule_id, file_path, id, ... }] }. Two sources, in order:
+      //   (a) --reaudit-file (explicit injection — backward-compatible Phase-79 seam, still wins).
+      //   (b) Phase 83 LOOP-03 (TK-1877): the auditors now EXIST → fall back to the engine's
+      //       narrow single-rule re-run reauditFile(ruleId, filePath) on the resolved target file.
+      // When neither an explicit file nor a resolvable target file is available → clear error.
       let reauditFindings = [];
       if (reauditFile) {
         try {
@@ -3904,10 +4048,20 @@ Examples:
           process.stdout.write(JSON.stringify({ error: `failed to read --reaudit-file: ${e.message}`, task_id: taskId }) + '\n');
           process.exit(1);
         }
+      } else if (filePathArg) {
+        // Engine-backed narrow re-audit: run ONLY this finding's rule on its file.
+        // A fixed file yields [] → cleared; a still-broken file yields the hit → reopen+divergence.
+        try {
+          const auditRunner = require('./lib/audit-runner.cjs');
+          reauditFindings = auditRunner.reauditFile(ruleId, filePathArg);
+        } catch (e) {
+          process.stdout.write(JSON.stringify({ error: `engine re-audit failed: ${e.message}`, task_id: taskId }) + '\n');
+          process.exit(1);
+        }
       } else {
-        // No injected re-audit source and the Phase 80 auditors don't exist yet → cannot decide.
+        // No explicit --reaudit-file AND no resolvable target file → cannot re-audit.
         process.stdout.write(JSON.stringify({
-          error: 'no re-audit source — pass --reaudit-file (Phase 80 auditors not yet available)',
+          error: 'no re-audit source — pass --reaudit-file, or --file-path for the engine-backed narrow re-audit (cannot re-audit without a target file)',
           task_id: taskId, finding_tag: findingTag,
         }) + '\n');
         process.exit(1);
