@@ -3977,6 +3977,66 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": _safe_error(e)}, 500)
             return
 
+        # ─── Findings PATCH route (Phase 79 ROUT-05) ────────────────────────────
+        #
+        # PATCH /api/findings/:id — transition a finding's status for the
+        # re-audit close-loop. Body: {"status": "open"|"ticketed"|"fixed"|
+        # "cleared"|"wontfix", "ticket_id": "..."}. Parameterized whitelist SET
+        # (status, ticket_id); 404 when the id is absent. Distinct from the GET
+        # /api/findings sweep (different method + handler — no collision).
+
+        if path.startswith("/api/findings/"):
+            finding_id = path[len("/api/findings/"):]
+            if not finding_id:
+                self._send_json({"error": "finding id required in path"}, 400)
+                return
+            _VALID_FINDING_STATUSES = {"open", "ticketed", "fixed", "cleared", "wontfix"}
+            new_status = body.get("status")
+            if new_status and new_status not in _VALID_FINDING_STATUSES:
+                self._send_json({
+                    "error": f"status must be one of: {', '.join(sorted(_VALID_FINDING_STATUSES))}"
+                }, 400)
+                return
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
+                return
+            try:
+                with store._get_conn() as conn, conn.cursor() as cur:
+                    # Build update SET clauses from a fixed whitelist; every
+                    # value binds as a %s param (parameterized-SQL-only).
+                    updates = []
+                    params = []
+                    if new_status:
+                        updates.append("status = %s")
+                        params.append(new_status)
+                    if "ticket_id" in body:
+                        updates.append("ticket_id = %s")
+                        params.append(body["ticket_id"])
+                    if not updates:
+                        self._send_json({"error": "No updatable fields provided"}, 400)
+                        return
+                    params.append(finding_id)
+                    cur.execute(
+                        f"UPDATE agent_findings SET {', '.join(updates)}"
+                        f" WHERE id = %s RETURNING id, status, ticket_id",
+                        params,
+                    )
+                    row = cur.fetchone()
+                    conn.commit()
+                if not row:
+                    self._send_json({"error": "finding not found"}, 404)
+                    return
+                self._send_json({
+                    "id": str(row[0]),
+                    "status": row[1],
+                    "ticket_id": row[2],
+                    "updated": True,
+                })
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
         self._send_json({"error": f"Unknown PATCH route: {path}"}, 404)
 
     # ─── DELETE routes (Phase 10 LEARN-05) ───────────
