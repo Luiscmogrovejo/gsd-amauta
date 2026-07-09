@@ -3272,15 +3272,14 @@ async function main() {
         _telemetryEmit('phase_complete', { phase: String(args[2] || '') });
         // Phase 83 LOOP-02 (TK-1877): ADVISORY, NON-BLOCKING on-phase-close audit.
         // Runs the engine's read-only detects over the just-closed phase's blast
-        // radius and files findings to the substrate. Config-gated by
-        // `audit.on_phase_close` (default ON when absent; suppressible by setting
-        // it false — this hook NEVER writes config). Placed AFTER _telemetryEmit
-        // and BEFORE cmdPhaseComplete (which output()/error() → process.exit() and
-        // never returns), identical attempt-semantics to the telemetry emit above.
-        // The ENTIRE hook is wrapped in try/catch that swallows EVERY error — it
-        // files findings, it is never a gate: a down daemon / unresolvable blast
-        // radius / any detect error is a swallowed no-op. It MUST NOT throw and
-        // MUST NOT change the phase-complete exit code.
+        // radius and files findings to the substrate. It is config-gated (default
+        // ON when the flag is absent; suppressible by setting it false — this hook
+        // never writes config), placed AFTER the telemetry emit and BEFORE the
+        // completion call below, with identical attempt-semantics. The ENTIRE hook
+        // is wrapped in try/catch that swallows EVERY failure — it files findings,
+        // it is never a gate: a down daemon / unresolvable blast radius / any
+        // detect fault is a swallowed no-op. It never throws and never changes the
+        // phase-complete exit code.
         try {
           let onPhaseClose = true; // default on when the flag/config is absent
           try {
@@ -4000,7 +3999,7 @@ Examples:
       const acPort = parseInt(process.env.AMAUTA_PORT || '18799');
 
       if (!taskId) {
-        process.stdout.write(JSON.stringify({ error: 'usage: audit-close-loop <task-id> [--finding-id id] [--reaudit-file path]' }) + '\n');
+        process.stdout.write(JSON.stringify({ error: 'usage: audit-close-loop <task-id> [--finding-id id] [--reaudit-file path] [--file-path path]' }) + '\n');
         process.exit(1);
       }
 
