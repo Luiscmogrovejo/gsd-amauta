@@ -1685,7 +1685,11 @@ async function planToTasks(planFilePath, opts) {
   const storyCriteria = storyCriteriaMatch ? storyCriteriaMatch[1].trim() : 'Plan tasks complete.';
 
   // ── Extract acceptance_criteria text for each task ───────────────────────
+  // Also extract an optional per-task <finding_tag> (ROUT-04): a `finding:<dedup_key>`
+  // tag emitted by the remediation router so the created task carries the finding identity for
+  // future route-time dedup. Absent → tag string is byte-identical to the pre-ROUT behavior.
   const taskCriteriaMap = {};
+  const taskFindingTagMap = {};
   const taskBlockRe = /<task\s+id="([^"]+)">([\s\S]*?)<\/task>/gi;
   let tmatch;
   while ((tmatch = taskBlockRe.exec(planContent)) !== null) {
@@ -1701,6 +1705,14 @@ async function planToTasks(planFilePath, opts) {
       taskCriteriaMap[tid] = lines.length > 0 ? lines : [acMatch[1].trim()];
     } else {
       taskCriteriaMap[tid] = [];
+    }
+    const ftMatch = tbody.match(/<finding_tag>([\s\S]*?)<\/finding_tag>/i);
+    if (ftMatch) {
+      const ft = ftMatch[1].trim();
+      // Only accept a well-formed finding:<key> tag; ignore anything else (defensive).
+      if (ft.startsWith('finding:') && ft.length > 'finding:'.length) {
+        taskFindingTagMap[tid] = ft;
+      }
     }
   }
 
@@ -1818,6 +1830,12 @@ async function planToTasks(planFilePath, opts) {
     const criteria = taskCriteriaMap[task.id] || [];
     const criteriaStr = criteria.length > 0 ? criteria.join(' | ') : task.title;
 
+    // ROUT-04: append an optional finding:<dedup_key> tag so the created task carries the
+    // finding identity. Absent → byte-identical to the pre-ROUT tag string.
+    const _baseTags = `plan:${planId},task:${task.id}`;
+    const _findingTag = taskFindingTagMap[task.id];
+    const _tags = _findingTag ? `${_baseTags},${_findingTag}` : _baseTags;
+
     const addResult = spawnAmauta([
       'add', 'task', task.title,
       '--parent', storyId,
@@ -1825,7 +1843,7 @@ async function planToTasks(planFilePath, opts) {
       '--criteria', criteriaStr,
       '--source', 'plan-to-tasks',
       '--from-plan', planId,
-      '--tags', `plan:${planId},task:${task.id}`,
+      '--tags', _tags,
     ]);
 
     // Check for DEDUP BLOCKED in stdout
@@ -2630,6 +2648,221 @@ function hookConfigCheck({ cwd } = {}) {
   return { ok: drift.length === 0, drift };
 }
 
+// ─── Remediation Router (v3.6 ROUT-01/02/03/04) ─────────────────────────────
+//
+// The findings→plan bridge: read open audit findings, decide fix-task | phase |
+// milestone from a CONFIG-DRIVEN severity table, and synthesize a PLAN.md that is fed to
+// the existing plan-to-tasks (the ONLY FIDEL-gated registration path). Phase and milestone
+// routes are OPERATOR-GATED proposals — surfaced, NEVER auto-executed. These helpers are
+// pure/deterministic (no LLM, no I/O except the explicit config read) so every routing
+// boundary is unit-testable.
+
+const _AUDIT_ROUTING_DEFAULTS = Object.freeze({
+  phase_count: 8,
+  phase_blockers: 3,
+  milestone_domains: 3,
+  milestone_critical_arch: true,
+});
+
+/**
+ * readAuditRouting(cwd) — read `.planning/config.json` and return `audit.routing` merged
+ * over the hardcoded fallback defaults. Thresholds come from config (ENG-04); the hardcoded
+ * numbers are fallback-only, used when the block (or the file) is absent.
+ *
+ * @param {string} cwd - project root
+ * @returns {{phase_count:number, phase_blockers:number, milestone_domains:number, milestone_critical_arch:boolean}}
+ */
+function readAuditRouting(cwd) {
+  let fromConfig = {};
+  try {
+    const cfgPath = path.join(cwd || process.cwd(), '.planning', 'config.json');
+    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+    if (cfg && cfg.audit && cfg.audit.routing && typeof cfg.audit.routing === 'object') {
+      fromConfig = cfg.audit.routing;
+    }
+  } catch (_) {
+    fromConfig = {};
+  }
+  return { ..._AUDIT_ROUTING_DEFAULTS, ...fromConfig };
+}
+
+/**
+ * _isBlockerFinding(f) — a finding counts as a blocker when it is a declared blocker at
+ * error/critical severity, or any critical-severity finding.
+ */
+function _isBlockerFinding(f) {
+  const sev = (f && f.severity) || '';
+  if (sev === 'critical') return true;
+  if ((sev === 'critical' || sev === 'error') && f && f.finding_type === 'blocker') return true;
+  return false;
+}
+
+/**
+ * routeFindings(findings, routing) — pure, deterministic severity→destination router.
+ * First-match-wins at the SET level, evaluated in order: milestone → phase → fix-task →
+ * backlog. No LLM, no I/O — unit-testable at every threshold boundary.
+ *
+ * @param {Array<object>} findings - open findings ({severity, domain, finding_type, file_path, dedup_key, id})
+ * @param {object} routing - thresholds from readAuditRouting()
+ * @returns {{fixTasks:Array, phaseProposals:Array<{domain,finding_ids,severities}>, milestoneProposals:Array<{finding_ids,severities,reason}>, backlog:Array}}
+ * @example
+ *   routeFindings([{severity:'critical',domain:'arch',id:'1',dedup_key:'R:1',file_path:'a.py'}], readAuditRouting(cwd))
+ *   // → { milestoneProposals: [{finding_ids:['1'], ...}], phaseProposals: [], fixTasks: [], backlog: [] }
+ */
+function routeFindings(findings, routing) {
+  const r = { ..._AUDIT_ROUTING_DEFAULTS, ...(routing || {}) };
+  const all = Array.isArray(findings) ? findings.filter(Boolean) : [];
+
+  // Group by domain (missing domain → 'unknown').
+  const byDomain = {};
+  for (const f of all) {
+    const d = f.domain || 'unknown';
+    (byDomain[d] = byDomain[d] || []).push(f);
+  }
+
+  // A domain is "over threshold" when its total count ≥ phase_count OR its blocker count ≥ phase_blockers.
+  const domainsOver = [];
+  for (const [d, items] of Object.entries(byDomain)) {
+    const blockers = items.filter(_isBlockerFinding).length;
+    if (items.length >= r.phase_count || blockers >= r.phase_blockers) domainsOver.push(d);
+  }
+
+  const criticalArch = r.milestone_critical_arch
+    ? all.filter(f => f.severity === 'critical' && f.domain === 'arch')
+    : [];
+
+  const consumed = new Set();
+  const fixTasks = [];
+  const backlog = [];
+  const phaseProposals = [];
+  const milestoneProposals = [];
+
+  const fid = (f) => (f.id != null ? String(f.id) : (f.dedup_key || ''));
+
+  // 1. milestone — critical+architectural finding, OR ≥ milestone_domains domains each over threshold.
+  const milestoneByArch = criticalArch.length > 0;
+  const milestoneByDomains = domainsOver.length >= r.milestone_domains;
+  if (milestoneByArch || milestoneByDomains) {
+    const mFindings = [];
+    const reasonParts = [];
+    const seen = new Set();
+    const pushUnique = (f) => { const k = fid(f); if (!seen.has(k)) { seen.add(k); mFindings.push(f); } };
+    if (milestoneByArch) {
+      criticalArch.forEach(pushUnique);
+      reasonParts.push('critical architectural finding');
+    }
+    if (milestoneByDomains) {
+      for (const d of domainsOver) byDomain[d].forEach(pushUnique);
+      reasonParts.push(`${domainsOver.length} domains over threshold`);
+    }
+    for (const f of mFindings) consumed.add(f);
+    milestoneProposals.push({
+      finding_ids: mFindings.map(fid),
+      severities: mFindings.map(f => f.severity),
+      reason: reasonParts.join('; '),
+    });
+  }
+
+  // 2. phase — any single over-threshold domain whose findings were not consumed by a milestone.
+  for (const d of domainsOver) {
+    const remaining = byDomain[d].filter(f => !consumed.has(f));
+    if (remaining.length === 0) continue;
+    for (const f of remaining) consumed.add(f);
+    phaseProposals.push({
+      domain: d,
+      finding_ids: remaining.map(fid),
+      severities: remaining.map(f => f.severity),
+    });
+  }
+
+  // 3/4. fix-task (critical|error|warning) or backlog (info) for everything remaining.
+  for (const f of all) {
+    if (consumed.has(f)) continue;
+    if (f.severity === 'info') { backlog.push(f); continue; }
+    if (f.severity === 'critical' || f.severity === 'error' || f.severity === 'warning') {
+      fixTasks.push(f);
+    } else {
+      backlog.push(f);
+    }
+  }
+
+  return { fixTasks, phaseProposals, milestoneProposals, backlog };
+}
+
+/**
+ * synthesizeFixPlan(fixFindings, opts) — emit a PLAN.md XML string (frontmatter + <story> +
+ * one <task> per finding) designed to be handed to plan-to-tasks (the ONLY FIDEL-gated path).
+ * Each task's <files_expected> is a concrete path from `finding.file_path` (never a glob) so
+ * FIDEL-01 passes by construction; <agent> is routeExecutor(file_path) so there is no agent
+ * conflict; a <finding_tag>finding:<dedup_key></finding_tag> stamps the finding identity.
+ *
+ * @param {Array<object>} fixFindings - findings routed to fix-task
+ * @param {object} [opts] - {planId}
+ * @returns {string} PLAN.md XML
+ * @example
+ *   synthesizeFixPlan([{file_path:'services/x.py', dedup_key:'N+1:abc', suggested_fix:'...', id:'u1'}])
+ */
+function synthesizeFixPlan(fixFindings, opts) {
+  opts = opts || {};
+  const findings = Array.isArray(fixFindings) ? fixFindings.filter(Boolean) : [];
+  const planId = opts.planId || `audit-${Date.now()}`;
+  const esc = (s) => String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  const taskBlocks = findings.map((f, i) => {
+    const filePath = f.file_path || '';
+    const agent = routeExecutor(filePath);
+    const ruleId = f.rule_id || f.dedup_key || `finding-${i + 1}`;
+    const dedupKey = f.dedup_key || `${ruleId}:${i + 1}`;
+    const fixHint = f.suggested_fix || 'apply the suggested remediation';
+    const findingId = f.id != null ? String(f.id) : dedupKey;
+    return `<task id="F${i + 1}">
+  <title>Remediate finding ${esc(findingId)} (rule ${esc(ruleId)}) in ${esc(filePath)}</title>
+  <agent>${esc(agent)}</agent>
+  <depends_on>[]</depends_on>
+  <files_expected>
+    modify:
+      - ${esc(filePath)}
+    create: []
+    delete: []
+  </files_expected>
+  <acceptance_criteria>
+    - Finding ${esc(findingId)} (rule ${esc(ruleId)}) cleared on re-audit of ${esc(filePath)}
+    - Apply suggested fix: ${esc(fixHint)}
+    - Existing tests for ${esc(filePath)} pass
+  </acceptance_criteria>
+  <finding_tag>finding:${esc(dedupKey)}</finding_tag>
+</task>`;
+  }).join('\n\n');
+
+  return `---
+plan_id: ${planId}
+phase: audit
+wave: A
+depends_on: []
+autonomous: true
+---
+
+# Plan ${planId} — Audit Remediation (auto-synthesized from open findings)
+
+## Objective
+
+Remediate ${findings.length} open audit finding(s) routed to fix-task. Synthesized by
+the gsd-tools remediation router and handed to plan-to-tasks (FIDEL manifest gates run).
+
+<story>
+  <title>Audit remediation ${planId}: fix ${findings.length} open finding(s) via FIDEL-gated fix-tasks</title>
+  <success_criteria>
+    Given open audit findings routed to fix-task,
+    When plan-to-tasks registers this plan,
+    Then each finding has a bounded fix-task with a concrete files_expected and a finding:&lt;dedup_key&gt; tag for route-time dedup.
+  </success_criteria>
+</story>
+
+${taskBlocks}
+`;
+}
+
 // Export test-only entry points when imported (not invoked) as a module.
 if (require.main !== module) {
   module.exports = {
@@ -2649,6 +2882,10 @@ if (require.main !== module) {
     featureListGenerate,
     featureListUpdate,
     planToTasks,
+    // Phase 79 ROUT-01/02/03/04: remediation router
+    readAuditRouting,
+    routeFindings,
+    synthesizeFixPlan,
     _validatePlanShape,
     _detectCycles,
     _checkAgentConflicts,
@@ -3455,6 +3692,148 @@ Examples:
       const result = await planToTasks(planFile, { cwd });
       process.stdout.write(JSON.stringify(result, null, 2) + '\n');
       process.exit(result.error ? 1 : 0);
+      break;
+    }
+
+    case 'findings-to-plan': {
+      // Phase 79 ROUT-01/02/03/04: read open findings → route (config-driven severity table) →
+      // synthesize a PLAN.md for the FIDEL-gated plan-to-tasks path; phase/milestone routes are
+      // OPERATOR-GATED proposals (printed auto_executed:false + a pending ASK_QUESTION) — NEVER
+      // auto-executed. This branch contains ZERO phase/milestone spawn: it only surfaces.
+      const getFlag = (name) => {
+        const i = args.indexOf(name);
+        return i !== -1 && args[i + 1] !== undefined ? args[i + 1] : null;
+      };
+      const findingsFile = getFlag('--findings-file');
+      const tasksFile = getFlag('--tasks-file');
+      const outFile = getFlag('--out');
+      const domainFilter = getFlag('--domain');
+      const runFilter = getFlag('--run');
+      const daemonPort = parseInt(process.env.AMAUTA_PORT || '18799');
+
+      // ── 1. Load open findings ──────────────────────────────────────────────
+      let findings;
+      if (findingsFile) {
+        try {
+          const parsed = JSON.parse(fs.readFileSync(findingsFile, 'utf-8'));
+          findings = Array.isArray(parsed) ? parsed : (parsed.findings || []);
+        } catch (e) {
+          process.stdout.write(JSON.stringify({ error: `failed to read --findings-file: ${e.message}` }) + '\n');
+          process.exit(1);
+        }
+      } else {
+        const http = require('http');
+        const qs = ['status=open'];
+        if (domainFilter) qs.push(`domain=${encodeURIComponent(domainFilter)}`);
+        findings = await new Promise((resolve) => {
+          const req = http.request({
+            hostname: '127.0.0.1', port: daemonPort,
+            path: `/api/findings?${qs.join('&')}`, method: 'GET',
+          }, (res) => {
+            let data = '';
+            res.on('data', (c) => { data += c; });
+            res.on('end', () => {
+              try { const p = JSON.parse(data); resolve(Array.isArray(p) ? p : (p.findings || [])); }
+              catch { resolve(null); }
+            });
+          });
+          req.on('error', () => resolve(null));
+          req.end();
+        });
+        if (findings === null) {
+          process.stdout.write(JSON.stringify({ error: 'daemon unreachable — cannot read open findings', daemon: false }) + '\n');
+          process.exit(1);
+        }
+      }
+      void runFilter; // reserved for audit_run scoping (Phase 80)
+
+      // ── 2. Route (config-driven) ──────────────────────────────────────────
+      const routing = readAuditRouting(cwd);
+      const routed = routeFindings(findings, routing);
+
+      // ── 3. Route-time dedup (ROUT-04): drop fix findings already carried by an open task ──
+      const OPEN_EXCLUDE = new Set(['done', 'validated', 'cancelled']);
+      const openFindingTags = new Set();
+      try {
+        let storeItems = [];
+        if (tasksFile) {
+          storeItems = (JSON.parse(fs.readFileSync(tasksFile, 'utf-8')).items) || [];
+        } else {
+          const pluginRoot = path.resolve(__dirname, '..', '..');
+          const dataDir = process.env.AMAUTA_DATA_DIR || path.join(pluginRoot, 'data');
+          storeItems = (JSON.parse(fs.readFileSync(path.join(dataDir, 'tasks.json'), 'utf-8')).items) || [];
+        }
+        for (const item of storeItems) {
+          if (OPEN_EXCLUDE.has(item.status)) continue;
+          for (const tag of (Array.isArray(item.tags) ? item.tags : [])) {
+            if (typeof tag === 'string' && tag.startsWith('finding:')) openFindingTags.add(tag);
+          }
+        }
+      } catch (_) { /* no task store yet → nothing to dedup against */ }
+
+      let dedupedCount = 0;
+      const dedupedFix = routed.fixTasks.filter((f) => {
+        const key = `finding:${f.dedup_key}`;
+        if (f.dedup_key && openFindingTags.has(key)) { dedupedCount++; return false; }
+        return true;
+      });
+
+      // ── 4. fix-task route (ROUT-01): synthesize PLAN.md for the FIDEL-gated plan-to-tasks path ──
+      const planXml = synthesizeFixPlan(dedupedFix, { planId: runFilter ? `audit-${runFilter}` : undefined });
+      if (outFile) {
+        fs.writeFileSync(outFile, planXml);
+      } else if (dedupedFix.length > 0) {
+        process.stdout.write(planXml + '\n');
+      }
+
+      // ── 5. phase/milestone routes (ROUT-03): OPERATOR-GATED proposals — surfaced, never run ──
+      const _postProposal = async (proposal) => {
+        const http = require('http');
+        const body = JSON.stringify({
+          from_agent: 'remediation-router',
+          to_agent: 'operator',
+          task_id: runFilter || 'audit-router',
+          message_type: 'ASK_QUESTION',
+          content: `Audit routing proposes a ${proposal.route} (operator approval required). `
+            + `Findings: ${proposal.finding_ids.join(', ')}; severities: ${proposal.severities.join(', ')}.`,
+        });
+        await new Promise((resolve) => {
+          const req = http.request({
+            hostname: '127.0.0.1', port: daemonPort,
+            path: '/api/messages', method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+          }, (res) => { res.on('data', () => {}); res.on('end', resolve); });
+          req.on('error', resolve); // best-effort: daemon down → proposal still printed
+          req.write(body); req.end();
+        });
+      };
+
+      for (const pp of routed.phaseProposals) {
+        const proposal = {
+          route: 'phase', domain: pp.domain,
+          finding_ids: pp.finding_ids, severities: pp.severities,
+          auto_executed: false,
+        };
+        process.stdout.write(JSON.stringify(proposal) + '\n');
+        await _postProposal(proposal);
+      }
+      for (const mp of routed.milestoneProposals) {
+        const proposal = {
+          route: 'milestone', reason: mp.reason,
+          finding_ids: mp.finding_ids, severities: mp.severities,
+          auto_executed: false,
+        };
+        process.stdout.write(JSON.stringify(proposal) + '\n');
+        await _postProposal(proposal);
+      }
+
+      // ── 6. Routing summary (last line — stable for consumers) ─────────────
+      process.stdout.write(JSON.stringify({
+        fix_tasks: dedupedFix.length,
+        phase_proposals: routed.phaseProposals.length,
+        milestone_proposals: routed.milestoneProposals.length,
+        deduped: dedupedCount,
+      }) + '\n');
       break;
     }
 
