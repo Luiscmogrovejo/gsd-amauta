@@ -1788,6 +1788,73 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
         # GET /api/findings/:task_id — retrieve all findings for a task, recency desc.
         # GET /api/messages/:agent_name — retrieve pending/approved messages for an agent.
 
+        # SUBS-04: cross-task sweep — GET /api/findings?domain=&severity=&type=&since=&status=
+        # Must precede the per-task startswith branch so the base path (no task_id) matches the
+        # sweep and the trailing-segment form still routes per-task. WHERE is a fixed clause
+        # whitelist; every value binds as a %s param (parameterized-SQL-only, no interpolation).
+        if path == "/api/findings":
+            params = parse_qs(urlparse(self.path).query)
+
+            def _p(k):
+                v = params.get(k, [None])
+                return v[0] if v else None
+
+            domain = _p("domain")
+            severity = _p("severity")
+            ftype = _p("type")
+            since = _p("since")
+            status = _p("status") or "open"
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
+                return
+            try:
+                clauses = ["status = %s"]
+                args = [status]
+                if domain:
+                    clauses.append("domain = %s")
+                    args.append(domain)
+                if severity:
+                    clauses.append("severity = %s")
+                    args.append(severity)
+                if ftype:
+                    clauses.append("finding_type = %s")
+                    args.append(ftype)
+                if since:
+                    clauses.append("created_at >= %s")
+                    args.append(since)
+                where = " AND ".join(clauses)
+                conn = store._get_conn()
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT id, agent_name, task_id, finding_type, severity, domain,"
+                        " file_path, rule_id, status, content, created_at"
+                        " FROM agent_findings WHERE " + where +
+                        " ORDER BY created_at DESC LIMIT 200",
+                        tuple(args),
+                    )
+                    rows = cur.fetchall()
+                results = [
+                    {
+                        "id": str(r[0]),
+                        "agent_name": r[1],
+                        "task_id": r[2],
+                        "finding_type": r[3],
+                        "severity": r[4],
+                        "domain": r[5],
+                        "file_path": r[6],
+                        "rule_id": r[7],
+                        "status": r[8],
+                        "content": r[9],
+                        "created_at": r[10].isoformat() if r[10] else None,
+                    }
+                    for r in rows
+                ]
+                self._send_json({"findings": results, "count": len(results)})
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
         if path.startswith("/api/findings/"):
             task_id = path[len("/api/findings/"):]
             if not task_id:
