@@ -1,19 +1,24 @@
 #!/usr/bin/env node
-// Check for GSD updates in background, write result to cache
-// Called by SessionStart hook - runs once per session
+// GSD update check — NEUTRALIZED (2026-07-10, supply-chain safety).
+//
+// This fork (gsd-amauta) is updated ONLY from the local git repository
+// (/Users/.../Code/gsd-amauta) via a manual, verified file sync. The original
+// hook queried the UPSTREAM npm package `get-shit-done-cc` on every session
+// start and fed an "update available" nag into the statusline — steering the
+// operator toward `npx get-shit-done-cc`, which installs upstream code this
+// fork does not trust (upstream reported compromised). No version telemetry,
+// no network calls, no child processes.
+//
+// It now only maintains the local cache so the statusline never nags:
+// update_available is always false; `installed` reflects the local VERSION.
 
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { spawn } = require('child_process');
 
 const homeDir = os.homedir();
-const cwd = process.cwd();
 
-// Detect runtime config directory (supports Claude, OpenCode, Gemini)
-// Respects CLAUDE_CONFIG_DIR for custom config directory setups
 function detectConfigDir(baseDir) {
-  // Check env override first (supports multi-account setups)
   const envDir = process.env.CLAUDE_CONFIG_DIR;
   if (envDir && fs.existsSync(path.join(envDir, 'get-shit-done', 'VERSION'))) {
     return envDir;
@@ -27,55 +32,20 @@ function detectConfigDir(baseDir) {
 }
 
 const globalConfigDir = detectConfigDir(homeDir);
-const projectConfigDir = detectConfigDir(cwd);
 const cacheDir = path.join(globalConfigDir, 'cache');
 const cacheFile = path.join(cacheDir, 'gsd-update-check.json');
+const versionFile = path.join(globalConfigDir, 'get-shit-done', 'VERSION');
 
-// VERSION file locations (check project first, then global)
-const projectVersionFile = path.join(projectConfigDir, 'get-shit-done', 'VERSION');
-const globalVersionFile = path.join(globalConfigDir, 'get-shit-done', 'VERSION');
+let installed = '0.0.0';
+try { installed = fs.readFileSync(versionFile, 'utf8').trim(); } catch (e) {}
 
-// Ensure cache directory exists
-if (!fs.existsSync(cacheDir)) {
-  fs.mkdirSync(cacheDir, { recursive: true });
-}
-
-// Run check in background (spawn background process, windowsHide prevents console flash)
-const child = spawn(process.execPath, ['-e', `
-  const fs = require('fs');
-  const { execSync } = require('child_process');
-
-  const cacheFile = ${JSON.stringify(cacheFile)};
-  const projectVersionFile = ${JSON.stringify(projectVersionFile)};
-  const globalVersionFile = ${JSON.stringify(globalVersionFile)};
-
-  // Check project directory first (local install), then global
-  let installed = '0.0.0';
-  try {
-    if (fs.existsSync(projectVersionFile)) {
-      installed = fs.readFileSync(projectVersionFile, 'utf8').trim();
-    } else if (fs.existsSync(globalVersionFile)) {
-      installed = fs.readFileSync(globalVersionFile, 'utf8').trim();
-    }
-  } catch (e) {}
-
-  let latest = null;
-  try {
-    latest = execSync('npm view get-shit-done-cc version', { encoding: 'utf8', timeout: 10000, windowsHide: true }).trim();
-  } catch (e) {}
-
-  const result = {
-    update_available: latest && installed !== latest,
+try {
+  if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
+  fs.writeFileSync(cacheFile, JSON.stringify({
+    update_available: false,
     installed,
-    latest: latest || 'unknown',
-    checked: Math.floor(Date.now() / 1000)
-  };
-
-  fs.writeFileSync(cacheFile, JSON.stringify(result));
-`], {
-  stdio: 'ignore',
-  windowsHide: true,
-  detached: true  // Required on Windows for proper process detachment
-});
-
-child.unref();
+    latest: installed,
+    checked: Math.floor(Date.now() / 1000),
+    neutralized: 'upstream get-shit-done-cc check disabled 2026-07-10 (supply-chain safety; local-repo updates only)',
+  }));
+} catch (e) {}

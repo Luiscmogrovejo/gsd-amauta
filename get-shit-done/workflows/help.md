@@ -65,11 +65,10 @@ node ~/.claude/get-shit-done/bin/amauta.cjs validate TK-0001 --pass --validator 
 
 ## Staying Updated
 
-GSD evolves fast. Update periodically:
-
-```bash
-npx get-shit-done-cc@latest
-```
+⛔ npm updates are DISABLED (upstream `get-shit-done-cc` reported compromised,
+2026-07). This installation is the local fork gsd-amauta — update ONLY via a
+manual verified sync from the local git repo (see /amauta:update for the
+procedure). Never run `npx get-shit-done-cc`.
 
 ## Core Workflow
 
@@ -383,11 +382,8 @@ Show this command reference.
 **`/amauta:update`**
 Update GSD to latest version with changelog preview.
 
-- Shows installed vs latest version comparison
-- Displays changelog entries for versions you've missed
-- Highlights breaking changes
-- Confirms before running install
-- Better than raw `npx get-shit-done-cc`
+- npm path disabled (upstream package not trusted — supply-chain safety)
+- Shows the safe manual update procedure from the local git repo
 
 Usage: `/amauta:update`
 
