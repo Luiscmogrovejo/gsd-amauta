@@ -2,7 +2,7 @@ services:
   postgres:
     # paradedb/paradedb:latest-pg16 ships pgvector >= 0.8.0 + pg_search (BM25) — INFRA-02, INFRA-03
     # Note: tag is latest-pg16 (not pg16) — ParadeDB tagging convention
-    image: paradedb/paradedb:latest-pg16
+    image: paradedb/paradedb:latest-pg16@sha256:21518b4005ad4111bdd41a6687ef37ca2abc363d7af30e700900ad6b8cb33e1e
     container_name: gsd-postgres
     restart: unless-stopped
     # INFRA-03: pg_search requires shared_preload_libraries — set via postgres command args
@@ -49,7 +49,7 @@ services:
     restart: unless-stopped
     working_dir: /app
     command: >
-      sh -c "pip install mcp>=1.0 --quiet &&
+      sh -c "pip install 'mcp>=1.0' --quiet &&
              python3 services/amauta-mcp.py --sse"
     environment:
       AMAUTA_DAEMON_URL: "http://host.docker.internal:18799"
@@ -58,7 +58,14 @@ services:
     ports:
       - "127.0.0.1:18800:18800"
     volumes:
-      - .:/app:ro
+      - ..:/app:ro
+    healthcheck:
+      # process-liveness probe via /proc (python:3.12-slim has no pgrep/procps);
+      # [y] bracket prevents the probe matching its own cmdline
+      test: ["CMD-SHELL", "grep -aq 'amauta-mcp.p[y]' /proc/*/cmdline || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     depends_on:
       - postgres
 
