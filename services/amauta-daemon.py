@@ -849,6 +849,25 @@ def _safe_error(e):
     return msg
 
 
+def _json_default(o):
+    """json.dumps default hook — serialize non-JSON-native values instead of
+    raising. datetime/date/time -> ISO-8601 (matches the isoformat convention
+    the store methods already apply per-field); anything else -> str. Prevents
+    "Object of type datetime is not JSON serializable" 500s on any endpoint
+    whose result rows carry raw datetimes (e.g. memory_semantic_search)."""
+    import datetime as _dt
+    from decimal import Decimal as _Decimal
+    if isinstance(o, (_dt.datetime, _dt.date, _dt.time)):
+        return o.isoformat()
+    if isinstance(o, _Decimal):
+        return float(o)
+    if isinstance(o, (set, frozenset)):
+        return list(o)
+    if isinstance(o, (bytes, bytearray)):
+        return o.decode("utf-8", "replace")
+    return str(o)
+
+
 def _scrub_evidence_args(args):
     """Scrub rpetd/note evidence content BEFORE python3 amauta.py runs.
 
@@ -1010,7 +1029,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
-        self.wfile.write(json.dumps(data).encode("utf-8"))
+        self.wfile.write(json.dumps(data, default=_json_default).encode("utf-8"))
 
     def _read_body(self):
         length = int(self.headers.get("Content-Length", 0))
@@ -4118,21 +4137,19 @@ def start_server(foreground=False):
     # Write PID file
     PID_FILE.write_text(str(os.getpid()))
 
-    # Graceful shutdown
+    # Graceful shutdown.
+    # IMPORTANT: this handler runs in the SAME (main) thread as
+    # server.serve_forever(). Calling server.shutdown() here would deadlock —
+    # shutdown() blocks until the serve loop consumes the stop request, but
+    # that loop is suspended inside this handler — leaving the process alive
+    # and holding the port (a zombie that reports "stopped" but never dies).
+    # Instead we just wake sleeping threads and raise SystemExit, which breaks
+    # serve_forever(); the finally-block after it performs the real teardown
+    # (_stop_redis / _stop_rlm / store.close / server_close / PID_FILE.unlink).
     def shutdown_handler(signum, frame):
         _shutdown_event.set()  # Wake sleeping threads for graceful exit
         log.info("daemon_shutdown")
         print("\nShutting down daemon...")
-        _stop_redis()
-        _stop_rlm()
-        for s in (_pg_store, _sqlite_store):
-            if s:
-                try:
-                    s.close()
-                except Exception:
-                    pass
-        server.shutdown()
-        PID_FILE.unlink(missing_ok=True)
         sys.exit(0)
 
     signal.signal(signal.SIGTERM, shutdown_handler)
@@ -4423,14 +4440,33 @@ def stop_server():
         pid = int(PID_FILE.read_text().strip())
         os.kill(pid, signal.SIGTERM)
         print(f"Sent SIGTERM to PID {pid}")
-        # Wait briefly for process to die before removing PID file
-        for _ in range(10):
+        # Wait for graceful exit (SIGTERM). If it does not die, escalate to
+        # SIGKILL rather than removing the PID file and falsely reporting
+        # success — a lingering process would keep holding the port and block
+        # the next start.
+        died = False
+        for _ in range(20):  # up to ~6s for graceful shutdown
             time.sleep(0.3)
             try:
                 os.kill(pid, 0)
             except ProcessLookupError:
+                died = True
                 break
+        if not died:
+            print(f"PID {pid} did not exit on SIGTERM — sending SIGKILL")
+            try:
+                os.kill(pid, signal.SIGKILL)
+                for _ in range(10):  # up to ~3s for the kernel to reap
+                    time.sleep(0.3)
+                    try:
+                        os.kill(pid, 0)
+                    except ProcessLookupError:
+                        died = True
+                        break
+            except ProcessLookupError:
+                died = True
         PID_FILE.unlink(missing_ok=True)
+        print("Daemon stopped" if died else f"WARNING: PID {pid} may still be running")
     except ProcessLookupError:
         print("Daemon not running (stale PID file)")
         PID_FILE.unlink(missing_ok=True)

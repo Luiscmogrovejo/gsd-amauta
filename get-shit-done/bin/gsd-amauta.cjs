@@ -1725,11 +1725,14 @@ async function cmdDaemon(subcommand) {
       die(`Daemon script not found: ${DAEMON_SCRIPT}`);
     }
     try {
-      execFileSync('python3', [DAEMON_SCRIPT, 'stop'], {
+      // Forward stop_server's own report (it now escalates SIGTERM→SIGKILL and
+      // prints "Daemon stopped" only if the process actually died, else a
+      // WARNING) instead of hard-coding a success message.
+      const out = execFileSync('python3', [DAEMON_SCRIPT, 'stop'], {
         encoding: 'utf-8',
         env: { ...process.env, AMAUTA_DATA_DIR: DATA_DIR },
       });
-      console.log('Daemon stopped');
+      process.stdout.write((out && out.trim()) ? out.trim() + '\n' : 'Daemon stopped\n');
     } catch (err) {
       console.error(err.stdout || err.stderr || err.message);
     }
