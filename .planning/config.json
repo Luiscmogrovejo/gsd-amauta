@@ -101,6 +101,12 @@
     "max_output_lines": 200,
     "emit_savings_telemetry": false
   },
+  "token_budget": {
+    "enabled": false,
+    "max_tokens_per_task": 0,
+    "max_cost_usd_per_task": 0,
+    "action": "warn"
+  },
   "audit": {
     "routing": {
       "phase_count": 8,
