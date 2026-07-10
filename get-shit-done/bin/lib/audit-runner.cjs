@@ -30,10 +30,28 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 
-// Repo root — this module lives at get-shit-done/bin/lib/audit-runner.cjs, so
-// three levels up is the project root. Used only by the repo-scope detects
-// (agentic-flow AGEN-04/AGEN-06) which inspect the tree, not a per-file scope.
-const ROOT = path.resolve(__dirname, '..', '..', '..');
+// Audit root — the repo UNDER AUDIT, not this module's install tree.
+// This module lives at get-shit-done/bin/lib/audit-runner.cjs, so three levels
+// up is the MODULE's root — correct only when the engine runs from a checkout
+// of the repo being audited. When it runs from the installed copy
+// (~/.claude/get-shit-done/bin/lib/) that resolves to ~/.claude, so the
+// repo-scope detects (AGEN-04/AGEN-06) audited the INSTALL tree instead of the
+// repo under audit (live symptom: AGEN-06 reported "0 eval sets" when the
+// audited repo has 3). defaultRoot() therefore resolves from process.cwd()
+// whenever cwd looks like a repo (has .planning/ or package.json), falling back
+// to the module-relative root only for odd cwds (e.g. unit tests run from /).
+// Computed at CALL time (not load time) so callers/tests may chdir first; an
+// explicit opts.root / ctx.root always wins over the default.
+const MODULE_ROOT = path.resolve(__dirname, '..', '..', '..');
+function defaultRoot() {
+  const cwd = process.cwd();
+  try {
+    if (fs.existsSync(path.join(cwd, '.planning')) || fs.existsSync(path.join(cwd, 'package.json'))) {
+      return cwd;
+    }
+  } catch (_) { /* unreadable cwd → module-relative fallback */ }
+  return MODULE_ROOT;
+}
 
 // ───────────────────────────────────────────────────────────────────────────
 // Detector implementations — mirror each rule's documented Detect VERBATIM from
@@ -337,7 +355,7 @@ const DETECT_REGISTRY = {
       rule_id: 'AGEN-04', domain: 'agentic-flow', severity: 'warning', scope: 'repo',
       suggested_fix: 'Add a hard token/cost budget ceiling enforcement identifier (a budget/token/cost ceiling constant) in services/ or the harness bin.',
       scan(ctx) {
-        const root = (ctx && ctx.root) || ROOT;
+        const root = (ctx && ctx.root) || defaultRoot();
         const dirs = [path.join(root, 'services'), path.join(root, 'get-shit-done', 'bin')];
         const ceilingHits = detectCeilingEnforcement(dirs);
         if (ceilingHits.length > 0) return []; // a ceiling IS enforced → clean
@@ -351,7 +369,7 @@ const DETECT_REGISTRY = {
       rule_id: 'AGEN-06', domain: 'agentic-flow', severity: 'warning', scope: 'repo',
       suggested_fix: 'Grow agent eval coverage (tests/evals/*.json) toward the gsd-* agent roster.',
       scan(ctx) {
-        const root = (ctx && ctx.root) || ROOT;
+        const root = (ctx && ctx.root) || defaultRoot();
         const evalSets = countAgentEvalSets(path.join(root, 'tests', 'evals'));
         const roster = countAgentRoster(path.join(root, 'get-shit-done', 'agents'));
         if (roster === 0 || evalSets >= roster) return []; // parity → clean
@@ -427,7 +445,7 @@ const DETECT_REGISTRY = {
       rule_id: 'GEN-06', domain: 'general', severity: 'warning',
       suggested_fix: 'Update the doc to a path that resolves, or restore the referenced file.',
       test(content, filePath) {
-        const baseDir = filePath ? path.dirname(filePath) : ROOT;
+        const baseDir = filePath ? path.dirname(filePath) : defaultRoot();
         const hits = detectDocDrift(content, baseDir);
         return hits.length ? `doc references unresolved path(s): ${hits.join(', ')}` : false;
       },
@@ -661,4 +679,4 @@ function reauditFile(ruleId, filePath) {
   return findings;
 }
 
-module.exports = { detect, runAudit, reauditFile, DETECT_REGISTRY };
+module.exports = { detect, runAudit, reauditFile, defaultRoot, DETECT_REGISTRY };
