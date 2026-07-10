@@ -8,10 +8,10 @@
  *
  * Tests:
  *   1. gsd-tools agents (no action) prints Usage to stdout and exits 0
- *   2. gsd-tools agents list emits JSON array of 17 agents
+ *   2. gsd-tools agents list emits JSON array of every on-disk agent
  *   3. gsd-tools agents validate <valid-dir> exits 0
  *   4. gsd-tools agents validate <missing-dir> exits non-zero
- *   5. gsd-tools agents compile --target=claude-code --dry-run compiled.length === 17
+ *   5. gsd-tools agents compile --target=claude-code --dry-run compiled.length === on-disk agent count
  *   6. gsd-tools agents compile --target=invalid-ide exits 2 + stderr 'unknown target'
  *   7. gsd-tools agents compile (no --target) exits 1 + stderr '--target'
  *   8. bin/cli.cjs agents list same output as gsd-tools.cjs agents list
@@ -22,11 +22,18 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
+const fs = require('node:fs');
 const { execFileSync, execSync } = require('node:child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 const GSD_TOOLS = path.join(ROOT, 'get-shit-done', 'bin', 'gsd-tools.cjs');
 const CLI = path.join(ROOT, 'bin', 'cli.cjs');
+// Drift-proof ground truth: count of agent dirs holding an AGENT.yaml on disk.
+// Replaces a hardcoded 17 that staled as the fleet grew to 35.
+const AGENTS_SRC = path.join(ROOT, 'get-shit-done', 'agents');
+const ON_DISK_AGENTS = fs.readdirSync(AGENTS_SRC).filter(
+  (d) => fs.existsSync(path.join(AGENTS_SRC, d, 'AGENT.yaml'))
+).length;
 const NODE = process.execPath;
 
 /**
@@ -76,9 +83,9 @@ test('gsd-tools agents (no action) prints Usage to stdout and exits 0', () => {
   );
 });
 
-// ─── Test 2: list emits JSON array of 17 agents ───────────────────────────────
+// ─── Test 2: list emits JSON array of every on-disk agent ───────────────────────────────
 
-test('gsd-tools agents list emits JSON array of 17 agents', () => {
+test('gsd-tools agents list emits JSON array of every on-disk agent', () => {
   const { stdout, status } = run([GSD_TOOLS, 'agents', 'list', '--source=get-shit-done/agents']);
   assert.equal(status, 0, `Expected exit 0, got ${status}`);
 
@@ -90,7 +97,8 @@ test('gsd-tools agents list emits JSON array of 17 agents', () => {
   }
 
   assert.ok(Array.isArray(agents), `Expected JSON array, got ${typeof agents}`);
-  assert.equal(agents.length, 17, `Expected 17 agents, got ${agents.length}`);
+  assert.equal(agents.length, ON_DISK_AGENTS, `Expected ${ON_DISK_AGENTS} agents (on-disk), got ${agents.length}`);
+  assert.ok(agents.length >= 35, `fleet floor: expected at least 35 agents, got ${agents.length}`);
   for (const agent of agents) {
     assert.ok(
       typeof agent.name === 'string' && agent.name.startsWith('gsd-'),
@@ -118,9 +126,9 @@ test('gsd-tools agents validate <missing-dir> exits non-zero', () => {
   assert.notEqual(status, 0, `Expected non-zero exit for missing agent dir, got 0`);
 });
 
-// ─── Test 5: compile --target=claude-code --dry-run compiled.length === 17 ───
+// ─── Test 5: compile --target=claude-code --dry-run compiled.length === on-disk agent count ───
 
-test('gsd-tools agents compile --target=claude-code --dry-run has 17 compiled entries', () => {
+test('gsd-tools agents compile --target=claude-code --dry-run has one compiled entry per on-disk agent', () => {
   const { stdout, stderr, status } = run([
     GSD_TOOLS, 'agents', 'compile',
     '--target=claude-code',
@@ -140,8 +148,8 @@ test('gsd-tools agents compile --target=claude-code --dry-run has 17 compiled en
 
   assert.ok(Array.isArray(result.compiled), `Expected result.compiled to be an array`);
   assert.equal(
-    result.compiled.length, 17,
-    `Expected 17 compiled entries, got ${result.compiled.length}`
+    result.compiled.length, ON_DISK_AGENTS,
+    `Expected ${ON_DISK_AGENTS} compiled entries (on-disk agents), got ${result.compiled.length}`
   );
 });
 

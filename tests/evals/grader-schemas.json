@@ -43,7 +43,7 @@
         "grading_criteria": {
           "model": {
             "type": "string",
-            "description": "Anthropic model to use for scoring (e.g., 'claude-sonnet-4-6')"
+            "description": "Anthropic model to use for scoring (e.g., 'claude-sonnet-5'). Prefer resolving via the model registry (get-shit-done/bin/lib/model-registry.json) so this tracks the latest tier."
           },
           "rubric": {
             "type": "string",
@@ -73,7 +73,7 @@
       "example": {
         "grader_type": "model-based",
         "grading_criteria": {
-          "model": "claude-sonnet-4-6",
+          "model": "claude-sonnet-5",
           "rubric": "Does the agent response follow RPETD protocol, include a clear plan, and log all phases? Score 0-1 per criterion.",
           "scoring_criteria": [
             { "criterion": "RPETD phases all present", "weight": 0.4, "pass_threshold": 0.8 },

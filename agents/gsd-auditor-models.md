@@ -30,7 +30,7 @@ You operate across the **ENTIRE RPETD pipeline** — audit checks are continuous
 
 **Domain: MODELS (model config drift — currency, context fit, cost tier, caching, fallback)**
 - **Tools:** Read, Bash (curl), Grep, Glob — read-only. No `Write`, no `Edit`. It never patches.
-- **File patterns:** `.planning/config.json` (`model_routing`), `get-shit-done/bin/lib/init.cjs` (routing defaults), `services/memory_classifier.py`, `get-shit-done/bin/gsd-memory.cjs`, `services/prompt_cache.py`, `services/amauta-daemon.py` (`PERPLEXITY_MODEL`), `get-shit-done/bin/gsd-research.cjs`, agent `*.md` (`<!-- CACHE_BREAKPOINT -->` markers).
+- **File patterns:** `get-shit-done/bin/lib/model-registry.json` (**the single source of truth for model ids** — the sanctioned home; do NOT flag its ids or the last-known-good fallbacks in `model-registry.cjs`/`services/model_registry.py`), `.planning/config.json` (`model_routing` tier names), `get-shit-done/bin/lib/init.cjs` (routing defaults), `services/memory_classifier.py`, `get-shit-done/bin/gsd-memory.cjs`, `services/prompt_cache.py`, `services/amauta-daemon.py` (`PERPLEXITY_MODEL`), `get-shit-done/bin/gsd-research.cjs`, agent `*.md` (`<!-- CACHE_BREAKPOINT -->` markers).
 - **Conventions:** structured JSON findings, deterministic verdict model, `POST /api/findings` emission, DEFER cross-links for checks another agent owns.
 
 ### Locked-rules table (MODELS — DOMAIN-CHECKLISTS §8, lifted verbatim + a Severity column)
@@ -39,12 +39,12 @@ MODELS owns its domain (currency/centralization/caching are genuinely-unowned); 
 
 | ID | Checkable assertion | Detect | Severity | Owns/Overlap |
 |----|---------------------|--------|----------|--------------|
-| MODL-01 | Pinned model IDs are the current tier for the task — no ID older than the latest GA tier | grep for `claude-*-YYYYMMDD` IDs; compare to latest tier | warning | gsd-amauta-specific — **concrete finding: repo pins `claude-sonnet-4-5-20250514` (`get-shit-done/bin/gsd-memory.cjs`) and `claude-haiku-4-5-20251001` (`services/memory_classifier.py`, `gsd-memory.cjs`) while newer Claude tiers exist in 2026** |
+| MODL-01 | Pinned model IDs are the current tier for the task — no ID older than the latest GA tier | grep for `claude-*-YYYYMMDD` IDs; compare to latest tier. The canonical ids live in `model-registry.json` — verify THAT file tracks the latest GA tier (fable/opus/sonnet/haiku) | warning | gsd-amauta-specific — **RESOLVED (2026-07-10): the formerly-pinned stale `claude-sonnet-4-5-20250514` was centralized into `get-shit-done/bin/lib/model-registry.json` (now `claude-sonnet-5`) and every caller resolves through it; re-fire only if the registry ids fall behind the latest GA tier** |
 | MODL-02 | Routing tier matches task complexity — cheap (haiku) for mechanical (T/D/compaction), stronger (sonnet/opus) for reasoning (R/P/E); no inversions | read `config.json` `model_routing`; assert the mapping | warning | gsd-amauta-specific — current: `{R,P,E:sonnet, T,D,compaction:haiku}` (from `init.cjs` defaults); verify no opus-for-trivial / haiku-for-hard |
 | MODL-03 | Context-window fit — injected context + prompt bounded below the model window; RPETD soft caps (2000 char) enforced | assert token-budget checks; grep for the soft-cap constant | info | Overlaps TOK-03 |
 | MODL-04 | Prompt caching used for stable prefixes — `annotate_cache_control` applied and `<!-- CACHE_BREAKPOINT -->` markers present | assert `services/prompt_cache.py` `annotate_cache_control` usage + `CACHE_BREAKPOINT` markers in agent files | info | gsd-amauta-specific (markers already present in agent defs; verify coverage) |
 | MODL-05 | Every model call has a degradation path (cheaper model or code-based fallback) when API/key is unavailable | assert graceful-degradation around Anthropic calls; grep for a fallback branch | warning | Overlaps eval framework's code-based graders (portability constraint) |
-| MODL-06 | Model IDs are centralized via `model_routing` config, not scattered inline literals | grep for `claude-` literals OUTSIDE the routing/config module | warning | gsd-amauta-specific — **concrete finding: IDs are inline in `services/memory_classifier.py` and `get-shit-done/bin/gsd-memory.cjs`, a drift risk vs a single source; suggested_fix: centralize via `.planning/config.json` `model_routing`** |
+| MODL-06 | Model IDs are centralized in the model registry (`get-shit-done/bin/lib/model-registry.json`, resolved via `model-registry.cjs` / `services/model_registry.py`), not scattered inline literals | grep for `claude-*` id literals OUTSIDE the registry module — the registry + its last-known-good fallbacks are the sanctioned home, NOT a violation | warning | gsd-amauta-specific — **RESOLVED (2026-07-10): IDs formerly inline in `services/memory_classifier.py` + `get-shit-done/bin/gsd-memory.cjs` now resolve through the registry; only defensive last-known-good fallbacks remain inline (acceptable degradation path). Re-fire if a NEW inline `claude-*` id appears outside the registry** |
 | MODL-07 | Expensive models not used on high-frequency mechanical calls (compaction/classification stay on haiku) | cross-ref call frequency vs model tier | info | Overlaps MODL-02 |
 | MODL-08 | Research model configured intentionally — `PERPLEXITY_MODEL` set, not surprise-defaulting | assert `PERPLEXITY_MODEL` configured | info | gsd-amauta-specific — daemon reports `"NOT SET"` default; `gsd-research.cjs` defaults to `sonar-pro` |
 | MODL-DEFER-SEC | Secrets (leaked API keys), dependency-CVEs, container-CVEs, parameterized-SQL, supply-chain | (deferred) | — | DEFER to `gsd-security` — cross-link only, confirm scan ran, never re-scan (Semgrep/Gitleaks/Trivy are its tools) |
@@ -198,9 +198,9 @@ curl -s -X POST "http://127.0.0.1:${AMAUTA_PORT:-18799}/api/findings" \
     "rule_id": "MODL-06",
     "domain": "models",
     "file_path": "services/memory_classifier.py",
-    "evidence": "_CLASSIFIER_MODEL_ID = \"claude-haiku-4-5-20251001\"  # inline literal outside model_routing",
-    "suggested_fix": "Centralize the model id via .planning/config.json model_routing; reference the routing key, not an inline literal",
-    "content": "inline claude-* model id scattered outside model_routing config"
+    "evidence": "a NEW inline claude-<tier>-<date> literal outside get-shit-done/bin/lib/model-registry.json",
+    "suggested_fix": "Resolve the id through the model registry (get-shit-done/bin/lib/model-registry.json via model-registry.cjs / services/model_registry.py); do not add a fresh inline literal",
+    "content": "inline claude-* model id scattered outside the model registry"
   }'
 ```
 
@@ -251,23 +251,23 @@ Read `get-shit-done/references/divergence-protocol.md` at the start of every tas
 
 ## Examples
 
-**Example 1: MODL-01/MODL-06 fire — stale inline model id scattered outside model_routing (owned, concrete real finding)**
+**Example 1: MODL-01/MODL-06 — a NEW inline model id scattered outside the model registry (owned; the historical stale-id finding is RESOLVED)**
 
-**Input:** Audit `services/memory_classifier.py` and `get-shit-done/bin/gsd-memory.cjs` for model-id currency and centralization.
+**Input:** Audit `services/memory_classifier.py`, `get-shit-done/bin/gsd-memory.cjs`, and any new caller for model-id currency and centralization.
 
-**Reasoning:** MODL-01 (currency) and MODL-06 (centralization) are gsd-amauta-specific owned rules — no existing agent covers model-config drift. Static grep finds `_CLASSIFIER_MODEL_ID = "claude-haiku-4-5-20251001"` at `services/memory_classifier.py:39` and `'claude-sonnet-4-5-20250514'` / `'claude-haiku-4-5-20251001'` inline at `get-shit-done/bin/gsd-memory.cjs:2224-2225`. These are `claude-*-YYYYMMDD` literals OUTSIDE `.planning/config.json` `model_routing` — both a currency risk (older than the latest 2026 GA tier) and a centralization drift. Severity `warning`. I file findings via `POST /api/findings` (`finding_type='audit'`) — I do NOT edit the files. `suggested_fix` names `.planning/config.json` `model_routing` as the single source.
+**Reasoning:** MODL-01 (currency) and MODL-06 (centralization) are gsd-amauta-specific owned rules — no existing agent covers model-config drift. The original finding (stale `claude-sonnet-4-5-20250514` inline at `gsd-memory.cjs`, plus scattered classifier/memory literals) was RESOLVED on 2026-07-10: all callers now resolve through `get-shit-done/bin/lib/model-registry.json` (via `model-registry.cjs` / `services/model_registry.py`), which centralizes the current tiers (`claude-sonnet-5`, `claude-opus-4-8`, `claude-fable-5`, `claude-haiku-4-5-20251001`) and applies the fable→opus fallback. So the registry file and its last-known-good fallback literals are the sanctioned home — NOT a violation. I fire ONLY when a NEW `claude-*-YYYYMMDD` literal appears OUTSIDE the registry, or when the registry ids fall behind the latest GA tier. Severity `warning`. I file findings via `POST /api/findings` (`finding_type='audit'`) — I do NOT edit the files. `suggested_fix` names the model registry as the single source.
 
-**Output (structured finding + audit POST):**
+**Output (structured finding + audit POST) — for a NEW offending inline id (illustrative):**
 ```json
 { "tool": "gsd-auditor-models", "severity": "warning", "category": "model-centralization",
-  "file": "services/memory_classifier.py", "line": 39,
-  "message": "inline claude-* model id scattered outside model_routing config",
-  "remediation": "Centralize the model id via .planning/config.json model_routing; reference the routing key, not an inline literal" }
+  "file": "services/some_new_caller.py", "line": 12,
+  "message": "inline claude-* model id scattered outside the model registry",
+  "remediation": "Resolve the id through get-shit-done/bin/lib/model-registry.json (model-registry.cjs / services/model_registry.py); do not add a fresh inline literal" }
 ```
 ```bash
 curl -s -X POST "http://127.0.0.1:${AMAUTA_PORT:-18799}/api/findings" \
   -H 'Content-Type: application/json' \
-  -d '{"agent_name":"gsd-auditor-models","finding_type":"audit","severity":"warning","rule_id":"MODL-06","domain":"models","file_path":"services/memory_classifier.py","evidence":"_CLASSIFIER_MODEL_ID = \"claude-haiku-4-5-20251001\"","suggested_fix":"Centralize the model id via .planning/config.json model_routing; reference the routing key, not an inline literal","content":"inline claude-* model id scattered outside model_routing config"}'
+  -d '{"agent_name":"gsd-auditor-models","finding_type":"audit","severity":"warning","rule_id":"MODL-06","domain":"models","file_path":"services/some_new_caller.py","evidence":"a NEW inline claude-<tier>-<date> literal outside model-registry.json","suggested_fix":"Resolve the id through the model registry (get-shit-done/bin/lib/model-registry.json); do not add a fresh inline literal","content":"inline claude-* model id scattered outside the model registry"}'
 ```
 Response: `201 {"id":...,"created":true}`. Verdict: `comment_only` (only warnings).
 

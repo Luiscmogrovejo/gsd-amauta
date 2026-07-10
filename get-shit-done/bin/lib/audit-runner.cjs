@@ -262,8 +262,21 @@ function detectServicesWithoutHealthcheck(composeSrc) {
 
 // MODL-01/06: an inline claude-<tier>-<date> literal (a pinned model id).
 const MODEL_ID_RE = /claude-[a-z]+-[0-9]/;
-function detectInlineModelId(src) {
-  return MODEL_ID_RE.test(src);
+// The sanctioned single source of truth for model ids (the registry module) and
+// its last-known-good fallbacks are NOT violations — every OTHER caller must
+// resolve through the registry instead of holding an inline literal.
+const MODEL_REGISTRY_FILES = /(?:^|[/\\])(?:model-registry\.(?:json|cjs)|model_registry\.py)$/;
+const SANCTIONED_FALLBACK_MARKER = /last-known-good|model[-_ ]registry fallback|registry fallback/i;
+function detectInlineModelId(src, filePath) {
+  // The registry file itself legitimately holds the canonical ids.
+  if (filePath && MODEL_REGISTRY_FILES.test(filePath)) return false;
+  if (!MODEL_ID_RE.test(src)) return false;
+  // Ignore ids on lines explicitly annotated as the sanctioned degradation-path
+  // fallback (a literal is unavoidable there — it fires WHEN the registry can't load).
+  const offending = src.split('\n').filter(
+    (line) => MODEL_ID_RE.test(line) && !SANCTIONED_FALLBACK_MARKER.test(line)
+  );
+  return offending.length > 0;
 }
 
 // HARN-02: validator == claimer per task (a JSON task ledger — {tasks:[…]}).
@@ -472,10 +485,10 @@ const DETECT_REGISTRY = {
   models: [
     {
       rule_id: 'MODL-01', domain: 'models', severity: 'warning',
-      suggested_fix: 'Centralize model ids in .planning/config.json model_routing; reference tier names, not inline literals.',
-      test(content) {
-        return detectInlineModelId(content)
-          ? `inline claude-<tier>-<date> model id literal (${(content.match(MODEL_ID_RE) || [''])[0]})`
+      suggested_fix: 'Resolve model ids through get-shit-done/bin/lib/model-registry.json (model-registry.cjs / services/model_registry.py); do not add inline literals. Keep the registry ids on the latest GA tier.',
+      test(content, filePath) {
+        return detectInlineModelId(content, filePath)
+          ? `inline claude-<tier>-<date> model id literal (${(content.match(MODEL_ID_RE) || [''])[0]}) outside the model registry`
           : false;
       },
     },

@@ -33,10 +33,19 @@ import sys
 import urllib.error
 import urllib.request
 
-# Matches the model-id constant gsd-memory.cjs's claudeSummarize() Anthropic
-# HTTP fallback uses for the 'haiku' shortname (get-shit-done/bin/gsd-memory.cjs
-# claudeSummarize(), Anthropic HTTP fallback block -- modelId ternary).
-_CLASSIFIER_MODEL_ID = "claude-haiku-4-5-20251001"
+# Model id resolves through the single source of truth shared with the JS
+# runtime (get-shit-done/bin/lib/model-registry.json) via services/model_registry.py
+# -- MODL-01 currency + MODL-06 centralization. Defensive: a missing/corrupt
+# registry degrades to the last-known-good haiku id so this fail-open module
+# never breaks at import time.
+try:
+    _here = os.path.dirname(os.path.abspath(__file__))
+    if _here not in sys.path:
+        sys.path.insert(0, _here)
+    from model_registry import resolve_model_id as _resolve_model_id
+    _CLASSIFIER_MODEL_ID = _resolve_model_id("haiku")
+except Exception:
+    _CLASSIFIER_MODEL_ID = "claude-haiku-4-5-20251001"  # last-known-good fallback (model-registry unavailable)
 _ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 _HTTP_TIMEOUT_SECONDS = 10
 _MAX_TOKENS = 200

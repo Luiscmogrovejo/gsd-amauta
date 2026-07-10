@@ -49,6 +49,9 @@ const http = require('http');
 // https module removed — Claude CLI used for distillation, curl for API fallback
 const path = require('path');
 const fs = require('fs');
+// Model ids resolve through the single source of truth (lib/model-registry.json)
+// — MODL-01 currency + MODL-06 centralization. Honors the fable→opus fallback.
+const { resolveModelId, resolveModelAlias } = require('./lib/model-registry.cjs');
 
 // ── Load .env file (skipped in test mode) ─────────────
 (function loadDotenv() {
@@ -2194,7 +2197,7 @@ function claudeSummarize(entries, model) {
   for (let attempt = 0; attempt <= CLAUDE_RATE_LIMIT_BACKOFF_MS.length; attempt++) {
     try {
       const result = execSync(
-        `claude --print --model ${model}`,
+        `claude --print --model ${resolveModelAlias(model)}`,
         { input: prompt, timeout: 60000, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
       );
       const summary = (result || '').trim();
@@ -2221,8 +2224,7 @@ function claudeSummarize(entries, model) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (apiKey) {
     try {
-      const modelId = model === 'sonnet' ? 'claude-sonnet-4-5-20250514'
-        : model === 'haiku' ? 'claude-haiku-4-5-20251001' : model;
+      const modelId = resolveModelId(model);
       const body = JSON.stringify({
         model: modelId, max_tokens: 500,
         messages: [{ role: 'user', content: prompt }],
@@ -2459,8 +2461,8 @@ async function cmdDistill(args) {
           original_count: group.length,
           distilled_at: new Date().toISOString(),
           distill_strategy: distillStrategy,
-          distill_model: distillStrategy === 'claude-sonnet' ? 'claude-sonnet-4-5-20250514'
-            : distillStrategy === 'claude-haiku' ? 'claude-haiku-4-5-20251001'
+          distill_model: distillStrategy === 'claude-sonnet' ? resolveModelId('sonnet')
+            : distillStrategy === 'claude-haiku' ? resolveModelId('haiku')
             : distillStrategy === 'ollama' ? ollamaModel
             : null,
           merged_sources: mergedSources,

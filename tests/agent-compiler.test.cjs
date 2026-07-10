@@ -7,7 +7,7 @@
  *   2. SUPPORTED_TARGETS array order: claude-code, opencode, cursor
  *   3. SECTION_KEY_TO_HEADING covers 9 headings (metadata is special, not in this map)
  *   4. SECTION_EMIT_ORDER lists 10 keys total — metadata first
- *   5. listAgents finds 17 agents under get-shit-done/agents/
+ *   5. listAgents finds every agent dir under get-shit-done/agents/
  *   6. validate(get-shit-done/agents/gsd-planner/) returns ok:true
  *   7. validate rejects unknown frontmatter field
  *   8. compile to claude-code, opencode, cursor produces three different outputs
@@ -111,11 +111,18 @@ test('SECTION_EMIT_ORDER lists 10 keys total — metadata first', () => {
   }
 });
 
-// ─── Test 5: listAgents finds 17 agents ───────────────────────────────────────
+// ─── Test 5: listAgents finds every agent dir ───────────────────────────────────────
 
-test('listAgents finds 17 agents under get-shit-done/agents/', () => {
-  const agents = listAgents(path.join(ROOT, 'get-shit-done/agents'));
-  assert.equal(agents.length, 17, `Expected 17 agents, got ${agents.length}`);
+test('listAgents finds every agent dir under get-shit-done/agents/', () => {
+  const agentsDir = path.join(ROOT, 'get-shit-done/agents');
+  const agents = listAgents(agentsDir);
+  // Drift-proof: compare to the on-disk ground truth (dirs containing AGENT.yaml)
+  // rather than a hardcoded count that staled as the fleet grew (17 → 35).
+  const onDisk = fs.readdirSync(agentsDir).filter(
+    (d) => fs.existsSync(path.join(agentsDir, d, 'AGENT.yaml'))
+  ).length;
+  assert.equal(agents.length, onDisk, `Expected ${onDisk} agents (on-disk AGENT.yaml dirs), got ${agents.length}`);
+  assert.ok(agents.length >= 35, `fleet floor: expected at least 35 agents, got ${agents.length}`);
 
   // All returned agents must have name and path
   for (const a of agents) {

@@ -181,12 +181,15 @@ for (const a of AUDITORS) {
 // Full-fleet byte-match: the compiled fleet count equals the number of
 // committed gsd-*.md files (30 after all four Wave-1 auditors land). This is
 // the shared byte-match invariant, asserted ONCE here in the final wave.
-test('REGRESSION: full-fleet compile count matches committed agents/gsd-*.md (30 after Wave-1 lands)', () => {
+test('REGRESSION: full-fleet compile count matches committed agents/gsd-*.md', () => {
   const r = compile('claude-code', { source: SOURCE_DIR });
   assert.equal(r.errors.length, 0, `full-fleet compile must produce 0 errors. Got: ${JSON.stringify(r.errors)}`);
   const committed = fs.readdirSync(AGENTS_OUT).filter((f) => /^gsd-.*\.md$/.test(f)).length;
   assert.equal(r.compiled.length, committed, `compiled fleet (${r.compiled.length}) must equal committed gsd-*.md count (${committed})`);
-  assert.equal(committed, 30, 'the fleet is at 30 agents after Wave-1 (4 new domain auditors landed)');
+  // Fleet is at 35 after v3.6 landed all 9 domain auditors + reference (grew from
+  // the Wave-1 snapshot of 30 as Wave-2 auditors landed — a doc-drift count fixed
+  // to reality; this assertion is a byte-match invariant, not a growth cap).
+  assert.equal(committed, 35, 'the fleet is at 35 agents (9 domain auditors + reference + core fleet)');
 });
 
 // ===========================================================================
@@ -421,24 +424,40 @@ test('DOM1-03 / SC3: INFRA-03 detect fires on a compose service with no healthch
 
 // ---- SC4 — DOM1-04 MODELS --------------------------------------------------
 
-test('DOM1-04 / SC4: MODL-01/MODL-06 detect fires on the REAL memory_classifier.py + gsd-memory.cjs stale ids, NOT on config.json model_routing', () => {
-  const classifierSrc = fs.readFileSync(path.join(ROOT, 'services', 'memory_classifier.py'), 'utf8');
+test('DOM1-04 / SC4: MODL-01/MODL-06 detector fires on a synthetic inline id, and the REAL callers are now centralized via the model registry', () => {
+  // Detector capability proven on STABLE synthetic fixtures (decoupled from live
+  // source so the fix below cannot silently disable the detector).
+  assert.equal(detectInlineModelId("const m = 'claude-sonnet-4-5-20250514';"), true,
+    'detector fires on a synthetic inline claude-<tier>-<date> id');
+  assert.equal(detectInlineModelId('routing: { R: "sonnet", T: "haiku" }'), false,
+    'detector does NOT fire on bare tier names');
+
+  // Reality after the 2026-07-10 centralization (audit→fix→re-audit clears):
   const memoryCjsSrc = fs.readFileSync(path.join(ROOT, 'get-shit-done', 'bin', 'gsd-memory.cjs'), 'utf8');
   const configSrc = fs.readFileSync(path.join(ROOT, '.planning', 'config.json'), 'utf8');
+  const registrySrc = fs.readFileSync(path.join(ROOT, 'get-shit-done', 'bin', 'lib', 'model-registry.json'), 'utf8');
 
-  assert.equal(detectInlineModelId(classifierSrc), true, 'MODL-01/06 fires on the REAL inline claude-* id in services/memory_classifier.py');
-  assert.equal(detectInlineModelId(memoryCjsSrc), true, 'MODL-01/06 fires on the REAL inline claude-* id in get-shit-done/bin/gsd-memory.cjs');
-  // Negative control: config.json model_routing uses tier names (sonnet/haiku),
-  // NOT pinned claude-<tier>-<date> literals — the centralization target, not a violation.
-  assert.equal(detectInlineModelId(configSrc), false, 'MODL-06 does NOT fire on .planning/config.json (centralized tier names, not inline ids)');
+  // gsd-memory.cjs no longer carries an inline dated id — it resolves through the registry.
+  assert.equal(detectInlineModelId(memoryCjsSrc), false,
+    'gsd-memory.cjs is centralized — no inline claude-<tier>-<date> id remains (resolves via model-registry.cjs)');
+  assert.match(memoryCjsSrc, /model-registry\.cjs/, 'gsd-memory.cjs requires the model registry');
+  // The registry IS the sanctioned single source and carries the current tiers.
+  assert.equal(detectInlineModelId(registrySrc), true, 'model-registry.json holds the canonical ids');
+  assert.match(registrySrc, /claude-sonnet-5/, 'registry pins the CURRENT sonnet tier (not the stale 4-5 id)');
+  assert.match(registrySrc, /claude-fable-5/, 'registry supports fable');
+  assert.doesNotMatch(registrySrc, /claude-sonnet-4-5-20250514/, 'the stale sonnet id is gone');
+  // Negative control: config.json model_routing uses tier names, not inline ids.
+  assert.equal(detectInlineModelId(configSrc), false,
+    'MODL-06 does NOT fire on .planning/config.json (centralized tier names, not inline ids)');
 
   const md = AUDITORS.find((a) => a.name === 'gsd-auditor-models');
   assert.ok(md.mdSrc.includes('MODL-01') && md.mdSrc.includes('MODL-06'), 'models .md documents MODL-01 + MODL-06');
-  assert.match(md.mdSrc, /model_routing/, 'MODL-06 suggested_fix names config.json model_routing centralization');
+  assert.match(md.mdSrc, /model_routing/, 'MODL-02 still names config.json model_routing');
   assert.match(md.mdSrc, /centraliz/i, 'MODL-06 prose names centralization');
+  assert.match(md.mdSrc, /model-registry\.json/, 'MODL-06 names the model registry as the single source');
   assert.ok(
     md.mdSrc.includes('memory_classifier.py') || md.mdSrc.includes('gsd-memory.cjs'),
-    'models .md cites the concrete stale-id seed file(s)'
+    'models .md still cites the concrete caller file(s)'
   );
 });
 
