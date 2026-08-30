@@ -164,6 +164,100 @@ DATA_DIR = os.environ.get(
 )
 PID_FILE = Path(__file__).resolve().parent / "amauta-daemon.pid"
 
+# ── amauta.py subprocess ceiling ──────────────────────────────────────────────
+# Every amauta.py subprocess launched by _run_amauta() is bounded by
+# AMAUTA_CMD_TIMEOUT_MS. The historical ceiling was a hard-coded 30s, which a
+# `claim` carrying Layer 1 enrichment overshoots by ~1s (measured 30.95s to
+# completion against an isolated store) — the command committed tasks.json and
+# was then killed, which is what made the dual-store mirror skip. 120s is the
+# default so the same work has headroom on a slower machine or with a larger
+# enrichment payload.
+#
+# A value that is *present but unusable* (non-numeric, or <= 0) falls back to
+# the historical 30000 rather than silently granting headroom nobody asked for;
+# an unset variable takes the 120000 default. The client side
+# (get-shit-done/bin/gsd-amauta.cjs) reads the same variable and adds
+# CLIENT_TIMEOUT_SLACK_MS so the HTTP client never becomes the binding limit.
+CMD_TIMEOUT_DEFAULT_MS = 120000
+CMD_TIMEOUT_FALLBACK_MS = 30000
+
+
+def _cmd_timeout_ms():
+    """Resolve the amauta.py subprocess ceiling, in milliseconds.
+
+    Returns:
+        int: the value of AMAUTA_CMD_TIMEOUT_MS when it parses to a positive
+            integer; CMD_TIMEOUT_DEFAULT_MS (120000) when the variable is unset
+            or empty; CMD_TIMEOUT_FALLBACK_MS (30000) when it is set but
+            non-numeric or <= 0 (logged at warning level, never silent).
+
+    Example:
+        >>> os.environ["AMAUTA_CMD_TIMEOUT_MS"] = "45000"
+        >>> _cmd_timeout_ms()
+        45000
+    """
+    raw = os.environ.get("AMAUTA_CMD_TIMEOUT_MS")
+    if raw is None or not str(raw).strip():
+        return CMD_TIMEOUT_DEFAULT_MS
+    try:
+        ms = int(str(raw).strip())
+    except (TypeError, ValueError):
+        log.warning(
+            "cmd_timeout_unparseable value=%r using_ms=%d",
+            raw, CMD_TIMEOUT_FALLBACK_MS,
+        )
+        return CMD_TIMEOUT_FALLBACK_MS
+    if ms <= 0:
+        log.warning(
+            "cmd_timeout_non_positive value=%r using_ms=%d",
+            raw, CMD_TIMEOUT_FALLBACK_MS,
+        )
+        return CMD_TIMEOUT_FALLBACK_MS
+    return ms
+
+
+# ── tasks.json change detection (dual-store mirror guard) ─────────────────────
+TASKS_FILE = Path(DATA_DIR) / "tasks.json"
+
+
+def _tasks_file_signature():
+    """Return a cheap O(1) fingerprint of tasks.json: (inode, size, mtime_ns).
+
+    amauta.py's save() commits tasks.json with os.replace() of a temp file, so
+    a committed write ALWAYS lands on a new inode. That makes a single
+    os.stat() a sufficient and constant-cost change signal — no need to hash
+    the (currently ~10 MB) file on both sides of every mutating command.
+
+    Returns:
+        tuple|None: (st_ino, st_size, st_mtime_ns), or None when the file
+            cannot be stat'd. A None on either side is treated by
+            _tasks_file_changed() as "changed", never as "unchanged".
+    """
+    try:
+        st = os.stat(TASKS_FILE)
+        return (st.st_ino, st.st_size, st.st_mtime_ns)
+    except OSError:
+        return None
+
+
+def _tasks_file_changed(before, after):
+    """Report whether tasks.json changed between two signatures.
+
+    Args:
+        before: signature captured before the subprocess ran, or None.
+        after: signature captured after it ran, or None.
+
+    Returns:
+        bool: True when the signatures differ, or when either side is unknown.
+            Unknown resolves to "changed" on purpose: the only mirror action
+            reachable without a rc==0 is an idempotent re-read-and-upsert, so
+            a false positive costs one redundant resync while a false negative
+            leaves the mirror permanently stale.
+    """
+    if before is None or after is None:
+        return True
+    return before != after
+
 # ── Stale Task Watchdog & Retry Queue Flush ───────────────────────────────────
 STALE_CHECK_INTERVAL = int(os.environ.get("GSD_STALE_INTERVAL", "300"))  # 5 minutes
 STALE_THRESHOLD_HOURS = int(os.environ.get("GSD_STALE_HOURS", "48"))
@@ -1077,17 +1171,21 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             env["AMAUTA_MEMORY_BACKEND"] = "postgres" if pg_url else ""
 
         cmd = [sys.executable, AMAUTA_PY] + args
+        timeout_ms = _cmd_timeout_ms()
+        timeout_s = timeout_ms / 1000.0
         try:
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=30,
+                timeout=timeout_s,
                 env=env,
             )
             return result.stdout, result.stderr, result.returncode
         except subprocess.TimeoutExpired:
-            return "", "Command timed out after 30s", 1
+            # Report the ceiling that actually fired, so the next person reading
+            # this message knows which N to raise (AMAUTA_CMD_TIMEOUT_MS).
+            return "", f"Command timed out after {timeout_s:g}s (AMAUTA_CMD_TIMEOUT_MS={timeout_ms})", 1
         except Exception as e:
             return "", str(e), 1
 
@@ -2342,6 +2440,12 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 if body.get("fix") is True:
                     args.append("--fix")
 
+            # Fingerprint tasks.json BEFORE the subprocess runs. A command that
+            # commits tasks.json and is then killed by the ceiling returns
+            # rc != 0, and the dual-store mirror below used to skip on that —
+            # freezing sqlite/PG against a tasks.json that had already moved.
+            _tasks_sig_before = _tasks_file_signature()
+
             out, err, rc = self._run_amauta(args)
 
             # ── RLM context enrichment for claim commands ──
@@ -2357,7 +2461,22 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                                        "assign", "note", "update", "delete", "link", "unlink", "atomize",
                                        "archive", "reconcile"}
             _mirror_store = _get_store()
-            if _mirror_store and rc == 0 and command in _TASK_MUTATING_COMMANDS:
+            # Mirror when the command SUCCEEDED, or when it failed but
+            # tasks.json moved anyway — the timed-out-after-commit case that
+            # left the two stores disagreeing. rc alone is not evidence that
+            # nothing was written; the atomic os.replace() in amauta.py's
+            # save() is.
+            _tasks_moved = (
+                rc != 0
+                and _tasks_file_changed(_tasks_sig_before, _tasks_file_signature())
+            )
+            if _tasks_moved:
+                log.warning(
+                    "mirror_after_failed_command command=%s task_id=%s rc=%s "
+                    "reason=tasks_json_changed_despite_failure",
+                    command, body.get("id", "?"), rc,
+                )
+            if _mirror_store and (rc == 0 or _tasks_moved) and command in _TASK_MUTATING_COMMANDS:
                 try:
                     task_id = body.get("id") or ""
                     # For add, extract the new task ID from output
@@ -2365,9 +2484,16 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                         import re as _re
                         m = _re.search(r"(TK|EP|ST|BG)-\d+", out)
                         task_id = m.group(0) if m else ""
-                    if command == "delete" and task_id:
+                    # DESTRUCTIVE mirror actions stay gated on rc == 0. On the
+                    # rc != 0 path we know tasks.json moved but not that THIS
+                    # command is what moved it (a sibling process writing the
+                    # shared file looks identical), and a wrong task_delete
+                    # destroys a live mirror row. The rc != 0 path therefore
+                    # falls through to the idempotent re-read-and-upsert below,
+                    # which resyncs from whatever tasks.json now says.
+                    if command == "delete" and task_id and rc == 0:
                         _mirror_store.task_delete(task_id)
-                    elif command == "archive":
+                    elif command == "archive" and rc == 0:
                         # Archive moves tasks OUT of tasks.json -- delete them from PG mirror.
                         # task_id may be empty for bulk archive; extract archived IDs from output.
                         import re as _re
@@ -2379,11 +2505,24 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                                 pass  # Best-effort per-task deletion
                     elif task_id:
                         # Re-read the task from tasks.json via show --json to get current state
-                        show_out, _, show_rc = self._run_amauta(["show", task_id, "--json"])
+                        show_out, show_err, show_rc = self._run_amauta(["show", task_id, "--json"])
                         if show_rc == 0 and show_out.strip():
                             import json as _json
                             item = _json.loads(show_out)
                             _mirror_store.task_upsert(item)
+                        else:
+                            # This re-read runs under the SAME ceiling as the
+                            # outer command, so it can time out too. Do not
+                            # swallow it: a silent failure here is the mirror
+                            # going stale while the caller sees exit_code 0.
+                            _pg_sync_warning = (
+                                f"\n[PG_SYNC_WARN] Mirror re-read failed for {task_id} "
+                                f"(show exit_code={show_rc}): {_safe_error(show_err.strip() or 'empty output')}"
+                            )
+                            log.warning(
+                                "store_mirror_reread_failed task_id=%s show_rc=%s error=%s",
+                                task_id, show_rc, _safe_error(show_err.strip() or "empty output"),
+                            )
                 except Exception as _pg_err:
                     _pg_sync_warning = f"\n[PG_SYNC_WARN] PG mirror failed for {body.get('id', '?')}: {_safe_error(_pg_err)}"
                     log.warning("store_mirror_failed task_id=%s error=%s", body.get("id", "?"), _safe_error(_pg_err))

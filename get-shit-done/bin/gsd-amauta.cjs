@@ -36,6 +36,10 @@
  *   GSD_AMAUTA_PY      Path to amauta.py
  *   AMAUTA_DATA_DIR    Task data directory
  *   GSD_AMAUTA_HOST    Daemon host (default: 127.0.0.1)
+ *   AMAUTA_CMD_TIMEOUT_MS  amauta.py command ceiling (default: 120000; a
+ *                      present-but-invalid value falls back to 30000). Read by
+ *                      this CLI AND by services/amauta-daemon.py; the HTTP
+ *                      client uses this value + 5000ms.
  */
 
 const http = require('http');
@@ -77,6 +81,49 @@ function _telemetryEmit(eventType, payload) {
 
 const HOST = process.env.GSD_AMAUTA_HOST || '127.0.0.1';
 const PORT = parseInt(process.env.GSD_AMAUTA_PORT || '18799', 10);
+
+// ── Command ceilings ────────────────────────────────────
+// AMAUTA_CMD_TIMEOUT_MS is the SINGLE source for how long an amauta.py command
+// may take. services/amauta-daemon.py::_cmd_timeout_ms() reads the same
+// variable with the same defaults; keeping them in lockstep is what stops the
+// HTTP client from silently becoming the binding limit the moment the daemon
+// side is allowed past the old 35s client default.
+const CMD_TIMEOUT_DEFAULT_MS = 120000;
+const CMD_TIMEOUT_FALLBACK_MS = 30000;
+// The client must outlive the daemon's own ceiling, or it gives up first and
+// reports a transport error for what is really a server-side timeout.
+const CLIENT_TIMEOUT_SLACK_MS = 5000;
+
+/**
+ * Resolve the amauta.py command ceiling in milliseconds.
+ *
+ * Mirrors services/amauta-daemon.py::_cmd_timeout_ms(): unset/empty takes the
+ * 120000 default; a present-but-unusable value (non-numeric or <= 0) falls
+ * back to the historical 30000 rather than silently granting headroom.
+ *
+ * @returns {number} ceiling in milliseconds
+ * @example
+ *   process.env.AMAUTA_CMD_TIMEOUT_MS = '45000';
+ *   cmdTimeoutMs(); // 45000
+ */
+function cmdTimeoutMs() {
+  const raw = process.env.AMAUTA_CMD_TIMEOUT_MS;
+  if (raw === undefined || raw === null || String(raw).trim() === '') {
+    return CMD_TIMEOUT_DEFAULT_MS;
+  }
+  const ms = Number.parseInt(String(raw).trim(), 10);
+  if (!Number.isFinite(ms) || ms <= 0) return CMD_TIMEOUT_FALLBACK_MS;
+  return ms;
+}
+
+/**
+ * Resolve the HTTP client ceiling: always the daemon ceiling plus slack.
+ *
+ * @returns {number} ceiling in milliseconds
+ */
+function clientTimeoutMs() {
+  return cmdTimeoutMs() + CLIENT_TIMEOUT_SLACK_MS;
+}
 
 // PLUGIN_ROOT resolution:
 // - In source repo (~/Code/gsd-amauta/get-shit-done/bin/), `../..` = repo root (has amauta.py + services/) ✓
@@ -152,10 +199,12 @@ const DAEMON_SCRIPT = (function() {
  * @param {string} method - GET or POST
  * @param {string} urlPath - e.g. /api/board
  * @param {object|null} body - JSON body for POST requests
- * @param {number} timeoutMs - request timeout
+ * @param {number} [timeoutMs] - request timeout; defaults to clientTimeoutMs()
+ *   (AMAUTA_CMD_TIMEOUT_MS + CLIENT_TIMEOUT_SLACK_MS), evaluated per call so
+ *   the client ceiling always tracks the daemon's.
  * @returns {Promise<{statusCode: number, data: object}>}
  */
-function httpRequest(method, urlPath, body = null, timeoutMs = 35000) {
+function httpRequest(method, urlPath, body = null, timeoutMs = clientTimeoutMs()) {
   return new Promise((resolve, reject) => {
     const payload = body ? JSON.stringify(body) : null;
     const headers = { 'Content-Type': 'application/json' };
@@ -284,7 +333,10 @@ function runDirect(args) {
   try {
     const result = execFileSync('python3', [AMAUTA_PY, ...args], {
       encoding: 'utf-8',
-      timeout: 30000,
+      // Same ceiling the daemon applies to the same subprocess — runDirect() IS
+      // the daemon-side execution, so it takes cmdTimeoutMs() without the
+      // client slack.
+      timeout: cmdTimeoutMs(),
       env: {
         ...process.env,
         AMAUTA_DATA_DIR: DATA_DIR,

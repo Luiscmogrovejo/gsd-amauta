@@ -584,3 +584,312 @@ test('_filesDisjointSplit: create[] paths are normalised too, not just modify[]'
   assert.equal(result.split_rationale, 'no_disjoint_prefix',
     'a file created by one task and modified by another is a collision');
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Dual-store mirror guard (services/amauta-daemon.py)
+//
+// Regression for: a task-mutating command that COMMITS tasks.json and is then
+// killed by the subprocess ceiling returns rc != 0. The mirror block used to be
+// gated on `rc == 0`, so it skipped — leaving sqlite/PG frozen against a
+// tasks.json that had already moved, permanently and silently.
+//
+// The acceptance criterion here is "a timeout that no longer corrupts", NOT
+// "a command that completes". This test forces the timeout on purpose (small
+// AMAUTA_CMD_TIMEOUT_MS + a stub that sleeps past it) and then asserts the two
+// stores AGREE. Raising the ceiling does not make this test pass; only the
+// guard does. Reverting `(rc == 0 or _tasks_moved)` back to `rc == 0` in
+// amauta-daemon.py must turn this test red.
+//
+// Isolation: the driver below builds its own ThreadedHTTPServer from the daemon
+// module and never calls run(), so it never touches the shared
+// services/amauta-daemon.pid or any shared port/data dir.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const http = require('http');
+const net = require('net');
+const { spawn, execFileSync } = require('child_process');
+
+const SERVICES_DIR = path.join(REPO_ROOT, 'services');
+
+/**
+ * Ask the OS for a free loopback port and release it immediately.
+ * @returns {Promise<number>} an ephemeral port number
+ */
+function getFreePort() {
+  return new Promise((resolve, reject) => {
+    const srv = net.createServer();
+    srv.on('error', reject);
+    srv.listen(0, '127.0.0.1', () => {
+      const { port } = srv.address();
+      srv.close(() => resolve(port));
+    });
+  });
+}
+
+/**
+ * Poll a loopback port until it accepts a TCP connection.
+ * @param {number} port
+ * @param {number} timeoutMs - give up after this long
+ * @returns {Promise<void>}
+ * @throws {Error} when the port never opens before the deadline
+ */
+function waitForPort(port, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  return new Promise((resolve, reject) => {
+    const attempt = () => {
+      const sock = net.connect(port, '127.0.0.1');
+      sock.once('connect', () => { sock.destroy(); resolve(); });
+      sock.once('error', () => {
+        sock.destroy();
+        if (Date.now() > deadline) {
+          reject(new Error(`port ${port} never opened within ${timeoutMs}ms`));
+          return;
+        }
+        setTimeout(attempt, 150);
+      });
+    };
+    attempt();
+  });
+}
+
+/**
+ * POST a JSON body to the test daemon.
+ * @param {number} port
+ * @param {string} urlPath
+ * @param {object} body
+ * @param {number} timeoutMs
+ * @returns {Promise<object>} parsed response, or {raw} when not JSON
+ */
+function postJson(port, urlPath, body, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify(body);
+    const req = http.request({
+      hostname: '127.0.0.1',
+      port,
+      path: urlPath,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+      },
+      timeout: timeoutMs,
+    }, (res) => {
+      let data = '';
+      res.on('data', (c) => { data += c; });
+      res.on('end', () => {
+        try { resolve(JSON.parse(data)); } catch { resolve({ raw: data }); }
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('client timeout')); });
+    req.write(payload);
+    req.end();
+  });
+}
+
+/**
+ * Read the mirrored rows for a task out of the test SQLite store.
+ * @param {string} dbPath
+ * @param {string} taskId
+ * @returns {Array<{id: string, status: string, claimed_by: string}>}
+ */
+function readMirrorRows(dbPath, taskId) {
+  const script = [
+    'import json, sqlite3, sys',
+    'conn = sqlite3.connect(sys.argv[1])',
+    'conn.row_factory = sqlite3.Row',
+    'rows = conn.execute("SELECT id, status, claimed_by FROM gsd_tasks WHERE id = ?", (sys.argv[2],)).fetchall()',
+    'print(json.dumps([dict(r) for r in rows]))',
+  ].join('\n');
+  return JSON.parse(
+    execFileSync('python3', ['-c', script, dbPath, taskId], { encoding: 'utf8' })
+  );
+}
+
+const FAKE_AMAUTA_PY = `
+import json, os, sys, tempfile, time
+
+DATA_DIR = os.environ["AMAUTA_DATA_DIR"]
+TASKS = os.path.join(DATA_DIR, "tasks.json")
+SLEEP_S = float(os.environ.get("FAKE_AMAUTA_SLEEP_S", "0"))
+
+def load():
+    with open(TASKS) as f:
+        return json.load(f)
+
+def save(data):
+    # Atomic replace, exactly like amauta.py save() -- the commit lands on a
+    # NEW inode, which is what the daemon's _tasks_file_signature() detects.
+    fd, tmp = tempfile.mkstemp(dir=DATA_DIR, suffix=".tmp")
+    with os.fdopen(fd, "w") as f:
+        json.dump(data, f, indent=2)
+    os.replace(tmp, TASKS)
+
+argv = sys.argv[1:]
+cmd = argv[0] if argv else ""
+
+# 'show' is a plain read and stays fast -- mirroring the real system, where the
+# enrichment payload rides on 'claim', not on 'show'.
+if cmd == "show":
+    tid = argv[1]
+    for item in load()["items"]:
+        if item["id"] == tid:
+            print(json.dumps(item))
+            sys.exit(0)
+    sys.exit(1)
+
+if cmd == "claim":
+    tid = argv[1]
+    agent = argv[argv.index("--agent") + 1] if "--agent" in argv else "unknown"
+    data = load()
+    for item in data["items"]:
+        if item["id"] == tid:
+            item["status"] = "in_progress"
+            item["claimed_by"] = agent
+            item["assigned_to"] = agent
+    save(data)             # <-- COMMITTED to tasks.json
+    sys.stdout.flush()
+    time.sleep(SLEEP_S)    # <-- then overshoot the ceiling and get killed
+    print("claimed " + tid)
+    sys.exit(0)
+
+sys.exit(0)
+`;
+
+const DRIVER_PY = `
+import importlib.util, os, pathlib, sys
+
+SERVICES = os.environ["TEST_SERVICES_DIR"]
+sys.path.insert(0, SERVICES)
+
+spec = importlib.util.spec_from_file_location(
+    "amauta_daemon_under_test", os.path.join(SERVICES, "amauta-daemon.py"))
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+
+# Repoint the PID file at the test tmpdir. Belt-and-braces: this driver builds
+# its own server and never calls mod.run(), which is the only thing that writes
+# the shared services/amauta-daemon.pid.
+mod.PID_FILE = pathlib.Path(os.environ["TEST_TMP_DIR"]) / "test-daemon.pid"
+
+if mod.SQLiteStore is None:
+    print("SQLiteStore unavailable in daemon module", file=sys.stderr)
+    sys.exit(2)
+
+mod._pg_store = None
+mod._sqlite_store = mod.SQLiteStore(db_path=os.environ["TEST_SQLITE_PATH"])
+
+server = mod.ThreadedHTTPServer(("127.0.0.1", int(os.environ["TEST_PORT"])),
+                                mod.AmautaHandler)
+server.serve_forever()
+`;
+
+test('mirror guard: a claim that times out AFTER committing tasks.json still reaches the mirror',
+  async (t) => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'amauta-mirror-guard-'));
+    const dataDir = path.join(tmpDir, 'data');
+    fs.mkdirSync(dataDir, { recursive: true });
+
+    const tasksFile = path.join(dataDir, 'tasks.json');
+    const sqlitePath = path.join(tmpDir, 'mirror.db');
+    const fakeAmauta = path.join(tmpDir, 'fake_amauta.py');
+    const driver = path.join(tmpDir, 'driver.py');
+
+    const TASK_ID = 'TK-9001';
+    const AGENT = 'executor-backend';
+    const CEILING_MS = 1500;   // small on purpose -- we WANT the timeout
+    const SLEEP_S = 6;         // comfortably past the ceiling
+
+    fs.writeFileSync(tasksFile, JSON.stringify({
+      metadata: { created: '2026-01-01T00:00:00Z', version: '2.0', updated: '2026-01-01T00:00:00Z' },
+      items: [{
+        id: TASK_ID,
+        project_id: '__test__',
+        type: 'task',
+        title: 'mirror guard fixture',
+        description: '',
+        details: '',
+        status: 'pending',
+        priority: 'high',
+        assigned_to: '',
+        claimed_by: null,
+        claimed_at: null,
+        rpetd_phases: {},
+        rpetd_complete: false,
+        importance: 3,
+        urgency: 3,
+        success_criteria: [],
+        deliverables: [],
+        dependencies: [],
+        tags: [],
+        notes: [],
+        parent: null,
+      }],
+    }, null, 2));
+    fs.writeFileSync(fakeAmauta, FAKE_AMAUTA_PY);
+    fs.writeFileSync(driver, DRIVER_PY);
+
+    const port = await getFreePort();
+    const child = spawn('python3', [driver], {
+      env: {
+        ...process.env,
+        TEST_SERVICES_DIR: SERVICES_DIR,
+        TEST_TMP_DIR: tmpDir,
+        TEST_SQLITE_PATH: sqlitePath,
+        TEST_PORT: String(port),
+        AMAUTA_DATA_DIR: dataDir,
+        GSD_AMAUTA_PY: fakeAmauta,
+        GSD_AMAUTA_PORT: String(port),
+        AMAUTA_CMD_TIMEOUT_MS: String(CEILING_MS),
+        FAKE_AMAUTA_SLEEP_S: String(SLEEP_S),
+        AMAUTA_DAEMON_TOKEN: '',
+        GSD_POSTGRES_URL: '',
+        GSD_RLM_ENABLED: 'false',
+        GSD_AMAUTA_NO_AUTO_START: '1',
+        NODE_ENV: 'test',
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let childErr = '';
+    child.stderr.on('data', (c) => { childErr += c; });
+    child.stdout.on('data', () => {});
+
+    t.after(() => {
+      try { child.kill('SIGKILL'); } catch { /* already gone */ }
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best effort */ }
+    });
+
+    await waitForPort(port, 60000).catch((e) => {
+      throw new Error(`test daemon did not start: ${e.message}\nstderr:\n${childErr}`);
+    });
+
+    const res = await postJson(port, '/api/claim', { id: TASK_ID, agent: AGENT },
+      (SLEEP_S * 1000) + 30000);
+
+    // 1. The ceiling actually fired. Without this the test could pass for the
+    //    wrong reason -- a claim that simply succeeded proves nothing.
+    assert.equal(res.exit_code, 1,
+      `expected a non-zero exit from the timed-out claim, got ${JSON.stringify(res)}`);
+    assert.match(String(res.error), /timed out/i,
+      `expected a timeout error, got ${JSON.stringify(res.error)}`);
+
+    // 2. The command committed tasks.json before it was killed. This is the
+    //    precondition that makes the mirror skip a corruption rather than a
+    //    no-op.
+    const onDisk = JSON.parse(fs.readFileSync(tasksFile, 'utf8'));
+    const item = onDisk.items.find((i) => i.id === TASK_ID);
+    assert.equal(item.status, 'in_progress',
+      'fixture precondition: the killed claim must have committed tasks.json');
+    assert.equal(item.claimed_by, AGENT);
+
+    // 3. THE GUARD. Both stores must agree. Under the old `rc == 0` gate the
+    //    mirror is skipped entirely and this row does not exist.
+    const rows = readMirrorRows(sqlitePath, TASK_ID);
+    assert.equal(rows.length, 1,
+      `mirror lost the task after a timed-out commit: ${JSON.stringify(rows)}\n` +
+      `daemon stderr:\n${childErr}`);
+    assert.equal(rows[0].status, item.status,
+      `stores disagree on status: tasks.json=${item.status} mirror=${rows[0].status}`);
+    assert.equal(rows[0].claimed_by, item.claimed_by,
+      `stores disagree on claimed_by: tasks.json=${item.claimed_by} mirror=${rows[0].claimed_by}`);
+  });
