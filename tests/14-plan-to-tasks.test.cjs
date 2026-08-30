@@ -180,7 +180,7 @@ test('Pass 0: agent-assignment conflict detected', () => {
   assert.ok(result.conflicts.length > 0, 'should detect conflict');
   const conflict = result.conflicts[0];
   assert.equal(conflict.taskId, 'conflict-01');
-  assert.equal(conflict.planAgent, 'executor-frontend');
+  assert.equal(conflict.declaredAgent, 'executor-frontend');
   assert.equal(conflict.computedAgent, 'executor-backend', 'computed agent should be executor-backend for .py files');
 });
 
