@@ -94,12 +94,30 @@ const CMD_TIMEOUT_FALLBACK_MS = 30000;
 // reports a transport error for what is really a server-side timeout.
 const CLIENT_TIMEOUT_SLACK_MS = 5000;
 
+// The strings Python's int() accepts, written as a JS regex: an optional sign,
+// then decimal digits that may carry PEP 515 underscore separators (single,
+// only between digits). Number.parseInt is NOT this set — it consumes a numeric
+// PREFIX and throws the rest away, so it reads '12abc' as 12 and '1_000' as 1
+// where int() returns 30000 (unparseable) and 1000 respectively. Every one of
+// those disagreements makes the client ceiling SMALLER than the daemon's, i.e.
+// it makes the client the silent binding limit — precisely the failure the
+// lockstep noted above exists to prevent. The guard therefore runs before the
+// parse, not after it.
+//
+// Residual, deliberately not mirrored: int() also accepts non-ASCII decimal
+// digits (int('٣') === 3). Those land in the 30000 fallback here, which is
+// the safe direction and now carries a warning rather than being silent.
+const CMD_TIMEOUT_INT_RE = /^[+-]?\d+(?:_\d+)*$/;
+
 /**
  * Resolve the amauta.py command ceiling in milliseconds.
  *
  * Mirrors services/amauta-daemon.py::_cmd_timeout_ms(): unset/empty takes the
- * 120000 default; a present-but-unusable value (non-numeric or <= 0) falls
- * back to the historical 30000 rather than silently granting headroom.
+ * 120000 default; a present-but-unusable value (not an integer literal, or
+ * <= 0) falls back to the historical 30000 rather than silently granting
+ * headroom. Both fallbacks warn on stderr, mirroring the daemon's
+ * cmd_timeout_unparseable / cmd_timeout_non_positive log lines, so a typo in
+ * the variable is never a silent 4x cut on the runDirect path.
  *
  * @returns {number} ceiling in milliseconds
  * @example
@@ -111,8 +129,22 @@ function cmdTimeoutMs() {
   if (raw === undefined || raw === null || String(raw).trim() === '') {
     return CMD_TIMEOUT_DEFAULT_MS;
   }
-  const ms = Number.parseInt(String(raw).trim(), 10);
-  if (!Number.isFinite(ms) || ms <= 0) return CMD_TIMEOUT_FALLBACK_MS;
+  const trimmed = String(raw).trim();
+  if (!CMD_TIMEOUT_INT_RE.test(trimmed)) {
+    // JSON.stringify rather than bare quotes: the value is operator-supplied
+    // and may carry newlines that would otherwise forge a second log line.
+    process.stderr.write(
+      `amauta: WARNING cmd_timeout_unparseable value=${JSON.stringify(String(raw))} using_ms=${CMD_TIMEOUT_FALLBACK_MS}\n`,
+    );
+    return CMD_TIMEOUT_FALLBACK_MS;
+  }
+  const ms = Number.parseInt(trimmed.replace(/_/g, ''), 10);
+  if (!Number.isFinite(ms) || ms <= 0) {
+    process.stderr.write(
+      `amauta: WARNING cmd_timeout_non_positive value=${JSON.stringify(String(raw))} using_ms=${CMD_TIMEOUT_FALLBACK_MS}\n`,
+    );
+    return CMD_TIMEOUT_FALLBACK_MS;
+  }
   return ms;
 }
 
