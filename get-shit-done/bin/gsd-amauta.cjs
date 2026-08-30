@@ -876,16 +876,38 @@ async function checkValidationGates(useDaemon, id, flags) {
     // architectural decision, which is the wrong direction for a process artifact to
     // push. The URL is still required once a remote exists.
     const hasCommitSha = /\b(?:commit|sha)\b[^\n]{0,20}?\b[0-9a-f]{7,40}\b/i.test(allContent);
-    let repoHasRemote = true;
-    try {
-      repoHasRemote = require('child_process')
-        .execSync('git remote', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
-        .trim().length > 0;
-    } catch (_) { /* not a git repo -- fall through to requiring a PR URL */ }
-    if (!hasPrUrl && !(hasCommitSha && !repoHasRemote)) {
-      gateFailures.push(repoHasRemote
-        ? 'PR_URL: No PR/merge evidence found in D-phase, E-phase, or notes. Code tasks should reference their PR URL or PR #NNN.'
-        : 'PR_URL: Repository has no remote, so a commit SHA is accepted in place of a PR URL -- but none was found. Record "commit <sha>" in the D or E phase.');
+    // The property that matters is whether the commit was PUSHED, not whether a remote
+    // exists. Gate 4 exists so work is landed and independently verifiable, and a commit
+    // is equally verifiable either way -- but a PR URL can only be *required* once the
+    // commit is reachable from a remote ref, because only then does a PR exist to point
+    // at. Two earlier versions of this exception keyed on the wrong property: first
+    // "cwd has no remote" (which checked the wrong repository entirely for a task that
+    // committed to a sibling repo), then "repo has no remote" (which refused work in a
+    // remote-bearing repo that had deliberately not been pushed). One predicate now
+    // covers both ADR-0008 local-only repos and remote-but-unpushed commits.
+    const shaMatch = allContent.match(/\b(?:commit|sha)\b[^\n]{0,20}?\b([0-9a-f]{7,40})\b/i);
+    const candidateRepos = new Set([process.cwd()]);
+    for (const m of allContent.matchAll(/(\/(?:Users|home|opt|var|srv)\/[^\s'"`,;:)\]]+)/g)) {
+      let dir = m[1].replace(/[.,;:)\]]+$/, '');
+      for (let i = 0; i < 6 && dir.length > 1; i++) {
+        candidateRepos.add(dir);
+        dir = require('path').dirname(dir);
+      }
+    }
+    // Pushed == reachable from a remote-tracking ref in any repo we can identify.
+    const shaIsPushed = (sha) => [...candidateRepos].some((cwd) => {
+      try {
+        return require('child_process').execSync(
+          `git branch -r --contains ${sha}`,
+          { encoding: 'utf8', cwd, stdio: ['ignore', 'pipe', 'ignore'] }
+        ).trim().length > 0;
+      } catch (_) { return false; }
+    });
+    const commitIsPushed = shaMatch ? shaIsPushed(shaMatch[1]) : false;
+    if (!hasPrUrl && !(hasCommitSha && !commitIsPushed)) {
+      gateFailures.push(commitIsPushed
+        ? 'PR_URL: Commit is reachable from a remote ref, so a PR URL is required. Reference the PR URL or PR #NNN in the D or E phase.'
+        : 'PR_URL: No PR/merge evidence and no commit SHA found. Record "commit <sha>" in the D or E phase (a SHA is accepted while the commit is unpushed).');
     }
   }
 
