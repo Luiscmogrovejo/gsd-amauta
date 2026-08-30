@@ -402,6 +402,13 @@ except ImportError:
 RLM_SERVICE_PY = str(Path(__file__).resolve().parent / "rlm-service.py")
 RLM_PORT = int(os.environ.get("GSD_RLM_PORT", "18798"))
 RLM_MAX_RESTARTS = 3
+# A port vacated by a graceful RLM stop is not immediately re-bindable: the
+# kernel holds the closed socket in TIME_WAIT. Measured on this machine
+# (net.inet.tcp.msl=15000 => 2*MSL=30s): 31.0s from _stop_rlm() to the port
+# passing _port_is_free(), with lsof reporting NO process on the port for the
+# whole window. The bound below carries ~45% headroom over that measurement.
+RLM_PORT_RELEASE_TIMEOUT_S = float(os.environ.get("GSD_RLM_PORT_RELEASE_TIMEOUT_S", "45"))
+RLM_PORT_RELEASE_POLL_S = float(os.environ.get("GSD_RLM_PORT_RELEASE_POLL_S", "0.1"))
 _rlm_process = None
 _rlm_restart_count = 0
 _rlm_restarts_lifetime = 0  # STAB-03: cumulative counter — never reset; tracks total restart events across session
@@ -454,6 +461,42 @@ def _port_is_free(port):
             return False
 
 
+def _await_port_release(port, timeout_s, poll_interval_s=None):
+    """Poll until `port` becomes bindable, giving up after `timeout_s` seconds.
+
+    Replaces the single fixed 0.5s sleep that made _start_rlm() race its own
+    shutdown. The port is not held by a process during that window -- it is held
+    by the kernel's TIME_WAIT on the socket the stopped RLM closed, so there is
+    nothing left to kill and the only correct move is to wait and re-probe.
+
+    Args:
+        port: TCP port to wait for.
+        timeout_s: Maximum seconds to wait before giving up.
+        poll_interval_s: Seconds between probes. Defaults to
+            RLM_PORT_RELEASE_POLL_S.
+
+    Returns:
+        bool: True if the port became free within the timeout, False otherwise.
+
+    Example:
+        >>> _await_port_release(18798, 45)
+        True
+    """
+    if poll_interval_s is None:
+        poll_interval_s = RLM_PORT_RELEASE_POLL_S
+    started = time.time()
+    deadline = started + timeout_s
+    while True:
+        if _port_is_free(port):
+            waited = time.time() - started
+            if waited > poll_interval_s:
+                log.info("rlm_port_released port=%d waited=%.1fs", port, waited)
+            return True
+        if time.time() >= deadline:
+            return False
+        time.sleep(poll_interval_s)
+
+
 def _validate_api_keys():
     """Validate API keys at startup. Returns status dict for health/logging."""
     keys_config = {
@@ -494,9 +537,11 @@ def _start_rlm():
     if not _port_is_free(RLM_PORT):
         log.warning("rlm_port_occupied port=%d", RLM_PORT)
         _kill_port_holder(RLM_PORT)
-        time.sleep(0.5)
-        if not _port_is_free(RLM_PORT):
-            log.error("rlm_port_still_occupied port=%d", RLM_PORT)
+        if not _await_port_release(RLM_PORT, RLM_PORT_RELEASE_TIMEOUT_S):
+            log.error(
+                "rlm_port_still_occupied port=%d waited=%.1fs",
+                RLM_PORT, RLM_PORT_RELEASE_TIMEOUT_S,
+            )
             return False
 
     try:
@@ -570,16 +615,49 @@ def _rlm_watchdog():
       - When the cap is hit, enter a 300s cooldown then reset and continue rather
         than abandoning forever (yesterday's failure mode: 1 restart → cap → 13h
         silence until manual intervention).
+      - A failed INITIAL start is recovered on exactly the same terms as a crash.
+        Two gates used to make that impossible: the thread was only started when
+        the first _start_rlm() succeeded, and `_rlm_process is None` short-circuited
+        every iteration. Both routes ended in the same place the cooldown above was
+        written to prevent — silence until a human noticed. `_rlm_process is None`
+        is now a recoverable state, handled by the shared budgeted block below, so
+        the recovery path gets no separate unbudgeted retry loop of its own.
+      - Adoption: an RLM that answers /health but carries no `_rlm_process` handle
+        was started outside this daemon. It is adopted — left running and monitored
+        over HTTP — never killed to gain a process handle. Health, not the handle,
+        is what every consumer of RLM in this daemon actually reads. If an adopted
+        instance later stops answering, the ordinary budgeted recovery below
+        reclaims the port and brings it back under management.
     """
     global _rlm_restart_count, _rlm_last_successful_uptime, _rlm_restarts_lifetime
+    adopted = False
     while True:
-        if not _rlm_enabled or _rlm_process is None:
+        if not _rlm_enabled:
             time.sleep(30)
             continue
-        process_dead = _rlm_process.poll() is not None
-        health_failed = not process_dead and not _check_rlm_health()
-        if process_dead or health_failed:
-            reason = "process_exited" if process_dead else "health_check_failed"
+
+        reason = None
+        if _rlm_process is None:
+            # No managed handle. Either something healthy is already serving the
+            # port (adopt it) or nothing is running because the initial start
+            # failed (recover it under the budget below).
+            if _check_rlm_health():
+                if not adopted:
+                    log.info("rlm_adopted_unmanaged port=%d", RLM_PORT)
+                    adopted = True
+                healthy = True
+            else:
+                healthy = False
+                reason = "not_running"
+        else:
+            adopted = False
+            process_dead = _rlm_process.poll() is not None
+            health_failed = not process_dead and not _check_rlm_health()
+            healthy = not (process_dead or health_failed)
+            if not healthy:
+                reason = "process_exited" if process_dead else "health_check_failed"
+
+        if not healthy:
             if _rlm_restart_count < RLM_MAX_RESTARTS:
                 _rlm_restart_count += 1
                 _rlm_restarts_lifetime += 1  # STAB-03: cumulative; not reset on success
@@ -4456,11 +4534,15 @@ def start_server(foreground=False):
         rlm_started = _start_rlm()
         if rlm_started:
             print(f"  RLM: started (PID {_rlm_process.pid}, port {RLM_PORT})")
-            # Start watchdog thread
-            watchdog = threading.Thread(target=_rlm_watchdog, daemon=True)
-            watchdog.start()
         else:
-            print(f"  RLM: not started (set GSD_RLM_ENABLED=false to disable)")
+            print(f"  RLM: not started -- watchdog will retry "
+                  f"(set GSD_RLM_ENABLED=false to disable)")
+        # Start the watchdog whenever RLM is enabled, NOT only when the first
+        # start succeeded. A failed initial start is precisely the case that
+        # needs recovery; gating the thread on success meant that case had no
+        # recovery thread at all, and the failure was silent until noticed.
+        watchdog = threading.Thread(target=_rlm_watchdog, daemon=True)
+        watchdog.start()
     else:
         print(f"  RLM: disabled (GSD_RLM_ENABLED=false)")
 
