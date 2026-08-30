@@ -524,3 +524,56 @@ ${taskWithConflict}
   try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
   if (err) throw err;
 });
+
+// ---------------------------------------------------------------------------
+// Regression: path normalisation before the disjointness comparison.
+//
+// _filesDisjointSplit previously compared raw authored path strings. Two tasks
+// declaring the same file with different spellings therefore compared as DISJOINT
+// and were scheduled into the same wave -- two agents holding the same pre-edit
+// baseline of one file, which diagrams/09 §9.5 names as the agent-era lost update:
+// silent when it happens, and caused purely by how two planners typed a path.
+//
+// Found 2026-08-30 while registering a Phase 0 plan set in the barerouter project.
+// ---------------------------------------------------------------------------
+
+test('_filesDisjointSplit: same file, different spellings, is NOT disjoint', () => {
+  const tasks = [
+    { id: 't1', filesExpected: { modify: ['./docs/X.md'], create: [], delete: [] } },
+    { id: 't2', filesExpected: { modify: ['docs/X.md'], create: [], delete: [] } },
+  ];
+  const result = _filesDisjointSplit(tasks);
+  assert.equal(result.split_rationale, 'no_disjoint_prefix',
+    './docs/X.md and docs/X.md are one file and must not be scheduled in parallel');
+  assert.equal(result.suggested_split_index, null);
+});
+
+test('_filesDisjointSplit: path traversal resolves to the same file', () => {
+  const tasks = [
+    { id: 't1', filesExpected: { modify: ['a/../docs/X.md'], create: [], delete: [] } },
+    { id: 't2', filesExpected: { modify: ['docs/X.md'], create: [], delete: [] } },
+  ];
+  const result = _filesDisjointSplit(tasks);
+  assert.equal(result.split_rationale, 'no_disjoint_prefix',
+    'a/../docs/X.md resolves to docs/X.md');
+});
+
+test('_filesDisjointSplit: normalisation does not merge genuinely different files', () => {
+  const tasks = [
+    { id: 't1', filesExpected: { modify: ['docs/A.md'], create: [], delete: [] } },
+    { id: 't2', filesExpected: { modify: ['docs/B.md'], create: [], delete: [] } },
+  ];
+  const result = _filesDisjointSplit(tasks);
+  assert.equal(result.split_rationale, 'disjoint_at_1',
+    'distinct files must still split -- the fix must not over-merge');
+});
+
+test('_filesDisjointSplit: create[] paths are normalised too, not just modify[]', () => {
+  const tasks = [
+    { id: 't1', filesExpected: { modify: [], create: ['./src/new.py'], delete: [] } },
+    { id: 't2', filesExpected: { modify: ['src/new.py'], create: [], delete: [] } },
+  ];
+  const result = _filesDisjointSplit(tasks);
+  assert.equal(result.split_rationale, 'no_disjoint_prefix',
+    'a file created by one task and modified by another is a collision');
+});

@@ -1403,10 +1403,28 @@ function _checkAgentConflicts(tasks) {
 function _filesDisjointSplit(tasks) {
   if (tasks.length === 0) return { suggested_split_index: null, split_rationale: 'no_tasks', new_plan_files: [] };
 
+  // Paths are normalised before comparison. Without this, two tasks declaring the same
+  // file with different spellings -- './docs/X.md' vs 'docs/X.md' vs 'a/../docs/X.md' --
+  // compare as DISJOINT and are scheduled into the same wave. Two agents then hold the
+  // same pre-edit baseline of one file, which is the agent-era lost update described in
+  // diagrams/09 section 9.5: silent when it happens, and caused purely by how two
+  // planners happened to type a path.
+  //
+  // path.resolve() also absolutises against cwd, which matters because the Amauta task
+  // store is flat across every project on the machine and task records carry no project
+  // field: bare 'src/index.ts' from two different repos would otherwise collide as
+  // identical. Absolute paths keep them distinct.
+  const _normFile = (f) => {
+    if (typeof f !== 'string') return String(f);
+    const t = f.trim();
+    if (!t) return t;
+    return path.resolve(t);
+  };
+
   const getFiles = (t) => new Set([
     ...(t.filesExpected.modify || []),
     ...(t.filesExpected.create || []),
-  ]);
+  ].map(_normFile));
 
   // Try every candidate boundary i (tasks[0..i] vs tasks[i+1..N-1])
   const candidates = [];
