@@ -340,8 +340,15 @@ test('divergence-protocol.md is at v1.1.0 with both new enum values', () => {
   const protocolPath = path.join(REPO_ROOT, 'get-shit-done', 'references', 'divergence-protocol.md');
   const content = fs.readFileSync(protocolPath, 'utf-8');
 
-  // Version check — matches frontmatter `version: "1.1.0"`
-  assert.ok(content.includes('version: "1.1.0"'), 'divergence-protocol.md must be at version 1.1.0');
+  // Version floor, not an exact pin. The previous assertion required exactly
+  // version: "1.1.0" and therefore failed the moment the document legitimately
+  // moved to 1.2.0 -- a test that fails on forward progress, while the assertions
+  // that carry meaning (the two enum values) still passed. Compare semver instead.
+  const vm = content.match(/version:\s*"(\d+)\.(\d+)\.(\d+)"/);
+  assert.ok(vm, 'divergence-protocol.md must declare a semver version in frontmatter');
+  const [maj, min] = [Number(vm[1]), Number(vm[2])];
+  assert.ok(maj > 1 || (maj === 1 && min >= 1),
+    `divergence-protocol.md must be at >= 1.1.0, found ${vm[0]}`);
 
   // Both new enum values must be present
   assert.ok(content.includes('agent_assignment_conflict'), 'must contain agent_assignment_conflict enum value');
