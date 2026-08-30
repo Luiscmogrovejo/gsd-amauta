@@ -69,6 +69,11 @@ sections:
     
     **Gate 4: PR URL (code tasks only)**
     D-phase, E-phase, or task notes must include a PR URL or "merged" evidence.
+    EXCEPTION: when the repository has no git remote, a commit SHA ("commit <sha>")
+    is accepted instead. Some architectures mandate local-first repos with no remote
+    until access is granted, which makes a PR URL impossible rather than merely
+    absent -- do not fail a task for honouring that. The URL is required once a
+    remote exists.
     
     **Override:** Use `--force` for legitimate exceptions (local scaffold, config-only tasks).
     

@@ -869,8 +869,23 @@ async function checkValidationGates(useDaemon, id, flags) {
                      /\bPR\s*#?\d+\b/i.test(allContent) ||
                      /\bgh\s+pr\s+(?:create|view|merge|list|checkout)\b/i.test(allContent) ||
                      hasMergeEvidence;
-    if (!hasPrUrl) {
-      gateFailures.push('PR_URL: No PR/merge evidence found in D-phase, E-phase, or notes. Code tasks should reference their PR URL or PR #NNN.');
+    // A commit SHA substitutes for a PR URL when the repository has no remote.
+    // ADR-0008 (barerouter) mandates local-first repos with no remote until org
+    // ownership is granted, so a PR URL is not merely missing -- it is impossible to
+    // produce. This gate previously punished an executor for honouring a ratified
+    // architectural decision, which is the wrong direction for a process artifact to
+    // push. The URL is still required once a remote exists.
+    const hasCommitSha = /\b(?:commit|sha)\b[^\n]{0,20}?\b[0-9a-f]{7,40}\b/i.test(allContent);
+    let repoHasRemote = true;
+    try {
+      repoHasRemote = require('child_process')
+        .execSync('git remote', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+        .trim().length > 0;
+    } catch (_) { /* not a git repo -- fall through to requiring a PR URL */ }
+    if (!hasPrUrl && !(hasCommitSha && !repoHasRemote)) {
+      gateFailures.push(repoHasRemote
+        ? 'PR_URL: No PR/merge evidence found in D-phase, E-phase, or notes. Code tasks should reference their PR URL or PR #NNN.'
+        : 'PR_URL: Repository has no remote, so a commit SHA is accepted in place of a PR URL -- but none was found. Record "commit <sha>" in the D or E phase.');
     }
   }
 
