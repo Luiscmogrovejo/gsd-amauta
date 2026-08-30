@@ -18,166 +18,550 @@
       "id": "gsd-operator",
       "lane": "non-code",
       "file_patterns": [],
-      "task_types": ["orchestration", "routing", "coordination"],
-      "tools": ["Bash", "Read", "Write", "Edit", "Task", "Glob", "Grep"],
-      "patterns": ["P1", "P2", "P3", "P6", "P8", "P9", "P14", "P15", "P17", "P18", "P19"]
+      "task_types": [
+        "orchestration",
+        "routing",
+        "coordination"
+      ],
+      "tools": [
+        "Bash",
+        "Read",
+        "Write",
+        "Edit",
+        "Task",
+        "Glob",
+        "Grep"
+      ],
+      "patterns": [
+        "P1",
+        "P2",
+        "P3",
+        "P6",
+        "P8",
+        "P9",
+        "P14",
+        "P15",
+        "P17",
+        "P18",
+        "P19"
+      ]
     },
     {
       "id": "gsd-planner",
       "lane": "non-code",
       "file_patterns": [],
-      "task_types": ["planning", "decomposition", "estimation"],
-      "tools": ["Read", "Write", "Edit", "Bash", "Task", "Glob", "Grep"],
-      "patterns": ["P1", "P6", "P13", "P14"]
+      "task_types": [
+        "planning",
+        "decomposition",
+        "estimation"
+      ],
+      "tools": [
+        "Read",
+        "Write",
+        "Edit",
+        "Bash",
+        "Task",
+        "Glob",
+        "Grep"
+      ],
+      "patterns": [
+        "P1",
+        "P6",
+        "P13",
+        "P14"
+      ]
     },
     {
       "id": "gsd-researcher",
       "lane": "non-code",
       "file_patterns": [],
-      "task_types": ["research", "analysis", "investigation"],
-      "tools": ["Read", "Bash", "Glob", "Grep"],
-      "patterns": ["P4", "P7", "P13", "P20"]
+      "task_types": [
+        "research",
+        "analysis",
+        "investigation"
+      ],
+      "tools": [
+        "Read",
+        "Bash",
+        "Glob",
+        "Grep"
+      ],
+      "patterns": [
+        "P4",
+        "P7",
+        "P13",
+        "P20"
+      ]
     },
     {
       "id": "gsd-roadmapper",
       "lane": "non-code",
       "file_patterns": [],
-      "task_types": ["planning", "roadmapping", "requirements"],
-      "tools": ["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
-      "patterns": ["P1", "P6", "P13", "P14"]
+      "task_types": [
+        "planning",
+        "roadmapping",
+        "requirements"
+      ],
+      "tools": [
+        "Read",
+        "Write",
+        "Edit",
+        "Bash",
+        "Glob",
+        "Grep"
+      ],
+      "patterns": [
+        "P1",
+        "P6",
+        "P13",
+        "P14"
+      ]
     },
     {
       "id": "gsd-executor-frontend",
       "lane": "code",
-      "file_patterns": ["*.tsx", "*.jsx", "*.css", "*.scss", "*.sass", "*.less", "*.html", "*.vue", "*.svelte"],
-      "task_types": ["execution", "implementation", "testing"],
-      "tools": ["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
-      "patterns": ["P4", "P7", "P11", "P12"]
+      "file_patterns": [
+        "*.tsx",
+        "*.jsx",
+        "*.css",
+        "*.scss",
+        "*.sass",
+        "*.less",
+        "*.html",
+        "*.vue",
+        "*.svelte"
+      ],
+      "task_types": [
+        "execution",
+        "implementation",
+        "testing"
+      ],
+      "tools": [
+        "Read",
+        "Write",
+        "Edit",
+        "Bash",
+        "Grep",
+        "Glob"
+      ],
+      "patterns": [
+        "P4",
+        "P7",
+        "P11",
+        "P12"
+      ]
     },
     {
       "id": "gsd-executor-backend",
       "lane": "code",
-      "file_patterns": ["*.py", "*.js", "*.cjs", "*.mjs", "*.ts", "*.go", "*.rs", "*.java", "*.sql"],
-      "task_types": ["execution", "implementation", "testing"],
-      "tools": ["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
-      "patterns": ["P4", "P7", "P11", "P12"]
+      "file_patterns": [
+        "*.py",
+        "*.js",
+        "*.cjs",
+        "*.mjs",
+        "*.ts",
+        "*.go",
+        "*.rs",
+        "*.java",
+        "*.sql",
+        "*.proto",
+        "buf.yaml",
+        "buf.gen.yaml"
+      ],
+      "task_types": [
+        "execution",
+        "implementation",
+        "testing"
+      ],
+      "tools": [
+        "Read",
+        "Write",
+        "Edit",
+        "Bash",
+        "Grep",
+        "Glob"
+      ],
+      "patterns": [
+        "P4",
+        "P7",
+        "P11",
+        "P12"
+      ]
     },
     {
       "id": "gsd-executor-infra",
       "lane": "code",
-      "file_patterns": ["Dockerfile*", "docker-compose*", ".github/workflows/*", "terraform/*", "k8s/*", "nginx.conf"],
-      "task_types": ["execution", "implementation", "deployment"],
-      "tools": ["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
-      "patterns": ["P4", "P7", "P11", "P12"]
+      "file_patterns": [
+        "Dockerfile*",
+        "docker-compose*",
+        ".github/workflows/*",
+        "terraform/*",
+        "k8s/*",
+        "nginx.conf"
+      ],
+      "task_types": [
+        "execution",
+        "implementation",
+        "deployment"
+      ],
+      "tools": [
+        "Read",
+        "Write",
+        "Edit",
+        "Bash",
+        "Grep",
+        "Glob"
+      ],
+      "patterns": [
+        "P4",
+        "P7",
+        "P11",
+        "P12"
+      ]
     },
     {
       "id": "gsd-executor-mobile-android",
       "lane": "code",
-      "file_patterns": ["*.kt", "*.kts", "*.gradle", "*.aidl", "AndroidManifest.xml", "proguard-rules.pro", "android/*"],
-      "task_types": ["execution", "implementation", "testing"],
-      "tools": ["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
-      "patterns": ["P4", "P7", "P11", "P12"],
+      "file_patterns": [
+        "*.kt",
+        "*.kts",
+        "*.gradle",
+        "*.aidl",
+        "AndroidManifest.xml",
+        "proguard-rules.pro",
+        "android/*"
+      ],
+      "task_types": [
+        "execution",
+        "implementation",
+        "testing"
+      ],
+      "tools": [
+        "Read",
+        "Write",
+        "Edit",
+        "Bash",
+        "Grep",
+        "Glob"
+      ],
+      "patterns": [
+        "P4",
+        "P7",
+        "P11",
+        "P12"
+      ],
       "notes": "Android specialist (Kotlin/Compose/Gradle). *.java stays with executor-backend; Android-Java work is assigned explicitly by the planner."
     },
     {
       "id": "gsd-executor-mobile-ios",
       "lane": "code",
-      "file_patterns": ["*.swift", "*.storyboard", "*.xib", "*.xcconfig", "*.pbxproj", "*.entitlements", "*.xcstrings", "Podfile", "ios/*"],
-      "task_types": ["execution", "implementation", "testing"],
-      "tools": ["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
-      "patterns": ["P4", "P7", "P11", "P12"]
+      "file_patterns": [
+        "*.swift",
+        "*.storyboard",
+        "*.xib",
+        "*.xcconfig",
+        "*.pbxproj",
+        "*.entitlements",
+        "*.xcstrings",
+        "Podfile",
+        "ios/*"
+      ],
+      "task_types": [
+        "execution",
+        "implementation",
+        "testing"
+      ],
+      "tools": [
+        "Read",
+        "Write",
+        "Edit",
+        "Bash",
+        "Grep",
+        "Glob"
+      ],
+      "patterns": [
+        "P4",
+        "P7",
+        "P11",
+        "P12"
+      ]
     },
     {
       "id": "gsd-executor-mobile-cross",
       "lane": "code",
-      "file_patterns": ["*.dart", "*.podspec", "pubspec.yaml", "analysis_options.yaml", "metro.config.js", "eas.json", "react-native.config.js"],
-      "task_types": ["execution", "implementation", "testing"],
-      "tools": ["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
-      "patterns": ["P4", "P7", "P11", "P12"],
+      "file_patterns": [
+        "*.dart",
+        "*.podspec",
+        "pubspec.yaml",
+        "analysis_options.yaml",
+        "metro.config.js",
+        "eas.json",
+        "react-native.config.js"
+      ],
+      "task_types": [
+        "execution",
+        "implementation",
+        "testing"
+      ],
+      "tools": [
+        "Read",
+        "Write",
+        "Edit",
+        "Bash",
+        "Grep",
+        "Glob"
+      ],
+      "patterns": [
+        "P4",
+        "P7",
+        "P11",
+        "P12"
+      ],
       "notes": "Flutter/Dart routes here deterministically. React Native .ts/.tsx routes to executor-frontend by extension; RN work is assigned explicitly by the planner."
     },
     {
       "id": "gsd-executor-wearables",
       "lane": "code",
-      "file_patterns": ["wear/*", "wearos/*", "watchos/*", "watch/*", "tiles/*", "complications/*", "*.watchface"],
-      "task_types": ["execution", "implementation", "testing"],
-      "tools": ["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
-      "patterns": ["P4", "P7", "P11", "P12"],
+      "file_patterns": [
+        "wear/*",
+        "wearos/*",
+        "watchos/*",
+        "watch/*",
+        "tiles/*",
+        "complications/*",
+        "*.watchface"
+      ],
+      "task_types": [
+        "execution",
+        "implementation",
+        "testing"
+      ],
+      "tools": [
+        "Read",
+        "Write",
+        "Edit",
+        "Bash",
+        "Grep",
+        "Glob"
+      ],
+      "patterns": [
+        "P4",
+        "P7",
+        "P11",
+        "P12"
+      ],
       "notes": "Directory-pattern routed: dir patterns (+100 specificity) beat the mobile executors' extension patterns for files under wearable directories. Also receives explicit planner assignments."
     },
     {
       "id": "gsd-executor-ai",
       "lane": "code",
-      "file_patterns": ["prompts/*", "evals/*", "*.prompt"],
-      "task_types": ["execution", "implementation", "testing"],
-      "tools": ["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
-      "patterns": ["P4", "P7", "P11", "P12"],
+      "file_patterns": [
+        "prompts/*",
+        "evals/*",
+        "*.prompt"
+      ],
+      "task_types": [
+        "execution",
+        "implementation",
+        "testing"
+      ],
+      "tools": [
+        "Read",
+        "Write",
+        "Edit",
+        "Bash",
+        "Grep",
+        "Glob"
+      ],
+      "patterns": [
+        "P4",
+        "P7",
+        "P11",
+        "P12"
+      ],
       "notes": "LLM/agent-app specialist (prompts, MCP tools, evals, RAG). General .py/.ts AI code stays with executor-backend; LLM-specific work is assigned explicitly by the planner."
     },
     {
       "id": "gsd-executor-general",
       "lane": "code",
       "file_patterns": [],
-      "task_types": ["execution", "implementation", "configuration", "documentation"],
-      "tools": ["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
-      "patterns": ["P4", "P7", "P11", "P12"],
+      "task_types": [
+        "execution",
+        "implementation",
+        "configuration",
+        "documentation"
+      ],
+      "tools": [
+        "Read",
+        "Write",
+        "Edit",
+        "Bash",
+        "Grep",
+        "Glob"
+      ],
+      "patterns": [
+        "P4",
+        "P7",
+        "P11",
+        "P12"
+      ],
       "notes": "Fallback executor for tasks that do not match any specialist file patterns. Also receives performance-rerouted tasks when specialist pass rate < 70%."
     },
     {
       "id": "gsd-checker",
       "lane": "non-code",
       "file_patterns": [],
-      "task_types": ["pre-check", "plan-review", "verification"],
-      "tools": ["Read", "Bash", "Grep", "Glob"],
-      "patterns": ["P5", "P10", "P16"]
+      "task_types": [
+        "pre-check",
+        "plan-review",
+        "verification"
+      ],
+      "tools": [
+        "Read",
+        "Bash",
+        "Grep",
+        "Glob"
+      ],
+      "patterns": [
+        "P5",
+        "P10",
+        "P16"
+      ]
     },
     {
       "id": "gsd-validator",
       "lane": "non-code",
       "file_patterns": [],
-      "task_types": ["validation", "post-check", "quality-gate"],
-      "tools": ["Read", "Bash", "Grep", "Glob"],
-      "patterns": ["P5", "P10", "P16", "P17"]
+      "task_types": [
+        "validation",
+        "post-check",
+        "quality-gate"
+      ],
+      "tools": [
+        "Read",
+        "Bash",
+        "Grep",
+        "Glob"
+      ],
+      "patterns": [
+        "P5",
+        "P10",
+        "P16",
+        "P17"
+      ]
     },
     {
       "id": "gsd-debugger",
       "lane": "code",
       "file_patterns": [],
-      "task_types": ["debugging", "diagnosis", "fix"],
-      "tools": ["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
-      "patterns": ["P4", "P7", "P11", "P13", "P15"]
+      "task_types": [
+        "debugging",
+        "diagnosis",
+        "fix"
+      ],
+      "tools": [
+        "Read",
+        "Write",
+        "Edit",
+        "Bash",
+        "Grep",
+        "Glob"
+      ],
+      "patterns": [
+        "P4",
+        "P7",
+        "P11",
+        "P13",
+        "P15"
+      ]
     },
     {
       "id": "gsd-persona-senior-backend",
       "lane": "code",
       "kind": "persona",
-      "base_executor": ["gsd-executor-backend"],
+      "base_executor": [
+        "gsd-executor-backend"
+      ],
       "file_patterns": [],
-      "task_types": ["execution", "implementation", "testing"],
-      "tools": ["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
-      "patterns": ["P4", "P7", "P11", "P12"],
+      "task_types": [
+        "execution",
+        "implementation",
+        "testing"
+      ],
+      "tools": [
+        "Read",
+        "Write",
+        "Edit",
+        "Bash",
+        "Grep",
+        "Glob"
+      ],
+      "patterns": [
+        "P4",
+        "P7",
+        "P11",
+        "P12"
+      ],
       "notes": "Role persona (Phase 61 PERS-01): senior backend engineer voice overlaying gsd-executor-backend. file_patterns intentionally empty — personas never participate in routeExecutor(); file-extension routing stays the sole routing authority."
     },
     {
       "id": "gsd-persona-frontend-specialist",
       "lane": "code",
       "kind": "persona",
-      "base_executor": ["gsd-executor-frontend"],
+      "base_executor": [
+        "gsd-executor-frontend"
+      ],
       "file_patterns": [],
-      "task_types": ["execution", "implementation", "testing"],
-      "tools": ["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
-      "patterns": ["P4", "P7", "P11", "P12"],
+      "task_types": [
+        "execution",
+        "implementation",
+        "testing"
+      ],
+      "tools": [
+        "Read",
+        "Write",
+        "Edit",
+        "Bash",
+        "Grep",
+        "Glob"
+      ],
+      "patterns": [
+        "P4",
+        "P7",
+        "P11",
+        "P12"
+      ],
       "notes": "Role persona (Phase 61 PERS-01): accessibility-first, design-system-disciplined UI voice overlaying gsd-executor-frontend. file_patterns intentionally empty — personas never participate in routeExecutor(); file-extension routing stays the sole routing authority."
     },
     {
       "id": "gsd-persona-systems-architect",
       "lane": "code",
       "kind": "persona",
-      "base_executor": ["gsd-executor-backend", "gsd-executor-frontend", "gsd-executor-infra"],
+      "base_executor": [
+        "gsd-executor-backend",
+        "gsd-executor-frontend",
+        "gsd-executor-infra"
+      ],
       "file_patterns": [],
-      "task_types": ["execution", "implementation", "testing"],
-      "tools": ["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
-      "patterns": ["P4", "P7", "P11", "P12"],
+      "task_types": [
+        "execution",
+        "implementation",
+        "testing"
+      ],
+      "tools": [
+        "Read",
+        "Write",
+        "Edit",
+        "Bash",
+        "Grep",
+        "Glob"
+      ],
+      "patterns": [
+        "P4",
+        "P7",
+        "P11",
+        "P12"
+      ],
       "notes": "Role persona (Phase 61 PERS-01): cross-cutting code-writing systems architect — multi-base overlay; concrete lane per task is whatever routeExecutor() computes from the task's files. Distinct from the advisory-only gsd-architect agent. file_patterns intentionally empty."
     }
   ]
