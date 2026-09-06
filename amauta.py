@@ -2504,7 +2504,116 @@ def _dedup_check(items, title, agent, source=None, from_plan=None):
     return None
 
 
+# ── TK-2313: list-valued flags are JSON arrays, never split on a delimiter ─────
+# The old code split --criteria/--deliverables/--checklist/--refs on "|", which cut
+# any criterion that cited a shell pipeline or a grep alternation (TK-2322 measured
+# 497 of 2440 store items). A JSON array is the only representation that can carry
+# an arbitrary criterion, so the wire format is a JSON array of strings and a
+# value that is not one is refused loudly, naming the flag and the offending char.
+_LIST_FLAGS = (
+    # (item field,           flag,             argparse attr,  "-file" sibling attr)
+    ("success_criteria",     "--criteria",     "criteria",     "criteria_file"),
+    ("deliverables",         "--deliverables", "deliverables", "deliverables_file"),
+    ("validation_checklist", "--checklist",    "checklist",    "checklist_file"),
+)
+_LIST_FLAG_HELP = "JSON array of strings, e.g. '[\"first\",\"second\"]' (never split on a delimiter)"
+
+
+def _refuse_list_flag(flag, reason):
+    """Print the refusal for a malformed list flag and exit 1 without touching the store.
+
+    Args:
+        flag: The flag as typed by the caller, e.g. "--criteria" or "--criteria-file".
+        reason: What was wrong with the value, already naming the offending character.
+
+    Raises:
+        SystemExit: always, with status 1.
+    """
+    base = flag[:-5] if flag.endswith("-file") else flag
+    print(c(f"{flag}: expected a JSON array of strings, e.g. '[\"first\",\"second\"]'. Got: {reason}.", RED))
+    print(dim(f"  Values are never split on '|' or any other delimiter. Fix the caller: emit "
+              f"json.dumps([...]) / JSON.stringify([...]) for {base}, or write the array to a "
+              f"file and pass {base}-file <path>."))
+    sys.exit(1)
+
+
+def _parse_list_flag(flag, raw, file_path=None):
+    """Parse one list-valued flag as a JSON array of strings.
+
+    Args:
+        flag: The flag name, e.g. "--criteria" (used verbatim in refusals).
+        raw: The inline value as typed, or None when the flag was not given.
+        file_path: Value of the "<flag>-file" sibling, or None.
+
+    Returns:
+        list[str]: the array exactly as given. Elements are not split, stripped,
+        reordered or dropped, so a criterion containing "|" survives whole.
+
+    Raises:
+        SystemExit: (status 1) when both the flag and its -file sibling are given,
+        when the file cannot be read, when the value is not JSON (the message
+        names the first offending character and its offset), when the JSON is
+        not an array, or when any element is not a string.
+
+    Example:
+        >>> _parse_list_flag("--criteria", '["run a | grep b exits 0", "second"]')
+        ['run a | grep b exits 0', 'second']
+    """
+    file_flag = f"{flag}-file"
+    if raw is not None and file_path is not None:
+        _refuse_list_flag(flag, f"both {flag} and {file_flag} were given; pass exactly one")
+    src = flag
+    if file_path is not None:
+        src = file_flag
+        try:
+            with open(file_path, encoding="utf-8") as f:
+                raw = f.read()
+        except OSError as e:
+            _refuse_list_flag(file_flag, f"cannot read {file_path!r} ({e.strerror or e})")
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as e:
+        if raw:
+            pos = min(e.pos, len(raw) - 1)
+            where = f"first offending character {raw[pos]!r} at offset {pos}"
+        else:
+            where = "empty value"
+        _refuse_list_flag(src, f"not JSON ({e.msg}); {where}")
+    if not isinstance(parsed, list):
+        _refuse_list_flag(src, f"JSON parsed as {type(parsed).__name__}, not an array")
+    for i, el in enumerate(parsed):
+        if not isinstance(el, str):
+            _refuse_list_flag(src, f"element {i} is {type(el).__name__}, not a string")
+    return parsed
+
+
+def _parse_list_flags(args, include_refs=False):
+    """Parse every list-valued flag present on an add/update namespace.
+
+    Runs BEFORE the store is loaded or locked so a refusal stores nothing.
+
+    Args:
+        args: argparse namespace from the add or update subparser.
+        include_refs: also parse --refs / --refs-file (add only).
+
+    Returns:
+        dict: item field -> list[str] for flags that were given, None for absent ones.
+        The "refs" key is present only when include_refs is True.
+    """
+    out = {}
+    for field, flag, attr, fattr in _LIST_FLAGS:
+        raw = getattr(args, attr, None)
+        fp  = getattr(args, fattr, None)
+        out[field] = _parse_list_flag(flag, raw, fp) if (raw is not None or fp is not None) else None
+    if include_refs:
+        raw = getattr(args, "refs", None)
+        fp  = getattr(args, "refs_file", None)
+        out["refs"] = _parse_list_flag("--refs", raw, fp) if (raw is not None or fp is not None) else None
+    return out
+
+
 def cmd_add(args):
+    lists = _parse_list_flags(args, include_refs=True)  # TK-2313: refuse before the lock
     with _file_lock():
         data  = load()
         items = data["items"]
@@ -2539,18 +2648,16 @@ def cmd_add(args):
         if args.tags:         item["tags"]          = [t.strip() for t in args.tags.split(",")]
         if args.deps:         item["dependencies"]  = [d.strip() for d in args.deps.split(",")]
 
-        # Structured lists
-        if args.criteria:
-            item["success_criteria"] = [s.strip() for s in args.criteria.split("|")]
-        if args.deliverables:
-            item["deliverables"] = [s.strip() for s in args.deliverables.split("|")]
-        if args.checklist:
-            item["validation_checklist"] = [s.strip() for s in args.checklist.split("|")]
+        # Structured lists — JSON arrays parsed by _parse_list_flags (TK-2313)
+        for field in ("success_criteria", "deliverables", "validation_checklist"):
+            if lists[field] is not None:
+                item[field] = lists[field]
         if args.test_strategy:
             item["test_strategy"] = args.test_strategy
-        if args.refs:
-            refs = [r.strip() for r in args.refs.split("|") if r.strip()]
-            for r in refs:
+        if lists["refs"] is not None:
+            for r in lists["refs"]:
+                if not r.strip():
+                    continue
                 item.setdefault("doc_refs", []).append(
                     {"path": r, "type": "code_file" if "/" in r else "workspace_file", "title": "", "note": ""}
                 )
@@ -2659,6 +2766,7 @@ def _print_tree(filtered: list, all_items: list, parent_id=None, indent=0):
 
 
 def cmd_update(args):
+    lists = _parse_list_flags(args)  # TK-2313: refuse before the lock; stores nothing on refusal
     with _file_lock():
         data  = load()
         items = data["items"]
@@ -2692,12 +2800,10 @@ def cmd_update(args):
             item["urgency"] = args.urgency; changed.append("urgency")
         if args.tags is not None:
             item["tags"] = [t.strip() for t in args.tags.split(",")]; changed.append("tags")
-        if args.criteria is not None:
-            item["success_criteria"] = [s.strip() for s in args.criteria.split("|")]; changed.append("success_criteria")
-        if args.deliverables is not None:
-            item["deliverables"] = [s.strip() for s in args.deliverables.split("|")]; changed.append("deliverables")
-        if args.checklist is not None:
-            item["validation_checklist"] = [s.strip() for s in args.checklist.split("|")]; changed.append("validation_checklist")
+        # JSON arrays replace the whole list; only the fields sent are touched (TK-2313)
+        for field in ("success_criteria", "deliverables", "validation_checklist"):
+            if lists[field] is not None:
+                item[field] = lists[field]; changed.append(field)
 
         item["updated_at"] = _now()
         save(data)
@@ -5621,9 +5727,15 @@ AGENT WORKFLOW (heartbeat cycle):
                    help="1-5: importance for scoring (default 3)")
     a.add_argument("--urgency",            type=int, choices=range(1,6), default=3,
                    help="1-5: urgency for scoring (default 3)")
-    a.add_argument("--criteria",           help="Success criteria, pipe-separated")
-    a.add_argument("--deliverables",       help="Deliverables, pipe-separated")
-    a.add_argument("--checklist",          help="Validation checklist, pipe-separated")
+    a.add_argument("--criteria",           help=f"Success criteria: {_LIST_FLAG_HELP}")
+    a.add_argument("--criteria-file",      dest="criteria_file", metavar="PATH",
+                   help="Read the success-criteria JSON array from a file")
+    a.add_argument("--deliverables",       help=f"Deliverables: {_LIST_FLAG_HELP}")
+    a.add_argument("--deliverables-file",  dest="deliverables_file", metavar="PATH",
+                   help="Read the deliverables JSON array from a file")
+    a.add_argument("--checklist",          help=f"Validation checklist: {_LIST_FLAG_HELP}")
+    a.add_argument("--checklist-file",     dest="checklist_file", metavar="PATH",
+                   help="Read the validation-checklist JSON array from a file")
     a.add_argument("--force",              action="store_true", help="Override hierarchy constraint check")
     a.add_argument("--source",             default=None, help="Creation source identifier (e.g. plan-to-tasks)")
     a.add_argument("--from-plan",          default=None, dest="from_plan", help="Plan ID for dedup bypass scoping")
@@ -5657,8 +5769,16 @@ AGENT WORKFLOW (heartbeat cycle):
     u.add_argument("--due");          u.add_argument("--hours", type=float)
     u.add_argument("--importance",    type=int, choices=range(1,6))
     u.add_argument("--urgency",       type=int, choices=range(1,6))
-    u.add_argument("--tags");         u.add_argument("--criteria")
-    u.add_argument("--deliverables"); u.add_argument("--checklist")
+    u.add_argument("--tags")
+    u.add_argument("--criteria",          help=f"Replace success criteria: {_LIST_FLAG_HELP}")
+    u.add_argument("--criteria-file",     dest="criteria_file", metavar="PATH",
+                   help="Read the success-criteria JSON array from a file")
+    u.add_argument("--deliverables",      help=f"Replace deliverables: {_LIST_FLAG_HELP}")
+    u.add_argument("--deliverables-file", dest="deliverables_file", metavar="PATH",
+                   help="Read the deliverables JSON array from a file")
+    u.add_argument("--checklist",         help=f"Replace validation checklist: {_LIST_FLAG_HELP}")
+    u.add_argument("--checklist-file",    dest="checklist_file", metavar="PATH",
+                   help="Read the validation-checklist JSON array from a file")
     u.add_argument("--validation-notes", dest="validation_notes")
     u.add_argument("--validated-by",     dest="validated_by")
 
@@ -5695,7 +5815,9 @@ AGENT WORKFLOW (heartbeat cycle):
     cl.add_argument("--agent", required=True, help="Agent claiming the task")
 
     # ── metadata refs at creation ─────────────────────────────────────────────
-    a.add_argument("--refs", help="Pipe-separated file/reference paths to attach as doc_refs")
+    a.add_argument("--refs", help=f"File/reference paths to attach as doc_refs: {_LIST_FLAG_HELP}")
+    a.add_argument("--refs-file", dest="refs_file", metavar="PATH",
+                   help="Read the doc_refs JSON array from a file")
 
     # ── rpetd — inline work log ───────────────────────────────────────────────
     rp = sub.add_parser("rpetd", help="Log an RPETD phase into a task")

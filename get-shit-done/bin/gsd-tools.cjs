@@ -1717,6 +1717,8 @@ async function planToTasks(planFilePath, opts) {
   const storyCriteriaMatch = storyBody.match(/<success_criteria>([\s\S]*?)<\/success_criteria>/i);
   const storyTitle = storyTitleMatch ? storyTitleMatch[1].trim() : `Plan ${planId} Story`;
   const storyCriteria = storyCriteriaMatch ? storyCriteriaMatch[1].trim() : 'Plan tasks complete.';
+  // TK-2313: --criteria is a JSON array on the wire; the story block is one criterion.
+  const storyCriteriaJson = JSON.stringify([storyCriteria]);
 
   // ── Extract acceptance_criteria text for each task ───────────────────────
   // Also extract an optional per-task <finding_tag> (ROUT-04): a `finding:<dedup_key>`
@@ -1833,7 +1835,7 @@ async function planToTasks(planFilePath, opts) {
     const _storyRaw = spawnSync('node', [
       amautaCjs, 'add', 'story', storyTitle,
       '--agent', 'operator',
-      '--criteria', storyCriteria,
+      '--criteria', storyCriteriaJson,
     ], _spawnOpts);
     storyId = extractId(_storyRaw.stdout, 'ST');
     if (!storyId) {
@@ -1862,7 +1864,9 @@ async function planToTasks(planFilePath, opts) {
     }
 
     const criteria = taskCriteriaMap[task.id] || [];
-    const criteriaStr = criteria.length > 0 ? criteria.join(' | ') : task.title;
+    // TK-2313: emit a JSON array, never a delimiter join — a criterion that cites a
+    // shell pipeline or a grep alternation must reach the store whole.
+    const criteriaJson = JSON.stringify(criteria.length > 0 ? criteria : [task.title]);
 
     // ROUT-04: append an optional finding:<dedup_key> tag so the created task carries the
     // finding identity. Absent → byte-identical to the pre-ROUT tag string.
@@ -1874,7 +1878,7 @@ async function planToTasks(planFilePath, opts) {
       'add', 'task', task.title,
       '--parent', storyId,
       '--agent', task.agent,
-      '--criteria', criteriaStr,
+      '--criteria', criteriaJson,
       '--source', 'plan-to-tasks',
       '--from-plan', planId,
       '--tags', _tags,
