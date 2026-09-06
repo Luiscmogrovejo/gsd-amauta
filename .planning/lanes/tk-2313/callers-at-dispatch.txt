@@ -1,0 +1,2 @@
+get-shit-done/bin/gsd-tools.cjs:1836:      '--criteria', storyCriteria,
+get-shit-done/bin/gsd-tools.cjs:1877:      '--criteria', criteriaStr,

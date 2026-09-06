@@ -1329,7 +1329,13 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 args.append("--json")
             elif flag and val is not None:
                 args.append(flag)
-                args.append(str(val))
+                # TK-2313: --criteria is a JSON array on the wire. A body that
+                # carries a native list is serialized; a string passes verbatim
+                # (str() of a list would be a Python repr, which amauta.py refuses).
+                if key == "criteria" and isinstance(val, (list, tuple)):
+                    args.append(json.dumps(list(val)))
+                else:
+                    args.append(str(val))
 
         return args
 

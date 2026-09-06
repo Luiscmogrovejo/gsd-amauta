@@ -1,0 +1,24 @@
+{
+  "phase": "00-foundations-and-baseline",
+  "timestamp": "2026-09-06T231544Z",
+  "task_id": "TK-2313",
+  "verdict": "gaps_found",
+  "gaps": [
+    {
+      "requirement_id": "SUP-12",
+      "description": "The fix reddens ten pre-existing tests that are green at the base. tests/test_e2e_lifecycle.py:55 builds the cmd_add Namespace with criteria=\"All tests pass|No errors\" (a pipe string, the old wire format); on the head _parse_list_flag refuses it and sys.exit(1)s inside every test's first cmd_add call. Measured: base a95f645 `python3 -m pytest tests/test_e2e_lifecycle.py` = 10 passed, exit 0; head 042c1cc = 10 failed, exit 1, every failure at amauta.py _refuse_list_flag with raw='All tests pass|No errors'. The lane reported the delta as test_e2e_lifecycle x6 and called it 'not attributed'; it is x10 and it is caused by the change (a fixture still emitting the pipe format). Fix: tests/test_e2e_lifecycle.py:55 -> criteria=json.dumps([\"All tests pass\", \"No errors\"]) (or the list serialised the same way), and add criteria_file/deliverables_file/checklist_file/refs_file=None to the Namespace if the test is to mirror argparse. Not a real-path break: every production caller (gsd-tools.cjs x2, daemon _build_args, e2e-advanced.test.cjs) emits JSON; hence gaps-found, not fail."
+    }
+  ],
+  "non_gaps_observations": [
+    "gate4_pr_url: no PR exists for fix/tk-2313-criteria-json-array (gh pr list --head, as Luiscmogrovejo, returns []); commits c27bd97/35c1549 are pushed. The brief forbids merge and does not ask for a PR; recorded, not graded.",
+    "executor_worktree_uncommitted: lane-2313-amauta has an uncommitted edit to agents/gsd-validator.md adding a Gate-4 exception (accept a commit SHA while unpushed). It is not on the branch, not in the writable set, and unrelated to JSON-array criteria; it does not belong to this change. It would not apply here anyway: 35c1549 is reachable from origin/.",
+    "gaps_report_convention: written at the brief's instructed path .planning/lanes/tk-2313/ on the gsd-amauta branch (force-added; .planning is gitignored there), not at the writer's .planning/milestones/<phase>/ nor the barerouter corpus path .planning/phases/<phase>/gaps-reports/. Six-key shape and 'gaps_found' literal follow writeGapsReport().",
+    "pre_existing_named_gaps (outside this task, reproduced at a95f645 and identical on the head): (1) gsd-amauta.cjs cmdAdd no-daemon path forwards none of --criteria/--deliverables/--checklist/--refs: `add task --criteria '[...]'` with GSD_AMAUTA_NO_AUTO_START=1 stores success_criteria=[] and exits 0 on both arms; (2) /api/add flag_map lacks deliverables/checklist/refs: a body with deliverables=['will | drop'] creates TK-0004 with deliverables=[] exit 0 on the head. gsd-amauta.cjs is unchanged by this PR.",
+    "installed_copy: ~/.claude/get-shit-done/bin/gsd-tools.cjs:1865 still has criteria.join(' | '); expected until bin/install.js runs after merge. Until then the running harness's plan-to-tasks still emits the pipe format and, once this branch's amauta.py is what it shells to, will be refused loudly rather than cut silently.",
+    "mirror_lag: through the private daemon, /api/exec update was not reflected in the sqlite mirror until the next daemon start (TK-0005 updated to ['p | q'] via /api/exec; mirror still held the add-time value at shutdown; TK-0001/TK-0003 updated in an earlier session were current after restart). Pre-existing behaviour of the /api/exec path, not this PR's.",
+    "docstring_stale: amauta.py _parse_list_flags docstring says 'Runs BEFORE the store is loaded or locked'; since 35c1549 it runs inside _file_lock (before load()). Cosmetic.",
+    "concatenated_pair: ST-0182 and ST-0183 (the 2 CONCATENATED of the 497) each hold two criteria joined by a literal '\\n- ' markdown separator; a delimiter-only repair of those two is possible through the new `update --criteria '[...]'` path. The 495 TRUNCATED cannot be restored byte-exactly by any automated migration because split('|') also strip()ped each fragment, so the whitespace around every cut is gone; a heuristic re-join is what TK-2322's per-item ledger does.",
+    "brief_ambient_env: the shell carries GSD_POSTGRES_URL=postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta (the live mirror). amauta.py reads it for its memory DSN and infra_detect gives it priority 1; a private AMAUTA_DATA_DIR alone does not isolate a run. Every validator command after discovery ran with it unset; cmd_add/cmd_update/cmd_show have no _mem_log_event/_pg_conn call, so the earlier runs that inherited it wrote nothing to PG.",
+    "suite_hang: tests/test_27_mrr_validation.py::test_rlm_mrr_validation (24th collected of 1414) blocks indefinitely without the RLM service; deselected for the whole-suite delta. Unrelated to this task."
+  ]
+}

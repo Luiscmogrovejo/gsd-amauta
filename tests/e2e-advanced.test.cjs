@@ -711,7 +711,7 @@ describe('Edge Cases & Robustness — E2E', () => {
       '--urgency', '4',
       '--agent', 'gsd-executor-backend',
       '--tags', 'auth,security',
-      '--criteria', 'Tests pass|Coverage >80%',
+      '--criteria', JSON.stringify(['Tests pass', 'Coverage >80%']),
     ], d);
     assert.ok(r.ok);
     const tk = id(r.out);
