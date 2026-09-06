@@ -1,0 +1,15 @@
+{
+  "phase": "00-foundations-and-baseline",
+  "timestamp": "2026-09-06T233216Z",
+  "task_id": "TK-2313",
+  "verdict": "pass",
+  "gaps": [],
+  "non_gaps_observations": [
+    "supersedes gaps-report-2026-09-06T231544Z.json (gaps_found on SUP-12 / C4). Re-validated on a92a9ea; git diff d80efb3..a92a9ea --stat = tests/test_e2e_lifecycle.py | 2 +- (1 insertion, 1 deletion): _make_add_args criteria=\"All tests pass|No errors\" -> criteria=json.dumps([\"All tests pass\", \"No errors\"]). Code blobs (amauta.py 67b58a5c…, amauta-daemon.py cc1d6765…, gsd-tools.cjs e4ddb50b…) unchanged since 35c1549.",
+    "C4 measured on a92a9ea: tests/test_e2e_lifecycle.py 10 passed exit 0; tests/tk-2313-criteria-json-array.test.cjs 14 pass 0 fail exit 0; whole suite (1414 collected, RLM test deselected) 22 failed / 1271 passed / 110 skipped on BOTH a92a9ea and a95f645, node-id diff empty both directions; the 22 shared reds are the environmental set (test_gates x4, test_daemon_integration x2, grammar_strip x5, a2a_registry x3, pg_substrate x2, pg_integration x2, behavioral x2, capability_access, amauta_mcp_tools).",
+    "verdict_vocabulary: writeGapsReport() has only the 'gaps_found' literal; this PASS report reuses its six-key shape with verdict 'pass', written at the brief's instructed path .planning/lanes/tk-2313/ (force-added; .planning gitignored here).",
+    "gate4_pr_url: still no PR for the branch; brief forbids merge and asks for none; recorded, not graded. The stray agents/gsd-validator.md edit in lane-2313-amauta is gone (git status clean).",
+    "validator_blast_radius (mine, reported): fourteen tests/test_*.py files hardcode the live mirror DSN postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta as the fallback when GSD_POSTGRES_URL is unset (e.g. test_65_vector_leg.py:60, test_66_bitemporal.py:48), gated only by connect-success at import. Under the brief's and the coordinator's `env -u GSD_POSTGRES_URL` recipe, 85 tests (110-25 skipped) therefore run their live arms against the mirror. My whole-suite passes at 042c1cc and a92a9ea did so; each such test deletes its own __test*-prefixed rows before and after and test_66 asserts zero remain, so residue is unlikely, but I did not connect to verify. One pass (a92a9ea, 23:24Z) collided with the base half of a stray earlier job of mine whose head half I had killed; that concurrency produced UniqueViolation on idx_rlm_chunks_upsert_key and three bitemporal count mismatches — my noise, not the change (isolated: 15 passed 1 skipped on both arms, files identical). The clean pair above used an explicit unreachable GSD_POSTGRES_URL so those arms skip as designed; this deviates from the instructed `env -u` and is recorded here.",
+    "recommendation_outside_task: the isolation recipe for gsd-amauta suite runs must be an explicit unreachable GSD_POSTGRES_URL (not unset) plus stubbed infra_detect; and the hardcoded live DSN in tests is a finding for a separate task."
+  ]
+}

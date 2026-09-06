@@ -167,3 +167,56 @@ isolated it passes 3/3 on the head (0.10/0.10/0.13 s) and 3/3 at base (0.12/0.21
 The 22 shared reds (gates ×4, daemon mirror ×2, pg_substrate/pg_integration under the unset DSN, grammar_strip ×5,
 a2a_registry ×3, behavioral ×2, capability_access, amauta_mcp_tools) are identical on both arms and are not this PR's.
 So the pytest delta caused by the change is exactly the ten C4 ids, and nothing else.
+
+---
+
+# RE-VALIDATION on `a92a9ea` — **PASS**
+
+Coordinator request 2026-09-06T23:23Z: re-validate C4 only on the new head. Fetched `origin/fix/tk-2313-criteria-json-array` =
+`a92a9ea` (`test(e2e): _make_add_args passes criteria as a JSON array (TK-2313 C4 gap)`, luiscmogrovejo, 23:22:45Z), one
+commit on top of `d80efb3`. Own worktrees `val2-2313-head` (a92a9ea) and `val2-2313-base` (a95f645); private
+`AMAUTA_DATA_DIR`; `env -u GSD_POSTGRES_URL -u AMAUTA_MEMORY_DATABASE_URL` for the two targeted runs. The stray
+`agents/gsd-validator.md` edit is gone from `lane-2313-amauta` (status clean).
+
+```
+$ git diff d80efb3..a92a9ea --stat
+ tests/test_e2e_lifecycle.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+-        criteria="All tests pass|No errors", deliverables=None,
++        criteria=json.dumps(["All tests pass", "No errors"]), deliverables=None,
+```
+Code blobs unchanged since `35c1549` (amauta.py md5 `67b58a5c…`, daemon `cc1d6765…`, gsd-tools `e4ddb50b…`).
+
+The three measured lines:
+```
+python3 -m pytest tests/test_e2e_lifecycle.py -v            → 10 passed in 0.18s              exit 0
+node --test tests/tk-2313-criteria-json-array.test.cjs      → tests 14  pass 14  fail 0       exit 0
+python3 -m pytest tests/ -q -rf --deselect …test_rlm_mrr_validation   (1414 collected)
+   a92a9ea: 22 failed, 1271 passed, 110 skipped, 1 deselected     exit 1
+   a95f645: 22 failed, 1271 passed, 110 skipped, 1 deselected     exit 1
+   node-id diff: red on head only = none; red on base only = none
+```
+The 22 shared reds are the environmental set (test_gates ×4, test_daemon_integration ×2 — the "six" — plus grammar_strip ×5,
+a2a_registry ×3, pg_substrate ×2, pg_integration ×2, behavioral ×2, capability_access, amauta_mcp_tools), identical on both
+arms. C4 holds; nothing else changed. **PASS.** Supersedes the GAPS-FOUND of `84f1e37`; new report
+`gaps-report-2026-09-06T233216Z.json`.
+
+## What I got wrong, and what the instruction got wrong, on the way here
+
+- **My first whole-suite pair on `a92a9ea` was contaminated by my own concurrency.** The first background job of the
+  original validation ran its two arms sequentially; I killed only its head half (PID 57704), and its base half kept
+  running inside the old base worktree — through my `git worktree remove --force` at 23:19:43Z, with a deleted cwd, until
+  23:26Z — overlapping the 23:24Z head pass. Result: four head-only reds (`test_65_vector_leg` live ×1,
+  `test_66_bitemporal` ×3: `UniqueViolation … idx_rlm_chunks_upsert_key`, "DELETE must NOT insert a new row", count
+  mismatches) that vanish in isolation (15 passed / 1 skipped on both arms; files identical across arms) and in the clean
+  rerun. Killing a sequential job means killing the job, not its current child.
+- **`env -u GSD_POSTGRES_URL` does not keep this suite off the live mirror; it points it there.** Fourteen `tests/test_*.py`
+  files (and three `.cjs`) hardcode `postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta` as the fallback DSN
+  (`test_65_vector_leg.py:60`, `test_66_bitemporal.py:48`, …), gated only by connect-success at import. With the var unset,
+  85 tests (110 − 25 skipped) run live arms against the mirror; my earlier whole-suite passes at `042c1cc` and `a92a9ea`
+  did so. Each cleans its `__test*`-prefixed rows before and after (test_66 asserts zero remain), so residue is unlikely;
+  I did not connect to verify. The clean pair above therefore used an **explicit unreachable**
+  `GSD_POSTGRES_URL='postgresql://nobody:none@127.0.0.1:1/unreachable'` — a deliberate deviation from the instructed
+  `env -u`, recorded here — under which those arms skip as their authors designed and both arms agree exactly.
+  Recommendation, outside this task: the standing isolation recipe for gsd-amauta must be an unreachable explicit DSN plus
+  a stubbed `infra_detect`, and the hardcoded live DSN in tests is a finding of its own.
