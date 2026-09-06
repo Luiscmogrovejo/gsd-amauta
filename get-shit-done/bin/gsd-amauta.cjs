@@ -1615,17 +1615,19 @@ function findGapsReports(phase, opts = {}) {
  * `--notes` are filed as observations under the same `verdict_notes:` prefix
  * convention the validator already uses for `unresolved_divergence:`.
  *
- * Best-effort by design at THIS point only: the phase was already resolved and
- * refused loudly before any state was mutated, so the only failures reachable
- * here are filesystem ones, and a write failure must not un-record a validation
- * that already committed. The reason is printed, never swallowed.
+ * The write is allowed to fail without failing the command: the verdict has
+ * already been recorded in the ledger by the time this runs, and un-recording a
+ * committed validation because a directory could not be named would be a worse
+ * outcome than an unwritten artefact. The refusal is printed in full on stderr
+ * and never swallowed — the failure mode this task exists to remove is the
+ * SILENT one, not the loud one.
  *
  * @param {object} args
- * @param {string} args.phase
+ * @param {string} [args.phase]  Explicit phase; else derived from taskId
  * @param {string} args.taskId
  * @param {string} args.verdict  PASS or FAIL
  * @param {string} [args.notes]
- * @returns {string|null} Report path, or null if the write failed
+ * @returns {string|null} Report path, or null if the write was refused
  */
 function fileVerdictArtefact({ phase, taskId, verdict, notes }) {
   const observations = [];
@@ -1633,7 +1635,9 @@ function fileVerdictArtefact({ phase, taskId, verdict, notes }) {
   try {
     return writeGapsReport(phase, taskId, [], observations, verdict);
   } catch (err) {
-    process.stderr.write(`ERROR: verdict recorded but its report was NOT written: ${err.message}\n`);
+    process.stderr.write(
+      `ERROR: ${verdict} for ${taskId} was recorded, but no report was filed for it: ${err.message}\n`,
+    );
     return null;
   }
 }
@@ -1654,10 +1658,13 @@ async function cmdValidate(useDaemon, id, flags, jsonMode) {
       '  --notes "..."       Notes / rejection reason\n' +
       '  --force-reason "..." Override gate checks with justification\n' +
       '  --subtasks "a|b"    Follow-up subtasks (used with --fail)\n' +
-      '  --phase <phase>     Phase the verdict belongs to. REQUIRED unless the\n' +
-      '                      task id starts with a numeric segment ("13.1-04-01").\n' +
-      '                      There is no "unknown" fallback: an unresolvable\n' +
-      '                      phase fails the command instead of misfiling it.\n' +
+      '  --phase <phase>     Phase the verdict report is filed under. Derived\n' +
+      '                      from a task id that STARTS with a numeric segment\n' +
+      '                      ("13.1-04-01"); otherwise required. There is no\n' +
+      '                      "unknown" fallback. Unresolvable with --gaps-found\n' +
+      '                      fails the command; with --pass/--fail the verdict\n' +
+      '                      is still recorded and the unwritten report is\n' +
+      '                      reported on stderr.\n' +
       '  --gap "REQ:desc"    Gap finding — repeatable (used with --gaps-found)\n' +
       '  --non-gaps "..."    Cosmetic observation — repeatable\n' +
       '  --json              JSON output\n'
@@ -1730,17 +1737,15 @@ async function cmdValidate(useDaemon, id, flags, jsonMode) {
   // TK-2339: PASS and FAIL are verdicts too, and SUP-02 says a verdict is one
   // of three states. Before this, only --gaps-found produced a machine-readable
   // artefact, so a genuine PASS had no canonical shape to be written in and had
-  // to be recorded in prose. Resolve the phase FIRST — before any gate runs and
-  // before any state is mutated — so an unresolvable phase costs nothing and
-  // says what was missing, instead of filing the result under "unknown".
-  let verdictPhase;
-  try {
-    verdictPhase = resolveGapsPhase({ phase: flags.phase, taskId: id });
-  } catch (err) {
-    process.stderr.write(`ERROR: ${err.message}\n`);
-    if (jsonMode) console.log(JSON.stringify({ error: err.code, message: err.message, details: err.details }));
-    return 1;
-  }
+  // to be recorded in prose. It now files one.
+  //
+  // The failure mode here is deliberately NOT the one --gaps-found has. That
+  // path exists solely to produce the artefact, so an unresolvable phase kills
+  // the command. A --pass or --fail is a verdict in its own right, recorded in
+  // the ledger; refusing to record it because we could not name a directory
+  // would make --phase mandatory on a path that never had it. So the ARTEFACT
+  // write fails, loudly and by name, and the verdict still lands. What must
+  // never happen — filing it under "unknown" — cannot happen either way.
   const verdictName = flags.pass_result === true ? VERDICT_PASS : VERDICT_FAIL;
 
   // Check validation gates (unless --force-reason)
@@ -1844,7 +1849,7 @@ async function cmdValidate(useDaemon, id, flags, jsonMode) {
 
     // TK-2339: file the PASS/FAIL artefact once the verdict is recorded.
     if ((data.exit_code || 0) === 0) {
-      const reportPath = fileVerdictArtefact({ phase: verdictPhase, taskId: id, verdict: verdictName, notes: flags.notes });
+      const reportPath = fileVerdictArtefact({ phase: flags.phase, taskId: id, verdict: verdictName, notes: flags.notes });
       if (reportPath) console.log(`${verdictName}: wrote ${reportPath}`);
     }
 
@@ -1882,7 +1887,7 @@ async function cmdValidate(useDaemon, id, flags, jsonMode) {
 
   // TK-2339: file the PASS/FAIL artefact once the verdict is recorded.
   if (result.exit_code === 0) {
-    const reportPath = fileVerdictArtefact({ phase: verdictPhase, taskId: id, verdict: verdictName, notes: flags.notes });
+    const reportPath = fileVerdictArtefact({ phase: flags.phase, taskId: id, verdict: verdictName, notes: flags.notes });
     if (reportPath) console.log(`${verdictName}: wrote ${reportPath}`);
   }
 

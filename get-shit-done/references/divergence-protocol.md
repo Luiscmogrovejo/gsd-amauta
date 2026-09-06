@@ -106,12 +106,18 @@ You do not.
 Report location contract (template — `<phase>` is runtime-substituted):
 
 ```
-.planning/milestones/<phase>/divergence-reports/<task_id>-<timestamp>.json
+.planning/phases/<phase>/divergence-reports/<task_id>-<timestamp>.json
 ```
 
-The `<phase>` token is the milestone directory name; `<task_id>` is the
+The `<phase>` token is the phase directory name; `<task_id>` is the
 plan's task ID (e.g. `13.1-02-01`); `<timestamp>` is a UTC ISO8601 value safe
 for filenames (colons replaced with hyphens).
+
+> Corrected under TK-2339. This document said `.planning/milestones/` while
+> both hooks that actually enumerate these reports read `.planning/phases/`:
+> `hooks/gsd-stop-gate.cjs:159` and `hooks/gsd-session-handoff.cjs:106`. A
+> report written to the documented path was never seen by either. The code is
+> authoritative here because it is what runs; the prose was the straggler.
 
 Every mandatory field, in order:
 
@@ -353,7 +359,7 @@ violation and lands as `gaps_found` floor.
 ## 10. Validator pre-gate scan
 
 Before the validator evaluates any of its five quality gates, it performs a
-pre-gate scan of `.planning/milestones/<phase>/divergence-reports/` and
+pre-gate scan of `.planning/phases/<phase>/divergence-reports/` and
 lists every report that lacks an `orchestrator_response` field. Each
 unresolved report is an automatic `gaps_found` floor — it is NOT advisory,
 and it is NOT reducible by other gate evidence. The validator reports every

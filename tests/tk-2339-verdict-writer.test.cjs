@@ -24,6 +24,8 @@
  *       back as PASS — three separate processes, no human moving anything
  *   15. CLI refuses --gaps-found with an unresolvable phase, loudly
  *   16. the allowlist glob in gsd-tools.cjs matches what the writer writes
+ *   17. ROUND-TRIP through BOTH files: the report the writer files is cleared
+ *       by manifestCheck in gsd-tools.cjs, then reads back as PASS
  *
  * Run: node --test tests/tk-2339-verdict-writer.test.cjs
  *
@@ -423,6 +425,122 @@ test('15. the CLI refuses --gaps-found with an unresolvable phase, loudly', () =
 });
 
 // ── 16 — writer and manifest allowlist must not drift apart ────────────────
+
+test('18. --pass without a resolvable phase records the verdict and refuses the report LOUDLY', () => {
+  // The asymmetry is deliberate and is the boundary of C1. --gaps-found exists
+  // solely to produce the artefact, so an unresolvable phase kills it (test 15).
+  // A --pass is a verdict in its own right; refusing to record it because we
+  // could not name a directory would make --phase mandatory on a path that
+  // never had it, and it broke seven pre-existing tests when I first tried it.
+  // What C1 actually forbids is the SILENT misfile, and that is what is pinned
+  // here: the failure is on stderr, by name, and nothing lands under "unknown".
+  const tmp = mkTemp('pass-nophase');
+  let err;
+  try {
+    const dataDir = path.join(tmp, 'private-store');
+    fs.mkdirSync(dataDir, { recursive: true });
+    const add = runCli(tmp, ['add', 'task', 'no phase fixture', '--agent', 'tk-2339-fixture'], dataDir);
+    assert.equal(add.status, 0, add.stderr || add.stdout);
+    const mintedId = (add.stdout.match(/TK-\d+/) || [])[0];
+
+    const r = runCli(tmp, [
+      'validate', mintedId, '--pass', '--validator', 'tk-2339', '--force-reason', 'no phase',
+    ], dataDir);
+
+    assert.equal(r.status, 0, `the verdict must still be recorded: ${r.stderr || r.stdout}`);
+    assert.match(r.stderr, /was recorded, but no report was filed for it/);
+    assert.match(r.stderr, /phase could not be resolved/);
+    assert.match(r.stderr, /--phase/);
+    // And nothing was misfiled anywhere.
+    const files = walkRel(tmp).filter((f) => !f.startsWith('private-store/'));
+    assert.deepEqual(files.filter((f) => f.includes('unknown')), [],
+      `nothing may land under "unknown", found ${JSON.stringify(files)}`);
+    assert.deepEqual(files.filter((f) => f.includes('gaps-report')), [],
+      `no report may be filed at all, found ${JSON.stringify(files)}`);
+  } catch (e) { err = e; }
+  cleanupOrPreserve(tmp, err);
+});
+
+// ── 17 — C4 through BOTH files: writer + the scan that lives in gsd-tools ──
+
+test('17. ROUND-TRIP THROUGH gsd-tools: the report the writer files is cleared by manifestCheck, then reads back PASS', async () => {
+  // A round-trip through the writer alone is not the acceptance. The scan that
+  // decides whether a filed report is legitimate lives in gsd-tools.cjs
+  // (manifestCheck + GLOBAL_ALLOWLIST), and it is the piece that would halt the
+  // executor if the writer and the allowlist ever disagreed about the path.
+  // This test runs the real thing: a git repo, a real diff between two SHAs,
+  // and a manifest that does NOT declare the report — so the report is cleared
+  // only if the allowlist glob actually matches where the writer put it.
+  const tools = require(GSD_TOOLS);
+  const { manifestCheck } = tools;
+  const tmp = mkTemp('roundtrip-tools');
+  let err;
+  try {
+    const dataDir = path.join(tmp, 'private-store');
+    fs.mkdirSync(dataDir, { recursive: true });
+
+    // A git repo whose ONLY change between the two SHAs is the verdict report.
+    const git = (cmd) => require('node:child_process').execSync(cmd, { cwd: tmp });
+    git('git init -q');
+    git('git config user.email "test@example.com"');
+    git('git config user.name "test"');
+    git('git config commit.gpgsign false');
+    fs.writeFileSync(path.join(tmp, '.gitignore'), 'private-store/\n');
+    git('git add -A');
+    git('git commit -q --allow-empty -m baseline');
+    const before = require('node:child_process').execSync('git rev-parse HEAD', { cwd: tmp }).toString().trim();
+
+    // (1) WRITTEN BY THE WRITER, through the CLI.
+    const add = runCli(tmp, ['add', 'task', 'C4 through gsd-tools', '--agent', 'tk-2339-fixture'], dataDir);
+    assert.equal(add.status, 0, `fixture task could not be minted: ${add.stderr || add.stdout}`);
+    const mintedId = (add.stdout.match(/TK-\d+/) || [])[0];
+    const write = runCli(tmp, [
+      'validate', mintedId, '--pass', '--phase', PHASE,
+      '--validator', 'tk-2339-tools-roundtrip', '--force-reason', 'C4 through gsd-tools',
+    ], dataDir);
+    assert.equal(write.status, 0, `CLI --pass failed: ${write.stderr || write.stdout}`);
+
+    git('git add -A');
+    git('git commit -q -m task-commit');
+    const after = require('node:child_process').execSync('git rev-parse HEAD', { cwd: tmp }).toString().trim();
+
+    // Sanity: the diff really does contain the report, so a green manifestCheck
+    // below cannot come from an empty diff.
+    const diff = require('node:child_process')
+      .execSync(`git diff --name-only ${before} ${after}`, { cwd: tmp }).toString().trim().split('\n');
+    const reportInDiff = diff.filter((f) => /^\.planning\/phases\/.+\/gaps-reports\/.+-gaps-.+\.json$/.test(f));
+    assert.equal(reportInDiff.length, 1,
+      `the diff must contain exactly the filed report, got ${JSON.stringify(diff)}`);
+
+    // (2) CLEARED BY THE SCAN IN gsd-tools.cjs. The report is DELIBERATELY not
+    // declared in the manifest, so it is an unexpected create unless the
+    // allowlist glob matches where the writer put it. `.planning/memory/**` IS
+    // declared: `validate` also appends a validation audit line there, and that
+    // side effect is not what is under test here. (It is also not in
+    // GLOBAL_ALLOWLIST — a separate, pre-existing gap, reported not fixed.)
+    const memoryFiles = diff.filter((f) => f.startsWith('.planning/memory/'));
+    const res = await manifestCheck({
+      phase: PHASE,
+      wave: 1,
+      taskId: mintedId,
+      filesExpected: { modify: [], create: memoryFiles, delete: [] },
+      gitShaBefore: before,
+      gitShaAfter: after,
+      cwd: tmp,
+    });
+    assert.equal(res.action, 'pass',
+      `manifestCheck halted on the report the tool itself filed: ${JSON.stringify(res)}`);
+    assert.equal(res.ok, true);
+
+    // (3) AND THE VERDICT READS BACK AS PASS — the read-back is the evidence.
+    const scan = runCli(tmp, ['gaps-reports', PHASE, '--json'], dataDir);
+    assert.equal(scan.status, 0, `scan failed: ${scan.stderr}`);
+    const mine = JSON.parse(scan.stdout).reports.filter((r) => r.task_id === mintedId);
+    assert.equal(mine.length, 1);
+    assert.equal(mine[0].verdict, 'PASS');
+  } catch (e) { err = e; }
+  cleanupOrPreserve(tmp, err);
+});
 
 test('16. the manifest allowlist glob matches what the writer writes', () => {
   const tmp = mkTemp('allowlist');
