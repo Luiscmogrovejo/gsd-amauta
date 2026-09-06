@@ -684,6 +684,18 @@ const GLOBAL_ALLOWLIST = [
   // Added in 13.1-05-05 (Wave 1 + Wave 2 fold-ins). See Observations #1
   // in 13.1-01-SUMMARY.md and Observation #1 in 13.1-04-SUMMARY.md.
   '.planning/milestones/**/manifest-violation-*.json',
+  // TK-2339: the verdict artefact moved to
+  // `.planning/phases/<phase>/gaps-reports/<task_id>-gaps-<ts>.json`, matching
+  // where every report anyone had actually filed and where the sibling
+  // divergence-report scanners (hooks/gsd-stop-gate.cjs,
+  // hooks/gsd-session-handoff.cjs) already look. This glob MUST stay in step
+  // with GAPS_REPORT_GLOB in get-shit-done/bin/gsd-amauta.cjs — if it drifts,
+  // a filed verdict starts counting as manifest drift and halts the executor
+  // that filed it.
+  '.planning/phases/**/gaps-reports/*-gaps-*.json',
+  // Retained so the pre-TK-2339 artefacts already committed in downstream
+  // repos do not retroactively become manifest violations. Nothing writes
+  // this shape any more.
   '.planning/milestones/**/gaps-report-*.json',
 ];
 

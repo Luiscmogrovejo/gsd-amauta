@@ -441,10 +441,28 @@ test('writeGapsReport: writes valid JSON with required schema', async () => {
       ['cosmetic: y'],
     );
     assert.ok(fs.existsSync(reportPath), 'gaps report file should exist');
+    // TK-2339: the canonical location is .planning/phases/<phase>/gaps-reports/
+    // and the filename carries the task id. This assertion was previously
+    // absent, which is why the writer and the filed corpus could disagree
+    // about the path for the whole life of this test.
+    // realpathSync: os.tmpdir() is a symlink on macOS (/var -> /private/var),
+    // and writeGapsReport builds from process.cwd(), which is resolved.
+    // Comparing against the unresolved mkdtemp path would yield a ../../..
+    // prefix and read a correct write as a wrong one.
+    assert.equal(
+      path.relative(fs.realpathSync(tmp), reportPath).split(path.sep).slice(0, 4).join('/'),
+      '.planning/phases/13.1-test/gaps-reports',
+      'report must be filed under .planning/phases/<phase>/gaps-reports/',
+    );
+    assert.match(path.basename(reportPath), /^TK-TEST-gaps-.+\.json$/);
     const report = JSON.parse(fs.readFileSync(reportPath, 'utf-8'));
     assert.equal(report.phase, '13.1-test');
     assert.equal(report.task_id, 'TK-TEST');
-    assert.equal(report.verdict, 'gaps_found');
+    // TK-2339: SUP-02 states are PASS / FAIL / GAPS-FOUND, verbatim from the
+    // requirement. This assertion previously read 'gaps_found' — the literal
+    // the writer hardcoded — so it blessed a writer that could express one of
+    // the three states and never noticed the other two were unreachable.
+    assert.equal(report.verdict, 'GAPS-FOUND');
     assert.ok(Array.isArray(report.gaps));
     assert.equal(report.gaps.length, 1);
     assert.equal(report.gaps[0].requirement_id, 'HARDEN-01');

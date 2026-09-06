@@ -1,7 +1,7 @@
 {
   "artifact_version": 1,
   "generated_by": "gsd-tools hook-config emit",
-  "generated_at": "2026-07-03T20:03:38.636Z",
+  "generated_at": "2026-09-06T16:18:19.442Z",
   "orchestrator_owned": [
     ".planning/STATE.md",
     ".planning/ROADMAP.md",
@@ -12,14 +12,19 @@
     ".planning/STATE.md",
     "coverage/**",
     ".planning/milestones/**/manifest-violation-*.json",
+    ".planning/phases/**/gaps-reports/*-gaps-*.json",
     ".planning/milestones/**/gaps-report-*.json"
   ],
   "capability_catalog": {
-    "catalog_version": "1.0",
+    "catalog_version": "1.1",
     "entry_names": [
       "amauta-daemon-http",
       "amauta-postgres",
-      "amauta-valkey"
+      "amauta-valkey",
+      "xcodebuildmcp-server",
+      "mobile-mcp-server",
+      "gradlew-android-loop",
+      "xcodebuild-ios-cli"
     ]
   }
 }

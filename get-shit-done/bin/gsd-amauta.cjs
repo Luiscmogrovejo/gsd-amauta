@@ -1285,48 +1285,357 @@ async function checkSpecInheritanceAdvisory(useDaemon, id, flags) {
   return { advisory: false, reason: 'spec inheritance advisory passed' };
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// TK-2339 — the verdict artefact: one location, three verdicts, no `unknown`
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// WHERE. Verdict artefacts live at
+//   .planning/phases/<phase>/gaps-reports/<task_id>-gaps-<ts>.json
+// and nowhere else. They used to be written to
+//   .planning/milestones/<phase>/gaps-report-<ts>.json
+// which disagreed with every report anyone had actually filed. The tiebreak
+// is not preference, it is the rest of the harness: the executable scanners
+// of the SIBLING verdict artefact — hooks/gsd-stop-gate.cjs and
+// hooks/gsd-session-handoff.cjs — already enumerate
+// `.planning/phases/<dir>/divergence-reports/`. Only the validator's spec
+// prose and this writer were left behind under `milestones/`. Moving one
+// writer rewrites nothing; moving the filed reports would rewrite the audit
+// trail of closed work.
+//
+// The manifest-check allowlist in gsd-tools.cjs (GLOBAL_ALLOWLIST) and the
+// artefact it generates, get-shit-done/config/hook-allowlists.json, are
+// moved in lockstep. If they are ever out of step with GAPS_REPORT_GLOB
+// below, a filed report starts counting as manifest drift.
+const GAPS_REPORTS_DIRNAME = 'gaps-reports';
+const GAPS_REPORT_GLOB = '.planning/phases/**/gaps-reports/*-gaps-*.json';
+// Pre-TK-2339 location, retained ONLY so the scan can report stragglers
+// rather than silently pretend they do not exist. Nothing writes here.
+const LEGACY_GAPS_REPORT_DIRNAME = 'milestones';
+
+// WHICH VERDICTS. SUP-02: "Supervisor verdicts MUST be exactly one of three
+// states — PASS / FAIL / GAPS-FOUND — never a boolean." The casing and the
+// hyphen are taken verbatim from the requirement, which is the only tiebreak
+// available: the filed corpus is inconsistent with itself (7 `gaps_found`,
+// 2 `PASS`, 1 `GAPS-FOUND`).
+const VERDICT_PASS = 'PASS';
+const VERDICT_FAIL = 'FAIL';
+const VERDICT_GAPS_FOUND = 'GAPS-FOUND';
+const CANONICAL_VERDICTS = Object.freeze([VERDICT_PASS, VERDICT_FAIL, VERDICT_GAPS_FOUND]);
+// Forms found on disk in already-filed reports. Accepted on READ so that
+// historical artefacts round-trip without being rewritten; never emitted.
+const LEGACY_VERDICT_ALIASES = Object.freeze({
+  gaps_found: VERDICT_GAPS_FOUND,
+  'gaps-found': VERDICT_GAPS_FOUND,
+  gapsfound: VERDICT_GAPS_FOUND,
+  pass: VERDICT_PASS,
+  fail: VERDICT_FAIL,
+});
+
+// Both `phase` and `task_id` become path segments in the report filename, so
+// an unvalidated value is a filesystem write primitive, not a cosmetic issue.
+// The shape deliberately admits the non-TK ids already in the corpus
+// (`LANE-A`, `SUP-11-12`) and numeric plan ids (`13.1-04-01`) while rejecting
+// anything containing a separator, a dot-segment, whitespace or nothing.
+const REPORT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._]*(?:-[A-Za-z0-9._]+)*$/;
+
 /**
- * HARDEN-04: Write a structured gaps report for a `gaps_found` verdict.
+ * Structured error for every refusal in this module. Carries a machine code
+ * so callers can branch without matching on prose.
  *
- * Schema (locked — see plan 13.1-04):
+ * @param {string} code   Stable identifier, e.g. `phase_unresolved`
+ * @param {string} message Human-readable, names what was missing
+ * @param {object} [details]
+ * @returns {Error}
+ */
+function gapsReportError(code, message, details) {
+  const err = new Error(message);
+  err.code = code;
+  err.details = details || {};
+  return err;
+}
+
+/**
+ * Reject a value that cannot safely become a path segment.
+ *
+ * @param {string} label  Field name, used in the message
+ * @param {*} value       Candidate value
+ * @returns {string}      The validated value
+ * @throws {Error} code `invalid_identifier` when the value is unusable
+ */
+function assertReportIdentifier(label, value) {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw gapsReportError(
+      'invalid_identifier',
+      `gaps report: ${label} must be a non-empty string, got ${JSON.stringify(value)}`,
+      { field: label, value },
+    );
+  }
+  const trimmed = value.trim();
+  if (!REPORT_ID_RE.test(trimmed)) {
+    throw gapsReportError(
+      'invalid_identifier',
+      `gaps report: ${label}=${JSON.stringify(value)} is not a usable path segment. ` +
+      `Allowed: letters, digits, dot, underscore, and single hyphens between them ` +
+      `(e.g. "TK-2339", "LANE-A", "SUP-11-12", "13.1-04-01").`,
+      { field: label, value },
+    );
+  }
+  return trimmed;
+}
+
+/**
+ * Resolve the phase a verdict artefact belongs to. There is no `unknown`
+ * fallback: an unresolvable phase fails the write and says what was missing.
+ *
+ * Before TK-2339 this fell back to the literal string `unknown` in TWO
+ * places in series — here and again inside the writer — so a caller could
+ * not opt out of it and a fix to either one alone was dead code. The
+ * derivation below only ever matched a LEADING NUMERIC segment, which no
+ * `TK-` id has, so every validator run on a real task id took the fallback.
+ *
+ * @param {object} args
+ * @param {string} [args.phase]   Explicit phase (wins when present)
+ * @param {string} [args.taskId]  Task id; a leading numeric segment is used
+ *                                (e.g. "13.1-04-01" -> "13.1")
+ * @returns {string} The resolved phase identifier
+ * @throws {Error} code `phase_unresolved` naming the inputs that failed
+ * @example
+ *   resolveGapsPhase({ phase: '00-foundations-and-baseline' }); // -> '00-foundations-and-baseline'
+ *   resolveGapsPhase({ taskId: '13.1-04-01' });                 // -> '13.1'
+ *   resolveGapsPhase({ taskId: 'TK-2339' });                    // throws phase_unresolved
+ */
+function resolveGapsPhase({ phase, taskId } = {}) {
+  if (typeof phase === 'string' && phase.trim() !== '') {
+    return assertReportIdentifier('phase', phase);
+  }
+  if (typeof taskId === 'string') {
+    const m = taskId.match(/^([0-9]+(?:\.[0-9]+)*)(?:-|$)/);
+    if (m) return assertReportIdentifier('phase', m[1]);
+  }
+  throw gapsReportError(
+    'phase_unresolved',
+    'gaps report: phase could not be resolved, so no report was written. ' +
+    `Pass --phase <phase> explicitly (e.g. --phase 00-foundations-and-baseline). ` +
+    `A phase is only derived from a task id that STARTS with a numeric segment ` +
+    `(e.g. "13.1-04-01"); task_id=${JSON.stringify(taskId)} does not. ` +
+    'Reports are never filed under a directory named "unknown".',
+    { phase: phase === undefined ? null : phase, task_id: taskId === undefined ? null : taskId },
+  );
+}
+
+/**
+ * Normalise a verdict read from disk or supplied by a caller to one of the
+ * three canonical SUP-02 states. Historical lowercase forms are accepted on
+ * input; only canonical forms are ever written.
+ *
+ * @param {*} verdict
+ * @returns {string} One of PASS / FAIL / GAPS-FOUND
+ * @throws {Error} code `invalid_verdict`
+ */
+function normaliseVerdict(verdict) {
+  if (typeof verdict !== 'string' || verdict.trim() === '') {
+    throw gapsReportError(
+      'invalid_verdict',
+      `gaps report: verdict must be one of ${CANONICAL_VERDICTS.join(' / ')}, got ${JSON.stringify(verdict)}`,
+      { verdict },
+    );
+  }
+  const raw = verdict.trim();
+  if (CANONICAL_VERDICTS.includes(raw)) return raw;
+  const alias = LEGACY_VERDICT_ALIASES[raw.toLowerCase()];
+  if (alias) return alias;
+  throw gapsReportError(
+    'invalid_verdict',
+    `gaps report: verdict ${JSON.stringify(verdict)} is not a SUP-02 state. ` +
+    `Expected one of ${CANONICAL_VERDICTS.join(' / ')}.`,
+    { verdict },
+  );
+}
+
+/**
+ * HARDEN-04 / TK-2339: write a structured verdict report.
+ *
+ * Schema (locked):
  *   {
  *     phase: string,
  *     timestamp: ISO8601,
  *     task_id: string,
- *     verdict: "gaps_found",
+ *     verdict: "PASS" | "FAIL" | "GAPS-FOUND",
  *     gaps: [{ requirement_id, description }],
  *     non_gaps_observations: [string]
  *   }
  *
- * No `severity` or `priority` fields — the validator vocabulary is locked:
- * every entry in `gaps[]` is equal. Cosmetic findings go in
+ * No ranking or grading fields on `gaps[]` — the validator vocabulary is
+ * locked and every entry in `gaps[]` is equal. Cosmetic findings go in
  * `non_gaps_observations[]` as a pressure-release valve.
  *
- * @param {string} phase        Phase identifier (used in the milestone dir path)
- * @param {string} taskId       Originating task id
+ * A PASS carrying gaps is a contradiction and is refused: the two recovery
+ * paths SUP-03 keeps separate would both be selected at once.
+ *
+ * @param {string} phase        Phase identifier; no `unknown` fallback exists
+ * @param {string} taskId       Originating task, lane or review id
  * @param {Array<{requirement_id: string, description: string}>} gaps
  * @param {string[]} nonGapsObservations
+ * @param {string} [verdict]    SUP-02 state; defaults to GAPS-FOUND
  * @returns {string} Absolute path to the written report
+ * @throws {Error} codes `phase_unresolved`, `invalid_identifier`,
+ *                 `invalid_verdict`, `pass_with_gaps`
+ * @example
+ *   writeGapsReport('00-foundations-and-baseline', 'TK-2339', [], [], 'PASS');
+ *   // -> <cwd>/.planning/phases/00-foundations-and-baseline/gaps-reports/TK-2339-gaps-<ts>.json
  */
-function writeGapsReport(phase, taskId, gaps, nonGapsObservations) {
-  const safePhase = String(phase || 'unknown').trim() || 'unknown';
-  const dir = path.join(process.cwd(), '.planning', 'milestones', safePhase);
+function writeGapsReport(phase, taskId, gaps, nonGapsObservations, verdict) {
+  const safePhase = resolveGapsPhase({ phase, taskId });
+  const safeTaskId = assertReportIdentifier('task_id', taskId);
+  const safeVerdict = normaliseVerdict(verdict === undefined ? VERDICT_GAPS_FOUND : verdict);
+  const gapList = Array.isArray(gaps) ? gaps : [];
+  if (safeVerdict === VERDICT_PASS && gapList.length > 0) {
+    throw gapsReportError(
+      'pass_with_gaps',
+      `gaps report: a ${VERDICT_PASS} verdict cannot carry ${gapList.length} gap(s). ` +
+      `Use ${VERDICT_GAPS_FOUND} (re-plan) or ${VERDICT_FAIL} (re-execute) — SUP-03 keeps the two recovery paths apart.`,
+      { verdict: safeVerdict, gaps: gapList.length },
+    );
+  }
+  const dir = path.join(process.cwd(), '.planning', 'phases', safePhase, GAPS_REPORTS_DIRNAME);
   fs.mkdirSync(dir, { recursive: true });
-  // ISO8601 with millisecond precision, colons stripped for fs-safe names.
+  // ISO8601 with millisecond precision, colons and dots stripped for fs-safe names.
   const now = new Date();
   const isoTs = now.toISOString();
   const fsTs = isoTs.replace(/[:.]/g, '-');
-  const reportPath = path.join(dir, `gaps-report-${fsTs}.json`);
+  const reportPath = path.join(dir, `${safeTaskId}-gaps-${fsTs}.json`);
   const report = {
     phase: safePhase,
     timestamp: isoTs,
-    task_id: taskId,
-    verdict: 'gaps_found',
-    gaps: Array.isArray(gaps) ? gaps : [],
+    task_id: safeTaskId,
+    verdict: safeVerdict,
+    gaps: gapList,
     non_gaps_observations: Array.isArray(nonGapsObservations) ? nonGapsObservations : [],
   };
   fs.writeFileSync(reportPath, JSON.stringify(report, null, 2) + '\n');
   return reportPath;
+}
+
+/**
+ * Read one verdict report, normalising its verdict to a SUP-02 state without
+ * touching the bytes on disk. Historical reports written before TK-2339 carry
+ * a lowercase `gaps_found`; they read back as `GAPS-FOUND` and are marked
+ * `legacy_verdict_form: true` so a consumer can tell.
+ *
+ * @param {string} reportPath Absolute or cwd-relative path to a report
+ * @returns {object} `{ path, phase, timestamp, task_id, verdict, gaps,
+ *                      non_gaps_observations, legacy_verdict_form, parse_error }`
+ */
+function readGapsReport(reportPath) {
+  let parsed;
+  try {
+    parsed = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+  } catch (err) {
+    return { path: reportPath, parse_error: err.message, verdict: null };
+  }
+  if (!parsed || typeof parsed !== 'object') {
+    return { path: reportPath, parse_error: 'report is not a JSON object', verdict: null };
+  }
+  const rawVerdict = parsed.verdict;
+  let verdict = null;
+  let parseError = null;
+  try {
+    verdict = normaliseVerdict(rawVerdict);
+  } catch (err) {
+    parseError = err.message;
+  }
+  return {
+    path: reportPath,
+    phase: typeof parsed.phase === 'string' ? parsed.phase : null,
+    // Two shapes exist in the filed corpus: `timestamp` (tool-written) and
+    // `validated_at` (hand-authored). Read both rather than report null.
+    timestamp: parsed.timestamp || parsed.validated_at || null,
+    task_id: typeof parsed.task_id === 'string' ? parsed.task_id : null,
+    verdict,
+    raw_verdict: rawVerdict === undefined ? null : rawVerdict,
+    legacy_verdict_form: verdict !== null && rawVerdict !== verdict,
+    gaps: Array.isArray(parsed.gaps) ? parsed.gaps : [],
+    non_gaps_observations: Array.isArray(parsed.non_gaps_observations) ? parsed.non_gaps_observations : [],
+    parse_error: parseError,
+  };
+}
+
+/**
+ * Scan for the verdict reports filed against a phase.
+ *
+ * Reads the ONE canonical location. Any report still sitting in the
+ * pre-TK-2339 `.planning/milestones/` tree is surfaced under
+ * `legacy_unmigrated[]` rather than silently ignored — including the
+ * `milestones/unknown/` directory, which is where every phase-less write
+ * used to land.
+ *
+ * @param {string} phase           Phase identifier
+ * @param {object} [opts]
+ * @param {string} [opts.cwd]      Repository root; defaults to process.cwd()
+ * @returns {{phase: string, dir: string, reports: object[], legacy_unmigrated: string[]}}
+ * @throws {Error} code `invalid_identifier` when `phase` is unusable
+ * @example
+ *   findGapsReports('00-foundations-and-baseline').reports.map(r => r.verdict);
+ *   // -> ['GAPS-FOUND', 'PASS', ...]
+ */
+function findGapsReports(phase, opts = {}) {
+  const root = opts.cwd || process.cwd();
+  const safePhase = assertReportIdentifier('phase', phase);
+  const dir = path.join(root, '.planning', 'phases', safePhase, GAPS_REPORTS_DIRNAME);
+  let names = [];
+  try {
+    names = fs.readdirSync(dir).filter((f) => f.endsWith('.json'));
+  } catch {
+    names = []; // no reports filed yet is not an error
+  }
+  names.sort();
+  const reports = names.map((n) => readGapsReport(path.join(dir, n)));
+
+  // Stragglers in the pre-TK-2339 tree. Reported, never read as canonical.
+  const legacy = [];
+  const legacyRoot = path.join(root, '.planning', LEGACY_GAPS_REPORT_DIRNAME);
+  const legacyDirs = [safePhase, 'unknown'];
+  for (const d of legacyDirs) {
+    for (const sub of [path.join(legacyRoot, d), path.join(legacyRoot, d, GAPS_REPORTS_DIRNAME)]) {
+      let found = [];
+      try {
+        found = fs.readdirSync(sub).filter((f) => f.endsWith('.json'));
+      } catch {
+        found = [];
+      }
+      for (const f of found) legacy.push(path.join(sub, f));
+    }
+  }
+  return { phase: safePhase, dir, reports, legacy_unmigrated: legacy.sort() };
+}
+
+/**
+ * File the verdict artefact for a PASS or FAIL outcome. GAPS-FOUND has its own
+ * call site because it carries `gaps[]`; PASS and FAIL carry none, and their
+ * `--notes` are filed as observations under the same `verdict_notes:` prefix
+ * convention the validator already uses for `unresolved_divergence:`.
+ *
+ * Best-effort by design at THIS point only: the phase was already resolved and
+ * refused loudly before any state was mutated, so the only failures reachable
+ * here are filesystem ones, and a write failure must not un-record a validation
+ * that already committed. The reason is printed, never swallowed.
+ *
+ * @param {object} args
+ * @param {string} args.phase
+ * @param {string} args.taskId
+ * @param {string} args.verdict  PASS or FAIL
+ * @param {string} [args.notes]
+ * @returns {string|null} Report path, or null if the write failed
+ */
+function fileVerdictArtefact({ phase, taskId, verdict, notes }) {
+  const observations = [];
+  if (typeof notes === 'string' && notes.trim() !== '') observations.push(`verdict_notes: ${notes.trim()}`);
+  try {
+    return writeGapsReport(phase, taskId, [], observations, verdict);
+  } catch (err) {
+    process.stderr.write(`ERROR: verdict recorded but its report was NOT written: ${err.message}\n`);
+    return null;
+  }
 }
 
 async function cmdValidate(useDaemon, id, flags, jsonMode) {
@@ -1345,7 +1654,10 @@ async function cmdValidate(useDaemon, id, flags, jsonMode) {
       '  --notes "..."       Notes / rejection reason\n' +
       '  --force-reason "..." Override gate checks with justification\n' +
       '  --subtasks "a|b"    Follow-up subtasks (used with --fail)\n' +
-      '  --phase <phase>     Phase id for gaps-report path (optional)\n' +
+      '  --phase <phase>     Phase the verdict belongs to. REQUIRED unless the\n' +
+      '                      task id starts with a numeric segment ("13.1-04-01").\n' +
+      '                      There is no "unknown" fallback: an unresolvable\n' +
+      '                      phase fails the command instead of misfiling it.\n' +
       '  --gap "REQ:desc"    Gap finding — repeatable (used with --gaps-found)\n' +
       '  --non-gaps "..."    Cosmetic observation — repeatable\n' +
       '  --json              JSON output\n'
@@ -1367,14 +1679,18 @@ async function cmdValidate(useDaemon, id, flags, jsonMode) {
   // It writes a structured gaps report and exits with code 2.
   // The validator vocabulary is locked: no severity, no priority, no ranking.
   if (flags.gaps_found) {
-    // Resolve phase: explicit --phase flag wins; otherwise derive from the task id
-    // (e.g. "13.1-04-01" -> "13.1"); final fallback is "unknown".
-    let phase = flags.phase || '';
-    if (!phase && typeof id === 'string') {
-      const m = id.match(/^([0-9]+(?:\.[0-9]+)?)/);
-      if (m) phase = m[1];
+    // TK-2339: phase resolution lives in resolveGapsPhase() and has no
+    // `unknown` fallback. The copy that used to sit here shadowed the
+    // writer's own fallback, which is why fixing the writer alone was dead
+    // code. Resolve BEFORE any work so an unresolvable phase costs nothing.
+    let phase;
+    try {
+      phase = resolveGapsPhase({ phase: flags.phase, taskId: id });
+    } catch (err) {
+      process.stderr.write(`ERROR: ${err.message}\n`);
+      if (jsonMode) console.log(JSON.stringify({ error: err.code, message: err.message, details: err.details }));
+      return 1;
     }
-    if (!phase) phase = 'unknown';
 
     // --gap accepts repeated "REQ-ID:description" pairs (collected upstream).
     const rawGaps = Array.isArray(flags.gaps_list) ? flags.gaps_list : [];
@@ -1389,10 +1705,10 @@ async function cmdValidate(useDaemon, id, flags, jsonMode) {
     const nonGapsObservations = Array.isArray(flags.non_gaps_list) ? flags.non_gaps_list : [];
 
     try {
-      const reportPath = writeGapsReport(phase, id, gaps, nonGapsObservations);
+      const reportPath = writeGapsReport(phase, id, gaps, nonGapsObservations, VERDICT_GAPS_FOUND);
       if (jsonMode) {
         console.log(JSON.stringify({
-          verdict: 'gaps_found',
+          verdict: VERDICT_GAPS_FOUND,
           phase,
           task_id: id,
           report: reportPath,
@@ -1400,7 +1716,7 @@ async function cmdValidate(useDaemon, id, flags, jsonMode) {
           non_gaps_count: nonGapsObservations.length,
         }));
       } else {
-        console.log(`gaps_found: wrote ${reportPath}`);
+        console.log(`${VERDICT_GAPS_FOUND}: wrote ${reportPath}`);
         console.log(`  gaps=${gaps.length} non_gaps_observations=${nonGapsObservations.length}`);
       }
     } catch (err) {
@@ -1410,6 +1726,22 @@ async function cmdValidate(useDaemon, id, flags, jsonMode) {
     _telemetryEmit('validator_verdict', { task_id: id, verdict: 'gaps', gate_failures: 0, gaps: gaps.length });
     return 2;
   }
+
+  // TK-2339: PASS and FAIL are verdicts too, and SUP-02 says a verdict is one
+  // of three states. Before this, only --gaps-found produced a machine-readable
+  // artefact, so a genuine PASS had no canonical shape to be written in and had
+  // to be recorded in prose. Resolve the phase FIRST — before any gate runs and
+  // before any state is mutated — so an unresolvable phase costs nothing and
+  // says what was missing, instead of filing the result under "unknown".
+  let verdictPhase;
+  try {
+    verdictPhase = resolveGapsPhase({ phase: flags.phase, taskId: id });
+  } catch (err) {
+    process.stderr.write(`ERROR: ${err.message}\n`);
+    if (jsonMode) console.log(JSON.stringify({ error: err.code, message: err.message, details: err.details }));
+    return 1;
+  }
+  const verdictName = flags.pass_result === true ? VERDICT_PASS : VERDICT_FAIL;
 
   // Check validation gates (unless --force-reason)
   if (flags.pass_result && !flags.force_reason) {
@@ -1453,7 +1785,15 @@ async function cmdValidate(useDaemon, id, flags, jsonMode) {
     }
   }
 
-  const body = { id, ...flags };
+  // TK-2339: `--phase` is consumed here (it selects the verdict artefact's
+  // directory) and is NOT a flag amauta.py's `validate` argparse accepts.
+  // Forwarding it made the daemon path exit with
+  // `amauta: error: unrecognized arguments: --phase ...`. That was latent
+  // before this task because --phase was only ever passed alongside
+  // --gaps-found, which returns above; now that --phase is required for every
+  // verdict, forwarding it would break every daemon-mode PASS.
+  const { phase: _consumedPhase, gaps_list: _gl, non_gaps_list: _ngl, ...forwardable } = flags;
+  const body = { id, ...forwardable };
 
   if (useDaemon) {
     const { data } = await httpRequest('POST', '/api/validate', body);
@@ -1502,6 +1842,12 @@ async function cmdValidate(useDaemon, id, flags, jsonMode) {
       }).catch(e => process.stderr.write(`[best-effort] validation audit write failed: ${e.message || e}\n`));
     }
 
+    // TK-2339: file the PASS/FAIL artefact once the verdict is recorded.
+    if ((data.exit_code || 0) === 0) {
+      const reportPath = fileVerdictArtefact({ phase: verdictPhase, taskId: id, verdict: verdictName, notes: flags.notes });
+      if (reportPath) console.log(`${verdictName}: wrote ${reportPath}`);
+    }
+
     _telemetryEmit('validator_verdict', { task_id: id, verdict: flags.pass_result ? 'pass' : 'fail', gate_failures: 0, gaps: 0 });
     return data.exit_code || 0;
   }
@@ -1532,6 +1878,12 @@ async function cmdValidate(useDaemon, id, flags, jsonMode) {
       const entry = `- [validation] ${new Date().toISOString()}: ${id} ${status} by ${flags.validator || 'validator'} — ${flags.notes || ''}\n`;
       fs.appendFileSync(auditFile, entry);
     } catch { /* best-effort */ }
+  }
+
+  // TK-2339: file the PASS/FAIL artefact once the verdict is recorded.
+  if (result.exit_code === 0) {
+    const reportPath = fileVerdictArtefact({ phase: verdictPhase, taskId: id, verdict: verdictName, notes: flags.notes });
+    if (reportPath) console.log(`${verdictName}: wrote ${reportPath}`);
   }
 
   _telemetryEmit('validator_verdict', { task_id: id, verdict: flags.pass_result ? 'pass' : 'fail', gate_failures: 0, gaps: 0 });
@@ -3128,6 +3480,40 @@ async function main() {
       break;
     }
 
+    // TK-2339: the read side of the verdict artefact. Until this existed,
+    // nothing in the harness read a filed verdict back — the writer's path and
+    // the corpus's path could disagree indefinitely because no code consumed
+    // either. `<id>` is the phase.
+    case 'gaps-reports': {
+      const flags = parseFlags(rest, 1);
+      const phaseArg = flags.phase || id;
+      if (!phaseArg || phaseArg.startsWith('--')) {
+        die('Usage: amauta gaps-reports <phase> [--json]   (or --phase <phase>)');
+      }
+      try {
+        const scan = findGapsReports(phaseArg);
+        if (jsonMode) {
+          console.log(JSON.stringify(scan, null, 2));
+        } else {
+          console.log(`phase=${scan.phase} dir=${scan.dir} reports=${scan.reports.length}`);
+          for (const r of scan.reports) {
+            console.log(`  ${r.verdict || '(unreadable)'}  ${r.task_id || '(no task_id)'}  ${path.basename(r.path)}` +
+              (r.legacy_verdict_form ? `  [legacy verdict form: ${JSON.stringify(r.raw_verdict)}]` : '') +
+              (r.parse_error ? `  [${r.parse_error}]` : ''));
+          }
+          if (scan.legacy_unmigrated.length > 0) {
+            console.log(`  legacy_unmigrated=${scan.legacy_unmigrated.length} (pre-TK-2339 .planning/milestones/ tree, not read as canonical):`);
+            for (const p of scan.legacy_unmigrated) console.log(`    ${p}`);
+          }
+        }
+        exitCode = 0;
+      } catch (err) {
+        process.stderr.write(`ERROR: ${err.message}\n`);
+        exitCode = 1;
+      }
+      break;
+    }
+
     case 'note': {
       const flags = parseFlags(rest, 1);
       exitCode = await cmdNote(useDaemon, id, flags, jsonMode);
@@ -3251,5 +3637,8 @@ if (require.main === module || _isDelegatedEntry) {
 
 // Test-only exports — not used in production flow
 if (typeof module !== 'undefined' && require.main !== module) {
-  module.exports = { _checkEvidenceBlock, checkEvidenceAdvisory, _checkQaBlocks, _checkRedGreenOrder, checkSpecInheritanceAdvisory, writeGapsReport, scrubEvidence, loadEvidenceScrubPatterns, resolveRawEvidence, TEST_EVIDENCE_PATTERNS };
+  module.exports = { _checkEvidenceBlock, checkEvidenceAdvisory, _checkQaBlocks, _checkRedGreenOrder, checkSpecInheritanceAdvisory, writeGapsReport, scrubEvidence, loadEvidenceScrubPatterns, resolveRawEvidence, TEST_EVIDENCE_PATTERNS,
+    // TK-2339 verdict artefact surface
+    readGapsReport, findGapsReports, resolveGapsPhase, normaliseVerdict, assertReportIdentifier,
+    CANONICAL_VERDICTS, VERDICT_PASS, VERDICT_FAIL, VERDICT_GAPS_FOUND, GAPS_REPORT_GLOB, GAPS_REPORTS_DIRNAME };
 }
