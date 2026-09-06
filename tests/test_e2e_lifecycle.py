@@ -52,7 +52,7 @@ def _make_add_args(title="E2E test task", task_type="task", parent=None):
         status="pending", priority="medium", agent="e2e-test",
         parent=parent, deps=None, tags="e2e,test", sprint=None,
         due=None, hours=None, importance=3, urgency=3,
-        criteria="All tests pass|No errors", deliverables=None,
+        criteria=json.dumps(["All tests pass", "No errors"]), deliverables=None,
         checklist=None, force=False, refs=None,
     )
 
