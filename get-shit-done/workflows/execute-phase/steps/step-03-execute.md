@@ -198,7 +198,7 @@ fi
    | Exit | Verdict | Routing |
    |------|---------|---------|
    | 0 | `pass` | Phase advances. Roadmap updated. STATE.md progress bumped. |
-   | 2 | `gaps_found` | Phase does NOT advance. Read `.planning/milestones/<phase>/gaps-report-<timestamp>.json`. For each gap, route the owning `requirement_id` back to `gsd-planner` for a delta plan. Run a mini-wave of the new plan(s). Re-invoke `gsd-validator`. **No retry counter** — gaps_found is not a failure. Repeat until `pass` or `fail`. |
+   | 2 | `gaps_found` | Phase does NOT advance. Read `.planning/phases/<phase>/gaps-report-<timestamp>.json`. For each gap, route the owning `requirement_id` back to `gsd-planner` for a delta plan. Run a mini-wave of the new plan(s). Re-invoke `gsd-validator`. **No retry counter** — gaps_found is not a failure. Repeat until `pass` or `fail`. |
    | 1 | `fail` | Phase does NOT advance. FATAL. Invoke `gsd-roadmapper` for escalation. Human review required. **No auto-retry.** |
 
    **Auto-escalation separation:** `gaps_found` does NOT count toward the 3-consecutive-failures auto-escalation rule. Only `fail` (exit 1) counts. Track `gaps_rate_per_phase` as a separate signal — high gaps rate is a planner signal, not a failure signal.
@@ -207,7 +207,7 @@ fi
 
    **No severity tagging:** All entries in `gaps[]` are equal. The orchestrator does not prioritize one gap over another; the planner handles priority in the delta plan.
 
-   **Validator pre-gate scan interlock:** If the validator finds unresolved divergence reports in `.planning/milestones/<phase>/divergence-reports/`, it floors the verdict at `gaps_found`. See `get-shit-done/references/divergence-protocol.md` for the scan protocol.
+   **Validator pre-gate scan interlock:** If the validator finds unresolved divergence reports in `.planning/phases/<phase>/divergence-reports/`, it floors the verdict at `gaps_found`. See `get-shit-done/references/divergence-protocol.md` for the scan protocol.
 
 4. **Report completion — spot-check claims first:**
 

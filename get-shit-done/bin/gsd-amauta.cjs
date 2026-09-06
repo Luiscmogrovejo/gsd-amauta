@@ -3386,7 +3386,7 @@ async function main() {
   // Daemon subcommand doesn't need the daemon running
   if (command === 'daemon') {
     const exitCode = await cmdDaemon(rest[0]);
-    if (exitCode >= 0) process.exit(exitCode);
+    if (exitCode >= 0) exitAfterFlush(exitCode);
     return; // daemon run keeps process alive
   }
 
@@ -3618,7 +3618,16 @@ async function main() {
       break;
   }
 
-  process.exit(exitCode);
+  exitAfterFlush(exitCode);
+}
+
+// process.exit() discards whatever stdout has not yet drained. On macOS a piped stdout is
+// asynchronous, so any --json payload past the pipe buffer (64 KiB) was cut mid-string and the
+// consumer saw "Unterminated string in JSON". The read-back verb exists to be piped; exit only
+// once stdout has drained. Found by the independent validator on TK-2339 (SUP-06).
+function exitAfterFlush(code) {
+  if (process.stdout.writableLength === 0) { process.exit(code); return; }
+  process.stdout.write('', () => process.exit(code));
 }
 
 // Guard: only run main() when executed directly (not when require()'d by tests).

@@ -93,10 +93,10 @@ The validator NEVER invents a requirement ID. Every finding must:
 
 ### Divergence Pre-Gate Scan
 
-BEFORE evaluating any of the 5 quality gates, scan `.planning/milestones/<phase>/divergence-reports/` for any report missing an `orchestrator_response` field.
+BEFORE evaluating any of the 5 quality gates, scan `.planning/phases/<phase>/divergence-reports/` for any report missing an `orchestrator_response` field.
 
 Protocol:
-1. List all `*.json` files in `.planning/milestones/<phase>/divergence-reports/`.
+1. List all `*.json` files in `.planning/phases/<phase>/divergence-reports/`.
 2. For each, parse the JSON. If `orchestrator_response` is absent or null → report is UNRESOLVED.
 3. If any unresolved reports exist, the minimum verdict floor is `--gaps-found`.
 4. List each unresolved report's `task_id` and `divergence_type` in the gaps-report under `non_gaps_observations[]` with prefix `unresolved_divergence:`.

@@ -570,3 +570,35 @@ test('16. the manifest allowlist glob matches what the writer writes', () => {
   } catch (e) { err = e; }
   cleanupOrPreserve(tmp, err);
 });
+
+// ── 18 — the read-back survives a pipe (SUP-06) ────────────────────────────
+//
+// Found by the independent validator on this branch: `gaps-reports <phase> --json`
+// written to a FILE was 90,250 bytes and parsed; the same command PIPED into
+// `node -e JSON.parse` was cut at 65,377 bytes — "Unterminated string in JSON".
+// process.exit() discards undrained stdout, and on macOS a piped stdout is
+// asynchronous past the 64 KiB pipe buffer. The verb exists to be piped.
+
+test('18. gaps-reports --json is whole through a pipe past 64 KiB', () => {
+  const tmp = mkTemp('pipe');
+  let err;
+  try {
+    const filler = 'x'.repeat(4000);
+    const N = 40; // ~40 × 4 KiB of gap text — comfortably past the 64 KiB pipe buffer
+    for (let i = 0; i < N; i++) {
+      inCwd(tmp, () => writeGapsReport(PHASE, `TK-${5000 + i}`,
+        [{ id: 'G1', criterion: 'C1', title: `gap ${i}`, description: filler }], [], 'GAPS-FOUND'));
+    }
+    const consumer = 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const o=JSON.parse(s);process.stdout.write(String(o.reports.length)+" "+s.length)})';
+    const cmd = `${JSON.stringify(process.execPath)} ${JSON.stringify(GSD_AMAUTA)} gaps-reports ${PHASE} --json | ${JSON.stringify(process.execPath)} -e ${JSON.stringify(consumer)}`;
+    const res = spawnSync('sh', ['-c', cmd], {
+      cwd: tmp, encoding: 'utf8',
+      env: { ...process.env, GSD_AMAUTA_NO_AUTO_START: '1', GSD_AMAUTA_PORT: process.env.GSD_AMAUTA_PORT },
+    });
+    assert.equal(res.status, 0, `piped read-back failed: ${res.stderr}`);
+    const [count, bytes] = res.stdout.trim().split(' ').map(Number);
+    assert.ok(bytes > 65536, `payload must exceed the pipe buffer to test anything; got ${bytes} bytes`);
+    assert.equal(count, N, `expected ${N} reports through the pipe, parsed ${count}`);
+  } catch (e) { err = e; }
+  cleanupOrPreserve(tmp, err);
+});
