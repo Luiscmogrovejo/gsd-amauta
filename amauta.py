@@ -2613,8 +2613,9 @@ def _parse_list_flags(args, include_refs=False):
 
 
 def cmd_add(args):
-    lists = _parse_list_flags(args, include_refs=True)  # TK-2313: refuse before the lock
     with _file_lock():
+        # TK-2313: parse the JSON-array flags before load(); a refusal exits here and stores nothing
+        lists = _parse_list_flags(args, include_refs=True)
         data  = load()
         items = data["items"]
 
@@ -2766,8 +2767,9 @@ def _print_tree(filtered: list, all_items: list, parent_id=None, indent=0):
 
 
 def cmd_update(args):
-    lists = _parse_list_flags(args)  # TK-2313: refuse before the lock; stores nothing on refusal
     with _file_lock():
+        # TK-2313: parse the JSON-array flags before load(); a refusal exits here and stores nothing
+        lists = _parse_list_flags(args)
         data  = load()
         items = data["items"]
         item  = _find(items, args.id)
