@@ -150,3 +150,20 @@ none exists; the brief forbids merge and does not ask for one; recorded, not gra
 7. **Whole-suite pytest hangs** on the 24th collected test, `tests/test_27_mrr_validation.py::test_rlm_mrr_validation`,
    without the RLM service; C4's "run pytest" needs that deselected (or `pytest-timeout`, which is not installed).
 8. Minor: head is `042c1cc`, "35c1549 or later" holds (docs-only on top). The `timeout` binary is absent from this shell.
+
+## Addendum — whole-suite pytest delta (written after the verdict commit)
+
+`python3 -m pytest tests/ -q -rf --deselect tests/test_27_mrr_validation.py::test_rlm_mrr_validation`, private data dir,
+`GSD_POSTGRES_URL` unset, dead daemon port, 1414 collected:
+
+```
+base a95f645: 22 failed, 1361 passed, 25 skipped, 1 deselected, 5 errors in 117.67s   exit 1
+head 042c1cc: 33 failed, 1350 passed, 25 skipped, 1 deselected, 5 errors in 120.90s   exit 1
+```
+Node-id diff (`comm` over the sorted `FAILED` lines): **red on base only: none.** Red on head only: the ten
+`tests/test_e2e_lifecycle.py` ids (C4) and `tests/test_rlm_enrichment.py::TestEnrichmentTiming::test_all_phases_under_budget`,
+a 1.5 s wall-clock budget that ran on the head while three private-daemon sessions of mine were competing for the CPU;
+isolated it passes 3/3 on the head (0.10/0.10/0.13 s) and 3/3 at base (0.12/0.21/0.10 s) — contention, not the change.
+The 22 shared reds (gates ×4, daemon mirror ×2, pg_substrate/pg_integration under the unset DSN, grammar_strip ×5,
+a2a_registry ×3, behavioral ×2, capability_access, amauta_mcp_tools) are identical on both arms and are not this PR's.
+So the pytest delta caused by the change is exactly the ten C4 ids, and nothing else.
