@@ -2841,8 +2841,36 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": "id is required"}, 400)
                 return
             try:
-                store.memory_delete(mem_id)
-                self._send_json({"deleted": True, "id": mem_id})
+                # MEMSAFE-02: report the real row count. This previously sent
+                # {"deleted": true} whether or not anything matched, so a
+                # no-op delete was indistinguishable from a real one.
+                n = store.memory_delete(mem_id)
+                self._send_json({"deleted": bool(n), "rows": n, "id": mem_id})
+            except Exception as e:
+                self._send_json({"error": _safe_error(e)}, 500)
+            return
+
+        if path == "/api/memory/archive-delete":
+            # MEMSAFE-03: the only supported way for distill to remove a
+            # consumed original. Archive-insert and delete run in ONE database
+            # transaction inside the store, so a delete can never commit
+            # without its archive copy.
+            store = _get_store()
+            if not store:
+                self._send_json({"error": "No database available"}, 503)
+                return
+            mem_id = body.get("id")
+            if not mem_id:
+                self._send_json({"error": "id is required"}, 400)
+                return
+            try:
+                result = store.memory_archive_and_delete(mem_id)
+                if not result.get("found"):
+                    self._send_json(
+                        {"error": f"memory id not found: {mem_id}", **result}, 404
+                    )
+                    return
+                self._send_json(result)
             except Exception as e:
                 self._send_json({"error": _safe_error(e)}, 500)
             return

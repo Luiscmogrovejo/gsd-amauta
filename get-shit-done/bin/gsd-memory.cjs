@@ -547,6 +547,9 @@ const BOOLEAN_FLAGS = new Set([
   'structured',
   'dry-run',
   'use-llm',
+  // MEMSAFE-04: without this entry the tokenizer would swallow the next argv
+  // token as the flag's value and the destructive gate would read as unset.
+  'confirm-destructive',
   'include-noise',
   // Phase 10 LEARN-05: skb-promote requires --reviewed (human gate) and
   // must be parsed as a boolean so the next positional arg (mem-id) is not
@@ -2077,7 +2080,20 @@ const AUTO_DISTILL_THRESHOLD = parseInt(process.env.GSD_MEMORY_DISTILL_THRESHOLD
 const AUTO_DISTILL_COOLDOWN_MS = parseInt(process.env.GSD_MEMORY_DISTILL_COOLDOWN || '300000', 10); // 5 min default
 let _lastAutoDistillAt = 0;
 
+// MEMSAFE-01 (containment): auto-distill is DESTRUCTIVE — it merges rows and
+// then DELETEs every consumed original. Running it as a side effect of a write
+// consumed 5,318 distinct originals, of which only 12 survive anywhere. It is
+// now OFF by default and only runs when the operator opts in explicitly.
+//
+// The debounce above cannot contain it: `_lastAutoDistillAt` is a module-level
+// global and this CLI is a one-shot process, so it is re-initialised to 0 on
+// every invocation and `now - 0 < COOLDOWN` is false for any real clock. The
+// cooldown has therefore never fired even once. Do not rely on it.
+const AUTO_DISTILL_ENABLED = process.env.GSD_MEMORY_AUTO_DISTILL === '1';
+
 async function maybeAutoDistill() {
+  // MEMSAFE-01: hard containment gate — a write must never trigger a merge.
+  if (!AUTO_DISTILL_ENABLED) return;
   try {
     // Debounce: skip if auto-distill ran recently (prevents O(n^2) on every store)
     const now = Date.now();
@@ -2102,9 +2118,27 @@ async function maybeAutoDistill() {
       // Haiku > Ollama > concatenation) — the canary from plan 66-01 proved
       // the path executes; without 'use-llm' every auto-triggered distill
       // silently degraded to concatenation (signal-lossy, never surfaced).
-      await cmdDistill({ threshold: '0.7', 'dry-run': false, 'use-llm': true, _positional: [] });
+      // MEMSAFE-04: even when explicitly enabled, the auto path must carry the
+      // destructive confirmation itself. It is not implicit in the env var.
+      await cmdDistill({
+        threshold: '0.7',
+        'dry-run': false,
+        'use-llm': true,
+        'confirm-destructive': process.env.GSD_MEMORY_AUTO_DISTILL_CONFIRM === '1',
+        _positional: [],
+      });
     }
-  } catch { /* silent */ }
+  } catch (err) {
+    // MEMSAFE-02: this catch was `catch { /* silent */ }`. A merge that failed
+    // — for any reason, including a failed delete or an unreachable daemon —
+    // was indistinguishable from a merge that never ran. A probe that returns
+    // zero must be able to return non-zero. Surface it and fail the process.
+    process.stderr.write(
+      `\x1b[91m[distill]\x1b[0m auto-distill FAILED: ${(err && err.stack) || err}\n`
+    );
+    process.exitCode = 1;
+    throw err;
+  }
 }
 
 // ── LLM Distill Helpers (02-03) ─────────────────────────────────────────────
@@ -2257,7 +2291,25 @@ const DISTILL_ELIGIBILITY_HARD_CAP = 5000; // hard cap: max rows considered per 
 
 async function cmdDistill(args) {
   const threshold = parseFloat(args.threshold || '0.7');
-  const dryRun = !!args['dry-run'];
+
+  // MEMSAFE-04: distill is destructive. The destructive path now requires an
+  // explicit --confirm-destructive; without it the run is forced to dry-run
+  // and reports exactly what it WOULD consume. Previously `--dry-run` had to
+  // be opted INTO, so any caller that simply forgot it deleted live rows.
+  const confirmed = !!args['confirm-destructive'];
+  const askedDry = !!args['dry-run'];
+  const dryRun = askedDry || !confirmed;
+  if (!askedDry && !confirmed) {
+    process.stderr.write(
+      '\x1b[93m[distill]\x1b[0m No --confirm-destructive: running as DRY RUN. ' +
+      'Nothing will be merged, archived or deleted.\n'
+    );
+  }
+
+  // MEMSAFE-03: ids actually archived+deleted this run, for the end-of-run
+  // reconciliation against the ids recorded in merged_from.
+  const archivedIds = [];
+  const consumedIds = [];
 
   // DATA-03: Never re-merge distilled entries — they are output of prior distill runs.
   // Including them causes cascading mega-entries with nested [merged from distilled] markers.
@@ -2358,11 +2410,16 @@ async function cmdDistill(args) {
     const keep = sorted[0];
     const remove = sorted.slice(1);
 
+    // MEMSAFE-04: a dry run must name the ids it would consume, not just show
+    // truncated text. `keep` is consumed too — it is deleted after the merge.
+    for (const e of group) consumedIds.push(e.id);
+
     console.log(`  \x1b[1mGroup\x1b[0m (${group.length} entries):`);
-    console.log(`    \x1b[92mKEEP\x1b[0m:   ${(keep.text || '').slice(0, 80)}... \x1b[2m[${keep.source}]\x1b[0m`);
+    console.log(`    \x1b[92mKEEP\x1b[0m:   [${keep.id}] ${(keep.text || '').slice(0, 80)}... \x1b[2m[${keep.source}]\x1b[0m`);
     for (const r of remove) {
-      console.log(`    \x1b[91mMERGE\x1b[0m:  ${(r.text || '').slice(0, 80)}... \x1b[2m[${r.source}]\x1b[0m`);
+      console.log(`    \x1b[91mMERGE\x1b[0m:  [${r.id}] ${(r.text || '').slice(0, 80)}... \x1b[2m[${r.source}]\x1b[0m`);
     }
+    console.log(`    \x1b[2mWOULD CONSUME (archived then deleted): ${group.map(e => e.id).join(', ')}\x1b[0m`);
 
     if (!dryRun) {
       // Determine merge text and strategy: Claude Sonnet > Claude Haiku > Ollama > concatenation
@@ -2485,20 +2542,43 @@ async function cmdDistill(args) {
       // The dedup-opt-out flag on mergeBody above is the primary defense; this is
       // belt-for-the-suspenders in case that seam is ever bypassed.
       if (storeRes && storeRes.status === 200 && !(storeRes.data && storeRes.data.dedup_skipped)) {
-        // Delete ONLY the duplicate entries, NOT the 'keep' entry (which is merged into the new one)
-        for (const entry of remove) {
-          if (entry.id) {
-            await tryDaemon('POST', '/api/memory/delete', { id: entry.id }).catch(e =>
-              process.stderr.write(`[distill] delete entry ${entry.id} failed: ${e.message || e}\n`));
+        // MEMSAFE-03: every consumed original is archived and deleted in a
+        // single server-side transaction. The previous code called
+        // /api/memory/delete and attached `.catch()` — but tryDaemon RESOLVES
+        // with null on 5xx/404/unreachable and never rejects, so that .catch
+        // could not fire and a failed delete was invisible. Worse, nothing was
+        // archived at all: the CLI had zero references to gsd_memory_archive.
+        for (const entry of [...remove, keep]) {
+          if (!entry || !entry.id) continue;
+          const res = await tryDaemon('POST', '/api/memory/archive-delete', { id: entry.id });
+          if (!res || res.status !== 200) {
+            const detail = res
+              ? `HTTP ${res.status} ${JSON.stringify(res.data)}`
+              : 'no response (daemon unreachable, 4xx/5xx, or route missing — restart the daemon)';
+            throw new Error(
+              `[distill] archive-delete FAILED for ${entry.id}: ${detail}. ` +
+              `Aborting the distill run; remaining originals are preserved.`
+            );
           }
-        }
-        // Also delete the original 'keep' entry since it's been replaced by the merged entry
-        if (keep.id) {
-          await tryDaemon('POST', '/api/memory/delete', { id: keep.id }).catch(e =>
-            process.stderr.write(`[distill] delete keep entry ${keep.id} failed: ${e.message || e}\n`));
+          if (!(res.data && res.data.deleted === 1)) {
+            throw new Error(
+              `[distill] archive-delete for ${entry.id} did not remove a row: ` +
+              `${JSON.stringify(res.data)}. Aborting the distill run.`
+            );
+          }
+          archivedIds.push(entry.id);
         }
       } else {
-        process.stderr.write(`\x1b[93m[distill]\x1b[0m Store failed for group — originals preserved to avoid data loss.\n`);
+        const detail = storeRes
+          ? `HTTP ${storeRes.status} ${JSON.stringify(storeRes.data)}`
+          : 'no response (daemon unreachable or 5xx)';
+        // MEMSAFE-02: a failed merge must be loud AND non-zero. Previously
+        // this printed a warning, kept going, and exited 0 — so a run in which
+        // every single group failed to merge was reported as a success.
+        throw new Error(
+          `[distill] merge store FAILED for group of ${group.length} — ${detail}. ` +
+          `Originals preserved; no rows were archived or deleted for this group.`
+        );
       }
     }
 
@@ -2509,7 +2589,21 @@ async function cmdDistill(args) {
 
   console.log(`\x1b[1mSummary:\x1b[0m ${groups.length} groups, ${mergedCount} merged, ${removedCount} entries removed.`);
   if (dryRun) {
-    console.log('\x1b[33mDry run — no changes made. Run without --dry-run to apply.\x1b[0m');
+    console.log(`\x1b[33mDry run — no changes made. ${consumedIds.length} entries WOULD be archived and deleted.\x1b[0m`);
+    console.log('\x1b[33mRe-run with --confirm-destructive to apply.\x1b[0m');
+    return;
+  }
+
+  // MEMSAFE-03 reconciliation: every id we recorded in a merged_from array
+  // must have been archived. If these disagree, the run left originals that
+  // are referenced as "consumed" but exist in neither table — exactly the
+  // failure this fix exists to prevent — so fail non-zero.
+  const missing = consumedIds.filter((id) => !archivedIds.includes(id));
+  console.log(`\x1b[1mArchive reconciliation:\x1b[0m consumed=${consumedIds.length} archived=${archivedIds.length}`);
+  if (missing.length > 0) {
+    throw new Error(
+      `[distill] ${missing.length} consumed id(s) were not archived: ${missing.join(', ')}`
+    );
   }
 }
 
