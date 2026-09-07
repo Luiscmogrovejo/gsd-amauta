@@ -25,6 +25,9 @@
  *  12. tasks written before TK-2229 (no project_id key) read as "default"
  *  13. under the daemon marker with no --project-dir, inference is REFUSED
  *      ("default"), never the daemon's own directory
+ *  14. daemon _build_args emits --project for exactly the five subcommands that
+ *      declare it, --project-dir for `add`, and NOTHING for `claim` (which has
+ *      always sent body.project_dir and would die on an unknown argument)
  */
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
@@ -242,6 +245,51 @@ describe('TK-2229 daemon seam', () => {
                        { env: { AMAUTA_INVOKED_BY_DAEMON: '1' } });
     assert.equal(res.status, 0, `list failed: ${res.stderr}`);
     assert.ok(res.stdout.includes(itemByTitle(TITLE_A).id));
+  });
+});
+
+describe('TK-2229 daemon arg building', () => {
+  it('14. _build_args scopes the new flags to the subcommands that declare them', () => {
+    // Import amauta-daemon.py without starting a server (start_server only runs
+    // under __main__) and call the seam directly, rather than grepping source.
+    const probe = [
+      'import importlib.util, json, os',
+      'os.environ["GSD_AMAUTA_NO_AUTO_START"]="1"',
+      's=importlib.util.spec_from_file_location("d", "services/amauta-daemon.py")',
+      'm=importlib.util.module_from_spec(s); s.loader.exec_module(m)',
+      'b=m.AmautaHandler._build_args',
+      'class F: pass',
+      'f=F()',
+      'out={',
+      '  "add_dir": b(f,"add",{"type":"task","title":"T","project_dir":"/x/repo-a"}),',
+      '  "add_proj": b(f,"add",{"type":"task","title":"T","project":"repo-b"}),',
+      '  "list": b(f,"list",{"project":"repo-c"}),',
+      '  "board": b(f,"board",{"project":"repo-c"}),',
+      '  "stats": b(f,"stats",{"project":"repo-c"}),',
+      '  "reconcile": b(f,"reconcile",{"project":"repo-c"}),',
+      '  "claim": b(f,"claim",{"id":"TK-1","agent":"a","project_dir":"/x/repo-a"}),',
+      '}',
+      'print(json.dumps(out))',
+    ].join('\n');
+    let raw;
+    try {
+      raw = execFileSync('python3', ['-c', probe], {
+        cwd: ROOT, encoding: 'utf-8', timeout: 30000,
+        env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
+      });
+    } catch (err) {
+      assert.fail(`daemon probe failed: ${err.stderr || err.message}`);
+    }
+    const out = JSON.parse(raw.trim().split('\n').pop());
+    assert.deepEqual(out.add_dir, ['add', 'task', 'T', '--project-dir', '/x/repo-a']);
+    assert.deepEqual(out.add_proj, ['add', 'task', 'T', '--project', 'repo-b']);
+    for (const cmd of ['list', 'board', 'stats', 'reconcile']) {
+      assert.deepEqual(out[cmd], [cmd, '--project', 'repo-c'], `${cmd} must forward --project`);
+    }
+    // The regression that matters: claim has always sent body.project_dir. A
+    // blanket flag_map entry would hand argparse an unrecognised argument and
+    // break every claim in the fleet.
+    assert.deepEqual(out.claim, ['claim', 'TK-1', '--agent', 'a']);
   });
 });
 
