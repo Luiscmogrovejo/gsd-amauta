@@ -248,6 +248,7 @@ GSD stores project settings in `.planning/config.json`. Configure during `/amaut
   "mode": "interactive",
   "granularity": "standard",
   "model_profile": "balanced",
+  "project_id": "my-repo",
   "planning": {
     "commit_docs": true,
     "search_gitignored": false
@@ -270,9 +271,59 @@ GSD stores project settings in `.planning/config.json`. Configure during `/amaut
 
 | Setting | Options | Default | What it Controls |
 |---------|---------|---------|------------------|
+| `project_id` | any string | inferred (see below) | Which project every task created in this repository is filed under |
 | `mode` | `interactive`, `yolo` | `interactive` | `yolo` auto-approves decisions; `interactive` confirms at each step |
 | `granularity` | `coarse`, `standard`, `fine` | `standard` | Phase granularity: how finely scope is sliced (3-5, 5-8, or 8-12 phases) |
 | `model_profile` | `quality`, `balanced`, `budget` | `balanced` | Model tier for each agent (see table below) |
+
+### Project scoping (`project_id`)
+
+Every task carries a `project_id` so several repositories can share one task
+store and still be told apart. `amauta list`, `board`, `stats` and `reconcile`
+all take `--project <id>` to scope a read to a single repository:
+
+```bash
+amauta list  --project my-repo --status pending
+amauta board --project my-repo
+amauta stats --project my-repo
+amauta reconcile --project my-repo        # diffs only that project, both sides
+amauta add task "..." --project my-repo   # overrides inference for one task
+```
+
+**The rule that assigns `project_id` at registration** lives in exactly one
+place -- `_resolve_project_id()` in `amauta.py`. Highest precedence first:
+
+| # | Source | Notes |
+|---|--------|-------|
+| 1 | `--project <id>` on `amauta add` | An operator said so explicitly |
+| 2 | `AMAUTA_PROJECT_ID` environment variable | For CI and wrapper scripts |
+| 3 | `project_id` in `.planning/config.json` | Searched from the working directory up to the repository root. A **configured** value always beats inference |
+| 4 | Name of the repository root directory | The nearest ancestor holding `.git` |
+| 5 | Name of the working directory | When there is no git tree |
+| 6 | `"default"` | Nothing is knowable |
+
+The identifier is the repository **directory** name, not the git remote name:
+it needs no subprocess, works offline, and exists for remote-less checkouts. A
+repository whose directory name is not the name you want (a checkout of
+`website` living in `~/Code/barerouter`, say) sets `project_id` in
+`.planning/config.json` and rule 3 wins:
+
+```bash
+amauta config-set project_id website
+```
+
+One seam is worth knowing: `amauta-daemon.py` runs `amauta.py` as a subprocess
+with the **daemon's** working directory, so the CLI forwards the caller's
+directory as `--project-dir`. If a route ever fails to forward it, the task is
+filed as `"default"` rather than under the daemon's own repository.
+
+Tasks created before project scoping existed read as `"default"`, which is also
+what `--project default` matches. `scripts/backfill-project-id.py` re-files
+historical rows from evidence they actually carry (a `repo:` tag, a title
+prefix naming a repository, a checkout path in the work log, a plan file owned
+by exactly one repository), and leaves anything unknowable as `"default"`
+rather than guessing. It is dry-run by default and reversible -- see
+`migrations/028-task-project-backfill.sql` and its `-DOWN` pair.
 
 ### Planning Settings
 

@@ -1,0 +1,25 @@
+{
+  "_README": [
+    "TK-2229 backfill input. Maps a NAME that appears inside a historical task",
+    "(a repo:<name> tag, or a 'name:' / '[name]' title prefix) to the project_id",
+    "that _resolve_project_id would produce for that repository today -- i.e. the",
+    "basename of its checkout directory.",
+    "",
+    "This file exists because the store's own rows use the GitHub repository name",
+    "while the project_id is the checkout directory name, and for the BareRouter",
+    "repositories those differ. Each entry is verifiable, not a guess:",
+    "  git -C ~/Code/<project_id> remote get-url origin  ends with  <alias>.git",
+    "Run scripts/backfill-project-id.py --verify-aliases to check every row.",
+    "",
+    "Only add an alias you can verify the same way. An unverifiable name belongs",
+    "in no rule -- the row stays 'default'."
+  ],
+  "aliases": {
+    "agent-core": "barerouter-agent",
+    "backend-core": "barerouter-backend",
+    "contracts": "barerouter-contracts",
+    "evals": "barerouter-evals",
+    "packs": "barerouter-packs",
+    "website": "barerouter"
+  }
+}

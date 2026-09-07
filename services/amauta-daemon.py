@@ -1021,6 +1021,30 @@ def _safe_error(e):
     return msg
 
 
+def _with_project(args, raw_path):
+    """Append `--project <id>` from a request's ?project= query parameter.
+
+    TK-2229: /api/board and /api/stats take no body, so the project filter
+    arrives as a query parameter. Whitespace-only values are ignored (that is
+    "no filter", not "a project literally named ' '").
+
+    Args:
+        args: amauta.py argument list to extend.
+        raw_path: The full request path including any query string.
+
+    Returns:
+        The same list, with the flag appended when a project was requested.
+    """
+    try:
+        params = parse_qs(urlparse(raw_path).query)
+        project = (params.get("project", [""])[0] or "").strip()
+        if project:
+            args.extend(["--project", project])
+    except Exception:
+        pass  # a malformed query string must never break a read endpoint
+    return args
+
+
 def _json_default(o):
     """json.dumps default hook — serialize non-JSON-native values instead of
     raising. datetime/date/time -> ISO-8601 (matches the isoformat convention
@@ -1240,6 +1264,11 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
         env["AMAUTA_DATA_DIR"] = DATA_DIR
         # Strip ANSI codes for clean JSON parsing
         env["NO_COLOR"] = "1"
+        # TK-2229: this subprocess inherits the DAEMON's working directory, not
+        # the caller's. The marker tells amauta.py that inferring a project from
+        # os.getcwd() would be wrong, so any route that fails to forward
+        # --project-dir gets "default" instead of the daemon's own repository.
+        env["AMAUTA_INVOKED_BY_DAEMON"] = "1"
         # Bridge GSD_POSTGRES_URL → AMAUTA_MEMORY_DATABASE_URL so amauta.py
         # enrichment layers (claim-time Layer 1, RPETD Layer 2) can reach PG.
         pg_url = os.environ.get("GSD_POSTGRES_URL", "")
@@ -1315,6 +1344,21 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             "append": None,  # boolean flag (rpetd --append)
             "json_output": None,  # boolean flag
         }
+
+        # TK-2229: --project / --project-dir are NOT in flag_map on purpose.
+        # flag_map is applied to every command, and only these subparsers
+        # declare the flags -- `claim` already sends body.project_dir and would
+        # die on an argparse "unrecognized arguments" error if it were global.
+        _PROJECT_FLAG_COMMANDS = {"add", "list", "board", "stats", "reconcile"}
+        _PROJECT_DIR_FLAG_COMMANDS = {"add"}
+        if command in _PROJECT_FLAG_COMMANDS:
+            _proj = str(body.get("project") or "").strip()
+            if _proj:
+                args.extend(["--project", _proj])
+        if command in _PROJECT_DIR_FLAG_COMMANDS:
+            _proj_dir = str(body.get("project_dir") or "").strip()
+            if _proj_dir:
+                args.extend(["--project-dir", _proj_dir])
 
         for key, flag in flag_map.items():
             if key not in body:
@@ -1515,12 +1559,12 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             return
 
         if path == "/api/board":
-            out, err, rc = self._run_amauta(["board"])
+            out, err, rc = self._run_amauta(_with_project(["board"], self.path))
             self._send_json({"output": out, "error": err, "exit_code": rc})
             return
 
         if path == "/api/stats":
-            out, err, rc = self._run_amauta(["stats"])
+            out, err, rc = self._run_amauta(_with_project(["stats"], self.path))
             self._send_json({"output": out, "error": err, "exit_code": rc})
             return
 
@@ -1553,6 +1597,8 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     args.extend(["--status", params["status"][0]])
                 if "agent" in params:
                     args.extend(["--agent", params["agent"][0]])
+                if "project" in params:  # TK-2229
+                    args.extend(["--project", params["project"][0]])
             out, err, rc = self._run_amauta(args)
             self._send_json({"output": out, "error": err, "exit_code": rc})
             return
@@ -2523,6 +2569,12 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 args = ["reconcile"]
                 if body.get("fix") is True:
                     args.append("--fix")
+                # This branch REBUILDS args from scratch, so the --project that
+                # _build_args appended above would be discarded. Re-add it here
+                # or POST /api/reconcile silently ignores the scope (TK-2229).
+                _rec_proj = str(body.get("project") or "").strip()
+                if _rec_proj:
+                    args.extend(["--project", _rec_proj])
 
             # Fingerprint tasks.json BEFORE the subprocess runs. A command that
             # commits tasks.json and is then killed by the ceiling returns

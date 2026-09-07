@@ -239,6 +239,216 @@ MEMORY_FILE = DATA_DIR / "memory.jsonl"
 ARCHIVE_FILE = DATA_DIR / "tasks-archive.json"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
+# ── Project identity (TK-2229) ────────────────────────────────────────────────
+# THE PROJECT RULE LIVES HERE AND NOWHERE ELSE.
+# Every writer (cmd_add, cmd_atomize) and every reader (--project on
+# list/board/stats/reconcile) goes through _resolve_project_id / _item_project.
+# If you need to change how a task is attributed to a repository, change this
+# block; do not add a second inference anywhere else in the tree.
+DEFAULT_PROJECT_ID = "default"
+PROJECT_ID_MAX_LEN = 128  # gsd_tasks.project_id is varchar(128)
+
+
+def _sanitize_project_id(value) -> Optional[str]:
+    """Normalise a candidate project id, or return None if it is not usable.
+
+    Args:
+        value: Raw candidate (str or None).
+
+    Returns:
+        The stripped value truncated to PROJECT_ID_MAX_LEN, or None when the
+        candidate is empty/blank/not a string.
+    """
+    if not isinstance(value, str):
+        return None
+    v = value.strip()
+    if not v:
+        return None
+    return v[:PROJECT_ID_MAX_LEN]
+
+
+def _repo_root(start_dir: str) -> Optional[str]:
+    """Walk up from start_dir to the nearest directory containing .git.
+
+    Args:
+        start_dir: Absolute or relative directory to start from.
+
+    Returns:
+        Absolute path of the repository root, or None when start_dir is not
+        inside a git working tree. A .git FILE (worktree/submodule pointer)
+        counts, same as a .git directory.
+    """
+    try:
+        cur = os.path.abspath(start_dir)
+    except Exception:
+        return None
+    while True:
+        if os.path.exists(os.path.join(cur, ".git")):
+            return cur
+        parent = os.path.dirname(cur)
+        if parent == cur:
+            return None
+        cur = parent
+
+
+def _project_id_from_config(start_dir: str, repo_root: Optional[str]) -> Optional[str]:
+    """Read an EXPLICITLY configured project id from .planning/config.json.
+
+    Searched from start_dir upward, stopping at the repository root (inclusive)
+    so a nested checkout never inherits its parent directory's project. With no
+    repository root the walk does not climb at all -- start_dir only. The
+    file location matches the harness convention used everywhere else
+    (config.cjs: path.join(cwd, '.planning', 'config.json')). Both a top-level
+    "project_id" and a nested {"project": {"id": ...}} are accepted.
+
+    Args:
+        start_dir: Directory the task is being registered from.
+        repo_root: Repository root, or None when there is no git tree.
+
+    Returns:
+        The configured id, or None when no config declares one.
+    """
+    try:
+        cur = os.path.abspath(start_dir)
+    except Exception:
+        return None
+    root = os.path.abspath(repo_root) if repo_root else None
+    while True:
+        cfg_path = os.path.join(cur, ".planning", "config.json")
+        if os.path.isfile(cfg_path):
+            try:
+                with open(cfg_path) as f:
+                    cfg = json.load(f) or {}
+                declared = cfg.get("project_id")
+                if declared is None:
+                    declared = (cfg.get("project") or {}).get("id") \
+                        if isinstance(cfg.get("project"), dict) else None
+                sanitized = _sanitize_project_id(declared)
+                if sanitized:
+                    return sanitized
+            except Exception:
+                pass  # unreadable/malformed config must never block registration
+        if root is None:
+            # No git tree to bound the walk. Do NOT climb -- an unrelated
+            # ancestor's .planning/config.json is not this directory's project.
+            return None
+        if os.path.normpath(cur) == os.path.normpath(root):
+            return None
+        parent = os.path.dirname(cur)
+        if parent == cur:
+            return None
+        cur = parent
+
+
+def _resolve_project_id(explicit=None, start_dir=None) -> str:
+    """Resolve the project a task belongs to. THE single source of the rule.
+
+    Precedence, highest first:
+      1. explicit         -- the --project flag (an operator said so)
+      2. AMAUTA_PROJECT_ID -- environment override (CI / wrappers)
+      2b. if AMAUTA_INVOKED_BY_DAEMON is set and no start_dir was forwarded,
+          stop here and return "default" -- see the daemon note below
+      3. .planning/config.json "project_id", searched from start_dir up to the
+         repository root -- an explicitly CONFIGURED value always beats inference
+      4. basename of the repository root (nearest ancestor holding .git)
+      5. basename of start_dir -- no git tree, but we still know where we are
+      6. "default"        -- nothing is knowable
+
+    The identifier is the repository ROOT DIRECTORY NAME, not the git remote
+    name: it needs no subprocess, exists for remote-less checkouts, and is
+    stable offline. A repository whose directory name differs from the name it
+    wants (e.g. a checkout of "website" living in ~/Code/barerouter) declares
+    "project_id" in .planning/config.json and rule 3 wins.
+
+    NOTE ON THE DAEMON: amauta.py runs as a subprocess of amauta-daemon.py,
+    which has its OWN working directory. os.getcwd() inside this process is the
+    DAEMON's cwd, never the caller's. Callers must therefore pass the caller
+    directory explicitly (CLI --project-dir / daemon body.project_dir). Falling
+    back to os.getcwd() here is correct only for direct invocations.
+
+    Args:
+        explicit: Value of the --project flag, or None.
+        start_dir: Directory the task is being registered from; defaults to the
+            current working directory.
+
+    Returns:
+        A non-empty project id, at most PROJECT_ID_MAX_LEN characters.
+
+    Example:
+        >>> _resolve_project_id(explicit="backend-core")
+        'backend-core'
+    """
+    forced = _sanitize_project_id(explicit)
+    if forced:
+        return forced
+
+    env = _sanitize_project_id(os.environ.get("AMAUTA_PROJECT_ID"))
+    if env:
+        return env
+
+    # Guard for the daemon seam. When amauta-daemon.py launched us it sets
+    # AMAUTA_INVOKED_BY_DAEMON, and this process's cwd is the DAEMON's working
+    # directory. If the caller's directory was not forwarded (e.g. an /api/exec
+    # passthrough that never went through _build_args), inferring from cwd would
+    # stamp every task with the daemon's own project — confidently wrong.
+    # "Not knowable" is the honest answer.
+    if not start_dir and os.environ.get("AMAUTA_INVOKED_BY_DAEMON"):
+        return DEFAULT_PROJECT_ID
+
+    try:
+        base = os.path.abspath(start_dir) if start_dir else os.getcwd()
+    except Exception:
+        return DEFAULT_PROJECT_ID
+
+    root = _repo_root(base)
+
+    configured = _project_id_from_config(base, root)
+    if configured:
+        return configured
+
+    if root:
+        from_root = _sanitize_project_id(os.path.basename(root))
+        if from_root:
+            return from_root
+
+    from_cwd = _sanitize_project_id(os.path.basename(base))
+    if from_cwd:
+        return from_cwd
+
+    return DEFAULT_PROJECT_ID
+
+
+def _item_project(item: dict) -> str:
+    """Project id of a stored item, treating absent/blank as DEFAULT_PROJECT_ID.
+
+    Mirrors the gsd_tasks.project_id column default so a JSON item written
+    before TK-2229 and a PG row written before TK-2229 answer identically.
+
+    Args:
+        item: A task item dict.
+
+    Returns:
+        The item's project id, never empty.
+    """
+    return _sanitize_project_id((item or {}).get("project_id")) or DEFAULT_PROJECT_ID
+
+
+def _filter_by_project(items: list, project) -> list:
+    """Filter items to one project. A falsy project means 'no filter'.
+
+    Args:
+        items: Task item dicts.
+        project: Project id to keep, or None/"" for all.
+
+    Returns:
+        The filtered list (the same list object when no filter applies).
+    """
+    wanted = _sanitize_project_id(project)
+    if not wanted:
+        return items
+    return [i for i in items if _item_project(i) == wanted]
+
+
 # ── Time ───────────────────────────────────────────────────────────────────────
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -1267,6 +1477,10 @@ def _new_item(itype: str, title: str) -> dict:
     return {
         # ── Core identity ──────────────────────────────────────────────────
         "id":           "",           # set by caller
+        # Which repository this task belongs to. cmd_add overwrites this with
+        # _resolve_project_id(...) — see the "Project identity" block near the
+        # top of this file for the one rule that decides it.
+        "project_id":   DEFAULT_PROJECT_ID,
         "type":         itype,
         "title":        title,
         "description":  "",           # what + why (1-3 sentences)
@@ -2635,6 +2849,15 @@ def cmd_add(args):
         item  = _new_item(itype, args.title)
         item["id"] = nid
 
+        # TK-2229: stamp the project at REGISTRATION. --project wins; otherwise
+        # inference starts from --project-dir (the CALLER's directory, which the
+        # CLI/daemon forward because this process's cwd is the daemon's, not the
+        # caller's). One rule, one place: _resolve_project_id.
+        item["project_id"] = _resolve_project_id(
+            explicit=getattr(args, "project", None),
+            start_dir=getattr(args, "project_dir", None),
+        )
+
         # Basic fields
         if args.description:  item["description"]  = args.description
         if args.details:      item["details"]       = args.details
@@ -2737,6 +2960,7 @@ def cmd_list(args):
     items = data["items"]
 
     # Filters
+    items = _filter_by_project(items, getattr(args, "project", None))  # TK-2229
     if args.agent:    items = [i for i in items if (i.get("assigned_to") or "").lower() == args.agent.lower()]
     if args.type:     items = [i for i in items if i.get("type") == args.type]
     if args.status:   items = [i for i in items if i.get("status") == args.status]
@@ -4194,6 +4418,10 @@ def cmd_atomize(args):
             fa.refs = None
             fa.parent = args.id
             fa.deps = None
+            # TK-2229: a subtask belongs to its parent's project, never to
+            # whatever directory the atomize call happened to run in.
+            fa.project = _item_project(parent)
+            fa.project_dir = None
             # Temporarily suppress print output
             import io, sys as _sys
             _buf = io.StringIO()
@@ -4876,6 +5104,8 @@ def cmd_board(args):
     data  = load()
     items = data["items"]
 
+    project = _sanitize_project_id(getattr(args, "project", None))  # TK-2229
+    items = _filter_by_project(items, project)
     if args.agent:
         items = [i for i in items if (i.get("assigned_to") or "").lower() == args.agent.lower()]
     if args.sprint:
@@ -4888,7 +5118,8 @@ def cmd_board(args):
 
     agent_str = f" — @{args.agent}" if args.agent else ""
     sprint_str = f" [{args.sprint}]" if args.sprint else ""
-    print(bold(f"\nAMAUTA BOARD{agent_str}{sprint_str}\n"))
+    project_str = f" ({project})" if project else ""
+    print(bold(f"\nAMAUTA BOARD{project_str}{agent_str}{sprint_str}\n"))
 
     for status in active_cols:
         col = col_items[status]
@@ -5150,21 +5381,32 @@ def cmd_agent_tasks(args):
 def cmd_stats(args):
     data  = load()
     items = data["items"]
+
+    project = _sanitize_project_id(getattr(args, "project", None))  # TK-2229
+    items = _filter_by_project(items, project)
+
     total = len(items)
     if total == 0:
+        if project:
+            print(dim(f"No items in project {project!r}.")); return
         print(dim("No items yet.")); return
 
-    by_type, by_status, by_agent, by_sprint = {}, {}, {}, {}
+    by_type, by_status, by_agent, by_sprint, by_project = {}, {}, {}, {}, {}
     rpetd_complete = 0
     for i in items:
         t = i.get("type","?");         by_type[t]   = by_type.get(t,0) + 1
         s = i.get("status","?");       by_status[s] = by_status.get(s,0) + 1
         a = i.get("assigned_to","?");  by_agent[a]  = by_agent.get(a,0) + 1
         sp = i.get("sprint") or "—";  by_sprint[sp] = by_sprint.get(sp,0) + 1
+        p = _item_project(i);          by_project[p] = by_project.get(p,0) + 1
         if i.get("rpetd_complete"):    rpetd_complete += 1
 
-    print(bold(f"\nAMAUTA v2 — {total} items\n"))
-    print(bold("By type:"))
+    project_str = f" [{project}]" if project else ""
+    print(bold(f"\nAMAUTA v2{project_str} — {total} items\n"))
+    print(bold("By project:"))
+    for p, n in sorted(by_project.items(), key=lambda kv: (-kv[1], kv[0])):
+        print(f"  {p:25s} {n}")
+    print(bold("\nBy type:"))
     for t, n in sorted(by_type.items()):
         print(f"  {c(t, TYPE_COL.get(t,WHITE)):25s} {n}")
     print(bold("\nBy status:"))
@@ -5247,9 +5489,16 @@ def cmd_skb(args):
 def cmd_reconcile(args):
     """Diff tasks.json vs PG gsd_tasks. JSON is always source of truth.
     Default mode is dry-run (report only). Use --fix to sync JSON -> PG.
+
+    TK-2229: --project narrows BOTH sides of the diff to one project, so a
+    per-repository wave can reconcile its own rows without reporting every
+    other repository's tasks as discrepancies.
     """
     data = load()
     items = data["items"]
+
+    project = _sanitize_project_id(getattr(args, "project", None))  # TK-2229
+    items = _filter_by_project(items, project)
 
     db_url = _mem_db_url()
     if not db_url:
@@ -5269,10 +5518,14 @@ def cmd_reconcile(args):
         print(c(f"ERROR: PG connection failed: {e}", RED))
         sys.exit(1)
 
-    # Read all PG tasks
+    # Read PG tasks (scoped to --project when given -- parameterized, never
+    # string-concatenated).
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute("SELECT * FROM gsd_tasks")
+            if project:
+                cur.execute("SELECT * FROM gsd_tasks WHERE project_id = %s", (project,))
+            else:
+                cur.execute("SELECT * FROM gsd_tasks")
             pg_tasks = {row["id"]: dict(row) for row in cur.fetchall()}
     except Exception as e:
         print(c(f"ERROR: Failed to read gsd_tasks: {e}", RED))
@@ -5282,7 +5535,11 @@ def cmd_reconcile(args):
     json_ids = {i["id"] for i in items}
     pg_ids = set(pg_tasks.keys())
 
-    # FIX-05: Also load archived tasks to avoid false "extra in PG" reports
+    # FIX-05: Also load archived tasks to avoid false "extra in PG" reports.
+    # Deliberately NOT project-filtered: an archived item written before
+    # TK-2229 carries no project_id, and filtering it out would reclassify it
+    # as "truly extra in PG" -- which --fix DELETES. Over-including here is
+    # safe; under-including destroys mirror rows.
     archive_data = _load_archive()
     archive_ids = {i["id"] for i in archive_data.get("items", [])}
 
@@ -5346,7 +5603,8 @@ def cmd_reconcile(args):
                 field_mismatches.append((item["id"], field, json_str, pg_str))
 
     # Report
-    print(f"Reconcile: {len(json_ids)} JSON tasks, {len(pg_ids)} PG tasks")
+    scope = f" [project={project}]" if project else ""
+    print(f"Reconcile{scope}: {len(json_ids)} JSON tasks, {len(pg_ids)} PG tasks")
     print(f"  Missing in PG: {len(missing_in_pg)}")
     print(f"  Extra in PG:   {len(extra_in_pg)}")
     if archived_still_in_pg:
@@ -5741,6 +5999,11 @@ AGENT WORKFLOW (heartbeat cycle):
     a.add_argument("--force",              action="store_true", help="Override hierarchy constraint check")
     a.add_argument("--source",             default=None, help="Creation source identifier (e.g. plan-to-tasks)")
     a.add_argument("--from-plan",          default=None, dest="from_plan", help="Plan ID for dedup bypass scoping")
+    a.add_argument("--project",            default=None, metavar="ID",
+                   help="Project this task belongs to (overrides inference; see _resolve_project_id)")
+    a.add_argument("--project-dir",        default=None, dest="project_dir", metavar="PATH",
+                   help="Directory to infer the project from (the CALLER's cwd; the daemon "
+                        "forwards this because this process's cwd is the daemon's)")
 
     # ── show ──────────────────────────────────────────────────────────────────
     sh = sub.add_parser("show", help="Full detail of one item")
@@ -5757,6 +6020,8 @@ AGENT WORKFLOW (heartbeat cycle):
     ls.add_argument("--priority", choices=PRIORITIES)
     ls.add_argument("--sprint")
     ls.add_argument("--tag")
+    ls.add_argument("--project", default=None, metavar="ID",
+                    help="Only items in this project (see _resolve_project_id for how it is set)")
     ls.add_argument("--tree",   action="store_true")
     ls.add_argument("--scored", action="store_true", help="Sort by priority score")
 
@@ -5863,6 +6128,8 @@ AGENT WORKFLOW (heartbeat cycle):
     bd.add_argument("--agent")
     bd.add_argument("--sprint")
     bd.add_argument("--limit", type=int, default=5, help="Max items per column (default 5)")
+    bd.add_argument("--project", default=None, metavar="ID",
+                    help="Only items in this project (see _resolve_project_id for how it is set)")
 
     # ── search ────────────────────────────────────────────────────────────────
     sr = sub.add_parser("search", help="Full-text search across all fields")
@@ -5918,7 +6185,9 @@ AGENT WORKFLOW (heartbeat cycle):
     uk.add_argument("id"); uk.add_argument("dep_id")
 
     # ── stats ─────────────────────────────────────────────────────────────────
-    sub.add_parser("stats", help="Task statistics")
+    st_p = sub.add_parser("stats", help="Task statistics")
+    st_p.add_argument("--project", default=None, metavar="ID",
+                      help="Only items in this project (see _resolve_project_id for how it is set)")
 
     # ── memory (compat layer) ────────────────────────────────────────────────
     mm = sub.add_parser("memory", help="Lightweight memory store: add/search/stats")
@@ -5968,6 +6237,8 @@ AGENT WORKFLOW (heartbeat cycle):
     rc = sub.add_parser("reconcile", help="Diff tasks.json vs PG and fix mismatches")
     rc.add_argument("--fix", action="store_true",
                     help="Sync JSON -> PG (default is dry-run / report only)")
+    rc.add_argument("--project", default=None, metavar="ID",
+                    help="Diff only this project on BOTH sides (JSON and PG)")
 
     # ── archive ──────────────────────────────────────────────────────────────
     ar = sub.add_parser("archive", help="Move done tasks older than N days to archive file")

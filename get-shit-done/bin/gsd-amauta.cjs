@@ -475,24 +475,46 @@ function parseFlags(args, startIndex = 0) {
 // Command Handlers
 // ═══════════════════════════════════════════════════════
 
-async function cmdBoard(useDaemon, jsonMode) {
+/**
+ * TK-2229: build the `?project=` query suffix for a read endpoint.
+ * @param {object} flags - Parsed flags, possibly carrying `project`.
+ * @returns {string} '' or '?project=<encoded>'
+ */
+function projectQuery(flags) {
+  const p = flags && typeof flags.project === 'string' ? flags.project.trim() : '';
+  return p ? `?project=${encodeURIComponent(p)}` : '';
+}
+
+/**
+ * TK-2229: append `--project <id>` to a direct amauta.py arg list.
+ * @param {string[]} args - Arg list, mutated in place.
+ * @param {object} flags - Parsed flags, possibly carrying `project`.
+ * @returns {string[]} The same args array.
+ */
+function withProjectArg(args, flags) {
+  const p = flags && typeof flags.project === 'string' ? flags.project.trim() : '';
+  if (p) args.push('--project', p);
+  return args;
+}
+
+async function cmdBoard(useDaemon, flags, jsonMode) {
   if (useDaemon) {
-    const { data } = await httpRequest('GET', '/api/board');
+    const { data } = await httpRequest('GET', `/api/board${projectQuery(flags)}`);
     printResponse(data, jsonMode);
     return data.exit_code || 0;
   }
-  const result = runDirect(['board']);
+  const result = runDirect(withProjectArg(['board'], flags));
   printResponse(result, jsonMode);
   return result.exit_code;
 }
 
-async function cmdStats(useDaemon, jsonMode) {
+async function cmdStats(useDaemon, flags, jsonMode) {
   if (useDaemon) {
-    const { data } = await httpRequest('GET', '/api/stats');
+    const { data } = await httpRequest('GET', `/api/stats${projectQuery(flags)}`);
     printResponse(data, jsonMode);
     return data.exit_code || 0;
   }
-  const result = runDirect(['stats']);
+  const result = runDirect(withProjectArg(['stats'], flags));
   printResponse(result, jsonMode);
   return result.exit_code;
 }
@@ -534,6 +556,10 @@ async function cmdList(useDaemon, flags, jsonMode) {
   if (flags.type) queryParts.push(`type=${encodeURIComponent(flags.type)}`);
   if (flags.status) queryParts.push(`status=${encodeURIComponent(flags.status)}`);
   if (flags.agent) queryParts.push(`agent=${encodeURIComponent(flags.agent)}`);
+  // TK-2229: --project is a plain scalar flag, so it takes the same
+  // key=value path as --type/--status/--agent. It is NOT one of the
+  // JSON-array flags (--criteria/--deliverables/--checklist/--refs, TK-2313).
+  if (flags.project) queryParts.push(`project=${encodeURIComponent(flags.project)}`);
   const qs = queryParts.length ? `?${queryParts.join('&')}` : '';
 
   if (useDaemon) {
@@ -545,6 +571,7 @@ async function cmdList(useDaemon, flags, jsonMode) {
   if (flags.type) args.push('--type', flags.type);
   if (flags.status) args.push('--status', flags.status);
   if (flags.agent) args.push('--agent', flags.agent);
+  withProjectArg(args, flags);
   const result = runDirect(args);
   printResponse(result, jsonMode);
   return result.exit_code;
@@ -557,6 +584,10 @@ async function cmdAdd(useDaemon, argv, jsonMode) {
   if (!type || !title) die('Usage: amauta add <type> <title> [--parent P] [--agent A] [--priority P] ...');
   const flags = parseFlags(argv, 2);
   const body = { type, title, ...flags };
+  // TK-2229: the daemon runs amauta.py as a subprocess with the DAEMON's cwd,
+  // so the caller's directory must travel over the wire or every task would be
+  // stamped with the daemon's own project. cmdClaim sets project_dir the same way.
+  body.project_dir = process.cwd();
 
   if (useDaemon) {
     const { data } = await httpRequest('POST', '/api/add', body);
@@ -574,6 +605,8 @@ async function cmdAdd(useDaemon, argv, jsonMode) {
   if (flags.tags) args.push('--tags', flags.tags);
   if (flags.source) args.push('--source', flags.source);
   if (flags['from-plan']) args.push('--from-plan', flags['from-plan']);
+  withProjectArg(args, flags);
+  args.push('--project-dir', process.cwd());
   const result = runDirect(args);
   printResponse(result, jsonMode);
   return result.exit_code;
@@ -3328,17 +3361,20 @@ async function main() {
       '  \x1b[33mUsage:\x1b[0m  amauta <command> [args] [--json]\n' +
       '\n' +
       '  \x1b[33mTask commands:\x1b[0m\n' +
-      '    board                       Kanban view of all tasks\n' +
-      '    stats                       Task counts by status\n' +
-      '    list [--type T] [--status S] [--agent A]\n' +
+      '    board [--project ID]        Kanban view of all tasks\n' +
+      '    stats [--project ID]        Task counts by status (and by project)\n' +
+      '    list [--type T] [--status S] [--agent A] [--project ID]\n' +
       '    show <id> [--json] [--no-inherit]  Full task details\n' +
       '    next <agent> [--json]       Next task for an agent\n' +
       '    search <query>              Full-text task search\n' +
       '    score <id>                  Priority score breakdown\n' +
       '\n' +
       '  \x1b[33mCreate / update:\x1b[0m\n' +
-      '    add <type> <title> [--parent ID] [--agent A] [--priority P]\n' +
+      '    add <type> <title> [--parent ID] [--agent A] [--priority P] [--project ID]\n' +
       '                            type: epic | story | task\n' +
+      '                            --project overrides the project inferred from the\n' +
+      '                            current directory (repo root name, or the\n' +
+      '                            "project_id" key in .planning/config.json)\n' +
       '    update <id> [--field val ...]\n' +
       '    status <id> <new-status>\n' +
       '    assign <id> --agent <agent>\n' +
@@ -3425,11 +3461,11 @@ async function main() {
 
   switch (command) {
     case 'board':
-      exitCode = await cmdBoard(useDaemon, jsonMode);
+      exitCode = await cmdBoard(useDaemon, parseFlags(rest, 0), jsonMode);
       break;
 
     case 'stats':
-      exitCode = await cmdStats(useDaemon, jsonMode);
+      exitCode = await cmdStats(useDaemon, parseFlags(rest, 0), jsonMode);
       break;
 
     case 'show':
