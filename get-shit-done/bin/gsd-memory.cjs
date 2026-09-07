@@ -2981,6 +2981,10 @@ if (require.main !== module) {
     _test_selectOllamaModel: selectOllamaModel,
     _test_llmSummarize: llmSummarize,
     _test_claudeSummarize: claudeSummarize,
+    // MEMSAFE-01: exported so tests/85-01-memsafe-containment.test.cjs can
+    // exercise the containment gate WITHOUT invoking the destructive
+    // `store` / `learn` / `distill` CLI commands.
+    _test_maybeAutoDistill: maybeAutoDistill,
     // Phase 10 LEARN-04: tag governance helpers
     loadTagRules,
     normalizeTags,
