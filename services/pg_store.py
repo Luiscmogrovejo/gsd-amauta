@@ -690,15 +690,20 @@ class PGStore:
             min_conn: Minimum pool connections.
             max_conn: Maximum pool connections.
         """
-        if not HAS_PG:
-            raise ImportError("psycopg2 not installed. Run: pip install psycopg2-binary")
-
+        # Containment first. Resolving the DSN BEFORE checking for the driver is
+        # deliberate: a machine that has psycopg2 is a machine that can do
+        # damage, and the configuration refusal is the message that matters. It
+        # also means the containment holds identically on a machine with no
+        # driver, instead of being masked by an ImportError.
         # No fallback branch, by design. See services/pg_dsn.py for why.
         self.dsn = _require_dsn(
             dsn,
             component="pg_store.PGStore",
             env_names=("GSD_POSTGRES_URL",),
         )
+
+        if not HAS_PG:
+            raise ImportError("psycopg2 not installed. Run: pip install psycopg2-binary")
         self.min_conn = min_conn
         self.max_conn = max_conn
         self._pool = None
