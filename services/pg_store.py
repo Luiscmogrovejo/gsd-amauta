@@ -111,7 +111,22 @@ except ImportError:
 # Configuration
 # ═══════════════════════════════════════════════════════
 
-DEFAULT_PG_URL = "postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta"
+# CONTAINMENT 2026-09-07: there is deliberately NO DEFAULT_PG_URL here.
+# It used to read:
+#     DEFAULT_PG_URL = "postgresql://gsd:<redacted>@127.0.0.1:5433/gsd_amauta"
+# and it was the fallback for an unset GSD_POSTGRES_URL. Unsetting that
+# variable to match CI therefore did not disable the database -- it silently
+# repointed the process at the SHARED development database, three call frames
+# below a test file with no database code in it, and 8 party_session rows were
+# written to it. An absent DSN now fails closed. See services/pg_dsn.py.
+# ── Containment: DSN resolution has exactly one home ──────────────────────────
+# services/pg_dsn.py. Dual-import because this module is loaded both as
+# ``services.pg_store`` (repo root on sys.path) and as ``pg_store``
+# (services/ itself on sys.path) -- see party_session.py L58-69.
+try:
+    from services.pg_dsn import require_dsn as _require_dsn  # type: ignore
+except ImportError:  # pragma: no cover - depends on caller's sys.path
+    from pg_dsn import require_dsn as _require_dsn  # type: ignore
 
 SOURCE_SCORES = {
     "lesson-learned": 4,
@@ -669,14 +684,21 @@ class PGStore:
         """Initialize connection pool.
 
         Args:
-            dsn: PostgreSQL DSN. Falls back to GSD_POSTGRES_URL env, then default.
+            dsn: PostgreSQL DSN. Falls back to the GSD_POSTGRES_URL env var.
+                 There is no further fallback: an absent DSN raises
+                 pg_dsn.UnconfiguredPostgresDSN rather than guessing a host.
             min_conn: Minimum pool connections.
             max_conn: Maximum pool connections.
         """
         if not HAS_PG:
             raise ImportError("psycopg2 not installed. Run: pip install psycopg2-binary")
 
-        self.dsn = dsn or os.environ.get("GSD_POSTGRES_URL", DEFAULT_PG_URL)
+        # No fallback branch, by design. See services/pg_dsn.py for why.
+        self.dsn = _require_dsn(
+            dsn,
+            component="pg_store.PGStore",
+            env_names=("GSD_POSTGRES_URL",),
+        )
         self.min_conn = min_conn
         self.max_conn = max_conn
         self._pool = None

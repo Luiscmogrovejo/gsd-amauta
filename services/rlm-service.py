@@ -221,7 +221,17 @@ def _get_pg_conn():
     """Return a psycopg2 connection for rlm_chunks ingestion, or None if unavailable."""
     try:
         import psycopg2
-        pg_url = os.environ.get("GSD_POSTGRES_URL", "postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta")
+        # CONTAINMENT 2026-09-07: no hardcoded DSN. This used to default to
+        # "postgresql://gsd:<redacted>@127.0.0.1:5433/gsd_amauta" -- the shared
+        # development database -- whenever GSD_POSTGRES_URL was unset.
+        try:
+            from services.pg_dsn import require_dsn as _require_dsn  # type: ignore
+        except ImportError:  # pragma: no cover
+            from pg_dsn import require_dsn as _require_dsn  # type: ignore
+        pg_url = _require_dsn(
+            component="rlm-service._get_pg_conn",
+            env_names=("GSD_POSTGRES_URL",),
+        )
         conn = psycopg2.connect(pg_url)
         conn.autocommit = False
         return conn
