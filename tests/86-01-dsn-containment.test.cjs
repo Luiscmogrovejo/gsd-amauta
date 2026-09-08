@@ -314,17 +314,29 @@ const RESOLVERS = [
   'services/rlm-service.py',
 ];
 
+/**
+ * Everything scanned for a live DSN literal. `pg_dsn.py` is on this list and
+ * not on RESOLVERS. Measured 2026-09-07: a mutation that reinstated a hardcoded
+ * default INSIDE require_dsn left this pin green — the helper was not being
+ * scanned — while the behavioural negative arm caught it. A pin a mutation
+ * survives is an inert pin, so the helper is scanned now too.
+ */
+const SCANNED = ['services/pg_dsn.py', ...RESOLVERS];
+
 test('DSNSAFE-01 mutation pin: no module resolves a DSN to a hardcoded host', () => {
   // A live DSN string literal anywhere on a resolution path is the defect.
   // Comments are exempt so the tombstones may record what used to be there.
   const LIVE_DSN = /["'](?:postgres(?:ql)?|redis):\/\/[^"'\n]*(?::5433|:6379|:5432|:18799|:18798)[^"'\n]*["']/;
-  for (const rel of RESOLVERS) {
+  for (const rel of SCANNED) {
     const src = fs.readFileSync(path.join(ROOT, rel), 'utf-8');
     const code = src
       .split('\n')
       .filter((l) => !l.trimStart().startsWith('#'))
       .join('\n');
-    const hit = code.match(LIVE_DSN);
+    const raw = code.match(LIVE_DSN);
+    // A DSN with a password in it is a credential, and an assert message ends
+    // up in gate logs and reports. Redact before it can be printed.
+    const hit = raw === null ? null : [raw[0].replace(/:\/\/[^/@\s]*:[^/@\s]*@/, '://<redacted>@')];
     assert.strictEqual(
       hit, null,
       `${rel} contains a hardcoded shared-service DSN in live code (${hit && hit[0]}). ` +
