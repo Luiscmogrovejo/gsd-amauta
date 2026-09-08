@@ -60,3 +60,10 @@ pacts/
 .claude/skills/
 .cursor/skills/
 .opencode/skills/
+
+# A stray "postgresql:/gsd:...@127.0.0.1:5433/gsd_amauta" directory tree exists
+# in this repo root (created 2026-07-03 by a shell that expanded a DSN into a
+# path). Its DIRECTORY NAMES contain the shared database password, so a
+# `git add -A` would commit a credential. Ignored, not deleted -- removing it is
+# the owner's call, not a lane's. Flagged 2026-09-07.
+postgresql:/
