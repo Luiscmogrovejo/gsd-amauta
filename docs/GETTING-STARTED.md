@@ -36,7 +36,7 @@ claude --version
 
 ```bash
 # Clone the repo
-git clone https://github.com/robertamauta/gsd-amauta.git ~/gsd-amauta
+git clone https://github.com/Luiscmogrovejo/gsd-amauta.git ~/gsd-amauta
 
 # Install into Claude Code (global — available in all projects)
 cd ~/gsd-amauta

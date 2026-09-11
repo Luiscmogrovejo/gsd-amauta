@@ -9,7 +9,7 @@ git clone https://github.com/Luiscmogrovejo/gsd-amauta.git
 cd gsd-amauta
 npm install
 docker compose -f docker/docker-compose.yml up -d   # Start PG + Valkey
-npx gsd-amauta init                                  # Run setup
+node bin/init.cjs                                    # Run setup
 npm test                                             # Verify tests pass
 ```
 
