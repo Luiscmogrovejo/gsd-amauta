@@ -8,16 +8,19 @@ This guide takes you from zero to your first shipped feature phase in about 15 m
 
 ## Step 1: Install
 
-Install the GSD-Amauta CLI globally. Note: v3.3.0 is the first public release — the package will appear on npmjs.com once the tag is pushed.
+The package is not published on npm yet. Install from a clone:
 
 ```bash
-npm install -g gsd-amauta
+git clone https://github.com/Luiscmogrovejo/gsd-amauta.git
+cd gsd-amauta
+npm install
+npm link          # optional: puts the `gsd-amauta` command on your PATH
 ```
 
 Verify the install:
 
 ```bash
-gsd-amauta --version
+node bin/cli.cjs doctor
 ```
 
 Expected output:
@@ -54,7 +57,7 @@ If you already have PostgreSQL running on port 5432, set `GSD_PG_HOST` and `GSD_
 The `init` command runs a 7-step setup: detects your IDE, installs agents and skills, runs database migrations, and starts the daemon.
 
 ```bash
-npx gsd-amauta init
+node bin/init.cjs      # or `gsd-amauta init` after `npm link`
 ```
 
 Expected output:
@@ -90,7 +93,7 @@ gsd-amauta doctor
 For full debug output (stack traces, raw error detail):
 
 ```bash
-npx gsd-amauta init --verbose
+node bin/init.cjs --verbose
 ```
 
 ---
@@ -234,8 +237,8 @@ gsd-amauta doctor
 **Upgrade to the latest release:**
 
 ```bash
-npm install -g gsd-amauta@latest
-npx gsd-amauta init --upgrade
+git pull
+node bin/init.cjs --upgrade
 ```
 
 **Read more:**

@@ -12,7 +12,7 @@
 
 ```bash
 # 1. Clone repository
-git clone https://github.com/robertamauta/gsd-amauta.git
+git clone https://github.com/Luiscmogrovejo/gsd-amauta.git
 cd gsd-amauta
 
 # 2. Configure environment

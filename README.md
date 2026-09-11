@@ -2,16 +2,20 @@
 
 **A quality-enforced AI development harness for Claude Code and any MCP-compatible agent.**
 
-GSD-Amauta gives your team a structured 5-phase development pipeline (RPETD: Research -> Plan -> Execute -> Test -> Deliver), persistent PostgreSQL + pgvector memory so every agent session builds on prior work, 17 specialist agents with file-pattern routing, and a formal protocol that turns plan-vs-reality mismatches into first-class observations instead of silent scope creep. Install once; your AI agents run smarter every phase.
+**Status:** personal project, in daily use on the author's own work. Not published on npm yet; install from a clone (below).
+
+GSD-Amauta gives your team a structured 5-phase development pipeline (RPETD: Research -> Plan -> Execute -> Test -> Deliver), persistent PostgreSQL + pgvector memory so every agent session builds on prior work, 35 specialist agents with file-pattern routing, and a formal protocol that turns plan-vs-reality mismatches into first-class observations instead of silent scope creep. Install once; your AI agents run smarter every phase.
 
 ---
 
 ## Quick start (30 seconds)
 
 ```bash
-# Prerequisites: Node.js >= 20, Docker (for PG + Valkey)
-npm install -g gsd-amauta
-npx gsd-amauta init          # 7-step setup: detects IDEs, runs migrations, starts daemon
+# Prerequisites: Node.js >= 20, Python 3.11+, Docker (for PG + Valkey)
+git clone https://github.com/Luiscmogrovejo/gsd-amauta.git && cd gsd-amauta
+npm install
+docker compose -f docker/docker-compose.yml up -d
+node bin/init.cjs            # 7-step setup: detects IDEs, runs migrations, starts daemon
 ```
 
 Then in Claude Code (or any MCP client):
@@ -29,10 +33,10 @@ See [docs/QUICKSTART.md](docs/QUICKSTART.md) for the full end-to-end walkthrough
 | Feature | GSD-Amauta | Claude Code (built-in) | Cursor | BMAD-METHOD | npm |
 |---------|-----------|------------------------|--------|-------------|-----|
 | Persistent memory across sessions | PostgreSQL + pgvector | None (stateless) | None | None | N/A |
-| Multi-agent orchestration | 17 specialist agents with routing | Single-agent | Single-agent | Wide agent roster, no PG | N/A |
+| Multi-agent orchestration | 35 specialist agents with routing | Single-agent | Single-agent | Wide agent roster, no PG | N/A |
 | RPETD pipeline enforcement | Mandatory 5-phase gate | No structure | No structure | Loose phase guidance | N/A |
 | Blackboard agent communication | agent_findings + agent_messages PG tables | None | None | None | N/A |
-| Install method | `npm install -g gsd-amauta` | Built into Claude Code | Built into Cursor | Manual copy | Package manager only |
+| Install method | `git clone` + `npm install` (not on npm yet) | Built into Claude Code | Built into Cursor | Manual copy | Package manager only |
 | Requires Docker | Yes (PG + Valkey) | No | No | No | No |
 | A2A agent-to-agent protocol | Yes (v3.3) | No | No | No | No |
 | Module marketplace | Yes (`gsd-amauta module install`) | No | No | No | No |
@@ -56,24 +60,30 @@ Optional but recommended:
 
 ## Installation
 
+The package is not on npm yet, so install from a clone:
+
 ```bash
-# 1. Install the CLI globally
-npm install -g gsd-amauta
+# 1. Clone and install dependencies
+git clone https://github.com/Luiscmogrovejo/gsd-amauta.git
+cd gsd-amauta
+npm install
 
 # 2. Start infrastructure (PG + Valkey)
-docker compose -f $(npm root -g)/gsd-amauta/docker/docker-compose.yml up -d
+docker compose -f docker/docker-compose.yml up -d
 
 # 3. Run the interactive setup
-npx gsd-amauta init
+node bin/init.cjs
 
 # 4. Verify everything is healthy
-gsd-amauta doctor
+node bin/cli.cjs doctor
 ```
+
+Optional: `npm link` from the clone puts `gsd-amauta` (and `amauta`) on your PATH, after which `gsd-amauta init` and `gsd-amauta doctor` are the same commands. The CLI reference below assumes that link.
 
 For upgrade and uninstall:
 ```bash
-npx gsd-amauta init --upgrade
-npx gsd-amauta init --uninstall
+git pull && node bin/init.cjs --upgrade
+node bin/init.cjs --uninstall
 ```
 
 ---
@@ -84,7 +94,7 @@ npx gsd-amauta init --uninstall
 
 **Persistent memory** — Every completed task, validated pattern, and agent learning is stored in PostgreSQL with pgvector embeddings. Future agents query this memory before starting work, so the system improves with every phase shipped.
 
-**Specialist agents** — 22 agents with file-pattern routing: planner, executor-backend, executor-frontend, executor-infra, executor-mobile-android, executor-mobile-ios, executor-mobile-cross (Flutter/React Native), executor-wearables (watchOS/Wear OS), executor-ai (LLM apps, prompts, MCP servers, evals), reviewer, security, architect, tester, and more. The orchestrator routes tasks to the right agent based on file types and complexity.
+**Specialist agents** — 35 agents with file-pattern routing: planner, executor-backend, executor-frontend, executor-infra, executor-mobile-android, executor-mobile-ios, executor-mobile-cross (Flutter/React Native), executor-wearables (watchOS/Wear OS), executor-ai (LLM apps, prompts, MCP servers, evals), reviewer, security, architect, tester, and more. The orchestrator routes tasks to the right agent based on file types and complexity.
 
 **Divergence protocol** — When an executor discovers a plan-vs-reality mismatch, it surfaces it as a first-class observation (not a silent fix). The orchestrator decides: absorb, escalate, or replan.
 
