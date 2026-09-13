@@ -13,11 +13,29 @@
 const assert = require('assert');
 const { spawnSync } = require('child_process');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
 
 const MEM_CLI = path.resolve(__dirname, '..', 'get-shit-done', 'bin', 'gsd-memory.cjs');
 
+// TK-2386: file-mode writes land in `<cwd>/.planning`, and this suite ran the
+// CLI with the repo as cwd — so every run appended to the repo's own tracked
+// .planning/STATE.md. Give the CLI a scratch cwd instead.
+const MEM_TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'gsd-memcli-'));
+process.on('exit', () => { try { fs.rmSync(MEM_TMP, { recursive: true, force: true }); } catch { /* best effort */ } });
+
 function runMem(...args) {
-  return spawnSync('node', [MEM_CLI, ...args], { encoding: 'utf-8', timeout: 15000 });
+  // TK-2386: this suite's contract is "daemon-reachable OR file-fallback".
+  // A degraded memory CLI now refuses with exit 3 unless the caller opts in to
+  // file mode, so the file-fallback half of the contract is taken explicitly
+  // here. Without this the suite silently measured whichever store the shared
+  // daemon on 18799 happened to be answering from.
+  return spawnSync('node', [MEM_CLI, ...args], {
+    encoding: 'utf-8',
+    timeout: 15000,
+    cwd: MEM_TMP,
+    env: { ...process.env, GSD_MEMORY_FILE_MODE: '1' },
+  });
 }
 
 const tests = [];
