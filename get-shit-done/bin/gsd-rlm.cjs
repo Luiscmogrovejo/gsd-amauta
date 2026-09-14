@@ -59,6 +59,10 @@ const fs = require('fs');
 
 const HOST = process.env.GSD_RLM_HOST || '127.0.0.1';
 const PORT = parseInt(process.env.GSD_RLM_PORT || '18798', 10);
+// TK-2384: both timeouts were literals in the code. They decide whether a slow
+// service reads as a missing one, so they are named, defaulted and overridable.
+const HEALTH_TIMEOUT_MS = parseInt(process.env.GSD_RLM_HEALTH_TIMEOUT_MS || '3000', 10);
+const REQUEST_TIMEOUT_MS = parseInt(process.env.GSD_RLM_REQUEST_TIMEOUT_MS || '30000', 10);
 const PLUGIN_ROOT = path.resolve(__dirname, '..', '..');
 const RLM_SERVICE = path.join(PLUGIN_ROOT, 'services', 'rlm-service.py');
 
@@ -87,7 +91,7 @@ function shouldFallbackToFiles() {
 // HTTP Client
 // ═══════════════════════════════════════════════════════
 
-function httpRequest(method, urlPath, body = null, timeoutMs = 30000) {
+function httpRequest(method, urlPath, body = null, timeoutMs = REQUEST_TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
     const payload = body ? JSON.stringify(body) : null;
     const headers = { 'Content-Type': 'application/json' };
@@ -127,13 +131,45 @@ function httpRequest(method, urlPath, body = null, timeoutMs = 30000) {
 // Service Management
 // ═══════════════════════════════════════════════════════
 
-async function isServiceRunning() {
+/**
+ * rlmHealthProbe(timeoutMs) — the ONE definition of "the RLM is up" (TK-2384).
+ *
+ * Before this, the CLI held two. isServiceRunning() required HTTP 200 AND
+ * body.status === 'ok'; cmdHealth() printed "running (PID …)" whenever the
+ * request merely did not throw — it read neither the status code nor the body's
+ * status field. A degraded service answering 503, or 200 with status != ok, made
+ * `gsd-rlm health` say running and `gsd-rlm query` say "RLM service unavailable"
+ * in the same second, which is exactly what TK-2384 was filed for.
+ *
+ * Both callers now use this, so the two commands cannot disagree, and the failure
+ * carries the reason it was measured from — never a bare "unavailable".
+ *
+ * @param {number} timeoutMs How long /health may take before it counts as down.
+ * @returns {Promise<{up: boolean, statusCode: number|null, data: object|null, reason: string}>}
+ */
+async function rlmHealthProbe(timeoutMs = HEALTH_TIMEOUT_MS) {
+  const where = `${HOST}:${PORT}`;
   try {
-    const { statusCode, data } = await httpRequest('GET', '/health', null, 3000);
-    return statusCode === 200 && data.status === 'ok';
-  } catch {
-    return false;
+    const { statusCode, data } = await httpRequest('GET', '/health', null, timeoutMs);
+    if (statusCode !== 200) {
+      return { up: false, statusCode, data: data || null, reason: `GET /health on ${where} answered HTTP ${statusCode}` };
+    }
+    if (!data || data.status !== 'ok') {
+      const got = data && data.status !== undefined ? JSON.stringify(data.status) : 'absent';
+      return { up: false, statusCode, data: data || null, reason: `GET /health on ${where} answered HTTP 200 with status=${got} (expected "ok")` };
+    }
+    return { up: true, statusCode, data, reason: `GET /health on ${where} answered HTTP 200 status=ok` };
+  } catch (err) {
+    let why;
+    if (err && err.code === 'ECONNREFUSED') why = `nothing is listening on ${where}`;
+    else if (err && err.message === 'Request timeout') why = `no answer within ${timeoutMs}ms`;
+    else why = (err && err.message) || 'unknown error';
+    return { up: false, statusCode: null, data: null, reason: `GET /health on ${where} failed: ${why}` };
   }
+}
+
+async function isServiceRunning() {
+  return (await rlmHealthProbe()).up;
 }
 
 async function startService() {
@@ -157,16 +193,22 @@ async function startService() {
   return false;
 }
 
+/**
+ * ensureService() — probe, and start the service only if the probe says it is down.
+ * @returns {Promise<{ok: boolean, reason: string}>} reason carries the measured
+ *   probe result so the caller can name WHY it is degrading (TK-2384).
+ */
 async function ensureService() {
-  if (await isServiceRunning()) return true;
-  process.stderr.write('RLM service not running, starting...\n');
+  const probe = await rlmHealthProbe();
+  if (probe.up) return { ok: true, reason: probe.reason };
+  process.stderr.write(`RLM service not running (${probe.reason}), starting...\n`);
   const started = await startService();
   if (started) {
     process.stderr.write('RLM service started.\n');
-    return true;
+    return { ok: true, reason: 'started by this CLI' };
   }
   process.stderr.write('ERROR: Could not start RLM service.\n');
-  return false;
+  return { ok: false, reason: `${probe.reason}; and starting it did not make it answer` };
 }
 
 // ═══════════════════════════════════════════════════════
@@ -293,10 +335,14 @@ async function cmdQuery(args, flags) {
       process.stderr.write(`\n  [DATA FLOW ERROR] RLM service is not running on port ${PORT}\n`);
       process.stderr.write(`  Fix: Start the daemon (it manages RLM) or run: python3 services/rlm-service.py run\n\n`);
     }
-    const reason = err && err.code === 'ECONNREFUSED' ? 'service stopped mid-request' : (err && err.message) || 'unknown error';
+    // TK-2384: name the condition. A 30s timeout is not "the service is down".
+    let reason;
+    if (err && err.code === 'ECONNREFUSED') reason = `connection refused by ${HOST}:${PORT} mid-request — the service stopped between the health probe and the query`;
+    else if (err && err.message === 'Request timeout') reason = `the query exceeded GSD_RLM_REQUEST_TIMEOUT_MS=${REQUEST_TIMEOUT_MS}ms — the service is up and answered the health probe, it did not finish this query`;
+    else reason = `request to ${HOST}:${PORT} failed: ${(err && err.message) || 'unknown error'}`;
     if (shouldFallbackToFiles()) {
       const suggestions = fallbackSuggestReferences(flags, query);
-      printFallbackMessage(suggestions, query);
+      printFallbackMessage(suggestions, query, reason);
       return 0;
     }
     process.stderr.write(`ERROR: RLM request failed (${reason}). Use --dir/--path or start the service.\n`);
@@ -436,22 +482,35 @@ async function cmdSearch(args, flags) {
   return data.ok ? 0 : 1;
 }
 
+/**
+ * cmdHealth(flags) — report the service through the SAME predicate `query` uses.
+ *
+ * TK-2384: this used to print "running" for any response that did not throw, so
+ * it contradicted `query` whenever the service answered but was not ok. It now
+ * calls rlmHealthProbe() and prints the measured reason on failure.
+ *
+ * @returns {Promise<number>} 0 when the probe says up, 1 when it does not.
+ */
 async function cmdHealth(flags) {
-  try {
-    const { data } = await httpRequest('GET', '/health', null, 3000);
-    if (flags.json) {
-      console.log(JSON.stringify(data, null, 2));
-    } else {
-      console.log(`RLM service: ${GREEN}running${RESET} (PID ${data.pid})`);
-      console.log(`  Port: ${data.port}`);
-      console.log(`  Cache: ${data.cache_size}/${data.cache_max} entries`);
-      console.log(`  Max chunk: ${data.max_chunk_chars} chars`);
-    }
-    return 0;
-  } catch {
+  const probe = await rlmHealthProbe();
+
+  if (flags.json) {
+    console.log(JSON.stringify({ up: probe.up, reason: probe.reason, status_code: probe.statusCode, health: probe.data }, null, 2));
+    return probe.up ? 0 : 1;
+  }
+
+  if (!probe.up) {
     console.log(`RLM service: ${YELLOW}not running${RESET}`);
+    console.log(`  ${probe.reason}`);
     return 1;
   }
+
+  const data = probe.data;
+  console.log(`RLM service: ${GREEN}running${RESET} (PID ${data.pid})`);
+  console.log(`  Port: ${data.port}`);
+  console.log(`  Cache: ${data.cache_size}/${data.cache_max} entries`);
+  console.log(`  Max chunk: ${data.max_chunk_chars} chars`);
+  return 0;
 }
 
 async function cmdStart() {
@@ -546,8 +605,23 @@ function fallbackSuggestReferences(flags, query) {
   return suggestions.slice(0, 10).map(s => s.path);
 }
 
-function printFallbackMessage(suggestions, query) {
-  process.stderr.write(`${YELLOW}RLM service unavailable -- falling back to file references.${RESET}\n`);
+/**
+ * printFallbackMessage(suggestions, query, reason) — say WHICH condition fired.
+ *
+ * TK-2384: this printed the single sentence "RLM service unavailable" for four
+ * different conditions — RLM disabled in .planning/config.json, the /health probe
+ * not answering, the connection refused mid-request, and the request exceeding
+ * its timeout. Three of those are false when said of a service that is up, and
+ * `gsd-rlm health` said "running" a second earlier. The reason is now measured by
+ * the caller and printed verbatim.
+ *
+ * @param {string[]} suggestions Files to read instead.
+ * @param {string} query The query that could not be served.
+ * @param {string} reason The measured condition. Required.
+ */
+function printFallbackMessage(suggestions, query, reason) {
+  process.stderr.write(`${YELLOW}RLM query not served -- falling back to file references.${RESET}\n`);
+  process.stderr.write(`${YELLOW}Reason: ${reason || 'UNMEASURED — caller did not supply one'}${RESET}\n`);
   if (query) {
     process.stderr.write(`${DIM}Query was: "${query}"${RESET}\n\n`);
   }
@@ -638,27 +712,30 @@ async function main() {
     process.exit(await cmdCheckConfig(flags));
   }
 
-  // Check if RLM is explicitly disabled via config
+  // Check if RLM is explicitly disabled via config.
+  // TK-2384: this path says nothing about the service — it may be running and
+  // healthy. Saying "unavailable" here is what made `health` and `query`
+  // contradict each other; the reason now names the config.
   if (!isRlmEnabled()) {
     const parsed = parseArgs(rest);
     const query = parsed.positional.join(' ') || '';
     const suggestions = fallbackSuggestReferences(parsed.flags, query);
-    printFallbackMessage(suggestions, query);
+    printFallbackMessage(suggestions, query, 'RLM is disabled by configuration (amauta.rlm_enabled=false in .planning/config.json) — the service itself was not probed and may well be running');
     process.exit(0);
   }
 
   // All other commands need the service
-  const serviceUp = await ensureService();
-  if (!serviceUp) {
+  const service = await ensureService();
+  if (!service.ok) {
     // Check if fallback is enabled
     if (shouldFallbackToFiles()) {
       const parsed = parseArgs(rest);
       const query = parsed.positional.join(' ') || '';
       const suggestions = fallbackSuggestReferences(parsed.flags, query);
-      printFallbackMessage(suggestions, query);
+      printFallbackMessage(suggestions, query, service.reason);
       process.exit(0);
     }
-    die('RLM service is not available and fallback is disabled. Run: gsd-rlm start');
+    die(`RLM service is not available and fallback is disabled (${service.reason}). Run: gsd-rlm start`);
   }
 
   const parsed = parseArgs(rest);
@@ -684,7 +761,14 @@ async function main() {
   process.exit(exitCode);
 }
 
-main().catch((err) => {
-  process.stderr.write(`FATAL: ${err.message}\n`);
-  process.exit(1);
-});
+// TK-2384: run as a CLI, importable as a module. The health predicate is the
+// thing two commands must agree on, so a test has to be able to call it directly
+// instead of inferring it from printed text.
+if (require.main === module) {
+  main().catch((err) => {
+    process.stderr.write(`FATAL: ${err.message}\n`);
+    process.exit(1);
+  });
+} else {
+  module.exports = { rlmHealthProbe, isServiceRunning, HOST, PORT, HEALTH_TIMEOUT_MS, REQUEST_TIMEOUT_MS };
+}

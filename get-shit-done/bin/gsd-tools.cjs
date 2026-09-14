@@ -29,8 +29,14 @@
  *   phase-plan-index <phase>           Index plans with waves and status
  *   websearch <query>                  Search web via Brave API (if configured)
  *     [--limit N] [--freshness day|week|month]
- *   route-executor <files>             Determine executor agent for comma-separated file list
- *                                      Output: {"executor": "executor-backend"} etc.
+ *   route-executor <files>             Determine executor agent for comma-separated FILE LIST.
+ *                                      The argument is PATHS ("src/a.tsx,services/b.py"), never a
+ *                                      task description — a description matches no pattern and
+ *                                      returns executor-general, which is indistinguishable from
+ *                                      "no specialist owns these files". Output names which it was:
+ *                                      {"executor":"executor-backend","input_kind":"file-list",
+ *                                       "matched_agent":"gsd-executor-backend","matched_pattern":"*.py",
+ *                                       "reason":"..."}  (.executor unchanged for existing callers)
  *   reindex [path] [--force]           Trigger rlm-service /reindex for code files in path
  *   audit [domain]                     Run a domain's (or all) read-only detects → POST findings, report sweep
  *     [--scope f1,f2] [--dry-run] [--port N]   --dry-run prints findings JSON without POSTing (daemon-optional)
@@ -203,7 +209,9 @@ function getCapabilityIndex() {
 /**
  * route-executor: Determine which executor agent should handle a set of files.
  *
- * Input: comma-separated file paths (from plan files_modified)
+ * Input: comma-separated file PATHS (from plan files_modified). NOT a task
+ * description — see classifyRoutingInput() below for why the distinction is
+ * reported rather than swallowed (TK-2384).
  * Output: one of: executor-frontend, executor-backend, executor-infra, executor-general
  *
  * Specificity-wins selection (DEBT-04): collects ALL matching (agent, pattern) pairs,
@@ -262,9 +270,49 @@ function patternToRegex(pattern) {
   }
 }
 
-function routeExecutor(filesStr) {
+/**
+ * classifyRoutingInput(tokens) — is this argument a file list at all? (TK-2384)
+ *
+ * routeExecutor()'s contract is a comma-separated file list, but callers have
+ * passed task descriptions. A description matches no file_pattern, so the router
+ * answered `executor-general` with the same confidence it uses for README.md —
+ * three different situations (no specialist owns these files / the argument was
+ * empty / the argument was never a file list) collapsed into one answer with no
+ * way for the caller to tell them apart. That is the blindness, not the routing.
+ *
+ * A token is path-like when it carries no whitespace: `Dockerfile`, `k8s/x.yaml`
+ * and `README.md` all qualify; `Pedro's provisioning debt` does not.
+ *
+ * Returns: 'empty' | 'file-list' | 'mixed' | 'not-a-file-list'
+ */
+function classifyRoutingInput(tokens) {
+  if (!tokens.length) return 'empty';
+  const pathLike = tokens.filter(t => !/\s/.test(t)).length;
+  if (pathLike === tokens.length) return 'file-list';
+  if (pathLike === 0) return 'not-a-file-list';
+  return 'mixed';
+}
+
+/**
+ * routeExecutorDetailed(filesStr) — routeExecutor() plus the evidence for its answer.
+ *
+ * Returns { executor, input_kind, matched_agent, matched_pattern, reason }.
+ * `executor` is byte-identical to routeExecutor()'s return; the rest is additive
+ * so existing callers reading `.executor` are unaffected.
+ */
+function routeExecutorDetailed(filesStr) {
   const files = (filesStr || '').split(',').map(f => f.trim()).filter(Boolean);
-  if (!files.length) return 'executor-general';
+  const inputKind = classifyRoutingInput(files);
+
+  if (!files.length) {
+    return {
+      executor: 'executor-general',
+      input_kind: inputKind,
+      matched_agent: null,
+      matched_pattern: null,
+      reason: 'empty file list — nothing to route on; executor-general is a default here, not a match',
+    };
+  }
 
   const caps = getCapabilityIndex();
   const joined = files.join('\n');
@@ -306,7 +354,17 @@ function routeExecutor(filesStr) {
     }
   }
 
-  if (!matches.length) return 'executor-general';
+  if (!matches.length) {
+    return {
+      executor: 'executor-general',
+      input_kind: inputKind,
+      matched_agent: null,
+      matched_pattern: null,
+      reason: inputKind === 'file-list'
+        ? `no file_pattern in agent-capabilities.json matched any of ${files.length} path(s) — executor-general is the fallback, not a specialist match`
+        : `argument is ${inputKind}: route-executor takes a comma-separated FILE LIST, not a description — nothing here could match a file_pattern`,
+    };
+  }
 
   // Sort: highest specificity score first; on tie, lowest priority index (frontend wins)
   matches.sort((a, b) => {
@@ -314,7 +372,23 @@ function routeExecutor(filesStr) {
     return a.priority - b.priority;
   });
 
-  return matches[0].agentId.replace('gsd-', '');
+  const winner = matches[0];
+  return {
+    executor: winner.agentId.replace('gsd-', ''),
+    input_kind: inputKind,
+    matched_agent: winner.agentId,
+    matched_pattern: winner.pattern,
+    reason: `${winner.pattern} (specificity ${winner.score}) is the most specific of ${matches.length} matching pattern(s)`,
+  };
+}
+
+/**
+ * routeExecutor(filesStr) — the string-only form every internal caller uses.
+ * Unchanged contract: returns executor-frontend | executor-backend | executor-infra |
+ * executor-ai | executor-mobile-* | executor-wearables | executor-general.
+ */
+function routeExecutor(filesStr) {
+  return routeExecutorDetailed(filesStr).executor;
 }
 
 // ─── Circuit Breaker (BEHAV-02) ─────────────────────────────────────────────
@@ -3712,10 +3786,21 @@ Examples:
 
     case 'route-executor': {
       // Determine which executor agent should handle a set of files.
-      // Input: comma-separated file paths (args[1])
-      // Output: JSON {"executor": "executor-backend"} etc.
-      const executor = routeExecutor(args[1]);
-      process.stdout.write(JSON.stringify({ executor }) + '\n');
+      // Input: comma-separated file PATHS (args[1]) — NOT a task description.
+      // Output: JSON {"executor": "...", "input_kind": "...", "matched_agent": ...,
+      //               "matched_pattern": ..., "reason": "..."}
+      // `.executor` is unchanged; the other fields are additive (TK-2384). A caller
+      // that passes a description gets executor-general AND a warning on stderr —
+      // stdout stays machine-readable so `| python3 -c ...json.load` keeps working.
+      const routed = routeExecutorDetailed(args[1]);
+      if (routed.input_kind === 'not-a-file-list' || routed.input_kind === 'mixed') {
+        process.stderr.write(
+          `[route-executor] WARNING: argument looks like a description, not a file list ` +
+          `(input_kind=${routed.input_kind}). Pass comma-separated paths, e.g. ` +
+          `"src/App.tsx,services/api.py". Returning ${routed.executor} by fallback, not by match.\n`
+        );
+      }
+      process.stdout.write(JSON.stringify(routed) + '\n');
       break;
     }
 
