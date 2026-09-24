@@ -27,8 +27,17 @@
  *   --fresh            Bypass cache, re-chunk all files (for debugging)
  *
  * Environment:
- *   GSD_RLM_PORT       Service port (default: 18798)
- *   GSD_RLM_HOST       Service host (default: 127.0.0.1)
+ *   GSD_RLM_PORT                 Service port (default: 18798)
+ *   GSD_RLM_HOST                 Service host (default: 127.0.0.1)
+ *   GSD_RLM_DEADLINE_MS          Wall-clock bound on the WHOLE command
+ *                                (default: 20000; 0 disables)
+ *   GSD_RLM_HEALTH_TIMEOUT_MS    /health probe timeout (default: 3000)
+ *   GSD_RLM_REQUEST_TIMEOUT_MS   per-request socket timeout (default: 30000)
+ *
+ * Exit codes:
+ *   0  served, or degraded to file references (a documented fallback)
+ *   1  refusal or error
+ *   3  deadline exceeded — the command stalled and did NOT fall back (TK-2384)
  */
 
 const http = require('http');
@@ -63,6 +72,22 @@ const PORT = parseInt(process.env.GSD_RLM_PORT || '18798', 10);
 // service reads as a missing one, so they are named, defaulted and overridable.
 const HEALTH_TIMEOUT_MS = parseInt(process.env.GSD_RLM_HEALTH_TIMEOUT_MS || '3000', 10);
 const REQUEST_TIMEOUT_MS = parseInt(process.env.GSD_RLM_REQUEST_TIMEOUT_MS || '30000', 10);
+// TK-2384: a WALL-CLOCK deadline over the WHOLE command, not a socket timeout.
+// Measured against the live RLM on 2026-09-24 (daemon pid 92805, RLM pid 50196,
+// /health 200 status=ok, index_size 163 020, rlm_restarts_lifetime 21):
+//   gsd-rlm query ... --dir ~/Code/barerouter   ->  ZERO bytes, still running at
+//   30s, killed by SIGALRM (rc 142)
+// A socket timeout does not cover that. req.on('timeout') is inactivity on ONE
+// socket, while the command can stall in the health probe, in startService()'s
+// 25-iteration poll (worst case 25 x (200ms + HEALTH_TIMEOUT_MS) = 80s, silent on
+// stdout), or between them. This is the outer bound over all of it.
+// 0 disables. Default 20s, comfortably under the 25s at which lanes gave up.
+const DEADLINE_MS = parseInt(process.env.GSD_RLM_DEADLINE_MS || '20000', 10);
+// Exit codes: 0 served (or a documented file-reference fallback), 1 refusal or
+// error, 3 deadline exceeded. 3 is distinct because a stall is NOT a degradation:
+// falling back to file references and exiting 0 is precisely how a hung RLM
+// passes for a working one.
+const EXIT_DEADLINE = 3;
 const PLUGIN_ROOT = path.resolve(__dirname, '..', '..');
 const RLM_SERVICE = path.join(PLUGIN_ROOT, 'services', 'rlm-service.py');
 
@@ -678,10 +703,35 @@ async function cmdCheckConfig(flags) {
 // CLI Router
 // ═══════════════════════════════════════════════════════
 
+/**
+ * armDeadline(label) — client-side wall-clock bound on the whole command.
+ *
+ * @param {string} label The command being run, named in the message.
+ * @returns {NodeJS.Timeout|null} The unref'd timer, or null when disabled.
+ */
+function armDeadline(label) {
+  if (!(DEADLINE_MS > 0)) return null;
+  const timer = setTimeout(() => {
+    const secs = Math.round(DEADLINE_MS / 1000);
+    process.stderr.write(
+      `RLM: timed out after ${secs}s (${label}) -- no answer from ${HOST}:${PORT}.\n` +
+      `A stall is not a degradation, so no file-reference fallback was printed and the ` +
+      `exit code is ${EXIT_DEADLINE}: exiting 0 here is how a hung RLM passes for a working ` +
+      `one. Raise GSD_RLM_DEADLINE_MS to wait longer, or set it to 0 to disable it.\n`
+    );
+    process.exit(EXIT_DEADLINE);
+  }, DEADLINE_MS);
+  // unref: the deadline must never be the reason the process stays alive.
+  if (typeof timer.unref === 'function') timer.unref();
+  return timer;
+}
+
 async function main() {
   const rawArgs = process.argv.slice(2);
   const command = rawArgs[0];
   const rest = rawArgs.slice(1);
+
+  armDeadline(rawArgs.length ? rawArgs.join(' ').slice(0, 80) : 'no command');
 
   if (!command) {
     die(

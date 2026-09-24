@@ -43,7 +43,7 @@ const SCENARIOS = {
   unavailable503: { code: 503, body: { status: 'error', error: 'reindex in progress' } },
 };
 const ports = {};
-let left = Object.keys(SCENARIOS).length;
+let left = Object.keys(SCENARIOS).length + 1;   // +1 for the black hole below
 for (const [name, s] of Object.entries(SCENARIOS)) {
   const srv = http.createServer((req, res) => {
     const payload = JSON.stringify(s.body);
@@ -55,6 +55,14 @@ for (const [name, s] of Object.entries(SCENARIOS)) {
     if (--left === 0) fs.writeFileSync(out, JSON.stringify(ports));
   });
 }
+// The black hole: completes the TCP connection, reads the request, and never
+// answers. This is the shape the live RLM took on 2026-09-14 and again on
+// 2026-09-24 -- /health 200 ok on one call, zero bytes and no return on the next.
+const hole = http.createServer(() => { /* deliberately no response, ever */ });
+hole.listen(0, '127.0.0.1', () => {
+  ports.blackhole = hole.address().port;
+  if (--left === 0) fs.writeFileSync(out, JSON.stringify(ports));
+});
 `;
 
 /** Synchronous sleep that does not need a subprocess. */
@@ -104,6 +112,10 @@ function cli(scenario, args, opts = {}) {
       GSD_RLM_PORT: String(PORTS[scenario]),
       GSD_RLM_HOST: '127.0.0.1',
       GSD_RLM_HEALTH_TIMEOUT_MS: '2000',
+      // Every case is deadline-bounded: startService()'s 25-iteration poll costs
+      // 25 x (200ms + health timeout), which against a black hole is 55s. A test
+      // file that can hang is not a test file.
+      GSD_RLM_DEADLINE_MS: String(opts.deadlineMs !== undefined ? opts.deadlineMs : 12000),
       ...(opts.fakePython ? { PATH: `${fakeBinDir}:${process.env.PATH}` } : {}),
     },
   });
@@ -191,5 +203,63 @@ describe('RLM-AGREE-02: a fallback names the condition that fired', () => {
     assert.equal(q.status, 0);
     assert.match(q.stderr, /Reason:/, q.stderr);
     assert.match(q.stderr, /HTTP 503/, `the fallback did not carry the measured reason: ${q.stderr}`);
+  });
+});
+
+describe('RLM-AGREE-03: a stall ends the command, non-zero, and does not fall back', () => {
+  // Measured against the live RLM on 2026-09-24 (daemon pid 92805, RLM pid 50196,
+  // /health 200 status=ok, index_size 163 020, rlm_restarts_lifetime 21):
+  //   gsd-rlm query ... --dir ~/Code/barerouter  ->  ZERO bytes, still running at
+  //   30s, killed by SIGALRM (rc 142).
+  // A socket timeout does not cover that: the command can stall in the health
+  // probe, in startService()'s 25-iteration poll (silent on stdout, 80s worst
+  // case), or between them. The bound is wall-clock over the whole command.
+  // Strictly SHORTER than GSD_RLM_HEALTH_TIMEOUT_MS (2000) on purpose. With the
+  // two equal, the deadline and the health timeout come due in the same tick and
+  // the order is undefined -- measured: two identical invocations, one exiting 3
+  // and the other printing the fallback. The deadline guarantees the command
+  // ENDS; it does not promise to win a tie against a legitimate degradation.
+  const DEADLINE = 1200;
+
+  it('ARMING: a healthy probe under the same deadline still exits 0', () => {
+    // Without this, a deadline that fired unconditionally would satisfy every
+    // assertion below and this block would be a gate that cannot see.
+    const h = cli('healthy', ['health'], { deadlineMs: DEADLINE });
+    assert.equal(h.status, 0, `the deadline fires on a service that answers: ${h.stderr}`);
+    assert.doesNotMatch(h.stderr, /timed out after/);
+  });
+
+  it('query against a black hole exits 3 and says "RLM: timed out after Ns"', () => {
+    const started = Date.now();
+    const q = cli('blackhole', ['query', 'anything', '--dir', os.tmpdir()], { deadlineMs: DEADLINE, fakePython: true });
+    const elapsed = Date.now() - started;
+    assert.notEqual(q.status, 0, 'a stalled query must not exit 0');
+    assert.equal(q.status, 3, `expected the deadline exit code 3, got ${q.status}: ${q.stderr}`);
+    assert.match(q.stderr, /RLM: timed out after \d+s/, q.stderr);
+    assert.ok(elapsed < 20000, `the deadline did not bound the command: ${elapsed}ms`);
+  });
+
+  it('and it does NOT degrade a stall to the file-reference fallback', () => {
+    const q = cli('blackhole', ['query', 'anything', '--dir', os.tmpdir()], { deadlineMs: DEADLINE, fakePython: true });
+    // Grep for the fallback's OWN banner and its stdout block. An earlier version
+    // of this assertion matched /falling back to file references/, which the
+    // deadline message itself contained -- the test failed on the wording of the
+    // fix rather than on its behaviour.
+    assert.doesNotMatch(q.stderr, /RLM query not served/,
+      'a stall printed the fallback banner, which is how it used to exit 0');
+    assert.doesNotMatch(q.stdout, /Suggested files/,
+      'a stall printed file suggestions, so it degraded instead of ending');
+  });
+
+  it('health against a black hole is bounded too, not just query', () => {
+    const h = cli('blackhole', ['health'], { deadlineMs: DEADLINE });
+    assert.notEqual(h.status, 0);
+    assert.match(h.stderr + h.stdout, /timed out after \d+s|not running/, h.stderr + h.stdout);
+  });
+
+  it('GSD_RLM_DEADLINE_MS=0 disables the deadline, so the opt-out exists', () => {
+    // Bounded by the health probe (2000ms) instead of by the deadline.
+    const h = cli('blackhole', ['health'], { deadlineMs: 0 });
+    assert.doesNotMatch(h.stderr, /timed out after/, 'the deadline fired although it was disabled');
   });
 });
