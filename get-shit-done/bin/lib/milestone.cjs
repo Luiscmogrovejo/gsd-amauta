@@ -233,6 +233,41 @@ function cmdMilestoneComplete(cwd, version, options, raw) {
   };
 
   output(result, raw);
+
+  // FIDEL-03: post-milestone reindex hook (fire-and-forget).
+  // Milestone completion must never block on RLM availability.
+  try {
+    const http = require('http');
+    const body = JSON.stringify({ path: '.', force: false });
+    const req = http.request({
+      hostname: '127.0.0.1',
+      port: parseInt(process.env.GSD_RLM_PORT || '18798', 10),
+      path: '/reindex',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+      },
+    }, (res) => {
+      res.resume();
+      res.on('error', () => {});
+      if (typeof res.socket?.unref === 'function') {
+        res.socket.unref();
+      }
+    });
+    req.on('socket', (socket) => {
+      if (typeof socket.unref === 'function') {
+        socket.unref();
+      }
+    });
+    req.on('error', () => {
+      process.stderr.write('[FIDEL-03] post-milestone reindex: RLM unreachable — skipped\n');
+    });
+    req.write(body);
+    req.end();
+  } catch (_err) {
+    process.stderr.write('[FIDEL-03] post-milestone reindex: error initiating reindex — skipped\n');
+  }
 }
 
 module.exports = {

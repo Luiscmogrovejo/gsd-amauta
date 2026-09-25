@@ -60,6 +60,7 @@ ZERO_FEATURES = {
     "has_migration": False,
     "has_api_change": False,
     "security_sensitivity": 0,
+    "top_level_dir_width": 0,
 }
 
 MAX_FEATURES = {
@@ -70,6 +71,7 @@ MAX_FEATURES = {
     "has_migration": True,
     "has_api_change": True,
     "security_sensitivity": 10,
+    "top_level_dir_width": 0,
 }
 
 
@@ -93,6 +95,7 @@ class TestScoreFeatures:
             "files_expected": 5, "estimated_loc": 120, "test_impact": 3,
             "dependency_depth": 2, "has_migration": False, "has_api_change": True,
             "security_sensitivity": 4,
+            "top_level_dir_width": 0,
         }
         r1, r2, r3 = score_features(mid), score_features(mid), score_features(mid)
         assert r1 == r2 == r3, f"Non-deterministic: {r1}, {r2}, {r3}"

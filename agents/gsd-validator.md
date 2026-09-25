@@ -66,6 +66,13 @@ T-phase must include actual command output (shell prompt `$`, exit codes, test r
 
 **Gate 4: PR URL (code tasks only)**
 D-phase, E-phase, or task notes must include a PR URL or "merged" evidence.
+EXCEPTION, keyed on whether the commit was PUSHED -- not on whether a remote
+exists. A commit SHA ("commit <sha>") is accepted while the commit is NOT
+reachable from any remote-tracking ref (git branch -r --contains <sha> empty).
+A PR URL is required once it is, because only then does a PR exist to point at.
+This covers both local-only repositories and commits deliberately held unpushed.
+Do not fail a task for honouring an architecture that forbids a remote, and do
+not let this gate drive a decision to publish.
 
 **Override:** Use `--force` for legitimate exceptions (local scaffold, config-only tasks).
 

@@ -21,7 +21,7 @@ Out of scope: replacing amauta-daemon (daemon continues to exist for REST API co
 - **Extend `services/amauta-mcp.py` in place.** Same file, same entry point (`python3 services/amauta-mcp.py [--sse]`). Replace every `_call_daemon(...)` with direct PG/Valkey access via reusable helpers. Existing tool definitions (`amauta/search-code`, `memory-store`, `memory-search`, `memory-distill`, `research`) stay; their handler bodies are rewritten to talk to PG/Valkey directly.
 - **NO daemon dependency for normal operation.** When PG is reachable, MCP runs standalone. When PG is down, the server still starts (stdio + SSE come up); each tool/resource returns structured errors matching the v2.5+ degradation pattern (`{"error": "pg_unavailable", "detail": "..."}`); the server does NOT crash.
 - **Daemon-fallback REMOVED**, not retained. MCP-01 is explicit: "Does NOT require daemon." Keeping a fallback re-introduces the coupling the requirement deletes. If a downstream consumer needs daemon-backed behavior, they can call the daemon REST API directly.
-- **`amauta/complexity-score` tool added** — missing from the current MCP surface. Calls `services/complexity_scorer.py` `score()` directly (Phase 42 SCALE-01 entry point).
+- **`amauta/complexity-score` tool added** — missing from the current MCP surface. Calls `services/complexity_scorer.py` `extract_features()` + `score_features()` directly (Phase 42 SCALE-01 entry points — verified at services/complexity_scorer.py:227 and :343; there is no `score()` function).
 
 ### Area 2 — Direct PG client (connection pool)
 
@@ -45,7 +45,7 @@ Every tool keeps its existing schema (where one exists) and routes to a direct-D
 3. **`amauta/memory-search`** — hybrid BM25 + pgvector over PG memory. Same retrieval shape as `search-code`. Top-K=3, cosine_floor=0.6 (matches Phase 43 defaults).
 4. **`amauta/memory-distill`** — distillation/summary of similar memories. Reuses existing logic via direct PG SELECT.
 5. **`amauta/research`** — Memory → SKB → WebFetch chain (per current MCP file comment: "Full 5-step chain requires gsd-researcher agent invocation" — MCP version is the implementable 3-step subset). NO new research scope here.
-6. **`amauta/complexity-score`** — calls `services/complexity_scorer.py` `score()` with the input task descriptor. Returns the 0-100 score + the per-dimension breakdown. NEW in Phase 46 (was missing).
+6. **`amauta/complexity-score`** — calls `services/complexity_scorer.py` `extract_features()` then `score_features()` with the input task descriptor (the real Phase 42 SCALE-01 API; no `score()` aggregate function exists). Returns the 0-100 score + the per-dimension breakdown. NEW in Phase 46 (was missing).
 
 **Tool error contract (frozen):** every tool returns either a successful result object OR `{"error": "<error_code>", "detail": "<message>"}`. Error codes: `pg_unavailable`, `valkey_unavailable`, `invalid_input`, `not_found`, `internal_error`. Server NEVER exits because a tool failed.
 
@@ -101,7 +101,7 @@ Every tool keeps its existing schema (where one exists) and routes to a direct-D
 - `services/pg_store.py` — `generate_embedding()` (voyage-code-3 1024-dim), `store_memory()`, hybrid retrieval helpers. Reuse verbatim.
 - `services/amauta_daemon_redis.py` — Valkey client init pattern, `VALKEY_URL`/`REDIS_URL` env handling.
 - `services/infra_detect.py` — PG cascade (local → Docker → SQLite). MCP uses this at startup to resolve connection URL.
-- `services/complexity_scorer.py` — Phase 42 SCALE-01 `score()` entry point for the new `amauta/complexity-score` tool.
+- `services/complexity_scorer.py` — Phase 42 SCALE-01 `extract_features()` + `score_features()` entry points (services/complexity_scorer.py:227 + :343) for the new `amauta/complexity-score` tool. (No `score()` function exists — call the two-step API.)
 - `services/skill_invocation_store.py` — Phase 43 hybrid retrieval pattern (RRF + cosine floor + 90-day recency). `amauta/memory-search` should follow this shape (cosine_floor=0.6, k=3, RRF k=60).
 
 ### Phase 47 integration hook (in scope to STRUCTURE, not to ship)
@@ -122,7 +122,7 @@ Every tool keeps its existing schema (where one exists) and routes to a direct-D
 - `services/amauta-mcp.py` lines 1-50 already handle env loading + stdio/SSE transport setup. Keep.
 - `services/amauta-mcp.py` tool DEFINITIONS (Tool objects with name/description/schema) — keep verbatim; only handler bodies change.
 - `services/pg_store.py` — embedding generation + memory ops + helper functions.
-- `services/complexity_scorer.py` `score()` — direct call for new tool.
+- `services/complexity_scorer.py` `extract_features()` + `score_features()` — direct two-step call for new tool (no `score()` aggregate exists; use these per-step functions verified at lines 227 and 343).
 - `services/amauta_daemon_redis.py` — Valkey init pattern.
 
 ### Established Patterns

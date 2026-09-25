@@ -91,6 +91,8 @@ Out of scope for this phase: replacing the static reference body, milestone-wide
   - `plan_progress.counts == {pass: N, fail: 0, pending: 0} for all features` → action `/amauta:plan-phase <next>`, reasoning notes plan complete
   - `drift_signals not empty` → action `git status / review STATE.md`, reasoning cites the drift (e.g., "git 3 commits ahead of STATE")
   - Default / no data → action `/amauta:progress`, reasoning "no clear next step from current signals"
+
+  _Note: the order above is informational. §Specifics below ships the load-bearing precedence._
 - **No registry, no cache, no LLM.** Rules table is hard-coded in `gsd-tools bearings`. Adding a rule = code change. Matches Phase 43 Area 8 (filesystem-only registry, no `help-routes.json`).
 
 ### Claude's Discretion

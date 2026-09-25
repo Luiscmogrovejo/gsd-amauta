@@ -42,6 +42,7 @@ Out of scope: install/uninstall/upgrade execution (Phase 49), remote module regi
 - **`ResolveResult` shape (frozen):**
   ```python
   {
+    "schema_version": "1.0",
     "ok": bool,
     "install_order": list[str] | None,  # topologically sorted module names, or None on conflict
     "conflicts": list[{
@@ -50,9 +51,10 @@ Out of scope: install/uninstall/upgrade execution (Phase 49), remote module regi
       "requested_module": str,
     }],
     "missing": list[str],  # required modules absent from the input set
+    "cycle": list[str] | None,  # cycle node names if a dep cycle is detected; None otherwise
   }
   ```
-- **Cycle detection:** if A requires B and B requires A → conflict report flags `cycle: true` in addition to `conflicts: []`. Resolver fails-closed.
+- **Cycle detection:** if A requires B and B requires A → resolver returns `cycle: [<node names forming the cycle>]` as a first-class top-level field (NOT a flag inside `conflicts`); when `cycle` is non-None, `install_order` is `None` and `ok` is `False`. Resolver fails-closed via return-dict, not exception.
 - **Determinism:** identical input → identical output. Module ordering inside `install_order` is topological + alphabetical tiebreak.
 
 ### Area 3 — Validation CLI

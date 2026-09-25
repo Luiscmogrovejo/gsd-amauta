@@ -178,6 +178,9 @@ function cmdInitPlanPhase(cwd, phase, raw, phaseDirOverride) {
   }
 
   const config = loadConfig(cwd);
+  const scopeWidthCeiling = (config.fidelity && typeof config.fidelity.scope_width_ceiling === 'number')
+    ? config.fidelity.scope_width_ceiling
+    : 4;
   const phaseInfo = phaseDirOverride
     ? validatePhaseDirOverride(cwd, phaseDirOverride)
     : findPhaseInternal(cwd, phase);
@@ -188,6 +191,39 @@ function cmdInitPlanPhase(cwd, phase, raw, phaseDirOverride) {
     ? reqMatch[1].replace(/[\[\]]/g, '').split(',').map(s => s.trim()).filter(Boolean).join(', ')
     : null;
   const phase_req_ids = (reqExtracted && reqExtracted !== 'TBD') ? reqExtracted : null;
+
+  let scopeWidthWarning = null;
+  if (phaseInfo?.directory) {
+    const phaseDirFull = path.join(cwd, phaseInfo.directory);
+    const topDirs = new Set();
+    try {
+      const planFiles = fs.readdirSync(phaseDirFull).filter(f => f.endsWith('-PLAN.md') || f === 'PLAN.md');
+      for (const planFile of planFiles) {
+        try {
+          const content = fs.readFileSync(path.join(phaseDirFull, planFile), 'utf-8');
+          const taskRe = /^<task\s+id="([^"]+)">([\s\S]*?)^<\/task>/gmi;
+          let match;
+          while ((match = taskRe.exec(content)) !== null) {
+            const body = match[2] || '';
+            const filesMatches = [...body.matchAll(/^\s{2}<files_expected>\s*$([\s\S]*?)^\s{2}<\/files_expected>\s*$/gmi)];
+            const filesMatch = filesMatches.length > 0 ? filesMatches[filesMatches.length - 1] : null;
+            if (!filesMatch) continue;
+            for (const line of filesMatch[1].split(/\r?\n/)) {
+              const stripped = line.trim();
+              if (!stripped.startsWith('- ') || stripped.startsWith('- []')) continue;
+              const candidate = stripped.slice(2).trim();
+              if (!candidate || candidate === '[]' || candidate.endsWith(':')) continue;
+              const parts = candidate.replace(/\\/g, '/').split('/');
+              if (parts.length >= 2 && parts[0]) topDirs.add(parts[0]);
+            }
+          }
+        } catch {}
+      }
+    } catch {}
+    if (topDirs.size > scopeWidthCeiling) {
+      scopeWidthWarning = `SCOPE_WIDTH_WARNING: Phase ${phase} spans ${topDirs.size} top-level dirs (${[...topDirs].sort().join(', ')}), exceeding the ceiling of ${scopeWidthCeiling}. Consider splitting into narrower plans.`;
+    }
+  }
 
   const result = {
     // Models
@@ -209,6 +245,8 @@ function cmdInitPlanPhase(cwd, phase, raw, phaseDirOverride) {
     phase_slug: phaseInfo?.phase_slug || null,
     padded_phase: phaseInfo?.phase_number?.padStart(2, '0') || null,
     phase_req_ids,
+    scope_width_warning: scopeWidthWarning,
+    scope_width_ceiling: scopeWidthCeiling,
 
     // Existing artifacts
     has_research: phaseInfo?.has_research || false,
@@ -251,6 +289,9 @@ function cmdInitPlanPhase(cwd, phase, raw, phaseDirOverride) {
   }
 
   output(result, raw);
+  if (scopeWidthWarning) {
+    process.stderr.write(`\n[SCOPE-WIDTH] ${scopeWidthWarning}\n`);
+  }
 }
 
 function cmdInitNewProject(cwd, raw) {

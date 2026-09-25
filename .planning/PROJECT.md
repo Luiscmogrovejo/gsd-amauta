@@ -80,6 +80,15 @@ Every RPETD phase must *see* what the other phases have already learned — past
 - **Positioning (discipline layer as headline):** README repositioning, public RPETD compliance scorecard (per-task: phases ran / validator verdict / divergence count / manifest fidelity), honest BMAD comparison doc.
 - **Post-launch Hardening:** triage + close GitHub issues from the post-v3.3.0-publish window, `npx gsd-amauta init` + doctor UX hardening, doc gaps from real users, performance debt on slow paths. (Gated on v3.3.0 npm publish + a real-usage data window.)
 
+**Expansion 2026-07-02 (harness-audit upgrade tracks, phases 65+):** the 2026-07 full-system audit (`docs/harness-audit-2026-07.md`) extended v3.4 with 7 tracks / 33 requirements — the longest scope of any milestone to date:
+- **Retrieval Unification (RETR):** route `/query` through the Phase 27 hybrid pipeline (AST+embeddings+RRF+rerank+graph — currently dead on the common path), fix label-match zero-scoring, fix MCP search-code ignoring its query, one staleness authority, wire the never-built dependency graph.
+- **Memory Ranking & Lifecycle (MEMR):** applied_count citation boost in ranking, hybrid FTS+vector RRF for memory, fix the dead Claude-distillation code path, signal-preserving distillation, bi-temporal validity + write-time ADD/UPDATE/DELETE/NOOP memory ops.
+- **Enforcement Hooks (HOOK):** PreToolUse manifest + claim gates, Stop completion gate, session handoff ledger, kill switch — moves enforcement from advisory/post-hoc to physically blocking. Requires TOOL-01 catalog as allowlist source.
+- **Mobile/Wearable Build Loops (MOBL):** XcodeBuildMCP + mobile-mcp/Gradle loops so the 5 new specialist executors (mobile-android/ios/cross, wearables, ai — shipped 2026-07-02) can build, test, and verify on simulators/emulators.
+- **Mobile AST Grammars (ASTG):** tree-sitter Kotlin/Swift/Go/Rust/Java chunking (after RETR).
+- **E2E Verification (E2E):** boot health + synthetic transactions across PG→Valkey→daemon→RLM→MCP→hooks; fix live test pollution in STATE.md.
+- **Observability (OBS):** OTel GenAI spans + optional self-hosted Langfuse, per-agent token/cost reporting (after TEL).
+
 **Body metaphor sequence:** brain → sight → hands → metabolism → nervous system → birth → gathering → federation → dialect → **mirror (v3.4)**. The Mirror: the harness sees itself — both via telemetry and via positioning that names what it actually is — and fixes how it works.
 
 ## Competitive Landscape
@@ -288,6 +297,7 @@ Every RPETD phase must *see* what the other phases have already learned — past
 | Behavioral rules over code enforcement | Agent .md prompts are the enforcement mechanism, not linters | ✓ Good — 820 assertions verify rules exist |
 | Canary suite with McNemar's test | Statistical degradation detection after model updates | ✓ Good — 50 deterministic tests, <5 min |
 | Code-based graders only in v3.0 | Keeps portable (no API key for evals); model-based = v3.1 | ✓ Good — 15/15 scenarios pass |
+| Phase 64 (Post-launch Hardening) deferred indefinitely, not "blocked" | Operator (2026-07-04): this harness is for personal use/upgrade, not a public npm launch seeking real-user issue reports — HARD-01..04's entire premise (triage real GitHub issues, harden against real install failures reported by strangers) doesn't apply. The v3.3.0 npm publish + real-usage-data gate is moot, not merely unmet. | — Pending: revisit only if public distribution becomes a goal |
 
 ---
-*Last updated: 2026-05-15 after v3.3 "The Dialect" shipped + v3.4 "The Mirror" scoped — strategic pivot away from A2A/registry feature-surface (BMAD prior art) toward harness effectiveness: phase-file fidelity, tool reach, role personas, telemetry, discipline-layer positioning*
+*Last updated: 2026-07-04 — recorded Phase 64 as scope-deferred (personal-use project, not seeking public npm adoption); v3.4 expansion phases 65-69 shipped 2026-07-03, Phase 68 shipped 2026-07-04*

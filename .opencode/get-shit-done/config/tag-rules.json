@@ -1,0 +1,50 @@
+{
+  "_comment": "Tag governance rules for gsd-memory. Read by BOTH gsd-memory.cjs (Node) and pg_store.py (Python). Banned tags are stripped; if nothing remains the learning is rejected. Synonyms normalize variants. Vocabulary is advisory (not strict). Tiers drive auto-trim ordering: domain > technique > scope > meta. See learning-format.md for agent guidance.",
+  "version": "1.0",
+  "banned": [
+    "best-practice",
+    "general",
+    "lesson",
+    "insight"
+  ],
+  "synonyms": {
+    "db": "database",
+    "postgres": "postgresql",
+    "pg": "postgresql",
+    "k8s": "kubernetes",
+    "ts": "typescript",
+    "js": "javascript",
+    "py": "python",
+    "ci": "ci-cd",
+    "cd": "ci-cd",
+    "auth": "authentication",
+    "oidc": "openid-connect",
+    "sso": "single-sign-on",
+    "tf": "terraform",
+    "fe": "frontend",
+    "be": "backend",
+    "e2e": "end-to-end",
+    "perf": "performance",
+    "mem": "memory"
+  },
+  "vocabulary": {
+    "database": ["postgresql", "mysql", "sqlite", "connection-pool", "migration", "index", "jsonb", "gin-index", "query-plan", "transaction", "deadlock", "foreign-key", "schema"],
+    "api": ["rest", "graphql", "http", "endpoint", "request-validation", "rate-limit", "pagination", "idempotency", "openapi", "webhook"],
+    "testing": ["unit", "integration", "e2e", "fixture", "mock", "stub", "pytest", "jest", "vitest", "coverage", "flake", "test-isolation", "red-green", "regression"],
+    "infrastructure": ["docker", "kubernetes", "helm", "terraform", "ci-cd", "github-actions", "volume", "networking", "dns", "load-balancer", "ingress"],
+    "security": ["injection", "xss", "csrf", "path-traversal", "rate-limit", "input-validation", "secret-rotation", "credential-leak", "least-privilege", "audit-log"],
+    "frontend": ["react", "vue", "svelte", "css", "tailwind", "state-management", "hydration", "accessibility", "seo", "bundle-size"],
+    "backend": ["nodejs", "python", "go", "rust", "java", "async", "concurrency", "worker-pool", "graceful-shutdown"],
+    "performance": ["latency", "throughput", "memoization", "cache-warming", "query-optimization", "n-plus-1", "lazy-loading", "batching", "profile"],
+    "authentication": ["openid-connect", "oauth2", "jwt", "session", "single-sign-on", "saml", "mfa", "token-refresh"],
+    "caching": ["redis", "lru", "ttl", "cache-invalidation", "stampede", "dog-piling", "etag"],
+    "deployment": ["blue-green", "canary", "rollback", "feature-flag", "migration-strategy", "zero-downtime"],
+    "monitoring": ["prometheus", "grafana", "logging", "tracing", "sli-slo", "alerting", "dashboard", "healthcheck"]
+  },
+  "tiers": {
+    "domain": ["postgresql", "mysql", "sqlite", "redis", "kubernetes", "docker", "react", "vue", "nodejs", "python", "go", "rust", "openid-connect", "oauth2", "jwt", "prometheus", "grafana", "terraform", "helm"],
+    "technique": ["connection-pool", "memoization", "idempotency", "pagination", "rate-limit", "query-optimization", "n-plus-1", "cache-invalidation", "red-green", "stampede", "graceful-shutdown", "lazy-loading", "batching", "token-refresh", "input-validation", "path-traversal"],
+    "scope": ["backend", "frontend", "database", "api", "testing", "infrastructure", "security", "performance", "authentication", "caching", "deployment", "monitoring", "e2e", "unit", "integration"],
+    "meta": ["pattern", "pitfall", "convention", "architecture", "policy", "workflow", "process", "delivery", "tool-usage"]
+  }
+}

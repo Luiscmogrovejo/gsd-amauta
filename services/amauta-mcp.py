@@ -882,33 +882,26 @@ async def _run_stdio():
 
 def _run_sse():
     """Run MCP server over SSE on port MCP_SSE_PORT."""
+    import uvicorn
     from mcp.server.sse import SseServerTransport
-    import http.server as _http
-    from socketserver import ThreadingMixIn
+    from starlette.applications import Starlette
+    from starlette.responses import Response
+    from starlette.routing import Mount, Route
 
-    transport = SseServerTransport(MCP_SSE_PATH)
+    transport = SseServerTransport("/messages/")
 
-    class _SSEHandler(_http.BaseHTTPRequestHandler):
-        def log_message(self, fmt, *args): pass  # suppress default logs
-        def do_GET(self):
-            if self.path == MCP_SSE_PATH or self.path.startswith(MCP_SSE_PATH + "?"):
-                asyncio.run(transport.handle_sse(self.rfile, self.wfile, server))
-            else:
-                self.send_response(404)
-                self.end_headers()
-        def do_POST(self):
-            if self.path.startswith("/messages"):
-                asyncio.run(transport.handle_post_message(self.rfile, self.wfile, server))
-            else:
-                self.send_response(404)
-                self.end_headers()
+    async def handle_sse(request):
+        async with transport.connect_sse(request.scope, request.receive, request._send) as (read_stream, write_stream):
+            await server.run(read_stream, write_stream, server.create_initialization_options())
+        return Response()
 
-    class _ThreadedServer(ThreadingMixIn, _http.HTTPServer):
-        daemon_threads = True
+    app = Starlette(routes=[
+        Route(MCP_SSE_PATH, endpoint=handle_sse),
+        Mount("/messages/", app=transport.handle_post_message),
+    ])
 
-    httpd = _ThreadedServer(("0.0.0.0", MCP_SSE_PORT), _SSEHandler)
     print(f"[amauta-mcp] SSE transport on port {MCP_SSE_PORT}{MCP_SSE_PATH}", flush=True)
-    httpd.serve_forever()
+    uvicorn.run(app, host="0.0.0.0", port=MCP_SSE_PORT, log_level="warning")
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 

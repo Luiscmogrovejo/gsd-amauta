@@ -1,0 +1,19 @@
+{
+  "_comment": "SINGLE SOURCE OF TRUTH for Claude model IDs (MODL-01 currency, MODL-06 centralization). Every runtime — gsd-memory.cjs, memory_classifier.py, amauta-daemon.py — resolves model aliases through THIS file. When a tier ships a newer version, update its id here ONCE and every caller picks it up. Do NOT scatter claude-* literals anywhere else.",
+  "aliases": {
+    "fable": "claude-fable-5",
+    "opus": "claude-opus-4-8",
+    "sonnet": "claude-sonnet-5",
+    "haiku": "claude-haiku-4-5-20251001"
+  },
+  "fallback": {
+    "fable": "opus"
+  },
+  "notes": {
+    "fable": "Fable 5 — latest creative-tier model. Used when routed explicitly; degrades to the latest Opus (see fallback.fable) when unavailable (no access / model-not-found). Toggle availability with GSD_FABLE_AVAILABLE=0.",
+    "opus": "Opus 4.8 — latest flagship / Fable fallback target.",
+    "sonnet": "Sonnet 5 — latest balanced reasoning tier (R/P/E default).",
+    "haiku": "Haiku 4.5 — latest cheap/fast tier (T/D/compaction/classification default)."
+  },
+  "updated": "2026-07-10"
+}
