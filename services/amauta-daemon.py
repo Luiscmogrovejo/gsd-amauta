@@ -1013,6 +1013,49 @@ def _memory_retention_thread():
 # ── Request Body Size Limit ────────────────────────────────────────────────────
 MAX_BODY_SIZE = int(os.environ.get("AMAUTA_MAX_BODY_SIZE", str(10 * 1024 * 1024)))  # 10MB default
 
+def _probe_store(store):
+    """Probe a store for LIVENESS and return (probe_result, is_live).
+
+    TK-2386. The /health payload used to derive "pg_available" from
+    `_pg_store is not None` — whether an object had been constructed at
+    startup. Measured 2026-09-13: that returned true with 5433 CLOSED (the
+    container was stopped) and true again with 5433 OPEN. Identical in both
+    states, because it never looked at the database. Meanwhile PGStore.health()
+    (pg_store.py:834) runs a real SELECT 1 through the pool, and the same
+    handler already called it two lines below to fill the "pg_health" field.
+    The probe sat next to the field that lied about it.
+
+    Every consumer reads pg_available as liveness: amauta.py:3739
+    (`"available": daemon.get("pg_available")`), gsd-research.cjs
+    (`detail: 'PG connected'`), gsd-amauta.cjs (`PostgreSQL: ok`), and
+    gsd-memory's `health` printed "PG: connected" at exit 0 while every
+    /api/memory/* route returned 500 "connection pool is closed".
+
+    Args:
+        store: a store object exposing health() -> {"status": "ok"|"error", ...},
+            or None when no store of that kind is configured.
+
+    Returns:
+        tuple[dict|None, bool]: the probe result (None when store is None) and
+        whether the store is actually answering.
+
+    Raises:
+        Nothing. A store whose health() itself raises is reported as not live —
+        an exception from the probe is evidence against liveness, never for it.
+
+    Example:
+        >>> _probe_store(None)
+        (None, False)
+    """
+    if store is None:
+        return None, False
+    try:
+        probe = store.health()
+    except Exception as e:  # noqa: BLE001 - a raising probe means "not live"
+        return {"status": "error", "error": _safe_error(e)}, False
+    return probe, bool(isinstance(probe, dict) and probe.get("status") == "ok")
+
+
 def _safe_error(e):
     """Sanitize exception messages to prevent DSN/credential leakage."""
     msg = str(e)
@@ -1397,6 +1440,28 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             return
 
         if path == "/health":
+            # TK-2386: `pg_available` used to be `_pg_store is not None` -- true
+            # for as long as the process had constructed a store object at
+            # startup, whatever happened to the database afterwards. Measured
+            # 2026-09-13: it returned true with 5433 CLOSED (Docker stopped) and
+            # true again with 5433 OPEN. The same value in both states: the
+            # field was a constant, not a probe, and it asserted a dependency it
+            # never checked. Every consumer reads it as liveness
+            # (amauta.py:3739 `"available": daemon.get("pg_available")`,
+            # gsd-research.cjs `detail: 'PG connected'`, gsd-amauta.cjs
+            # `PostgreSQL: ok`), and gsd-memory's `health` printed
+            # "PG: connected" at exit 0 while every /api/memory/* route
+            # answered 500 "connection pool is closed".
+            #
+            # PGStore.health() (pg_store.py:834) is a real probe -- it runs
+            # SELECT 1 through the pool -- and this handler ALREADY called it
+            # for the `pg_health` field a few lines below. The probe was sitting
+            # next to the field that lied about it. It is now run ONCE, up
+            # front, and feeds both, so this costs no extra round trip.
+            _pg_probe, _pg_live = _probe_store(_pg_store)
+            _sqlite_probe, _sqlite_live = _probe_store(
+                _sqlite_store if not _pg_store else None
+            )
             health = {
                 "status": "ok",
                 "daemon": "amauta-daemon",
@@ -1404,7 +1469,11 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 "data_dir": DATA_DIR,
                 "amauta_py": AMAUTA_PY,
                 "pid": os.getpid(),
-                "pg_available": _pg_store is not None,
+                # TK-2386: probe-backed, not "an object exists".
+                "pg_available": _pg_live,
+                # Retained separately because `pg_available` no longer answers
+                # it: whether PG is the CONFIGURED backend, healthy or not.
+                "pg_configured": _pg_store is not None,
                 "backend": _infra_result.get("backend") if _infra_result else ("postgresql" if _pg_store else "file"),
                 "features": _infra_result.get("features", []) if _infra_result else [],
                 "rlm_managed": _rlm_enabled,
@@ -1427,15 +1496,28 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 "oidc_issuer": _oidc.issuer if _oidc and _oidc.is_enabled() else None,
             }
             if _pg_store:
-                health["pg_health"] = _pg_store.health()
+                health["pg_health"] = _pg_probe
             elif _sqlite_store:
-                health["sqlite_health"] = _sqlite_store.health()
+                health["sqlite_health"] = _sqlite_probe if _sqlite_probe is not None else _sqlite_store.health()
 
             # INF-05: Pipeline status and data flow health
             service_errors = []
             # Check PG
             if _pg_store is None and _sqlite_store is None:
                 service_errors.append("PostgreSQL: no database connection -- memory and task storage unavailable")
+            elif _pg_store is not None and not _pg_live:
+                # TK-2386: present but not answering. This branch did not exist,
+                # so a closed pool reported pipeline_status "healthy" with an
+                # empty service_errors list while every memory route 500ed.
+                service_errors.append(
+                    "PostgreSQL: configured but not responding (%s) -- memory and task storage unavailable"
+                    % (_pg_probe or {}).get("error", "probe failed")
+                )
+            elif _sqlite_store is not None and not _pg_store and not _sqlite_live:
+                service_errors.append(
+                    "SQLite: configured but not responding (%s) -- memory and task storage unavailable"
+                    % (_sqlite_probe or {}).get("error", "probe failed")
+                )
             # Check Redis
             if _redis_enabled and _HAS_REDIS and not _check_redis_health():
                 service_errors.append("Redis: cache unreachable -- falling back to in-memory/file cache (slower)")
@@ -1451,7 +1533,9 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 service_errors.append("Perplexity API: key not set -- web research disabled")
 
             # Compute pipeline status
-            critical_down = _pg_store is None and _sqlite_store is None
+            # TK-2386: was `_pg_store is None and _sqlite_store is None` -- a
+            # store object that could not answer SELECT 1 still counted as up.
+            critical_down = not _pg_live and not _sqlite_live
             degraded = len(service_errors) > 0
             pipeline_status = "critical" if critical_down else ("degraded" if degraded else "healthy")
 

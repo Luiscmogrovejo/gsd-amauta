@@ -43,6 +43,7 @@ function cli(args, dataDir, opts = {}) {
       env: {
         ...process.env,
         GSD_AMAUTA_PORT: '19999',
+        GSD_MEMORY_FILE_MODE: '1', // TK-2386: drives the memory CLI at a dead port on purpose
         GSD_AMAUTA_NO_AUTO_START: '1',
         AMAUTA_DATA_DIR: dataDir,
         ...(opts.env || {}),
@@ -70,6 +71,7 @@ function mem(args, dataDir, opts = {}) {
       env: {
         ...process.env,
         GSD_AMAUTA_PORT: '19999',
+        GSD_MEMORY_FILE_MODE: '1', // TK-2386: drives the memory CLI at a dead port on purpose
         GSD_AMAUTA_NO_AUTO_START: '1',
         AMAUTA_DATA_DIR: dataDir,
         ...(opts.env || {}),

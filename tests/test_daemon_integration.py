@@ -56,10 +56,25 @@ def _extract_health_fields(source: str) -> set:
     # brace to the same indentation as 'health = {', skipping nested dict braces.
     # Backreference \1 matches exactly the indent of 'health = {', so the nested
     # api_keys closing '},' (deeper indent) is NOT treated as the dict close.
-    pattern = r'if path == "/health":\n( +)health = \{(.*?)\n\1\}'
-    m = re.search(pattern, source, re.DOTALL)
+    #
+    # TK-2386: this used to require 'health = {' on the line IMMEDIATELY after
+    # 'if path == "/health":'. The handler now probes the store for liveness
+    # before building the payload, so slice from the route marker and find the
+    # dict after it rather than demanding adjacency.
+    marker = 'if path == "/health":'
+    start = source.find(marker)
+    if start == -1:
+        raise AssertionError("the /health route is missing from the daemon source")
+    pattern = r'\n( +)health = \{(.*?)\n\1\}'
+    m = re.search(pattern, source[start:], re.DOTALL)
     if not m:
-        return set()
+        # TK-2386: was 'return set()'. An empty set is not a measurement — it
+        # means the extractor could not see the payload, which must never be
+        # reported as "the payload has no fields".
+        raise AssertionError(
+            "could not extract the /health payload dict — the extractor is blind, "
+            "so no verdict about its fields is possible"
+        )
     block = m.group(2)
     # Extract quoted key names from "key": value lines
     return set(re.findall(r'"(\w+)":', block))

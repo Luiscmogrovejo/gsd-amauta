@@ -24,6 +24,17 @@ const MEMORY_CLI = path.join(__dirname, '..', 'get-shit-done', 'bin', 'gsd-memor
 /**
  * Run a CLI tool with the daemon port set to an unused port (59999)
  * to simulate daemon-not-running conditions.
+ *
+ * TK-2386: these assertions were written when a silent degrade to file mode
+ * at exit 0 WAS the intended contract (TK-0059), so every `assert.ok(r.success)`
+ * below was pinning what later turned out to be the defect: on 2026-09-13 six
+ * learnings were reported "Stored" at exit 0 and none of them was retrievable,
+ * because the answer had come from .planning files rather than PG and nothing
+ * in the exit code distinguished the two. File mode itself is still a real
+ * case for an operator with no daemon, so it survives behind an explicit
+ * opt-in — and these tests now take that opt-in deliberately, which is exactly
+ * what they were always testing. The DEFAULT (no opt-in) is asserted to refuse
+ * at a non-zero exit in tests/86-01-memory-cli-retrievability.test.cjs.
  */
 function runNoDaemon(cliPath, args, cwd = process.cwd()) {
   try {
@@ -35,6 +46,7 @@ function runNoDaemon(cliPath, args, cwd = process.cwd()) {
         GSD_AMAUTA_PORT: '59999',         // Non-existent port → ECONNREFUSED
         GSD_AMAUTA_HOST: '127.0.0.1',
         GSD_AMAUTA_NO_AUTO_START: '1',    // Skip 5s daemon startup wait in tests
+        GSD_MEMORY_FILE_MODE: '1',        // TK-2386: opt in to degraded file mode ON PURPOSE
       },
       cwd,
       timeout: 10000,

@@ -43,6 +43,16 @@
  * Environment (auto-loaded from .env):
  *   GSD_AMAUTA_PORT      Daemon port (default: 18799)
  *   GSD_AMAUTA_HOST      Daemon host (default: 127.0.0.1)
+ *   GSD_MEMORY_FILE_MODE TK-2386: set to '1' to opt in to degraded
+ *                        .planning file-mode when the daemon or its PG is
+ *                        unreachable. Unset (the default), a memory command
+ *                        REFUSES with exit 3 rather than answering from a
+ *                        different store at exit 0.
+ *
+ * Exit codes:
+ *   0  the command reached PG and did what it says it did
+ *   1  usage error, daemon error, or a write that landed no citable row
+ *   3  TK-2386: refused — PG-backed memory was not reachable (see above)
  */
 
 const http = require('http');
@@ -367,6 +377,65 @@ function httpRequest(method, urlPath, body = null, timeoutMs = 15000) {
 let _fileMode = false;
 const FILE_MODE_WARN = '\x1b[93m[file mode]\x1b[0m PG unavailable — using file-based memory\n';
 
+// ═══════════════════════════════════════════════════════
+// TK-2386: degradation is refused, not absorbed
+// ═══════════════════════════════════════════════════════
+//
+// Measured 2026-09-13: the daemon on 18799 answered GET /health with
+// {"status":"ok","pg_available":true,...,"pg_health":{"status":"error",
+// "error":"connection pool is closed"}} while every POST /api/memory/*
+// returned 500. Because tryDaemon() mapped every failure to `return null`,
+// each command took its .planning file-mode branch and exited 0. Six
+// learnings were reported "Stored", and 18 subsequent searches found none of
+// them — the searches were answered out of a DIFFERENT store than the one the
+// writes had been aimed at. Nothing in the exit code could tell the two
+// stores apart, which is the whole defect: the CLI reported success while
+// storing nothing retrievable.
+//
+// cmdBackfillEmbeddings() was the one command that already refused (exit 1)
+// instead of degrading; this generalizes that contract to every command.
+// It retires the Phase 66 MEMR-07 "resolved-non-2xx-degrades-like-a-
+// connection-failure" contract, which was the false green itself.
+//
+// File mode is NOT removed — an operator working with no daemon at all is a
+// real case. It now requires GSD_MEMORY_FILE_MODE=1, so a degraded answer is
+// something a caller asked for rather than something that happened to them.
+const REFUSE_EXIT_CODE = 3;
+
+/** @type {{klass: string, detail: string, target: string}|null} */
+let _degradation = null;
+let _currentCommand = 'memory';
+
+/**
+ * Refuse the command unless the caller explicitly opted in to file mode.
+ *
+ * Called at every file-mode branch. Names the degradation class, the target
+ * and the opt-in, then exits non-zero — a caller (or a gate) can therefore
+ * distinguish "answered from PG" from "answered from .planning files".
+ *
+ * @returns {void} Returns only when GSD_MEMORY_FILE_MODE=1; otherwise exits.
+ */
+function requireDaemonOrRefuse() {
+  if (process.env.GSD_MEMORY_FILE_MODE === '1') {
+    process.stderr.write(FILE_MODE_WARN + '\x1b[93m[file mode]\x1b[0m opted in via GSD_MEMORY_FILE_MODE=1 — results do NOT come from PG.\n');
+    return;
+  }
+  const d = _degradation || {
+    klass: 'daemon unreachable',
+    detail: 'no usable response',
+    target: `${HOST}:${PORT}`,
+  };
+  process.stderr.write(
+    `\x1b[91m[memory] REFUSING\x1b[0m ${_currentCommand}: PostgreSQL-backed memory is not reachable — ` +
+    `${d.klass} (${d.detail}) @ ${d.target}.\n` +
+    `  Nothing was read from, or written to, PG — and nothing was written to ${PLANNING_DIR}.\n` +
+    `  Answering from .planning file mode instead would be a different store at exit 0 — ` +
+    `that is how TK-2386's six learnings were reported stored and were not retrievable.\n` +
+    `  Repair the daemon, or set GSD_MEMORY_FILE_MODE=1 to opt in to degraded file mode deliberately.\n`
+  );
+  process.exit(REFUSE_EXIT_CODE);
+}
+
 function ensureDirs() {
   if (!fs.existsSync(PLANNING_DIR)) fs.mkdirSync(PLANNING_DIR, { recursive: true });
   if (!fs.existsSync(MEMORY_DIR)) fs.mkdirSync(MEMORY_DIR, { recursive: true });
@@ -503,32 +572,40 @@ async function tryDaemon(method, urlPath, body = null) {
     if (res.status === 503) {
       // The only route class that actually means "PG unavailable".
       _fileMode = true;
+      _degradation = { klass: 'PG unavailable', detail: 'HTTP 503', target };
       if (warn) {
-        process.stderr.write(`\x1b[93m[memory]\x1b[0m PG unavailable (${res.status}) — ${target} — write falling back to file mode.\n`);
+        process.stderr.write(`\x1b[93m[memory]\x1b[0m PG unavailable (${res.status}) — ${target} — degraded; not answered from PG.\n`);
       }
       return null;
     }
     if (res.status >= 500) {
       // Any other 5xx is a route-handler exception -- do NOT claim PG is down.
       _fileMode = true;
+      _degradation = { klass: 'daemon route error', detail: `HTTP ${res.status}`, target };
       if (warn) {
-        process.stderr.write(`\x1b[93m[memory]\x1b[0m daemon error (${res.status}) — ${target} — write falling back to file mode.\n`);
+        process.stderr.write(`\x1b[93m[memory]\x1b[0m daemon error (${res.status}) — ${target} — degraded; not answered from PG.\n`);
       }
       return null;
     }
     if (res.status === 404) {
       // Stale daemon: route doesn't exist on the running process yet.
       _fileMode = true;
+      _degradation = { klass: 'stale daemon route', detail: `HTTP ${res.status}`, target };
       if (warn) {
-        process.stderr.write(`\x1b[93m[memory]\x1b[0m daemon does not know this route (stale daemon? restart it) — ${target} (${res.status}) — write falling back to file mode.\n`);
+        process.stderr.write(`\x1b[93m[memory]\x1b[0m daemon does not know this route (stale daemon? restart it) — ${target} (${res.status}) — degraded; not answered from PG.\n`);
       }
       return null;
     }
     return res;
-  } catch {
+  } catch (err) {
     _fileMode = true;
+    _degradation = {
+      klass: 'daemon unreachable',
+      detail: (err && (err.code || err.message)) || 'connection failed',
+      target,
+    };
     if (method === 'POST' || method === 'PUT') {
-      process.stderr.write(`\x1b[93m[memory]\x1b[0m Daemon unreachable — ${target} — write falling back to file mode.\n`);
+      process.stderr.write(`\x1b[93m[memory]\x1b[0m Daemon unreachable — ${target} — degraded; not answered from PG.\n`);
     }
     return null; // Daemon unreachable
   }
@@ -663,7 +740,18 @@ async function cmdSearch(args) {
 
   const body = { query, limit: parseInt(args.limit || '20', 10) };
   if (args.agent) body.agent_id = args.agent;
-  if (args.project) body.project_id = args.project;
+  // TK-2386: this read `if (args.project) body.project_id = args.project;`.
+  // cmdStore ALWAYS sends body.project_id = autoProjectId(args.project) — the
+  // CALLER's cwd basename — but search omitted it unless --project was passed,
+  // and the daemon then resolved it with _resolve_project_id (amauta-daemon.py
+  // :1258) to the basename of the DAEMON's own cwd. Writes from ~/Code/anything
+  // therefore landed in one project and every search looked in another: on
+  // 2026-09-13, 0 of 6 freshly-stored learnings were retrievable across 18
+  // searches while `list` (which sends project_id=None, i.e. NO filter) showed
+  // five of them by id. The seam was project scoping, not FTS or embeddings —
+  // so this makes search resolve the project exactly as store does, rather
+  // than widening the search.
+  body.project_id = autoProjectId(args.project);
   if (args.source) body.source = args.source;
   // MEM-01: --include-noise bypasses default exclusion of task_event/rpetd_phase
   if (args['include-noise']) body.include_noise = true;
@@ -680,7 +768,7 @@ async function cmdSearch(args) {
 
   if (!res) {
     // File-based fallback
-    process.stderr.write(FILE_MODE_WARN);
+    requireDaemonOrRefuse();
     const results = fileSearch(query).slice(0, body.limit);
     if (args.json) {
       console.log(JSON.stringify({ results, count: results.length, mode: 'file' }, null, 2));
@@ -717,6 +805,77 @@ async function cmdSearch(args) {
   console.log('');
 }
 
+/**
+ * TK-2386: report a /api/memory/store 200 honestly.
+ *
+ * The daemon's store route (amauta-daemon.py:2743-2787) answers 200 with FIVE
+ * different shapes, four of which carry no `id`:
+ *   {id, stored:true, ...}                            — a row landed
+ *   {stored:false, dedup_skipped:true, existing_id}   — no row; content already present
+ *   {stored:false, noop:true, existing_id}            — no row at all
+ *   {stored:false, deleted_target}                    — no row at all
+ *   {stored:..., ...unenumerated sentinel}            — may carry no id
+ * Callers printed `Stored ${res.data.id}` on all five, which is where the
+ * measured `Stored undefined` at exit 0 came from: the caller was told the
+ * write succeeded and given no mem-id to cite, because nothing had landed.
+ *
+ * A write that produced nothing citable now exits non-zero. A dedup hit is
+ * NOT a failure — the content is retrievable under existing_id — so it exits
+ * 0 and prints that id, which is the id the caller should cite.
+ *
+ * @param {object} data Parsed JSON body of the daemon's 200 response.
+ * @param {object} opts
+ * @param {string} opts.source Source label to echo back to the caller.
+ * @param {boolean} [opts.json] Emit raw JSON instead of a human line.
+ * @param {string} [opts.suffix] Extra context for the human line.
+ * @returns {boolean} true when a citable row landed; exits non-zero otherwise.
+ * @example
+ *   reportStoreResult(res.data, { source: 'lesson-learned', json: args.json });
+ */
+function reportStoreResult(data, opts) {
+  const d = data || {};
+  const source = opts.source;
+  const suffix = opts.suffix ? `, ${opts.suffix}` : '';
+
+  if (opts.json) console.log(JSON.stringify(d, null, 2));
+
+  if (d.dedup_skipped) {
+    if (!opts.json) {
+      const sim = d.similarity != null ? ` similarity ${d.similarity}` : '';
+      console.log(
+        `\x1b[93mNot stored\x1b[0m — deduplicated into existing ${d.existing_id}${sim}. ` +
+        `Cite ${d.existing_id}.`
+      );
+    }
+    return false;
+  }
+
+  if (d.noop || d.deleted_target !== undefined || d.stored === false) {
+    if (!opts.json) {
+      console.error(
+        `\x1b[91mNot stored\x1b[0m — the daemon accepted the request and inserted no row ` +
+        `(${JSON.stringify(d)}). There is no mem-id to cite.`
+      );
+    }
+    process.exit(1);
+  }
+
+  if (!d.id) {
+    if (!opts.json) {
+      console.error(
+        `\x1b[91mNot stored\x1b[0m — the daemon returned 200 with no mem-id (${JSON.stringify(d)}). ` +
+        `An id-less success cannot be cited or retrieved, so it is not reported as a store.`
+      );
+    }
+    process.exit(1);
+  }
+
+  if (!opts.json) {
+    console.log(`\x1b[92mStored\x1b[0m ${d.id} (source: ${source}${suffix})`);
+  }
+  return true;
+}
+
 async function cmdStore(args) {
   const text = args._positional.join(' ');
   if (!text) {
@@ -742,7 +901,7 @@ async function cmdStore(args) {
 
   if (!res) {
     // File-based fallback
-    process.stderr.write(FILE_MODE_WARN);
+    requireDaemonOrRefuse();
     // Phase 10 LEARN-02: structured metadata is lost in file mode — keep
     // the block text intact but warn so agents know to re-store once the
     // daemon is reachable.
@@ -765,11 +924,8 @@ async function cmdStore(args) {
     process.exit(1);
   }
 
-  if (args.json) {
-    console.log(JSON.stringify(res.data, null, 2));
-  } else {
-    console.log(`\x1b[92mStored\x1b[0m ${res.data.id} (source: ${source})`);
-  }
+  // TK-2386: never `Stored ${res.data.id}` unconditionally — see reportStoreResult.
+  reportStoreResult(res.data, { source, json: args.json });
 
   // TK-0054: Check if auto-distill is needed
   await maybeAutoDistill();
@@ -870,18 +1026,33 @@ async function cmdLearn(args) {
       process.exit(1);
     }
 
-    const body = { text, source: 'auto_learning', project_id: autoProjectId(null) };
+    // TK-2386: this line read
+    //     { text, source: 'auto_learning', project_id: autoProjectId(null) }
+    // so --source, --tags and --project were accepted by the parser and then
+    // silently discarded on the only form of `learn` the harness actually
+    // prescribes (`learn "<text>" --source lesson-learned --tags ... --project ...`,
+    // HARNESS.md). Every lane's D-phase learning landed as auto_learning, with
+    // no tags, under the CWD project. The --structured path below already
+    // honoured args.source; only this free-text path did not.
+    const source = args.source || 'auto_learning';
+    const body = { text, source, project_id: autoProjectId(args.project) };
     if (args.agent) body.agent_id = args.agent;
+    if (args.tags) {
+      body.tags = normalizeTagsList(
+        (Array.isArray(args.tags) ? args.tags : String(args.tags).split(','))
+          .map(t => t.trim()).filter(Boolean)
+      );
+    }
 
     const res = await tryDaemon('POST', '/api/memory/store', body);
 
     if (!res) {
-      process.stderr.write(FILE_MODE_WARN);
+      requireDaemonOrRefuse();
       const id = fileLearn(text);
       if (args.json) {
-        console.log(JSON.stringify({ id, stored: true, mode: 'file' }, null, 2));
+        console.log(JSON.stringify({ id, stored: true, mode: 'file', source }, null, 2));
       } else {
-        console.log(`\x1b[92mStored\x1b[0m ${id} (source: auto_learning, file mode → STATE.md)`);
+        console.log(`\x1b[92mStored\x1b[0m ${id} (source: ${source}, file mode → STATE.md)`);
       }
       // TK-0054: Still check auto-distill even in file mode (counts file entries)
       await maybeAutoDistill();
@@ -893,11 +1064,8 @@ async function cmdLearn(args) {
       process.exit(1);
     }
 
-    if (args.json) {
-      console.log(JSON.stringify(res.data, null, 2));
-    } else {
-      console.log(`\x1b[92mStored\x1b[0m ${res.data.id} (source: auto_learning)`);
-    }
+    // TK-2386: honest reporting of the daemon's id-less 200 shapes.
+    reportStoreResult(res.data, { source, json: args.json });
 
     // TK-0054: Check if auto-distill is needed (same as cmdStore)
     await maybeAutoDistill();
@@ -937,7 +1105,7 @@ async function cmdLearn(args) {
       if (args.agent) body.agent_id = args.agent;
       const res = await tryDaemon('POST', '/api/memory/store', body);
       if (!res) {
-        process.stderr.write(FILE_MODE_WARN);
+        requireDaemonOrRefuse();
         const id = fileLearn(textFromPositional);
         if (args.json) {
           console.log(JSON.stringify({ id, stored: true, mode: 'file', fallback: 'parse_failed' }, null, 2));
@@ -951,8 +1119,10 @@ async function cmdLearn(args) {
         console.error('Error:', res.data.error || 'Unknown error');
         process.exit(1);
       }
-      if (args.json) console.log(JSON.stringify(res.data, null, 2));
-      else console.log(`\x1b[92mStored\x1b[0m ${res.data.id} (source: auto_learning, free-text fallback)`);
+      // TK-2386: honest reporting of the daemon's id-less 200 shapes.
+      reportStoreResult(res.data, {
+        source: 'auto_learning', json: args.json, suffix: 'free-text fallback',
+      });
       await maybeAutoDistill();
       return;
     }
@@ -1093,7 +1263,7 @@ async function cmdList(args) {
   const res = await tryDaemon('GET', url);
 
   if (!res) {
-    process.stderr.write(FILE_MODE_WARN);
+    requireDaemonOrRefuse();
     const results = fileList();
     if (args.json) {
       console.log(JSON.stringify({ results, count: results.length, mode: 'file' }, null, 2));
@@ -1146,7 +1316,7 @@ async function cmdCount(args) {
   const res = await tryDaemon('GET', '/api/memory/count');
 
   if (!res) {
-    process.stderr.write(FILE_MODE_WARN);
+    requireDaemonOrRefuse();
     const count = fileCount();
     if (args.json) {
       console.log(JSON.stringify({ count, mode: 'file' }, null, 2));
@@ -1580,13 +1750,45 @@ async function cmdHealth(args) {
     const res = await httpRequest('GET', '/health');
     if (args.json) {
       console.log(JSON.stringify(res.data, null, 2));
+      // TK-2386: the exit code must agree with the payload in --json too, or a
+      // gate reading `health --json` inherits exactly the false green this
+      // task closes.
+      const jh = res.data.pg_health || null;
+      if (!res.data.pg_available || (jh && jh.status && jh.status !== 'ok')) {
+        process.exit(1);
+      }
       return;
     }
     const d = res.data;
     console.log(`Daemon: ${d.status === 'ok' ? '\x1b[92mok\x1b[0m' : '\x1b[91merror\x1b[0m'} (PID ${d.pid})`);
-    console.log(`PG:     ${d.pg_available ? '\x1b[92mconnected\x1b[0m' : '\x1b[91mnot available\x1b[0m'}`);
-    if (d.pg_health) {
-      console.log(`PG DSN: ${d.pg_health.dsn_host || 'unknown'}`);
+
+    // TK-2386: this printed `PG: connected` off d.pg_available alone and
+    // exited 0. d.pg_available is a startup-time capability flag; the LIVE
+    // state is d.pg_health. On 2026-09-13 the daemon answered
+    //   {"status":"ok","pg_available":true,
+    //    "pg_health":{"status":"error","error":"connection pool is closed"}}
+    // so `health` reported PG connected at exit 0 while every POST
+    // /api/memory/* returned 500 and every command silently degraded to file
+    // mode. `health` is the instrument the operator reaches for FIRST, so a
+    // health check that cannot go red is what hid the other four seams.
+    const pgh = d.pg_health || null;
+    const pgDegraded = !!(pgh && pgh.status && pgh.status !== 'ok');
+    if (!d.pg_available) {
+      console.log('PG:     \x1b[91mnot available\x1b[0m');
+    } else if (pgDegraded) {
+      console.log(`PG:     \x1b[91mDEGRADED\x1b[0m — ${pgh.error || pgh.status}`);
+    } else {
+      console.log('PG:     \x1b[92mconnected\x1b[0m');
+    }
+    if (pgh) {
+      console.log(`PG DSN: ${pgh.dsn_host || 'unknown'}`);
+    }
+    if (!d.pg_available || pgDegraded) {
+      console.error(
+        '\x1b[91mmemory is not usable:\x1b[0m the daemon is up but its PostgreSQL ' +
+        'backing is not. Memory reads and writes will not reach PG.'
+      );
+      process.exit(1);
     }
   } catch (err) {
     console.error(`\x1b[91mDaemon not reachable:\x1b[0m ${err.message}`);
@@ -1612,7 +1814,7 @@ async function cmdCrossProject(args) {
   const res = await tryDaemon('POST', '/api/memory/cross-project', body);
 
   if (!res) {
-    process.stderr.write(FILE_MODE_WARN);
+    requireDaemonOrRefuse();
     // File fallback: just do a normal search (no cross-project in file mode)
     const results = fileSearch(query).slice(0, body.limit);
     if (args.json) {
@@ -1673,7 +1875,7 @@ async function cmdAutoCapture(args) {
 
   if (!res) {
     // File-based fallback
-    process.stderr.write(FILE_MODE_WARN);
+    requireDaemonOrRefuse();
     const id = fileStore(context, 'session-learning');
     if (args.json) {
       console.log(JSON.stringify({ id, stored: true, mode: 'file' }, null, 2));
@@ -1707,7 +1909,10 @@ async function cmdSemanticSearch(args) {
   }
 
   const body = { query, limit: parseInt(args.limit || '20', 10) };
-  if (args.project) body.project_id = args.project;
+  // TK-2386: same store/search project asymmetry as cmdSearch — resolve the
+  // project the way cmdStore does so a stored row is reachable from the cwd
+  // that stored it.
+  body.project_id = autoProjectId(args.project);
   if (args.source) body.source = args.source;
   // MEM-01: --include-noise bypasses default exclusion of task_event/rpetd_phase
   if (args['include-noise']) body.include_noise = true;
@@ -1715,7 +1920,7 @@ async function cmdSemanticSearch(args) {
   const res = await tryDaemon('POST', '/api/memory/semantic-search', body);
 
   if (!res) {
-    process.stderr.write(FILE_MODE_WARN);
+    requireDaemonOrRefuse();
     // Fall back to regular file search (no embeddings in file mode)
     const results = fileSearch(query).slice(0, body.limit);
     if (args.json) {
@@ -2836,6 +3041,9 @@ async function main() {
 
   const command = rawArgs[0];
   const args = parseArgs(rawArgs.slice(1));
+
+  // TK-2386: name the command in any degradation refusal.
+  _currentCommand = command;
 
   const commands = {
     'search': cmdSearch,

@@ -32,7 +32,10 @@ function py(args, dataDir) {
   try {
     const out = execFileSync('python3', [PY, ...args], {
       encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, AMAUTA_DATA_DIR: dataDir, NO_COLOR: '1', GSD_AMAUTA_PORT: '19999' },
+      env: {
+        ...process.env, AMAUTA_DATA_DIR: dataDir, NO_COLOR: '1', GSD_AMAUTA_PORT: '19999',
+        GSD_MEMORY_FILE_MODE: '1', // TK-2386: drives the memory CLI at a dead port on purpose
+      },
       cwd: dataDir, timeout: 15000,
     });
     return { ok: true, out: out.trim(), err: '' };
@@ -45,7 +48,11 @@ function run(bin, args, dataDir, env = {}) {
   try {
     const out = execFileSync(process.execPath, [bin, ...args], {
       encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, GSD_AMAUTA_PORT: '19999', GSD_AMAUTA_NO_AUTO_START: '1', AMAUTA_DATA_DIR: dataDir, ...env },
+      env: {
+        ...process.env, GSD_AMAUTA_PORT: '19999', GSD_AMAUTA_NO_AUTO_START: '1',
+        GSD_MEMORY_FILE_MODE: '1', // TK-2386: drives the memory CLI at a dead port on purpose
+        AMAUTA_DATA_DIR: dataDir, ...env,
+      },
       cwd: dataDir, timeout: 15000,
     });
     return { ok: true, out: out.trim(), err: '' };
