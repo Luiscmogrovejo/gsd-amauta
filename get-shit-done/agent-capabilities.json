@@ -197,7 +197,8 @@
         ".github/workflows/*",
         "terraform/*",
         "k8s/*",
-        "nginx.conf"
+        "nginx.conf",
+        "*.sh"
       ],
       "task_types": [
         "execution",

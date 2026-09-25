@@ -112,6 +112,12 @@ else
       # Route to executor using shared helper (single source of truth)
       # gsd-tools.cjs routeExecutor: tightened infra regex eliminates false positives
       # (e.g., src/config.ts -> backend NOT infra; .github/ISSUE_TEMPLATE.md -> general NOT infra)
+      # CONTRACT (TK-2384): route-executor takes a comma-separated FILE LIST, never a
+      # task description. A description matches no file_pattern and comes back as
+      # executor-general, indistinguishable from "no specialist owns these files".
+      # The JSON carries input_kind (file-list | mixed | not-a-file-list | empty) and
+      # reason; a non-file-list also warns on stderr, which this pipeline discards.
+      # An EMPTY $PLAN_FILES is therefore a routing hole, not a routing answer.
       EXECUTOR=$(node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" route-executor "$PLAN_FILES" 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('executor','executor-general'))" 2>/dev/null || echo "executor-general")
       echo "[ROUTING] Plan ${plan}: files='${PLAN_FILES}' -> ${EXECUTOR}"
 
