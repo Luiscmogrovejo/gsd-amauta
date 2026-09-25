@@ -32,6 +32,7 @@ from decimal import Decimal
 try:
     import psycopg2
     import psycopg2.extras
+    import psycopg2.pool
     from psycopg2.pool import ThreadedConnectionPool
     HAS_PG = True
 except ImportError:
@@ -708,8 +709,12 @@ class PGStore:
         try:
             conn = self._pool.getconn()
             conn.autocommit = False
-        except (psycopg2.OperationalError, psycopg2.InterfaceError):
-            # Initial getconn failed — try reconnecting once
+        except (psycopg2.OperationalError, psycopg2.InterfaceError, psycopg2.pool.PoolError):
+            # Initial getconn failed — try reconnecting once. PoolError is the
+            # "connection pool is closed" state a failed _connect() leaves behind
+            # (closeall ran, the new pool never built); without it here the store
+            # stays dead until the daemon restarts while /health reports ok.
+            # (2026-09-25: eight days on a closed pool.)
             if conn:
                 try:
                     self._pool.putconn(conn, close=True)

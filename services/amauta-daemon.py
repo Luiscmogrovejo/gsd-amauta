@@ -98,6 +98,18 @@ except ImportError:
 
 # PostgreSQL store (optional — graceful degradation)
 _pg_store = None
+
+
+def _pg_health_error(pg_health):
+    """The service error for a PG store that exists but cannot answer SELECT 1.
+
+    A store object is not a connection: `_pg_store is not None` held for eight days
+    while every query failed with "connection pool is closed" and /health said
+    healthy. A failed probe must lower pipeline_status, never sit beside it.
+    """
+    if not pg_health or pg_health.get("status") == "ok":
+        return None
+    return "PostgreSQL: store present but probe failed -- %s" % pg_health.get("error", "unknown")
 _HAS_PG_MODULE = False
 try:
     from pg_store import PGStore
@@ -1505,6 +1517,9 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             # Check PG
             if _pg_store is None and _sqlite_store is None:
                 service_errors.append("PostgreSQL: no database connection -- memory and task storage unavailable")
+            pg_error = _pg_health_error(health.get("pg_health"))
+            if pg_error:
+                service_errors.append(pg_error)
             elif _pg_store is not None and not _pg_live:
                 # TK-2386: present but not answering. This branch did not exist,
                 # so a closed pool reported pipeline_status "healthy" with an
