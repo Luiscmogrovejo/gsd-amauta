@@ -13,7 +13,9 @@
  *   gsd-amauta status <id> <status>  -> gsd-amauta.cjs cmdStatus (task status change)
  *   gsd-amauta <anything else>       -> get-shit-done/bin/gsd-amauta.cjs
  *
- * This is the main bin entry for `npx gsd-amauta`.
+ *   gsd-amauta help | --help | -h  -> prints usage
+ *
+ * This is the main bin entry for the `gsd-amauta` command.
  */
 
 'use strict';
@@ -22,6 +24,35 @@ const path = require('path');
 const { execSync, spawnSync } = require('child_process');
 
 const command = process.argv[2];
+
+// ─── Help ───────────────────────────────────────────────────────────────────
+//
+// `gsd-amauta`, `gsd-amauta help`, `--help` and `-h` print usage and exit 0.
+// Without this, a first-time user who ran --help got silence.
+
+const USAGE = `gsd-amauta: multi-agent development harness (RPETD pipeline, Postgres memory, MCP)
+
+Usage: gsd-amauta <command> [options]
+
+Setup
+  init [--upgrade|--uninstall]   Interactive setup: IDE detection, migrations, daemon
+  doctor                         Diagnose the install (paths, daemon, Postgres, Valkey, keys)
+  mcp register | status          Register / check the MCP server with Claude Code
+
+Work
+  status                         System status
+  status <task-id> <status>      Change a task's status
+  board | list | next | show     Task board and queue
+  add | claim | rpetd | validate Task lifecycle (validator is never the author)
+  agents ...                     Agent registry commands
+  module ... | party ...         Module and multi-agent session commands
+
+Docs: https://github.com/Luiscmogrovejo/gsd-amauta#readme`;
+
+if (command === undefined || command === 'help' || command === '--help' || command === '-h') {
+  console.log(USAGE);
+  process.exit(0);
+}
 
 // ─── MCP subcommand ─────────────────────────────────────────────────────────
 
