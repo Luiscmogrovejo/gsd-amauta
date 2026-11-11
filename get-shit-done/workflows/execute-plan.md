@@ -127,8 +127,13 @@ Do NOT read execute-plan.md — its state-writing steps are orchestrator-owned.
 </execution_context>
 
 <amauta_enrichment>
-Run the context pipeline and the RPETD command block from your
+Run the context pipeline (RLM + memory) and the RPETD command block from your
 `{routed_executor}-workflow` skill — they are there verbatim and are not repeated here.
+
+The research chain is MANDATORY before any work, and is stated here in full because it is a
+pipeline guarantee rather than a convenience:
+   node ~/.claude/get-shit-done/bin/gsd-research.cjs search '{plan_objective}' 2>/dev/null || true
+
 - Enrichment topic: '{plan_objective}'
 - Amauta task id: {plan_task_id}  (empty = Amauta unavailable, skip every $CLI call)
 - Claim as: --agent {routed_executor}

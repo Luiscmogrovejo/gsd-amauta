@@ -147,8 +147,15 @@ fi
          </execution_context>
 
          <amauta_enrichment>
-         Your `{routed_executor}-workflow` skill already carries the context pipeline and the
-         RPETD command block. Run it as written there; it is not repeated here.
+         Your `{routed_executor}-workflow` skill already carries the context pipeline (RLM +
+         memory) and the RPETD command block. Run it as written there; it is not repeated here.
+
+         The research chain is MANDATORY and runs before any work — it is stated here in full
+         rather than left to the skill because it is a pipeline guarantee, not a convenience:
+            node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-research.cjs search '{plan_objective}' --creative --task-type {execution_type} 2>/dev/null || true
+         (memory -> SKB -> Context7 -> Perplexity -> WebFetch; creative variants are gated by
+         task type and killed entirely by GSD_R_CREATIVE=off.)
+
          - Enrichment topic: '{plan_objective}'
          - Amauta task id: {plan_task_id}  (empty string = Amauta unavailable, skip all $CLI calls)
          - Claim as: --agent {routed_executor}

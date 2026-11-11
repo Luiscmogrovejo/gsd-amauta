@@ -169,9 +169,20 @@ tools: Read, Grep, Glob
 // ─── CODEX_AGENT_SANDBOX mapping ────────────────────────────────────────────────
 
 describe('CODEX_AGENT_SANDBOX', () => {
-  test('has all 11 agents mapped', () => {
-    const agentNames = Object.keys(CODEX_AGENT_SANDBOX);
-    assert.strictEqual(agentNames.length, 11, 'has 11 agents');
+  test('every mapped name is a real agent in agents/', () => {
+    // Derived from the source of truth, not a magic number: the map grew from 11
+    // to 16 entries and the old `=== 11` just went stale. What actually matters is
+    // that no entry names an agent that does not exist (a typo would silently get
+    // the read-only default, which `defaults unknown agents to read-only` covers).
+    const onDisk = new Set(
+      fs.readdirSync(path.join(__dirname, '..', 'agents'))
+        .filter(f => f.startsWith('gsd-') && f.endsWith('.md'))
+        .map(f => f.slice(0, -'.md'.length))
+    );
+    const mapped = Object.keys(CODEX_AGENT_SANDBOX);
+    assert.ok(mapped.length > 0, 'CODEX_AGENT_SANDBOX must not be empty');
+    const unknown = mapped.filter(n => !onDisk.has(n));
+    assert.deepStrictEqual(unknown, [], `mapped names with no agents/*.md file: ${unknown.join(', ')}`);
   });
 
   test('workspace-write agents have write tools', () => {
