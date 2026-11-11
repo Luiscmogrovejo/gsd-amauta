@@ -857,27 +857,33 @@ describe('Gate config enforcement in workflows', () => {
   });
 
   test('confirm_phases gate wired in plan-phase.md', () => {
+    // moved to get-shit-done/workflows/plan-phase/steps/step-02-research.md: plan-phase.md became a thin
+    // redirect to the sharded workflow (SHARD-01, 47be650), so the gate lives in the step file.
     const content = fs.readFileSync(
-      path.join(__dirname, '..', 'get-shit-done', 'workflows', 'plan-phase.md'), 'utf-8'
+      path.join(__dirname, '..', 'get-shit-done', 'workflows', 'plan-phase', 'steps', 'step-02-research.md'), 'utf-8'
     );
     assert.ok(content.includes('gates.confirm_phases'),
-      'plan-phase.md should reference gates.confirm_phases');
+      'plan-phase step step-02-research.md should reference gates.confirm_phases');
   });
 
   test('confirm_breakdown gate wired in plan-phase.md', () => {
+    // moved to get-shit-done/workflows/plan-phase/steps/step-03-plan.md: plan-phase.md became a thin
+    // redirect to the sharded workflow (SHARD-01, 47be650), so the gate lives in the step file.
     const content = fs.readFileSync(
-      path.join(__dirname, '..', 'get-shit-done', 'workflows', 'plan-phase.md'), 'utf-8'
+      path.join(__dirname, '..', 'get-shit-done', 'workflows', 'plan-phase', 'steps', 'step-03-plan.md'), 'utf-8'
     );
     assert.ok(content.includes('gates.confirm_breakdown'),
-      'plan-phase.md should reference gates.confirm_breakdown');
+      'plan-phase step step-03-plan.md should reference gates.confirm_breakdown');
   });
 
   test('confirm_plan gate wired in plan-phase.md', () => {
+    // moved to get-shit-done/workflows/plan-phase/steps/step-04-check.md: plan-phase.md became a thin
+    // redirect to the sharded workflow (SHARD-01, 47be650), so the gate lives in the step file.
     const content = fs.readFileSync(
-      path.join(__dirname, '..', 'get-shit-done', 'workflows', 'plan-phase.md'), 'utf-8'
+      path.join(__dirname, '..', 'get-shit-done', 'workflows', 'plan-phase', 'steps', 'step-04-check.md'), 'utf-8'
     );
     assert.ok(content.includes('gates.confirm_plan'),
-      'plan-phase.md should reference gates.confirm_plan');
+      'plan-phase step step-04-check.md should reference gates.confirm_plan');
   });
 
   test('execute_next_plan gate wired in execute-plan.md (pre-existing)', () => {
@@ -961,16 +967,35 @@ describe('Quick task Amauta integration', () => {
 
 describe('gsd- prefix consistency across all layers', () => {
 
-  test('all 11 agent files exist with gsd- prefix', () => {
-    const agents = fs.readdirSync(path.join(__dirname, '..', 'agents'))
-      .filter(f => f.startsWith('gsd-') && f.endsWith('.md'));
-    assert.strictEqual(agents.length, 11, `should have 11 gsd- agents: ${agents.join(', ')}`);
+  test('every agent file under agents/ has the gsd- prefix and matches its AGENT.yaml source', () => {
+    // Roster is derived from disk (compile source of truth: get-shit-done/agents/<name>/AGENT.yaml),
+    // not a fixed count (was 11, then 35). Set equality names any missing or extra agent.
+    const agentsDir = path.join(__dirname, '..', 'agents');
+    const sourceDir = path.join(__dirname, '..', 'get-shit-done', 'agents');
+    const agentMds = fs.readdirSync(agentsDir).filter(f => f.endsWith('.md'));
+    const unprefixed = agentMds.filter(f => !f.startsWith('gsd-'));
+    assert.deepStrictEqual(unprefixed, [], `agent files without gsd- prefix: ${unprefixed.join(', ')}`);
+    const agents = agentMds.map(f => f.replace(/\.md$/, '')).sort();
+    const sources = fs.readdirSync(sourceDir, { withFileTypes: true })
+      .filter(e => e.isDirectory() && fs.existsSync(path.join(sourceDir, e.name, 'AGENT.yaml')))
+      .map(e => e.name).sort();
+    assert.ok(agents.length > 0, 'agents/ must hold at least one agent file');
+    const missing = sources.filter(n => !agents.includes(n));
+    const extra = agents.filter(n => !sources.includes(n));
+    assert.deepStrictEqual(agents, sources,
+      `agents/*.md differs from AGENT.yaml sources. missing: [${missing.join(', ')}] extra: [${extra.join(', ')}]`);
   });
 
-  test('all 11 skill directories exist with gsd-*-workflow naming', () => {
+  test('every gsd-*-workflow skill directory belongs to an existing agent (SKL-01 deferred to v2: not every agent has one)', () => {
+    // Was a fixed skill count. Only some of the agents have a skill directory (SKL-01 is
+    // deferred to v2, 88-CONTEXT.md), so the contract asserted here is the one that can hold:
+    // no orphan skill, i.e. each skill dir maps to an agent file. Derived from disk, no count.
     const skills = fs.readdirSync(path.join(__dirname, '..', 'skills'))
       .filter(f => f.startsWith('gsd-') && f.endsWith('-workflow'));
-    assert.strictEqual(skills.length, 11, `should have 11 gsd-*-workflow dirs: ${skills.join(', ')}`);
+    assert.ok(skills.length > 0, 'skills/ must hold at least one gsd-*-workflow directory');
+    const agentsDir = path.join(__dirname, '..', 'agents');
+    const orphans = skills.filter(sk => !fs.existsSync(path.join(agentsDir, sk.replace(/-workflow$/, '') + '.md')));
+    assert.deepStrictEqual(orphans, [], `skill dirs with no matching agent file: ${orphans.join(', ')}`);
   });
 
   test('each agent skills: field resolves to an existing skill directory', () => {

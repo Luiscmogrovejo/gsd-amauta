@@ -27,6 +27,20 @@ const MIGRATIONS_DIR = path.join(ROOT, 'migrations');
 const SERVICES_DIR = path.join(ROOT, 'services');
 const BIN_DIR = path.join(ROOT, 'get-shit-done', 'bin');
 
+// Agents every install must carry (the original core set). Membership in this named
+// list replaces the old `>= 11` magic number; the full roster is read from disk.
+const CORE_AGENTS = [
+  'gsd-checker', 'gsd-debugger', 'gsd-executor-backend', 'gsd-executor-frontend',
+  'gsd-executor-general', 'gsd-executor-infra', 'gsd-operator', 'gsd-planner',
+  'gsd-researcher', 'gsd-roadmapper', 'gsd-validator',
+];
+// Core agents that carry a skill directory (skills/<agent>-workflow/). The other agents
+// have none: SKL-01 is deferred to v2 (88-CONTEXT.md), so this is a floor, not the roster.
+const CORE_SKILLS = CORE_AGENTS.map((a) => `${a}-workflow`);
+// Read-only audit agents carry no research chain: they audit what exists and do not look up
+// current practice, so they have no RESEARCH= variable. Scoped here by name prefix, not by count.
+const NO_RESEARCH_CHAIN = (f) => f.startsWith('gsd-auditor-');
+
 // ═══════════════════════════════════════════════════════
 // SECTION 1: RLM Context Engine (10 tests)
 // ═══════════════════════════════════════════════════════
@@ -324,14 +338,18 @@ describe('Spec Compliance — all specs', () => {
     assert.ok(content.includes('lesson-learned'), 'Should reference lesson-learned source');
   });
 
-  test('3.12 AGT-2: All 11 agents have CLI= MEM= variables', () => {
+  test('3.12 AGT-2: every agent has CLI= MEM= variables (RESEARCH= for all but the read-only auditors)', () => {
     const agentFiles = fs.readdirSync(AGENTS_DIR).filter(f => f.endsWith('.md'));
-    assert.ok(agentFiles.length >= 11, `Expected >=11 agents, got ${agentFiles.length}`);
+    // Roster read from disk; the core agents must all be present (membership, not a count).
+    const missingCore = CORE_AGENTS.filter((a) => !agentFiles.includes(`${a}.md`));
+    assert.deepStrictEqual(missingCore, [], `core agents missing from agents/: ${missingCore.join(', ')}`);
     for (const f of agentFiles) {
       const content = fs.readFileSync(path.join(AGENTS_DIR, f), 'utf-8');
       assert.ok(content.includes('CLI='), `${f} should have CLI= variable`);
       assert.ok(content.includes('MEM='), `${f} should have MEM= variable`);
-      assert.ok(content.includes('RESEARCH='), `${f} should have RESEARCH= variable`);
+      if (!NO_RESEARCH_CHAIN(f)) {
+        assert.ok(content.includes('RESEARCH='), `${f} should have RESEARCH= variable`);
+      }
       // validator intentionally omits RLM
       if (!f.includes('validator')) {
         assert.ok(content.includes('RLM='), `${f} should have RLM= variable`);
@@ -352,12 +370,13 @@ describe('Spec Compliance — all specs', () => {
     }
   });
 
-  test('3.14 All 11 skills have $RESEARCH search in context pipeline', () => {
+  test('3.14 Every skill has $RESEARCH search in context pipeline', () => {
     const skillDirs = fs.readdirSync(SKILLS_DIR).filter(d => {
       const p = path.join(SKILLS_DIR, d);
       return fs.statSync(p).isDirectory() && fs.existsSync(path.join(p, 'SKILL.md'));
     });
-    assert.ok(skillDirs.length >= 11, `Expected >=11 skills, got ${skillDirs.length}`);
+    const missingSkills = CORE_SKILLS.filter((d) => !skillDirs.includes(d));
+    assert.deepStrictEqual(missingSkills, [], `core skills missing from skills/: ${missingSkills.join(', ')}`);
     for (const d of skillDirs) {
       const content = fs.readFileSync(path.join(SKILLS_DIR, d, 'SKILL.md'), 'utf-8');
       assert.ok(content.includes('$RESEARCH'), `${d}/SKILL.md should use $RESEARCH`);
@@ -600,9 +619,14 @@ describe('Research Chain — deep integration tests', () => {
   });
 
   test('7.5 operator agent documents research chain fallback', () => {
-    const content = fs.readFileSync(path.join(AGENTS_DIR, 'gsd-operator.md'), 'utf-8');
+    // moved to skills/gsd-operator-workflow/SKILL.md: the agent file now only carries the
+    // `gsd-research.cjs search` call; the memory -> SKB -> Context7 -> Perplexity -> WebFetch
+    // chain order is documented in the operator's skill.
+    const agent = fs.readFileSync(path.join(AGENTS_DIR, 'gsd-operator.md'), 'utf-8');
+    assert.ok(agent.includes('gsd-research.cjs'), 'Operator agent should call the research chain');
+    const content = fs.readFileSync(path.join(SKILLS_DIR, 'gsd-operator-workflow', 'SKILL.md'), 'utf-8');
     assert.ok(content.includes('Perplexity') || content.includes('perplexity'), 'Should mention Perplexity');
-    assert.ok(content.includes('WebFetch') || content.includes('webfetch') || content.includes('web'), 'Should mention WebFetch fallback');
+    assert.ok(content.includes('WebFetch') || content.includes('webfetch'), 'Should mention WebFetch fallback');
   });
 
   test('7.6 researcher agent has WebFetch tool', () => {
@@ -649,8 +673,12 @@ describe('Auto-Learning — deep integration tests', () => {
 
   test('8.6 _auto_write_learning writes to both memory and SKB', () => {
     const content = fs.readFileSync(path.join(ROOT, 'amauta.py'), 'utf-8');
-    const fn = content.substring(content.indexOf('def _auto_write_learning'));
-    assert.ok(fn.includes('_mem_pg_add') || fn.includes('amauta_memory'), 'Should write to memory');
+    const start = content.indexOf('def _auto_write_learning');
+    assert.ok(start >= 0, '_auto_write_learning must exist in amauta.py');
+    const next = content.indexOf('\ndef ', start + 1);
+    const fn = content.substring(start, next === -1 ? undefined : next); // this function body only
+    // moved: the memory write is `_mem_log_event(...)` in amauta.py (was `_mem_pg_add`)
+    assert.ok(fn.includes('_mem_log_event'), 'Should write to memory');
     assert.ok(fn.includes('_skb_promote'), 'Should promote to SKB');
   });
 
