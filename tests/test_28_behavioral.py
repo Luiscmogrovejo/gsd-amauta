@@ -83,8 +83,13 @@ def test_divergence_protocol_version_1_2_0():
 # ─── BEHAV-01: execute-phase.md AGENTS.md discovery ─────────────────────────
 
 def test_execute_phase_has_agents_md_discovery():
-    """execute-phase.md initialize step includes AGENTS.md discovery block."""
-    ep_path = os.path.join(ROOT, "get-shit-done", "workflows", "execute-phase.md")
+    """execute-phase initialize step includes AGENTS.md discovery block."""
+    # execute-phase.md changed in c145580 (Phase 41 SHARD-02): it became a 3-line redirect
+    # when the workflow was sharded; the full pre-shard text with these markers is the "legacy
+    # fallback" file the redirect names. The sharded steps do not contain the AGENTS.md
+    # discovery block at all (routed in 88-08-SUMMARY.md), so this keeps pinning the one
+    # place that still ships it instead of passing vacuously.
+    ep_path = os.path.join(ROOT, "get-shit-done", "workflows", "execute-phase-legacy.md")
     with open(ep_path) as f:
         content = f.read()
     assert "AGENTS.md Discovery" in content
@@ -151,16 +156,26 @@ def test_27_01_feature_list_has_minimum_features():
 # ─── BEHAV-06: execute-phase.md get-bearings block (Wave 2) ───────────────────
 
 def test_execute_phase_has_all_six_behav_markers():
-    """execute-phase.md contains all 6 BEHAV capability markers."""
-    ep_path = os.path.join(ROOT, "get-shit-done", "workflows", "execute-phase.md")
+    """execute-phase (legacy fallback text) contains all 6 BEHAV capability markers."""
+    # Same as test_execute_phase_has_agents_md_discovery: the markers moved with the
+    # pre-shard text to execute-phase-legacy.md when execute-phase.md became a redirect (c145580).
+    ep_path = os.path.join(ROOT, "get-shit-done", "workflows", "execute-phase-legacy.md")
     with open(ep_path) as f:
         content = f.read()
     # BEHAV-01
     assert "AGENTS.md Discovery" in content
     # BEHAV-02
     assert "Circuit Breaker Check" in content
-    # BEHAV-03
-    assert re.search(r"Reflexion|reflexion|divergence-memory", content, re.IGNORECASE)
+    # BEHAV-03: the inline "Slot 3: divergence-memory.json" bearings script was replaced by a
+    # shell-out to `gsd-tools bearings` in fb60fd2 (45-02-03), so the divergence-memory
+    # reference now lives in gsd-tools.cjs. Assert the workflow delegates to it AND that the
+    # delegate still reads divergence memory; neither half alone proves the marker.
+    assert "gsd-tools.cjs\" bearings" in content
+    tools_path = os.path.join(ROOT, "get-shit-done", "bin", "gsd-tools.cjs")
+    with open(tools_path) as f:
+        tools_src = f.read()
+    assert re.search(r"Reflexion|reflexion|divergence-memory", content + tools_src, re.IGNORECASE)
+    assert "divergence-memory" in tools_src
     # BEHAV-04
     assert re.search(r"Lint-After-Edit|lint_report", content, re.IGNORECASE)
     # BEHAV-05

@@ -34,6 +34,8 @@ import unittest.mock
 import urllib.error
 import urllib.request
 
+import pytest
+
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _DAEMON = os.path.join(_ROOT, "services", "amauta-daemon.py")
 _PYTHON = os.environ.get("GSD_TEST_PYTHON", sys.executable)
@@ -578,11 +580,21 @@ class TestPhaseParsingAgainstEachBackend(unittest.TestCase):
         # An unlisted feature still gets a usable sentence, not a KeyError.
         self.assertIn("unlisted", self.mod._requires_postgres_payload("unlisted")["detail"])
 
+    @pytest.mark.usefixtures("backend_selection_env")
     def test_force_sqlite_reads_the_env_flag(self):
+        # _force_sqlite() changed in ee1af14 (88-01) to answer True under GSD_TEST_MODE.
+        # The hermetic scrub (tests/conftest.py) exports GSD_BACKEND=sqlite, GSD_FORCE_SQLITE=1
+        # and GSD_TEST_MODE=1, and _force_sqlite() is True for each (test mode since 88-01,
+        # GSD_BACKEND captured at import as _REQUESTED_BACKEND). The class-level module was
+        # imported under that scrub, so it cannot show the "unset => False" rows. Load a
+        # fresh module while backend_selection_env has cleared the three names, then drive
+        # GSD_FORCE_SQLITE alone. Only the three backend-selection names are cleared; the
+        # socket guard and the data-dir isolation stay in force.
+        mod = _load_daemon_module()
         for raw, expected in (("1", True), ("true", True), ("on", True),
                               ("", False), ("0", False), ("no", False)):
             with unittest.mock.patch.dict(os.environ, {"GSD_FORCE_SQLITE": raw}):
-                self.assertIs(self.mod._force_sqlite(), expected, raw)
+                self.assertIs(mod._force_sqlite(), expected, raw)
 
 
 class TestLogRotationIsBounded(unittest.TestCase):

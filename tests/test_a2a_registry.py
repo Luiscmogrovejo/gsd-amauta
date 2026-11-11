@@ -10,6 +10,7 @@ import json
 import os
 import subprocess
 import sys
+import glob
 import unittest
 
 _REPO_ROOT = os.path.join(os.path.dirname(__file__), "..")
@@ -34,6 +35,19 @@ KNOWN_AGENTS_17 = frozenset([
     "gsd-roadmapper", "gsd-security", "gsd-tester", "gsd-validator",
 ])
 
+# The roster changed in f1613b2 (first agents added after the 17 of 9224cbc) and in the
+# commits after it, from 17 (Phase 52) to 35 agents. A literal count goes stale every time an
+# agent is added (it did: the registry reports 35), so the expectation is derived from the
+# source of truth, the agent definition files, and asserted as set equality. Same approach as
+# plan 88-05 for the Node suite.
+def _agent_files_on_disk():
+    """Names of every agents/*.md definition file in the repository."""
+    return {
+        os.path.basename(p)[: -len(".md")]
+        for p in glob.glob(os.path.join(_REPO_ROOT, "agents", "gsd-*.md"))
+    }
+
+
 A2A_REGISTRY_CLI = os.path.join(_REPO_ROOT, "services", "a2a_registry_cli.py")
 
 
@@ -45,10 +59,17 @@ class TestSchemaVersion(unittest.TestCase):
 
 class TestListAgents(unittest.TestCase):
     def test_list_agents_returns_exactly_17(self):
-        """list_agents() returns exactly 17 compiled AGENT.yaml entries."""
+        """list_agents() returns exactly one compiled AGENT.yaml per agents/*.md file.
+
+        (Name kept for continuity: the roster was 17 in Phase 52 and is 35 now; see
+        _agent_files_on_disk.)"""
         agents = list_agents()
-        self.assertEqual(len(agents), 17,
-            f"Expected 17 agents (Phase 52 roster), got {len(agents)}: {sorted(agents)}")
+        expected = _agent_files_on_disk()
+        self.assertGreaterEqual(len(expected), 17)
+        self.assertEqual(set(agents), expected,
+            f"registry and agents/*.md disagree: only in registry "
+            f"{sorted(set(agents) - expected)}, only on disk {sorted(expected - set(agents))}")
+        self.assertEqual(len(agents), len(expected))
 
     def test_list_agents_returns_sorted_list(self):
         """list_agents() returns alphabetically sorted list."""
@@ -86,10 +107,12 @@ class TestGetCapabilities(unittest.TestCase):
 
 class TestAllCapabilities(unittest.TestCase):
     def test_all_capabilities_returns_17_entries(self):
-        """all_capabilities() returns a dict with exactly 17 entries."""
+        """all_capabilities() returns one entry per agents/*.md file (17 in Phase 52, 35 now)."""
         all_caps = all_capabilities()
-        self.assertEqual(len(all_caps), 17,
-            f"Expected 17 agents in all_capabilities(), got {len(all_caps)}")
+        expected = _agent_files_on_disk()
+        self.assertEqual(set(all_caps), expected,
+            f"all_capabilities() keys differ from agents/*.md: only in registry "
+            f"{sorted(set(all_caps) - expected)}, only on disk {sorted(expected - set(all_caps))}")
 
     def test_all_capabilities_values_are_lists(self):
         """all_capabilities() values are all lists."""
@@ -126,12 +149,15 @@ class TestRegistryCLI(unittest.TestCase):
         self.assertIn("error", data)
 
     def test_list_json_roundtrip(self):
-        """CLI list --json returns valid JSON with 'agents' list of 17."""
+        """CLI list --json returns valid JSON with an 'agents' list matching agents/*.md."""
         result = self._run_cli("list", "--json")
         self.assertEqual(result.returncode, 0, f"CLI failed: {result.stderr}")
         data = json.loads(result.stdout)
         self.assertIn("agents", data)
-        self.assertEqual(len(data["agents"]), 17)
+        # Entries are {"agent": name, "capabilities": [...]} dicts.
+        names = [entry["agent"] for entry in data["agents"]]
+        self.assertEqual(set(names), _agent_files_on_disk())
+        self.assertEqual(len(names), len(_agent_files_on_disk()))
 
 
 if __name__ == "__main__":

@@ -43,6 +43,18 @@ def _make_pg_store():
         return store
 
 
+def _unmigrated(store):
+    """Force the un-migrated (no valid_at/invalid_at) path of PGStore._has_bitemporal.
+
+    Since 6fa857b (66-05-03) memory_store_with_embedding probes the schema through
+    _get_conn() before its dedup query; unseeded, that probe consumed the first mock
+    cursor and shifted every later one. The store's own docstring says tests force
+    this path by setting _bitemporal_cache = False directly.
+    """
+    store._bitemporal_cache = False
+    return store
+
+
 def _make_mock_cursor():
     """Create a mock cursor that works as a context manager."""
     cursor = MagicMock()
@@ -147,10 +159,12 @@ class TestMemoryStoreDedupSkip(unittest.TestCase):
 
     def test_memory_store_with_embedding_skips_near_duplicate(self):
         """Cosine similarity 0.97 > 0.95 threshold means dedup_skipped=True."""
-        store = _make_pg_store()
-        # Dedup check cursor returns existing row with high similarity
+        store = _unmigrated(_make_pg_store())
+        # Dedup check cursor returns existing row with high similarity.
+        # Since 6fa857b the dedup lookup is a top-3 nearest-neighbour query read with
+        # fetchall(), not fetchone() (it also feeds the write-time classifier).
         dedup_cursor = _make_mock_cursor()
-        dedup_cursor.fetchone.return_value = {"id": 42, "text": "existing", "similarity": 0.97}
+        dedup_cursor.fetchall.return_value = [{"id": 42, "text": "existing", "similarity": 0.97}]
         _patch_get_conn(store, [dedup_cursor])
         fake_embedding = [0.1] * 1024
 
@@ -168,10 +182,10 @@ class TestMemoryStoreDedupInsert(unittest.TestCase):
 
     def test_memory_store_with_embedding_inserts_when_no_duplicate(self):
         """No existing match means INSERT is executed, returning new ID."""
-        store = _make_pg_store()
-        # First cursor (dedup check) returns None
+        store = _unmigrated(_make_pg_store())
+        # First cursor (dedup check): no neighbours (fetchall since 6fa857b, see above)
         dedup_cursor = _make_mock_cursor()
-        dedup_cursor.fetchone.return_value = None
+        dedup_cursor.fetchall.return_value = []
         # Second cursor (insert) returns new ID
         insert_cursor = _make_mock_cursor()
         insert_cursor.fetchone.return_value = (99,)
@@ -189,9 +203,9 @@ class TestMemoryStoreDedupEnvThreshold(unittest.TestCase):
 
     def test_memory_store_with_embedding_respects_env_threshold(self):
         """With GSD_DEDUP_THRESHOLD=0.90, similarity 0.92 should be deduped."""
-        store = _make_pg_store()
+        store = _unmigrated(_make_pg_store())
         dedup_cursor = _make_mock_cursor()
-        dedup_cursor.fetchone.return_value = {"id": 10, "text": "similar", "similarity": 0.92}
+        dedup_cursor.fetchall.return_value = [{"id": 10, "text": "similar", "similarity": 0.92}]
         _patch_get_conn(store, [dedup_cursor])
         fake_embedding = [0.1] * 1024
 

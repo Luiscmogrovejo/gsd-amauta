@@ -96,8 +96,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           python3 -m pip install --upgrade pip
-          python3 -m pip install -r requirements.txt
-          python3 -m pip install pytest numpy
+          python3 -m pip install -r requirements.txt -r requirements-dev.txt
 
       - name: Run the Python suite
         shell: bash

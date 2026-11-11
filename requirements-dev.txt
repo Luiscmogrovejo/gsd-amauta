@@ -1,0 +1,10 @@
+# Test-only dependencies for the CI pytest job (plan 88-08). Runtime dependencies
+# stay in requirements.txt; nothing here ships. Every version is pinned exactly.
+pytest==9.0.2
+numpy==2.4.3
+# requirements.txt leaves mcp unbounded above, so a fresh runner resolves mcp 2.x.
+# services/amauta-mcp.py is written against the 1.x server API (`@server.list_tools()`
+# decorators); under 2.x it dies at import, so the MCP test modules either skip
+# without saying why or fail. Pin the suite to the version the code is developed and
+# verified against. Weekly downloads checked 2026-11-11: 79,134,034.
+mcp==1.27.1

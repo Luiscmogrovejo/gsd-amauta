@@ -10,6 +10,8 @@ import tempfile
 import unittest
 import unittest.mock
 
+import pytest
+
 _DAEMON = os.path.join(os.path.dirname(__file__), "..", "services", "amauta-daemon.py")
 
 PG = {"backend": "postgresql", "connection_url": "postgresql://u:p@127.0.0.1:5433/db",
@@ -125,6 +127,12 @@ class TestPgStartupRetry(unittest.TestCase):
             self.assertTrue(self.mod._pg_expected())
 
 
+# 88-08-04: tests/conftest.py exports GSD_FORCE_SQLITE=1, GSD_BACKEND=sqlite and
+# GSD_TEST_MODE=1 for the whole session, and _force_sqlite() answers True for each
+# of them, so these tests could not observe their own inputs (the "a fallback written
+# later is not a selection" case failed). backend_selection_env clears exactly those
+# three names for the test and leaves the socket guard and data-dir scrub in place.
+@pytest.mark.usefixtures("backend_selection_env")
 class TestOperatorSelectedSqlite(unittest.TestCase):
     def test_gsd_backend_sqlite_at_startup_selects_sqlite(self):
         mod = _load({"GSD_BACKEND": "sqlite", "GSD_FORCE_SQLITE": ""})

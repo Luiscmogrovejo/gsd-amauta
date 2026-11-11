@@ -6,6 +6,7 @@ directories, ports moved off the operator's live services, and the socket guard
 installed. HOME is not modified (replacing it hides user-site packages).
 """
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -32,6 +33,14 @@ _DELETED_KEYS = (
     "GSD_PG_PORT",
 )
 _LIVE_PORTS = {18799, 18798, 6379, 5433}
+
+# Install the socket guard at conftest import, which is BEFORE pytest collects
+# any test module. A module-level probe (``_daemon_ready()`` in
+# tests/test_capability_e2e.py used to GET the live daemon at import) runs during
+# collection, i.e. before the session fixture below; with the guard installed
+# only there, collection itself reached the operator's live daemon (88-08-03).
+# install() is idempotent, so the session fixture's later call is a no-op.
+hermetic_guard.install()
 
 
 def _free_port(avoid=()):
@@ -188,3 +197,80 @@ def fixture_daemon(tmp_path):
             proc.wait()
         out_f.close()
         err_f.close()
+
+
+# ---------------------------------------------------------------------------
+# Plan 88-08 shared helpers
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def backend_selection_env(monkeypatch):
+    """Clear the variables the hermetic scrub exports so a test can exercise backend selection.
+
+    The session scrub sets ``GSD_FORCE_SQLITE=1``, ``GSD_BACKEND=sqlite`` and
+    ``GSD_TEST_MODE=1``. The daemon's ``_force_sqlite()`` answers True for any of
+    them, so a test that asks "does an unset or later-written variable count as an
+    operator choice?" cannot see its own inputs. This fixture removes exactly those
+    three names for one test (monkeypatch restores them afterwards). It does not
+    touch the socket guard, the port scrub or the data-dir isolation, so the test
+    still cannot reach a live service.
+
+    Yields:
+        None.
+    """
+    for key in ("GSD_FORCE_SQLITE", "GSD_BACKEND", "GSD_TEST_MODE"):
+        monkeypatch.delenv(key, raising=False)
+    yield
+
+
+def _postgres_dsn_or_skip():
+    """Return ``GSD_TEST_POSTGRES_URL`` or skip the calling test with a named reason.
+
+    Kept as a plain function so a test can exercise the skip contract directly.
+
+    Returns:
+        The DSN string.
+
+    Raises:
+        pytest.skip.Exception: when ``GSD_TEST_POSTGRES_URL`` is unset or empty.
+    """
+    dsn = os.environ.get("GSD_TEST_POSTGRES_URL")
+    if not dsn:
+        pytest.skip(
+            "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test "
+            "(Phase 89 adds the CI service)"
+        )
+    return dsn
+
+
+@pytest.fixture(scope="session")
+def postgres_dsn():
+    """DSN of a disposable Postgres, or skip when none was provided.
+
+    The opt-in variable is ``GSD_TEST_POSTGRES_URL``, deliberately not
+    ``GSD_POSTGRES_URL``: the session scrub deletes the latter so that no test can
+    inherit the operator's live DSN, and this helper must not reintroduce it.
+    Never starts a container; Phase 89 brings the CI service.
+
+    Returns:
+        The DSN string from ``GSD_TEST_POSTGRES_URL``.
+    """
+    return _postgres_dsn_or_skip()
+
+
+def have_tool(name):
+    """True when an executable called ``name`` is on PATH.
+
+    Use it to skip, by name, a test that needs a tool CI cannot have.
+
+    Args:
+        name: executable name, for example ``"claude"`` or ``"gitleaks"``.
+
+    Returns:
+        bool: whether ``shutil.which(name)`` finds it.
+
+    Example:
+        @pytest.mark.skipif(not have_tool("claude"), reason="the claude CLI is not available in this environment")
+    """
+    return shutil.which(name) is not None
