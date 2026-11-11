@@ -17,17 +17,34 @@ concurrency:
 
 jobs:
   test:
+    name: test (${{ matrix.os }}, node ${{ matrix.node-version }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
+    timeout-minutes: 25
+    continue-on-error: ${{ !matrix.required }}
 
     strategy:
-      fail-fast: true
+      # Source of the matrix decision: .planning/phases/88-foundation-hermetic-ci/88-CONTEXT.md
+      # (locked 2026-11-11). Node 18 is gone: package.json engines.node is
+      # >=20 and Node 18 is end of life. ubuntu and macos on Node 20 and 22 are
+      # required cells. Windows (Node 22) is non-blocking: its result is
+      # reported, and it becomes required only if it is green without
+      # Windows-only rewrites. fail-fast is off so one red cell cannot cancel
+      # (and hide) the others.
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        node-version: [18, 20, 22]
+        include:
+          - { os: ubuntu-latest, node-version: 20, required: true }
+          - { os: ubuntu-latest, node-version: 22, required: true }
+          - { os: macos-latest, node-version: 20, required: true }
+          - { os: macos-latest, node-version: 22, required: true }
+          - { os: windows-latest, node-version: 22, required: false }
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          # Full history: the party/phase canary tests run `git show <sha>`
+          # against historical commits and fail on the default depth-1 clone.
+          fetch-depth: 0
 
       - name: Set up Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -39,18 +56,11 @@ jobs:
         run: npm ci
 
       - name: Run tests with coverage
-        # c8 v11 requires Node 20+ (engines: ^20.0.0 || >=22.0.0). Node 18 EOL April 2025.
+        # c8 v11 requires Node 20+ (engines: ^20.0.0 || >=22.0.0).
         # Use bash on all platforms so shell glob expansion works on Windows.
-        if: matrix.node-version != 18
         shell: bash
         run: npm run test:coverage
 
-      - name: Run tests (Node 18, coverage not supported)
-        if: matrix.node-version == 18
-        shell: bash
-        run: npm test
-
       - name: Run coverage ratchet
-        if: matrix.node-version != 18
         shell: bash
         run: node scripts/coverage-ratchet.cjs
