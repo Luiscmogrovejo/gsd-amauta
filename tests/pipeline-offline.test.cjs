@@ -987,7 +987,7 @@ describe('gsd- prefix consistency across all layers', () => {
   });
 
   test('every gsd-*-workflow skill directory belongs to an existing agent (SKL-01 deferred to v2: not every agent has one)', () => {
-    // Was `skills.length === 11`. Only 11 of the agents have a skill directory (SKL-01 is
+    // Was a fixed skill count. Only some of the agents have a skill directory (SKL-01 is
     // deferred to v2, 88-CONTEXT.md), so the contract asserted here is the one that can hold:
     // no orphan skill, i.e. each skill dir maps to an agent file. Derived from disk, no count.
     const skills = fs.readdirSync(path.join(__dirname, '..', 'skills'))

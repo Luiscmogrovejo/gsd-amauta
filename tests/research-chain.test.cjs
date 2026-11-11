@@ -279,7 +279,7 @@ describe('Research chain: agent integration', () => {
   });
 
   test('every gsd-*-workflow skill has RESEARCH= variable', () => {
-    // Was `skills.length === 11`: skills are read from disk; only some agents have one (SKL-01 deferred to v2).
+    // Was a fixed skill count: skills are read from disk; only some agents have one (SKL-01 deferred to v2).
     const skillsDir = path.join(__dirname, '..', 'skills');
     const skills = fs.readdirSync(skillsDir).filter(f => f.startsWith('gsd-') && f.endsWith('-workflow'));
     assert.ok(skills.length > 0, 'skills/ must hold at least one gsd-*-workflow directory');
