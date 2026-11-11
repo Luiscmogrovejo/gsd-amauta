@@ -8,7 +8,7 @@
  *   - 10 section keys populated for gsd-planner
  *   - metadata section contains "version: 3.0.0"
  *   - Unknown heading rejects with descriptive error
- *   - Batch converts all 17 agents without error
+ *   - Batch converts every agent file under agents/ without error
  *   - Section body preserves code-fence leading whitespace
  *   - body_preamble: H1 for planner, null for executor-data
  *
@@ -168,13 +168,22 @@ test('unknown heading rejects conversion', (t) => {
   );
 });
 
-// ─── Test 6: batch converts all 17 agents without error ─────────────────────
+// ─── Test 6: batch converts every agent file without error ──────────────────
 
-test('batch converts all 17 agents without error', (t) => {
+test('batch converts every agent file under agents/ without error', (t) => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-yaml-batch-'));
   t.after(() => {
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
   });
+
+  // The roster is whatever agents/*.md holds on disk; it is not a fixed number
+  // (was 17, then 35). Set equality is stronger than a count and names the
+  // missing or extra agent when it fails.
+  const expectedNames = fs.readdirSync(AGENTS_DIR)
+    .filter((f) => f.startsWith('gsd-') && f.endsWith('.md'))
+    .map((f) => f.replace(/\.md$/, ''))
+    .sort();
+  assert.ok(expectedNames.length > 0, 'agents/ must hold at least one gsd-*.md agent file');
 
   const batchResult = convertBatch(AGENTS_DIR, tmpDir);
 
@@ -182,15 +191,21 @@ test('batch converts all 17 agents without error', (t) => {
     batchResult.errors.length, 0,
     `Batch conversion had errors:\n${batchResult.errors.map(e => `  ${e.file}: ${e.error}`).join('\n')}`
   );
-  assert.equal(
-    batchResult.converted, 17,
-    `Expected 17 agents converted, got ${batchResult.converted}`
-  );
 
-  // Verify all 17 AGENT.yaml files were written
-  const yamlFiles = fs.readdirSync(tmpDir)
-    .filter(d => fs.existsSync(path.join(tmpDir, d, 'AGENT.yaml')));
-  assert.equal(yamlFiles.length, 17, `Expected 17 AGENT.yaml files, found ${yamlFiles.length}`);
+  // Every converted agent produced an AGENT.yaml; compare the set to the files on disk.
+  const yamlNames = fs.readdirSync(tmpDir)
+    .filter(d => fs.existsSync(path.join(tmpDir, d, 'AGENT.yaml')))
+    .sort();
+  const missing = expectedNames.filter((n) => !yamlNames.includes(n));
+  const extra = yamlNames.filter((n) => !expectedNames.includes(n));
+  assert.deepStrictEqual(
+    yamlNames, expectedNames,
+    `AGENT.yaml set differs from agents/*.md. missing: [${missing.join(', ')}] extra: [${extra.join(', ')}]`
+  );
+  assert.equal(
+    batchResult.converted, expectedNames.length,
+    `convertBatch reported ${batchResult.converted} converted for ${expectedNames.length} agent files`
+  );
 });
 
 // ─── Test 7: section body preserves code fence leading whitespace ────────────

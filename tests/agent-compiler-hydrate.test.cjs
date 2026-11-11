@@ -5,8 +5,8 @@
  * Verifies:
  *   1. compile() without --hydrate produces output with ZERO ## Current context
  *   2. compile() with --hydrate=gsd-planner: gsd-planner.md contains ## Current context,
- *      other 16 do NOT
- *   3. compile() with --hydrate=gsd-planner,gsd-checker: 2 hydrated, 15 non-hydrated
+ *      every other agent does NOT
+ *   3. compile() with --hydrate=gsd-planner,gsd-checker: 2 hydrated, all others non-hydrated
  *   4. ## Current context insertion is BETWEEN closing frontmatter --- and ## version heading
  *   5. hydration subprocess failure (PG down / daemon down) does NOT block compile
  *   6. compile-twice determinism with --hydrate empty: output is byte-identical on second run
@@ -30,26 +30,34 @@ const ROOT = path.resolve(__dirname, '..');
 const COMPILER = path.join(ROOT, 'scripts', 'agent-compiler.cjs');
 const { compile } = require(COMPILER);
 
-// The 17 canonical agent names (locked per HEAD 21438ae)
-const ALL_AGENTS = [
-  'gsd-architect',
-  'gsd-checker',
-  'gsd-debugger',
-  'gsd-executor-backend',
-  'gsd-executor-data',
-  'gsd-executor-frontend',
-  'gsd-executor-general',
-  'gsd-executor-infra',
-  'gsd-operator',
-  'gsd-planner',
-  'gsd-qa',
-  'gsd-researcher',
-  'gsd-reviewer',
-  'gsd-roadmapper',
-  'gsd-security',
-  'gsd-tester',
-  'gsd-validator',
-];
+// The roster is derived from the compile source of truth (one AGENT.yaml per
+// agent under get-shit-done/agents/), never a fixed number: it was 17, it is 35,
+// and the next agent added must not break this file.
+const SOURCE_DIR = path.join(ROOT, 'get-shit-done', 'agents');
+const ALL_AGENTS = fs.readdirSync(SOURCE_DIR, { withFileTypes: true })
+  .filter((e) => e.isDirectory() && fs.existsSync(path.join(SOURCE_DIR, e.name, 'AGENT.yaml')))
+  .map((e) => e.name)
+  .sort();
+
+/**
+ * Assert the compiler produced exactly one output per agent source (set equality).
+ * The message names the missing and the extra agents.
+ *
+ * @param {{compiled: Array<{name: string}>}} result - compile() result
+ * @param {string} label - context for the failure message
+ * @returns {void}
+ * @throws {AssertionError} when the compiled set differs from ALL_AGENTS
+ */
+function assertCompiledMatchesRoster(result, label) {
+  assert.ok(ALL_AGENTS.length > 0, 'expected at least one AGENT.yaml source');
+  const got = result.compiled.map((c) => c.name).sort();
+  const missing = ALL_AGENTS.filter((n) => !got.includes(n));
+  const extra = got.filter((n) => !ALL_AGENTS.includes(n));
+  assert.deepStrictEqual(
+    got, ALL_AGENTS,
+    `${label}: compiled set differs from AGENT.yaml sources. missing: [${missing.join(', ')}] extra: [${extra.join(', ')}]`
+  );
+}
 
 // ─── Helper: compile to temp dir and return map of agentName → fileContent ───
 
@@ -64,7 +72,7 @@ function compileToTmp(opts) {
   return { tmpDir, result };
 }
 
-// ─── Test 1: no --hydrate → ZERO ## Current context across all 17 outputs ────
+// ─── Test 1: no --hydrate → ZERO ## Current context across every compiled output ────
 
 test('compile without --hydrate produces output with ZERO ## Current context', (t) => {
   const { tmpDir, result } = compileToTmp({ hydrate: [] });
@@ -74,7 +82,7 @@ test('compile without --hydrate produces output with ZERO ## Current context', (
   });
 
   assert.equal(result.errors.length, 0, `compile() must produce 0 errors. Got: ${JSON.stringify(result.errors)}`);
-  assert.equal(result.compiled.length, 17, `compile() must produce 17 outputs. Got: ${result.compiled.length}`);
+  assertCompiledMatchesRoster(result, 'compile()');
 
   for (const agentName of ALL_AGENTS) {
     const filePath = path.join(tmpDir, `${agentName}.md`);
@@ -87,9 +95,9 @@ test('compile without --hydrate produces output with ZERO ## Current context', (
   }
 });
 
-// ─── Test 2: --hydrate=gsd-planner → gsd-planner.md hydrated, 16 others NOT ─
+// ─── Test 2: --hydrate=gsd-planner → gsd-planner.md hydrated, all others NOT ─
 
-test('compile with --hydrate=gsd-planner injects ## Current context in gsd-planner.md only; other 16 do NOT contain it', (t) => {
+test('compile with --hydrate=gsd-planner injects ## Current context in gsd-planner.md only; every other agent does NOT contain it', (t) => {
   // This test calls the real agent-hydrate subprocess. If the daemon/PG is down,
   // invokeHydration() returns null and compile continues without hydration (WARN emitted).
   // The test still asserts the non-hydrated agents — if hydration fails gracefully,
@@ -102,9 +110,9 @@ test('compile with --hydrate=gsd-planner injects ## Current context in gsd-plann
   });
 
   assert.equal(result.errors.length, 0, `compile() must produce 0 errors. Got: ${JSON.stringify(result.errors)}`);
-  assert.equal(result.compiled.length, 17, `compile() must produce 17 outputs. Got: ${result.compiled.length}`);
+  assertCompiledMatchesRoster(result, 'compile()');
 
-  // Assert other 16 agents do NOT contain ## Current context
+  // Assert every other agent does NOT contain ## Current context
   const nonHydrated = ALL_AGENTS.filter((n) => n !== 'gsd-planner');
   for (const agentName of nonHydrated) {
     const filePath = path.join(tmpDir, `${agentName}.md`);
@@ -137,9 +145,9 @@ test('compile with --hydrate=gsd-planner injects ## Current context in gsd-plann
   }
 });
 
-// ─── Test 3: --hydrate=gsd-planner + gsd-checker → 2 hydrated, 15 non-hydrated ─
+// ─── Test 3: --hydrate=gsd-planner + gsd-checker → 2 hydrated, rest non-hydrated ─
 
-test('compile with --hydrate=gsd-planner and gsd-checker: other 15 do NOT contain ## Current context', (t) => {
+test('compile with --hydrate=gsd-planner and gsd-checker: every other agent does NOT contain ## Current context', (t) => {
   const { tmpDir, result } = compileToTmp({ hydrate: ['gsd-planner', 'gsd-checker'] });
 
   t.after(() => {
@@ -147,11 +155,11 @@ test('compile with --hydrate=gsd-planner and gsd-checker: other 15 do NOT contai
   });
 
   assert.equal(result.errors.length, 0, `compile() must produce 0 errors. Got: ${JSON.stringify(result.errors)}`);
-  assert.equal(result.compiled.length, 17, `compile() must produce 17 outputs. Got: ${result.compiled.length}`);
+  assertCompiledMatchesRoster(result, 'compile()');
 
-  // The 15 non-hydrated agents must NOT contain ## Current context
+  // Every non-hydrated agent must NOT contain ## Current context
   const nonHydrated = ALL_AGENTS.filter((n) => n !== 'gsd-planner' && n !== 'gsd-checker');
-  assert.equal(nonHydrated.length, 15, 'exactly 15 non-hydrated agents expected');
+  assert.equal(nonHydrated.length, ALL_AGENTS.length - 2, 'every agent except the two hydrated ones is non-hydrated');
 
   for (const agentName of nonHydrated) {
     const filePath = path.join(tmpDir, `${agentName}.md`);
@@ -290,10 +298,10 @@ test('compile-twice determinism with --hydrate empty — output is byte-identica
 
   assert.equal(r1.errors.length, 0, 'Run 1 must have 0 errors');
   assert.equal(r2.errors.length, 0, 'Run 2 must have 0 errors');
-  assert.equal(r1.compiled.length, 17, 'Run 1 must compile 17 agents');
-  assert.equal(r2.compiled.length, 17, 'Run 2 must compile 17 agents');
+  assertCompiledMatchesRoster(r1, 'Run 1');
+  assertCompiledMatchesRoster(r2, 'Run 2');
 
-  // Compare all 17 outputs byte-for-byte between run 1 and run 2
+  // Compare every output byte-for-byte between run 1 and run 2
   const diffs = [];
   for (const agentName of ALL_AGENTS) {
     const c1 = fs.readFileSync(path.join(tmpDir1, `${agentName}.md`), 'utf8');
