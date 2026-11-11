@@ -112,9 +112,11 @@ class TestMirrorSyncCallsTaskUpsertOnSuccess(unittest.TestCase):
 
     def test_mirror_sync_calls_task_upsert_on_success(self):
         """Source code shows task_upsert called when rc == 0 and command in _TASK_MUTATING_COMMANDS."""
-        # Verify the mirror sync block references both conditions
-        self.assertIn("rc == 0 and command in _TASK_MUTATING_COMMANDS", DAEMON_SOURCE,
-                       "Mirror sync should check rc == 0 AND command in mutating set")
+        # The guard is no longer `rc == 0 and command in ...`: 99eb618 widened it to
+        # `(rc == 0 or _tasks_moved) and command in ...` so a command that timed out after
+        # committing is still mirrored. The success arm (rc == 0) is still required.
+        self.assertIn("(rc == 0 or _tasks_moved) and command in _TASK_MUTATING_COMMANDS", DAEMON_SOURCE,
+                       "Mirror sync should check (rc == 0 or tasks moved) AND command in mutating set")
         # Verify task_upsert is called in the mirror block
         mirror_block_match = re.search(
             r'command in _TASK_MUTATING_COMMANDS.*?task_upsert',
@@ -125,14 +127,21 @@ class TestMirrorSyncCallsTaskUpsertOnSuccess(unittest.TestCase):
 
 
 class TestMirrorSyncSkippedOnNonzeroRc(unittest.TestCase):
-    """Mirror sync skipped when rc != 0."""
+    """Mirror sync skipped when rc != 0 and the tasks file did not move."""
 
     def test_mirror_sync_skipped_on_nonzero_rc(self):
-        """Mirror sync condition requires rc == 0; nonzero rc skips it."""
-        # Verify the guard: `if _mirror_store and rc == 0 and command in _TASK_MUTATING_COMMANDS:`
-        guard_pattern = r'if _mirror_store and rc == 0 and command in _TASK_MUTATING_COMMANDS'
+        """A nonzero rc skips the mirror unless tasks.json demonstrably changed."""
+        # Old pin: `if _mirror_store and rc == 0 and command in _TASK_MUTATING_COMMANDS`.
+        # The guard changed in 99eb618: a nonzero rc alone still skips, but a failed command that
+        # nevertheless replaced tasks.json (timed out after commit) is mirrored. Both halves
+        # of that rule are pinned: the guard, and _tasks_moved being false unless rc != 0
+        # AND the file signature changed.
+        guard_pattern = r'if _mirror_store and \(rc == 0 or _tasks_moved\) and command in _TASK_MUTATING_COMMANDS'
         self.assertRegex(DAEMON_SOURCE, guard_pattern,
-                          "Mirror sync should have triple guard: store + rc==0 + mutating")
+                          "Mirror sync should have triple guard: store + (rc==0 or tasks moved) + mutating")
+        moved_pattern = r'_tasks_moved = \(\s*rc != 0\s*and _tasks_file_changed\('
+        self.assertRegex(DAEMON_SOURCE, moved_pattern,
+                          "_tasks_moved must require a nonzero rc AND a changed tasks.json signature")
 
 
 # ── _resolve_project_id for all routes ───────────────────────────────────────
