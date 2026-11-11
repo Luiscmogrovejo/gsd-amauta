@@ -31,8 +31,68 @@ const {
   _filesDisjointSplit,
   _renderDagText,
   _diffPlanVsAmauta,
+  _loadRegisteredTasks,
+  extractId,
+  extractDedupId,
   planToTasks,
 } = tools;
+
+const { startFixtureDaemon, stopFixtureDaemon } = require('./support/fixture-daemon.cjs');
+
+/**
+ * Run `fn(handle)` against a fixture daemon (SQLite, ephemeral port, temp data dir) with the
+ * daemon's environment applied to this process, because planToTasks() reads AMAUTA_DATA_DIR and
+ * the CLI port from process.env. Everything is restored and the daemon stopped afterwards, so no
+ * test in this file can write to the operator's live store (ST-0035 / ST-0086, 2026-11-11).
+ *
+ * @param {(h: object) => Promise<any>} fn
+ * @returns {Promise<any>}
+ */
+async function withFixtureEnv(fn) {
+  const h = await startFixtureDaemon();
+  const saved = {};
+  for (const k of Object.keys(h.env)) saved[k] = process.env[k];
+  Object.assign(process.env, h.env);
+  try {
+    return await fn(h);
+  } finally {
+    for (const k of Object.keys(saved)) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+    await stopFixtureDaemon(h);
+  }
+}
+
+/**
+ * Run `gsd-tools plan-to-tasks <planFile>` as a child process against a fixture daemon.
+ * @param {string} planFile
+ * @param {object} h fixture handle
+ * @returns {Promise<{code: number|null, stdout: string, result: object|null}>}
+ */
+function runCliAgainst(planFile, h) {
+  const { spawn: spawnChild } = require('child_process');
+  return new Promise((resolve) => {
+    const child = spawnChild(process.execPath, [GSD_TOOLS, 'plan-to-tasks', planFile], {
+      cwd: REPO_ROOT,
+      env: { ...process.env, ...h.env },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    child.stdout.on('data', (c) => { stdout += c; });
+    child.stderr.on('data', () => {});
+    const timer = setTimeout(() => child.kill('SIGKILL'), 90000);
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      const at = stdout.search(/^\{/m);
+      let result = null;
+      if (at !== -1) {
+        try { result = JSON.parse(stdout.slice(at)); } catch (_e) { result = null; }
+      }
+      resolve({ code, stdout, result });
+    });
+  });
+}
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -452,7 +512,7 @@ ${makeTask('cycle-02', 'executor-backend', ['b.py'], ['cycle-01'])}
   if (err) throw err;
 });
 
-test('planToTasks: valid plan passes Pass 0 validation (daemon-agnostic)', async () => {
+test('planToTasks: valid plan passes Pass 0 validation (daemon-agnostic)', { timeout: 180000 }, async () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsd-14-valid-'));
   let err;
   try {
@@ -466,7 +526,9 @@ ${makeTask('valid-02', 'executor-backend', ['get-shit-done/bin/gsd-amauta.cjs'],
     const planFile = path.join(tmpDir, '14-valid-PLAN.md');
     fs.writeFileSync(planFile, planContent);
 
-    const result = await planToTasks(planFile, { cwd: tmpDir });
+    // Fixture daemon + temp data dir: this test writes through the real CLI (it created the story
+    // and 147 plan_id notes on ST-0035 in the live store before 88-07).
+    const result = await withFixtureEnv(() => planToTasks(planFile, { cwd: tmpDir }));
     // Pass 0 succeeded (no cycle, no cap, no conflict) — result is either:
     // - {pass0:'complete', plan_id, story_id, tasks_created, ...} on full success (daemon running)
     // - {error:'story_creation_failed'} if daemon is not available
@@ -485,9 +547,164 @@ ${makeTask('valid-02', 'executor-backend', ['get-shit-done/bin/gsd-amauta.cjs'],
     if (result.plan_id) {
       assert.equal(result.plan_id, '14-valid-test', 'should extract plan_id from frontmatter');
     }
+    assert.ok(result.story_id, `against the fixture daemon the story must be created; got: ${JSON.stringify(result).slice(0, 200)}`);
   } catch (e) { err = e; }
 
   try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
+  if (err) throw err;
+});
+
+// ── 88-07: extractId returns the CREATED id, never a dedup-matched one ───────
+
+test('extractId: a dedup line returns null, never the pre-existing story', () => {
+  assert.equal(extractId('Story similar to ST-0035 (92% match)', 'ST'), null);
+  // The real dedup output of `amauta add` (ANSI-coloured, exit 0):
+  const dedup = '\x1b[93mDEDUP BLOCKED: similar task ST-0035 already exists for @operator. ' +
+    'Add a note to ST-0035 instead of creating a duplicate.\x1b[0m\n' +
+    '\x1b[2m  Use: amauta note ST-0035 --content "your context here"\x1b[0m\n';
+  assert.equal(extractId(dedup, 'ST'), null);
+  assert.equal(extractDedupId(dedup), 'ST-0035');
+});
+
+test('extractId: the creation line returns the new id (story and task)', () => {
+  const story = '\x1b[92mCreated story ST-0412: Some new story\x1b[0m\n\x1b[2m  assigned=@operator  priority=medium  score=2.1\x1b[0m\n';
+  assert.equal(extractId(story, 'ST'), 'ST-0412');
+  const task = '\x1b[92mCreated task TK-0099: Mentions ST-0001 in its title\x1b[0m\n';
+  assert.equal(extractId(task, 'TK'), 'TK-0099');
+  assert.equal(extractId(task, 'ST'), null, 'an id inside a title is not a created story');
+});
+
+// ── 88-07: the single registered-tasks seam (Phase 91 repoints it) ───────────
+
+test('_loadRegisteredTasks: missing file and corrupt file both return an empty list, never throw', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsd-14-seam-'));
+  try {
+    const missing = await _loadRegisteredTasks({ dataDir: path.join(dir, 'nope'), planId: 'x' });
+    assert.deepEqual(missing, { source: 'tasks.json', tasks: [] });
+    fs.writeFileSync(path.join(dir, 'tasks.json'), '{ not json');
+    const corrupt = await _loadRegisteredTasks({ dataDir: dir, planId: 'x' });
+    assert.deepEqual(corrupt, { source: 'tasks.json', tasks: [] });
+    fs.writeFileSync(path.join(dir, 'tasks.json'), JSON.stringify({ items: [{ id: 'TK-0001' }] }));
+    const ok = await _loadRegisteredTasks({ dataDir: dir, planId: 'x' });
+    assert.equal(ok.tasks.length, 1);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+test('planToTasks: tasks.json is read only through _loadRegisteredTasks', () => {
+  const src = fs.readFileSync(GSD_TOOLS, 'utf-8');
+  const start = src.indexOf('async function planToTasks(');
+  const end = src.indexOf('\n}\n', start);
+  const body = src.slice(start, end);
+  assert.ok(start > 0 && end > start, 'planToTasks body located');
+  assert.ok(!/tasks\.json/.test(body.replace(/\/\/.*$/gm, '')), 'planToTasks must not touch tasks.json outside _loadRegisteredTasks');
+  assert.ok(/_loadRegisteredTasks\(/.test(body), 'planToTasks must call _loadRegisteredTasks');
+});
+
+// ── 88-07: drift compares in the namespace the store can answer in ───────────
+
+test('drift: a stored task with no manifest, and dependencies held as amauta ids, are not drift', () => {
+  const planTasks = [
+    { id: 'p-01', title: 'One', agent: 'executor-backend', filesExpected: { modify: ['a.py'], create: [], delete: [] }, dependsOn: [] },
+    { id: 'p-02', title: 'Two', agent: 'executor-backend', filesExpected: { modify: ['b.py'], create: [], delete: [] }, dependsOn: ['p-01'] },
+  ];
+  const stored = [
+    { id: 'TK-0001', tags: ['plan:p', 'task:p-01'], title: 'One', assigned_to: 'executor-backend', dependencies: [] },
+    { id: 'TK-0002', tags: ['plan:p', 'task:p-02'], title: 'Two', assigned_to: 'executor-backend', dependencies: ['TK-0001'] },
+  ];
+  assert.equal(_diffPlanVsAmauta(planTasks, stored).drifted, false);
+});
+
+test('drift: a stored manifest that differs from the plan is still drift', () => {
+  const planTasks = [{ id: 'p-01', title: 'One', agent: 'executor-backend', filesExpected: { modify: ['a.py'], create: [], delete: [] }, dependsOn: [] }];
+  const stored = [{ id: 'TK-0001', tags: ['task:p-01'], title: 'One', assigned_to: 'executor-backend',
+    files_expected: { modify: ['other.py'], create: [], delete: [] }, dependencies: [] }];
+  const r = _diffPlanVsAmauta(planTasks, stored);
+  assert.equal(r.drifted, true);
+  assert.equal(r.diffs[0].field, 'files_expected.modify');
+});
+
+// ── 88-07 / FND-05: second run on an unchanged plan says "no drift" ─────────
+
+test('FND-05: an unchanged plan prints "no drift" and exits 0; a drifted plan does neither', { timeout: 240000 }, async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsd-14-nodrift-'));
+  let err;
+  try {
+    const sfx = require('crypto').randomBytes(4).toString('hex');
+    // Unique story title per run: a fixed one can dedup-match a real story (ST-0035 incident).
+    const story = makeStory().replace('<title>Test Story</title>', `<title>No-drift story ${sfx}</title>`);
+    const planContent = `---
+plan_id: 14-nodrift-test
+---
+${story}
+${makeTask('nodrift-01', 'executor-backend', ['amauta.py'], [])}
+${makeTask('nodrift-02', 'executor-backend', ['get-shit-done/bin/gsd-amauta.cjs'], ['nodrift-01'])}
+`;
+    const planFile = path.join(tmpDir, '14-nodrift-PLAN.md');
+    fs.writeFileSync(planFile, planContent);
+
+    const h = await startFixtureDaemon();
+    try {
+      const run1 = await runCliAgainst(planFile, h);
+      assert.ok(run1.result && run1.result.story_id, `run 1 should register the plan: ${run1.stdout.slice(0, 300)}`);
+      assert.equal(run1.code, 0);
+      assert.ok(!run1.stdout.includes('no drift'), 'a first registration is not "no drift"');
+
+      const run2 = await runCliAgainst(planFile, h);
+      assert.equal(run2.code, 0, 'unchanged plan exits 0');
+      assert.ok(run2.stdout.includes('no drift'), `stdout should contain "no drift"; got: ${run2.stdout.slice(0, 300)}`);
+      assert.equal(run2.result.skipped, true);
+      assert.equal(run2.result.reason, 'already_registered');
+
+      fs.writeFileSync(planFile, planContent.replace('Task nodrift-01', 'Task nodrift-01 CHANGED'));
+      const run3 = await runCliAgainst(planFile, h);
+      assert.notEqual(run3.code, 0, 'drifted plan exits non-zero');
+      assert.equal(run3.result.error, 'plan_amauta_drift');
+      assert.ok(!run3.stdout.includes('no drift'), 'drift output must not contain "no drift"');
+    } finally {
+      await stopFixtureDaemon(h);
+    }
+  } catch (e) { err = e; }
+
+  try { fs.rmSync(tmpDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); } catch (_) {}
+  if (err) throw err;
+});
+
+test('planToTasks: a story title that dedup-matches another plan\'s story is refused and stamps no note on it', { timeout: 240000 }, async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsd-14-wrongstory-'));
+  let err;
+  try {
+    const sfx = require('crypto').randomBytes(4).toString('hex');
+    const mk = (planId, taskId) => `---
+plan_id: ${planId}
+---
+${makeStory().replace('<title>Test Story</title>', `<title>Shared story title ${sfx}</title>`)}
+${makeTask(taskId, 'executor-backend', ['amauta.py'], [])}
+`;
+    const planA = path.join(tmpDir, 'A-PLAN.md');
+    const planB = path.join(tmpDir, 'B-PLAN.md');
+    fs.writeFileSync(planA, mk('14-ws-a', 'ws-a-01'));
+    fs.writeFileSync(planB, mk('14-ws-b', 'ws-b-01'));
+    const h = await startFixtureDaemon();
+    try {
+      const runA = await runCliAgainst(planA, h);
+      assert.ok(runA.result && runA.result.story_id, `plan A registers: ${runA.stdout.slice(0, 300)}`);
+      const runB = await runCliAgainst(planB, h);
+      assert.equal(runB.result.error, 'story_dedup_refused', `got: ${runB.stdout.slice(0, 300)}`);
+      assert.equal(runB.result.matched_story_id, runA.result.story_id);
+      assert.match(runB.result.message, /refusing to attach to an existing story/);
+      assert.notEqual(runB.code, 0);
+      const store = JSON.parse(fs.readFileSync(path.join(h.dataDir, 'tasks.json'), 'utf-8'));
+      const storyA = store.items.find((i) => i.id === runA.result.story_id);
+      assert.ok(!JSON.stringify(storyA.notes || []).includes('14-ws-b'), 'no plan B note on plan A\'s story');
+      assert.equal(store.items.filter((i) => (i.tags || []).includes('plan:14-ws-b')).length, 0, 'no plan B task created');
+    } finally {
+      await stopFixtureDaemon(h);
+    }
+  } catch (e) { err = e; }
+
+  try { fs.rmSync(tmpDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); } catch (_) {}
   if (err) throw err;
 });
 
