@@ -17,7 +17,7 @@
  */
 const { describe, test } = require('node:test');
 const assert = require('node:assert/strict');
-const { spawnSync } = require('node:child_process');
+const { spawnSync, execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -68,6 +68,16 @@ if (pythonCheck.error || pythonCheck.status !== 0) {
   console.log('SKIP: python3 not on PATH — skipping task-completions-learning tests');
   process.exit(0);
 }
+
+// NumPy probe: _logistic_regression degrades to a 0.5 no-op without NumPy, which makes any
+// "p > 0.5" / "p < 0.5" assertion vacuous. requirements.txt deliberately does not list numpy
+// (heavy numerical dependency for every install), so those assertions run only when it exists.
+const NUMPY = (() => {
+  try { execFileSync('python3', ['-c', 'import numpy'], { stdio: 'ignore' }); return true; }
+  catch { return false; }
+})();
+const NUMPY_SKIP = NUMPY ? false
+  : 'numpy is not installed; _logistic_regression degrades to a 0.5 no-op and the assertion would be vacuous';
 
 // Helper: run python3 script via tmp file (cwd=ROOT)
 function pyFile(scriptContent) {
@@ -159,7 +169,32 @@ print(json.dumps({'p': p, 'neighbor_count': len(neighbors_2)}))
     assert.strictEqual(out.neighbor_count, 2, `Test used 2 neighbors`);
   });
 
-  test('_logistic_regression: all validator_pass neighbors → p > 0.5', () => {
+  test('_logistic_regression: without NumPy degrades to a logged 0.5 no-op (documented fallback)', (t) => {
+    // Always runs: simulates NumPy absence by flipping the module flag, so the fallback stays covered
+    // even on machines where NumPy is installed (and the two assertions below are not skipped).
+    const r = pyFile(`
+${PY_BOOTSTRAP}
+import logging, io
+_buf = io.StringIO()
+_h = logging.StreamHandler(_buf)
+logging.getLogger('amauta.complexity_scorer').addHandler(_h)
+_mod._HAS_NUMPY = False
+features = {'files_expected': 5,'estimated_loc': 100,'test_impact': 2,'dependency_depth': 1,'has_migration': False,'has_api_change': False,'security_sensitivity': 2, 'top_level_dir_width': 0}
+neighbors = [
+    {'feature_vector': dict(features, files_expected=5+i%3), 'outcome_label': 'validator_pass', 'similarity': 0.9}
+    for i in range(20)
+]
+p = _logistic_regression(neighbors, features)
+print(json.dumps({'p': p, 'log': _buf.getvalue()}))
+`);
+    assert.ok(!r.error, `Python error: ${r.error}\n${r.stderr}`);
+    const out = JSON.parse(r.stdout.trim());
+    assert.strictEqual(out.p, 0.5, `NumPy-absent path should return the 0.5 no-op, got ${out.p}`);
+    assert.ok(out.log.includes('NumPy not available'), `degradation should be logged, got: ${out.log}`);
+    if (!NUMPY) t.diagnostic('numpy absent: 2 learning tests skipped');
+  });
+
+  test('_logistic_regression: all validator_pass neighbors → p > 0.5', { skip: NUMPY_SKIP }, () => {
     const r = pyFile(`
 ${PY_BOOTSTRAP}
 features = {'files_expected': 5,'estimated_loc': 100,'test_impact': 2,'dependency_depth': 1,'has_migration': False,'has_api_change': False,'security_sensitivity': 2, 'top_level_dir_width': 0}
@@ -177,7 +212,7 @@ print(json.dumps({'p': p}))
     assert.ok(out.p > 0.5, `All validator_pass neighbors should yield p>0.5, got ${out.p}`);
   });
 
-  test('_logistic_regression: all task_fail neighbors → p < 0.5', () => {
+  test('_logistic_regression: all task_fail neighbors → p < 0.5', { skip: NUMPY_SKIP }, () => {
     const r = pyFile(`
 ${PY_BOOTSTRAP}
 features = {'files_expected': 5,'estimated_loc': 100,'test_impact': 2,'dependency_depth': 1,'has_migration': False,'has_api_change': False,'security_sensitivity': 2, 'top_level_dir_width': 0}
