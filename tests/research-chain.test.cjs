@@ -258,21 +258,31 @@ describe('Research chain: preamble stripping', () => {
 // ═══════════════════════════════════════════════════════
 
 describe('Research chain: agent integration', () => {
-  test('all 11 agents have RESEARCH= variable', () => {
+  test('every agent except the read-only auditors has RESEARCH= variable', () => {
+    // Roster read from disk, not a fixed count (was 11, is 35). The read-only audit agents
+    // (gsd-auditor-*) audit what exists and have no research chain, so they carry no RESEARCH=.
+    // Everything else must, and the original core agents must all be present.
     const agentsDir = path.join(__dirname, '..', 'agents');
     const agents = fs.readdirSync(agentsDir).filter(f => f.startsWith('gsd-') && f.endsWith('.md'));
-    assert.strictEqual(agents.length, 11, `should have 11 agents: ${agents.join(', ')}`);
-    for (const agent of agents) {
+    const core = ['gsd-checker', 'gsd-debugger', 'gsd-executor-backend', 'gsd-executor-frontend',
+      'gsd-executor-general', 'gsd-executor-infra', 'gsd-operator', 'gsd-planner',
+      'gsd-researcher', 'gsd-roadmapper', 'gsd-validator'];
+    const missingCore = core.filter(n => !agents.includes(`${n}.md`));
+    assert.deepStrictEqual(missingCore, [], `core agents missing from agents/: ${missingCore.join(', ')}`);
+    const researchAgents = agents.filter(f => !f.startsWith('gsd-auditor-'));
+    assert.ok(researchAgents.length > 0, 'expected at least one non-auditor agent');
+    for (const agent of researchAgents) {
       const content = fs.readFileSync(path.join(agentsDir, agent), 'utf-8');
       assert.ok(content.includes('RESEARCH=') || content.includes("RESEARCH='"),
         `${agent} should have RESEARCH= variable`);
     }
   });
 
-  test('all 11 skills have RESEARCH= variable', () => {
+  test('every gsd-*-workflow skill has RESEARCH= variable', () => {
+    // Was `skills.length === 11`: skills are read from disk; only some agents have one (SKL-01 deferred to v2).
     const skillsDir = path.join(__dirname, '..', 'skills');
     const skills = fs.readdirSync(skillsDir).filter(f => f.startsWith('gsd-') && f.endsWith('-workflow'));
-    assert.strictEqual(skills.length, 11, `should have 11 skills: ${skills.join(', ')}`);
+    assert.ok(skills.length > 0, 'skills/ must hold at least one gsd-*-workflow directory');
     for (const skill of skills) {
       const content = fs.readFileSync(path.join(skillsDir, skill, 'SKILL.md'), 'utf-8');
       assert.ok(content.includes('RESEARCH='),
@@ -280,7 +290,7 @@ describe('Research chain: agent integration', () => {
     }
   });
 
-  test('all 11 skills have $RESEARCH search in context pipeline', () => {
+  test('every gsd-*-workflow skill has $RESEARCH search in context pipeline', () => {
     const skillsDir = path.join(__dirname, '..', 'skills');
     const skills = fs.readdirSync(skillsDir).filter(f => f.startsWith('gsd-') && f.endsWith('-workflow'));
     for (const skill of skills) {
@@ -291,11 +301,13 @@ describe('Research chain: agent integration', () => {
   });
 
   test('execute-phase.md enrichment block has research chain', () => {
+    // moved to get-shit-done/workflows/execute-phase/steps/step-03-execute.md: execute-phase.md
+    // is a thin redirect to the sharded workflow (SHARD-01); the enrichment block lives in that step.
     const content = fs.readFileSync(
-      path.join(__dirname, '..', 'get-shit-done', 'workflows', 'execute-phase.md'), 'utf-8'
+      path.join(__dirname, '..', 'get-shit-done', 'workflows', 'execute-phase', 'steps', 'step-03-execute.md'), 'utf-8'
     );
     assert.ok(content.includes('gsd-research.cjs search'),
-      'execute-phase.md should call research chain in enrichment block');
+      'execute-phase step-03-execute.md should call research chain in enrichment block');
   });
 
   test('execute-plan.md enrichment block has research chain', () => {
