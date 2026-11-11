@@ -334,3 +334,79 @@ class TestOutputModes(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestInstallStale(unittest.TestCase):
+    """The manifest check cannot see that the package moved on after install."""
+
+    def setUp(self):
+        import subprocess, tempfile
+        self.subprocess = subprocess
+        self.tmp = tempfile.mkdtemp(prefix="doctor-stale-")
+        self.pkg = os.path.join(self.tmp, "pkg")
+        os.makedirs(self.pkg)
+        self.git("init", "-q")
+        self.commit("one")
+        self.first = self.head()
+        self.record = os.path.join(self.tmp, "install_record.json")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def git(self, *args):
+        return self.subprocess.run(
+            ["git", "-C", self.pkg, "-c", "user.email=t@t", "-c", "user.name=t",
+             "-c", "commit.gpgsign=false", *args],
+            capture_output=True, text=True, check=True).stdout.strip()
+
+    def commit(self, name):
+        with open(os.path.join(self.pkg, name), "w") as f:
+            f.write(name)
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", name)
+
+    def head(self):
+        return self.git("rev-parse", "HEAD")
+
+    def run_check(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "doctor_stale", os.path.join(os.path.dirname(__file__), "..", "services", "doctor.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        rows = []
+        mod.row = lambda status, cat, detail, data=None: rows.append((status, cat, detail, data))
+        mod.check_install_stale(record_path=self.record, package_root=self.pkg)
+        self.assertEqual(len(rows), 1)
+        return mod, rows[0]
+
+    def write_record(self, commit):
+        import json
+        with open(self.record, "w") as f:
+            json.dump({"version": "3.3.0", "package_commit": commit}, f)
+
+    def test_matching_commit_is_ok(self):
+        self.write_record(self.first)
+        mod, (status, cat, detail, _) = self.run_check()
+        self.assertEqual((status, cat), (mod.OK, "install_stale"))
+
+    def test_package_ahead_of_install_warns_with_distance(self):
+        self.write_record(self.first)
+        self.commit("two")
+        self.commit("three")
+        mod, (status, _, detail, data) = self.run_check()
+        self.assertEqual(status, mod.WARN)
+        self.assertEqual(data["commits_behind"], 2)
+        self.assertIn("--upgrade", detail)
+
+    def test_missing_record_warns_instead_of_assuming_current(self):
+        mod, (status, _, detail, data) = self.run_check()
+        self.assertEqual(status, mod.WARN)
+        self.assertIsNone(data["installed_commit"])
+
+    def test_non_git_package_is_not_a_warning(self):
+        import shutil
+        shutil.rmtree(os.path.join(self.pkg, ".git"))
+        mod, (status, _, _, _) = self.run_check()
+        self.assertEqual(status, mod.OK)

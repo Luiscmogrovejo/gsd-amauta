@@ -25,6 +25,8 @@ Run: python3 services/doctor.py  OR  gsd-amauta doctor
 import json
 import os
 import pathlib
+import subprocess
+from pathlib import Path
 import sys
 import urllib.request
 import urllib.error
@@ -324,6 +326,58 @@ def check_version_skew(config_dir, manifest):
         row(WARN, "version_skew", f"Check error: {e}")
 
 
+# ══ Check 4b: Stale install (package moved on since the files were installed) ══
+def _git_head(root):
+    try:
+        r = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"],
+                           capture_output=True, text=True, timeout=5)
+        sha = (r.stdout or "").strip()
+        return sha if r.returncode == 0 and len(sha) == 40 else None
+    except Exception:
+        return None
+
+
+def check_install_stale(record_path=None, package_root=None):
+    """The manifest check proves the installed files were not edited; it cannot
+    see that the PACKAGE changed after the install. VERSION rarely moves between
+    commits, so compare the commit recorded at install time with the package's
+    current commit."""
+    try:
+        record_path = Path(record_path) if record_path else Path.home() / ".amauta" / "data" / "install_record.json"
+        package_root = Path(package_root) if package_root else Path(__file__).resolve().parent.parent
+        head = _git_head(package_root)
+        if head is None:
+            row(OK, "install_stale", "package is not a git checkout — nothing to compare")
+            return
+        try:
+            record = json.loads(record_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            record = None
+        installed = (record or {}).get("package_commit")
+        data = {"installed_commit": installed, "package_commit": head}
+        if not installed:
+            row(WARN, "install_stale",
+                "no install record with a commit — the installed copy may be older than "
+                f"the package ({head[:7]}); run `node bin/init.cjs --upgrade`", data)
+        elif installed != head:
+            behind = None
+            try:
+                r = subprocess.run(["git", "-C", str(package_root), "rev-list", "--count", f"{installed}..{head}"],
+                                   capture_output=True, text=True, timeout=5)
+                behind = int(r.stdout.strip()) if r.returncode == 0 else None
+            except Exception:
+                behind = None
+            data["commits_behind"] = behind
+            how = f"{behind} commit(s) behind" if behind is not None else "a different commit"
+            row(WARN, "install_stale",
+                f"installed from {installed[:7]}, package is at {head[:7]} ({how}); "
+                "run `node bin/init.cjs --upgrade`", data)
+        else:
+            row(OK, "install_stale", f"installed copy matches package commit {head[:7]}", data)
+    except Exception as e:
+        row(WARN, "install_stale", f"Check error: {e}")
+
+
 # ══ Check 5: Daemon ═══════════════════════════════════════════════════════════
 def check_daemon():
     health, err = http_json(DAEMON_URL)
@@ -615,6 +669,7 @@ def main(argv):
     check_path_collision()
     manifest = check_install_drift(config_dir)
     check_version_skew(config_dir, manifest)
+    check_install_stale()
     health = check_daemon()
     check_backend(health)
     check_postgres(health)

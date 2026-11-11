@@ -1399,6 +1399,16 @@ function printDegradedBanner(report) {
  * `applied_migrations` records ONLY migrations that actually ran against a
  * database — never the SQLite case, where no SQL is executed.
  */
+function packageCommit() {
+  try {
+    const r = spawnSync('git', ['-C', PLUGIN_ROOT, 'rev-parse', 'HEAD'], { encoding: 'utf-8', timeout: 5000 });
+    const sha = (r.stdout || '').trim();
+    return r.status === 0 && /^[0-9a-f]{40}$/.test(sha) ? sha : null;
+  } catch (_e) {
+    return null;
+  }
+}
+
 function writeInstallRecord(fields) {
   const record = {
     version: packageVersion(),
@@ -1406,6 +1416,10 @@ function writeInstallRecord(fields) {
     upgraded_at: null,
     backend: fields.backend || 'unknown',
     plugin_root: PLUGIN_ROOT,
+    // The package version rarely changes between commits, so the commit the
+    // files were installed from is what lets doctor tell a stale install
+    // from a current one.
+    package_commit: packageCommit(),
     applied_migrations: fields.appliedMigrations || [],
   };
   try {
