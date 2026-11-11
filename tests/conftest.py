@@ -33,6 +33,14 @@ _DELETED_KEYS = (
 )
 _LIVE_PORTS = {18799, 18798, 6379, 5433}
 
+# Install the socket guard at conftest import, which is BEFORE pytest collects
+# any test module. A module-level probe (``_daemon_ready()`` in
+# tests/test_capability_e2e.py used to GET the live daemon at import) runs during
+# collection, i.e. before the session fixture below; with the guard installed
+# only there, collection itself reached the operator's live daemon (88-08-03).
+# install() is idempotent, so the session fixture's later call is a no-op.
+hermetic_guard.install()
+
 
 def _free_port(avoid=()):
     """Bind port 0 on 127.0.0.1 and return the port the OS chose.
@@ -188,3 +196,4 @@ def fixture_daemon(tmp_path):
             proc.wait()
         out_f.close()
         err_f.close()
+

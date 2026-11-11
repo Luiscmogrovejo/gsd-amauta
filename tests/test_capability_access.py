@@ -322,7 +322,14 @@ def test_buffer_dir_identical_across_runtimes(tmp_path, monkeypatch):
     monkeypatch.delenv("AMAUTA_DATA_DIR", raising=False)
     repo = subprocess.check_output(["git", "rev-parse", "--show-toplevel"]).decode().strip()
     assert os.path.normpath(os.path.abspath(_data_dir())) == os.path.join(repo, "data")
-    assert os.path.isfile(os.path.join(repo, "data", "tasks.json"))
+    # The old proof was `os.path.isfile(<repo>/data/tasks.json)`: it needed the operator's
+    # live, gitignored data file and so failed in any clean checkout or CI runner (LIVE
+    # bucket, 88-08-03). The seam it proved is that the Node side defaults DATA_DIR to
+    # <plugin root>/data when AMAUTA_DATA_DIR is unset; read that default from the Node
+    # source itself, which is the same fact without touching the live store.
+    node_src = os.path.join(repo, "get-shit-done", "bin", "gsd-amauta.cjs")
+    with open(node_src, "r", encoding="utf-8") as fh:
+        assert "process.env.AMAUTA_DATA_DIR || path.join(PLUGIN_ROOT, 'data')" in fh.read()
 
     # (b) override honored by BOTH runtimes — the shared seam.
     monkeypatch.setenv("AMAUTA_DATA_DIR", str(tmp_path))
