@@ -72,7 +72,19 @@ _VECTOR_LIMIT = 10              # per-list pre-fusion top-N
 try:
     from services.pg_dsn import require_dsn as _require_dsn  # type: ignore
 except ImportError:  # pragma: no cover - depends on caller's sys.path
-    from pg_dsn import require_dsn as _require_dsn  # type: ignore
+    try:
+        from pg_dsn import require_dsn as _require_dsn  # type: ignore
+    except ImportError:
+        # Loaded by file path (importlib, `python -c` from another directory):
+        # neither the repo root nor services/ is on sys.path. pg_dsn.py always
+        # sits beside this file, so load it from there rather than fail.
+        import importlib.util as _ilu
+        import os as _os
+        _spec = _ilu.spec_from_file_location(
+            "pg_dsn", _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "pg_dsn.py"))
+        _pg_dsn = _ilu.module_from_spec(_spec)
+        _spec.loader.exec_module(_pg_dsn)
+        _require_dsn = _pg_dsn.require_dsn
 
 # ═══════════════════════════════════════════════════════
 # Database connection
