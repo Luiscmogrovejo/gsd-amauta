@@ -1,4 +1,4 @@
--- GSD-Amauta Migration 028: make the PG schema able to hold the live SQLite data
+-- GSD-Amauta Migration 029: make the PG schema able to hold the live SQLite data
 -- Prerequisite for services/migrate_sqlite_to_pg.py.
 --
 -- Two gaps found by measuring the real SQLite database before writing the
@@ -60,6 +60,6 @@ CREATE INDEX IF NOT EXISTS idx_gsd_memory_archive_archived_at
 
 COMMENT ON TABLE gsd_memory_archive IS
     'Soft-deleted gsd_memory rows (memory_retention_cleanup). Declared in '
-    'migration 028 so a SQLite import has somewhere to put archived rows.';
+    'migration 029 so a SQLite import has somewhere to put archived rows.';
 
 COMMIT;

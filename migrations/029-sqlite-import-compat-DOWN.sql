@@ -1,4 +1,4 @@
--- DOWN for 028-sqlite-import-compat.sql
+-- DOWN for 029-sqlite-import-compat.sql
 --
 -- NOT fully reversible by design:
 --   * gsd_tasks.title is NOT narrowed back to VARCHAR(512). 58 live rows are

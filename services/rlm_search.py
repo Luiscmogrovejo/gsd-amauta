@@ -92,7 +92,7 @@ _HAS_EMBEDDING_MODEL_COLUMN = {}
 
 
 def _has_embedding_model_column(pg_conn) -> bool:
-    """True when rlm_chunks has migration 029's embedding_model column."""
+    """True when rlm_chunks has migration 030's embedding_model column."""
     key = id(pg_conn)
     if key in _HAS_EMBEDDING_MODEL_COLUMN:
         return _HAS_EMBEDDING_MODEL_COLUMN[key]
@@ -434,7 +434,7 @@ def hybrid_search(query: str, pg_conn, top_k: int = DEFAULT_TOP_K,
     # embedding_code column; cosine distance between the two spaces is noise.
     # Rows embedded by another model still reach the results through BM25 —
     # they just do not pollute the vector ranking. NULL embedding_model means
-    # "written before migration 029, provenance unknown" and is included so
+    # "written before migration 030, provenance unknown" and is included so
     # an existing index does not go dark the moment this ships.
     vector_filter_sql = ""
     vector_filter_params = ()

@@ -59,13 +59,13 @@ def file_sha256(filepath: str) -> str:
     return h.hexdigest()
 
 
-#: Cached per-connection result of "does rlm_chunks have migration 029's
+#: Cached per-connection result of "does rlm_chunks have migration 030's
 #: columns?" so the probe runs once, not once per file per query.
 _HAS_029_COLUMNS = {}
 
 
 def _has_stat_columns(pg_conn) -> bool:
-    """True when migration 029 (file_mtime/file_size/embedding_model) is applied."""
+    """True when migration 030 (file_mtime/file_size/embedding_model) is applied."""
     key = id(pg_conn)
     if key in _HAS_029_COLUMNS:
         return _HAS_029_COLUMNS[key]

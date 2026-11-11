@@ -78,10 +78,10 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 try:
-    from services.pg_dsn import mask_dsn, resolve_dsn
+    from services.pg_dsn import local_docker_dsn, mask_dsn, require_dsn
     from services.pg_store import PGStore
 except ImportError:  # pragma: no cover - script-launched from services/
-    from pg_dsn import mask_dsn, resolve_dsn
+    from pg_dsn import local_docker_dsn, mask_dsn, require_dsn
     from pg_store import PGStore
 
 DEFAULT_SQLITE_PATH = os.path.join(
@@ -431,7 +431,7 @@ def migrate(sqlite_path=DEFAULT_SQLITE_PATH, dsn=None, dry_run=False,
             mode="merge", tables=None, exclude_tables=(), batch_size=500,
             skip_content_duplicates=False, allow_conflicts=False, log=print):
     """Plan and (unless dry_run) apply the merge. Returns ``(ok, report)``."""
-    dsn = resolve_dsn(dsn)
+    dsn = require_dsn(dsn, component="migrate_sqlite_to_pg")
     sqlite_conn = open_sqlite_readonly(sqlite_path)
     store = PGStore(dsn=dsn, min_conn=1, max_conn=4)
     try:
@@ -608,7 +608,12 @@ def main(argv=None):
     parser.add_argument("--sqlite", default=DEFAULT_SQLITE_PATH,
                         help=f"SQLite file (default {DEFAULT_SQLITE_PATH})")
     parser.add_argument("--dsn", default=None,
-                        help="PostgreSQL DSN (default: services/pg_dsn.py resolution)")
+                        help="PostgreSQL DSN. Default: GSD_POSTGRES_URL, DATABASE_URL or "
+                             "AMAUTA_MEMORY_DATABASE_URL. With none set the command refuses "
+                             "to guess a database (see services/pg_dsn.py).")
+    parser.add_argument("--local-docker", action="store_true",
+                        help="Target this project's own Docker PostgreSQL "
+                             "(127.0.0.1:$GSD_PG_PORT, default 5433) explicitly.")
     parser.add_argument("--dry-run", action="store_true",
                         help="Print the full merge plan (insert / identical / "
                              "conflict / duplicate per table) and write nothing.")
@@ -637,6 +642,8 @@ def main(argv=None):
     parser.add_argument("--json", action="store_true",
                         help="Print the report as JSON instead of a table.")
     args = parser.parse_args(argv)
+    if args.local_docker and not args.dsn:
+        args.dsn = local_docker_dsn()
 
     if args.mode == "replace" and not args.allow_truncate:
         print("ERROR: --mode replace TRUNCATEs every selected table, destroying "

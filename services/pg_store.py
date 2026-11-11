@@ -3503,7 +3503,7 @@ class PGStore:
         return self._import_rows("gsd_memory", rows, mode, "id")
 
     def import_memory_archive(self, rows, mode="merge"):
-        """Import archived (soft-deleted) memory rows. See migration 028."""
+        """Import archived (soft-deleted) memory rows. See migration 029."""
         self._ensure_archive_table()
         return self._import_rows("gsd_memory_archive", rows, mode, "id")
 

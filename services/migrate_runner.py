@@ -42,9 +42,9 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 try:
-    from services.pg_dsn import mask_dsn, resolve_dsn
+    from services.pg_dsn import local_docker_dsn, mask_dsn, require_dsn
 except ImportError:  # pragma: no cover - script-launched from services/
-    from pg_dsn import mask_dsn, resolve_dsn
+    from pg_dsn import local_docker_dsn, mask_dsn, require_dsn
 
 DEFAULT_MIGRATIONS_DIR = os.path.join(_REPO_ROOT, "migrations")
 
@@ -153,11 +153,12 @@ MIGRATION_SENTINELS = {
         ("column", "agent_findings", "rule_id"),
         ("column", "agent_findings", "dedup_key"),
     ],
-    "028-sqlite-import-compat.sql": [
+    "028-task-project-backfill.sql": [("relation", "gsd_task_project_backfill")],
+    "029-sqlite-import-compat.sql": [
         ("relation", "gsd_memory_archive"),
         ("unbounded", "gsd_tasks", "title"),
     ],
-    "029-rlm-chunk-provenance.sql": [
+    "030-rlm-chunk-provenance.sql": [
         ("column", "rlm_chunks", "embedding_model"),
         ("column", "rlm_chunks", "file_mtime"),
         ("column", "rlm_chunks", "file_size"),
@@ -396,7 +397,7 @@ def apply_migrations(dsn=None, migrations_dir=DEFAULT_MIGRATIONS_DIR,
     Returns a result dict. Raises :class:`MigrationError` on the first failure
     (after rolling that file back); earlier files stay applied and recorded.
     """
-    dsn = resolve_dsn(dsn)
+    dsn = require_dsn(dsn, component="migrate_runner")
     conn = _connect(dsn)
     try:
         pre_migrated = looks_pre_migrated(conn) and not tracking_table_exists(conn)
@@ -489,7 +490,7 @@ def apply_migrations(dsn=None, migrations_dir=DEFAULT_MIGRATIONS_DIR,
 
 def status(dsn=None, migrations_dir=DEFAULT_MIGRATIONS_DIR):
     """Return a status dict without changing anything."""
-    dsn = resolve_dsn(dsn)
+    dsn = require_dsn(dsn, component="migrate_runner")
     conn = _connect(dsn)
     try:
         tracked = tracking_table_exists(conn)
@@ -528,7 +529,12 @@ def main(argv=None):
         description="Apply tracked PostgreSQL migrations for GSD-Amauta."
     )
     parser.add_argument("--dsn", default=None,
-                        help="PostgreSQL DSN (default: services/pg_dsn.py resolution)")
+                        help="PostgreSQL DSN. Default: GSD_POSTGRES_URL, DATABASE_URL or "
+                             "AMAUTA_MEMORY_DATABASE_URL. With none set the command refuses "
+                             "to guess a database (see services/pg_dsn.py).")
+    parser.add_argument("--local-docker", action="store_true",
+                        help="Target this project's own Docker PostgreSQL "
+                             "(127.0.0.1:$GSD_PG_PORT, default 5433) explicitly.")
     parser.add_argument("--migrations-dir", default=DEFAULT_MIGRATIONS_DIR)
     parser.add_argument("--status", action="store_true",
                         help="Print applied/pending migrations and exit 0.")
@@ -544,6 +550,8 @@ def main(argv=None):
                              "indexes).")
     parser.add_argument("--json", action="store_true", help="Machine-readable output.")
     args = parser.parse_args(argv)
+    if args.local_docker and not args.dsn:
+        args.dsn = local_docker_dsn()
 
     import json as _json
 

@@ -38,11 +38,11 @@ import time
 
 try:
     from services.pg_dsn import (
-        dsn_parts, dsn_with_database, mask_dsn, pg_port, redis_port, resolve_dsn,
+        dsn_parts, dsn_with_database, local_docker_dsn, mask_dsn, pg_port, redis_port, resolve_dsn,
     )
 except ImportError:  # pragma: no cover - script-launched from services/
     from pg_dsn import (
-        dsn_parts, dsn_with_database, mask_dsn, pg_port, redis_port, resolve_dsn,
+        dsn_parts, dsn_with_database, local_docker_dsn, mask_dsn, pg_port, redis_port, resolve_dsn,
     )
 
 # ── Capability floor ────────────────────────────────────────────────────────
@@ -310,14 +310,18 @@ def detect_infrastructure(auto_start=True):
 
 
 def _explicit_dsn():
-    """The DSN from an env var, or None when only defaults would apply."""
-    try:
-        from services.pg_dsn import dsn_source
-    except ImportError:  # pragma: no cover
-        from pg_dsn import dsn_source
-    if dsn_source() == "defaults":
-        return None
+    """The DSN an environment variable configures, or None when none does."""
     return resolve_dsn()
+
+
+def _local_dsn():
+    """DSN to probe for a local PostgreSQL.
+
+    Detection is the one place where reaching this project's own Docker
+    PostgreSQL without an exported DSN is the stated intent; see
+    pg_dsn.local_docker_dsn(). An explicitly configured DSN still wins.
+    """
+    return resolve_dsn() or local_docker_dsn()
 
 
 def _detect_local_postgresql(rejected):
@@ -334,7 +338,7 @@ def _detect_local_postgresql(rejected):
         if port not in ports:
             ports.append(port)
 
-    default_parts = dsn_parts(resolve_dsn())
+    default_parts = dsn_parts(_local_dsn())
     users = []
     for user in (default_parts["user"], os.environ.get("USER"), "postgres", "gsd"):
         if user and user not in users:
@@ -391,7 +395,7 @@ def _detect_docker_postgresql(rejected=None):
         return None
     if f":{port}->" not in proc.stdout and port not in proc.stdout:
         return None
-    url = resolve_dsn()
+    url = _local_dsn()
     ok, report = check_pg_capabilities(url)
     if ok:
         return url
@@ -476,7 +480,7 @@ def _auto_start_docker_postgresql():
     if not started:
         return None, report
 
-    url = resolve_dsn()
+    url = _local_dsn()
     deadline = time.time() + 60
     last_reason = "timed out waiting for readiness"
     while time.time() < deadline:

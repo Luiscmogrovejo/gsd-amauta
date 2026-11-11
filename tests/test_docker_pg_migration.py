@@ -222,19 +222,26 @@ class TestDsnResolution:
         env = {"GSD_POSTGRES_URL": "postgresql://a@h/one"}
         assert pg_dsn.resolve_dsn("postgresql://x@h/x", env=env) == "postgresql://x@h/x"
 
-    def test_defaults_match_the_compose_file(self):
-        assert pg_dsn.resolve_dsn(env={}) == "postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta"
-        assert pg_dsn.dsn_source(env={}) == "defaults"
+    def test_an_absent_dsn_is_never_invented(self):
+        # Containment (services/pg_dsn.py): no variable set means no DSN.
+        assert pg_dsn.resolve_dsn(env={}) is None
+        assert pg_dsn.dsn_source(env={}) is None
+        with pytest.raises(pg_dsn.UnconfiguredPostgresDSN):
+            pg_dsn.require_dsn(environ={})
+
+    def test_local_docker_dsn_matches_the_compose_file(self):
+        # Built only on request (detection, --local-docker), never as a fallback.
+        assert pg_dsn.local_docker_dsn({}) == "postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta"
 
     def test_postgres_user_password_and_port_overrides_are_honoured(self):
         env = {"POSTGRES_USER": "alice", "POSTGRES_PASSWORD": "s3cr3t",
                "GSD_PG_PORT": "15433", "GSD_PG_DB": "other"}
-        assert pg_dsn.resolve_dsn(env=env) == \
+        assert pg_dsn.local_docker_dsn(env) == \
             "postgresql://alice:s3cr3t@127.0.0.1:15433/other"
 
     def test_password_special_characters_are_url_encoded(self):
         env = {"POSTGRES_PASSWORD": "p@ss/word"}
-        assert "p%40ss%2Fword" in pg_dsn.resolve_dsn(env=env)
+        assert "p%40ss%2Fword" in pg_dsn.local_docker_dsn(env)
 
     def test_port_helpers_default_to_the_compose_values(self):
         assert pg_dsn.pg_port(env={}) == "5433"
@@ -255,7 +262,8 @@ class TestDsnResolution:
         store_src = (REPO_ROOT / "services" / "pg_store.py").read_text()
         assert "pg_dsn import" in infra_src
         assert "pg_dsn import" in store_src
-        assert '_resolve_pg_dsn(dsn)' in store_src
+        # PGStore resolves through the fail-closed entry point: no default DSN.
+        assert '_require_dsn(' in store_src
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -781,12 +789,12 @@ class TestSqliteMigrationIntegration:
 
     def test_the_cli_exits_non_zero_when_a_row_cannot_land(
             self, scratch_dsn, tmp_path):
-        """Without migration 028 a 900-char title is rejected — and reported."""
+        """Without migration 029 a 900-char title is rejected — and reported."""
         from services import migrate_sqlite_to_pg as mig
         partial = tmp_path / "mig"
         partial.mkdir()
         for sql in sorted(MIGRATIONS_DIR.glob("*.sql")):
-            if sql.name.startswith(("028", "029")):
+            if sql.name.startswith(("029", "030")):
                 continue
             (partial / sql.name).write_text(sql.read_text())
         migrate_runner.apply_migrations(dsn=scratch_dsn,
@@ -1150,8 +1158,9 @@ class TestBaselineDetectionIntegration:
         assert len(report["detected_by_schema"]) == 26
         assert report["pending"] == [
             "027-audit-findings.sql",
-            "028-sqlite-import-compat.sql",
-            "029-rlm-chunk-provenance.sql",
+            "028-task-project-backfill.sql",
+            "029-sqlite-import-compat.sql",
+            "030-rlm-chunk-provenance.sql",
         ]
 
     def test_only_the_missing_migrations_are_applied(self, scratch_dsn):
@@ -1161,8 +1170,9 @@ class TestBaselineDetectionIntegration:
         assert len(result["baselined"]) == 26
         assert result["applied"] == [
             "027-audit-findings.sql",
-            "028-sqlite-import-compat.sql",
-            "029-rlm-chunk-provenance.sql",
+            "028-task-project-backfill.sql",
+            "029-sqlite-import-compat.sql",
+            "030-rlm-chunk-provenance.sql",
         ]
         again = migrate_runner.apply_migrations(dsn=scratch_dsn, log=lambda *_: None)
         assert again["applied"] == []
@@ -1170,7 +1180,7 @@ class TestBaselineDetectionIntegration:
     def test_a_gap_in_the_middle_is_found_not_assumed_away(self, scratch_dsn):
         """Baseline is per-migration, not 'everything through N'."""
         import psycopg2
-        self._apply_the_old_way(scratch_dsn, 29)
+        self._apply_the_old_way(scratch_dsn, 30)
         conn = psycopg2.connect(scratch_dsn)
         conn.autocommit = True
         with conn.cursor() as cur:
@@ -1182,12 +1192,12 @@ class TestBaselineDetectionIntegration:
                                                  log=lambda *_: None)
         assert set(result["applied"]) == {
             "016-agent-metrics.sql", "022-module-installs.sql"}
-        assert len(result["baselined"]) == 27
+        assert len(result["baselined"]) == 28
 
     def test_existing_embeddings_survive_the_baseline_run(self, scratch_dsn):
         """003 must never be re-entered on a database that already has vectors."""
         import psycopg2
-        self._apply_the_old_way(scratch_dsn, 29)
+        self._apply_the_old_way(scratch_dsn, 30)
         conn = psycopg2.connect(scratch_dsn)
         conn.autocommit = True
         with conn.cursor() as cur:

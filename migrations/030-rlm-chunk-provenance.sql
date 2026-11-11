@@ -1,4 +1,4 @@
--- GSD-Amauta Migration 029: RLM chunk provenance + cheap staleness short-circuit
+-- GSD-Amauta Migration 030: RLM chunk provenance + cheap staleness short-circuit
 --
 -- Three columns on rlm_chunks, all additive:
 --
@@ -22,7 +22,7 @@
 -- This migration is idempotent: safe to re-run.
 --
 -- Predecessor: 013-code-embeddings.sql (added embedding_code to rlm_chunks via
--- the same ADD COLUMN IF NOT EXISTS form); 028-sqlite-import-compat.sql.
+-- the same ADD COLUMN IF NOT EXISTS form); 029-sqlite-import-compat.sql.
 
 BEGIN;
 

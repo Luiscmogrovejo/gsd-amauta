@@ -28,7 +28,7 @@ Three defects fixed here:
   (1536-dim, truncated to 1024) went into the same ``embedding_code`` column
   as Voyage output (1024-dim) with nothing recording which produced a row.
   Cosine distance across two embedding spaces is noise. ``embed_code``
-  returns the model name alongside the vector; migration 029 stores it; the
+  returns the model name alongside the vector; migration 030 stores it; the
   vector leg of the search filters to the active model. We keep writing the
   fallback (BM25 still covers those rows, and refusing the write would leave
   a locally-embedded index with no vectors at all) — we just stop pretending
@@ -211,7 +211,7 @@ def _try_qodo(text: str) -> Optional[list]:
     symmetric — so the parameter is not forwarded. The result is truncated or
     zero-padded to 1024 dims purely so it FITS the column; it is not
     comparable with a Voyage vector, which is why the caller records the model
-    (migration 029) and the search filters on it.
+    (migration 030) and the search filters on it.
     """
     try:
         import urllib.request
