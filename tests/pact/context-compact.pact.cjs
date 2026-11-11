@@ -22,7 +22,7 @@ const { like, string, integer } = MatchersV3;
 const provider = new PactV3({
   consumer: 'gsd-tools',
   provider: 'amauta-daemon',
-  dir: path.join(__dirname, '..', '..', 'pacts'),
+  dir: require('../support/pact-dir.cjs').pactDir(), // per-process: see tests/support/pact-dir.cjs
   logLevel: 'warn',
 });
 
