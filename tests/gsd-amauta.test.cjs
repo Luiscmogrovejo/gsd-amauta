@@ -1,10 +1,8 @@
 /**
  * GSD-Amauta CLI Tests
  *
- * Tests the Node.js CLI wrapper (gsd-amauta.cjs) against the live daemon.
- * Requires: daemon running on :18799, PG on :5433.
- *
- * If daemon is not running, integration tests are skipped gracefully.
+ * Tests the Node.js CLI wrapper (gsd-amauta.cjs) against a FIXTURE daemon (Phase 88, plan 88-07:
+ * SQLite, ephemeral port, temp data dir). Needs neither the operator's daemon on :18799 nor PG.
  *
  * TK-0057
  */
@@ -15,10 +13,11 @@ const { execFileSync } = require('child_process');
 const http = require('http');
 const path = require('path');
 
-// Hermetic (Phase 88): probe the daemon on the port the runner chose (a free port with no
-// daemon behind it), never the operator's live 18799. The tests skip when it is absent.
-// Converting them to the fixture daemon is plan 88-07.
-const DAEMON_PORT = process.env.GSD_AMAUTA_PORT || '18799';
+// Hermetic (Phase 88, plan 88-07): the daemon is a fixture daemon started in before() and stopped in
+// after(); every CLI call carries its environment (ephemeral port, temp data dir). Nothing here touches
+// the operator's live daemon or <repo>/data. A fixture that does not come up fails the suite loudly.
+const { startFixtureDaemon, stopFixtureDaemon } = require('./support/fixture-daemon.cjs');
+let fixture = null;
 
 const CLI_PATH = path.join(__dirname, '..', 'get-shit-done', 'bin', 'gsd-amauta.cjs');
 
@@ -33,7 +32,7 @@ function run(args, { expectFail = false } = {}) {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: {
         ...process.env,
-        AMAUTA_DATA_DIR: process.env.AMAUTA_DATA_DIR || path.join(__dirname, '..', 'data'),
+        ...(fixture ? fixture.env : {}),
       },
       timeout: 30000,   // was 15000 — claim/validate can take 15-20s on busy daemon
     });
@@ -62,7 +61,7 @@ function runJSON(args) {
 
 function daemonHealth() {
   return new Promise((resolve) => {
-    const req = http.get('http://127.0.0.1:' + DAEMON_PORT + '/health', { timeout: 3000 }, (res) => {
+    const req = http.get('http://127.0.0.1:' + (fixture ? fixture.port : 0) + '/health', { timeout: 3000 }, (res) => {
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
       res.on('end', () => {
@@ -132,12 +131,12 @@ let testTaskId = null;
 describe('gsd-amauta.cjs', () => {
 
   before(async () => {
+    fixture = await startFixtureDaemon();
     const health = await daemonHealth();
     daemonOk = health && health.status === 'ok';
-    if (!daemonOk) {
-      console.log('  WARN: Daemon not running — skipping integration tests');
-    }
+    assert.ok(daemonOk, 'fixture daemon should answer /health');
   });
+
 
   // ─── CLI Help (no daemon needed) ──────────────────
 
@@ -318,12 +317,15 @@ describe('gsd-amauta.cjs', () => {
 
   // ─── Cleanup ──────────────────────────────────────
 
-  after(() => {
+  after(async () => {
     if (testTaskId && daemonOk) {
       try {
         run(['exec', 'delete', testTaskId, '--force']);
       } catch { /* best effort cleanup */ }
     }
+    // Registered last on purpose: the cleanup above still needs the daemon.
+    if (fixture) await stopFixtureDaemon(fixture);
+    fixture = null;
   });
 });
 

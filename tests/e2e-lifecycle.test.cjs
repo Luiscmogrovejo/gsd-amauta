@@ -4,7 +4,8 @@
  * Tests the full lifecycle: create epic/stories → create tasks → claim →
  * RPETD all 5 phases → validate → verify memory entries → cleanup.
  *
- * Requires: daemon on :18799, PG on :5433.
+ * Phase 88 (88-07): runs against a FIXTURE daemon (SQLite, ephemeral port, temp data dir), so it
+ * needs neither the operator's daemon on :18799 nor PG on :5433.
  *
  * TK-0058
  */
@@ -12,13 +13,15 @@
 const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert');
 const { execFileSync } = require('child_process');
-const http = require('http');
 const path = require('path');
 
-// Hermetic (Phase 88): probe the daemon on the port the runner chose (a free port with no
-// daemon behind it), never the operator's live 18799. The tests skip when it is absent.
-// Converting them to the fixture daemon is plan 88-07.
-const DAEMON_PORT = process.env.GSD_AMAUTA_PORT || '18799';
+// Hermetic (Phase 88, plan 88-07): the daemon is a fixture daemon started in before() and stopped in
+// after(); every CLI call below carries its environment (ephemeral port, temp data dir). Nothing here
+// touches the operator's live daemon or <repo>/data. The memory tests (section 4) need the
+// PostgreSQL-backed memory store, which the SQLite fixture does not have; they are named skips.
+const { startFixtureDaemon, stopFixtureDaemon } = require('./support/fixture-daemon.cjs');
+let fixture = null;
+const MEMORY_SKIP = 'PostgreSQL-backed memory is not available under the hermetic environment (SQLite fixture daemon); covered by the Phase 89 memory integration suite';
 
 const AMAUTA_CLI = path.join(__dirname, '..', 'get-shit-done', 'bin', 'gsd-amauta.cjs');
 const MEMORY_CLI = path.join(__dirname, '..', 'get-shit-done', 'bin', 'gsd-memory.cjs');
@@ -36,7 +39,7 @@ function run(cliPath, args) {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: {
         ...process.env,
-        AMAUTA_DATA_DIR: process.env.AMAUTA_DATA_DIR || path.join(__dirname, '..', 'data'),
+        ...(fixture ? fixture.env : {}),
         GSD_MEMORY_DISTILL_THRESHOLD: '999999',  // Disable auto-distill in tests
       },
       timeout: 30000,   // was 15000 — claim can take 15-20s on busy daemon
@@ -61,20 +64,6 @@ function extractId(output, prefix = 'TK') {
   return match ? match[0] : null;
 }
 
-function daemonHealth() {
-  return new Promise((resolve) => {
-    const req = http.get('http://127.0.0.1:' + DAEMON_PORT + '/health', { timeout: 3000 }, (res) => {
-      let data = '';
-      res.on('data', (chunk) => { data += chunk; });
-      res.on('end', () => {
-        try { resolve(JSON.parse(data)); } catch { resolve(null); }
-      });
-    });
-    req.on('error', () => resolve(null));
-    req.on('timeout', () => { req.destroy(); resolve(null); });
-  });
-}
-
 // ═══════════════════════════════════════════════════════
 // State
 // ═══════════════════════════════════════════════════════
@@ -92,9 +81,10 @@ function skipIfNoDaemon(ctx) {
 describe('E2E Lifecycle', () => {
 
   before(async () => {
-    const health = await daemonHealth();
-    daemonOk = health && health.status === 'ok';
-    if (!daemonOk) console.log('  WARN: Daemon not running — skipping E2E tests');
+    // A fixture daemon that does not come up throws here and fails the suite loudly (with the
+    // daemon's stderr) instead of turning every test into a silent skip.
+    fixture = await startFixtureDaemon();
+    daemonOk = true;
   });
 
   // ─── Phase 1: Create project structure in Amauta ──
@@ -245,7 +235,7 @@ describe('E2E Lifecycle', () => {
   // ─── Phase 4: Memory integration ─────────────────
 
   describe('4. Memory integration', () => {
-    test('store a memory entry', (t) => {
+    test('store a memory entry', { skip: MEMORY_SKIP }, (t) => {
       if (skipIfNoDaemon(t)) return;
       let r = memory(['store', 'E2E test memory entry — should be cleaned up', '--source', 'agent', '--tags', 'e2e-test']);
       const isRateLimited = (res) => ((res.error || '') + (res.output || '')).includes('Too many requests');
@@ -261,14 +251,14 @@ describe('E2E Lifecycle', () => {
       assert.ok(r.output.includes('Stored'), 'should confirm stored');
     });
 
-    test('search finds the entry', (t) => {
+    test('search finds the entry', { skip: MEMORY_SKIP }, (t) => {
       if (skipIfNoDaemon(t)) return;
       const r = memory(['search', 'E2E test memory']);
       assert.ok(r.success, `search: ${r.error || r.output}`);
       assert.ok(r.output.includes('E2E test memory entry'), 'should find stored entry');
     });
 
-    test('learn stores auto_learning', (t) => {
+    test('learn stores auto_learning', { skip: MEMORY_SKIP }, (t) => {
       if (skipIfNoDaemon(t)) return;
       // learn calls /api/memory/store (same path as store test above).
       // In full-suite runs, prior tests may exhaust the 60-req/min rate limit.
@@ -288,7 +278,7 @@ describe('E2E Lifecycle', () => {
       assert.ok(r.output.includes('auto_learning'), 'should be auto_learning source');
     });
 
-    test('count returns > 0', (t) => {
+    test('count returns > 0', { skip: MEMORY_SKIP }, (t) => {
       if (skipIfNoDaemon(t)) return;
       const r = memory(['count']);
       assert.ok(r.success, 'count should work');
@@ -305,7 +295,7 @@ describe('E2E Lifecycle', () => {
       assert.ok(json.tags.includes('javascript'), 'should detect javascript');
     });
 
-    test('cross-project search works', (t) => {
+    test('cross-project search works', { skip: MEMORY_SKIP }, (t) => {
       if (skipIfNoDaemon(t)) return;
       // Just check it runs without error; may or may not find results
       const r = memory(['cross-project', 'test patterns', '--limit', '3']);
@@ -334,12 +324,14 @@ describe('E2E Lifecycle', () => {
 
   // ─── Cleanup ──────────────────────────────────────
 
-  after(() => {
-    if (!daemonOk) return;
-    // Delete test artifacts (best effort) — use 'delete' command (has dedicated /api/delete route)
+  after(async () => {
+    if (!fixture) return;
+    // The fixture's data dir is deleted with it; the explicit deletes keep the cleanup path exercised.
     const toDelete = [taskId, storyId, epicId].filter(Boolean);
     for (const id of toDelete) {
       try { amauta(['delete', id]); } catch { /* ok */ }
     }
+    await stopFixtureDaemon(fixture);
+    fixture = null;
   });
 });

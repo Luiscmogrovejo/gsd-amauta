@@ -30,7 +30,7 @@
 //   ALWAYS-RUN  — pure detect-soundness for all 9 domains + the verb dry-run +
 //                 the LOOP-02/LOOP-03 source-analysis + the operator surface.
 //                 No daemon/PG needed.
-//   LIVE-DAEMON — skipped when GET /health on 127.0.0.1:${AMAUTA_PORT||18799}
+//   LIVE-DAEMON — runs on a fixture daemon (88-07); formerly skipped when 127.0.0.1:${AMAUTA_PORT||18799}
 //                 is unreachable (mirrors the 79-01/82-01 gate). Drives the full
 //                 loop over HTTP; PATCH-clears every finding it posts and removes
 //                 every tmp fixture. The hyphenated daemon starts servers at
@@ -58,7 +58,24 @@ const CMD_MD = path.join(ROOT, 'commands', 'amauta', 'audit.md');
 const WORKFLOW_MD = path.join(ROOT, 'get-shit-done', 'workflows', 'audit.md');
 
 const engine = require(ENGINE);
-const PORT = parseInt(process.env.AMAUTA_PORT || '18799', 10);
+// Phase 88 (88-07): the LIVE-DAEMON tests run on a FIXTURE daemon (SQLite, ephemeral port, temp data
+// dir) started on first use and stopped when the file ends. They never touch the operator's daemon on
+// 18799. A fixture that cannot start throws, so the tests fail loudly instead of skipping.
+const { startFixtureDaemon, stopFixtureDaemon } = require('./support/fixture-daemon.cjs');
+let PORT = 0;
+let _fixturePromise = null;
+let _fixture = null;
+function ensureFixture() {
+  if (!_fixturePromise) {
+    _fixturePromise = startFixtureDaemon().then((h) => { _fixture = h; PORT = h.port; return h; });
+  }
+  return _fixturePromise;
+}
+require('node:test').after(async () => {
+  if (_fixturePromise) { try { await _fixturePromise; } catch (_e) { /* surfaced by the test that needed it */ } }
+  if (_fixture) await stopFixtureDaemon(_fixture);
+  _fixture = null;
+});
 
 // ── tmp scratch (never the real store / source / config) ────────────────────
 function mkFixture(prefix, name, content) {
@@ -73,7 +90,7 @@ function mkFixture(prefix, name, content) {
 function runTool(argv, hermetic) {
   const env = hermetic
     ? { ...process.env, AMAUTA_PORT: '1', GSD_RLM_PORT: '1' }
-    : { ...process.env, GSD_RLM_PORT: '1' }; // live daemon, closed reindex
+    : { ...process.env, AMAUTA_PORT: String(PORT), GSD_RLM_PORT: '1' }; // fixture daemon, closed reindex
   return spawnSync(process.execPath, [TOOLS, ...argv], { encoding: 'utf-8', env });
 }
 
@@ -115,6 +132,7 @@ function httpJson(method, urlPath, body) {
 }
 
 async function daemonReachable() {
+  await ensureFixture();
   const r = await httpJson('GET', '/health');
   return r.status === 200 && r.json && r.json.status === 'ok';
 }
