@@ -206,7 +206,7 @@ describe('RLM code-path checks (T1/T2)', () => {
 
   it('_kill_port_holder is defined in daemon', () => {
     assert.ok(
-      DAEMON_SRC.includes('def _kill_port_holder(port):'),
+      DAEMON_SRC.includes('def _kill_port_holder(port, allowed_pids):'), // 88-12: allow-list signature
       '_kill_port_holder not defined in daemon'
     );
   });
