@@ -3632,10 +3632,16 @@ function exitAfterFlush(code) {
 
 // Guard: only run main() when executed directly (not when require()'d by tests).
 // Also runs when delegated via amauta.cjs wrapper (process.argv[1] ends with /amauta.cjs).
-const _isDelegatedEntry = process.argv[1] &&
+// argv[1] is the path as typed, so a symlink named `amauta` (npm link, a bin
+// shim) has no .cjs suffix. require.main.filename is the resolved real path of
+// the entry script, which is what identifies the wrapper reliably.
+const _mainBase = (require.main && require.main.filename)
+  ? require('path').basename(require.main.filename)
+  : '';
+const _isDelegatedEntry = _mainBase === 'amauta.cjs' || (process.argv[1] &&
   (process.argv[1].endsWith('/amauta.cjs') || process.argv[1].endsWith('\\amauta.cjs')) &&
   !process.argv[1].endsWith('/gsd-amauta.cjs') &&
-  !process.argv[1].endsWith('\\gsd-amauta.cjs');
+  !process.argv[1].endsWith('\\gsd-amauta.cjs'));
 
 if (require.main === module || _isDelegatedEntry) {
   main().catch((err) => {
