@@ -77,7 +77,10 @@ def _has_stat_columns(pg_conn) -> bool:
                 WHERE table_name = 'rlm_chunks'
                   AND column_name IN ('file_mtime', 'file_size', 'embedding_model')
             """)
-            present = cur.fetchone()[0] == 3
+            row = cur.fetchone()
+            # isinstance guard: unit tests drive this through a fake cursor
+            # that answers every query with the same canned row.
+            present = bool(row) and isinstance(row[0], int) and row[0] == 3
     except Exception as e:
         log.debug("rlm_029_probe_failed error=%s", str(e))
         try:
@@ -139,7 +142,11 @@ def is_stale(filepath: str, pg_conn) -> bool:
     if row is None:
         return True  # Not yet indexed
 
-    stored_sha, stored_mtime, stored_size = row[0], row[1], row[2]
+    # Tolerate a short row: a pre-029 database answers the two NULL literals,
+    # but a caller-supplied fake connection may hand back just (sha,).
+    stored_sha = row[0]
+    stored_mtime = row[1] if len(row) > 1 else None
+    stored_size = row[2] if len(row) > 2 else None
     # Cheap short-circuit: same mtime AND same size => unchanged, skip the hash.
     if (has_stat and mtime is not None and stored_mtime is not None
             and stored_size is not None
@@ -420,14 +427,20 @@ def prune_missing_files(dir_path: str, pg_conn, seen_paths=None) -> int:
 
 
 def ingest_directory(dir_path: str, pg_conn, force: bool = False,
-                     prune: bool = True) -> dict:
+                     prune: bool = False) -> dict:
     """
     Recursively ingest all supported files in a directory.
     Skips SKIP_DIRS. Used by 'gsd-tools reindex [path]'.
 
     Args:
         prune: also remove chunks for files that no longer exist under
-               *dir_path* (default True). Pass False for a pure add-only pass.
+               *dir_path*. Defaults to False because rlm-service.py's /query
+               handler calls this on EVERY query, often against a narrow
+               subtree — deleting "missing" files there would be a per-query
+               scan and a chance to drop chunks for a file that is merely
+               temporarily unreadable. The explicit /reindex pass sets it
+               True. Per-file stale-chunk deletion happens in ingest_file
+               regardless.
 
     Returns {total_files, inserted, skipped, errors, error_files,
              chunks_deleted, files_pruned}.

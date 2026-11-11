@@ -493,8 +493,15 @@ def bm25_only_search(query: str, pg_conn, top_k: int = DEFAULT_TOP_K,
     if not safe_query:
         return []
 
-    file_clause = "AND file_path LIKE %s" if file_filter else ""
-    params = [safe_query] + ([f"{file_filter}%"] if file_filter else [])
+    # Same sibling-directory fix as hybrid_search: `LIKE '/a/b%'` also matched
+    # /a/bc and /a/b-old. Match the directory itself or a path beneath it.
+    if file_filter:
+        prefix = str(file_filter).rstrip(os.sep)
+        file_clause = "AND (file_path = %s OR file_path LIKE %s)"
+        params = [safe_query, prefix, prefix + os.sep + "%"]
+    else:
+        file_clause = ""
+        params = [safe_query]
 
     sql = f"""
         SELECT
