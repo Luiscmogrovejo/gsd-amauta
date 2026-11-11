@@ -11,6 +11,7 @@ Run with:
 import os
 import sys
 import unittest
+from unittest import mock
 
 # Prevent module-level side effects during import
 os.environ["GSD_AMAUTA_NO_AUTO_START"] = "1"
@@ -160,6 +161,26 @@ class TestLearningWritten(unittest.TestCase):
 
 # ── _validate_all_gates tests ────────────────────────────────────────────────
 class TestValidateAllGates(unittest.TestCase):
+    # 88-08-05: these tests assert the gitflow-ON behaviour (PR_URL / BRANCH_EVIDENCE gates
+    # FAIL). Behaviour changed in 9bf4334: _needs_gitflow_gate() returns False
+    # whenever _gitflow_globally_disabled() is true, and the tracked .planning/config.json
+    # of this trunk-based repo sets workflow.gitflow=false, so every gate came back SKIP.
+    # The tests were therefore reading the repo's own config instead of their inputs.
+    # Pin the gate ON explicitly (the end-user-project default) so they are independent of
+    # that file; test_gitflow_disabled_skips_the_pr_gates covers the OFF arm.
+    def setUp(self):
+        patcher = mock.patch("amauta._gitflow_globally_disabled", return_value=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_gitflow_disabled_skips_the_pr_gates(self):
+        """With workflow.gitflow=false (trunk-based repo) the PR-evidence gates are SKIP, not FAIL."""
+        item = _make_item(rpetd={}, agent="executor-backend")
+        with mock.patch("amauta._gitflow_globally_disabled", return_value=True):
+            gate_map = {r["gate"]: r["status"] for r in _validate_all_gates(item)}
+        self.assertEqual(gate_map["PR_URL"], "SKIP")
+        self.assertEqual(gate_map["BRANCH_EVIDENCE"], "SKIP")
+
     def test_all_phases_empty_returns_5_fails(self):
         """Task with all phases empty should get failures on all gates."""
         item = _make_item(rpetd={})
