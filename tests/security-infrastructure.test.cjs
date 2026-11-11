@@ -183,8 +183,10 @@ describe('Docker Configuration', () => {
       'Must NOT mount entire migrations dir (DOWN files would run!)');
     // Nothing is mounted into initdb any more: the tracked runner applies UP
     // files and structurally never applies a *-DOWN.sql.
-    assert.ok(!compose.includes('docker-entrypoint-initdb.d'),
-      'compose must not mount anything into initdb');
+    const mounts = compose.split('\n')
+      .filter(l => !l.trim().startsWith('#'))
+      .filter(l => /:\/docker-entrypoint-initdb\.d/.test(l));
+    assert.deepStrictEqual(mounts, [], 'compose must not mount anything into initdb');
   });
 
   test('docker-compose.yml does not have deprecated version key', () => {
