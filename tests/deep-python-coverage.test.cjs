@@ -50,12 +50,12 @@ function py(args, dataDir, extraEnv = {}) {
   }
 }
 
-function pyInline(code) {
+function pyInline(code, extraEnv = {}) {
   try {
     const result = execFileSync('python3', ['-c', `
 import sys, json; sys.path.insert(0, '${ROOT}')
 ${code}
-`], { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 8000 });
+`], { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 8000, env: { ...process.env, ...extraEnv } });
     return result.trim();
   } catch (e) {
     return (e.stdout||'').toString().trim() || (e.stderr||'').toString().trim();
@@ -940,11 +940,13 @@ print(_score(item, all_items))
 
 describe('_has_merge_evidence() — merge detection', () => {
   function hasMerge(item, extra = '') {
+    // GSD_GITFLOW is pinned ON: the tracked .planning/config.json sets workflow.gitflow=false,
+    // under which _has_merge_evidence short-circuits to True for every task (13.6 needs the gate).
     return pyInline(`
 from amauta import _has_merge_evidence
 item = ${JSON.stringify(item)}
 print(_has_merge_evidence(item, ${JSON.stringify(extra)}))
-`);
+`, { GSD_GITFLOW: 'on' });
   }
 
   test('13.1 merged to main in D-phase returns true', () => {

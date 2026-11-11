@@ -35,6 +35,9 @@ function py(args, dataDir) {
       env: {
         ...process.env, AMAUTA_DATA_DIR: dataDir, NO_COLOR: '1', GSD_AMAUTA_PORT: '19999',
         GSD_MEMORY_FILE_MODE: '1', // TK-2386: drives the memory CLI at a dead port on purpose
+        // Pin the PR gate ON: the tracked .planning/config.json sets workflow.gitflow=false, which
+        // would turn every fixture into a "non-code" task and skip BRANCH_EVIDENCE / PR_URL.
+        GSD_GITFLOW: 'on',
       },
       cwd: dataDir, timeout: 15000,
     });
@@ -51,6 +54,7 @@ function run(bin, args, dataDir, env = {}) {
       env: {
         ...process.env, GSD_AMAUTA_PORT: '19999', GSD_AMAUTA_NO_AUTO_START: '1',
         GSD_MEMORY_FILE_MODE: '1', // TK-2386: drives the memory CLI at a dead port on purpose
+        GSD_GITFLOW: 'on', // see py(): pin the PR gate regardless of .planning/config.json
         AMAUTA_DATA_DIR: dataDir, ...env,
       },
       cwd: dataDir, timeout: 15000,
@@ -412,7 +416,7 @@ describe('Validation Gates — Advanced E2E', () => {
           R: 'R: Researched existing implementation patterns and reviewed architecture docs for edge cases and constraints.',
           P: 'P: Planned implementation with Given/When/Then criteria. Risk assessed, dependencies mapped, rollback defined.',
           E: 'E: git checkout -b feat/TK-0001. Code done.',
-          T: 'T: npm test\n10 tests passed\nexit 0',
+          T: 'T: ran npm test under the hermetic runner; 37 subtests, 37 passing, 0 failing, 0 skipped; exit 0; duration 2.1s',
           D: 'D: https://github.com/org/repo/pull/1 merged to main. LEARNING: Always handle edge cases because unhandled exceptions in production cause cascading failures that impact downstream services and degrade user experience significantly.'
         },
         rpetd_complete: true, notes: overrides.notes || [],
@@ -857,8 +861,8 @@ describe('Cross-Pipeline Integration — E2E', () => {
     py(['claim', tk, '--agent', 'gsd-executor-general'], d);
 
     // RPETD
-    py(['rpetd', tk, '--phase', 'R', '--content', 'R: Researched auth patterns'], d);
-    py(['rpetd', tk, '--phase', 'P', '--content', 'P: Plan: 1. Model 2. Routes 3. Tests'], d);
+    py(['rpetd', tk, '--phase', 'R', '--content', 'R: Researched auth patterns: reviewed existing JWT middleware, session handling and route conventions in the codebase'], d);
+    py(['rpetd', tk, '--phase', 'P', '--content', 'P: Plan: 1. Model the user table 2. Add auth routes with input validation 3. Cover both with integration tests'], d);
     py(['rpetd', tk, '--phase', 'E', '--content', 'E: git checkout -b feat/TK-auth. Code done. https://github.com/org/repo/pull/1 merged to main.'], d);
     py(['rpetd', tk, '--phase', 'T', '--content', 'T: npm test\n15 tests passed, 0 failed\nexit 0'], d);
     py(['rpetd', tk, '--phase', 'D', '--content', 'D: https://github.com/org/repo/pull/1 merged to main. LEARNING: Always add input validation to auth routes because unvalidated input creates SQL injection and XSS attack vectors that compromise the entire authentication system.'], d);
