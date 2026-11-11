@@ -6,6 +6,23 @@ const os = require('os');
 const readline = require('readline');
 const crypto = require('crypto');
 
+// Phase 88: a test-mode run must never install into the operator's real ~/.claude.
+// `npm ci` runs this file as the package "install" lifecycle script, so without this
+// refusal a test install writes agents/, commands/, skills/ and settings.json into the
+// live config directory. Only the CLI entry is guarded: tests that require() this
+// module under GSD_TEST_MODE=1 for its exports are unaffected. Exit 0, not non-zero,
+// so an `npm ci` lifecycle does not fail the install.
+if (require.main === module && /^(1|true|yes|on)$/i.test(String(process.env.GSD_TEST_MODE || ''))) {
+  const liveTarget = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
+  if (path.resolve(liveTarget) === path.resolve(os.homedir(), '.claude')) {
+    process.stderr.write(
+      'GSD_TEST_MODE: refusing to install into the live config directory ' + liveTarget +
+      '; set CLAUDE_CONFIG_DIR to a temporary directory.\n'
+    );
+    process.exit(0);
+  }
+}
+
 // Colors
 const cyan = '\x1b[36m';
 const green = '\x1b[32m';

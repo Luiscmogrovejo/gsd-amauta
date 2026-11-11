@@ -173,6 +173,9 @@ async function runCli(args, { port, cwd, env = {} }) {
         GSD_AMAUTA_HOST: '127.0.0.1',
         GSD_AMAUTA_PORT: String(port),
         GSD_AMAUTA_NO_AUTO_START: '1',
+        // The runner exports GSD_TEST_MODE=1, which forces project_id=__test__; these tests
+        // measure project resolution, so the child must not inherit it.
+        GSD_TEST_MODE: '',
         // Never let a test reach the real distill path.
         GSD_MEMORY_AUTO_DISTILL: '0',
         NO_COLOR: '1',

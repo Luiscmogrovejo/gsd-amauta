@@ -45,6 +45,7 @@ function run(args, name) {
       PATH: bin + path.delimiter + process.env.PATH,
       HOME: path.join(tmp, 'home-' + name),
       GSD_INSTALL_FILES_ONLY: '',
+      GSD_TEST_MODE: '', // the runner's GSD_TEST_MODE=1 makes install.js skip its main block
       GSD_SHUNT: '', GSD_COMPRESS: '',
     }),
   });

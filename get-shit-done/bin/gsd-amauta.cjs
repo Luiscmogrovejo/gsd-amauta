@@ -79,8 +79,15 @@ function _telemetryEmit(eventType, payload) {
 // Configuration
 // ═══════════════════════════════════════════════════════
 
+// Phase 88: GSD_TEST_MODE=1 is real isolation. It never falls back to the live
+// daemon port or the live data directory, and never auto-starts a daemon.
+const TEST_MODE = /^(1|true|yes|on)$/i.test(String(process.env.GSD_TEST_MODE || ''));
+
 const HOST = process.env.GSD_AMAUTA_HOST || '127.0.0.1';
-const PORT = parseInt(process.env.GSD_AMAUTA_PORT || '18799', 10);
+// Under test mode GSD_DAEMON_PORT is an accepted alias, so a caller that sets only
+// that one still reaches its test port instead of the live default.
+const PORT = parseInt(
+  process.env.GSD_AMAUTA_PORT || (TEST_MODE && process.env.GSD_DAEMON_PORT) || '18799', 10);
 
 // ── Command ceilings ────────────────────────────────────
 // AMAUTA_CMD_TIMEOUT_MS is the SINGLE source for how long an amauta.py command
@@ -188,6 +195,24 @@ function _resolvePluginRoot() {
 const PLUGIN_ROOT = _resolvePluginRoot();
 const AMAUTA_PY = process.env.GSD_AMAUTA_PY || path.join(PLUGIN_ROOT, 'amauta.py');
 const DATA_DIR = process.env.AMAUTA_DATA_DIR || path.join(PLUGIN_ROOT, 'data');
+
+/**
+ * Under test mode, refuse to run against the live defaults (daemon port 18799,
+ * <PLUGIN_ROOT>/data). Called from main() only, so require()-ing this module
+ * from a test is unaffected.
+ * @returns {void} exits the process with code 2 on a refusal
+ */
+function _refuseLiveDefaultsInTestMode() {
+  if (!TEST_MODE) return;
+  if (!process.env.GSD_AMAUTA_PORT && !process.env.GSD_DAEMON_PORT) {
+    process.stderr.write('GSD_TEST_MODE: refusing the default daemon port 18799; set GSD_AMAUTA_PORT and GSD_DAEMON_PORT to a test port.\n');
+    process.exit(2);
+  }
+  if (!process.env.AMAUTA_DATA_DIR) {
+    process.stderr.write('GSD_TEST_MODE: refusing the live data directory; set AMAUTA_DATA_DIR to a temporary directory.\n');
+    process.exit(2);
+  }
+}
 
 // Phase 62 TEL-01/TEL-03: consent-gated local telemetry core (lazy-required
 // below at first use so a missing/broken telemetry.cjs never blocks any
@@ -335,6 +360,13 @@ async function startDaemon() {
  */
 async function ensureDaemon() {
   if (await isDaemonRunning()) return true;
+
+  // Test mode never spawns a daemon (the port was already checked above, so a
+  // fixture daemon on a test port is still used when it is running).
+  if (TEST_MODE) {
+    process.stderr.write('GSD_TEST_MODE: daemon auto-start disabled; using direct CLI.\n');
+    return false;
+  }
 
   // Allow tests/CI to skip auto-start (saves 5s startup wait per test)
   if (process.env.GSD_AMAUTA_NO_AUTO_START === '1') {
@@ -3259,6 +3291,7 @@ function cmdCompressGain(jsonMode) {
 // ═══════════════════════════════════════════════════════
 
 async function main() {
+  _refuseLiveDefaultsInTestMode();
   const rawArgs = process.argv.slice(2);
 
   // Extract global flags

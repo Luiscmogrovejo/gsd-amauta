@@ -43,6 +43,7 @@ function runInit(args, opts) {
     AMAUTA_DATA_DIR: path.join(home, 'data'),
     GSD_AMAUTA_PORT: '18991',   // dead port: never touch a running daemon
     CLAUDE_CONFIG_DIR: opts.configDir || path.join(home, '.claude'),
+    GSD_TEST_MODE: '',          // init shells out to install.js, which skips its main block under test mode
   };
   let stdout = '';
   let stderr = '';
