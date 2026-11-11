@@ -181,9 +181,10 @@ function readInstallRecord(tmpRoot) {
 //
 // `module install|uninstall|upgrade` hash the manifest with PyYAML (services/module_lifecycle.py:
 // "compute_manifest_hash requires PyYAML"). The GitHub macOS runner has python3 + pydantic but no PyYAML, so those
-// cases cannot pass there; `module validate` does not need it (services/module_schema.py has a fallback parser).
+// cases cannot pass there.
 const { test } = require('node:test');
-const HAVE_PYYAML = spawnSync('python3', ['-c', 'import yaml'], { stdio: 'ignore' }).status === 0;
+const pyHas = (mod) => spawnSync('python3', ['-c', `import ${mod}`], { stdio: 'ignore' }).status === 0;
+const HAVE_PYYAML = pyHas('yaml');
 const SKIP_NO_PYYAML = HAVE_PYYAML
   ? false
   : 'PyYAML is not installed for python3 in this environment; module install/uninstall/upgrade need it to hash the manifest';

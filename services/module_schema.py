@@ -256,37 +256,32 @@ def _parse_yaml_minimal(text: str) -> dict:
         if not stripped or stripped.startswith('#'):
             i += 1
             continue
-        m = re.match(r'^([A-Za-z0-9_.-]+):\s*(.*)$', line)
+        m = re.match(r'^([a-zA-Z_-]+):\s*(.*)$', line)
         if not m:
             i += 1
             continue
         key, val = m.group(1), m.group(2).strip()
 
-        # Empty value or explicit {}: the value is whatever indented block follows (a sequence or a mapping),
-        # or an empty dict/list when nothing follows.
+        # Empty value or explicit {}
         if val in ('', '{}'):
+            # Check if next lines are indented block sequence
+            items = []
             j = i + 1
-            block: list = []
-            while j < len(lines) and (
-                not lines[j].strip() or lines[j].lstrip().startswith('#') or lines[j][:1] in (' ', '\t')
-            ):
-                block.append(lines[j])
-                j += 1
-            content = [ln for ln in block if ln.strip() and not ln.lstrip().startswith('#')]
-            if val == '{}' or not content:
+            while j < len(lines) and (lines[j].startswith('  - ') or lines[j].startswith('  ')):
+                inner = lines[j].strip()
+                if inner.startswith('- '):
+                    items.append(inner[2:].strip())
+                    j += 1
+                else:
+                    # Key: value pair inside a mapping
+                    break
+            if items:
+                result[key] = items
+                i = j
+            else:
                 # empty list or dict; treat as empty dict if {} else empty list
                 result[key] = {} if val == '{}' else []
-            elif content[0].strip().startswith('- '):
-                result[key] = [ln.strip()[2:].strip() for ln in content if ln.strip().startswith('- ')]
-            else:
-                # Indented block mapping (`services:\n  name: {}`). It used to be dropped and stored as [],
-                # which pydantic rejects ("Input should be a valid dictionary") on a machine with pydantic but
-                # no PyYAML. Parse the block with the same rules, one indentation level in.
-                indent = len(content[0]) - len(content[0].lstrip())
-                result[key] = _parse_yaml_minimal(
-                    '\n'.join(ln[indent:] if ln.strip() else '' for ln in block)
-                )
-            i = j
+                i += 1
             continue
 
         # Explicit []
