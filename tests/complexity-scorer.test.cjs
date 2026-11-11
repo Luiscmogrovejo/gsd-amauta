@@ -90,7 +90,7 @@ features = {
     'dependency_depth': 0,
     'has_migration': False,
     'has_api_change': False,
-    'security_sensitivity': 0,
+    'security_sensitivity': 0, 'top_level_dir_width': 0,
 }
 result = score_features(features)
 print(json.dumps({'score': result}))
@@ -110,7 +110,7 @@ features = {
     'dependency_depth': 10,
     'has_migration': True,
     'has_api_change': True,
-    'security_sensitivity': 10,
+    'security_sensitivity': 10, 'top_level_dir_width': 0,
 }
 result = score_features(features)
 print(json.dumps({'score': result}))
@@ -130,7 +130,7 @@ features = {
     'dependency_depth': 2,
     'has_migration': False,
     'has_api_change': True,
-    'security_sensitivity': 4,
+    'security_sensitivity': 4, 'top_level_dir_width': 0,
 }
 results = [score_features(features) for _ in range(3)]
 assert results[0] == results[1] == results[2], f"Non-deterministic: {results}"
@@ -145,7 +145,7 @@ print(json.dumps({'scores': results}))
   test('score_features: has_migration boolean adds 15 points', () => {
     const r = pyFile(`
 ${PY_BOOTSTRAP}
-base = {'files_expected': 0,'estimated_loc': 0,'test_impact': 0,'dependency_depth': 0,'has_migration': False,'has_api_change': False,'security_sensitivity': 0}
+base = {'files_expected': 0,'estimated_loc': 0,'test_impact': 0,'dependency_depth': 0,'has_migration': False,'has_api_change': False,'security_sensitivity': 0, 'top_level_dir_width': 0}
 with_mig = dict(base, has_migration=True)
 delta = score_features(with_mig) - score_features(base)
 assert delta == 15, f"has_migration delta expected 15, got {delta}"
@@ -159,7 +159,7 @@ print(json.dumps({'delta': delta}))
   test('score_features: has_api_change boolean adds 10 points', () => {
     const r = pyFile(`
 ${PY_BOOTSTRAP}
-base = {'files_expected': 0,'estimated_loc': 0,'test_impact': 0,'dependency_depth': 0,'has_migration': False,'has_api_change': False,'security_sensitivity': 0}
+base = {'files_expected': 0,'estimated_loc': 0,'test_impact': 0,'dependency_depth': 0,'has_migration': False,'has_api_change': False,'security_sensitivity': 0, 'top_level_dir_width': 0}
 with_api = dict(base, has_api_change=True)
 delta = score_features(with_api) - score_features(base)
 assert delta == 10, f"has_api_change delta expected 10, got {delta}"
@@ -173,7 +173,7 @@ print(json.dumps({'delta': delta}))
   test('score_features: files_expected=20 contributes max 20 points', () => {
     const r = pyFile(`
 ${PY_BOOTSTRAP}
-base = {'files_expected': 0,'estimated_loc': 0,'test_impact': 0,'dependency_depth': 0,'has_migration': False,'has_api_change': False,'security_sensitivity': 0}
+base = {'files_expected': 0,'estimated_loc': 0,'test_impact': 0,'dependency_depth': 0,'has_migration': False,'has_api_change': False,'security_sensitivity': 0, 'top_level_dir_width': 0}
 with_files = dict(base, files_expected=20)
 delta = score_features(with_files) - score_features(base)
 assert delta == 20, f"files_expected=20 delta expected 20, got {delta}"
@@ -187,7 +187,7 @@ print(json.dumps({'delta': delta}))
   test('score_features: security_sensitivity=10 contributes max 15 points', () => {
     const r = pyFile(`
 ${PY_BOOTSTRAP}
-base = {'files_expected': 0,'estimated_loc': 0,'test_impact': 0,'dependency_depth': 0,'has_migration': False,'has_api_change': False,'security_sensitivity': 0}
+base = {'files_expected': 0,'estimated_loc': 0,'test_impact': 0,'dependency_depth': 0,'has_migration': False,'has_api_change': False,'security_sensitivity': 0, 'top_level_dir_width': 0}
 with_sec = dict(base, security_sensitivity=10)
 delta = score_features(with_sec) - score_features(base)
 assert delta == 15, f"security_sensitivity=10 delta expected 15, got {delta}"
@@ -201,7 +201,7 @@ print(json.dumps({'delta': delta}))
   test('score_features: score clamped at 100 for very large inputs', () => {
     const r = pyFile(`
 ${PY_BOOTSTRAP}
-features = {'files_expected': 9999,'estimated_loc': 999999,'test_impact': 10,'dependency_depth': 10,'has_migration': True,'has_api_change': True,'security_sensitivity': 10}
+features = {'files_expected': 9999,'estimated_loc': 999999,'test_impact': 10,'dependency_depth': 10,'has_migration': True,'has_api_change': True,'security_sensitivity': 10, 'top_level_dir_width': 0}
 result = score_features(features)
 assert 0 <= result <= 100, f"Score out of range [0,100]: {result}"
 print(json.dumps({'score': result}))
@@ -338,7 +338,7 @@ ${PY_BOOTSTRAP}
 meta = {'files_expected': ['migrations/018-task-completions.sql']}
 features = extract_features(None, meta)
 assert features['security_sensitivity'] >= 4, f"migrations/ floor should be >=4, got {features['security_sensitivity']}"
-print(json.dumps({'security_sensitivity': features['security_sensitivity']}))
+print(json.dumps({'security_sensitivity': features['security_sensitivity'], 'top_level_dir_width': 0}))
 `);
     assert.ok(!r.error, `Python error: ${r.error}\n${r.stderr}`);
     const out = JSON.parse(r.stdout.trim());
@@ -351,7 +351,7 @@ ${PY_BOOTSTRAP}
 meta = {'files_expected': ['services/complexity_scorer.py']}
 features = extract_features(None, meta)
 assert features['security_sensitivity'] >= 3, f"services/ floor should be >=3, got {features['security_sensitivity']}"
-print(json.dumps({'security_sensitivity': features['security_sensitivity']}))
+print(json.dumps({'security_sensitivity': features['security_sensitivity'], 'top_level_dir_width': 0}))
 `);
     assert.ok(!r.error, `Python error: ${r.error}\n${r.stderr}`);
     const out = JSON.parse(r.stdout.trim());
@@ -367,7 +367,7 @@ meta = {'files_expected': ['migrations/schema.sql']}
 features = extract_features(None, meta)
 # With LLM off, security_sensitivity must be exactly the floor rule value (4 for migrations/)
 assert features['security_sensitivity'] == 4, f"LLM off: expected security_sensitivity=4 (floor), got {features['security_sensitivity']}"
-print(json.dumps({'security_sensitivity': features['security_sensitivity'], 'llm_off': True}))
+print(json.dumps({'security_sensitivity': features['security_sensitivity'], 'top_level_dir_width': 0, 'llm_off': True}))
 `);
     assert.ok(!r.error, `Python error: ${r.error}\n${r.stderr}`);
     const out = JSON.parse(r.stdout.trim());

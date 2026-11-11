@@ -112,7 +112,34 @@ except ImportError:
 # Configuration
 # ═══════════════════════════════════════════════════════
 
-DEFAULT_PG_URL = "postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta"
+# CONTAINMENT 2026-09-07: there is deliberately NO DEFAULT_PG_URL here.
+# It used to read:
+#     DEFAULT_PG_URL = "postgresql://gsd:<redacted>@127.0.0.1:5433/gsd_amauta"
+# and it was the fallback for an unset GSD_POSTGRES_URL. Unsetting that
+# variable to match CI therefore did not disable the database -- it silently
+# repointed the process at the SHARED development database, three call frames
+# below a test file with no database code in it, and 8 party_session rows were
+# written to it. An absent DSN now fails closed. See services/pg_dsn.py.
+# ── Containment: DSN resolution has exactly one home ──────────────────────────
+# services/pg_dsn.py. Dual-import because this module is loaded both as
+# ``services.pg_store`` (repo root on sys.path) and as ``pg_store``
+# (services/ itself on sys.path) -- see party_session.py L58-69.
+try:
+    from services.pg_dsn import require_dsn as _require_dsn  # type: ignore
+except ImportError:  # pragma: no cover - depends on caller's sys.path
+    try:
+        from pg_dsn import require_dsn as _require_dsn  # type: ignore
+    except ImportError:
+        # Loaded by file path (importlib, `python -c` from another directory):
+        # neither the repo root nor services/ is on sys.path. pg_dsn.py always
+        # sits beside this file, so load it from there rather than fail.
+        import importlib.util as _ilu
+        import os as _os
+        _spec = _ilu.spec_from_file_location(
+            "pg_dsn", _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "pg_dsn.py"))
+        _pg_dsn = _ilu.module_from_spec(_spec)
+        _spec.loader.exec_module(_pg_dsn)
+        _require_dsn = _pg_dsn.require_dsn
 
 SOURCE_SCORES = {
     "lesson-learned": 4,
@@ -670,14 +697,26 @@ class PGStore:
         """Initialize connection pool.
 
         Args:
-            dsn: PostgreSQL DSN. Falls back to GSD_POSTGRES_URL env, then default.
+            dsn: PostgreSQL DSN. Falls back to the GSD_POSTGRES_URL env var.
+                 There is no further fallback: an absent DSN raises
+                 pg_dsn.UnconfiguredPostgresDSN rather than guessing a host.
             min_conn: Minimum pool connections.
             max_conn: Maximum pool connections.
         """
+        # Containment first. Resolving the DSN BEFORE checking for the driver is
+        # deliberate: a machine that has psycopg2 is a machine that can do
+        # damage, and the configuration refusal is the message that matters. It
+        # also means the containment holds identically on a machine with no
+        # driver, instead of being masked by an ImportError.
+        # No fallback branch, by design. See services/pg_dsn.py for why.
+        self.dsn = _require_dsn(
+            dsn,
+            component="pg_store.PGStore",
+            env_names=("GSD_POSTGRES_URL",),
+        )
+
         if not HAS_PG:
             raise ImportError("psycopg2 not installed. Run: pip install psycopg2-binary")
-
-        self.dsn = dsn or os.environ.get("GSD_POSTGRES_URL", DEFAULT_PG_URL)
         self.min_conn = min_conn
         self.max_conn = max_conn
         self._pool = None
@@ -1326,10 +1365,103 @@ class PGStore:
                 return cur.fetchone()[0]
 
     def memory_delete(self, mem_id):
-        """Delete a memory entry by ID."""
+        """Delete a memory entry by ID.
+
+        Returns:
+            int: number of rows actually deleted (0 if the id did not exist).
+
+        MEMSAFE-02: this used to return None unconditionally, so the caller
+        could not distinguish "deleted one row" from "matched nothing". The
+        daemon route reported ``{"deleted": true}`` either way -- a probe that
+        could not return zero.
+        """
         with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM gsd_memory WHERE id = %s", (mem_id,))
+                return cur.rowcount
+
+    def memory_archive_and_delete(self, mem_id):
+        """Copy one memory row into gsd_memory_archive, then delete it.
+
+        Both statements run inside a single ``_get_conn()`` block, which sets
+        ``autocommit = False`` and commits only on clean exit -- so the archive
+        insert and the delete are ONE transaction. If the insert raises, the
+        delete never commits and the original row survives. This is the reason
+        the operation is exposed as a single HTTP call rather than as the
+        caller sequencing ``/archive`` then ``/delete``: a transaction cannot
+        span two HTTP requests, but it can sit entirely inside one handler.
+
+        The insert uses ``ON CONFLICT (id) DO NOTHING`` because the archive id
+        is the primary key and a row may legitimately already be archived; that
+        case is reported as ``already_archived`` and still counts as safe to
+        delete, because the content is provably present in the archive.
+
+        Args:
+            mem_id: the gsd_memory id to archive and remove. Matching is
+                case-sensitive (``id = %s`` on a VARCHAR column), i.e. the id
+                must be passed back exactly as it was read.
+
+        Returns:
+            dict: ``{"id", "archived", "already_archived", "deleted", "found"}``
+            where ``archived``/``deleted`` are row counts and ``found`` is
+            False when the id does not exist in gsd_memory at all.
+
+        Raises:
+            psycopg2.Error: on any database failure. Nothing is committed.
+
+        Example:
+            >>> store.memory_archive_and_delete("mem-1a2b3c")
+            {'id': 'mem-1a2b3c', 'archived': 1, 'already_archived': False,
+             'deleted': 1, 'found': True}
+        """
+        self._ensure_archive_table()
+        with self._get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1 FROM gsd_memory WHERE id = %s", (mem_id,))
+                if cur.fetchone() is None:
+                    return {
+                        "id": mem_id,
+                        "archived": 0,
+                        "already_archived": False,
+                        "deleted": 0,
+                        "found": False,
+                    }
+
+                cur.execute(
+                    """
+                    INSERT INTO gsd_memory_archive
+                        (id, text, agent_id, source, tags, metadata,
+                         project_id, embedding, created_at, updated_at, archived_at)
+                    SELECT id, text, agent_id, source, tags, metadata,
+                           project_id, embedding, created_at, updated_at, NOW()
+                    FROM gsd_memory
+                    WHERE id = %s
+                    ON CONFLICT (id) DO NOTHING
+                    """,
+                    (mem_id,),
+                )
+                archived = cur.rowcount
+
+                # Read-back inside the same transaction: prove the content is
+                # in the archive BEFORE issuing the delete. If this fails the
+                # exception propagates and _get_conn rolls back, so the
+                # original row is still there.
+                cur.execute("SELECT 1 FROM gsd_memory_archive WHERE id = %s", (mem_id,))
+                if cur.fetchone() is None:
+                    raise RuntimeError(
+                        f"archive read-back failed for {mem_id}; refusing to delete"
+                    )
+
+                cur.execute("DELETE FROM gsd_memory WHERE id = %s", (mem_id,))
+                deleted = cur.rowcount
+
+                return {
+                    "id": mem_id,
+                    "archived": archived,
+                    "already_archived": archived == 0,
+                    "deleted": deleted,
+                    "found": True,
+                }
 
     def memory_get_by_id(self, mem_id):
         """Fetch a single memory entry by ID.

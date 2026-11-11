@@ -75,6 +75,17 @@ function startMockDaemon(entries) {
         return;
       }
 
+      // MEMSAFE-03: distill removes a consumed original through the single
+      // archive-then-delete call and requires exactly one row removed.
+      if (req.method === 'POST' && req.url === '/api/memory/archive-delete') {
+        deletes.push(parsed);
+        res.writeHead(200);
+        res.end(JSON.stringify({
+          id: parsed.id, archived: 1, already_archived: false, deleted: 1, found: true,
+        }));
+        return;
+      }
+
       if (req.method === 'POST' && req.url === '/api/memory/delete') {
         deletes.push(parsed);
         res.writeHead(200);
@@ -112,7 +123,7 @@ test('66-01-02: real merge group through cmdDistill --use-llm reaches distill_st
     await new Promise((resolve, reject) => {
       const child = spawn(
         process.execPath,
-        [GSD_MEMORY, 'distill', '--use-llm'],
+        [GSD_MEMORY, 'distill', '--use-llm', '--confirm-destructive'],
         {
           env: {
             ...process.env,

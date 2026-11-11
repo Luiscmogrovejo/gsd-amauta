@@ -1,0 +1,88 @@
+name: Memory Safety Gate (MEMSAFE)
+
+# The counter-proofs for commit fa0e6f3 (auto-distill containment + never
+# delete without archiving). They passed once by hand in a scratchpad; until
+# they run on every push the fix can regress silently, which is precisely the
+# failure class of the incident they exist to prevent.
+#
+# No branch filter. The repository's default branch is `master`, and
+# .github/workflows/test.yml filters on `main` only — so that workflow has
+# never run on a push to the default branch. This gate is deliberately not
+# filtered so it cannot inherit that hole.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  memsafe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        # pgvector image: gsd_memory declares `embedding vector(1024)`, so the
+        # ephemeral test database needs the extension available.
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: gsd
+          POSTGRES_PASSWORD: gsd
+          POSTGRES_DB: postgres
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U gsd"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Set up Python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Install Python dependencies
+        run: python3 -m pip install --upgrade pip psycopg2-binary pytest
+
+      - name: Run the MEMSAFE gate
+        shell: bash
+        # No pipes. A gate in this repo has twice been read through `| tail`
+        # and reported tail's exit status instead of the gate's, pushing red to
+        # the default branch. `set -euo pipefail` plus an explicit `$?` check
+        # means nothing here proceeds on an unverified zero.
+        env:
+          # The suite parses host/port/user/password out of this and DISCARDS
+          # the database name — it generates and drops its own
+          # gsd_memsafe_test_<hex> database. The name below is deliberately
+          # nonsense to make that visible: if it were ever honoured, every
+          # test would fail to connect rather than silently touching a real DB.
+          GSD_POSTGRES_URL: postgresql://gsd:gsd@127.0.0.1:5433/this_name_is_discarded
+          # An unreachable database must FAIL, never skip. A gate that skips is
+          # a gate that is green for the wrong reason.
+          GSD_MEMSAFE_REQUIRE_PG: '1'
+        run: |
+          set -euo pipefail
+          node scripts/memsafe-gate.cjs
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            echo "MEMSAFE gate exited ${status}" >&2
+            exit "$status"
+          fi
+          echo "MEMSAFE gate verified zero"

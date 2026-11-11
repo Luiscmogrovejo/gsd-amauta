@@ -187,17 +187,48 @@ else:
 # Database connection
 # ═══════════════════════════════════════════════════════
 
-_DEFAULT_PG_URL = "postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta"
+# CONTAINMENT 2026-09-07: no hardcoded DSN. This line used to read
+#     _DEFAULT_PG_URL = "postgresql://gsd:<redacted>@127.0.0.1:5433/gsd_amauta"
+# i.e. the shared development database, used whenever DATABASE_URL and
+# GSD_POSTGRES_URL were both unset. Same shape as the pg_store fallback
+# that wrote 8 rows to that database. An absent DSN now fails closed.
+# ── Containment: DSN resolution has exactly one home ──────────────────────────
+# services/pg_dsn.py. Dual-import because this module is loaded both as
+# ``services.step_orchestrator`` (repo root on sys.path) and as ``step_orchestrator``
+# (services/ itself on sys.path) -- see party_session.py L58-69.
+try:
+    from services.pg_dsn import require_dsn as _require_dsn  # type: ignore
+except ImportError:  # pragma: no cover - depends on caller's sys.path
+    try:
+        from pg_dsn import require_dsn as _require_dsn  # type: ignore
+    except ImportError:
+        # Loaded by file path (importlib, `python -c` from another directory):
+        # neither the repo root nor services/ is on sys.path. pg_dsn.py always
+        # sits beside this file, so load it from there rather than fail.
+        import importlib.util as _ilu
+        import os as _os
+        _spec = _ilu.spec_from_file_location(
+            "pg_dsn", _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "pg_dsn.py"))
+        _pg_dsn = _ilu.module_from_spec(_spec)
+        _spec.loader.exec_module(_pg_dsn)
+        _require_dsn = _pg_dsn.require_dsn
 
 def _get_conn():
-    """Return a psycopg2 connection using DATABASE_URL or default.
+    """Return a psycopg2 connection using DATABASE_URL or GSD_POSTGRES_URL.
+
+    There is no default. An absent DSN raises
+    pg_dsn.UnconfiguredPostgresDSN rather than guessing a host.
 
     Follows the same pattern as pg_store._get_conn().
     Raises RuntimeError if psycopg2 is not installed.
     """
     if not _HAS_PG:
         raise RuntimeError("psycopg2 not installed — cannot connect to PostgreSQL")
-    db_url = os.environ.get("DATABASE_URL") or os.environ.get("GSD_POSTGRES_URL") or _DEFAULT_PG_URL
+    # No fallback branch, by design. See services/pg_dsn.py.
+    db_url = _require_dsn(
+        component="step_orchestrator._get_conn",
+        env_names=("DATABASE_URL", "GSD_POSTGRES_URL"),
+    )
     conn = psycopg2.connect(db_url)
     conn.autocommit = False
     return conn

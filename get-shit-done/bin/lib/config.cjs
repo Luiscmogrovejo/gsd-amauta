@@ -7,6 +7,9 @@ const path = require('path');
 const { output, error } = require('./core.cjs');
 
 const VALID_CONFIG_KEYS = new Set([
+  // TK-2229: the EXPLICIT project id for this repository. Read by
+  // amauta.py's _resolve_project_id(), which prefers it over any inference.
+  'project_id',
   'mode', 'granularity', 'parallelization', 'commit_docs', 'model_profile',
   'search_gitignored', 'brave_search', 'current_milestone',
   'workflow.research', 'workflow.plan_check', 'workflow.verifier',

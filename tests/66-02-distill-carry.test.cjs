@@ -48,6 +48,17 @@ function startMockDaemon(entries) {
         return;
       }
 
+      // MEMSAFE-03: distill removes a consumed original through the single
+      // archive-then-delete call and requires exactly one row removed.
+      if (req.method === 'POST' && req.url === '/api/memory/archive-delete') {
+        deletes.push(parsed);
+        res.writeHead(200);
+        res.end(JSON.stringify({
+          id: parsed.id, archived: 1, already_archived: false, deleted: 1, found: true,
+        }));
+        return;
+      }
+
       if (req.method === 'POST' && req.url === '/api/memory/delete') {
         deletes.push(parsed);
         res.writeHead(200);
@@ -128,7 +139,7 @@ test('66-02-05: distill mergeBody carries applied_count sum + merged_sources + d
   const { server, port, stores, deletes } = await startMockDaemon(entries);
 
   try {
-    const { code, stdout, stderr } = await runDistill(port);
+    const { code, stdout, stderr } = await runDistill(port, ['--confirm-destructive']);
     assert.equal(code, 0, `distill exited ${code}\nstdout:\n${stdout}\nstderr:\n${stderr}`);
 
     assert.equal(stores.length, 1, `expected exactly 1 store body, got ${stores.length}`);

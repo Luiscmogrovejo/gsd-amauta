@@ -720,15 +720,18 @@ class SQLiteStore:
         leaving the live table, so a distilled summary does not sit beside the
         rows it summarizes.
 
-        Returns {"archived": bool, "deleted": bool, "id": mem_id}. A missing id
-        is not an error — it reports both flags False.
+        Returns {"id", "archived", "already_archived", "deleted", "found"} with
+        row counts, matching PGStore. A missing id reports found False. Insert
+        and delete share one transaction: a delete never commits without its
+        archive copy.
         """
         with self._get_conn() as conn:
             row = conn.execute(
                 "SELECT id FROM gsd_memory WHERE id = ?", (mem_id,)
             ).fetchone()
             if row is None:
-                return {"archived": False, "deleted": False, "id": mem_id}
+                return {"id": mem_id, "archived": 0, "already_archived": False,
+                        "deleted": 0, "found": False}
             archived = conn.execute("""
                 INSERT OR IGNORE INTO gsd_memory_archive
                     (id, text, agent_id, source, tags, metadata,
@@ -740,7 +743,11 @@ class SQLiteStore:
             deleted = conn.execute(
                 "DELETE FROM gsd_memory WHERE id = ?", (mem_id,)
             ).rowcount > 0
-            return {"archived": archived, "deleted": deleted, "id": mem_id}
+            # Same shape as PGStore.memory_archive_and_delete, so the
+            # /api/memory/archive-delete endpoint serves both backends.
+            return {"id": mem_id, "archived": int(archived),
+                    "already_archived": not archived,
+                    "deleted": int(deleted), "found": True}
 
     def memory_count_by_source(self):
         """Count memories grouped by source."""

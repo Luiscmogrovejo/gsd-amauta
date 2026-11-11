@@ -59,7 +59,7 @@ const SCALE03_FEATURES_PY = `{
     'has_api_change': False,
     'test_impact': 5,
     'dependency_depth': 3,
-    'security_sensitivity': 5,
+    'security_sensitivity': 5, 'top_level_dir_width': 0,
 }`;
 
 // Check python3 is on PATH
@@ -126,7 +126,7 @@ cfg = {
         {'max': 100, 'phases': ['R', 'P', 'E', 'T', 'D', 'S', 'A']},
     ],
 }
-features = {'files_expected': 3,'estimated_loc': 80,'test_impact': 2,'dependency_depth': 1,'has_migration': False,'has_api_change': False,'security_sensitivity': 2}
+features = {'files_expected': 3,'estimated_loc': 80,'test_impact': 2,'dependency_depth': 1,'has_migration': False,'has_api_change': False,'security_sensitivity': 2, 'top_level_dir_width': 0}
 result = calibrate_score(50, features, cfg, embedding=None)
 assert result['cold_start'] is True, f"cold_start should be True, got {result}"
 assert result['calibrated_score'] > 50, f"cold-start should bias UP, got {result['calibrated_score']}"
@@ -143,7 +143,7 @@ print(json.dumps(result))
   test('_logistic_regression: < 3 neighbors returns 0.5 (no-op)', () => {
     const r = pyFile(`
 ${PY_BOOTSTRAP}
-features = {'files_expected': 5,'estimated_loc': 100,'test_impact': 2,'dependency_depth': 1,'has_migration': False,'has_api_change': False,'security_sensitivity': 2}
+features = {'files_expected': 5,'estimated_loc': 100,'test_impact': 2,'dependency_depth': 1,'has_migration': False,'has_api_change': False,'security_sensitivity': 2, 'top_level_dir_width': 0}
 # 2 neighbors < 3 threshold → returns 0.5
 neighbors_2 = [
     {'feature_vector': features, 'outcome_label': 'validator_pass', 'similarity': 0.9},
@@ -162,7 +162,7 @@ print(json.dumps({'p': p, 'neighbor_count': len(neighbors_2)}))
   test('_logistic_regression: all validator_pass neighbors → p > 0.5', () => {
     const r = pyFile(`
 ${PY_BOOTSTRAP}
-features = {'files_expected': 5,'estimated_loc': 100,'test_impact': 2,'dependency_depth': 1,'has_migration': False,'has_api_change': False,'security_sensitivity': 2}
+features = {'files_expected': 5,'estimated_loc': 100,'test_impact': 2,'dependency_depth': 1,'has_migration': False,'has_api_change': False,'security_sensitivity': 2, 'top_level_dir_width': 0}
 # 20 neighbors all validator_pass → p should be > 0.5
 neighbors = [
     {'feature_vector': dict(features, files_expected=5+i%3), 'outcome_label': 'validator_pass', 'similarity': 0.9}
@@ -180,7 +180,7 @@ print(json.dumps({'p': p}))
   test('_logistic_regression: all task_fail neighbors → p < 0.5', () => {
     const r = pyFile(`
 ${PY_BOOTSTRAP}
-features = {'files_expected': 5,'estimated_loc': 100,'test_impact': 2,'dependency_depth': 1,'has_migration': False,'has_api_change': False,'security_sensitivity': 2}
+features = {'files_expected': 5,'estimated_loc': 100,'test_impact': 2,'dependency_depth': 1,'has_migration': False,'has_api_change': False,'security_sensitivity': 2, 'top_level_dir_width': 0}
 # 20 neighbors all task_fail → p should be < 0.5
 neighbors = [
     {'feature_vector': dict(features, files_expected=5+i%3), 'outcome_label': 'task_fail', 'similarity': 0.9}
@@ -208,7 +208,7 @@ cfg = {
         {'max': 100, 'phases': ['R', 'P', 'E', 'T', 'D', 'S', 'A']},
     ],
 }
-features = {'files_expected': 5,'estimated_loc': 200,'test_impact': 3,'dependency_depth': 2,'has_migration': True,'has_api_change': False,'security_sensitivity': 3}
+features = {'files_expected': 5,'estimated_loc': 200,'test_impact': 3,'dependency_depth': 2,'has_migration': True,'has_api_change': False,'security_sensitivity': 3, 'top_level_dir_width': 0}
 results = [calibrate_score(45, features, cfg) for _ in range(3)]
 scores = [r['calibrated_score'] for r in results]
 assert scores[0] == scores[1] == scores[2], f"Non-deterministic: {scores}"
@@ -236,7 +236,7 @@ cfg = {
         {'max': 100, 'phases': ['R', 'P', 'E', 'T', 'D', 'S', 'A']},
     ],
 }
-features = {'files_expected': 5,'estimated_loc': 200,'test_impact': 3,'dependency_depth': 2,'has_migration': False,'has_api_change': False,'security_sensitivity': 3}
+features = {'files_expected': 5,'estimated_loc': 200,'test_impact': 3,'dependency_depth': 2,'has_migration': False,'has_api_change': False,'security_sensitivity': 3, 'top_level_dir_width': 0}
 result = calibrate_score(40, features, cfg, embedding=None)
 # Cold-start should fire since count=0 (PG unreachable)
 assert result['cold_start'] is True, f"cold_start should be True when PG is unreachable"
@@ -262,7 +262,7 @@ cfg = {
         {'max': 100, 'phases': ['R', 'P', 'E', 'T', 'D', 'S', 'A']},
     ],
 }
-features = {'files_expected': 20,'estimated_loc': 500,'test_impact': 10,'dependency_depth': 10,'has_migration': True,'has_api_change': True,'security_sensitivity': 10}
+features = {'files_expected': 20,'estimated_loc': 500,'test_impact': 10,'dependency_depth': 10,'has_migration': True,'has_api_change': True,'security_sensitivity': 10, 'top_level_dir_width': 0}
 # Score 100 → already in heaviest bucket, no shift possible
 result = calibrate_score(100, features, cfg, embedding=None)
 assert result['cold_start'] is True
@@ -290,7 +290,7 @@ cfg = {
         {'max': 100, 'phases': ['R', 'P', 'E', 'T', 'D', 'S', 'A']},
     ],
 }
-features = {'files_expected': 5,'estimated_loc': 100,'test_impact': 2,'dependency_depth': 1,'has_migration': False,'has_api_change': False,'security_sensitivity': 2}
+features = {'files_expected': 5,'estimated_loc': 100,'test_impact': 2,'dependency_depth': 1,'has_migration': False,'has_api_change': False,'security_sensitivity': 2, 'top_level_dir_width': 0}
 result = calibrate_score(50, features, cfg, embedding=None)
 # Bucket max=60, next bucket lower = 61
 assert result['calibrated_score'] == 61, f"cold-start from bucket max=60 should shift to 61, got {result['calibrated_score']}"
@@ -318,7 +318,7 @@ import json
 
 # Inline 20 fail-outcome neighbors for _logistic_regression calibration
 # (bypasses PG entirely — we call calibrate_score with pre-built neighbors via monkeypatching)
-features = {'files_expected': 5,'estimated_loc': 100,'test_impact': 2,'dependency_depth': 1,'has_migration': False,'has_api_change': False,'security_sensitivity': 2}
+features = {'files_expected': 5,'estimated_loc': 100,'test_impact': 2,'dependency_depth': 1,'has_migration': False,'has_api_change': False,'security_sensitivity': 2, 'top_level_dir_width': 0}
 
 neighbors_fail = [
     {
@@ -392,7 +392,7 @@ ${PY_BOOTSTRAP}
 import json
 import complexity_scorer as _cs
 
-features = {'files_expected': 5,'estimated_loc': 100,'test_impact': 2,'dependency_depth': 1,'has_migration': False,'has_api_change': False,'security_sensitivity': 2}
+features = {'files_expected': 5,'estimated_loc': 100,'test_impact': 2,'dependency_depth': 1,'has_migration': False,'has_api_change': False,'security_sensitivity': 2, 'top_level_dir_width': 0}
 neighbors_pass = [
     {
         'feature_vector': dict(features, files_expected=5+i%3),

@@ -319,7 +319,8 @@ class TestMemoryArchiveAndDelete(_StoreCase):
     def test_row_moves_to_the_archive_table(self):
         mem_id = self.store.memory_store("archive me", source="task_event")
         result = self.store.memory_archive_and_delete(mem_id)
-        self.assertEqual(result, {"archived": True, "deleted": True, "id": mem_id})
+        self.assertEqual(result, {"id": mem_id, "archived": 1, "already_archived": False,
+                                  "deleted": 1, "found": True})
         with self.store._get_conn() as conn:
             live = conn.execute("SELECT COUNT(*) FROM gsd_memory WHERE id = ?", (mem_id,)).fetchone()[0]
             archived = conn.execute(
@@ -332,7 +333,8 @@ class TestMemoryArchiveAndDelete(_StoreCase):
     def test_missing_id_is_reported_not_raised(self):
         self.assertEqual(
             self.store.memory_archive_and_delete("mem-nope"),
-            {"archived": False, "deleted": False, "id": "mem-nope"},
+            {"id": "mem-nope", "archived": 0, "already_archived": False,
+             "deleted": 0, "found": False},
         )
 
 
