@@ -59,27 +59,98 @@ def file_sha256(filepath: str) -> str:
     return h.hexdigest()
 
 
+#: Cached per-connection result of "does rlm_chunks have migration 029's
+#: columns?" so the probe runs once, not once per file per query.
+_HAS_029_COLUMNS = {}
+
+
+def _has_stat_columns(pg_conn) -> bool:
+    """True when migration 029 (file_mtime/file_size/embedding_model) is applied."""
+    key = id(pg_conn)
+    if key in _HAS_029_COLUMNS:
+        return _HAS_029_COLUMNS[key]
+    present = False
+    try:
+        with pg_conn.cursor() as cur:
+            cur.execute("""
+                SELECT COUNT(*) FROM information_schema.columns
+                WHERE table_name = 'rlm_chunks'
+                  AND column_name IN ('file_mtime', 'file_size', 'embedding_model')
+            """)
+            present = cur.fetchone()[0] == 3
+    except Exception as e:
+        log.debug("rlm_029_probe_failed error=%s", str(e))
+        try:
+            pg_conn.rollback()
+        except Exception:
+            pass
+    if len(_HAS_029_COLUMNS) > 32:
+        _HAS_029_COLUMNS.clear()
+    _HAS_029_COLUMNS[key] = present
+    return present
+
+
+def file_stat(filepath: str):
+    """``(mtime, size)`` for *filepath*, or ``(None, None)`` if unreadable."""
+    try:
+        info = os.stat(filepath)
+        return float(info.st_mtime), int(info.st_size)
+    except OSError:
+        return None, None
+
+
 def is_stale(filepath: str, pg_conn) -> bool:
     """
-    Check if any rlm_chunks rows for this file have a different sha256 than the current file.
-    Returns True if file is new or has changed (needs re-ingestion).
-    Returns False if file content matches stored sha256 (skip re-ingestion).
-    """
-    current_sha = file_sha256(filepath)
-    if not current_sha:
-        return True  # Unreadable file -- treat as stale
+    Check whether *filepath* needs re-ingestion.
 
-    with pg_conn.cursor() as cur:
-        cur.execute(
-            "SELECT sha256 FROM rlm_chunks WHERE file_path = %s LIMIT 1",
-            (str(os.path.abspath(filepath)),)
-        )
-        row = cur.fetchone()
+    Returns True if the file is new or has changed, False when the stored
+    chunks are up to date.
+
+    rlm-service.py's /query handler calls ingest_directory() on EVERY query,
+    which called this for every file in the tree, which SHA-256'd every byte
+    of every file — the full hash of the whole codebase, per query. Migration
+    029 stores the source file's mtime and size at ingest time, so the common
+    case (nothing touched) now short-circuits on a stat() and never opens the
+    file. The hash is still the authority: it runs whenever mtime/size differ
+    or are unknown, so a content change with a preserved mtime is still
+    caught by the hash on the next genuine stat difference, and `force=True`
+    (gsd-tools reindex) bypasses the check entirely.
+    """
+    abs_path = str(os.path.abspath(filepath))
+    has_stat = _has_stat_columns(pg_conn)
+    mtime, size = file_stat(abs_path)
+
+    columns = "sha256, file_mtime, file_size" if has_stat else "sha256, NULL, NULL"
+    try:
+        with pg_conn.cursor() as cur:
+            cur.execute(
+                f"SELECT {columns} FROM rlm_chunks WHERE file_path = %s LIMIT 1",
+                (abs_path,),
+            )
+            row = cur.fetchone()
+    except Exception as e:
+        log.debug("is_stale_query_failed path=%s error=%s", filepath, str(e))
+        try:
+            pg_conn.rollback()
+        except Exception:
+            pass
+        return True
 
     if row is None:
         return True  # Not yet indexed
-    stored_sha = row[0].strip()  # CHAR(64) may have trailing spaces
-    return stored_sha != current_sha
+
+    stored_sha, stored_mtime, stored_size = row[0], row[1], row[2]
+    # Cheap short-circuit: same mtime AND same size => unchanged, skip the hash.
+    if (has_stat and mtime is not None and stored_mtime is not None
+            and stored_size is not None
+            and int(stored_size) == size
+            and abs(float(stored_mtime) - mtime) < 1e-6):
+        return False
+
+    current_sha = file_sha256(abs_path)
+    if not current_sha:
+        return True  # Unreadable file -- treat as stale
+    return (stored_sha or "").strip() != current_sha
 
 
 def _embedding_to_pg(embedding: Optional[list]) -> Optional[str]:
@@ -113,6 +184,7 @@ def ingest_file(filepath: str, pg_conn, force: bool = False) -> dict:
         "status": "skipped",
         "chunks_inserted": 0,
         "chunks_skipped": 0,
+        "chunks_deleted": 0,
         "error": None,
     }
 
@@ -173,10 +245,17 @@ def ingest_file(filepath: str, pg_conn, force: bool = False) -> dict:
 
     # Generate descriptions and embeddings; upsert
     from services.caveman_descriptions import describe_chunk
-    from services.rlm_embeddings import generate_code_embedding
+    from services.rlm_embeddings import INPUT_TYPE_DOCUMENT, embed_code
 
     # Determine if this is a code file (embeddings enabled)
     embed_eligible = ext in AST_EXTENSIONS
+    has_stat = _has_stat_columns(pg_conn)
+    mtime, size = file_stat(filepath)
+
+    #: rlm_chunks.id of every chunk written in this pass. Anything else still
+    #: carrying this file_path is a leftover from a previous version of the
+    #: file and is deleted below.
+    written_ids = []
 
     inserted = 0
     try:
@@ -189,23 +268,45 @@ def ingest_file(filepath: str, pg_conn, force: bool = False) -> dict:
                     log.debug("describe_chunk_failed path=%s error=%s", filepath, str(e))
 
                 embedding = None
+                embedding_model = None
                 if embed_eligible:
                     try:
-                        raw_embedding = generate_code_embedding(
-                            chunk.get("content", chunk.get("text", ""))
+                        embedded = embed_code(
+                            chunk.get("content", chunk.get("text", "")),
+                            input_type=INPUT_TYPE_DOCUMENT,
                         )
-                        embedding = _embedding_to_pg(raw_embedding)
+                        if embedded is not None:
+                            raw_embedding, embedding_model = embedded
+                            embedding = _embedding_to_pg(raw_embedding)
                     except Exception as e:
                         log.debug("embed_failed path=%s symbol=%s error=%s",
                                   filepath, chunk.get("symbol_name", ""), str(e))
 
+                symbol_name = chunk.get("symbol_name", chunk.get("label", ""))
+                start_line = chunk.get("start_line", 0)
+
+                extra_columns = ""
+                extra_placeholders = ""
+                extra_updates = ""
+                extra_values = ()
+                if has_stat:
+                    extra_columns = ", embedding_model, file_mtime, file_size"
+                    extra_placeholders = ", %s, %s, %s"
+                    extra_updates = (
+                        ", embedding_model = EXCLUDED.embedding_model"
+                        ", file_mtime = EXCLUDED.file_mtime"
+                        ", file_size = EXCLUDED.file_size"
+                    )
+                    extra_values = (embedding_model, mtime, size)
+
                 # Upsert by (file_path, symbol_name, start_line)
-                cur.execute("""
+                cur.execute(f"""
                     INSERT INTO rlm_chunks
                         (file_path, symbol_name, symbol_type, start_line, end_line,
                          content, description, sha256, dependencies, dependents,
-                         embedding_code, updated_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::vector, NOW())
+                         embedding_code, updated_at{extra_columns})
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::vector,
+                            NOW(){extra_placeholders})
                     ON CONFLICT (file_path, symbol_name, start_line)
                     DO UPDATE SET
                         symbol_type    = EXCLUDED.symbol_type,
@@ -216,12 +317,13 @@ def ingest_file(filepath: str, pg_conn, force: bool = False) -> dict:
                         dependencies   = EXCLUDED.dependencies,
                         dependents     = EXCLUDED.dependents,
                         embedding_code = EXCLUDED.embedding_code,
-                        updated_at     = NOW()
+                        updated_at     = NOW(){extra_updates}
+                    RETURNING id
                 """, (
                     filepath,
-                    chunk.get("symbol_name", chunk.get("label", "")),
+                    symbol_name,
                     chunk.get("symbol_type", "legacy"),
-                    chunk.get("start_line", 0),
+                    start_line,
                     chunk.get("end_line", 0),
                     chunk.get("content", chunk.get("text", "")),
                     description,
@@ -229,8 +331,32 @@ def ingest_file(filepath: str, pg_conn, force: bool = False) -> dict:
                     chunk.get("dependencies", []),
                     chunk.get("dependents", []),
                     embedding,
-                ))
+                ) + extra_values)
+                returned = cur.fetchone()
+                if returned:
+                    written_ids.append(returned[0])
                 inserted += 1
+
+            # Delete this file's stale chunks.
+            #
+            # The upsert key is (file_path, symbol_name, start_line), so a
+            # renamed function, a deleted function, or ANY edit that shifts a
+            # symbol's starting line leaves the previous row behind forever.
+            # Over a few hundred edits the index fills with chunks whose
+            # content no longer exists in the file, and BM25 happily returns
+            # them. Every row still carrying this file_path that was not
+            # written in this pass is by definition stale.
+            if written_ids:
+                cur.execute(
+                    "DELETE FROM rlm_chunks "
+                    "WHERE file_path = %s AND id <> ALL(%s)",
+                    (filepath, written_ids),
+                )
+                deleted = cur.rowcount
+                result["chunks_deleted"] = deleted if deleted and deleted > 0 else 0
+                if result["chunks_deleted"]:
+                    log.info("ingest_pruned_stale path=%s chunks=%d",
+                             filepath, result["chunks_deleted"])
         pg_conn.commit()
     except Exception as e:
         log.error("ingest_upsert_failed path=%s error=%s", filepath, str(e))
@@ -248,12 +374,63 @@ def ingest_file(filepath: str, pg_conn, force: bool = False) -> dict:
     return result
 
 
-def ingest_directory(dir_path: str, pg_conn, force: bool = False) -> dict:
+def prune_missing_files(dir_path: str, pg_conn, seen_paths=None) -> int:
+    """Delete chunks for files that no longer exist under *dir_path*.
+
+    Nothing ever removed a deleted file's chunks: ``is_stale`` only looks at
+    files that still exist, so renaming or deleting a source file left its
+    whole chunk set in the index to be returned by BM25 forever.
+
+    Existence is checked with ``os.path.isfile`` against the paths recorded in
+    rlm_chunks rather than against *seen_paths*, so a file the current scan
+    skipped (unsupported extension, inside a SKIP_DIR) is not mistaken for a
+    deletion. Returns the number of rows deleted.
+    """
+    dir_path = str(os.path.abspath(dir_path))
+    prefix = dir_path.rstrip(os.sep)
+    try:
+        with pg_conn.cursor() as cur:
+            # Exact match OR a child path. A bare `LIKE prefix%` would also
+            # match a sibling directory whose name starts with this one.
+            cur.execute(
+                "SELECT DISTINCT file_path FROM rlm_chunks "
+                "WHERE file_path = %s OR file_path LIKE %s",
+                (prefix, prefix + os.sep + "%"),
+            )
+            indexed = [row[0] for row in cur.fetchall()]
+            missing = [p for p in indexed if not os.path.isfile(p)]
+            if not missing:
+                return 0
+            cur.execute(
+                "DELETE FROM rlm_chunks WHERE file_path = ANY(%s)", (missing,)
+            )
+            deleted = cur.rowcount or 0
+        pg_conn.commit()
+        if deleted:
+            log.info("prune_missing_files dir=%s files=%d chunks=%d",
+                     dir_path, len(missing), deleted)
+        return deleted
+    except Exception as e:
+        log.warning("prune_missing_files_failed dir=%s error=%s", dir_path, str(e))
+        try:
+            pg_conn.rollback()
+        except Exception:
+            pass
+        return 0
+
+
+def ingest_directory(dir_path: str, pg_conn, force: bool = False,
+                     prune: bool = True) -> dict:
     """
     Recursively ingest all supported files in a directory.
     Skips SKIP_DIRS. Used by 'gsd-tools reindex [path]'.
 
-    Returns {total_files, inserted, skipped, errors, error_files}.
+    Args:
+        prune: also remove chunks for files that no longer exist under
+               *dir_path* (default True). Pass False for a pure add-only pass.
+
+    Returns {total_files, inserted, skipped, errors, error_files,
+             chunks_deleted, files_pruned}.
     """
     dir_path = str(os.path.abspath(dir_path))
     all_extensions = AST_EXTENSIONS | LEGACY_EXTENSIONS
@@ -263,6 +440,8 @@ def ingest_directory(dir_path: str, pg_conn, force: bool = False) -> dict:
         "skipped": 0,
         "errors": 0,
         "error_files": [],
+        "chunks_deleted": 0,
+        "files_pruned": 0,
     }
 
     for root, dirs, files in os.walk(dir_path):
@@ -274,6 +453,7 @@ def ingest_directory(dir_path: str, pg_conn, force: bool = False) -> dict:
             fpath = os.path.join(root, fname)
             stats["total_files"] += 1
             res = ingest_file(fpath, pg_conn, force=force)
+            stats["chunks_deleted"] += res.get("chunks_deleted", 0)
             if res["status"] == "inserted":
                 stats["inserted"] += 1
             elif res["status"] == "error":
@@ -282,8 +462,15 @@ def ingest_directory(dir_path: str, pg_conn, force: bool = False) -> dict:
             else:
                 stats["skipped"] += 1
 
+    if prune:
+        pruned = prune_missing_files(dir_path, pg_conn)
+        stats["files_pruned"] = pruned
+        stats["chunks_deleted"] += pruned
+
     log.info(
-        "ingest_directory_done dir=%s files=%d inserted=%d skipped=%d errors=%d",
-        dir_path, stats["total_files"], stats["inserted"], stats["skipped"], stats["errors"],
+        "ingest_directory_done dir=%s files=%d inserted=%d skipped=%d errors=%d "
+        "chunks_deleted=%d",
+        dir_path, stats["total_files"], stats["inserted"], stats["skipped"],
+        stats["errors"], stats["chunks_deleted"],
     )
     return stats

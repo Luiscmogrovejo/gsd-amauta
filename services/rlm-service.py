@@ -256,7 +256,9 @@ def _trigger_lazy_ingestion(paths: list):
                 ingest_file(path, pg_conn)
             elif os.path.isdir(path):
                 from services.rlm_ingestion import ingest_directory
-                ingest_directory(path, pg_conn)
+                # prune=False — background lazy ingestion, not an authoritative
+                # rescan. /reindex owns orphan removal.
+                ingest_directory(path, pg_conn, prune=False)
     except Exception as e:
         log.warning("lazy_ingestion_failed error=%s — continuing with in-memory BM25", str(e))
     finally:
@@ -1183,7 +1185,14 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
                     from rlm_reranker import rerank
                     from rlm_graph import expand_chunks_with_graph, _get_cache_client
 
-                stats = ingest_directory(directory, pg_conn)
+                # prune=False: this runs on EVERY query, possibly against a
+                # narrow subtree, so deleting "missing" files here would be
+                # both a per-query table scan and a chance to drop chunks for
+                # a file that is merely temporarily unreadable. Orphan removal
+                # belongs to the explicit /reindex pass (prune defaults True
+                # there). Per-file stale-chunk deletion still happens inside
+                # ingest_file for every file that is actually re-ingested.
+                stats = ingest_directory(directory, pg_conn, prune=False)
                 if stats.get("inserted", 0) > 0:
                     _rebuild_graph_safe()
 

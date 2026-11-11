@@ -331,6 +331,11 @@ def main(argv=None):
 
     import json as _json
 
+    # With --json, stdout must contain ONLY the JSON document: bin/init.cjs
+    # parses it. Progress lines go to stderr.
+    def log(message):
+        print(message, file=sys.stderr if args.json else sys.stdout)
+
     try:
         if args.status:
             payload = status(args.dsn, args.migrations_dir)
@@ -353,6 +358,7 @@ def main(argv=None):
             migrations_dir=args.migrations_dir,
             dry_run=args.dry_run,
             baseline=args.baseline,
+            log=log,
         )
         if args.json:
             print(_json.dumps(result, indent=2, default=str))

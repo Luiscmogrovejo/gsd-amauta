@@ -87,11 +87,41 @@ def _check_ident(name: str) -> None:
         raise ValueError(f"unsafe SQL identifier: {name!r}")
 
 
+#: Per-connection cache for the migration-029 column probe.
+_HAS_EMBEDDING_MODEL_COLUMN = {}
+
+
+def _has_embedding_model_column(pg_conn) -> bool:
+    """True when rlm_chunks has migration 029's embedding_model column."""
+    key = id(pg_conn)
+    if key in _HAS_EMBEDDING_MODEL_COLUMN:
+        return _HAS_EMBEDDING_MODEL_COLUMN[key]
+    present = False
+    try:
+        with pg_conn.cursor() as cur:
+            cur.execute("""
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'rlm_chunks' AND column_name = 'embedding_model'
+            """)
+            present = cur.fetchone() is not None
+    except Exception as e:
+        log.debug("embedding_model_probe_failed error=%s", str(e))
+        try:
+            pg_conn.rollback()
+        except Exception:
+            pass
+    if len(_HAS_EMBEDDING_MODEL_COLUMN) > 32:
+        _HAS_EMBEDDING_MODEL_COLUMN.clear()
+    _HAS_EMBEDDING_MODEL_COLUMN[key] = present
+    return present
+
+
 def hybrid_search_generic(query: str, pg_conn, *, table: str, id_column: str,
                            select_columns, vector_column: Optional[str] = None,
                            query_embedding: Optional[list] = None,
                            bm25_query: Optional[str] = None,
                            filter_sql: str = "", filter_params=(),
+                           vector_filter_sql: str = "", vector_filter_params=(),
                            top_k: int = DEFAULT_TOP_K,
                            candidate_k: int = RRF_CANDIDATE_K,
                            rrf_k: int = RRF_K) -> list:
@@ -119,6 +149,10 @@ def hybrid_search_generic(query: str, pg_conn, *, table: str, id_column: str,
         filter_sql: optional SQL fragment appended to BOTH legs (e.g.
             "AND c.some_column LIKE %s")
         filter_params: positional params for filter_sql, applied once per leg
+        vector_filter_sql: optional SQL fragment appended to the VECTOR leg
+            only (e.g. restricting to rows embedded by the active model —
+            a condition that must not suppress BM25 matches)
+        vector_filter_params: positional params for vector_filter_sql
         top_k: rows returned after RRF fusion
         candidate_k: candidate pool size per leg before fusion
         rrf_k: RRF k constant
@@ -141,6 +175,7 @@ def hybrid_search_generic(query: str, pg_conn, *, table: str, id_column: str,
         return []
 
     filter_params = list(filter_params)
+    vector_filter_params = list(vector_filter_params)
 
     if query_embedding is None or vector_column is None:
         log.debug("hybrid_search_generic_bm25_only_mode table=%s reason=no_query_embedding", table)
@@ -182,6 +217,7 @@ def hybrid_search_generic(query: str, pg_conn, *, table: str, id_column: str,
             FROM {table} c
             WHERE c.{vector_column} IS NOT NULL
             {filter_sql}
+            {vector_filter_sql}
             LIMIT {candidate_k}
         ),
         rrf_fused AS (
@@ -203,7 +239,8 @@ def hybrid_search_generic(query: str, pg_conn, *, table: str, id_column: str,
         LIMIT %s
     """
 
-    params = [bm25_query] + filter_params + [vec_literal] + filter_params + [top_k]
+    params = ([bm25_query] + filter_params + [vec_literal] + filter_params
+              + vector_filter_params + [top_k])
 
     # Output column order is deterministic from the SELECT list we just built
     # (select_columns, then the three fusion aliases) — no cursor metadata
@@ -365,22 +402,56 @@ def hybrid_search(query: str, pg_conn, top_k: int = DEFAULT_TOP_K,
     # a cast-dimension mismatch. embed_for_query() has no other call sites
     # (only a callable-existence check in tests/test_27_ingestion.py) so this
     # redirect is scoped to this one call site.
-    from services.rlm_embeddings import generate_code_embedding
-    query_embedding = generate_code_embedding(query)  # full 1024-dim, or None
+    # input_type="query", not "document". voyage-code-3 is asymmetric: the
+    # query side and the document side get different prompts, and embedding a
+    # query as a document throws away recall for nothing. The previous call
+    # took generate_code_embedding's hard-coded "document" default.
+    from services.rlm_embeddings import (
+        INPUT_TYPE_QUERY, active_embedding_model, generate_code_embedding,
+    )
+    query_embedding = generate_code_embedding(
+        query, input_type=INPUT_TYPE_QUERY
+    )  # full 1024-dim, or None
 
     select_columns = [
         "id", "file_path", "symbol_name", "symbol_type", "start_line", "end_line",
         "content", "description", "dependencies", "dependents",
     ]
-    filter_sql = "AND c.file_path LIKE %s" if file_filter else ""
-    filter_params = (f"{file_filter}%",) if file_filter else ()
+    # `LIKE prefix%` also matched SIBLING directories: a filter of /a/b
+    # matched /a/bc/... and /a/b-old/... Match the directory itself or a path
+    # genuinely beneath it.
+    if file_filter:
+        prefix = str(file_filter).rstrip(os.sep)
+        filter_sql = "AND (c.file_path = %s OR c.file_path LIKE %s)"
+        filter_params = (prefix, prefix + os.sep + "%")
+    else:
+        filter_sql = ""
+        filter_params = ()
     bm25_query = _boosted_rlm_query(_sanitize_query(query))
+
+    # Vector-leg-only filter: compare like with like. Voyage (1024-dim) and
+    # Qodo (1536-dim, truncated to 1024) vectors live in the same
+    # embedding_code column; cosine distance between the two spaces is noise.
+    # Rows embedded by another model still reach the results through BM25 —
+    # they just do not pollute the vector ranking. NULL embedding_model means
+    # "written before migration 029, provenance unknown" and is included so
+    # an existing index does not go dark the moment this ships.
+    vector_filter_sql = ""
+    vector_filter_params = ()
+    active_model = active_embedding_model()
+    if active_model and _has_embedding_model_column(pg_conn):
+        vector_filter_sql = (
+            "AND (c.embedding_model IS NULL OR c.embedding_model = %s)"
+        )
+        vector_filter_params = (active_model,)
 
     results = hybrid_search_generic(
         query, pg_conn,
         table="rlm_chunks", id_column="id", select_columns=select_columns,
         vector_column="embedding_code", query_embedding=query_embedding,
         bm25_query=bm25_query, filter_sql=filter_sql, filter_params=filter_params,
+        vector_filter_sql=vector_filter_sql,
+        vector_filter_params=vector_filter_params,
         top_k=top_k,
     )
 
