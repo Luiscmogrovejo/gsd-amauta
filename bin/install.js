@@ -221,12 +221,14 @@ const forceStatusline = args.includes('--force-statusline');
 const enableMobileMcp = args.includes('--enable-mobile-mcp') || process.env.GSD_MOBILE_MCP === 'on';
 const enableCompression = args.includes('--enable-compression') || process.env.GSD_COMPRESS === 'on';
 const enableShunt = args.includes('--enable-shunt') || process.env.GSD_SHUNT === 'on';
+// --files-only: install files and settings, start nothing (no containers, no daemon).
+const filesOnly = args.includes('--files-only') || process.env.GSD_INSTALL_FILES_ONLY === '1';
 
 console.log(banner);
 
 // Show help if requested
 if (hasHelp) {
-  console.log(`  ${yellow}Usage:${reset} node bin/install.js [options]\n\n  ${yellow}Options:${reset}\n    ${cyan}-g, --global${reset}              Install globally (to config directory)\n    ${cyan}-l, --local${reset}               Install locally (to current directory)\n    ${cyan}--claude${reset}                  Install for Claude Code only\n    ${cyan}--opencode${reset}                Install for OpenCode only\n    ${cyan}--gemini${reset}                  Install for Gemini only\n    ${cyan}--codex${reset}                   Install for Codex only\n    ${cyan}--all${reset}                     Install for all runtimes\n    ${cyan}-u, --uninstall${reset}           Uninstall Amauta (remove all files)\n    ${cyan}-c, --config-dir <path>${reset}   Specify custom config directory\n    ${cyan}-h, --help${reset}                Show this help message\n    ${cyan}--force-statusline${reset}        Replace existing statusline config\n    ${cyan}--enable-compression${reset}      Opt in to output-compression hooks (Claude only; default off)\n    ${cyan}--enable-shunt${reset}            Opt in to the token-saving read shunt (Claude only; default off)\n\n  ${yellow}Examples:${reset}\n    ${dim}# Interactive install (prompts for runtime and location)${reset}\n    npx get-shit-done-cc\n\n    ${dim}# Install for Claude Code globally${reset}\n    npx get-shit-done-cc --claude --global\n\n    ${dim}# Install for Gemini globally${reset}\n    npx get-shit-done-cc --gemini --global\n\n    ${dim}# Install for Codex globally${reset}\n    npx get-shit-done-cc --codex --global\n\n    ${dim}# Install for all runtimes globally${reset}\n    npx get-shit-done-cc --all --global\n\n    ${dim}# Install to custom config directory${reset}\n    npx get-shit-done-cc --codex --global --config-dir ~/.codex-work\n\n    ${dim}# Install to current project only${reset}\n    npx get-shit-done-cc --claude --local\n\n    ${dim}# Uninstall GSD from Codex globally${reset}\n    npx get-shit-done-cc --codex --global --uninstall\n\n  ${yellow}Notes:${reset}\n    The --config-dir option is useful when you have multiple configurations.\n    It takes priority over CLAUDE_CONFIG_DIR / GEMINI_CONFIG_DIR / CODEX_HOME environment variables.\n`);
+  console.log(`  ${yellow}Usage:${reset} node bin/install.js [options]\n\n  ${yellow}Options:${reset}\n    ${cyan}-g, --global${reset}              Install globally (to config directory)\n    ${cyan}-l, --local${reset}               Install locally (to current directory)\n    ${cyan}--claude${reset}                  Install for Claude Code only\n    ${cyan}--opencode${reset}                Install for OpenCode only\n    ${cyan}--gemini${reset}                  Install for Gemini only\n    ${cyan}--codex${reset}                   Install for Codex only\n    ${cyan}--all${reset}                     Install for all runtimes\n    ${cyan}-u, --uninstall${reset}           Uninstall Amauta (remove all files)\n    ${cyan}-c, --config-dir <path>${reset}   Specify custom config directory\n    ${cyan}-h, --help${reset}                Show this help message\n    ${cyan}--force-statusline${reset}        Replace existing statusline config\n    ${cyan}--enable-compression${reset}      Opt in to output-compression hooks (Claude only; default off)\n    ${cyan}--enable-shunt${reset}            Opt in to the token-saving read shunt (Claude only; default off)\n    ${cyan}--files-only${reset}              Install files and settings only; start no containers and no daemon\n\n  ${yellow}Examples:${reset}\n    ${dim}# Interactive install (prompts for runtime and location)${reset}\n    npx get-shit-done-cc\n\n    ${dim}# Install for Claude Code globally${reset}\n    npx get-shit-done-cc --claude --global\n\n    ${dim}# Install for Gemini globally${reset}\n    npx get-shit-done-cc --gemini --global\n\n    ${dim}# Install for Codex globally${reset}\n    npx get-shit-done-cc --codex --global\n\n    ${dim}# Install for all runtimes globally${reset}\n    npx get-shit-done-cc --all --global\n\n    ${dim}# Install to custom config directory${reset}\n    npx get-shit-done-cc --codex --global --config-dir ~/.codex-work\n\n    ${dim}# Install to current project only${reset}\n    npx get-shit-done-cc --claude --local\n\n    ${dim}# Uninstall GSD from Codex globally${reset}\n    npx get-shit-done-cc --codex --global --uninstall\n\n  ${yellow}Notes:${reset}\n    The --config-dir option is useful when you have multiple configurations.\n    It takes priority over CLAUDE_CONFIG_DIR / GEMINI_CONFIG_DIR / CODEX_HOME environment variables.\n`);
   process.exit(0);
 }
 
@@ -3328,11 +3330,22 @@ function installAllRuntimes(runtimes, isGlobal, isInteractive) {
       const targetDir = isGlobal
         ? getGlobalDir(claudeResult.runtime, explicitConfigDir)
         : path.join(process.cwd(), getDirName(claudeResult.runtime));
-      installAmauta(targetDir)
-        .then(() => {
-          writeManifest(targetDir, claudeResult.runtime);
-        })
-        .catch(err => console.log(`  ${yellow}⚠${reset} Amauta setup error: ${err.message}`));
+      // Infrastructure setup (containers, daemon) belongs to a Claude Code
+      // install that asked for it. --files-only, and an install that does not
+      // include Claude Code (e.g. --opencode alone), touch files only: they
+      // must not start containers or a daemon as a side effect.
+      const includesClaude = results.some(r => r.runtime === 'claude');
+      if (filesOnly || !includesClaude) {
+        const why = filesOnly ? '--files-only' : 'no Claude Code runtime selected';
+        console.log(`\n  ${dim}Skipped infrastructure setup (${why}): no containers or daemon were started${reset}`);
+        writeManifest(targetDir, claudeResult.runtime);
+      } else {
+        installAmauta(targetDir)
+          .then(() => {
+            writeManifest(targetDir, claudeResult.runtime);
+          })
+          .catch(err => console.log(`  ${yellow}⚠${reset} Amauta setup error: ${err.message}`));
+      }
     }
   };
 
