@@ -39,7 +39,7 @@
 //   ALWAYS-RUN  — require {validate,compile} from the compiler + source-analyze
 //                 the committed artifacts + prove each documented Detect is sound
 //                 on a genuine seeded/real violation. No daemon/PG needed.
-//   LIVE-DAEMON — skipped when GET /health on 127.0.0.1:${AMAUTA_PORT||18799} is
+//   LIVE-DAEMON — runs on a fixture daemon (88-07); formerly skipped when 127.0.0.1:${AMAUTA_PORT||18799} is
 //                 unreachable; POSTs each auditor's exact finding shape, sweeps
 //                 for it (SUBS-04), then PATCHes it cleared (leaves the substrate
 //                 clean). The hyphenated daemon starts servers at import, so it
@@ -490,7 +490,24 @@ test('DOM1-04 / SC4: MODL-01/MODL-06 detector fires on a synthetic inline id, an
 // Skipped when GET /health on 127.0.0.1:${AMAUTA_PORT||18799} is unreachable.
 // ===========================================================================
 
-const PORT = parseInt(process.env.AMAUTA_PORT || '18799', 10);
+// Phase 88 (88-07): the LIVE-DAEMON tests run on a FIXTURE daemon (SQLite, ephemeral port, temp data
+// dir) started on first use and stopped when the file ends. They never touch the operator's daemon on
+// 18799. A fixture that cannot start throws, so the tests fail loudly instead of skipping.
+const { startFixtureDaemon, stopFixtureDaemon } = require('./support/fixture-daemon.cjs');
+let PORT = 0;
+let _fixturePromise = null;
+let _fixture = null;
+function ensureFixture() {
+  if (!_fixturePromise) {
+    _fixturePromise = startFixtureDaemon().then((h) => { _fixture = h; PORT = h.port; return h; });
+  }
+  return _fixturePromise;
+}
+require('node:test').after(async () => {
+  if (_fixturePromise) { try { await _fixturePromise; } catch (_e) { /* surfaced by the test that needed it */ } }
+  if (_fixture) await stopFixtureDaemon(_fixture);
+  _fixture = null;
+});
 
 function httpJson(method, urlPath, body) {
   return new Promise((resolve) => {
@@ -526,7 +543,7 @@ function httpJson(method, urlPath, body) {
 const LIVE_OPT_IN = process.env.GSD_LIVE_DAEMON_TESTS === '1';
 
 async function daemonReachable() {
-  if (!LIVE_OPT_IN) return false;
+  await ensureFixture();
   const r = await httpJson('GET', '/health');
   return r.status === 200 && r.json && r.json.status === 'ok';
 }

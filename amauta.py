@@ -596,6 +596,8 @@ def save(data: dict):
                 os.chown(TASKS_FILE, 1000, 1000)
             except PermissionError:
                 pass  # running inside container as node — chown not needed, node IS uid=1000
+            except AttributeError:
+                pass  # Windows: os.chown does not exist; without this every save raised (88-07, CI windows cell)
         except Exception:
             tmp.close()
             try:

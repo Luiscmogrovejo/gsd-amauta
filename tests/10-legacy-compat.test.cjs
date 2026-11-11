@@ -24,6 +24,12 @@ const MEM_CLI = path.resolve(__dirname, '..', 'get-shit-done', 'bin', 'gsd-memor
 const MEM_TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'gsd-memcli-'));
 process.on('exit', () => { try { fs.rmSync(MEM_TMP, { recursive: true, force: true }); } catch { /* best effort */ } });
 
+// Phase 88 (88-07) disposition: in-process / file mode, no daemon. Every CLI call below opts in to
+// file mode (GSD_MEMORY_FILE_MODE=1) and runs in test mode against a port nothing listens on, so the
+// suite never measures (or writes to) a shared daemon. Under GSD_TEST_MODE=1 gsd-memory.cjs caps a
+// request at 2000 ms and names the failure instead of hanging until this file's own timeout.
+const DEAD_PORT = (process.env.GSD_AMAUTA_PORT && process.env.GSD_AMAUTA_PORT !== '18799') ? process.env.GSD_AMAUTA_PORT : '19941';
+
 function runMem(...args) {
   // TK-2386: this suite's contract is "daemon-reachable OR file-fallback".
   // A degraded memory CLI now refuses with exit 3 unless the caller opts in to
@@ -34,7 +40,7 @@ function runMem(...args) {
     encoding: 'utf-8',
     timeout: 15000,
     cwd: MEM_TMP,
-    env: { ...process.env, GSD_MEMORY_FILE_MODE: '1' },
+    env: { ...process.env, GSD_MEMORY_FILE_MODE: '1', GSD_TEST_MODE: '1', GSD_AMAUTA_PORT: DEAD_PORT },
   });
 }
 
@@ -65,6 +71,35 @@ test('REGRESSION: skb-search (legacy subcommand) unchanged', () => {
   // Either runs successfully or shows daemon-down; must not crash
   assert.ok(r.status === 0 || r.status === 1);
   assert.ok(!/TypeError|SyntaxError|ReferenceError/.test(r.stderr));
+});
+
+test('88-07: under GSD_TEST_MODE a silent memory service fails fast with a named message', async () => {
+  // A listener that accepts and never answers: before the 2000 ms test-mode cap this ran into the
+  // caller's own 60 s timeout and surfaced as a null exit code.
+  const net = require('net');
+  const { spawn } = require('child_process');
+  const server = net.createServer(() => {});
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const port = server.address().port;
+  try {
+    const started = Date.now();
+    const out = await new Promise((resolve) => {
+      const child = spawn(process.execPath, [MEM_CLI, 'search', 'anything'], {
+        cwd: MEM_TMP,
+        env: { ...process.env, GSD_TEST_MODE: '1', GSD_AMAUTA_PORT: String(port) },
+        stdio: ['ignore', 'ignore', 'pipe'],
+      });
+      let stderr = '';
+      child.stderr.on('data', (c) => { stderr += c; });
+      const killer = setTimeout(() => child.kill('SIGKILL'), 20000);
+      child.on('close', (code) => { clearTimeout(killer); resolve({ code, stderr }); });
+    });
+    assert.ok(out.code !== null && out.code !== 0, `expected a non-zero exit, got ${out.code}`);
+    assert.match(out.stderr, /memory service unavailable at http:\/\/127\.0\.0\.1:\d+ under GSD_TEST_MODE \(timed out after 2000ms\)/);
+    assert.ok(Date.now() - started < 10000, 'must fail within seconds, not run into a 60 s timeout');
+  } finally {
+    server.close();
+  }
 });
 
 test('REGRESSION: module re-require does not throw after Phase 10 changes', () => {

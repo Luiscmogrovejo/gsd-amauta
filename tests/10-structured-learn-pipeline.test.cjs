@@ -12,21 +12,16 @@ const { spawnSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const http = require('http');
+const { startFixtureDaemon, stopFixtureDaemon } = require('./support/fixture-daemon.cjs');
 
 const MEM_CLI = path.resolve(__dirname, '..', 'get-shit-done', 'bin', 'gsd-memory.cjs');
-const PORT = parseInt(process.env.GSD_AMAUTA_PORT || '18799', 10);
 
-function daemonAlive() {
-  return new Promise((resolve) => {
-    const req = http.request({ host: '127.0.0.1', port: PORT, path: '/health', method: 'GET', timeout: 2000 }, (res) => {
-      resolve(res.statusCode === 200);
-    });
-    req.on('error', () => resolve(false));
-    req.on('timeout', () => { req.destroy(); resolve(false); });
-    req.end();
-  });
-}
+// Phase 88 (88-07) disposition: fixture daemon for the pipeline test, file mode for the rest.
+// The parse/validation tests need no daemon: they run in test mode against a port nothing listens on.
+// The PIPELINE test used to probe 127.0.0.1:18799 (the operator's live daemon) and skip when it was
+// down; it now starts its own SQLite fixture daemon on an ephemeral port and a temp data dir, so it
+// runs the same way everywhere. Under GSD_TEST_MODE=1 gsd-memory.cjs caps a request at 2000 ms.
+const DEAD_PORT = (process.env.GSD_AMAUTA_PORT && process.env.GSD_AMAUTA_PORT !== '18799') ? process.env.GSD_AMAUTA_PORT : '19941';
 
 // TK-2386: file-mode writes land in `<cwd>/.planning`, and this suite ran the
 // CLI with the repo as cwd — so every run appended to the repo's own tracked
@@ -34,7 +29,7 @@ function daemonAlive() {
 const MEM_TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'gsd-memcli-'));
 process.on('exit', () => { try { fs.rmSync(MEM_TMP, { recursive: true, force: true }); } catch { /* best effort */ } });
 
-function runMem(...args) {
+function runMemEnv(extraEnv, ...args) {
   // TK-2386: this suite's contract is "daemon-reachable OR file-fallback".
   // A degraded memory CLI now refuses with exit 3 unless the caller opts in to
   // file mode, so the file-fallback half of the contract is taken explicitly
@@ -44,9 +39,11 @@ function runMem(...args) {
     encoding: 'utf-8',
     timeout: 15000,
     cwd: MEM_TMP,
-    env: { ...process.env, GSD_MEMORY_FILE_MODE: '1' },
+    env: { ...process.env, GSD_MEMORY_FILE_MODE: '1', GSD_TEST_MODE: '1', GSD_AMAUTA_PORT: DEAD_PORT, ...extraEnv },
   });
 }
+
+function runMem(...args) { return runMemEnv({}, ...args); }
 
 const tests = [];
 function test(name, fn) { tests.push({ name, fn }); }
@@ -90,28 +87,36 @@ test('skb-promote without --reviewed flag is rejected', () => {
 
 // ---- Daemon-dependent pipeline tests (skipped if daemon down) ----
 
-test('PIPELINE: learn -> search --tags -> increment -> skb-candidates (daemon-dependent)', async () => {
-  const alive = await daemonAlive();
-  if (!alive) { console.log('    [skipped -- daemon not reachable on port ' + PORT + ']'); return; }
+test('PIPELINE: learn -> search --tags -> increment -> skb-candidates (fixture daemon)', async () => {
+  const h = await startFixtureDaemon();
+  try {
+    const runH = (...args) => runMemEnv({ ...h.env }, ...args);
 
-  // 1. Store a structured learning
-  const uniqueMarker = `int-test-${Date.now()}`;
-  const r1 = runMem('learn', '--structured',
-    '--what', `Integration test ${uniqueMarker}`,
-    '--why', 'verification',
-    '--category', 'pattern',
-    '--tags', 'integration,testing,pattern'
-  );
-  assert.strictEqual(r1.status, 0, `store failed: ${r1.stderr}`);
+    // 1. Store a structured learning
+    const uniqueMarker = `int-test-${Date.now()}`;
+    const r1 = runH('learn', '--structured',
+      '--what', `Integration test ${uniqueMarker}`,
+      '--why', 'verification',
+      '--category', 'pattern',
+      '--tags', 'integration,testing,pattern'
+    );
+    assert.strictEqual(r1.status, 0, `store failed: ${r1.stderr}`);
 
-  // 2. Search by category
-  const r2 = runMem('search', '--category', 'pattern', '--tags', 'integration', uniqueMarker);
-  assert.strictEqual(r2.status, 0, `search failed: ${r2.stderr}`);
-  assert.ok(r2.stdout.includes(uniqueMarker) || r2.stdout.includes('WHAT:'), `search result did not contain marker: ${r2.stdout.slice(0, 200)}`);
+    // 2. Search by category
+    const r2 = runH('search', '--category', 'pattern', '--tags', 'integration', uniqueMarker);
+    assert.strictEqual(r2.status, 0, `search failed: ${r2.stderr}`);
+    assert.ok(r2.stdout.includes(uniqueMarker) || r2.stdout.includes('WHAT:'), `search result did not contain marker: ${r2.stdout.slice(0, 200)}`);
 
-  // 3. Verify skb-candidates runs without error
-  const r3 = runMem('skb', 'candidates');
-  assert.strictEqual(r3.status, 0, `skb candidates failed: ${r3.stderr}`);
+    // 3. Verify skb-candidates runs without error
+    // The fixture daemon runs the SQLite store, which does not implement skb-candidates (HTTP 501,
+    // "not supported by this store"); that path is PG-backed and arrives with the Phase 89 merge.
+    // Anything other than success or that named 501 is still a failure.
+    const r3 = runH('skb', 'candidates');
+    const notSupported = /501/.test(r3.stderr + r3.stdout) && /not supported by this store/.test(r3.stderr + r3.stdout);
+    assert.ok(r3.status === 0 || notSupported, `skb candidates failed: ${r3.stderr}`);
+  } finally {
+    await stopFixtureDaemon(h);
+  }
 });
 
 // -------------------- Runner --------------------

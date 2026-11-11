@@ -1626,10 +1626,19 @@ function _renderDagText(tasks) {
  * Compares title, agent, files_expected (modify/create/delete), depends_on.
  * Does NOT compare read_first, action, acceptance_criteria.
  * Returns {drifted: bool, divergence_type, diffs: [{taskId, field, planValue, amautaValue}]}
+ *
+ * Two comparisons are made in the namespace the store can actually answer in (FND-05;
+ * before this an unchanged plan always reported drift on a second run):
+ *   - files_expected is compared only when the stored task records one. `amauta add` has no
+ *     manifest flag, so a registered task carries none; the plan file is the manifest's home.
+ *     "Stored task has no manifest" is not a difference.
+ *   - depends_on: the store keeps dependencies as amauta ids (TK-nnnn), the plan as plan-local
+ *     ids. Stored ids that belong to this plan are translated back to plan-local ids first.
  */
 function _diffPlanVsAmauta(planTasks, amautaTasks) {
   const diffs = [];
   const amautaById = {};
+  const lidByAmautaId = {};
   for (const t of (amautaTasks || [])) {
     // Primary: metadata.plan_local_id
     let lid = (t.metadata && t.metadata.plan_local_id) ? t.metadata.plan_local_id : null;
@@ -1646,6 +1655,7 @@ function _diffPlanVsAmauta(planTasks, amautaTasks) {
     // Fallback: use amauta item id
     if (!lid) lid = t.id;
     amautaById[lid] = t;
+    if (t.id) lidByAmautaId[t.id] = lid;
   }
 
   for (const planTask of (planTasks || [])) {
@@ -1664,8 +1674,8 @@ function _diffPlanVsAmauta(planTasks, amautaTasks) {
     }
     // Compare files_expected fields
     const fe = planTask.filesExpected || { modify: [], create: [], delete: [] };
-    const afe = (aTask.files_expected) || { modify: [], create: [], delete: [] };
-    for (const key of ['modify', 'create', 'delete']) {
+    const afe = aTask.files_expected || null;
+    for (const key of (afe ? ['modify', 'create', 'delete'] : [])) {
       const pVal = JSON.stringify((fe[key] || []).slice().sort());
       const aVal = JSON.stringify((afe[key] || []).slice().sort());
       if (pVal !== aVal) {
@@ -1674,7 +1684,7 @@ function _diffPlanVsAmauta(planTasks, amautaTasks) {
     }
     // Compare depends_on
     const pDeps = JSON.stringify((planTask.dependsOn || []).slice().sort());
-    const aDeps = JSON.stringify((aTask.dependencies || []).slice().sort());
+    const aDeps = JSON.stringify((aTask.dependencies || []).map(d => lidByAmautaId[d] || d).sort());
     if (pDeps !== aDeps) {
       diffs.push({ taskId: planTask.id, field: 'depends_on', planValue: planTask.dependsOn || [], amautaValue: aTask.dependencies || [] });
     }
@@ -1689,6 +1699,77 @@ function _diffPlanVsAmauta(planTasks, amautaTasks) {
     _telemetryEmit('divergence_filed', { divergence_type: _diffResult.divergence_type, diff_count: diffs.length });
   }
   return _diffResult;
+}
+
+/**
+ * Strip ANSI colour escapes from CLI output.
+ * @param {string} str
+ * @returns {string} the string without `ESC[...m` sequences ('' for a falsy input)
+ */
+function stripAnsi(str) {
+  return (str || '').replace(/\x1b\[[0-9;]*m/g, '');
+}
+
+/**
+ * Extract the id of the item the amauta CLI just CREATED.
+ *
+ * Only the creation line counts. The literal line matched is, after ANSI stripping:
+ *   `Created story ST-0001: <title>`   /   `Created task TK-0001: <title>`
+ * (printed by `amauta add`). The dedup outcome prints
+ *   `DEDUP BLOCKED: similar task ST-0035 already exists for @operator. ...`
+ * and exits 0; that id names a PRE-EXISTING item and must never be returned as created.
+ * The earlier "first ST-nnnn anywhere in stdout" parse stamped 147 plan_id notes onto
+ * ST-0035 on 2026-11-11.
+ *
+ * @param {string} stdout CLI stdout
+ * @param {string} prefix 'ST' or 'TK'
+ * @returns {string|null} the created id (upper case), or null when no creation line is present
+ */
+function extractId(stdout, prefix) {
+  const cleaned = stripAnsi(stdout || '');
+  const re = new RegExp(`^\\s*Created\\s+\\w+\\s+(${prefix}-[0-9]+)\\b`, 'im');
+  const m = cleaned.match(re);
+  return m ? m[1].toUpperCase() : null;
+}
+
+/**
+ * Extract the pre-existing id a dedup outcome points at.
+ * @param {string} stdout CLI stdout
+ * @returns {string|null} e.g. 'ST-0035' from `DEDUP BLOCKED: similar task ST-0035 ...`, else null
+ */
+function extractDedupId(stdout) {
+  const m = stripAnsi(stdout || '').match(/DEDUP BLOCKED:\s*similar task\s+((?:ST|TK)-[0-9]+)/i);
+  return m ? m[1].toUpperCase() : null;
+}
+
+// Phase 91 (SRV-03) repoints this at the daemon/database. It is the ONLY place planToTasks learns what is already registered.
+/**
+ * Load every registered item planToTasks needs for its idempotency check.
+ *
+ * @param {object} args
+ * @param {string} args.dataDir directory holding tasks.json
+ * @param {string} [args.planId] the plan being registered (unused by the file source; reserved for a database source that filters server-side)
+ * @returns {Promise<{source: 'tasks.json'|'daemon', tasks: object[]}>} a missing file yields an empty list; a corrupt file warns on stderr and yields an empty list (never throws)
+ * @example
+ *   const { tasks } = await _loadRegisteredTasks({ dataDir: process.env.AMAUTA_DATA_DIR, planId: '14-03' });
+ */
+async function _loadRegisteredTasks({ dataDir, planId } = {}) {
+  void planId;
+  const tasksFile = path.join(dataDir, 'tasks.json');
+  let raw;
+  try {
+    raw = fs.readFileSync(tasksFile, 'utf-8');
+  } catch (_e) {
+    // tasks.json does not exist yet (fresh install): nothing registered.
+    return { source: 'tasks.json', tasks: [] };
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    return { source: 'tasks.json', tasks: Array.isArray(parsed.items) ? parsed.items : [] };
+  } catch (e) {
+    process.stderr.write(`[plan-to-tasks] could not parse ${tasksFile}: ${e.message} — treating as empty.\n`);
+    return { source: 'tasks.json', tasks: [] };
+  }
 }
 
 /**
@@ -1772,18 +1853,6 @@ async function planToTasks(planFilePath, opts) {
     return spawnSync('node', [amautaCjs, ...args], _spawnOpts);
   }
 
-  function stripAnsi(str) {
-    return (str || '').replace(/\x1b\[[0-9;]*m/g, '');
-  }
-
-  function extractId(stdout, prefix) {
-    // Matches ST-XXXX or TK-XXXX from "Created story ST-0012: ..." style output
-    const cleaned = stripAnsi(stdout || '');
-    const re = new RegExp(`${prefix}-[0-9]+`, 'i');
-    const m = cleaned.match(re);
-    return m ? m[0].toUpperCase() : null;
-  }
-
   // ── Parse story block for Pass 0.5 ──────────────────────────────────────
   const storyMatch = planContent.match(/<story>([\s\S]*?)<\/story>/i);
   const storyBody = storyMatch ? storyMatch[1].trim() : '';
@@ -1826,21 +1895,12 @@ async function planToTasks(planFilePath, opts) {
     }
   }
 
-  // ── Idempotency lookup: read tasks.json directly ────────────────────────
-  // DATA_DIR is discovered from env (same as gsd-amauta.cjs) or default
+  // ── Idempotency lookup: everything registered comes through ONE function ─
+  // dataDir is resolved once here; no other site in planToTasks computes it.
   const pluginRoot = path.resolve(__dirname, '..', '..');
-  const dataDir = process.env.AMAUTA_DATA_DIR || path.join(pluginRoot, 'data');
-  const tasksFile = path.join(dataDir, 'tasks.json');
-
-  let allItems = [];
-  try {
-    const raw = fs.readFileSync(tasksFile, 'utf-8');
-    const parsed = JSON.parse(raw);
-    allItems = parsed.items || [];
-  } catch (_) {
-    // If tasks.json doesn't exist yet (fresh install), continue with empty list
-    allItems = [];
-  }
+  const dataDir = opts.dataDir || process.env.AMAUTA_DATA_DIR || path.join(pluginRoot, 'data');
+  const registered = await _loadRegisteredTasks({ dataDir, planId });
+  const allItems = registered.tasks;
 
   // Build plan-local-id -> amauta task mapping.
   // Primary lookup: metadata.plan_local_id (set by post-creation note call).
@@ -1865,11 +1925,18 @@ async function planToTasks(planFilePath, opts) {
   }
 
   // Check if a story already exists for this plan_id
+  // `add story` carries no --from-plan, so a story never has metadata.plan_id; the tasks it
+  // parents do (tag plan:<id>). Fall back to the parent of this plan's registered tasks so a
+  // partial re-run attaches to ITS story instead of tripping the dedup refusal below.
+  const _planTag = `plan:${planId}`;
+  const _planParents = new Set(allItems
+    .filter(item => Array.isArray(item.tags) && item.tags.includes(_planTag) && item.parent)
+    .map(item => item.parent));
   const existingStory = allItems.find(item =>
     item.type === 'story' &&
     item.metadata &&
     (item.metadata.plan_id === planId || item.metadata.plan_local_id === planId)
-  );
+  ) || allItems.find(item => item.type === 'story' && _planParents.has(item.id));
 
   // Count how many plan tasks already exist
   const planTaskIds = tasks.map(t => t.id);
@@ -1879,7 +1946,13 @@ async function planToTasks(planFilePath, opts) {
     // ALL tasks exist — check for drift
     const amautaTaskList = planTaskIds.map(id => existingByPlanLocalId[id]).filter(Boolean);
     const driftResult = _diffPlanVsAmauta(tasks, amautaTaskList);
-    if (driftResult.drifted) {
+    // A dependency the plan declares but the store lacks (and nothing the store holds that the plan
+    // does not) is an interrupted Pass 2, not drift: fall through, Pass 1 skips every existing task
+    // and Pass 2 creates the missing links.
+    const missingLinksOnly = driftResult.drifted && driftResult.diffs.every(d =>
+      d.field === 'depends_on' && Array.isArray(d.planValue) && Array.isArray(d.amautaValue) &&
+      d.amautaValue.every(x => d.planValue.includes(x)));
+    if (driftResult.drifted && !missingLinksOnly) {
       _telemetryEmit('divergence_filed', { divergence_type: 'plan_amauta_drift', diff_count: driftResult.diffs.length });
       return {
         error: 'plan_amauta_drift',
@@ -1888,16 +1961,18 @@ async function planToTasks(planFilePath, opts) {
         message: 'Plan has drifted from amauta task records. Reconcile before re-running.',
       };
     }
-    // No drift — idempotent skip
-    return {
-      skipped: true,
-      reason: 'already_registered',
-      story_id: existingStory ? existingStory.id : null,
-      task_ids: planTaskIds.map(id => ({
-        plan_local_id: id,
-        amauta_id: existingByPlanLocalId[id] ? existingByPlanLocalId[id].id : null,
-      })),
-    };
+    // No drift — idempotent skip. The human line is printed by the CLI case (stdout, before the JSON).
+    if (!driftResult.drifted) {
+      return {
+        skipped: true,
+        reason: 'already_registered',
+        story_id: existingStory ? existingStory.id : null,
+        task_ids: planTaskIds.map(id => ({
+          plan_local_id: id,
+          amauta_id: existingByPlanLocalId[id] ? existingByPlanLocalId[id].id : null,
+        })),
+      };
+    }
   }
 
   // ── Pass 0.5: Story creation ─────────────────────────────────────────────
@@ -1912,6 +1987,16 @@ async function planToTasks(planFilePath, opts) {
       '--criteria', storyCriteriaJson,
     ], _spawnOpts);
     storyId = extractId(_storyRaw.stdout, 'ST');
+    const _dedupId = storyId ? null : extractDedupId(_storyRaw.stdout);
+    if (_dedupId) {
+      // Dedup matched a story this plan did not create: attaching here is how ST-0035 collected
+      // 147 plan_id notes. Refuse; write no note.
+      return {
+        error: 'story_dedup_refused',
+        message: `plan-to-tasks: refusing to attach to an existing story (dedup matched ${_dedupId}); rename the plan's story title`,
+        matched_story_id: _dedupId,
+      };
+    }
     if (!storyId) {
       return {
         error: 'story_creation_failed',
@@ -3053,6 +3138,10 @@ if (require.main !== module) {
     _filesDisjointSplit,
     _renderDagText,
     _diffPlanVsAmauta,
+    _loadRegisteredTasks,
+    extractId,
+    extractDedupId,
+    stripAnsi,
     // Phase 45: Bearings
     generateBearings,
     readProjectState,
@@ -3886,6 +3975,11 @@ Examples:
       const planFile = args[1];
       if (!planFile) { error('Usage: gsd-tools plan-to-tasks <plan-file>'); break; }
       const result = await planToTasks(planFile, { cwd });
+      if (result && result.skipped === true && result.reason === 'already_registered') {
+        // FND-05: say it in words as well as in JSON (the JSON below is unchanged for programmatic callers).
+        const _n = Array.isArray(result.task_ids) ? result.task_ids.length : 0;
+        process.stdout.write(`plan-to-tasks: no drift (${_n} tasks already registered under ${result.story_id || 'unknown story'})\n`);
+      }
       process.stdout.write(JSON.stringify(result, null, 2) + '\n');
       process.exit(result.error ? 1 : 0);
       break;

@@ -19,12 +19,12 @@ const http = require('http');
 
 const { like, string } = MatchersV3;
 
-const provider = new PactV3({
+const provider = require('../support/pact-settle.cjs').settle(new PactV3({
   consumer: 'gsd-tools',
   provider: 'amauta-daemon',
-  dir: path.join(__dirname, '..', '..', 'pacts'),
+  dir: require('../support/pact-dir.cjs').pactDir(), // per-process: see tests/support/pact-dir.cjs
   logLevel: 'warn',
-});
+}));
 
 // Helper: POST JSON body to mock server
 function postJson(baseUrl, urlPath, body) {
@@ -32,6 +32,7 @@ function postJson(baseUrl, urlPath, body) {
     const url = new URL(urlPath, baseUrl);
     const bodyStr = JSON.stringify(body);
     const options = {
+      agent: false, // one connection per request: a pooled socket can outlive its mock server and meet a later one on the same port
       hostname: url.hostname,
       port: url.port,
       path: url.pathname,
@@ -63,6 +64,7 @@ function getJson(baseUrl, urlPath) {
   return new Promise((resolve, reject) => {
     const url = new URL(urlPath, baseUrl);
     const options = {
+      agent: false, // one connection per request: a pooled socket can outlive its mock server and meet a later one on the same port
       hostname: url.hostname,
       port: url.port,
       path: url.pathname,
@@ -93,6 +95,7 @@ function patchJson(baseUrl, urlPath, body) {
     const url = new URL(urlPath, baseUrl);
     const bodyStr = JSON.stringify(body);
     const options = {
+      agent: false, // one connection per request: a pooled socket can outlive its mock server and meet a later one on the same port
       hostname: url.hostname,
       port: url.port,
       path: url.pathname,
