@@ -226,14 +226,29 @@ test('LOOP-01 / SC1: mobile MOBL-A1 (fileset) FIRES on a dangling <uses-permissi
 // keys on the ceiling ABSENCE (an empty budget/token/cost-ceiling grep across
 // services/ + get-shit-done/bin/), NOT on a false "telemetry measures cost"
 // premise; AGEN-06 on the eval-coverage gap (tests/evals/*.json vs the roster).
-test('LOOP-01 / SC1+SC2: agentic-flow AGEN-04 (ceiling absence) + AGEN-06 (evals coverage gap) FIRE on the real tree (read-only)', () => {
-  const findings = engine.detect('agentic-flow', []); // repo-scope: inspects the tree, not a file list
-  const agen04 = findings.find((f) => f.rule_id === 'AGEN-04');
-  const agen06 = findings.find((f) => f.rule_id === 'AGEN-06');
-  assert.ok(agen04, 'AGEN-04 fires on the real ceiling absence');
-  assert.match(agen04.evidence, /ceiling absence|ceiling/i, 'AGEN-04 evidence keys on the ceiling ABSENCE (not a measures-cost premise)');
-  assert.ok(agen06, 'AGEN-06 fires on the real eval-coverage gap');
-  assert.match(agen06.evidence, /eval coverage|coverage gap|eval set/i, 'AGEN-06 evidence names the evals coverage gap');
+test('LOOP-01 / SC1+SC2: agentic-flow AGEN-04 (ceiling absence) + AGEN-06 (evals coverage gap) FIRE on the seeded tree, NOT on the clean tree', () => {
+  // 88-06: this used to run the engine over the REAL repository and expect both gaps. AGEN-04's gap has been closed
+  // there (services/telemetry.py now names a ceiling), so the assertion failed, and an absence assertion over
+  // live content flips with every unrelated change. The engine is pointed at a seeded fixture root instead
+  // (opts.root), with a clean root as the control; the real tree is reported as a diagnostic below.
+  const seededRoot = path.join(__dirname, 'fixtures', '88-06-auditors', 'agentic-flow', 'seeded');
+  const cleanRoot = path.join(__dirname, 'fixtures', '88-06-auditors', 'agentic-flow', 'clean');
+  const findings = engine.detect('agentic-flow', [], { root: seededRoot }); // repo-scope: inspects the tree, not a file list
+  const agen04 = findings.filter((f) => f.rule_id === 'AGEN-04');
+  const agen06 = findings.filter((f) => f.rule_id === 'AGEN-06');
+  assert.equal(agen04.length, 1, 'AGEN-04 fires exactly once on the seeded ceiling absence');
+  assert.equal(agen04[0].file_path, 'services/,get-shit-done/bin/', 'AGEN-04 names the scanned directories');
+  assert.match(agen04[0].evidence, /ceiling absence/i, 'AGEN-04 evidence keys on the ceiling ABSENCE (not a measures-cost premise)');
+  assert.equal(agen06.length, 1, 'AGEN-06 fires exactly once on the seeded eval-coverage gap');
+  assert.equal(agen06[0].file_path, 'tests/evals/', 'AGEN-06 names the evals directory');
+  assert.match(agen06[0].evidence, /1 agent eval set\(s\) vs a 3-agent roster/, 'AGEN-06 evidence names the seeded 1-of-3 coverage gap');
+  assert.deepEqual(engine.detect('agentic-flow', [], { root: cleanRoot }), [], 'the clean tree yields zero findings');
+});
+
+test('LOOP-01 / diagnostic: agentic-flow findings over the real tree (reported, never failing)', (t) => {
+  const real = engine.detect('agentic-flow', [], { root: ROOT });
+  t.diagnostic(`agentic-flow on the real tree: ${real.length} finding(s)${real.length ? ': ' + real.map((f) => f.rule_id + ' (' + f.evidence + ')').join('; ') : ''}`);
+  assert.ok(Array.isArray(real));
 });
 
 // ===========================================================================

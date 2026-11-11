@@ -1,0 +1,5 @@
+services:
+  web:
+    image: myorg/web:1.4.2@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    healthcheck:
+      test: ["CMD", "true"]
