@@ -10,7 +10,10 @@ test('INFRA-02: migration 011 file exists and has pgvector version assertion', (
   const sql = fs.readFileSync('migrations/011-paradedb-setup.sql', 'utf8');
   // paradedb:latest-pg16 ships pgvector 0.8.1; DB persisted 0.8.2 from prior image.
   // ALTER EXTENSION vector UPDATE would fail (downgrade attempt) — replaced with DO block assertion.
-  assert.ok(sql.includes('ivfflat.iterative_scan'), 'Must enable iterative scan');
+  // renamed from ivfflat.iterative_scan to hnsw.iterative_scan in 1d51227 (Phase 66-04-02): the embedding
+  // index is HNSW, so the ivfflat.* GUC was the wrong parameter name. Same behaviour: enable iterative scan.
+  assert.ok(sql.includes('hnsw.iterative_scan'), 'Must enable iterative scan');
+  assert.ok(!sql.includes('ivfflat.iterative_scan'), 'ivfflat.iterative_scan is the wrong GUC for an HNSW index');
   assert.ok(sql.includes('INFRA-02'), 'Must have INFRA-02 annotation');
 });
 
@@ -26,7 +29,9 @@ test('INFRA-02: migration 011 DOWN file exists', () => {
 
 test('INFRA-02: pg_store.py enables iterative_scan on connections', () => {
   const pgStore = fs.readFileSync('services/pg_store.py', 'utf8');
-  assert.ok(pgStore.includes('ivfflat.iterative_scan'), 'pg_store.py must SET ivfflat.iterative_scan');
+  // renamed from ivfflat.iterative_scan to hnsw.iterative_scan in 1d51227 (Phase 66-04-02); see the migration test above
+  assert.ok(pgStore.includes('hnsw.iterative_scan'), 'pg_store.py must SET hnsw.iterative_scan');
+  assert.ok(!pgStore.includes('ivfflat.iterative_scan'), 'ivfflat.iterative_scan is the wrong GUC for an HNSW index');
   assert.ok(pgStore.includes('relaxed_order'), 'Must use relaxed_order value');
 });
 
@@ -43,7 +48,8 @@ test('INFRA-02: docker-compose.yml has pg_search in shared_preload_libraries', (
 
 test('INFRA-02: migration 011 has iterative scan SET', () => {
   const sql = fs.readFileSync('migrations/011-paradedb-setup.sql', 'utf8');
-  assert.ok(sql.includes('SET ivfflat.iterative_scan = relaxed_order'), 'Migration must SET iterative scan');
+  // renamed from ivfflat.iterative_scan to hnsw.iterative_scan in 1d51227 (Phase 66-04-02)
+  assert.ok(sql.includes('SET hnsw.iterative_scan = relaxed_order'), 'Migration must SET iterative scan');
 });
 
 test('INFRA-03: migration 011 creates BM25 index using pg_search v0.22.6 syntax', () => {
