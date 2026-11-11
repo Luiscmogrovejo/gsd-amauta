@@ -4,7 +4,9 @@ SQLite-fallback backend reporting, empty RLM index, missing embeddings,
 --json and --strict exit codes.
 
 Hermetic by construction:
-  - HOME is a throwaway temp dir
+  - HOME is a throwaway temp dir (and Path.home() is monkeypatched in-process tests)
+  - API keys are set to dummies, so the result never depends on the operator's keys
+  - `gh` is a fake script on PATH: the real gh and the network are never reached
   - the daemon / RLM endpoints are a local stub HTTP server on an ephemeral
     port (never the live daemon on 18799 / RLM on 18798)
   - PATH is replaced with temp dirs holding fake binaries
@@ -12,9 +14,11 @@ Hermetic by construction:
 Run: python3 tests/test_doctor_truth.py       (or: pytest tests/test_doctor_truth.py -q)
 """
 import hashlib
+import importlib.util
 import json
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -68,10 +72,43 @@ def base_env(**extra):
     env["GSD_RLM_PORT"] = "18992"
     # Default to a PATH with no `amauta` at all, so the operator's own install
     # cannot change a test outcome. Collision tests override PATH explicitly.
-    env["PATH"] = "/usr/bin:/bin"
+    # A fake `gh` leads it: the real one (present on CI runners) is never run.
+    env["PATH"] = f"{_fake_gh_dir()}:/usr/bin:/bin"
     env.pop("CLAUDE_CONFIG_DIR", None)
+    # check_api_keys is FAIL with none set. A runner has none and a laptop has
+    # some, so the exit code depended on the machine; fix them.
+    for key in ("VOYAGE_API_KEY", "PERPLEXITY_API_KEY", "ANTHROPIC_API_KEY"):
+        env[key] = "dummy-not-a-real-key"
     env.update({k: str(v) for k, v in extra.items()})
     return env
+
+
+NOT_LOGGED_IN = "You are not logged into any GitHub hosts. To log in, run: gh auth login\n"
+
+
+def make_fake_gh(dirpath, status_text=NOT_LOGGED_IN, exit_code=1):
+    """Write a `gh` that answers `auth status` with canned text and logs its argv.
+
+    Any other subcommand exits 99, so a check that strays beyond `auth status`
+    is visible in `<dirpath>/gh-calls.log`.
+    """
+    os.makedirs(dirpath, exist_ok=True)
+    pathlib.Path(dirpath, "status.txt").write_text(status_text)
+    body = (
+        "#!/bin/sh\n"
+        f'echo "$@" >> "{dirpath}/gh-calls.log"\n'
+        'if [ "$1" = "auth" ] && [ "$2" = "status" ]; then\n'
+        # shell builtins only: PATH may hold nothing but this script
+        f'  while IFS= read -r line; do printf \'%s\\n\' "$line"; done < "{dirpath}/status.txt"\n'
+        f"  exit {exit_code}\n"
+        "fi\n"
+        "exit 99\n"
+    )
+    return make_fake_bin(dirpath, "gh", body)
+
+
+def _fake_gh_dir():
+    return os.path.dirname(make_fake_gh(tempfile.mkdtemp(prefix="doctor-fakegh-")))
 
 
 def run_doctor(env, args=("--json",)):
@@ -112,7 +149,7 @@ def make_install(config_dir, version=PKG_VERSION, tamper=False, missing=False):
     (gsd / "bin").mkdir(parents=True, exist_ok=True)
     (gsd / "VERSION").write_text(version)
     f1 = gsd / "bin" / "gsd-tools.cjs"
-    f1.write_text("// installed copy with /abs/home/.claude/ rewritten paths\n")
+    f1.write_text("// installed copy with rewritten absolute paths\n")
     f2 = gsd / "bin" / "gsd-memory.cjs"
     f2.write_text("// second installed file\n")
     manifest = {
@@ -336,33 +373,53 @@ if __name__ == "__main__":
     unittest.main()
 
 
+def load_doctor():
+    """A fresh doctor module whose `rows` list the test can read."""
+    spec = importlib.util.spec_from_file_location("doctor_under_test", DOCTOR)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    mod.rows.clear()
+    return mod
+
+
+def write_package(root, files, shipped=("lib",)):
+    """A fake package: package.json `files` array plus the given {relpath: text}."""
+    root = pathlib.Path(root)
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "package.json").write_text(json.dumps({"name": "x", "version": "1.0.0",
+                                                   "files": list(shipped)}))
+    for rel, text in files.items():
+        f = root / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(text)
+    return root
+
+
 class TestInstallStale(unittest.TestCase):
-    """The manifest check cannot see that the package moved on after install."""
+    """install_stale compares a content hash of the shipped files, never git HEAD."""
 
     def setUp(self):
-        import subprocess, tempfile
-        self.subprocess = subprocess
         self.tmp = tempfile.mkdtemp(prefix="doctor-stale-")
         self.pkg = os.path.join(self.tmp, "pkg")
-        os.makedirs(self.pkg)
+        write_package(self.pkg, {"lib/a.txt": "alpha", "lib/sub/b.txt": "beta", "README.md": "docs"})
         self.git("init", "-q")
         self.commit("one")
         self.first = self.head()
         self.record = os.path.join(self.tmp, "install_record.json")
+        self.mod = load_doctor()
 
     def tearDown(self):
-        import shutil
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def git(self, *args):
-        return self.subprocess.run(
+        return subprocess.run(
             ["git", "-C", self.pkg, "-c", "user.email=t@t", "-c", "user.name=t",
              "-c", "commit.gpgsign=false", *args],
             capture_output=True, text=True, check=True).stdout.strip()
 
-    def commit(self, name):
+    def commit(self, name, text=None):
         with open(os.path.join(self.pkg, name), "w") as f:
-            f.write(name)
+            f.write(text if text is not None else name)
         self.git("add", "-A")
         self.git("commit", "-q", "-m", name)
 
@@ -370,43 +427,241 @@ class TestInstallStale(unittest.TestCase):
         return self.git("rev-parse", "HEAD")
 
     def run_check(self):
-        import importlib.util
-        spec = importlib.util.spec_from_file_location(
-            "doctor_stale", os.path.join(os.path.dirname(__file__), "..", "services", "doctor.py"))
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        rows = []
-        mod.row = lambda status, cat, detail, data=None: rows.append((status, cat, detail, data))
-        mod.check_install_stale(record_path=self.record, package_root=self.pkg)
-        self.assertEqual(len(rows), 1)
-        return mod, rows[0]
+        self.mod.rows.clear()
+        self.mod.check_install_stale(record_path=self.record, package_root=self.pkg)
+        self.assertEqual(len(self.mod.rows), 1)
+        return self.mod, self.mod.rows[0]
 
-    def write_record(self, commit):
-        import json
+    def write_record(self, commit, with_hash=True):
+        rec = {"version": "3.3.0", "package_commit": commit}
+        if with_hash:
+            fmap = self.mod.shipped_file_map(self.pkg)
+            rec["shipped_hash"] = self.mod.shipped_hash_from_map(fmap)
+            rec["shipped_files"] = fmap
         with open(self.record, "w") as f:
-            json.dump({"version": "3.3.0", "package_commit": commit}, f)
+            json.dump(rec, f)
 
-    def test_matching_commit_is_ok(self):
+    def test_matching_hash_is_ok(self):
         self.write_record(self.first)
-        mod, (status, cat, detail, _) = self.run_check()
+        mod, (status, cat, _detail, _) = self.run_check()
         self.assertEqual((status, cat), (mod.OK, "install_stale"))
 
-    def test_package_ahead_of_install_warns_with_distance(self):
+    def test_shipped_hash_is_deterministic(self):
+        """Same content hashes the same twice, and whatever order files were created in."""
+        a = self.mod.shipped_file_hash(self.pkg)
+        self.assertEqual(a, self.mod.shipped_file_hash(self.pkg))
+        self.assertEqual(len(a), 64)
+        trees = []
+        for n, order in enumerate((["lib/a.txt", "lib/sub/b.txt", "lib/z.txt"],
+                                   ["lib/z.txt", "lib/sub/b.txt", "lib/a.txt"])):
+            root = os.path.join(self.tmp, f"order{n}")
+            write_package(root, {rel: rel.upper() for rel in order})
+            trees.append(self.mod.shipped_file_hash(root))
+        self.assertEqual(trees[0], trees[1])
+
+    def test_head_change_without_file_change_stays_ok(self):
+        """FND-10: a commit that touches no shipped file must not mark the install stale."""
         self.write_record(self.first)
-        self.commit("two")
-        self.commit("three")
+        self.commit("NOTES-not-shipped.md")
+        self.assertNotEqual(self.head(), self.first, "HEAD must have moved")
+        mod, (status, _, _detail, data) = self.run_check()
+        self.assertEqual(status, mod.OK)
+        self.assertEqual(data["head"], self.head())
+
+    def test_shipped_file_change_is_warn(self):
+        self.write_record(self.first)
+        self.commit("lib/a.txt", "alpha CHANGED")
         mod, (status, _, detail, data) = self.run_check()
         self.assertEqual(status, mod.WARN)
-        self.assertEqual(data["commits_behind"], 2)
+        self.assertIn("lib/a.txt", data["differing"])
+        self.assertEqual(data["differing_count"], 1)
         self.assertIn("--upgrade", detail)
 
+    def test_added_and_removed_shipped_files_are_named(self):
+        self.write_record(self.first)
+        self.commit("lib/new.txt", "n")
+        os.remove(os.path.join(self.pkg, "lib", "sub", "b.txt"))
+        mod, (status, _, _detail, data) = self.run_check()
+        self.assertEqual(status, mod.WARN)
+        self.assertEqual(data["differing"], ["lib/new.txt", "lib/sub/b.txt"])
+
+    def test_pycache_and_ds_store_do_not_count(self):
+        self.write_record(self.first)
+        for rel in ("lib/__pycache__/a.cpython-312.pyc", "lib/__pycache__/any-name.txt",
+                    "lib/.DS_Store", "lib/x.pyc"):
+            f = os.path.join(self.pkg, rel)
+            os.makedirs(os.path.dirname(f), exist_ok=True)
+            open(f, "w").write("junk")
+        mod, (status, *_rest) = self.run_check()
+        self.assertEqual(status, mod.OK)
+
+    def test_record_without_shipped_hash_is_warn_with_upgrade_hint(self):
+        self.write_record(self.first, with_hash=False)
+        mod, (status, _, detail, _data) = self.run_check()
+        self.assertEqual(status, mod.WARN)
+        self.assertIn("node bin/init.cjs --upgrade --files-only", detail)
+        self.assertIn("predates shipped-hash tracking", detail)
+
     def test_missing_record_warns_instead_of_assuming_current(self):
-        mod, (status, _, detail, data) = self.run_check()
+        mod, (status, _, _detail, data) = self.run_check()
         self.assertEqual(status, mod.WARN)
         self.assertIsNone(data["installed_commit"])
 
     def test_non_git_package_is_not_a_warning(self):
-        import shutil
+        """Content comparison needs no git: a matching hash is OK without a checkout."""
+        self.write_record(self.first)
         shutil.rmtree(os.path.join(self.pkg, ".git"))
-        mod, (status, _, _, _) = self.run_check()
+        mod, (status, *_rest) = self.run_check()
         self.assertEqual(status, mod.OK)
+
+    @unittest.skipUnless(sys.platform != "win32", "parity script uses a POSIX node path")
+    def test_node_and_python_hash_the_same_tree_identically(self):
+        """bin/init.cjs writes the hash doctor.py checks: both folds must agree."""
+        node = "/opt/homebrew/bin/node" if os.path.exists("/opt/homebrew/bin/node") else shutil.which("node")
+        if not node or subprocess.run([node, "--version"], capture_output=True).returncode != 0:
+            self.skipTest("needs a working `node` on the runner")
+        tricky = os.path.join(self.tmp, "tricky")
+        write_package(tricky, {"lib/a b.txt": "x", "lib/\u00e9t\u00e9.txt": "y", "lib/Z.txt": "z",
+                               "lib/sub/deep/c.txt": "c", "lib/node_modules/skip.txt": "no",
+                               "lib/__pycache__/skip.pyc": "no", "top.txt": "t"},
+                      shipped=("lib", "top.txt", "missing-entry"))
+        for root in (tricky, str(ROOT)):
+            res = subprocess.run(
+                [node, "-e", "const i=require('./bin/init.cjs');"
+                 "console.log(i.shippedHashFromMap(i.shippedFileMap(process.argv[1])))", root],
+                capture_output=True, text=True, cwd=str(ROOT), timeout=60, env=base_env())
+            self.assertEqual(res.returncode, 0, res.stderr)
+            self.assertEqual(res.stdout.strip(), self.mod.shipped_file_hash(root), root)
+
+
+# ── github_access: a fake `gh` on PATH, never the real one ────────────────────
+
+GH_BOTH = (
+    "github.com\n"
+    "  \u2713 Logged in to github.com account acme (keyring)\n"
+    "  - Active account: true\n"
+    "  - Git operations protocol: https\n"
+    "  - Token: gho_SUPERSECRETTOKENVALUE0123456789\n"
+    "  - Token scopes: 'gist', 'read:org', 'repo', 'workflow'\n"
+)
+GH_NO_WORKFLOW = GH_BOTH.replace(", 'workflow'", "")
+GH_OTHER_ACCOUNT = GH_BOTH.replace("account acme", "account someone-else")
+
+
+class TestGithubAccess(unittest.TestCase):
+    """The check reports login and scopes without printing a token."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="doctor-gh-")
+        self.pkg = os.path.join(self.tmp, "pkg")
+        write_package(self.pkg, {"lib/a.txt": "a"})
+        self.set_remote("https://github.com/acme/widgets.git")
+        # PATH holds only `git` (symlinked) and, when asked, the fake gh.
+        self.bin = os.path.join(self.tmp, "bin")
+        os.makedirs(self.bin)
+        os.symlink(shutil.which("git"), os.path.join(self.bin, "git"))
+        self.old_path = os.environ["PATH"]
+        os.environ["PATH"] = self.bin
+        self.mod = load_doctor()
+
+    def tearDown(self):
+        os.environ["PATH"] = self.old_path
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def set_remote(self, url):
+        subprocess.run(["git", "-C", self.pkg, "init", "-q"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", self.pkg, "remote", "remove", "origin"], capture_output=True)
+        if url:
+            subprocess.run(["git", "-C", self.pkg, "remote", "add", "origin", url],
+                           check=True, capture_output=True)
+
+    def install_gh(self, status, exit_code=0):
+        make_fake_gh(self.bin, status, exit_code)
+
+    def run_check(self):
+        self.mod.rows.clear()
+        self.mod.check_github_access(package_root=self.pkg)
+        self.assertEqual(len(self.mod.rows), 1)
+        status, cat, detail, data = self.mod.rows[0]
+        self.assertEqual(cat, "github_access")
+        self.assertNotIn("SUPERSECRET", json.dumps([detail, data]), "a token reached the row")
+        return status, detail, data
+
+    def gh_calls(self):
+        log = pathlib.Path(self.bin, "gh-calls.log")
+        return log.read_text().splitlines() if log.exists() else []
+
+    def test_logged_in_with_repo_and_workflow_is_ok(self):
+        self.install_gh(GH_BOTH)
+        status, detail, data = self.run_check()
+        self.assertEqual(status, self.mod.OK, detail)
+        self.assertEqual(data["scopes"], ["gist", "read:org", "repo", "workflow"])
+        self.assertEqual(self.gh_calls(), ["auth status --hostname github.com"])
+
+    def test_missing_workflow_scope_is_warn_with_the_exact_fix(self):
+        self.install_gh(GH_NO_WORKFLOW)
+        status, detail, data = self.run_check()
+        self.assertEqual(status, self.mod.WARN, detail)
+        self.assertEqual(data["missing_scopes"], ["workflow"])
+        self.assertIn("gh auth switch -u acme", detail)
+        self.assertIn("gh auth refresh -h github.com -s workflow", detail)
+
+    def test_owner_account_not_logged_in_is_warn(self):
+        self.install_gh(GH_OTHER_ACCOUNT)
+        status, detail, data = self.run_check()
+        self.assertEqual(status, self.mod.WARN, detail)
+        self.assertFalse(data["owner_logged_in"])
+        self.assertIn("acme", detail)
+        self.assertIn("gh auth switch -u acme", detail)
+
+    def test_no_accounts_at_all_is_warn(self):
+        self.install_gh(NOT_LOGGED_IN, exit_code=1)
+        status, detail, _data = self.run_check()
+        self.assertEqual(status, self.mod.WARN, detail)
+
+    def test_gh_absent_is_skipped_not_warn(self):
+        status, detail, data = self.run_check()
+        self.assertEqual(status, self.mod.OK)
+        self.assertEqual(data["skipped"], "gh_absent")
+        self.assertIn("skipped", detail)
+
+    def test_non_github_remote_is_skipped_not_warn_and_never_asks_gh(self):
+        self.install_gh(GH_NO_WORKFLOW)
+        self.set_remote("https://gitlab.com/acme/widgets.git")
+        status, _detail, data = self.run_check()
+        self.assertEqual(status, self.mod.OK)
+        self.assertEqual(data["skipped"], "not_github")
+        self.assertEqual(self.gh_calls(), [])
+
+    def test_no_origin_is_skipped(self):
+        self.install_gh(GH_NO_WORKFLOW)
+        self.set_remote(None)
+        status, _detail, data = self.run_check()
+        self.assertEqual(status, self.mod.OK)
+        self.assertEqual(data["skipped"], "not_github")
+
+    def test_parse_github_remote_forms(self):
+        p = self.mod.parse_github_remote
+        self.assertEqual(p("https://github.com/acme/widgets.git"), ("acme", "widgets"))
+        self.assertEqual(p("https://x-access-token:abc@github.com/acme/widgets"), ("acme", "widgets"))
+        self.assertEqual(p("git@github.com:acme/widgets.git"), ("acme", "widgets"))
+        self.assertEqual(p("ssh://git@github.com/acme/widgets.git"), ("acme", "widgets"))
+        self.assertIsNone(p("https://gitlab.com/acme/widgets.git"))
+        self.assertIsNone(p("https://github.com.evil.example/acme/widgets"))
+        self.assertIsNone(p(""))
+
+    def test_credentials_in_the_remote_url_never_reach_the_row(self):
+        self.install_gh(GH_BOTH)
+        self.set_remote("https://acme:hunter2-secret@github.com/acme/widgets.git")
+        _status, detail, data = self.run_check()
+        self.assertNotIn("hunter2", json.dumps([detail, data]))
+
+    def test_doctor_run_uses_only_the_fake_gh(self):
+        """End to end: main() with a fake gh leading PATH never reaches the real one."""
+        fake = _fake_gh_dir()
+        env = base_env(GSD_AMAUTA_PORT=18991)
+        env["PATH"] = f"{fake}:/usr/bin:/bin"
+        _rc, _out, _err, parsed = run_doctor(env)
+        self.assertEqual(check_row(parsed, "github_access")["category"], "github_access")
+        calls = pathlib.Path(fake, "gh-calls.log").read_text().splitlines()
+        self.assertEqual(calls, ["auth status --hostname github.com"])

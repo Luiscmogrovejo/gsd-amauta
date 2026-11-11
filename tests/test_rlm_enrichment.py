@@ -179,12 +179,19 @@ class TestEnrichTaskContextRLM(unittest.TestCase):
 class TestEnrichmentTiming(unittest.TestCase):
     """Verify enrichment completes within latency budget."""
 
+    # 88-08-03 (LIVE): the R phase calls _research_chain_query when fewer than 2 memories
+    # match, and that function spawns `node ~/.claude/get-shit-done/bin/gsd-research.cjs`
+    # from the operator's HOME: a real subprocess with a 45 s timeout that can reach the
+    # live daemon and the network, outside the in-process socket guard. On a machine with
+    # that script installed this "mocked RLM" budget test measured 6.3 s against 1.5 s.
+    # Mock it like every other collaborator so the budget measures enrichment code only.
+    @patch("amauta._research_chain_query", return_value=[])
     @patch("amauta._pick_domain_doc", return_value="")
     @patch("amauta._rlm_query", return_value="")
     @patch("amauta._mem_pg_available", return_value=False)
     @patch("amauta._skb_search", return_value=[])
     @patch("amauta._mem_semantic_search", return_value=[])
-    def test_all_phases_under_budget(self, mock_sem, mock_skb, mock_pg, mock_rlm, mock_doc):
+    def test_all_phases_under_budget(self, mock_sem, mock_skb, mock_pg, mock_rlm, mock_doc, mock_research):
         """Full RPETD cycle (5 phases) should complete within 1.5s with mocked RLM."""
         item = {
             "id": "TK-TIME",

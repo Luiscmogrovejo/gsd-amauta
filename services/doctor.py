@@ -4,7 +4,8 @@
 STAB-06 + "doctor tells the truth" pass.
 
 Checks (in order):
-  paths, path_collision, install_drift, version_skew, daemon, backend,
+  paths, path_collision, install_drift, version_skew, install_stale,
+  github_access, daemon, backend,
   postgres, valkey, rlm_index, embeddings, api_keys, migrations, agents,
   skills, mobile
 
@@ -25,6 +26,8 @@ Run: python3 services/doctor.py  OR  gsd-amauta doctor
 import json
 import os
 import pathlib
+import re
+import shutil
 import subprocess
 from pathlib import Path
 import sys
@@ -190,6 +193,19 @@ def check_paths():
 
 
 # ══ Check 2: PATH collision ═══════════════════════════════════════════════════
+def _path_entries(name, hits):
+    """Evidence for one command name: every PATH hit, its real target and class."""
+    out = []
+    for hit in hits:
+        try:
+            target = str(pathlib.Path(hit).resolve())
+        except Exception:
+            target = hit
+        out.append({"name": name, "path": hit, "target": target,
+                    "classification": classify_path_binary(hit)})
+    return out
+
+
 def check_path_collision():
     """A foreign `amauta` / `gsd-amauta` ahead of ours on PATH is a FAIL.
 
@@ -197,10 +213,19 @@ def check_path_collision():
     `amauta` in ~/.local/bin. `which amauta-ai` finds nothing, so the old
     init.cjs check missed it while every `amauta ...` command ran the wrong
     program.
+
+    Resolution policy: a collision is resolved by removing the shadowing entry
+    (or fixing PATH order), not by teaching this checker to ignore it. In
+    particular a binary that resolves into the runtime config directory is NOT
+    treated as "self": that would silence the warning on every other install too.
+
+    `data["entries"]` lists, for each colliding name, every PATH hit with its
+    resolved `target` and the `classification` classify_path_binary gave it.
     """
     try:
         collisions = []   # foreign program shadowing us — FAIL
         other_copies = []  # a DIFFERENT gsd-amauta copy ahead of us — WARN
+        entries = []
         checked = []
         for name in ("amauta", "gsd-amauta"):
             hits = which_all(name)
@@ -217,22 +242,33 @@ def check_path_collision():
                 "real_path": str(pathlib.Path(first).resolve()),
                 "kind": kind,
             }
+            hit_entries = _path_entries(name, hits)
+            entries.extend(hit_entries)
+            if len(hit_entries) > 1:
+                a, b = hit_entries[0], hit_entries[1]
+                entry["shadowing"] = (
+                    f"{name} resolves to {a['target']} ({a['classification']}), "
+                    f"shadowing {b['target']} ({b['classification']}); "
+                    "the first entry on PATH wins"
+                )
             (collisions if kind == "foreign" else other_copies).append(entry)
         if collisions:
             detail = "; ".join(
                 f"`{c['name']}` resolves to {c['real_path']} — NOT gsd-amauta"
+                + (f" ({c['shadowing']})" if c.get("shadowing") else "")
                 for c in collisions
             )
             row(FAIL, "path_collision",
                 f"{detail} — fix PATH order, or `pipx uninstall amauta-ai`",
-                {"collisions": collisions, "other_copies": other_copies})
+                {"collisions": collisions, "other_copies": other_copies, "entries": entries})
         elif other_copies:
             detail = "; ".join(
-                f"`{c['name']}` runs another gsd-amauta copy at {c['real_path']}"
+                c["shadowing"] if c.get("shadowing")
+                else f"`{c['name']}` runs another gsd-amauta copy at {c['real_path']}"
                 for c in other_copies
             )
             row(WARN, "path_collision", f"{detail} — not this checkout",
-                {"collisions": [], "other_copies": other_copies})
+                {"collisions": [], "other_copies": other_copies, "entries": entries})
         elif checked:
             row(OK, "path_collision", f"{', '.join(checked)} on PATH resolve to this package")
         else:
@@ -327,6 +363,15 @@ def check_version_skew(config_dir, manifest):
 
 
 # ══ Check 4b: Stale install (package moved on since the files were installed) ══
+# Names that never ship, wherever they sit in a shipped directory. `__pycache__`
+# matters most: running doctor itself writes it, and it must not read as a change.
+SHIPPED_EXCLUDE_DIRS = frozenset({".git", "node_modules", "__pycache__"})
+SHIPPED_EXCLUDE_NAMES = frozenset({".DS_Store"})
+SHIPPED_EXCLUDE_SUFFIXES = (".pyc", ".pyo")
+INSTALL_UPGRADE_HINT = "node bin/init.cjs --upgrade --files-only"
+STALE_PATHS_CAP = 5
+
+
 def _git_head(root):
     try:
         r = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"],
@@ -337,45 +382,243 @@ def _git_head(root):
         return None
 
 
+def shipped_file_map(package_root):
+    """{relative posix path: sha256 hex of content} for every file the package ships.
+
+    The set comes from the `files` array of package.json (directories expanded
+    recursively). `bin/init.cjs` implements the same algorithm in
+    `shippedFileMap`; tests/test_doctor_truth.py pins that both give the same
+    digest. No mtimes, no absolute paths, no directory-order dependence.
+
+    Args:
+        package_root: directory holding package.json.
+
+    Returns:
+        dict mapping relative path to the sha256 of the file's bytes.
+
+    Raises:
+        OSError / ValueError: package.json unreadable or malformed.
+    """
+    root = Path(package_root)
+    with open(root / "package.json", encoding="utf-8") as fh:
+        entries = json.load(fh).get("files") or []
+    found = {}
+
+    def add(path):
+        rel = path.relative_to(root).as_posix()
+        if path.name in SHIPPED_EXCLUDE_NAMES or path.name.endswith(SHIPPED_EXCLUDE_SUFFIXES):
+            return
+        if os.path.isfile(path):  # follows a symlink to a file, like the installer's copy
+            found[rel] = sha256_file(path)
+
+    for entry in entries:
+        top = root / entry
+        if top.is_dir() and not top.is_symlink():
+            for dirpath, dirnames, filenames in os.walk(top):
+                dirnames[:] = [d for d in dirnames if d not in SHIPPED_EXCLUDE_DIRS]
+                for name in filenames:
+                    add(Path(dirpath) / name)
+        elif top.exists():
+            add(top)
+    return found
+
+
+def shipped_hash_from_map(file_map):
+    """Fold the per-file digests, sorted by path, into one hex digest.
+
+    digest = sha256 over, for each path in sorted order,
+    sha256(relative_path + NUL + sha256(content)) taken as raw bytes.
+    """
+    import hashlib
+
+    acc = hashlib.sha256()
+    for rel in sorted(file_map):
+        acc.update(hashlib.sha256(f"{rel}\0{file_map[rel]}".encode("utf-8")).digest())
+    return acc.hexdigest()
+
+
+def shipped_file_hash(package_root):
+    """Deterministic content hash of the files the package ships (64 hex chars).
+
+    Args:
+        package_root: directory holding package.json.
+
+    Returns:
+        hex sha256 string.
+
+    Raises:
+        OSError / ValueError: package.json unreadable or malformed.
+
+    Example:
+        >>> shipped_file_hash(".")  # doctest: +SKIP
+    """
+    return shipped_hash_from_map(shipped_file_map(package_root))
+
+
 def check_install_stale(record_path=None, package_root=None):
-    """The manifest check proves the installed files were not edited; it cannot
-    see that the PACKAGE changed after the install. VERSION rarely moves between
-    commits, so compare the commit recorded at install time with the package's
-    current commit."""
+    """Is the installed copy older than the package? Compares CONTENT, not git HEAD.
+
+    `package_commit` vs `git rev-parse HEAD` re-triggered on every merge, even a
+    docs-only one. The install record now carries `shipped_hash` (and the per-file
+    `shipped_files` map) of the shipped file set at install time; this check
+    recomputes it for the package as it is now.
+      equal hash                  -> OK
+      different hash              -> WARN, naming the first changed paths
+      record without shipped_hash -> WARN, never a silent pass
+    `package_commit` stays in the record as provenance only.
+    """
     try:
         record_path = Path(record_path) if record_path else Path.home() / ".amauta" / "data" / "install_record.json"
         package_root = Path(package_root) if package_root else Path(__file__).resolve().parent.parent
-        head = _git_head(package_root)
-        if head is None:
-            row(OK, "install_stale", "package is not a git checkout — nothing to compare")
+        if not (package_root / "package.json").exists():
+            row(OK, "install_stale", "package has no package.json — nothing to compare")
             return
         try:
             record = json.loads(record_path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             record = None
-        installed = (record or {}).get("package_commit")
-        data = {"installed_commit": installed, "package_commit": head}
-        if not installed:
+        if not isinstance(record, dict):
+            record = None
+        head = _git_head(package_root)
+        installed_commit = (record or {}).get("package_commit")
+        recorded_hash = (record or {}).get("shipped_hash")
+        data = {"installed_commit": installed_commit, "head": head}
+        if record is None:
             row(WARN, "install_stale",
-                "no install record with a commit — the installed copy may be older than "
-                f"the package ({head[:7]}); run `node bin/init.cjs --upgrade`", data)
-        elif installed != head:
-            behind = None
-            try:
-                r = subprocess.run(["git", "-C", str(package_root), "rev-list", "--count", f"{installed}..{head}"],
-                                   capture_output=True, text=True, timeout=5)
-                behind = int(r.stdout.strip()) if r.returncode == 0 else None
-            except Exception:
-                behind = None
-            data["commits_behind"] = behind
-            how = f"{behind} commit(s) behind" if behind is not None else "a different commit"
+                f"no install record at {record_path}; run: {INSTALL_UPGRADE_HINT}", data)
+            return
+        if not recorded_hash:
             row(WARN, "install_stale",
-                f"installed from {installed[:7]}, package is at {head[:7]} ({how}); "
-                "run `node bin/init.cjs --upgrade`", data)
+                f"install record predates shipped-hash tracking; run: {INSTALL_UPGRADE_HINT}", data)
+            return
+        current_map = shipped_file_map(package_root)
+        current = shipped_hash_from_map(current_map)
+        data.update({"shipped_hash": recorded_hash[:12], "package_shipped_hash": current[:12]})
+        if recorded_hash == current:
+            row(OK, "install_stale",
+                f"installed copy matches the shipped files (hash {current[:12]})", data)
+            return
+        recorded_map = record.get("shipped_files")
+        if isinstance(recorded_map, dict):
+            changed = sorted(
+                p for p in set(recorded_map) | set(current_map)
+                if recorded_map.get(p) != current_map.get(p)
+            )
+            data["differing"] = changed[:STALE_PATHS_CAP]
+            data["differing_count"] = len(changed)
+            row(WARN, "install_stale",
+                f"installed files differ from the package ({len(changed)} files differ: "
+                f"{', '.join(changed[:STALE_PATHS_CAP])}); run: {INSTALL_UPGRADE_HINT}", data)
         else:
-            row(OK, "install_stale", f"installed copy matches package commit {head[:7]}", data)
+            row(WARN, "install_stale",
+                f"installed files differ from the package (per-file list not recorded); "
+                f"run: {INSTALL_UPGRADE_HINT}", data)
     except Exception as e:
         row(WARN, "install_stale", f"Check error: {e}")
+
+
+# ══ Check 4c: GitHub access (can this machine push the repo it is a checkout of?) ══
+GITHUB_REMOTE_RE = re.compile(
+    r"^(?:https?://(?:[^@/]+@)?github\.com/|ssh://git@github\.com/|git@github\.com:)"
+    r"(?P<owner>[^/\s]+)/(?P<repo>[^/\s]+?)(?:\.git)?/?$"
+)
+GH_TIMEOUT = float(os.environ.get("GSD_DOCTOR_GH_TIMEOUT", "15"))
+
+
+def parse_github_remote(url):
+    """(owner, repo) of a github.com remote URL, or None for anything else."""
+    m = GITHUB_REMOTE_RE.match((url or "").strip())
+    return (m.group("owner"), m.group("repo")) if m else None
+
+
+def parse_gh_auth_status(text):
+    """{account: {"scopes": [..] | None, "valid": bool}} for github.com.
+
+    Reads only the account line and the `Token scopes:` line of `gh auth status`.
+    The `Token:` line is never kept, so nothing secret can reach a row.
+    """
+    accounts = {}
+    current = None
+    for line in text.splitlines():
+        m = re.search(r"(Logged in to|Failed to log in to) (\S+) account (\S+)", line)
+        if m:
+            current = None
+            if m.group(2) == "github.com":
+                current = m.group(3)
+                accounts[current] = {"scopes": None, "valid": m.group(1) == "Logged in to"}
+            continue
+        if current and "Token scopes:" in line:
+            raw = line.split("Token scopes:", 1)[1]
+            accounts[current]["scopes"] = [t.strip().strip("'\"") for t in raw.split(",") if t.strip()]
+    return accounts
+
+
+def check_github_access(package_root=None):
+    """Can the account that owns `origin` push to it, workflow files included?
+
+    Reports whether `gh` is installed, whether the origin owner is logged in to
+    gh, and whether that token has the `repo` and `workflow` scopes. Pushing a
+    change under .github/workflows/ needs `workflow`. Never prints a token.
+
+    Skipped cleanly (an OK row saying so, never a WARN) when `gh` is absent, there
+    is no origin, the remote is not github.com, or gh gives no usable answer. WARN
+    only when the remote is GitHub and the owner is not logged in or a scope is
+    missing.
+    """
+    try:
+        package_root = Path(package_root) if package_root else REPO_ROOT
+        gh = shutil.which("gh")
+        if not gh:
+            row(OK, "github_access", "skipped — `gh` is not installed", {"skipped": "gh_absent"})
+            return
+        try:
+            r = subprocess.run(["git", "-C", str(package_root), "remote", "get-url", "origin"],
+                               capture_output=True, text=True, timeout=5)
+            url = (r.stdout or "").strip() if r.returncode == 0 else ""
+        except Exception:
+            url = ""
+        parsed = parse_github_remote(url)
+        if not parsed:
+            row(OK, "github_access", "skipped — origin is not a github.com remote",
+                {"skipped": "not_github"})
+            return
+        owner, repo = parsed
+        data = {"owner": owner, "repo": repo}
+        try:
+            res = subprocess.run([gh, "auth", "status", "--hostname", "github.com"],
+                                 capture_output=True, text=True, timeout=GH_TIMEOUT)
+            accounts = parse_gh_auth_status((res.stdout or "") + "\n" + (res.stderr or ""))
+        except Exception as e:  # noqa: BLE001 — diagnostics must never crash
+            row(OK, "github_access", f"skipped — could not run `gh auth status` ({type(e).__name__})",
+                dict(data, skipped="gh_unusable"))
+            return
+        data["accounts"] = sorted(accounts)
+        match = next((a for a in accounts if a.lower() == owner.lower()), None)
+        if match is None or not accounts[match]["valid"]:
+            have = ", ".join(sorted(accounts)) or "none"
+            row(WARN, "github_access",
+                f"gh has no working login for {owner} (origin owner; logged in: {have}) — "
+                f"run: gh auth login -h github.com   then   gh auth switch -u {owner}",
+                dict(data, owner_logged_in=False))
+            return
+        scopes = accounts[match]["scopes"]
+        if scopes is None:
+            row(OK, "github_access",
+                f"skipped — gh reports no token scopes for {match} (fine-grained or env token)",
+                dict(data, owner_logged_in=True, skipped="no_scopes_reported"))
+            return
+        data.update({"owner_logged_in": True, "scopes": scopes})
+        missing = [sc for sc in ("repo", "workflow") if sc not in scopes]
+        if not missing:
+            row(OK, "github_access", f"{match} is logged in to gh with repo + workflow scopes", data)
+            return
+        data["missing_scopes"] = missing
+        fix = f"gh auth switch -u {owner}   then   gh auth refresh -h github.com -s {','.join(missing)}"
+        row(WARN, "github_access",
+            f"{match}'s gh token lacks scope {', '.join(missing)} (pushing .github/workflows needs "
+            f"workflow) — run: {fix}", data)
+    except Exception as e:
+        row(WARN, "github_access", f"Check error: {e}")
 
 
 # ══ Check 5: Daemon ═══════════════════════════════════════════════════════════
@@ -670,6 +913,7 @@ def main(argv):
     manifest = check_install_drift(config_dir)
     check_version_skew(config_dir, manifest)
     check_install_stale()
+    check_github_access()
     health = check_daemon()
     check_backend(health)
     check_postgres(health)

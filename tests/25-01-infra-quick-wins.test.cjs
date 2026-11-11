@@ -212,17 +212,32 @@ describe('RLM code-path checks (T1/T2)', () => {
   });
 
   it('_rlm_watchdog logs reason= for restart and max_restarts_exceeded', () => {
+    // The watchdog was rewritten in b41ad40 ("RLM watchdog self-heals after burst"), then extended to recover a
+    // failed initial start. Still in services/amauta-daemon.py, but the literals changed:
+    //  - reason detection now has three states (not_running / process_exited / health_check_failed)
+    //  - the restart log is a multi-line call: "rlm_restart attempt=%d/%d reason=%s backoff=%ds"
+    //  - "rlm_max_restarts_exceeded reason=%s" (log.error, then abandon) became
+    //    "rlm_max_restarts_cooldown duration=300" (log.warning, then cool down and continue). The cap log no
+    //    longer carries reason= because the reason belongs to each restart attempt, which is logged above it.
     assert.ok(
       DAEMON_SRC.includes('reason = "process_exited" if process_dead else "health_check_failed"'),
       'reason detection not found in _rlm_watchdog'
     );
     assert.ok(
-      DAEMON_SRC.includes('log.warning("rlm_restart attempt=%d/%d reason=%s"'),
+      DAEMON_SRC.includes('reason = "not_running"'),
+      'not_running reason (failed initial start) not found in _rlm_watchdog'
+    );
+    assert.ok(
+      DAEMON_SRC.includes('"rlm_restart attempt=%d/%d reason=%s backoff=%ds"'),
       'rlm_restart log with reason= not found in _rlm_watchdog'
     );
     assert.ok(
-      DAEMON_SRC.includes('log.error("rlm_max_restarts_exceeded reason=%s"'),
-      'rlm_max_restarts_exceeded log with reason= not found in _rlm_watchdog'
+      DAEMON_SRC.includes('log.warning("rlm_max_restarts_cooldown duration=300")'),
+      'rlm_max_restarts_cooldown log not found in _rlm_watchdog'
+    );
+    assert.ok(
+      !DAEMON_SRC.includes('rlm_max_restarts_exceeded'),
+      'the abandon-forever path (rlm_max_restarts_exceeded) must stay removed: the watchdog cools down and continues'
     );
   });
 });

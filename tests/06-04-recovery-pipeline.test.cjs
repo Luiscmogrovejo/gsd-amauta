@@ -35,7 +35,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const ROOT = path.resolve(__dirname, '..');
-const AMAUTA = fs.readFileSync(path.join(ROOT, 'amauta.py'), 'utf-8');
+// CRLF -> LF: a Windows checkout (core.autocrlf=true on the GitHub runner) has CRLF line endings, and the block
+// extraction below searches for '\n}\n'. With CRLF that search returned -1, the RECOVERY_ACTIONS block came out
+// empty, and tests 11-13 failed on windows-latest only. The test is about the contents, not the line endings.
+const AMAUTA = fs.readFileSync(path.join(ROOT, 'amauta.py'), 'utf-8').replace(/\r\n/g, '\n');
 // Phase 41: execute-phase.md is now a redirect — read sharded step files for full content
 const EXEC_PHASE_DIR = path.join(ROOT, 'get-shit-done', 'workflows', 'execute-phase');
 const EXEC_PHASE = fs.existsSync(path.join(EXEC_PHASE_DIR, 'steps'))

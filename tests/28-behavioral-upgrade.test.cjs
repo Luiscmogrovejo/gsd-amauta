@@ -375,30 +375,82 @@ test('BEHAV-05: execute-phase.md validate-phase step blocks --pass on failing fe
 
 // ─── BEHAV-06 Tests (Wave 2) ──────────────────────────────────────────────────
 
-// Test 26: execute-phase.md initialize step has Get-Bearings block
+// BEHAV-06 moved (Phase 45, fb60fd2 / 4670a85): the inline 4-slot Python bearings assembly that lived in
+// execute-phase.md was replaced by a shell-out to `gsd-tools.cjs bearings --terse --token-budget 400`, and the
+// workflow itself was sharded in Phase 41 (execute-phase.md is now a 4-line redirect; the block lives in
+// get-shit-done/workflows/execute-phase/steps/step-01-prepare.md). The assertions below therefore check
+//   (a) the workflow shell-out, in the sharded steps, and
+//   (b) the bearings CONTRACT by calling renderBearings() from gsd-tools.cjs, not by grepping prose.
+// Note: .github/workflows/behavioral-tests.yml triggers on `get-shit-done/workflows/execute-phase.md` only, which
+// is now the redirect; it does not watch execute-phase/steps/**. That workflow is not changed by this test file.
+
+/** Build a bearings structured object large enough to overflow a 400-token budget. */
+function bigBearings() {
+  const stats = [];
+  for (let i = 0; i < 12; i++) {
+    stats.push({ name: `stat_${i}`, value: i, status: 'ok', detail: 'x'.repeat(60) });
+  }
+  return {
+    project_state: { phase_number: '28', phase_name: 'The Behavioral Upgrade', current_plan: '28-02', status: 'executing', drift_signals: [] },
+    recent_activity: {
+      commits: [1, 2, 3, 4, 5].map(n => ({ sha: `abc000${n}`, subject: `commit subject number ${n} `.repeat(3) })),
+      divergence: { timestamp: '2026-05-12T00:00:00Z', summary: 'try the other approach' },
+    },
+    plan_progress: { feature_list_path: '.planning/phases/28/28-02-feature_list.json', counts: { pass: 1, fail: 0, pending: 2 } },
+    pattern_stats: stats,
+    recommendation: { action: '/amauta:execute-phase 28', reasoning: '2 pending feature(s); resume execute.' },
+  };
+}
+
+// Test 26: execute-phase initialize step has Get-Bearings block
 test('BEHAV-06: execute-phase.md initialize step has Get-Bearings block', () => {
   const content = readExecPhase();
   assert.match(content, /Get-Bearings/);
   assert.match(content, /get-bearings|GET-BEARINGS/i);
   assert.match(content, /BEHAV-06/);
-  assert.match(content, /session resume/i);
+  // renamed from "session resume" to "session orientation on resume" (step-01-prepare.md, 4670a85)
+  assert.match(content, /session orientation on resume/i);
+  // the block shells out to the shared implementation with the FROZEN 400-token budget
+  assert.match(content, /gsd-tools\.cjs" bearings --terse --token-budget 400/);
 });
 
-// Test 27: get-bearings block documents all 4 priority slots
+// Test 27: the bearings output carries the four priority sources (feature_list, git log, divergence-memory, STATE.md)
 test('BEHAV-06: get-bearings block has 4 priority slots (feature_list, git log, divergence-memory, STATE.md)', () => {
-  const content = readExecPhase();
-  assert.match(content, /Slot 1.*feature_list|feature_list.*150 token/i);
-  assert.match(content, /Slot 2.*git log|git log.*50 token/i);
-  assert.match(content, /Slot 3.*divergence-memory|divergence-memory.*100 token/i);
-  assert.match(content, /Slot 4.*STATE\.md|STATE\.md.*100 token/i);
-  assert.match(content, /400 token/i);
+  // The four "Slot N" prose lines were removed with the inline assembly (fb60fd2). The four sources are now
+  // sections of the structured output of renderBearings(); assert each source is present in the rendered block.
+  const tools = require(path.join(ROOT, 'get-shit-done', 'bin', 'gsd-tools.cjs'));
+  const out = tools.renderBearings(bigBearings(), { tokenBudget: 100000, terse: false });
+  assert.match(out, /=== GET-BEARINGS ===/);
+  assert.match(out, /## Current Position\nPhase: 28 — The Behavioral Upgrade\nPlan: 28-02 \(executing\)/, 'STATE.md source (Current Position)');
+  assert.match(out, /## Recent Activity\n- abc0001 /, 'git log source (Recent Activity)');
+  assert.match(out, /Last divergence \(2026-05-12T00:00:00Z\): try the other approach/, 'divergence-memory source');
+  assert.match(out, /## Plan Progress\n\.planning\/phases\/28\/28-02-feature_list\.json\npass: 1, fail: 0, pending: 2/, 'feature_list source (Plan Progress)');
+  assert.match(out, /## Pattern Stats/);
+  assert.match(out, /=== END GET-BEARINGS ===/);
+  // the four sources are rendered in the frozen order
+  const order = ['## Current Position', '## Recent Activity', '## Plan Progress', '## Pattern Stats', '## Recommended Next Action']
+    .map(h => out.indexOf(h));
+  assert.deepEqual(order, [...order].sort((x, y) => x - y), 'sections must appear in priority order');
+  assert.ok(order.every(i => i >= 0), 'every section must be present');
 });
 
-// Test 28: get-bearings block documents STATE.md truncation rule as overflow handler
+// Test 28: on overflow the block truncates the lowest-priority material first and never the Current Position
 test('BEHAV-06: get-bearings block documents STATE.md as first to truncate on overflow', () => {
+  // The Phase 28 rule "STATE.md is truncated first" was reversed by Phase 45 (CONTEXT.md Area 3): STATE.md's
+  // Current Position is NEVER truncated; Pattern Stats are dropped first, then older commits. The old
+  // expectation was stale, the code is the contract (documented in step-01-prepare.md and renderBearings()).
   const content = readExecPhase();
-  assert.match(content, /truncate.*STATE\.md.*first|STATE\.md.*truncate.*first/i);
+  assert.match(content, /Pattern Stats are\s+truncated first on overflow; Current Position is never truncated/);
   assert.match(content, /AUTOMATICALLY/i);
+
+  const tools = require(path.join(ROOT, 'get-shit-done', 'bin', 'gsd-tools.cjs'));
+  const structured = bigBearings();
+  const full = tools.renderBearings(structured, { tokenBudget: 100000, terse: false });
+  const tight = tools.renderBearings(structured, { tokenBudget: 400, terse: false });
+  assert.ok(Math.ceil(full.length / 4) > 400, 'fixture must overflow the 400-token budget');
+  assert.ok(Math.ceil(tight.length / 4) <= 400, `rendered block must fit the 400-token budget, got ${Math.ceil(tight.length / 4)}`);
+  assert.match(tight, /pattern stat\(s\) truncated for token budget/, 'Pattern Stats are the first thing to be truncated');
+  assert.match(tight, /## Current Position\nPhase: 28 — The Behavioral Upgrade\nPlan: 28-02 \(executing\)/, 'Current Position is never truncated');
 });
 
 // ─── Integration Test (Wave 2) ────────────────────────────────────────────────
@@ -413,8 +465,15 @@ test('Integration: all 6 BEHAV capabilities are wired in execute-phase.md and gs
   // BEHAV-02
   assert.match(ep, /Circuit Breaker Check/);
   assert.match(tools, /circuitBreakerCheck/);
-  // BEHAV-03
-  assert.match(ep, /Reflexion|reflexion|divergence-memory/i);
+  // BEHAV-03: moved. The Reflexion / divergence-memory block was inline in execute-phase.md; it now lives in
+  // get-shit-done/references/divergence-protocol.md section 14 ("Reflexion Memory Hook") and in gsd-tools.cjs,
+  // which reads .planning/divergence-memory.json for the bearings block. execute-phase hands off to the protocol.
+  const protocol = fs.readFileSync(
+    path.join(ROOT, 'get-shit-done', 'references', 'divergence-protocol.md'), 'utf8');
+  assert.match(protocol, /## 14\. Reflexion Memory Hook/);
+  assert.match(protocol, /divergence-memory/);
+  assert.match(tools, /divergence-memory\.json/);
+  assert.match(ep, /divergence/i);
   // BEHAV-04
   assert.match(ep, /Lint-After-Edit|lint_report/i);
   assert.match(tools, /lintAfterEdit/);

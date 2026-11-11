@@ -84,10 +84,10 @@ class TestListTools(unittest.TestCase):
             self.skipTest(f"Module failed to load: {_LOAD_ERROR}")
 
     def test_list_tools_exposes_six_frozen_names(self):
-        """list_tools() must return exactly the 6 frozen tool names (MCP-02)."""
+        """list_tools() must expose the 6 frozen tool names (MCP-02) and nothing unaccounted for."""
         result = _run(_mod.list_tools())
         names = {t.name for t in result.tools}
-        expected = {
+        frozen = {
             "amauta/search-code",
             "amauta/memory-store",
             "amauta/memory-search",
@@ -95,7 +95,13 @@ class TestListTools(unittest.TestCase):
             "amauta/research",
             "amauta/complexity-score",
         }
-        self.assertEqual(names, expected, f"Tool set mismatch. Got: {names}")
+        # The surface changed in df54a59 (53-03-01) and is no longer exactly six: it added amauta/bearings and
+        # amauta/agent-hydrate. The six frozen names stay pinned as a subset (renaming or
+        # dropping one is still a break), and the full set is pinned exactly so a new tool
+        # cannot appear without this list being updated deliberately.
+        added_after_freeze = {"amauta/bearings", "amauta/agent-hydrate"}
+        self.assertTrue(frozen <= names, f"Frozen tool missing. Got: {names}")
+        self.assertEqual(names, frozen | added_after_freeze, f"Tool set mismatch. Got: {names}")
 
 
 class TestMemoryStoreTool(unittest.TestCase):

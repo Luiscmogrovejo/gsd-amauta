@@ -50,8 +50,11 @@ from services.evidence_scrub import scrub_text
 
 _FIXTURES_PATH = os.path.join(_HERE, "fixtures", "68-build-log-fixtures.json")
 _DAEMON_PATH = os.path.join(_ROOT, "services", "amauta-daemon.py")
-_DAEMON_PORT = int(os.environ.get("GSD_AMAUTA_PORT", "18799"))
-_DAEMON_BASE = f"http://127.0.0.1:{_DAEMON_PORT}"
+# Plan 88-08-03: the two "live" tests below used to read GSD_AMAUTA_PORT (default
+# 18799 = the operator's live daemon) and skip when nothing answered. They now run
+# against the hermetic ``fixture_daemon`` (tests/conftest.py), which runs THIS
+# tree's code on an ephemeral port with a private SQLite data dir, so the
+# "stale in-memory process" and "degraded PG pool" skips no longer apply.
 
 
 def _load_fixtures():
@@ -214,19 +217,14 @@ def test_daemon_memory_store_choke_point_scrubs_before_store():
     assert set(hits) == {"keystore-password", "github-token"}
 
 
-def test_daemon_memory_store_live_smoke_or_skip():
-    """Live daemon smoke -- SKIPS (never fails) when /health is unreachable
-    or /api/memory/store errors for reasons unrelated to scrubbing (e.g. a
-    degraded PG pool). This environment's daemon reports pg_health as
-    'connection pool is closed' -- a pre-existing ambient degradation, not
-    a scrub-wiring defect, so this test names that outcome explicitly
-    rather than papering over it as a pass or misreporting it as a fail."""
-    try:
-        req = urllib.request.Request(f"{_DAEMON_BASE}/health", method="GET")
-        urllib.request.urlopen(req, timeout=3)
-    except (urllib.error.URLError, OSError):
-        pytest.skip("daemon /health unreachable -- live smoke skipped, import-level proof above stands")
+def test_daemon_memory_store_live_smoke_or_skip(fixture_daemon):
+    """Daemon smoke against the hermetic fixture daemon: POST /api/memory/store
+    with a secret in ``text`` must report the scrub.
 
+    (The function name keeps its historical ``_or_skip`` suffix; the live-daemon
+    skip branches were removed in 88-08-03 because the fixture daemon always runs
+    current code on SQLite.)"""
+    base = f"http://127.0.0.1:{fixture_daemon.port}"
     body = json.dumps({
         "text": "live-smoke storePassword=hunter2",
         "source": "agent",
@@ -234,18 +232,13 @@ def test_daemon_memory_store_live_smoke_or_skip():
         "embed": False,
     }).encode("utf-8")
     req = urllib.request.Request(
-        f"{_DAEMON_BASE}/api/memory/store", data=body, method="POST",
+        f"{base}/api/memory/store", data=body, method="POST",
         headers={"Content-Type": "application/json"},
     )
-    try:
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            data = json.loads(resp.read())
-    except (urllib.error.URLError, OSError):
-        pytest.skip("daemon /api/memory/store non-responsive within timeout -- live smoke skipped")
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        data = json.loads(resp.read())
 
-    if "error" in data:
-        pytest.skip(f"daemon store backend degraded ({data['error']!r}) -- ambient, not a scrub-wiring defect")
-
+    assert "error" not in data, f"fixture daemon store failed: {data!r}"
     assert data.get("stored") is True
     if data.get("scrubbed"):
         assert "keystore-password" in data["scrubbed"]
@@ -293,88 +286,39 @@ def _urlopen_json(url, body=None, method="GET", timeout=5):
         return json.loads(resp.read())
 
 
-def test_mcp_transport_live_post_rpetd_or_skip():
-    """Best-effort live proof that an MCP-style POST /api/rpetd with a
-    fixture secret in `content` lands scrubbed on a REAL task record
-    (read back via /api/show, not just the POST's own ack message).
+def test_mcp_transport_live_post_rpetd_or_skip(fixture_daemon):
+    """An MCP-style POST /api/rpetd with a fixture secret in `content` lands
+    scrubbed on a REAL task record (read back via /api/exec show, not just the
+    POST's own ack message), against the hermetic fixture daemon.
 
-    Three named outcomes, never conflated:
-      1. Daemon unreachable / non-responsive within timeout -> SKIP
-         (services-down, per the Phase 69 E2E outcome-separation pattern).
-      2. Daemon reachable and running current code -> asserts the stored
-         T-phase content is scrubbed (the real proof).
-      3. Daemon reachable but running a STALE in-memory process (started
-         before this plan's edits landed -- detected here by the raw
-         secret surviving into the stored record) -> SKIP with an explicit
-         named reason. This is a live-process-reload gap, not a
-         scrub-wiring defect; restarting the shared daemon here would
-         affect other in-flight agents and is out of this task's scope
-         (Rule 6 master-cwd server-restart discipline). The import-level
-         tests above already prove the wiring is correct in source.
-
-    The throwaway probe task is deleted in a `finally` block regardless of
-    outcome.
+    (Name kept for continuity. The three live-daemon outcomes this test used to
+    distinguish -- unreachable, reachable-and-current, reachable-but-stale -- are
+    gone: the fixture daemon is started from this tree for this test, so it is
+    always reachable and always current, and a failure at any step is a real
+    failure, not a skip.)
     """
-    try:
-        health = _urlopen_json(f"{_DAEMON_BASE}/health", method="GET", timeout=3)
-    except (urllib.error.URLError, OSError):
-        pytest.skip("daemon /health unreachable -- live MCP-transport smoke skipped")
-        return
-
-    try:
-        add_resp = _urlopen_json(
-            f"{_DAEMON_BASE}/api/add",
-            {"type": "task", "title": "68-02-04 scrub live-smoke probe (throwaway)"},
-            method="POST", timeout=10,
-        )
-    except (urllib.error.URLError, OSError):
-        pytest.skip("daemon /api/add non-responsive -- live MCP-transport smoke skipped")
-        return
-
+    base = f"http://127.0.0.1:{fixture_daemon.port}"
+    add_resp = _urlopen_json(
+        f"{base}/api/add",
+        {"type": "task", "title": "68-02-04 scrub smoke probe (throwaway)"},
+        method="POST", timeout=10,
+    )
     import re as _re
     m = _re.search(r"(TK|EP|ST|BG)-\d+", add_resp.get("output", ""))
-    if not m:
-        pytest.skip(f"could not parse a task id from /api/add response: {add_resp!r}")
-        return
+    assert m, f"could not parse a task id from /api/add response: {add_resp!r}"
     probe_id = m.group(0)
 
-    try:
-        secret_marker = "storePassword=hunter2"
-        try:
-            rpetd_resp = _urlopen_json(
-                f"{_DAEMON_BASE}/api/rpetd",
-                {"id": probe_id, "phase": "T", "content": f"mcp-transport probe {secret_marker}"},
-                method="POST", timeout=10,
-            )
-        except (urllib.error.URLError, OSError):
-            pytest.skip("daemon /api/rpetd non-responsive within timeout -- live MCP-transport smoke skipped")
-            return
+    secret_marker = "storePassword=hunter2"
+    rpetd_resp = _urlopen_json(
+        f"{base}/api/rpetd",
+        {"id": probe_id, "phase": "T", "content": f"mcp-transport probe {secret_marker}"},
+        method="POST", timeout=10,
+    )
+    assert rpetd_resp.get("exit_code") == 0, f"daemon rpetd command errored: {rpetd_resp!r}"
 
-        if rpetd_resp.get("exit_code") != 0:
-            pytest.skip(f"daemon rpetd command errored unrelated to scrubbing: {rpetd_resp!r}")
-            return
+    show_resp = _urlopen_json(f"{base}/api/exec", {"args": ["show", probe_id, "--json"]}, method="POST", timeout=10)
+    show_item = json.loads(show_resp.get("output", "{}"))
+    stored_content = str(show_item.get("rpetd_phases", {}).get("T", ""))
 
-        try:
-            show_resp = _urlopen_json(f"{_DAEMON_BASE}/api/exec", {"args": ["show", probe_id, "--json"]}, method="POST", timeout=10)
-            show_item = json.loads(show_resp.get("output", "{}"))
-        except (urllib.error.URLError, OSError, json.JSONDecodeError):
-            pytest.skip("could not read back the probe task -- live MCP-transport smoke skipped")
-            return
-
-        stored_content = str(show_item.get("rpetd_phases", {}).get("T", ""))
-        if secret_marker in stored_content:
-            pytest.skip(
-                "raw secret survived into the stored T-phase content -- the live "
-                "daemon process predates this plan's edits (stale in-memory "
-                "process, confirmed via `ps -o lstart` vs source mtime) and "
-                "restarting the shared daemon is out of scope here (Rule 6); "
-                "import-level _scrub_evidence_args proof above stands"
-            )
-            return
-
-        assert "[scrubbed:keystore-password]" in stored_content
-    finally:
-        try:
-            _urlopen_json(f"{_DAEMON_BASE}/api/delete", {"id": probe_id}, method="POST", timeout=10)
-        except (urllib.error.URLError, OSError):
-            pass  # best-effort cleanup
+    assert secret_marker not in stored_content, "raw secret survived into the stored T-phase content"
+    assert "[scrubbed:keystore-password]" in stored_content

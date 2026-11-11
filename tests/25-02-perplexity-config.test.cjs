@@ -163,10 +163,20 @@ describe("PERP-03: PERPLEXITY_MODEL === 'auto' wiring", () => {
     // Find providerPerplexity body
     const fnStart = content.indexOf('async function providerPerplexity');
     assert.ok(fnStart !== -1, 'providerPerplexity must exist');
-    const fnBody = content.slice(fnStart, fnStart + 1500);  // window expanded: caching logic added before API call
+    // The fixed 1500-char window went stale when the cache lookup/store logic was added in front of the API
+    // call (the `model: selectedModel,` line now sits ~2000 chars into the function, in
+    // get-shit-done/bin/gsd-research.cjs). Scope to the function body instead: from its start to the next
+    // top-level `function` declaration, so the assertion cannot go stale again when the function grows.
+    const rest = content.slice(fnStart + 'async function providerPerplexity'.length);
+    const nextFn = rest.search(/\n(?:async )?function \w+/);
+    const fnBody = nextFn === -1 ? rest : rest.slice(0, nextFn);
     assert.ok(
       fnBody.includes('model: selectedModel,'),
       'providerPerplexity API request should use `model: selectedModel,`'
+    );
+    assert.ok(
+      !fnBody.includes('model: PERPLEXITY_MODEL'),
+      'providerPerplexity must not send the raw PERPLEXITY_MODEL (it may be the literal "auto")'
     );
   });
 
