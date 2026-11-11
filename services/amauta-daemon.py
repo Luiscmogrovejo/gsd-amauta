@@ -45,6 +45,7 @@ def _load_dotenv():
 _load_dotenv()
 import sys
 import time
+import uuid
 import threading
 from collections import defaultdict
 from pathlib import Path
@@ -1624,6 +1625,33 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(data, default=_json_default).encode("utf-8"))
 
+    def _internal_error(self, exc, status=500, correlation_id=None):
+        """Answer a failed request with a fixed message; keep the detail in the daemon log.
+
+        Exception text carries file paths, DSNs, SQL fragments and library internals, none of
+        which belong in an HTTP response. The client gets only ``{"error": "internal error",
+        "correlation_id": <id>}``; the same id is written to the log together with the
+        traceback, so an operator can find the cause from the id a client reports.
+
+        Args:
+            exc: The exception that was caught. Never placed in the response body.
+            status: HTTP status to send (default 500).
+            correlation_id: Id to use; a 12-hex-character one is generated when omitted.
+
+        Returns:
+            None. The response has been written.
+
+        Example:
+            >>> # inside a handler
+            >>> # except Exception as e:
+            >>> #     self._internal_error(e)
+        """
+        cid = correlation_id or uuid.uuid4().hex[:12]
+        # The request path is client-controlled: keep it on one line and bounded.
+        safe_path = str(getattr(self, "path", "") or "").replace("\r", "\\r").replace("\n", "\\n")[:200]
+        log.error("request_failed id=%s path=%s", cid, safe_path, exc_info=exc)
+        self._send_json({"error": "internal error", "correlation_id": cid}, status)
+
     def _read_body(self):
         length = int(self.headers.get("Content-Length", 0))
         length = max(0, length)
@@ -1834,7 +1862,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 else:
                     self._send_json({"error": "semantic_cache module not available"}, 503)
             except Exception as e:
-                self._send_json({"error": str(e)}, 500)
+                self._internal_error(e)
             return
 
         if path == "/health":
@@ -2105,7 +2133,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 )
                 self._send_json({"results": results, "count": len(results)})
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         if path == "/api/memory/count":
@@ -2117,7 +2145,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 count = store.memory_count()
                 self._send_json({"count": count})
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         if path == "/api/memory/embedding-stats":
@@ -2129,7 +2157,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 stats = store.memory_embedding_stats()
                 self._send_json(stats)
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # ─── Memory Distill Status GET route ──────────
@@ -2153,7 +2181,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     "needs_distill": total >= threshold,
                 })
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # ─── Memory Tag Stats GET route ──────────────
@@ -2166,7 +2194,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 stats = store.memory_tag_stats()
                 self._send_json(stats)
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # ─── Embedding Coverage GET route ──────────────
@@ -2183,7 +2211,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     "coverage_pct": stats.get("coverage_pct", 0),
                 })
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # ─── SKB Candidates GET route (Phase 10 LEARN-05) ────────
@@ -2219,7 +2247,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     "needs_review_min": needs_review_min,
                 })
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # ─── Agent Performance GET route (PG or SQLite) ──────
@@ -2239,7 +2267,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 summary = store.agent_performance_summary(agent_id)
                 self._send_json(summary or {"total_tasks": 0, "agent_id": agent_id})
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # ─── SKB GET routes (PG or SQLite) ─────────────
@@ -2257,7 +2285,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 )
                 self._send_json({"results": results, "count": len(results)})
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # ─── Audit Log GET routes (PG or SQLite) ─────────
@@ -2277,7 +2305,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 )
                 self._send_json({"results": results, "count": len(results)})
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         if path == "/api/audit/export" or path.startswith("/api/audit/export?"):
@@ -2315,7 +2343,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 else:
                     self._send_json({"results": results, "count": len(results), "format": "json"})
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # ─── Capability catalog GET routes (Phase 60 TOOL-02/TOOL-03) ──
@@ -2329,7 +2357,8 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 try:
                     validate_catalog(dict(catalog))
                 except ValueError as ve:
-                    self._send_json({"error": "capability_catalog_invalid", "detail": str(ve)}, 500)
+                    log.error("capability_catalog_invalid detail=%s", ve)
+                    self._send_json({"error": "capability_catalog_invalid"}, 500)
                     return
                 self._send_json({
                     "catalog_version": catalog.get("catalog_version"),
@@ -2337,7 +2366,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     "count": len(catalog.get("entries", [])),
                 })
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         if path == "/api/capability/audit":
@@ -2350,7 +2379,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 result = audit_diff(store=store)
                 self._send_json(result)   # HTTP 200 either way; 'drift' bool drives CLI exit code
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # ─── Validation GET routes (PG or SQLite) ──────
@@ -2364,7 +2393,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 results = store.validation_history(task_id)
                 self._send_json({"results": results, "count": len(results)})
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # ─── Backup GET routes (Phase 8: Data Durability) ──
@@ -2376,7 +2405,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 backups = _backup_manager.list_backups()
                 self._send_json({"backups": backups, "count": len(backups)})
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         if path == "/api/backup/verify" or path.startswith("/api/backup/verify?"):
@@ -2389,7 +2418,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 result = _backup_manager.verify(input_path)
                 self._send_json(result)
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # ─── RPETD Context GET route (Phase 20 HANDOFF-02) ────────────────────
@@ -2411,7 +2440,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     else:
                         self._send_json({"error": f"No context found for {ctx_task_id} phase {ctx_phase}"}, 404)
                 except Exception as e:
-                    self._send_json({"error": _safe_error(e)}, 500)
+                    self._internal_error(e)
                 return
             else:
                 self._send_json({"error": "Invalid context path. Use /api/context/<task_id>/<phase> where phase is R, P, E, T, or D"}, 400)
@@ -2459,7 +2488,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     return
                 self._send_json(entry)
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # GET /api/skb/skb-XXXX — fetch a single SKB entry by ID.
@@ -2480,7 +2509,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     return
                 self._send_json(entry)
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # GET /api/circuit-breaker/{agent_name} — Read circuit breaker state (BEHAV-02)
@@ -2512,7 +2541,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     "last_failure": state.get("last_failure"),
                 })
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # ─── Blackboard GET routes (Phase 38 COMM-01, COMM-02) ───────────────────
@@ -2548,7 +2577,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     )
                     self._send_json({"findings": results, "count": len(results)})
                 except Exception as e:
-                    self._send_json({"error": _safe_error(e)}, 500)
+                    self._internal_error(e)
                 return
             try:
                 clauses = ["status = %s"]
@@ -2593,7 +2622,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 ]
                 self._send_json({"findings": results, "count": len(results)})
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         if path.startswith("/api/findings/"):
@@ -2610,7 +2639,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     results = store.findings_by_task(task_id)
                     self._send_json({"findings": results, "count": len(results)})
                 except Exception as e:
-                    self._send_json({"error": _safe_error(e)}, 500)
+                    self._internal_error(e)
                 return
             try:
                 with store._get_conn() as conn, conn.cursor() as cur:
@@ -2634,7 +2663,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 ]
                 self._send_json({"findings": results, "count": len(results)})
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         if path.startswith("/api/messages/"):
@@ -2651,7 +2680,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     messages = store.messages_for_agent(agent_name)
                     self._send_json({"messages": messages, "count": len(messages)})
                 except Exception as e:
-                    self._send_json({"error": _safe_error(e)}, 500)
+                    self._internal_error(e)
                 return
             try:
                 with store._get_conn() as conn, conn.cursor() as cur:
@@ -2682,7 +2711,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 ]
                 self._send_json({"messages": messages, "count": len(messages)})
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # ─── Agent Metrics GET routes (Phase 39 LIFE-02) ────────────────────────
@@ -2699,7 +2728,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     stats = store.agent_metrics_stats()
                     self._send_json({"stats": stats, "count": len(stats)})
                 except Exception as e:
-                    self._send_json({"error": _safe_error(e)}, 500)
+                    self._internal_error(e)
                 return
             try:
                 with store._get_conn() as conn, conn.cursor() as cur:
@@ -2728,7 +2757,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 ]
                 self._send_json({"stats": stats, "count": len(stats)})
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # ─── Step Handoffs GET routes (Phase 41 SHARD-04) ────────────────────────
@@ -2757,7 +2786,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     else:
                         self._send_json({"step_id": None, "message": "No handoff found"})
                 except Exception as e:
-                    self._send_json({"error": _safe_error(e)}, 500)
+                    self._internal_error(e)
                 return
             try:
                 with store._get_conn() as conn, conn.cursor() as cur:
@@ -2792,7 +2821,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 else:
                     self._send_json({"step_id": None, "message": "No handoff found"})
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # ── GET /a2a/exchanges — A2A audit endpoint (Phase 56 A2A-07) ────────────
@@ -2896,7 +2925,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     "next_cursor": next_cursor,
                 })
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         self._send_json({"error": f"Unknown GET route: {path}"}, 404)
@@ -2958,7 +2987,8 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 )
                 self._send_json({"stored": True, "key": cache_key, "ttl": ttl})
             except Exception as e:
-                self._send_json({"stored": False, "reason": str(e)})
+                log.warning("perplexity_cache_store_failed error=%s", _safe_error(e))
+                self._send_json({"stored": False, "reason": "internal error"})
             return
 
         # ── POST /api/semantic-cache/search — Semantic cache lookup (Phase 24 / SEMANTIC-01) ──
@@ -2982,7 +3012,8 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 else:
                     self._send_json({"hit": False})
             except Exception as e:
-                self._send_json({"hit": False, "error": str(e)})
+                log.warning("semantic_cache_lookup_failed error=%s", _safe_error(e))
+                self._send_json({"hit": False, "error": "internal error"})
             return
 
         # ── POST /api/semantic-cache/store — Store response in semantic cache (Phase 24 / SEMANTIC-01) ──
@@ -3010,7 +3041,8 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 )
                 self._send_json({"stored": entry_id is not None, "id": entry_id})
             except Exception as e:
-                self._send_json({"stored": False, "error": str(e)})
+                log.warning("semantic_cache_store_failed error=%s", _safe_error(e))
+                self._send_json({"stored": False, "error": "internal error"})
             return
 
         # Generic command executor — limited to safe read/query operations
@@ -3318,7 +3350,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     return
                 _send_memory_store_response({"id": mem_id, "stored": True, "embedded": bool(use_embedding and _pg_store), "project_id": project_id})
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         if path == "/api/memory/search":
@@ -3359,7 +3391,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 results = store.memory_search(**kwargs)
                 self._send_json({"results": results, "count": len(results)})
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         if path == "/api/memory/delete":
@@ -3380,7 +3412,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 n = store.memory_delete(mem_id)
                 self._send_json({"deleted": bool(n), "rows": int(n or 0), "id": mem_id})
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         if path == "/api/memory/archive-delete":
@@ -3405,7 +3437,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     return
                 self._send_json(result)
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         if path == "/api/memory/semantic-search":
@@ -3432,7 +3464,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 results, method = store.memory_semantic_search(**kwargs)
                 self._send_json({"results": results, "count": len(results), "method": method})
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         if path == "/api/memory/backfill-embeddings":
@@ -3446,7 +3478,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 )
                 self._send_json(result)
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         if path == "/api/memory/cross-project":
@@ -3467,7 +3499,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 )
                 self._send_json({"results": results, "count": len(results)})
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # ─── Auto-capture POST route (session learning) ──
@@ -3497,7 +3529,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 )
                 self._send_json({"id": mem_id, "stored": True, "source": "session-learning", "chars": len(text), "project_id": project_id})
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # ─── Memory Retention Cleanup POST route (MEM-02) ────────
@@ -3513,7 +3545,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 result = store.memory_retention_cleanup()
                 self._send_json(result)
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # ─── Memory Increment Applied POST route (Phase 10 LEARN-05) ────────
@@ -3558,7 +3590,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             except ValueError as ve:
                 self._send_json({"error": str(ve)}, 400)
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # ─── Audit Log POST route (PG or SQLite) ────────
@@ -3586,7 +3618,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 )
                 self._send_json({"id": row_id, "logged": True})
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # ─── Capability access POST route (Phase 60 TOOL-02/TOOL-03) ──
@@ -3637,7 +3669,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     }
                 self._send_json(resp)
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # ─── SKB POST routes (PG or SQLite) ────────────
@@ -3663,7 +3695,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 )
                 self._send_json({"id": skb_id, "stored": True})
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         if path == "/api/skb/search":
@@ -3683,7 +3715,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 )
                 self._send_json({"results": results, "count": len(results)})
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # ─── Validation POST route (PG or SQLite) ──────
@@ -3708,7 +3740,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 )
                 self._send_json({"id": vid, "recorded": True})
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # ─── Agent Performance POST route (PG or SQLite) ──────
@@ -3736,7 +3768,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 )
                 self._send_json({"recorded": True})
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # ─── Backup POST routes (Phase 8: Data Durability) ──
@@ -3754,7 +3786,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     "created": True,
                 })
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         if path == "/api/backup/restore":
@@ -3777,7 +3809,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             except ValueError as e:
                 self._send_json({"error": str(e)}, 422)
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # ─── RPETD Context Compact route (Phase 20 HANDOFF-02/04) ───────────
@@ -3851,7 +3883,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 })
             except Exception as e:
                 log.error(f"Context compaction failed: {e}")
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # ─── RPETD Context Validate route (Phase 21 STALE-04) ─────────────
@@ -3919,7 +3951,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 })
             except Exception as e:
                 log.error("Context validation failed: %s", str(e))
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # ── POST /api/circuit-breaker/record — Record agent task outcome (BEHAV-02) ──
@@ -3962,7 +3994,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     "failures": next_state["failures"],
                 })
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # ─── Step Handoffs POST routes (Phase 41 SHARD-04) ───────────────────────
@@ -4003,7 +4035,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     )
                     self._send_json(created, 201)
                 except Exception as e:
-                    self._send_json({"error": _safe_error(e)}, 500)
+                    self._internal_error(e)
                 return
             try:
                 import json as _json
@@ -4039,7 +4071,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     conn.commit()
                 self._send_json({"id": str(row[0]), "created_at": row[1].isoformat()}, 201)
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # ─── Complexity Score POST routes (Phase 42 SCALE-01, SCALE-02) ──────────
@@ -4191,7 +4223,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     "banner": _banner,
                 })
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         if path == "/api/complexity/complete":
@@ -4261,7 +4293,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                         "reason": "PG unavailable or store_completion returned empty",
                     })
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # ─── Complexity Escalate POST route (Phase 42 SCALE-04) ─────────────────────
@@ -4496,7 +4528,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                         "banner": _banner,
                     })
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # ─── Skill Invocation POST routes (Phase 43 SKILL-02) ───────────────────────
@@ -4525,7 +4557,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 })
             except Exception as e:
                 log.exception("/api/skills/invoke failed")
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         if path == "/api/skills/complete":
@@ -4550,7 +4582,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     self._send_json({"ok": False, "error": "invocation not found"}, 404)
             except Exception as e:
                 log.exception("/api/skills/complete failed")
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # ─── Blackboard POST routes (Phase 38 COMM-01, COMM-02, COMM-04) ──────────
@@ -4619,7 +4651,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                             "created_at": created["created_at"],
                         }, 201)
                 except Exception as e:
-                    self._send_json({"error": _safe_error(e)}, 500)
+                    self._internal_error(e)
                 return
             try:
                 with store._get_conn() as conn, conn.cursor() as cur:
@@ -4661,7 +4693,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     conn.commit()
                 self._send_json({"id": str(row[0]), "created": True, "created_at": row[1].isoformat()}, 201)
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         if path == "/api/messages":
@@ -4703,7 +4735,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                         "created_at": created["created_at"],
                     }, 201)
                 except Exception as e:
-                    self._send_json({"error": _safe_error(e)}, 500)
+                    self._internal_error(e)
                 return
             try:
                 with store._get_conn() as conn, conn.cursor() as cur:
@@ -4731,7 +4763,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     "created_at": row[1].isoformat(),
                 }, 201)
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         if path == "/api/handoff":
@@ -4756,19 +4788,18 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     timeout=10,
                 )
                 if result.returncode != 0:
-                    self._send_json({
-                        "error": "handoff generation failed",
-                        "details": result.stderr.strip(),
-                    }, 500)
+                    log.error("handoff_generation_failed stderr=%s", result.stderr.strip()[:500])
+                    self._send_json({"error": "handoff generation failed"}, 500)
                     return
                 handoff_data = json.loads(result.stdout)
                 self._send_json(handoff_data, 200)
             except subprocess.TimeoutExpired:
                 self._send_json({"error": "handoff generation timed out"}, 500)
             except json.JSONDecodeError as e:
-                self._send_json({"error": "invalid JSON from handoff.cjs", "details": str(e)}, 500)
+                log.error("handoff_invalid_json detail=%s", e)
+                self._send_json({"error": "invalid JSON from handoff.cjs"}, 500)
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # ─── Agent Metrics POST routes (Phase 39 LIFE-02) ───────────────────────
@@ -4808,7 +4839,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                         "created_at": created["created_at"],
                     }, 201)
                 except Exception as e:
-                    self._send_json({"error": _safe_error(e)}, 500)
+                    self._internal_error(e)
                 return
             try:
                 with store._get_conn() as conn, conn.cursor() as cur:
@@ -4829,7 +4860,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     conn.commit()
                 self._send_json({"id": str(row[0]), "created": True, "created_at": row[1].isoformat()}, 201)
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         self._send_json({"error": f"Unknown POST route: {path}"}, 404)
@@ -4884,7 +4915,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     return
                 self._send_json(result, 200)
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # ─── Blackboard PATCH route (Phase 38 COMM-02) ──────────────────────────
@@ -4928,7 +4959,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                         return
                     self._send_json({**updated, "updated": True})
                 except Exception as e:
-                    self._send_json({"error": _safe_error(e)}, 500)
+                    self._internal_error(e)
                 return
             try:
                 with store._get_conn() as conn, conn.cursor() as cur:
@@ -4967,7 +4998,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     "updated": True,
                 })
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         # ─── Findings PATCH route (Phase 79 ROUT-05) ────────────────────────────
@@ -5010,7 +5041,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                         return
                     self._send_json({**updated, "updated": True})
                 except Exception as e:
-                    self._send_json({"error": _safe_error(e)}, 500)
+                    self._internal_error(e)
                 return
             try:
                 with store._get_conn() as conn, conn.cursor() as cur:
@@ -5045,7 +5076,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     "updated": True,
                 })
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         self._send_json({"error": f"Unknown PATCH route: {path}"}, 404)
@@ -5093,7 +5124,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     return
                 self._send_json(result, 200)
             except Exception as e:
-                self._send_json({"error": _safe_error(e)}, 500)
+                self._internal_error(e)
             return
 
         self._send_json({"error": f"Unknown DELETE route: {path}"}, 404)

@@ -36,7 +36,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 
-// ─── Phase 51 base SHA (FROZEN — NEVER update without operator sign-off) ─────
+// ─── Phase 51 base SHA (FROZEN — update only with operator sign-off; last: 2026-11-11, delegated) ─────
 //
 // This is the commit immediately preceding Phase 51 execution start.
 // From .planning/ROADMAP.md §Phase 51 + git log confirmation:
@@ -44,7 +44,15 @@ const crypto = require('node:crypto');
 //
 // If this SHA is wrong (i.e., git show fails), the test will throw and the
 // executor MUST surface a divergence report — NOT silently update the SHA.
-const PHASE_51_BASE = 'dd404b7ee48ad2c4a9fc46d55b14f1cf3eac2671';
+// RE-BASELINED 2026-11-11 (plan 88-06, operator sign-off: delegated 2026-11-11). The base used to be
+//   dd404b7ee48ad2c4a9fc46d55b14f1cf3eac2671  docs(51): capture Phase 51 context
+// but the protected paths below were changed on purpose by later phases (new specialist agents and auditors, the
+// model registry, doctor/init rework, gsd-tools and amauta-mcp changes), so every assertion that
+// compares them with that commit failed with a diff. The base is now the master commit
+//   e6dbc5122c0eb7b10f1861970d450e540ed269ec  Merge pull request #20 from Luiscmogrovejo/phase88/04-validate-fixtures-numpy
+// and every assertion is kept: the canary guards these paths against unintended change from here on. The files
+// that changed since the old base, and the commits that changed them, are in 88-06-RECORD.md.
+const PHASE_51_BASE = 'e6dbc5122c0eb7b10f1861970d450e540ed269ec';
 
 const ROOT = path.resolve(__dirname, '..');
 

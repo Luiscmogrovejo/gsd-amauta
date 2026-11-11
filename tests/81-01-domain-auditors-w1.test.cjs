@@ -60,6 +60,9 @@ const AGENTS_OUT = path.join(ROOT, 'agents');
 
 const { validate, compile } = require(COMPILER);
 
+// Seeded/clean fixture pairs for the audit-absence tests (plan 88-06).
+const AUDITOR_FIXTURES = path.join(__dirname, 'fixtures', '88-06-auditors');
+
 // The 4 Wave-1 auditors under test — name, source dir, compiled .md, headline
 // rule ids (DOM1 requirement), and audit domain string.
 const AUDITORS = [
@@ -375,7 +378,7 @@ test('DOM1-02 / SC2: BACK-06 detect fires on a DB call inside a loop and NOT on 
 
 // ---- SC3 — DOM1-03 INFRA ---------------------------------------------------
 
-test('DOM1-03 / SC3: INFRA-01 detect fires on a seeded :latest image AND the REAL docker-compose paradedb:latest-pg16, NOT on a digest-pinned image', () => {
+test('DOM1-03 / SC3: INFRA-01 detect fires on a seeded :latest image, NOT on a digest-pinned image, and finds exactly the planted instance in the seeded fixture tree', () => {
   const seeded = [
     'services:',
     '  web:',
@@ -387,16 +390,37 @@ test('DOM1-03 / SC3: INFRA-01 detect fires on a seeded :latest image AND the REA
   assert.ok(seededHits.includes('myorg/web:latest'), 'INFRA-01 flags the seeded :latest image');
   assert.equal(seededHits.some((h) => h.includes('@sha256:')), false, 'INFRA-01 does NOT flag the digest-pinned image');
 
-  // Real in-repo seed — read-only.
-  const realCompose = fs.readFileSync(path.join(ROOT, 'docker', 'docker-compose.yml'), 'utf8');
-  const realHits = detectUnpinnedImages(realCompose);
-  assert.ok(
-    realHits.some((h) => /paradedb\/paradedb:latest-pg16/.test(h)),
-    'INFRA-01 fires on the REAL docker-compose paradedb/paradedb:latest-pg16 unpinned image'
-  );
+  // 88-06: this test used to assert that the REAL docker/docker-compose.yml still carried the unpinned
+  // paradedb:latest-pg16 image. That finding has since been FIXED (the compose file pins a digest), so an
+  // absence/presence assertion over live repository content went red and would keep flipping whenever the
+  // repository changes. The auditor is now proven on a seeded fixture pair; the real compose file is reported
+  // as a diagnostic in the next test and never fails a unit test.
+  const seededFile = path.join(AUDITOR_FIXTURES, 'infra', 'seeded', 'docker-compose.yml');
+  const cleanFile = path.join(AUDITOR_FIXTURES, 'infra', 'clean', 'docker-compose.yml');
+  assert.deepEqual(detectUnpinnedImages(fs.readFileSync(seededFile, 'utf8')), ['myorg/web:latest'],
+    'seeded fixture: exactly the one planted unpinned image');
+  assert.deepEqual(detectUnpinnedImages(fs.readFileSync(cleanFile, 'utf8')), [],
+    'clean fixture: zero unpinned images');
+
+  // The shared engine reports the finding with its rule id and the file it names.
+  const engine = require(path.join(ROOT, 'get-shit-done', 'bin', 'lib', 'audit-runner.cjs'));
+  const seededFindings = engine.detect('infra', [seededFile]).filter((f) => f.rule_id === 'INFRA-01');
+  assert.equal(seededFindings.length, 1, 'seeded fixture: exactly one INFRA-01 finding');
+  assert.equal(seededFindings[0].file_path, seededFile, 'the finding names the seeded compose file');
+  assert.match(seededFindings[0].evidence, /myorg\/web:latest/, 'the finding names the planted image');
+  assert.deepEqual(engine.detect('infra', [cleanFile]).filter((f) => f.rule_id === 'INFRA-01'), [],
+    'clean fixture: zero INFRA-01 findings');
+
   const inf = AUDITORS.find((a) => a.name === 'gsd-auditor-infra');
   assert.ok(inf.mdSrc.includes('INFRA-01'), 'infra .md documents INFRA-01');
   assert.match(inf.mdSrc, /:latest|pinned/i, 'INFRA-01 detect names the :latest / pin discipline');
+});
+
+test('DOM1-03 / diagnostic: INFRA-01 over the real docker/docker-compose.yml (reported, never failing)', (t) => {
+  const realCompose = fs.readFileSync(path.join(ROOT, 'docker', 'docker-compose.yml'), 'utf8');
+  const realHits = detectUnpinnedImages(realCompose);
+  t.diagnostic(`INFRA-01 on the real docker/docker-compose.yml: ${realHits.length} unpinned image(s)${realHits.length ? ': ' + realHits.join(', ') : ''}`);
+  assert.ok(Array.isArray(realHits));
 });
 
 test('DOM1-03 / SC3: INFRA-03 detect fires on a compose service with no healthcheck and NOT on one with a healthcheck', () => {
@@ -495,14 +519,21 @@ function httpJson(method, urlPath, body) {
   });
 }
 
+// 88-06: the live layer is opt-in. It POSTs findings to a real daemon, and the default port is shared with every other
+// test file in a parallel run: a daemon another file starts (and stops) on that port during this one made these cases
+// pass the /health probe and then fail mid-request (ubuntu node 20, "sweep returns 200: 0 !== 200"). Point it at a
+// disposable daemon on purpose with GSD_LIVE_DAEMON_TESTS=1 and AMAUTA_PORT=<port>.
+const LIVE_OPT_IN = process.env.GSD_LIVE_DAEMON_TESTS === '1';
+
 async function daemonReachable() {
+  if (!LIVE_OPT_IN) return false;
   const r = await httpJson('GET', '/health');
   return r.status === 200 && r.json && r.json.status === 'ok';
 }
 
 for (const a of AUDITORS) {
   test(`LIVE ${a.req}: ${a.name} audit finding POSTs to /api/findings, lands in the SUBS-04 sweep, then PATCHes cleared`, async (t) => {
-    if (!(await daemonReachable())) { t.skip('daemon unreachable on 127.0.0.1:' + PORT); return; }
+    if (!(await daemonReachable())) { t.skip(LIVE_OPT_IN ? 'daemon unreachable on 127.0.0.1:' + PORT : 'live-daemon layer is opt-in: set GSD_LIVE_DAEMON_TESTS=1 and AMAUTA_PORT to a disposable daemon'); return; }
 
     // A unique file_path keeps the server dedup_key (rule_id:sha1(file_path))
     // distinct so the POST creates rather than dedups.

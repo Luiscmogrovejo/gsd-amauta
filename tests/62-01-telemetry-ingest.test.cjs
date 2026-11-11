@@ -183,7 +183,11 @@ describe('[TEL-03] Mock sink drain + min-interval throttle', () => {
 
         assert.ok(capturedBody, 'server must have received a POST body');
         const parsedBody = JSON.parse(capturedBody);
-        assert.equal(parsedBody.schema_version, '1.0');
+        // The old expectation ('1.0') was wrong, not the code: d26d9f7 (GAIN-02, plan 77-01-01) bumped the governed
+        // schema to 1.1 and appended the compression_run event. Assert the body carries the constant the module
+        // exports, so the next governed bump cannot strand this test again, and pin the current value once.
+        assert.equal(parsedBody.schema_version, t.SCHEMA_VERSION);
+        assert.equal(t.SCHEMA_VERSION, '1.1');
         assert.equal(parsedBody.events.length, 2);
 
         assert.equal(t.bufferedCount(), 0);

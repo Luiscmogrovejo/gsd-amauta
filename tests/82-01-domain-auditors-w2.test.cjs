@@ -68,6 +68,9 @@ const AGENTS_OUT = path.join(ROOT, 'agents');
 
 const { validate, compile } = require(COMPILER);
 
+// Seeded/clean fixture pairs for the audit-absence tests (plan 88-06).
+const AUDITOR_FIXTURES = path.join(__dirname, 'fixtures', '88-06-auditors');
+
 // The 5 Wave-2 auditors under test — DOM2 requirement, name, source dir,
 // compiled .md, headline rule ids, and audit domain string. The `antiDup`
 // field pins the DEFER cross-link this auditor must carry (a rule row whose
@@ -474,22 +477,49 @@ test('DOM2-02 / SC1: APIC-04 detect fires on a seeded mutating POST with no idem
 
 // ---- SC1 + SC2 — DOM2-03 AGENTIC-FLOW (REAL seeds) ------------------------
 
-test('DOM2-03 / SC1+SC2: AGEN-04 detect fires on the REAL ceiling-absence (empty ceiling grep + no cost event in telemetry EVENT_TYPES)', () => {
-  // (1) No token/cost budget-ceiling enforcement anywhere in services/ or bin/.
-  const ceilingHits = detectCeilingEnforcement([
-    path.join(ROOT, 'services'),
-    path.join(ROOT, 'get-shit-done', 'bin'),
-  ]);
-  assert.deepEqual(ceilingHits, [], 'AGEN-04: a budget-ceiling enforcement grep across services/ + get-shit-done/bin/ returns EMPTY (the ceiling is absent — the finding)');
+test('DOM2-03 / SC1+SC2: AGEN-04 detect fires on the seeded ceiling-absence (empty ceiling grep + no cost event in telemetry EVENT_TYPES) and NOT on the clean tree', () => {
+  // 88-06: this used to assert the ceiling was absent from the REAL services/ + get-shit-done/bin/ trees. The gap has
+  // since been closed in the repository (services/telemetry.py now names a ceiling), so an absence assertion over
+  // live content failed, and it would flip again with every unrelated change. The detector is proven on a
+  // seeded fixture (absence planted) and a clean fixture (ceiling + cost event present); the repository's
+  // own state is reported as a diagnostic in the next test.
+  const seededRoot = path.join(AUDITOR_FIXTURES, 'agentic-flow', 'seeded');
+  const cleanRoot = path.join(AUDITOR_FIXTURES, 'agentic-flow', 'clean');
+  const dirsOf = (root) => [path.join(root, 'services'), path.join(root, 'get-shit-done', 'bin')];
 
-  // (2) telemetry EVENT_TYPES carries no cost/token event (do NOT assert it measures cost).
-  const telemetrySrc = fs.readFileSync(path.join(ROOT, 'services', 'telemetry.py'), 'utf8');
-  assert.equal(eventTypesHasCostEvent(telemetrySrc), false, 'AGEN-04: telemetry EVENT_TYPES has NO cost/token event (measurement-without-a-ceiling, not a false measures-cost premise)');
+  // (1) seeded: no token/cost budget-ceiling enforcement anywhere.
+  assert.deepEqual(detectCeilingEnforcement(dirsOf(seededRoot)), [],
+    'AGEN-04: a budget-ceiling enforcement grep across the seeded services/ + get-shit-done/bin/ returns EMPTY (the ceiling is absent — the finding)');
+  // (2) seeded telemetry EVENT_TYPES carries no cost/token event (do NOT assert it measures cost).
+  assert.equal(eventTypesHasCostEvent(fs.readFileSync(path.join(seededRoot, 'services', 'telemetry.py'), 'utf8')), false,
+    'AGEN-04: seeded telemetry EVENT_TYPES has NO cost/token event (measurement-without-a-ceiling, not a false measures-cost premise)');
+
+  // The shared engine files exactly one AGEN-04 finding on the seeded root, naming the scanned dirs, and none on clean.
+  const engine = require(path.join(ROOT, 'get-shit-done', 'bin', 'lib', 'audit-runner.cjs'));
+  const seededF = engine.detect('agentic-flow', [], { root: seededRoot }).filter((f) => f.rule_id === 'AGEN-04');
+  assert.equal(seededF.length, 1, 'seeded fixture: exactly one AGEN-04 finding');
+  assert.equal(seededF[0].file_path, 'services/,get-shit-done/bin/', 'the finding names the scanned directories');
+  assert.match(seededF[0].evidence, /ceiling absence/, 'the finding keys on the ceiling ABSENCE');
+  assert.deepEqual(engine.detect('agentic-flow', [], { root: cleanRoot }).filter((f) => f.rule_id === 'AGEN-04'), [],
+    'clean fixture: zero AGEN-04 findings');
+  assert.equal(detectCeilingEnforcement(dirsOf(cleanRoot)).length, 1, 'clean fixture: the ceiling is found');
+  assert.equal(eventTypesHasCostEvent(fs.readFileSync(path.join(cleanRoot, 'services', 'telemetry.py'), 'utf8')), true,
+    'clean fixture: telemetry EVENT_TYPES has a cost event');
 
   const af = AUDITORS.find((x) => x.name === 'gsd-auditor-agentic-flow');
   assert.ok(af.mdSrc.includes('AGEN-04'), 'agentic-flow .md documents AGEN-04');
   assert.match(af.mdSrc, /ceiling/i, 'AGEN-04 evidence names the budget-ceiling absence');
   assert.match(af.mdSrc, /EVENT_TYPES|no cost|no token/i, 'AGEN-04 evidence names the telemetry no-cost-event half');
+});
+
+test('DOM2-03 / diagnostic: AGEN-04 over the real tree (reported, never failing)', (t) => {
+  const hits = detectCeilingEnforcement([
+    path.join(ROOT, 'services'),
+    path.join(ROOT, 'get-shit-done', 'bin'),
+  ]);
+  const telemetrySrc = fs.readFileSync(path.join(ROOT, 'services', 'telemetry.py'), 'utf8');
+  t.diagnostic(`AGEN-04 on the real tree: ${hits.length} ceiling file(s)${hits.length ? ': ' + hits.map((h) => path.relative(ROOT, h)).join(', ') : ''}; cost event in telemetry EVENT_TYPES: ${eventTypesHasCostEvent(telemetrySrc)}`);
+  assert.ok(Array.isArray(hits));
 });
 
 test('DOM2-03 / SC1+SC2: AGEN-06 detect fires on the REAL eval-coverage gap (3 agent eval sets vs the ~35-agent roster)', () => {
@@ -620,14 +650,21 @@ function httpJson(method, urlPath, body) {
   });
 }
 
+// 88-06: the live layer is opt-in. It POSTs findings to a real daemon, and the default port is shared with every other
+// test file in a parallel run: a daemon another file starts (and stops) on that port during this one made these cases
+// pass the /health probe and then fail mid-request (ubuntu node 20, "sweep returns 200: 0 !== 200"). Point it at a
+// disposable daemon on purpose with GSD_LIVE_DAEMON_TESTS=1 and AMAUTA_PORT=<port>.
+const LIVE_OPT_IN = process.env.GSD_LIVE_DAEMON_TESTS === '1';
+
 async function daemonReachable() {
+  if (!LIVE_OPT_IN) return false;
   const r = await httpJson('GET', '/health');
   return r.status === 200 && r.json && r.json.status === 'ok';
 }
 
 for (const a of AUDITORS) {
   test(`LIVE ${a.req}: ${a.name} audit finding POSTs to /api/findings, lands in the SUBS-04 sweep, then PATCHes cleared`, async (t) => {
-    if (!(await daemonReachable())) { t.skip('daemon unreachable on 127.0.0.1:' + PORT); return; }
+    if (!(await daemonReachable())) { t.skip(LIVE_OPT_IN ? 'daemon unreachable on 127.0.0.1:' + PORT : 'live-daemon layer is opt-in: set GSD_LIVE_DAEMON_TESTS=1 and AMAUTA_PORT to a disposable daemon'); return; }
 
     // A unique file_path keeps the server dedup_key (rule_id:sha1(file_path))
     // distinct so the POST creates rather than dedups.

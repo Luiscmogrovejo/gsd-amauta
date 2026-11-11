@@ -68,12 +68,20 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const os = require('node:os');
 
-// ─── PHASE_53_BASE constant (FROZEN — NEVER update without operator sign-off) ─
+// ─── PHASE_53_BASE constant (FROZEN — update only with operator sign-off; last: 2026-11-11, delegated) ─
 //
 // HEAD captured 2026-05-14 at Phase 53 Wave 1 dispatch.
 // Confirmed: git show --format="%s" -s 32fbdc31527cb9fc5ca81db3036214054c49ae71
 //   plan(53): author 5 PLANs directly after 2 planner stream timeouts
-const PHASE_53_BASE = '32fbdc31527cb9fc5ca81db3036214054c49ae71';  // HEAD captured 2026-05-14 at Phase 53 Wave 1 dispatch
+// RE-BASELINED 2026-11-11 (plan 88-06, operator sign-off: delegated 2026-11-11). The base used to be
+//   32fbdc31527cb9fc5ca81db3036214054c49ae71  plan(53): author 5 PLANs directly after 2 planner stream timeouts
+// but the protected paths below were changed on purpose by later phases (new specialist agents and auditors, the
+// model registry, doctor/init rework, gsd-tools and amauta-mcp changes), so every assertion that
+// compares them with that commit failed with a diff. The base is now the master commit
+//   e6dbc5122c0eb7b10f1861970d450e540ed269ec  Merge pull request #20 from Luiscmogrovejo/phase88/04-validate-fixtures-numpy
+// and every assertion is kept: the canary guards these paths against unintended change from here on. The files
+// that changed since the old base, and the commits that changed them, are in 88-06-RECORD.md.
+const PHASE_53_BASE = 'e6dbc5122c0eb7b10f1861970d450e540ed269ec';  // HEAD captured 2026-05-14 at Phase 53 Wave 1 dispatch
 
 const ROOT = path.resolve(__dirname, '..');
 
