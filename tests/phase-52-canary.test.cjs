@@ -1,5 +1,11 @@
 'use strict';
 /**
+ * CANARY POLICY (plan 88-12): a PR that changes a path this file pins re-baselines this canary
+ * IN THE SAME PR and names the change in its description. This canary exists to make such
+ * a change deliberate, not to forbid it. Never skip, retire or weaken an assertion to go
+ * green. Worked example: PR #24 changed the pinned bin/init.cjs without re-baselining and
+ * left master red on four cells until plan 88-12 moved the bases.
+ *
  * tests/phase-52-canary.test.cjs — Phase 52 cross-surface byte-preservation canary.
  *
  * Verifies that Phase 52 added ONLY the expected surfaces and did NOT silently
@@ -73,7 +79,13 @@ const PHASE_52_BASE = '21438ae43fd368d814b5aa27732aeb8379d2f7c5';
 // not exist at the base, a `case 'agents':` that was not in gsd-tools.cjs at the base); those cannot move to a later
 // commit without becoming false. The files that changed since PHASE_52_BASE, and the commits that changed them,
 // are in 88-06-RECORD.md.
-const CANARY_BASE = 'e6dbc5122c0eb7b10f1861970d450e540ed269ec';
+// RE-BASELINED AGAIN 2026-11-11 (plan 88-12, operator sign-off: delegated 2026-11-11). Three pinned files changed on
+// purpose since the base above: bin/init.cjs (PR #24, commit 04e17ed, and plan 88-12 task 03), services/module_schema.py
+// (88-12 task 08, the fallback YAML parser fix) and services/module_lifecycle.py (88-12 task 09, the target-root
+// override). The base is now the last commit of that series that touches a pinned path:
+//   f79f1eed08188b05a54e628364550858379fe586  fix(88-12): module install honours GSD_MODULE_TARGET_ROOT so the e2e never writes into the repository
+// Every assertion is kept. The full list of pinned files and commits is in 88-12-RECORD.md.
+const CANARY_BASE = 'f79f1eed08188b05a54e628364550858379fe586';
 
 const ROOT = path.resolve(__dirname, '..');
 

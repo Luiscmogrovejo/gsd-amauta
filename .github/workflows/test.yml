@@ -55,6 +55,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The Node tests shell out to python3 and need PyYAML and pydantic (module
+      # manifest hashing and validation). The runners' system Python is PEP 668
+      # "externally managed" (a bare pip install fails) and windows-latest may
+      # have no python3 on PATH, so give the job its own Python first. Same SHA
+      # pin as the pytest job.
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5
+        with:
+          python-version: '3.12'
+
+      - name: Install the Python packages the Node tests import
+        shell: bash
+        run: python -m pip install --disable-pip-version-check pyyaml pydantic
+
       - name: Run tests with coverage
         # c8 v11 requires Node 20+ (engines: ^20.0.0 || >=22.0.0).
         # Use bash on all platforms so shell glob expansion works on Windows.

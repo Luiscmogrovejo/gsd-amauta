@@ -235,6 +235,14 @@ class TestRlmQueryReturnsResultsOnSuccess(unittest.TestCase):
 class TestResearchChainReturnsEmptyOnSubprocessTimeout(unittest.TestCase):
     """_research_chain_query returns [] on subprocess timeout."""
 
+    def setUp(self):
+        # Plan 88-12: test mode makes the real function return [] before it spawns anything.
+        # subprocess.run is mocked in every test here, so opt out explicitly to keep
+        # exercising the real timeout / parse / node-missing branches.
+        patcher = patch("amauta._research_chain_blocked", return_value=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_research_chain_returns_empty_on_subprocess_timeout(self):
         """Subprocess.TimeoutExpired -> returns [] without hanging."""
         with patch("shutil.which", return_value="/usr/bin/node"), \
@@ -247,6 +255,14 @@ class TestResearchChainReturnsEmptyOnSubprocessTimeout(unittest.TestCase):
 
 class TestResearchChainReturnsEmptyOnParseError(unittest.TestCase):
     """_research_chain_query returns [] on JSON parse error and writes to stderr."""
+
+    def setUp(self):
+        # Plan 88-12: test mode makes the real function return [] before it spawns anything.
+        # subprocess.run is mocked in every test here, so opt out explicitly to keep
+        # exercising the real timeout / parse / node-missing branches.
+        patcher = patch("amauta._research_chain_blocked", return_value=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def test_research_chain_returns_empty_on_parse_error(self):
         """Invalid JSON in stdout -> returns [] and writes error to stderr."""
@@ -270,6 +286,14 @@ class TestResearchChainReturnsEmptyOnParseError(unittest.TestCase):
 
 class TestResearchChainReturnsEmptyWhenNodeNotFound(unittest.TestCase):
     """_research_chain_query returns [] immediately when node is not found."""
+
+    def setUp(self):
+        # Plan 88-12: test mode makes the real function return [] before it spawns anything.
+        # subprocess.run is mocked in every test here, so opt out explicitly to keep
+        # exercising the real timeout / parse / node-missing branches.
+        patcher = patch("amauta._research_chain_blocked", return_value=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def test_research_chain_returns_empty_when_node_not_found(self):
         """shutil.which returns None -> returns [] without calling subprocess."""

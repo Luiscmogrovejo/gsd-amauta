@@ -24,6 +24,45 @@ const http = require('http');
 const { spawn } = require('child_process');
 
 const REPO = path.resolve(__dirname, '..', '..');
+
+/**
+ * Where process-ledger lines go: GSD_PROCESS_LEDGER (set by scripts/run-tests.cjs)
+ * or, for a standalone run, process-ledger.jsonl in the daemon's data dir.
+ * @param {string} dataDir
+ * @returns {string}
+ */
+function ledgerPath(dataDir) {
+  return process.env.GSD_PROCESS_LEDGER || path.join(dataDir, 'process-ledger.jsonl');
+}
+
+/**
+ * Append one JSON line to the process ledger. Never throws: a ledger that cannot
+ * be written must not break the test that is starting a daemon.
+ * @param {string} dataDir
+ * @param {object} record
+ * @returns {void}
+ */
+function appendLedger(dataDir, record) {
+  try {
+    fs.appendFileSync(ledgerPath(dataDir), JSON.stringify(record) + '\n');
+  } catch (e) {
+    console.error('fixture-daemon: could not write the process ledger: ' + e.message);
+  }
+}
+
+/**
+ * Whether a pid answers signal 0 (EPERM counts as alive).
+ * @param {number} pid
+ * @returns {boolean}
+ */
+function pidAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === 'EPERM';
+  }
+}
 // 60 s: on a loaded macOS CI runner (node --test runs many files at once) the daemon needed more
 // than the earlier 20 s before it printed DAEMON_PORT (88-03 first full matrix run).
 const READY_TIMEOUT_MS = Number(process.env.GSD_FIXTURE_READY_TIMEOUT_MS) || 60000;
@@ -137,6 +176,8 @@ async function startFixtureDaemon(opts = {}) {
     throw new Error('fixture daemon did not become ready (port=' + port + ', exited=' + exited + '): ' + tail);
   }
 
+  appendLedger(dataDir, { event: 'started', kind: 'daemon', pid: proc.pid, port, dataDir, at: Date.now() });
+
   return {
     port,
     dataDir,
@@ -178,6 +219,23 @@ async function stopFixtureDaemon(handle) {
   if (r === 'timeout') {
     proc.kill('SIGKILL');
     await done;
+  }
+  appendLedger(handle.dataDir, { event: 'stopped', kind: 'daemon', pid: proc.pid });
+  // An RLM service the daemon started (never in test mode, but recorded if present).
+  try {
+    const rlmPid = parseInt(fs.readFileSync(path.join(handle.dataDir, 'rlm-service.pid'), 'utf8').trim(), 10);
+    if (rlmPid > 0) {
+      appendLedger(handle.dataDir, {
+        event: pidAlive(rlmPid) ? 'started' : 'stopped',
+        kind: 'rlm',
+        pid: rlmPid,
+        port: Number(process.env.GSD_RLM_PORT) || null,
+        dataDir: handle.dataDir,
+        at: Date.now(),
+      });
+    }
+  } catch (_e) {
+    /* no RLM pid file: nothing to record */
   }
   if (!handle.keep) fs.rmSync(handle.dataDir, { recursive: true, force: true });
 }

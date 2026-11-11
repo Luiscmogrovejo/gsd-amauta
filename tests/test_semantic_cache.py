@@ -38,6 +38,13 @@ _EMBEDDINGS = {
     # Threshold edge cases
     "query_above_threshold":        [1.0, 0.0, 0.0, 0.0],
     "query_below_threshold":        [0.0, 1.0, 0.0, 0.0],
+    # Plan 88-12 (item 3): test_stats_tokens_saved_accumulates stores "q1" and "q2" and looks both
+    # up. Without explicit vectors both fell through to hash(text) % 1000, whose buckets are
+    # chosen by PYTHONHASHSEED and are not even required to collide to be "similar" (cosine of the
+    # generic vectors is >= 0.90 for nearby buckets), so the lookup of "q2" could return q1's entry
+    # and the test saw 400 tokens saved instead of 500. Orthogonal vectors: cosine 0.0.
+    "q1":                           [1.0, 0.0, 0.0, 0.0],
+    "q2":                           [0.0, 0.0, 0.0, 1.0],
 }
 
 _THRESHOLD_TEST = 0.90  # same as default COSINE_THRESHOLD

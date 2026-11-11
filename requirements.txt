@@ -12,5 +12,7 @@ tree-sitter-java==0.23.5
 networkx>=3.0
 voyageai>=0.3.0
 sentence-transformers>=3.0.0
-mcp>=1.0
+# services/amauta-mcp.py targets the mcp 1.x server API (Phase 90 owns the port to 2.x);
+# remove the <2 cap only together with that port (plan 88-12 item 1).
+mcp>=1.0,<2
 cryptography>=42.0

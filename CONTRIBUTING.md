@@ -56,6 +56,23 @@ Breaking changes: append `!` after the type/scope (`feat!:`) and add a `BREAKING
 - **New features must include tests.** Coverage ratchet runs in CI; PRs that drop coverage below the recorded baseline fail.
 - Tests must be deterministic. Do not use real network calls in unit tests (mock PG, Valkey, and HTTP).
 
+### Canary tests
+
+Four frozen-base canaries assert that a list of protected paths (`agents/`, `services/module_schema.py`, `services/module_lifecycle.py`, `bin/init.cjs`, `scripts/agent-compiler.cjs`, and others named at the top of each file) is byte-identical to a base commit:
+
+- `tests/party-canary.test.cjs`
+- `tests/party-decisions-canary.test.cjs`
+- `tests/phase-52-canary.test.cjs`
+- `tests/phase-53-canary.test.cjs`
+
+**A PR that changes a pinned path re-baselines that canary in the same PR and names the change in its description.** The canary exists to make such a change deliberate, not to forbid it. Move the base constant in each affected canary to the last commit of your PR that touches a pinned path, keep every assertion, and never skip, retire or weaken one to go green. Because the new base is a commit that exists only on your branch, such a PR is merged with a merge commit, never squashed or rebase-merged. PR #24 is the worked example of what happens otherwise: it changed `bin/init.cjs` without re-baselining and left master red on four cells.
+
+To see whether a change touches a pinned path, run:
+
+```
+node scripts/run-tests.cjs tests/party-canary.test.cjs tests/party-decisions-canary.test.cjs tests/phase-52-canary.test.cjs tests/phase-53-canary.test.cjs
+```
+
 ## Code review
 
 The `gsd-reviewer` agent runs automatically on PRs that touch Python services or JavaScript in `bin/` or `get-shit-done/`. It posts structured findings as PR comments.

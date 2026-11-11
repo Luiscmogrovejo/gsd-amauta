@@ -84,6 +84,6 @@
     "test": "node scripts/run-tests.cjs",
     "test:behavioral": "node scripts/run-behavioral-tests.cjs",
     "test:memsafe": "node scripts/memsafe-gate.cjs",
-    "test:coverage": "c8 --check-coverage --lines 70 --reporter text --include 'get-shit-done/bin/lib/*.cjs' --exclude 'tests/**' --all node scripts/run-tests.cjs"
+    "test:coverage": "c8 --check-coverage --lines 70 --reporter text --reporter json-summary --include 'get-shit-done/bin/lib/*.cjs' --exclude 'tests/**' --all node scripts/run-tests.cjs"
   }
 }

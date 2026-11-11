@@ -482,7 +482,39 @@ except ImportError:
 
 # ── RLM Service Management ───────────────────────────────────────────────────
 RLM_SERVICE_PY = str(Path(__file__).resolve().parent / "rlm-service.py")
-RLM_PORT = int(os.environ.get("GSD_RLM_PORT", "18798"))
+
+
+def _resolve_rlm_port(daemon_port, env):
+    """Decide which RLM port this daemon manages, or that it manages none.
+
+    The RLM default (18798) is the partner of the DEFAULT daemon port (18799) and
+    nothing else. A daemon on any other port (an installer run, a test, a second
+    instance) that adopted 18798 would fight the operator's live RLM for it.
+
+    Args:
+        daemon_port: The port this daemon itself binds (0 means ephemeral).
+        env: Mapping to read GSD_RLM_PORT from (normally os.environ).
+
+    Returns:
+        tuple: (port or None, reason). reason is one of "explicit",
+        "default_pair", "non_default_daemon_port". A None port means the daemon
+        does not manage an RLM service at all.
+
+    Example:
+        >>> _resolve_rlm_port(18799, {})
+        (18798, 'default_pair')
+    """
+    explicit = (env.get("GSD_RLM_PORT") or "").strip()
+    if explicit:
+        return int(explicit), "explicit"
+    if daemon_port == 18799:
+        return 18798, "default_pair"
+    return None, "non_default_daemon_port"
+
+
+RLM_PORT, _RLM_PORT_REASON = _resolve_rlm_port(PORT, os.environ)
+if RLM_PORT is None:
+    log.info("rlm_unmanaged reason=%s daemon_port=%d", _RLM_PORT_REASON, PORT)
 RLM_MAX_RESTARTS = 3
 # A port vacated by a graceful RLM stop is not immediately re-bindable: the
 # kernel holds the closed socket in TIME_WAIT. Measured on this machine
@@ -495,41 +527,159 @@ _rlm_process = None
 _rlm_restart_count = 0
 _rlm_restarts_lifetime = 0  # STAB-03: cumulative counter — never reset; tracks total restart events across session
 _rlm_last_successful_uptime = None  # epoch seconds of first healthy observation post-restart; resets to None after each restart event so the 300s uptime gate re-arms
-_rlm_enabled = os.environ.get("GSD_RLM_ENABLED", "true").lower() != "false" and not _test_mode()
+_rlm_enabled = (
+    os.environ.get("GSD_RLM_ENABLED", "true").lower() != "false"
+    and not _test_mode()
+    and RLM_PORT is not None
+)
 
 
-def _kill_port_holder(port):
-    """Kill any process holding the given port. Returns True if port was freed."""
-    import subprocess as _sp
+def _rlm_pid_file_path():
+    """Path of the pid file the RLM service writes for the RLM this daemon owns.
+
+    This is the other half of a contract with services/rlm-service.py (PID_FILE,
+    ~line 97-105): under GSD_TEST_MODE with AMAUTA_DATA_DIR set the file lives in
+    that data dir; otherwise it lives beside the service script. The LaunchAgent
+    sets neither variable, so the live daemon's file is the one beside the script.
+    If either side changes its rule, change both: a daemon that looks in the wrong
+    place classes its own orphaned RLM as a stranger.
+
+    Returns:
+        pathlib.Path: where this daemon's RLM pid file is (or would be).
+    """
+    if _test_mode() and os.environ.get("AMAUTA_DATA_DIR"):
+        return Path(os.environ["AMAUTA_DATA_DIR"]).resolve() / "rlm-service.pid"
+    return Path(RLM_SERVICE_PY).resolve().parent / "rlm-service.pid"
+
+
+def _pid_command_line(pid):
+    """Command line of `pid`, or "" when it cannot be read.
+
+    Reads ``ps -ww -o command= -p <pid>`` (``-ww`` lifts any column cap on procps
+    and BSD ps) and, on Linux, also ``/proc/<pid>/cmdline``; the two are joined so
+    a pid is judged on whichever source answered.
+
+    Args:
+        pid: Process id to inspect.
+
+    Returns:
+        str: the command line(s) found, possibly empty.
+    """
+    parts = []
     try:
-        result = _sp.run(
-            ["lsof", "-ti", f":{port}"],
+        out = subprocess.run(
+            ["ps", "-ww", "-o", "command=", "-p", str(int(pid))],
             capture_output=True, text=True, timeout=5,
         )
-        if result.returncode == 0 and result.stdout.strip():
-            pids = result.stdout.strip().split("\n")
-            for pid_str in pids:
-                pid = int(pid_str.strip())
-                if pid == os.getpid():
-                    continue  # Never kill ourselves
-                try:
-                    os.kill(pid, signal.SIGTERM)
-                    time.sleep(0.5)
-                    try:
-                        os.kill(pid, 0)  # Check if still alive
-                        os.kill(pid, signal.SIGKILL)
-                        time.sleep(0.3)
-                    except ProcessLookupError:
-                        pass
-                    log.info("rlm_port_freed pid=%d port=%d", pid, port)
-                except ProcessLookupError:
-                    pass
-                except PermissionError:
-                    log.warning("rlm_port_kill_permission pid=%d", pid)
-            return True
+        if out.returncode == 0:
+            parts.append(out.stdout)
+    except Exception as e:
+        log.warning("rlm_pid_identity_check_failed pid=%s error=%s", pid, e)
+    try:
+        with open("/proc/%d/cmdline" % int(pid), "rb") as fh:
+            parts.append(fh.read().replace(b"\0", b" ").decode("utf-8", "replace"))
+    except (OSError, ValueError):
+        pass  # no /proc (macOS) or the process is gone
+    return " ".join(parts)
+
+
+def _pid_is_rlm_service(pid):
+    """True when the live process behind `pid` is an rlm-service.py process.
+
+    A pid file can outlive its process and the pid can be recycled onto something
+    unrelated; this check is what makes a pid-file pid "our own RLM" rather than
+    an assumption.
+
+    Args:
+        pid: Process id to inspect.
+
+    Returns:
+        bool: True only if the process command line contains rlm-service.py.
+    """
+    return "rlm-service.py" in _pid_command_line(pid)
+
+
+def _rlm_allowed_pids():
+    """Pids this daemon may signal when reclaiming the RLM port.
+
+    Exactly two sources, both this daemon's own record: the child it spawned in
+    this process lifetime, and the pid in its own RLM pid file provided the
+    process really is an rlm-service.py (the RLM child runs with
+    start_new_session=True, so it survives a daemon restart and the pid file is
+    the restarted daemon's only handle on it).
+
+    Returns:
+        set: pids that are safe to terminate.
+    """
+    allowed = set()
+    if _rlm_process is not None:
+        allowed.add(_rlm_process.pid)
+    try:
+        pid = int(_rlm_pid_file_path().read_text().strip())
+    except (OSError, ValueError):
+        pid = None
+    if pid is not None and pid != os.getpid() and _pid_is_rlm_service(pid):
+        allowed.add(pid)
+    return allowed
+
+
+def _port_holder_pids(port):
+    """Pids with a LISTEN socket on `port` (lsof). Empty list on any failure."""
+    try:
+        result = subprocess.run(
+            ["lsof", "-t", f"-iTCP:{port}", "-sTCP:LISTEN"],
+            capture_output=True, text=True, timeout=5,
+        )
     except Exception as e:
         log.warning("rlm_port_check_failed error=%s", str(e))
-    return False
+        return []
+    if result.returncode != 0 or not result.stdout.strip():
+        return []
+    pids = []
+    for line in result.stdout.split():
+        try:
+            pids.append(int(line))
+        except ValueError:
+            continue
+    return pids
+
+
+def _kill_port_holder(port, allowed_pids):
+    """Terminate the holders of `port` that are in `allowed_pids`; spare the rest.
+
+    Args:
+        port: TCP port whose listeners are inspected.
+        allowed_pids: Collection of pids this daemon owns. A holder outside it
+            (including this process) is logged as foreign and never signalled.
+
+    Returns:
+        bool: True if at least one allowed holder was signalled.
+    """
+    allowed = set(allowed_pids or ())
+    signalled = False
+    try:
+        for pid in _port_holder_pids(port):
+            if pid not in allowed or pid == os.getpid():
+                log.warning("rlm_port_holder_foreign port=%d pid=%d", port, pid)
+                continue
+            try:
+                os.kill(pid, signal.SIGTERM)
+                time.sleep(0.5)
+                try:
+                    os.kill(pid, 0)  # Check if still alive
+                    os.kill(pid, signal.SIGKILL)
+                    time.sleep(0.3)
+                except ProcessLookupError:
+                    pass
+                log.info("rlm_port_freed pid=%d port=%d", pid, port)
+                signalled = True
+            except ProcessLookupError:
+                pass
+            except PermissionError:
+                log.warning("rlm_port_kill_permission pid=%d", pid)
+    except Exception as e:
+        log.warning("rlm_port_check_failed error=%s", str(e))
+    return signalled
 
 
 def _port_is_free(port):
@@ -618,7 +768,18 @@ def _start_rlm():
     # Pre-flight: ensure port is free, kill orphans if needed
     if not _port_is_free(RLM_PORT):
         log.warning("rlm_port_occupied port=%d", RLM_PORT)
-        _kill_port_holder(RLM_PORT)
+        allowed_pids = _rlm_allowed_pids()
+        holders = _port_holder_pids(RLM_PORT)
+        if any(h not in allowed_pids or h == os.getpid() for h in holders):
+            # A foreign holder is never killed and never waited out. If it
+            # answers /health the watchdog adopts it; otherwise give up here.
+            _kill_port_holder(RLM_PORT, allowed_pids=set())  # logs rlm_port_holder_foreign per pid
+            if _check_rlm_health():
+                log.info("rlm_foreign_holder_left_alone port=%d", RLM_PORT)
+            else:
+                log.warning("rlm_start_aborted reason=foreign_port_holder port=%d", RLM_PORT)
+            return False
+        _kill_port_holder(RLM_PORT, allowed_pids=allowed_pids)
         if not _await_port_release(RLM_PORT, RLM_PORT_RELEASE_TIMEOUT_S):
             log.error(
                 "rlm_port_still_occupied port=%d waited=%.1fs",

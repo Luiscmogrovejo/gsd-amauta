@@ -18,6 +18,7 @@
  * Options:
  *   --skip-install         Skip agent/command/skill installation
  *   --skip-daemon          Skip daemon startup
+ *   --start-daemon         Start the daemon even in test mode or from a HOME that is not the operator's
  *   --opencode             Install OpenCode config (legacy alias for --tools opencode)
  *   --claude               Install Claude Code config (legacy alias for --tools claude-code)
  *   --backend <type>       Force backend: pg, sqlite, auto (default: auto)
@@ -61,6 +62,90 @@ const DATA_DIR = process.env.AMAUTA_DATA_DIR || path.join(PLUGIN_ROOT, 'data');
 
 const HOST = process.env.GSD_AMAUTA_HOST || '127.0.0.1';
 const PORT = parseInt(process.env.GSD_AMAUTA_PORT || '18799', 10);
+
+// ═══════════════════════════════════════════════════════
+// Daemon gate (plan 88-12): who may start a daemon
+// ═══════════════════════════════════════════════════════
+
+/**
+ * Whether `path.resolve(child)` is `parent` or lies beneath it.
+ * @param {string} child
+ * @param {string} parent
+ * @returns {boolean}
+ */
+function isPathUnder(child, parent) {
+  const rel = path.relative(path.resolve(parent), path.resolve(child));
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+/**
+ * Decide whether this run may start (or restart) a daemon. `--skip-daemon` was
+ * opt-out; the 2026-11-11 incident ran the installer in a throwaway HOME without it
+ * and left a daemon fighting the operator's live RLM. The safe default is the other
+ * way round for any HOME that is not the operator's own account.
+ *
+ * `homedir` is os.homedir() (follows $HOME) and `passwdHome` is
+ * os.userInfo().homedir (does not): a throwaway HOME can never look like the
+ * operator's account. First match wins:
+ *   --skip-daemon -> no (skip_daemon_flag); --start-daemon -> yes (forced_by_flag);
+ *   GSD_TEST_MODE=1 -> no (test_mode); HOME != account home -> no (foreign_home);
+ *   CLAUDE_CONFIG_DIR outside HOME -> no (foreign_config_dir); otherwise yes (operator_home).
+ *
+ * @param {{env: object, homedir: string, passwdHome: string, flags: {skipDaemon?: boolean, startDaemon?: boolean}}} ctx
+ * @returns {{start: boolean, reason: string}}
+ * @example
+ *   shouldStartDaemon({ env: {}, homedir: '/home/a', passwdHome: '/home/a', flags: {} });
+ *   // => { start: true, reason: 'operator_home' }
+ */
+function shouldStartDaemon({ env, homedir, passwdHome, flags: f }) {
+  const e = env || {};
+  const fl = f || {};
+  if (fl.skipDaemon) return { start: false, reason: 'skip_daemon_flag' };
+  if (fl.startDaemon) return { start: true, reason: 'forced_by_flag' };
+  if (e.GSD_TEST_MODE === '1') return { start: false, reason: 'test_mode' };
+  if (path.resolve(homedir) !== path.resolve(passwdHome)) return { start: false, reason: 'foreign_home' };
+  if (e.CLAUDE_CONFIG_DIR && !isPathUnder(e.CLAUDE_CONFIG_DIR, homedir)) {
+    return { start: false, reason: 'foreign_config_dir' };
+  }
+  return { start: true, reason: 'operator_home' };
+}
+
+/**
+ * The account home from the passwd database (ignores $HOME); falls back to
+ * os.homedir() when the account has no entry (some containers).
+ * @returns {string}
+ */
+function passwdHomedir() {
+  try {
+    return os.userInfo().homedir || os.homedir();
+  } catch (_e) {
+    return os.homedir();
+  }
+}
+
+/**
+ * The daemon gate evaluated for this process.
+ * @param {object} f flags object (skipDaemon, startDaemon)
+ * @returns {{start: boolean, reason: string}}
+ */
+function daemonGate(f) {
+  return shouldStartDaemon({ env: process.env, homedir: os.homedir(), passwdHome: passwdHomedir(), flags: f });
+}
+
+/** Human text for a declined gate, by reason. */
+const DAEMON_SKIP_TEXT = {
+  test_mode: 'GSD_TEST_MODE=1',
+  foreign_home: 'HOME is not the operator account home',
+  foreign_config_dir: 'CLAUDE_CONFIG_DIR is outside HOME',
+};
+
+/**
+ * @param {string} reason a declined-gate reason
+ * @returns {string} message ending with the override hint
+ */
+function daemonSkipMessage(reason) {
+  return `skipped — ${DAEMON_SKIP_TEXT[reason] || reason}; pass --start-daemon to override`;
+}
 
 // Colors
 const cyan = '\x1b[36m';
@@ -111,6 +196,7 @@ function printHelp() {
 Options:
   --skip-install         Skip agent/command/skill installation
   --skip-daemon          Skip daemon startup
+  --start-daemon         Start the daemon even in test mode or from a HOME that is not the operator's account
   --opencode             Install OpenCode config (legacy alias for --tools opencode)
   --claude               Install Claude Code config (legacy alias for --tools claude-code)
   --backend <type>       Force backend: pg, sqlite, auto (default: auto)
@@ -159,6 +245,7 @@ if (args[0] === 'init') args.shift();
 const flags = {
   skipInstall: args.includes('--skip-install'),
   skipDaemon: args.includes('--skip-daemon'),
+  startDaemon: args.includes('--start-daemon'),  // 88-12: the one override of the daemon gate
   force: args.includes('--force'),
   json: args.includes('--json'),
   runtime: args.includes('--opencode') ? 'opencode' : 'claude',
@@ -889,9 +976,16 @@ async function stepStartDaemon(log, infraResult) {
     ? infraResult.details.raw
     : infraResult;
 
-  if (flags.skipDaemon) {
-    log('Skipped (--skip-daemon)');
-    const r = buildStepResult('start_daemon', 'skip', 'skipped via --skip-daemon', null);
+  const gate = daemonGate(flags);
+  if (!gate.start) {
+    let r;
+    if (gate.reason === 'skip_daemon_flag') {
+      log('Skipped (--skip-daemon)');
+      r = buildStepResult('start_daemon', 'skip', 'skipped via --skip-daemon', { skip_reason: gate.reason });
+    } else {
+      log(`Skipped (${DAEMON_SKIP_TEXT[gate.reason] || gate.reason}; pass --start-daemon to override)`);
+      r = buildStepResult('start_daemon', 'skip', daemonSkipMessage(gate.reason), { skip_reason: gate.reason });
+    }
     r.duration_ms = Date.now() - start;
     return r;
   }
@@ -998,7 +1092,9 @@ async function stepStartDaemon(log, infraResult) {
 async function stepVerify(log) {
   const start = Date.now();
 
-  if (flags.skipDaemon) {
+  // Same gate as the start step: a daemon that was never started is not verified
+  // (and a throwaway HOME must not report the operator's live daemon as its own).
+  if (!daemonGate(flags).start) {
     log('Skipped (daemon not started)');
     const r = buildStepResult('verify', 'skip', 'skipped — daemon not started', null);
     r.duration_ms = Date.now() - start;
@@ -1929,10 +2025,14 @@ async function runUpgrade(f) {
   // ── Step 6: restart_daemon ─────────────────────────────────────────────────
   {
     const start = Date.now();
-    if (idempotentSkip || f.skipDaemon) {
-      const skipReason = idempotentSkip ? 'already up-to-date (idempotent)' : '--skip-daemon';
+    const restartGate = daemonGate(f);
+    if (idempotentSkip || !restartGate.start) {
+      const skipReason = idempotentSkip ? 'already up-to-date (idempotent)'
+        : (restartGate.reason === 'skip_daemon_flag' ? '--skip-daemon'
+          : `${DAEMON_SKIP_TEXT[restartGate.reason] || restartGate.reason}; pass --start-daemon to override`);
       const r = buildStepResult('restart_daemon', 'skip',
-        `skipped — ${skipReason}`, null);
+        `skipped — ${skipReason}`,
+        idempotentSkip ? null : { skip_reason: restartGate.reason });
       r.duration_ms = Date.now() - start;
       results.push(r);
     } else if (f.dryRun) {
@@ -2531,4 +2631,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { stepDetectIdes, buildStepResult, renderStepTable, migrateLegacyCommands, stepAssertions, runUpgrade, runUninstall, shippedFileMap, shippedHashFromMap };
+module.exports = { stepDetectIdes, buildStepResult, renderStepTable, migrateLegacyCommands, stepAssertions, runUpgrade, runUninstall, shippedFileMap, shippedHashFromMap, shouldStartDaemon };

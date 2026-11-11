@@ -101,6 +101,9 @@ function buildHermeticEnv(baseEnv) {
   env.AMAUTA_PORT = String(daemonPort);
   env.GSD_REDIS_PORT = String(redisPort);
   env.GSD_REDIS_URL = 'redis://127.0.0.1:' + redisPort + '/0';
+  // Every fixture daemon records the pid it starts and stops here; main() reads it
+  // back after the run and fails the run on anything left alive (plan 88-12).
+  env.GSD_PROCESS_LEDGER = path.join(root, 'process-ledger.jsonl');
 
   const supportDir = path.join(__dirname, '..', 'tests', 'support');
   env.NODE_OPTIONS = [baseEnv.NODE_OPTIONS, '--require ' + path.join(supportDir, 'hermetic-guard.cjs')]
@@ -142,6 +145,50 @@ function selectFiles(args) {
     files: [...unitTests, ...integrationTests].map((f) => path.join('tests', f)),
     explicit: false,
   };
+}
+
+/**
+ * Synchronous sleep (the runner is synchronous).
+ * @param {number} ms
+ * @returns {void}
+ */
+function sleepMs(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
+ * Stop the strays this run identified as its own daemon or RLM: SIGTERM by pid,
+ * re-check after 2 s, SIGKILL what remains. Entries that are not `identified`
+ * are never signalled (no name pattern, no process group, never this process,
+ * its parent or the live daemon's pids).
+ *
+ * @param {ReturnType<typeof canary.strayProcesses>} strays
+ * @returns {number[]} pids that were signalled
+ */
+function killStrays(strays) {
+  const mine = strays.filter((s) => s.identified && !canary.isProtectedPid(s.pid));
+  const signalled = [];
+  for (const s of mine) {
+    try {
+      process.kill(s.pid, 'SIGTERM');
+      signalled.push(s.pid);
+    } catch (_e) {
+      /* already gone */
+    }
+  }
+  if (signalled.length === 0) return signalled;
+  sleepMs(2000);
+  for (const s of mine) {
+    // Re-identify immediately before the harder signal: the pid must still be ours.
+    if (!canary.identify(s).identified) continue;
+    try {
+      process.kill(s.pid, 0);
+      process.kill(s.pid, 'SIGKILL');
+    } catch (_e) {
+      /* exited after SIGTERM */
+    }
+  }
+  return signalled;
 }
 
 /** Entry point: run the selected files under the hermetic environment. */
@@ -189,6 +236,20 @@ function main() {
         status = 4; // fails even when the tests themselves passed
       }
     }
+    // Process leaks: a daemon or RLM the run started and nobody stopped. Reported
+    // even when the canary already set a status; the kill pass touches only entries
+    // identified as this run's own daemon/RLM.
+    let strays = [];
+    try {
+      strays = canary.strayProcesses(env.GSD_PROCESS_LEDGER);
+    } catch (err) {
+      console.error('run-tests: process ledger could not be read: ' + err.message);
+    }
+    if (strays.length > 0) {
+      console.error(canary.formatStrays(strays));
+      status = 5; // 4 is the live-store canary's; a leaked process fails the run too
+      killStrays(strays);
+    }
   }
   try {
     fs.rmSync(path.dirname(env.AMAUTA_DATA_DIR), { recursive: true, force: true });
@@ -198,6 +259,6 @@ function main() {
   process.exit(status);
 }
 
-module.exports = { buildHermeticEnv, freePort, selectFiles };
+module.exports = { buildHermeticEnv, freePort, selectFiles, killStrays };
 
 if (require.main === module) main();

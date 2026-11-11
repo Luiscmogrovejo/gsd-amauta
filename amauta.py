@@ -990,21 +990,57 @@ def _mem_semantic_search(query: str, top_k: int = 5, include_noise: bool = False
             return _mem_pg_search(query, None, top_k)
     return []
 
+def _research_chain_blocked() -> bool:
+    """True when the research chain must not spawn anything (test mode).
+
+    The chain reaches Perplexity and the web through a subprocess, outside the
+    in-process socket guard, and it resolved the operator's installed harness under
+    ~/.claude. There is no hermetic version of it, so under test the honest answer
+    is "no results". A test that has mocked subprocess.run and wants to exercise
+    the real parsing patches this function to return False.
+
+    Returns:
+        bool: True when GSD_TEST_MODE is "1" or a pytest test is running.
+    """
+    return os.environ.get("GSD_TEST_MODE", "") == "1" or bool(os.environ.get("PYTEST_CURRENT_TEST"))
+
+
+def _research_script_path():
+    """Locate gsd-research.cjs for the research chain.
+
+    Returns:
+        str | None: None in test mode (nothing may be spawned). Otherwise the copy in
+        this repository when it exists, falling back to the operator's installed
+        ~/.claude copy (so the operator's machine behaves as before when the repo
+        copy is absent, and a developer running from a checkout exercises the checkout).
+    """
+    if _research_chain_blocked():
+        return None
+    repo_copy = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "get-shit-done", "bin", "gsd-research.cjs")
+    if os.path.isfile(repo_copy):
+        return repo_copy
+    return os.path.expanduser("~/.claude/get-shit-done/bin/gsd-research.cjs")
+
+
 def _research_chain_query(query: str, limit: int = 3) -> list:
     """
     Invoke gsd-research.cjs research chain for web-augmented context.
     Chain order: Memory -> SKB -> Context7 -> Perplexity -> WebFetch.
     Returns list of result dicts with 'text' and 'source' keys.
     Only called when local memory has insufficient results.
-    Best-effort -- never raises, returns [] on failure.
+    Best-effort -- never raises, returns [] on failure. Returns [] immediately,
+    spawning nothing, in test mode (see _research_chain_blocked).
     """
     import subprocess, shutil
+    if _research_chain_blocked():
+        return []
     try:
         node_path = shutil.which("node")
         if not node_path:
             return []
-        script = os.path.expanduser("~/.claude/get-shit-done/bin/gsd-research.cjs")
-        if not os.path.isfile(script):
+        script = _research_script_path()
+        if not script or not os.path.isfile(script):
             return []
 
         result = subprocess.run(

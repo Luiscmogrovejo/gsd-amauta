@@ -47,15 +47,22 @@ def test_have_tool_finds_an_executable_on_path(tmp_path, monkeypatch):
 
 def test_research_chain_reports_unavailable_when_node_is_missing():
     """No node binary: the chain returns [] (unavailable), it does not invent context."""
-    with mock.patch("shutil.which", return_value=None):
+    # Plan 88-12: test mode short-circuits to [] before the node lookup; opt out so this
+    # still exercises the missing-node branch.
+    with mock.patch("amauta._research_chain_blocked", return_value=False), \
+            mock.patch("shutil.which", return_value=None):
         result = amauta._research_chain_query("any topic")
     assert result == [], "research chain unavailable must be an empty result, got %r" % (result,)
 
 
 def test_research_chain_reports_unavailable_when_the_script_is_missing(tmp_path, monkeypatch):
-    """node present but ~/.claude/.../gsd-research.cjs absent: still unavailable, still []."""
+    """node present but gsd-research.cjs absent (repo copy and ~/.claude copy): still []."""
     monkeypatch.setenv("HOME", str(tmp_path))
-    with mock.patch("shutil.which", return_value="/usr/bin/true"):
+    # Plan 88-12: the repository copy is preferred when it exists, so point the module at an
+    # empty tree to make "script missing" true again, and opt out of the test-mode early return.
+    monkeypatch.setattr(amauta, "__file__", str(tmp_path / "amauta.py"))
+    with mock.patch("amauta._research_chain_blocked", return_value=False), \
+            mock.patch("shutil.which", return_value="/usr/bin/true"):
         with mock.patch("subprocess.run") as run:
             result = amauta._research_chain_query("any topic")
     assert result == [], "research chain unavailable must be an empty result, got %r" % (result,)

@@ -6,18 +6,17 @@
  * lifecycle-test + lifecycle-test-v2 fixtures via the gsd-tools.cjs dispatch
  * surface.
  *
- * DESIGN NOTE (Phase 49 implementation reality):
- *   gsd-tools.cjs spawns Python with `cwd: repoRoot` unconditionally, so
- *   copy_agents and copy_skills write relative to the repo root (e.g.
- *   repoRoot/agents/test-agent.md). The tests use absolute manifest paths
- *   from a hermetic tmp tree to avoid polluting repoRoot, but the SC1
- *   filesystem snapshot diff is scoped to the specific files named by the
- *   install record rather than a whole-tree diff.
+ * DESIGN NOTE (plan 88-12): `module install` copies agents to `agents/<name>.md` and
+ *   skills to `get-shit-done/skills/<name>/`, resolved against the Python cwd, and
+ *   gsd-tools.cjs forces that cwd to the repository root. Until plan 88-12 that meant
+ *   a test run wrote `agents/test-agent.md` into the working tree, where a concurrently
+ *   running roster test could read it. services/module_lifecycle.py now honours
+ *   GSD_MODULE_TARGET_ROOT, and every install here points it at a hermetic temp tree;
+ *   the tests assert the installed files exist UNDER that tree and that the repository
+ *   was never written to.
  *
- *   The install record (HOME=tmpRoot → ~/.amauta/data/module_installs.json)
- *   IS hermetic because install_record_store uses os.path.expanduser(HOME).
- *   The install record assertions are the load-bearing SC1/SC2/SC3 gates
- *   per the plan spec.
+ *   The install record (HOME=tmpRoot → ~/.amauta/data/module_installs.json) is hermetic
+ *   because install_record_store uses os.path.expanduser(HOME).
  *
  * Run:
  *   node tests/module-lifecycle-e2e.test.cjs
@@ -40,6 +39,11 @@ const fixtureV2Src = path.join(repoRoot, 'tests', 'fixtures', 'modules', 'lifecy
 
 // ── Setup helpers ─────────────────────────────────────────────────────────────
 
+/** @param {string} tmpRoot @returns {string} the install target root for this test's tree */
+function targetRootOf(tmpRoot) {
+  return path.join(tmpRoot, 'target-root');
+}
+
 /**
  * Copy a directory tree recursively using fs.cpSync (Node 16.7+).
  */
@@ -58,37 +62,19 @@ function copyRecursive(src, dst) {
  *   - .amauta/data/ for install_record_store (HOME=tmpRoot redirects
  *     os.path.expanduser('~') to tmpRoot)
  *
- * Agent and skill copies land in repoRoot (gsd-tools.cjs hardcodes
- * cwd=repoRoot for the Python subprocess). The test cleans those up in
- * each test that actually writes them.
+ * Agent and skill copies land under <tmpRoot>/target-root (GSD_MODULE_TARGET_ROOT),
+ * never under repoRoot.
  */
 function setupHermeticTree() {
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'amauta-phase49-e2e-'));
   copyRecursive(fixtureV1Src, path.join(tmpRoot, 'lifecycle-test'));
   copyRecursive(fixtureV2Src, path.join(tmpRoot, 'lifecycle-test-v2'));
+  fs.mkdirSync(targetRootOf(tmpRoot), { recursive: true });
   return {
     tmpRoot,
     v1Manifest: path.join(tmpRoot, 'lifecycle-test', 'module.yaml'),
     v2Manifest: path.join(tmpRoot, 'lifecycle-test-v2', 'module.yaml'),
   };
-}
-
-/**
- * Snapshot the set of files that install would create in repoRoot:
- *   repoRoot/agents/test-agent.md, repoRoot/get-shit-done/skills/test-skill/SKILL.md
- * Returns { agents: [absPath,...], skills: [absPath,...] }.
- */
-function snapshotInstalledFiles() {
-  const agents = [];
-  const skills = [];
-  const agentsDir = path.join(repoRoot, 'agents');
-  const skillsDir = path.join(repoRoot, 'get-shit-done', 'skills');
-  // Test-specific files that lifecycle-test v1 installs
-  const testAgent = path.join(agentsDir, 'test-agent.md');
-  const testSkill = path.join(skillsDir, 'test-skill', 'SKILL.md');
-  if (fs.existsSync(testAgent)) agents.push(testAgent);
-  if (fs.existsSync(testSkill)) skills.push(testSkill);
-  return { agents, skills };
 }
 
 /**
@@ -122,19 +108,14 @@ function snapshotTree(root) {
 }
 
 /**
- * Remove lifecycle-test v1 installed files from repoRoot if present.
- * Used for cleanup after tests that run real (non-dry-run) install.
+ * The repository tree must never receive the fixture module's files.
+ * @returns {void}
  */
-function cleanupInstalledFiles() {
-  const files = [
-    path.join(repoRoot, 'agents', 'test-agent.md'),
-    path.join(repoRoot, 'get-shit-done', 'skills', 'test-skill', 'SKILL.md'),
-  ];
-  for (const f of files) {
-    try { fs.rmSync(f); } catch { /* ok if absent */ }
-  }
-  // Remove empty skill dir if we created it
-  try { fs.rmdirSync(path.join(repoRoot, 'get-shit-done', 'skills', 'test-skill')); } catch { /* ok */ }
+function assertRepoUntouched() {
+  assert.ok(!fs.existsSync(path.join(repoRoot, 'agents', 'test-agent.md')),
+    'module install wrote agents/test-agent.md into the repository tree');
+  assert.ok(!fs.existsSync(path.join(repoRoot, 'get-shit-done', 'skills', 'test-skill')),
+    'module install wrote get-shit-done/skills/test-skill into the repository tree');
 }
 
 /**
@@ -151,6 +132,7 @@ function runStep(args, tmpRoot) {
     GSD_INSTALL_RECORD_BACKEND: 'sqlite',
     HOME: tmpRoot,
     GSD_DATA_DIR: path.join(tmpRoot, '.amauta', 'data'),
+    GSD_MODULE_TARGET_ROOT: targetRootOf(tmpRoot),
   };
   return spawnSync('node', [toolsPath, 'module', ...args], {
     encoding: 'utf8',
@@ -234,15 +216,16 @@ run('test_e2e_install_creates_agent_skill_record', () => {
     assert.ok(typeof hash === 'string' && /^[0-9a-f]{64}$/.test(hash),
       `manifest_hash must be 64 hex chars; got: ${hash}`);
 
-    // Agent and skill files land in repoRoot (gsd-tools.cjs Python cwd = repoRoot)
-    const agentFile = path.join(repoRoot, 'agents', 'test-agent.md');
+    // Agent and skill files land under the target root, not in the repository
+    const agentFile = path.join(targetRootOf(tmpRoot), 'agents', 'test-agent.md');
     assert.ok(fs.existsSync(agentFile),
       `agents/test-agent.md must exist at ${agentFile} after install`);
-    const skillFile = path.join(repoRoot, 'get-shit-done', 'skills', 'test-skill', 'SKILL.md');
+    const skillFile = path.join(targetRootOf(tmpRoot), 'get-shit-done', 'skills', 'test-skill', 'SKILL.md');
     assert.ok(fs.existsSync(skillFile),
       `get-shit-done/skills/test-skill/SKILL.md must exist at ${skillFile} after install`);
+    assertRepoUntouched();
   } finally {
-    cleanupInstalledFiles();
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
 });
 
@@ -251,7 +234,7 @@ run('test_e2e_install_creates_agent_skill_record', () => {
 // NOTE: The "filesystem snapshot diff" (SC1 gate) is based on the install record
 // as the authoritative state representation. Agent/skill file removal is also
 // verified. The whole-tree snapshot diff uses the tmpRoot-scoped view (install
-// records only, since files land in repoRoot which we clean up).
+// records only, since files land under the per-test target root).
 run('test_e2e_uninstall_returns_filesystem_to_pre_install', () => {
   const { tmpRoot, v1Manifest } = setupHermeticTree();
   const preSnapshot = snapshotTree(tmpRoot);
@@ -263,9 +246,9 @@ run('test_e2e_uninstall_returns_filesystem_to_pre_install', () => {
       `install must exit 0; stderr: ${installResult.stderr}; stdout: ${installResult.stdout}`);
 
     // Verify install created agent and skill files
-    const agentFile = path.join(repoRoot, 'agents', 'test-agent.md');
+    const agentFile = path.join(targetRootOf(tmpRoot), 'agents', 'test-agent.md');
     assert.ok(fs.existsSync(agentFile), `agent file must exist after install`);
-    const skillFile = path.join(repoRoot, 'get-shit-done', 'skills', 'test-skill', 'SKILL.md');
+    const skillFile = path.join(targetRootOf(tmpRoot), 'get-shit-done', 'skills', 'test-skill', 'SKILL.md');
     assert.ok(fs.existsSync(skillFile), `skill file must exist after install`);
 
     // Uninstall
@@ -300,8 +283,9 @@ run('test_e2e_uninstall_returns_filesystem_to_pre_install', () => {
     assert.deepStrictEqual(postArr, preArr,
       `tmpRoot snapshot must return to pre-install state (SC1); ` +
       `pre=${JSON.stringify(preArr)}, post=${JSON.stringify(postArr)}`);
+    assertRepoUntouched();
   } finally {
-    cleanupInstalledFiles();
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
 });
 
@@ -335,8 +319,9 @@ run('test_e2e_reinstall_is_idempotent_skip', () => {
     );
     assert.ok(anyAlreadyInstalled,
       `at least one step should mention already installed; messages: ${JSON.stringify(messages)}`);
+    assertRepoUntouched();
   } finally {
-    cleanupInstalledFiles();
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
 });
 
@@ -407,8 +392,9 @@ run('test_e2e_upgrade_v1_to_v2', () => {
     // Skill file copy on upgrade is intentionally a soft assertion per plan spec
     // (upgrade is record-centric for the synthetic fixture; physical re-copy of
     // new skills deferred to v3.3+). No assertion on new-skill file presence.
+    assertRepoUntouched();
   } finally {
-    cleanupInstalledFiles();
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
 });
 
@@ -444,12 +430,13 @@ run('test_e2e_dry_run_install_leaves_filesystem_unchanged', () => {
       'dry-run must not write install record; got: ' + JSON.stringify(records));
   }
 
-  // No agent or skill file should be written
-  const agentFile = path.join(repoRoot, 'agents', 'test-agent.md');
-  const skillFile = path.join(repoRoot, 'get-shit-done', 'skills', 'test-skill', 'SKILL.md');
-  // Soft assertion: if the files don't already exist (not pre-installed), dry-run must not create them
-  // We check at the test level rather than absolute-assert to avoid false failure if
-  // a prior test left cleanup incomplete.
+  // No agent or skill file should be written, under the target root or in the repository
+  assert.ok(!fs.existsSync(path.join(targetRootOf(tmpRoot), 'agents', 'test-agent.md')),
+    'dry-run must not write the agent file');
+  assert.ok(!fs.existsSync(path.join(targetRootOf(tmpRoot), 'get-shit-done', 'skills', 'test-skill')),
+    'dry-run must not write the skill directory');
+  assertRepoUntouched();
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
 });
 
 // 6. Human output (no --json) includes would_apply block in dry-run (ROADMAP SC2)
