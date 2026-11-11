@@ -13,6 +13,12 @@ Deviations from plan documented inline:
 import pathlib
 import pytest
 
+# 88-08-04: the three LIVE integration tests below used to fall back to the default DSN
+# on 127.0.0.1:5433, i.e. the operator's live Postgres whenever its container was up
+# (psycopg2 is a C extension, so the in-process socket guard cannot see it). They now
+# take the ``postgres_dsn`` fixture (tests/conftest.py), which skips with
+# "no disposable Postgres" unless GSD_TEST_POSTGRES_URL points at a disposable server.
+
 
 def _read_migration():
     return pathlib.Path('migrations/011-paradedb-setup.sql').read_text()
@@ -27,9 +33,11 @@ def test_infra02_migration_has_version_assertion():
 
 
 def test_infra02_migration_enables_iterative_scan():
-    """Migration 011 sets ivfflat.iterative_scan = relaxed_order."""
+    """Migration 011 sets hnsw.iterative_scan = relaxed_order."""
     sql = _read_migration()
-    assert 'ivfflat.iterative_scan' in sql
+    # The GUC was ivfflat.iterative_scan until the index moved to HNSW; the setting
+    # changed in 1d51227 (66-04-02) in both migration 011 and services/pg_store.py.
+    assert 'hnsw.iterative_scan' in sql
     assert 'relaxed_order' in sql
 
 
@@ -60,9 +68,10 @@ def test_infra02_migration_down_exists():
 
 
 def test_infra02_pg_store_enables_iterative_scan():
-    """pg_store.py _get_conn sets ivfflat.iterative_scan = relaxed_order."""
+    """pg_store.py _get_conn sets hnsw.iterative_scan = relaxed_order."""
     pg_store = pathlib.Path('services/pg_store.py').read_text()
-    assert 'ivfflat.iterative_scan' in pg_store
+    # ivfflat.iterative_scan -> hnsw.iterative_scan in 1d51227 (66-04-02).
+    assert 'hnsw.iterative_scan' in pg_store
     assert 'relaxed_order' in pg_store
 
 
@@ -91,13 +100,11 @@ def test_infra02_extension_fixture_exists():
 
 
 @pytest.mark.integration
-def test_infra02_pgvector_version_gte_080():
+def test_infra02_pgvector_version_gte_080(postgres_dsn):
     """LIVE: pgvector version in running PG is >= 0.8.0."""
     try:
         import psycopg2
-        import os
-        dsn = os.environ.get('GSD_POSTGRES_URL', 'postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta')
-        conn = psycopg2.connect(dsn, connect_timeout=3)
+        conn = psycopg2.connect(postgres_dsn, connect_timeout=3)
         cur = conn.cursor()
         cur.execute("SELECT extversion FROM pg_extension WHERE extname='vector'")
         row = cur.fetchone()
@@ -112,13 +119,11 @@ def test_infra02_pgvector_version_gte_080():
 
 
 @pytest.mark.integration
-def test_infra03_pg_search_installed():
+def test_infra03_pg_search_installed(postgres_dsn):
     """LIVE: pg_search extension is installed in running PG."""
     try:
         import psycopg2
-        import os
-        dsn = os.environ.get('GSD_POSTGRES_URL', 'postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta')
-        conn = psycopg2.connect(dsn, connect_timeout=3)
+        conn = psycopg2.connect(postgres_dsn, connect_timeout=3)
         cur = conn.cursor()
         cur.execute("SELECT extversion FROM pg_extension WHERE extname='pg_search'")
         row = cur.fetchone()
@@ -130,16 +135,14 @@ def test_infra03_pg_search_installed():
 
 
 @pytest.mark.integration
-def test_infra03_bm25_query_returns_results():
+def test_infra03_bm25_query_returns_results(postgres_dsn):
     """LIVE: BM25 query on bm25_test_table returns >= 1 result.
 
     Deviation: BM25 query syntax requires column prefix 'content:hello' (not bare 'hello').
     """
     try:
         import psycopg2
-        import os
-        dsn = os.environ.get('GSD_POSTGRES_URL', 'postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta')
-        conn = psycopg2.connect(dsn, connect_timeout=3)
+        conn = psycopg2.connect(postgres_dsn, connect_timeout=3)
         cur = conn.cursor()
         # pg_search v0.22.6 requires column-prefixed query: 'content:term'
         cur.execute("SELECT count(*) FROM bm25_test_table WHERE bm25_test_table @@@ 'content:hello'")
