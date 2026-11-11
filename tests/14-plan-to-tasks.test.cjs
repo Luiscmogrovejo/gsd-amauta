@@ -593,7 +593,8 @@ test('_loadRegisteredTasks: missing file and corrupt file both return an empty l
 });
 
 test('planToTasks: tasks.json is read only through _loadRegisteredTasks', () => {
-  const src = fs.readFileSync(GSD_TOOLS, 'utf-8');
+  // CRLF-safe: a Windows checkout turns the source's line endings into \r\n.
+  const src = fs.readFileSync(GSD_TOOLS, 'utf-8').replace(/\r\n/g, '\n');
   const start = src.indexOf('async function planToTasks(');
   const end = src.indexOf('\n}\n', start);
   const body = src.slice(start, end);
