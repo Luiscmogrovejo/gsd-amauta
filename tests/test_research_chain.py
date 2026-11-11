@@ -32,6 +32,14 @@ import amauta
 class TestResearchChainQuery(unittest.TestCase):
     """Tests for _research_chain_query() helper."""
 
+    def setUp(self):
+        # Plan 88-12: in test mode _research_chain_query returns [] without spawning anything.
+        # Every test here mocks subprocess.run itself, so it is safe to exercise the real
+        # parsing/arguments: opt out of the early return explicitly.
+        patcher = patch("amauta._research_chain_blocked", return_value=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     @patch("subprocess.run")
     @patch("shutil.which", return_value="/usr/local/bin/node")
     @patch("os.path.isfile", return_value=True)
