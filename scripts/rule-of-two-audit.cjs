@@ -181,7 +181,8 @@ function main() {
       .sort();
   } catch (err) {
     console.error(`[rule-of-two-audit] Cannot read agents/ directory: ${err.message}`);
-    process.exit(0);
+    process.exitCode = 0;
+    return;
   }
 
   const agents = [];
@@ -225,7 +226,11 @@ function main() {
     }
   }
 
-  process.exit(0);
+  // Do not call process.exit() here. The report goes to stdout, and when stdout is a pipe (a caller using
+  // spawnSync/execSync, or `| jq`) the write is asynchronous on some platform/Node combinations; exiting
+  // immediately cut the JSON at the first 8192 bytes ("Unterminated string in JSON at position 8192",
+  // macOS runner, Node 20). Setting exitCode lets the event loop drain stdout first.
+  process.exitCode = 0;
 }
 
 main();

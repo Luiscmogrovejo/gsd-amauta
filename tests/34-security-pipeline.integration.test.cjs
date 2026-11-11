@@ -18,20 +18,68 @@
  */
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { spawnSync } = require('node:child_process');
-const { existsSync, readFileSync } = require('node:fs');
+const { spawnSync, execFileSync } = require('node:child_process');
+const fs = require('node:fs');
+const { existsSync, readFileSync } = fs;
+const os = require('node:os');
 const path = require('node:path');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..');
+
+/**
+ * Is an external tool on PATH?
+ * @param {string} bin Executable name.
+ * @returns {boolean} true when `command -v <bin>` finds it.
+ */
+function haveTool(bin) {
+  try {
+    execFileSync('command', ['-v', bin], { shell: true, stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// The installers (scripts/install-gitleaks.cjs, install-trivy.cjs) skip only when the binary already sits at
+// node_modules/.bin/<tool>; a copy elsewhere on PATH does not stop them downloading. A test that runs an
+// installer for real must therefore be gated on that exact path, not on PATH, or it reaches the network.
+const LOCAL_GITLEAKS = path.join(PROJECT_ROOT, 'node_modules', '.bin', 'gitleaks');
+const LOCAL_TRIVY = path.join(PROJECT_ROOT, 'node_modules', '.bin', 'trivy');
+const HAVE_GITLEAKS = haveTool('gitleaks') || existsSync(LOCAL_GITLEAKS);
+const GITLEAKS_INSTALLER_SKIP = existsSync(LOCAL_GITLEAKS)
+  ? false
+  : 'gitleaks is not installed and this test must not download a binary from the network';
+const TRIVY_INSTALLER_SKIP = existsSync(LOCAL_TRIVY)
+  ? false
+  : 'trivy is not installed and this test must not download a binary from the network';
+
+/** Run a node script from the repository root. */
+function runScript(script, timeout) {
+  return spawnSync(process.execPath, [script], { cwd: PROJECT_ROOT, encoding: 'utf-8', timeout });
+}
+
+/** Memoize a lazy computation so describe-level setup does not run at collection time. */
+function lazy(fn) {
+  let done = false;
+  let value;
+  return () => {
+    if (!done) { value = fn(); done = true; }
+    return value;
+  };
+}
 
 // ─── Group 1: security-scan.cjs behavior (SEC-01, SEC-02, SEC-03, SEC-06) ──
 
 describe('[SEC-01][SEC-02][SEC-03][SEC-06] security-scan.cjs: graceful degradation baseline', () => {
   // Run once and reuse result across this describe block
+  // npm_config_offline: `npm audit` is the one scan that always runs and it calls the registry. Offline it
+  // answers at once with an empty report; online it took up to the 60 s timeout on a slow network and made the
+  // file's run time depend on the registry. The test checks the report shape, not live advisories.
   const result = spawnSync('node', ['scripts/security-scan.cjs'], {
     cwd: PROJECT_ROOT,
     encoding: 'utf-8',
     timeout: 60000,
+    env: { ...process.env, npm_config_offline: 'true' },
   });
 
   it('[SEC-03] script exits 0 in clean environment (all external tools may be absent)', () => {
@@ -207,45 +255,44 @@ describe('[SEC-05] rule-of-two-audit.cjs: JSON schema and agent coverage', () =>
 // ─── Group 3: install-gitleaks.cjs graceful degradation (SEC-02) ───────────
 
 describe('[SEC-02] install-gitleaks.cjs: graceful degradation (exits 0 always)', () => {
-  const result = spawnSync('node', ['scripts/install-gitleaks.cjs'], {
-    cwd: PROJECT_ROOT,
-    encoding: 'utf-8',
-    timeout: 30000,
-  });
+  // Lazy: the installer is run only when the test is not skipped. Run at collection time (as before) it
+  // downloaded a binary and was killed by the test timeout wherever gitleaks was absent.
+  const run = lazy(() => runScript('scripts/install-gitleaks.cjs', 30000));
 
-  it('[SEC-02] script exits 0 (skips if already installed or gracefully degrades)', () => {
-    assert.strictEqual(
-      result.status,
-      0,
-      `install-gitleaks.cjs exited ${result.status}:\nstdout: ${result.stdout}\nstderr: ${result.stderr}`
-    );
-  });
-
-  it('[SEC-02] script does not throw unhandled exceptions', () => {
-    assert.ok(
-      !result.stderr.includes('UnhandledPromiseRejection'),
-      `Unhandled promise rejection in install-gitleaks.cjs:\n${result.stderr}`
-    );
-    // TypeError is only a problem if it caused a non-zero exit
-    if (result.status !== 0) {
-      assert.ok(
-        !result.stderr.includes('TypeError'),
-        `TypeError in install-gitleaks.cjs:\n${result.stderr}`
+  it('[SEC-02] script exits 0 (skips if already installed or gracefully degrades)',
+    { skip: GITLEAKS_INSTALLER_SKIP }, () => {
+      const result = run();
+      assert.strictEqual(
+        result.status,
+        0,
+        `install-gitleaks.cjs exited ${result.status}:\nstdout: ${result.stdout}\nstderr: ${result.stderr}`
       );
-    }
-  });
+    });
+
+  it('[SEC-02] script does not throw unhandled exceptions',
+    { skip: GITLEAKS_INSTALLER_SKIP }, () => {
+      const result = run();
+      assert.ok(
+        !result.stderr.includes('UnhandledPromiseRejection'),
+        `Unhandled promise rejection in install-gitleaks.cjs:\n${result.stderr}`
+      );
+      // TypeError is only a problem if it caused a non-zero exit
+      if (result.status !== 0) {
+        assert.ok(
+          !result.stderr.includes('TypeError'),
+          `TypeError in install-gitleaks.cjs:\n${result.stderr}`
+        );
+      }
+    });
 });
 
 // ─── Group 4: install-trivy.cjs graceful degradation (SEC-06) ──────────────
 
 describe('[SEC-06] install-trivy.cjs: graceful degradation (exits 0 always)', () => {
-  const result = spawnSync('node', ['scripts/install-trivy.cjs'], {
-    cwd: PROJECT_ROOT,
-    encoding: 'utf-8',
-    timeout: 30000,
-  });
+  const run = lazy(() => runScript('scripts/install-trivy.cjs', 30000));
 
-  it('[SEC-06] script exits 0', () => {
+  it('[SEC-06] script exits 0', { skip: TRIVY_INSTALLER_SKIP }, () => {
+    const result = run();
     assert.strictEqual(
       result.status,
       0,
@@ -253,12 +300,94 @@ describe('[SEC-06] install-trivy.cjs: graceful degradation (exits 0 always)', ()
     );
   });
 
-  it('[SEC-06] script does not throw unhandled exceptions', () => {
+  it('[SEC-06] script does not throw unhandled exceptions', { skip: TRIVY_INSTALLER_SKIP }, () => {
+    const result = run();
     assert.ok(
       !result.stderr.includes('UnhandledPromiseRejection'),
       `Unhandled promise rejection in install-trivy.cjs:\n${result.stderr}`
     );
   });
+});
+
+// ─── Group 4b: the pipeline when a scanner is absent (always runs, no network) ──
+
+describe('[SEC-02][SEC-06] absent scanners are reported as unavailable, never as a clean scan', () => {
+  let stage;
+
+  /** A throw-away project root holding a copy of one script, so ROOT-relative paths resolve inside it. */
+  function stageProject(...scripts) {
+    stage = fs.mkdtempSync(path.join(os.tmpdir(), 'gsd-34-stage-'));
+    fs.mkdirSync(path.join(stage, 'scripts'), { recursive: true });
+    for (const sc of scripts) fs.copyFileSync(path.join(PROJECT_ROOT, 'scripts', sc), path.join(stage, 'scripts', sc));
+    return stage;
+  }
+
+  /** PATH that finds `node` and the base system tools but no gitleaks, trivy, semgrep or npm. */
+  function barePath(dir) {
+    const bin = path.join(dir, 'bin');
+    fs.mkdirSync(bin, { recursive: true });
+    try { fs.symlinkSync(process.execPath, path.join(bin, 'node')); } catch { /* exists */ }
+    return [bin, '/usr/bin', '/bin'].join(path.delimiter);
+  }
+
+  it('[SEC-02] security-scan.cjs lists gitleaks and trivy under tools_skipped when they are absent', () => {
+    const dir = stageProject('security-scan.cjs');
+    try {
+      const res = spawnSync(process.execPath, ['scripts/security-scan.cjs'], {
+        cwd: dir,
+        encoding: 'utf-8',
+        timeout: 60000,
+        env: { ...process.env, PATH: barePath(dir) },
+      });
+      assert.strictEqual(res.status, 0, `security-scan.cjs exited ${res.status}:\n${res.stdout}\n${res.stderr}`);
+      const report = JSON.parse(readFileSync(path.join(dir, 'reports', 'security-report.json'), 'utf-8'));
+      // The scanner is "unavailable": it is named in tools_skipped, it is NOT in tools_run, and no finding
+      // (and therefore no "clean" result) is attributed to it.
+      for (const tool of ['gitleaks', 'trivy']) {
+        assert.ok(report.tools_skipped.includes(tool), `${tool} must be reported as skipped/unavailable: ${JSON.stringify(report.tools_skipped)}`);
+        assert.ok(!report.tools_run.includes(tool), `${tool} must not be reported as run: ${JSON.stringify(report.tools_run)}`);
+        assert.ok(!report.findings.some((f) => f.tool === tool), `${tool} must not have findings`);
+      }
+      assert.match(res.stdout, /Tools skipped: .*gitleaks/, 'the console summary must name the unavailable scanner');
+      assert.doesNotMatch(res.stdout, /Tools run: .*gitleaks/, 'the console summary must not claim gitleaks ran');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  for (const [tool, script] of [['gitleaks', 'install-gitleaks.cjs'], ['trivy', 'install-trivy.cjs']]) {
+    it(`[SEC-02][SEC-06] ${script} degrades to exit 0 when the download fails (network stubbed, nothing leaves the machine)`, () => {
+      const dir = stageProject(script);
+      try {
+        // Preload that makes every https request fail at once, as on a machine with no route to GitHub.
+        const preload = path.join(dir, 'https-offline.cjs');
+        fs.writeFileSync(preload, [
+          "'use strict';",
+          "const https = require('https');",
+          "const { EventEmitter } = require('events');",
+          'https.get = function offlineGet() {',
+          '  const req = new EventEmitter();',
+          "  process.nextTick(() => req.emit('error', Object.assign(new Error('offline (test stub)'), { code: 'ENOTFOUND' })));",
+          '  return req;',
+          '};',
+          '',
+        ].join('\n'));
+        const res = spawnSync(process.execPath, ['--require', preload, `scripts/${script}`], {
+          cwd: dir,
+          encoding: 'utf-8',
+          timeout: 30000,
+        });
+        assert.strictEqual(res.status, 0, `${script} exited ${res.status}:\nstdout: ${res.stdout}\nstderr: ${res.stderr}`);
+        assert.ok(!res.stderr.includes('UnhandledPromiseRejection'), `unhandled rejection in ${script}:\n${res.stderr}`);
+        assert.ok(!existsSync(path.join(dir, 'node_modules', '.bin', tool)), `${tool} must not have been installed`);
+        // Either the platform has no release asset, or the stubbed download failed and was reported.
+        assert.match(res.stdout + res.stderr, /Unsupported platform|install failed: offline \(test stub\)/,
+          `${script} must report why ${tool} is unavailable:\n${res.stdout}\n${res.stderr}`);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  }
 });
 
 // ─── Group 5: Semgrep rule file assertions (SEC-01) ─────────────────────────
@@ -286,7 +415,8 @@ describe('[SEC-01] Semgrep rule file: parse and rule ID assertions', () => {
     assert.ok(ruleFile.includes('gsd-subprocess-shell-true'), 'Missing gsd-subprocess-shell-true rule ID');
   });
 
-  it('[SEC-01] semgrep fixture detection: if semgrep available, detects 34-vulnerable.js (conditional)', () => {
+  it('[SEC-01] semgrep fixture detection: if semgrep available, detects 34-vulnerable.js (conditional)',
+    { skip: haveTool('semgrep') ? false : 'semgrep is not installed in this environment' }, () => {
     const whichResult = spawnSync('which', ['semgrep'], { encoding: 'utf-8' });
     const semgrepAvailable = whichResult.status === 0;
     if (semgrepAvailable) {
@@ -324,7 +454,8 @@ describe('[SEC-02] Gitleaks: config allowlist + fixture detection (conditional)'
     assert.ok(content.includes('tests/fixtures'), '.gitleaks.toml missing tests/fixtures allowlist');
   });
 
-  it('[SEC-02] gitleaks fixture detection: if gitleaks available, detects test-secret.txt (conditional)', () => {
+  it('[SEC-02] gitleaks fixture detection: if gitleaks available, detects test-secret.txt (conditional)',
+    { skip: HAVE_GITLEAKS ? false : 'gitleaks is not installed in this environment' }, () => {
     // Check for local binary first, then system PATH
     const localBin = path.join(PROJECT_ROOT, 'node_modules', '.bin', 'gitleaks');
     let gitleaksBin = null;
