@@ -22,12 +22,16 @@ the test never talks to a real daemon.
 Run: pytest tests/test_doctor.py -q
 """
 import ast
+import importlib.util
 import os
+import pathlib
 import re
 import subprocess
 import sys
 import tempfile
 import unittest
+
+import pytest
 
 PYTHON = sys.executable
 
@@ -40,6 +44,16 @@ def hermetic_env(extra=None):
     env.update(HERMETIC_PORTS)
     env["HOME"] = tempfile.mkdtemp(prefix="doctor-home-")
     env.pop("CLAUDE_CONFIG_DIR", None)
+    # Neither the operator's PATH (their own `amauta`, their real `gh`) nor their
+    # API keys may decide the outcome: a fake `gh` leads a minimal PATH.
+    fake = tempfile.mkdtemp(prefix="doctor-fakegh-")
+    gh = os.path.join(fake, "gh")
+    with open(gh, "w") as fh:
+        fh.write("#!/bin/sh\necho 'You are not logged into any GitHub hosts.'\nexit 1\n")
+    os.chmod(gh, 0o755)
+    env["PATH"] = f"{fake}:/usr/bin:/bin"
+    for key in ("VOYAGE_API_KEY", "PERPLEXITY_API_KEY", "ANTHROPIC_API_KEY"):
+        env[key] = "dummy-not-a-real-key"
     if extra:
         env.update(extra)
     return env
@@ -129,6 +143,100 @@ class TestDoctorStructure(unittest.TestCase):
             out,
             "doctor must emit a Result: N OK, N WARN, N FAIL summary line",
         )
+
+
+# ── path_collision: evidence for both programs (plan 88-10) ───────────────────
+
+DOCTOR_PY = pathlib.Path(__file__).resolve().parent.parent / "services" / "doctor.py"
+
+
+def _load_doctor():
+    spec = importlib.util.spec_from_file_location("doctor_collision", DOCTOR_PY)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    mod.rows.clear()
+    return mod
+
+
+def _script(path, text="#!/bin/sh\n# gsd-amauta\n"):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+    path.chmod(0o755)
+    return path
+
+
+@pytest.fixture
+def two_gsd_amauta(tmp_path, monkeypatch):
+    """Two `gsd-amauta` on a fake PATH: a symlink into a fake runtime config dir, then a script."""
+    runtime = _script(tmp_path / "claude" / "get-shit-done" / "bin" / "gsd-amauta.cjs")
+    first = tmp_path / "local-bin"
+    first.mkdir()
+    os.symlink(runtime, first / "gsd-amauta")
+    second = _script(tmp_path / "brew-bin" / "gsd-amauta")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("PATH", os.pathsep.join([str(first), str(second.parent)]))
+    return {"runtime": runtime, "first": first / "gsd-amauta", "second": second}
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="needs POSIX symlinks and #! scripts")
+def test_path_collision_reports_both_targets(two_gsd_amauta):
+    mod = _load_doctor()
+    mod.check_path_collision()
+    [(status, cat, detail, data)] = mod.rows
+    assert (status, cat) == (mod.WARN, "path_collision"), detail
+    entries = data["entries"]
+    assert len(entries) == 2
+    assert all(e["target"] and e["classification"] for e in entries)
+    assert entries[0]["target"] == str(two_gsd_amauta["runtime"].resolve())
+    assert entries[1]["target"] == str(two_gsd_amauta["second"].resolve())
+    assert "shadowing" in detail
+    assert "the first entry on PATH wins" in detail
+    assert str(two_gsd_amauta["runtime"].resolve()) in detail
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="needs POSIX symlinks and #! scripts")
+def test_path_collision_ok_when_single_entry(tmp_path, monkeypatch):
+    """One `gsd-amauta` that resolves into this package is OK."""
+    mod = _load_doctor()
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    os.symlink(mod.REPO_ROOT / "bin" / "cli.cjs", bin_dir / "gsd-amauta")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("PATH", str(bin_dir))
+    mod.check_path_collision()
+    [(status, cat, _detail, _data)] = mod.rows
+    assert (status, cat) == (mod.OK, "path_collision")
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="needs POSIX symlinks and #! scripts")
+def test_symlink_into_runtime_config_dir_is_not_classified_self(two_gsd_amauta):
+    """Policy (88-RESEARCH section 5): a binary resolving into the runtime config
+    directory is another copy, not 'self'. Treating it as self would silence the
+    warning on every other install too."""
+    mod = _load_doctor()
+    assert mod.classify_path_binary(str(two_gsd_amauta["first"])) == "other"
+    assert mod.classify_path_binary(str(two_gsd_amauta["first"])) != "self"
+
+
+def test_install_stale_default_record_path_follows_the_patched_home(tmp_path, monkeypatch):
+    """With no record_path the check reads the record under the redirected home
+    (tmp_path), so the operator's own install record is never read."""
+    mod = _load_doctor()
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(pathlib.Path, "home", lambda: tmp_path)
+    pkg = tmp_path / "pkg"
+    (pkg / "lib").mkdir(parents=True)
+    (pkg / "package.json").write_text('{"files": ["lib"]}')
+    (pkg / "lib" / "a.txt").write_text("a")
+    mod.check_install_stale(package_root=pkg)
+    assert mod.rows[-1][0] == mod.WARN and "no install record" in mod.rows[-1][2]
+    record = tmp_path / ".amauta" / "data" / "install_record.json"
+    record.parent.mkdir(parents=True)
+    fmap = mod.shipped_file_map(pkg)
+    record.write_text(__import__("json").dumps(
+        {"shipped_hash": mod.shipped_hash_from_map(fmap), "shipped_files": fmap}))
+    mod.check_install_stale(package_root=pkg)
+    assert mod.rows[-1][0] == mod.OK
 
 
 if __name__ == "__main__":
