@@ -325,7 +325,23 @@ function validateLengthCaps(parsed) {
 // HTTP Client (matches gsd-rlm.cjs / gsd-amauta.cjs pattern)
 // ═══════════════════════════════════════════════════════
 
+// Phase 88 (88-07): under GSD_TEST_MODE=1 no request may wait longer than this. A test that points
+// the CLI at a dead or silent service must fail in seconds with a named message, not run into the
+// test's own 60 s timeout and surface as a null exit code. Outside test mode nothing changes.
+const TEST_MODE_REQUEST_TIMEOUT_MS = 2000;
+
+/**
+ * HTTP request to the daemon.
+ *
+ * @param {string} method
+ * @param {string} urlPath
+ * @param {object|null} [body]
+ * @param {number} [timeoutMs] per-request timeout; capped at 2000 ms under GSD_TEST_MODE=1
+ * @returns {Promise<{status: number, data: object}>}
+ * @throws {Error} 'Daemon not running...' on ECONNREFUSED, 'Request timed out' on timeout
+ */
 function httpRequest(method, urlPath, body = null, timeoutMs = 15000) {
+  if (process.env.GSD_TEST_MODE === '1') timeoutMs = Math.min(timeoutMs, TEST_MODE_REQUEST_TIMEOUT_MS);
   return new Promise((resolve, reject) => {
     const payload = body ? JSON.stringify(body) : null;
     const headers = { 'Content-Type': 'application/json' };
@@ -598,6 +614,13 @@ async function tryDaemon(method, urlPath, body = null) {
     }
     return res;
   } catch (err) {
+    if (process.env.GSD_TEST_MODE === '1') {
+      // Named failure for tests: distinguishable from a crash. The REFUSING exit that follows is unchanged.
+      const why = (err && err.message === 'Request timed out')
+        ? `timed out after ${TEST_MODE_REQUEST_TIMEOUT_MS}ms`
+        : ((err && (err.code || err.message)) || 'connection failed');
+      process.stderr.write(`gsd-memory: memory service unavailable at http://${HOST}:${PORT} under GSD_TEST_MODE (${why})\n`);
+    }
     _fileMode = true;
     _degradation = {
       klass: 'daemon unreachable',
