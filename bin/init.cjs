@@ -54,6 +54,8 @@ const DAEMON_SCRIPT = path.join(PLUGIN_ROOT, 'services', 'amauta-daemon.py');
 const INFRA_DETECT = path.join(PLUGIN_ROOT, 'services', 'infra_detect.py');
 const INSTALL_SCRIPT = path.join(PLUGIN_ROOT, 'bin', 'install.js');
 const MIGRATIONS_DIR = path.join(PLUGIN_ROOT, 'migrations');
+// Tracked migration runner (replaces the per-file host-psql loop in stepMigrations)
+const MIGRATE_RUNNER = path.join(PLUGIN_ROOT, 'services', 'migrate_runner.py');
 const AMAUTA_PY = process.env.GSD_AMAUTA_PY || path.join(PLUGIN_ROOT, 'amauta.py');
 const DATA_DIR = process.env.AMAUTA_DATA_DIR || path.join(PLUGIN_ROOT, 'data');
 
@@ -815,9 +817,9 @@ function stepMigrations(log, infraResult) {
     return r;
   }
 
-  // Get migration files (skip DOWN files)
+  // Get migration files (skip DOWN files) — count only, for the result detail.
   const migrationFiles = fs.readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql') && !f.includes('DOWN'))
+    .filter((f) => f.endsWith('.sql') && !f.endsWith('-DOWN.sql'))
     .sort();
 
   if (migrationFiles.length === 0) {
@@ -828,50 +830,44 @@ function stepMigrations(log, infraResult) {
     return r;
   }
 
-  let applied = 0;
-  let errors = 0;
+  // Delegate to the tracked runner (services/migrate_runner.py) instead of
+  // shelling out to the host's psql once per file. The old loop had no
+  // tracking table, counted EVERY failure as "already applied", and reported
+  // 'pass' as long as one file succeeded — so a genuinely broken migration
+  // looked identical to a re-run. The runner records what it applied in
+  // schema_migrations, applies each file in its own transaction, and exits
+  // non-zero with the file name and SQLSTATE on a real failure. It also
+  // removes the dependency on a host psql binary.
   const connUrl = infraRaw.connection_url;
-
-  for (const file of migrationFiles) {
-    const filePath = path.join(MIGRATIONS_DIR, file);
-    try {
-      // Parse connection URL for psql args
-      const url = new URL(connUrl);
-      const psqlArgs = [
-        '-h', url.hostname,
-        '-p', url.port || '5432',
-        '-U', url.username,
-        '-d', url.pathname.slice(1), // Remove leading /
-        '-f', filePath,
-        '-v', 'ON_ERROR_STOP=1',
-        '--quiet',
-      ];
-
-      const env = { ...process.env };
-      if (url.password) {
-        env.PGPASSWORD = url.password;
-      }
-
-      execFileSync('psql', psqlArgs, {
-        timeout: 30000,
-        stdio: 'pipe',
-        env,
-      });
-      applied++;
-    } catch {
-      // Migration might fail if already applied (e.g., table exists)
-      // This is expected — not a fatal error
-      errors++;
-    }
+  let applied = 0;
+  let alreadyApplied = 0;
+  let runnerOutput = '';
+  try {
+    runnerOutput = execFileSync(
+      'python3',
+      [MIGRATE_RUNNER, '--dsn', connUrl, '--json'],
+      { timeout: 300000, stdio: 'pipe', encoding: 'utf8', env: { ...process.env } },
+    );
+    const parsed = JSON.parse(runnerOutput);
+    applied = (parsed.applied || []).length;
+    alreadyApplied = parsed.already_applied || 0;
+    log(`done (${applied} applied, ${alreadyApplied} already applied)`);
+    const r = buildStepResult('migrations', 'pass',
+      `${applied} applied, ${alreadyApplied} already applied`,
+      { applied, errors: 0, already_applied: alreadyApplied,
+        drifted: parsed.drifted || [], total: migrationFiles.length });
+    r.duration_ms = Date.now() - start;
+    return r;
+  } catch (err) {
+    const detail = ((err && (err.stderr || err.stdout)) || String(err))
+      .toString().trim().slice(0, 500);
+    log(`${yellow}migration runner failed${reset}`);
+    const r = buildStepResult('migrations', 'fail',
+      `migration runner failed: ${detail}`,
+      { applied, errors: 1, total: migrationFiles.length, detail });
+    r.duration_ms = Date.now() - start;
+    return r;
   }
-
-  log(`done (${applied} applied, ${errors} already applied)`);
-  const status = errors > 0 && applied === 0 ? 'warn' : 'pass';
-  const r = buildStepResult('migrations', status,
-    `${applied} applied, ${errors} already applied`,
-    { applied, errors, total: migrationFiles.length });
-  r.duration_ms = Date.now() - start;
-  return r;
 }
 
 /**

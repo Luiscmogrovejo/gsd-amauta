@@ -7,7 +7,7 @@
 
 BEGIN;
 
-CREATE TABLE task_completions (
+CREATE TABLE IF NOT EXISTS task_completions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   task_id VARCHAR(128) NOT NULL,
   phase_number INTEGER NOT NULL,
@@ -23,7 +23,7 @@ CREATE TABLE task_completions (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX idx_task_completions_outcome ON task_completions(outcome_label, created_at DESC);
-CREATE INDEX idx_task_completions_embedding ON task_completions USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+CREATE INDEX IF NOT EXISTS idx_task_completions_outcome ON task_completions(outcome_label, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_task_completions_embedding ON task_completions USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
 
 COMMIT;

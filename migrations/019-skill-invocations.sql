@@ -21,7 +21,7 @@
 
 BEGIN;
 
-CREATE TABLE skill_invocations (
+CREATE TABLE IF NOT EXISTS skill_invocations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   skill_name VARCHAR(64) NOT NULL,
   invocation_text TEXT NOT NULL,
@@ -32,8 +32,8 @@ CREATE TABLE skill_invocations (
   completed_at TIMESTAMPTZ
 );
 
-CREATE INDEX idx_skill_invocations_embedding ON skill_invocations USING ivfflat (context_embedding vector_cosine_ops) WITH (lists = 100);
-CREATE INDEX idx_skill_invocations_text_gin ON skill_invocations USING GIN (to_tsvector('english', invocation_text));
-CREATE INDEX idx_skill_invocations_recency ON skill_invocations (skill_name, invoked_at DESC);
+CREATE INDEX IF NOT EXISTS idx_skill_invocations_embedding ON skill_invocations USING ivfflat (context_embedding vector_cosine_ops) WITH (lists = 100);
+CREATE INDEX IF NOT EXISTS idx_skill_invocations_text_gin ON skill_invocations USING GIN (to_tsvector('english', invocation_text));
+CREATE INDEX IF NOT EXISTS idx_skill_invocations_recency ON skill_invocations (skill_name, invoked_at DESC);
 
 COMMIT;

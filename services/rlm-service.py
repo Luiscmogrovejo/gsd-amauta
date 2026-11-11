@@ -256,6 +256,8 @@ def _trigger_lazy_ingestion(paths: list):
                 ingest_file(path, pg_conn)
             elif os.path.isdir(path):
                 from services.rlm_ingestion import ingest_directory
+                # No prune — background lazy ingestion, not an authoritative
+                # rescan. /reindex owns orphan removal.
                 ingest_directory(path, pg_conn)
     except Exception as e:
         log.warning("lazy_ingestion_failed error=%s — continuing with in-memory BM25", str(e))
@@ -1107,7 +1109,10 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
                     graph_stats = _rebuild_graph_safe()
                     self._send_json({"ok": True, "result": result, "graph": graph_stats})
                 else:
-                    stats = ingest_directory(target_path, pg_conn, force=force)
+                    # Explicit full rescan: this is the one caller that owns
+                    # orphan removal for files deleted since the last index.
+                    stats = ingest_directory(target_path, pg_conn,
+                                             force=force, prune=True)
                     graph_stats = _rebuild_graph_safe()
                     self._send_json({"ok": True, "stats": stats, "graph": graph_stats})
             finally:
@@ -1183,6 +1188,13 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
                     from rlm_reranker import rerank
                     from rlm_graph import expand_chunks_with_graph, _get_cache_client
 
+                # No prune here: this runs on EVERY query, possibly against
+                # a narrow subtree, so deleting "missing" files would be both
+                # a per-query table scan and a chance to drop chunks for a
+                # file that is merely temporarily unreadable. Orphan removal
+                # belongs to the explicit /reindex pass below. Per-file
+                # stale-chunk deletion still happens inside ingest_file for
+                # every file that is actually re-ingested.
                 stats = ingest_directory(directory, pg_conn)
                 if stats.get("inserted", 0) > 0:
                     _rebuild_graph_safe()

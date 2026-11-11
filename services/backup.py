@@ -134,11 +134,20 @@ class BackupManager:
             "schema_version": backup_version,
             "tables_restored": 0,
             "rows_imported": {},
+            # Per-table source/inserted/skipped/failed, plus the first few row
+            # ids and reasons for anything that failed. A restore that drops
+            # rows is NOT a success: `ok` is False and the caller is expected
+            # to exit non-zero.
+            "row_detail": {},
+            "failures": {},
+            "rows_failed": 0,
+            "ok": True,
         }
 
         # Import each table
         table_importers = {
             "gsd_memory": "import_memory",
+            "gsd_memory_archive": "import_memory_archive",
             "gsd_tasks": "import_tasks",
             "gsd_shared_kb": "import_skb",
             "gsd_task_validations": "import_validations",
@@ -156,14 +165,42 @@ class BackupManager:
             if importer is None:
                 # Store doesn't support this table (e.g., SQLite has no agent_performance)
                 results["rows_imported"][table_name] = 0
+                results["row_detail"][table_name] = {
+                    "source": len(rows), "inserted": 0, "skipped": len(rows),
+                    "failed": 0, "note": f"{method_name} not supported by this store",
+                }
                 continue
 
             try:
                 count = importer(rows, mode)
-                results["rows_imported"][table_name] = count
-                results["tables_restored"] += 1
             except Exception as e:
                 results["rows_imported"][table_name] = f"error: {e}"
+                results["row_detail"][table_name] = {
+                    "source": len(rows), "inserted": 0, "skipped": 0,
+                    "failed": len(rows), "note": str(e),
+                }
+                results["failures"][table_name] = [{"id": None, "error": str(e)}]
+                results["rows_failed"] += len(rows)
+                results["ok"] = False
+                continue
+
+            # PGStore returns an ImportResult (an int subclass); SQLiteStore
+            # returns a plain int. getattr keeps both paths working.
+            inserted = int(count)
+            failed = int(getattr(count, "failed", 0))
+            skipped = int(getattr(count, "skipped", len(rows) - inserted))
+            results["rows_imported"][table_name] = inserted
+            results["row_detail"][table_name] = {
+                "source": len(rows), "inserted": inserted,
+                "skipped": skipped, "failed": failed,
+            }
+            if failed:
+                results["failures"][table_name] = list(
+                    getattr(count, "failures", [])
+                )[:50]
+                results["rows_failed"] += failed
+                results["ok"] = False
+            results["tables_restored"] += 1
 
         return results
 

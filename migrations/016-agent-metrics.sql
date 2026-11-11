@@ -9,7 +9,7 @@ BEGIN;
 -- LIFE-02: Agent metrics table.
 -- Records one row per task execution per agent.
 -- Outcome must be one of: 'pass', 'fail', 'partial'.
-CREATE TABLE agent_metrics (
+CREATE TABLE IF NOT EXISTS agent_metrics (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   agent_name VARCHAR(64) NOT NULL,
   task_id VARCHAR(128) NOT NULL,
@@ -21,6 +21,6 @@ CREATE TABLE agent_metrics (
 );
 
 -- Primary lookup: retrieve all metrics for a specific agent.
-CREATE INDEX idx_metrics_agent ON agent_metrics(agent_name);
+CREATE INDEX IF NOT EXISTS idx_metrics_agent ON agent_metrics(agent_name);
 
 COMMIT;

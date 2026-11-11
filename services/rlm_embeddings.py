@@ -7,13 +7,43 @@ Priority order:
   2. Qodo-Embed-1-1.5B via Ollama (local, http://localhost:11434)
   3. None -- BM25-only graceful degradation
 
-Matryoshka dimensionality: store 1024-dim, query at 256-dim for fast lookup.
+Three defects fixed here:
+
+* **Query vectors were embedded as documents.** Every call hard-coded
+  ``input_type="document"``, including the one from
+  ``services/rlm_search.py:hybrid_search`` that embeds the user's QUERY.
+  voyage-code-3 is an asymmetric model: query and document prompts put the
+  two sides in deliberately different places, so embedding a query as a
+  document costs recall for nothing. ``input_type`` is now a parameter and
+  the search path passes ``"query"``.
+
+* **The cache key hashed only the first 512 characters.** Two chunks sharing
+  a 512-character prefix — trivially common for generated code, licence
+  headers, or a class and its subclass — collided, and the second silently
+  received the first one's vector. The key is now the full text, plus the
+  model and input_type, so a query and a document of the same text no longer
+  share an entry either.
+
+* **Fallback vectors were indistinguishable from real ones.** Qodo output
+  (1536-dim, truncated to 1024) went into the same ``embedding_code`` column
+  as Voyage output (1024-dim) with nothing recording which produced a row.
+  Cosine distance across two embedding spaces is noise. ``embed_code``
+  returns the model name alongside the vector; migration 030 stores it; the
+  vector leg of the search filters to the active model. We keep writing the
+  fallback (BM25 still covers those rows, and refusing the write would leave
+  a locally-embedded index with no vectors at all) — we just stop pretending
+  the two are comparable.
+
+Matryoshka dimensionality: store 1024-dim. ``embed_for_query`` truncates to
+256 for callers that want the fast lookup; note that pgvector's ``vector(N)``
+cast needs an EXACT dimension match, so it is NOT usable against the stored
+1024-dim column (see TK-1741 in rlm_search.py).
 """
 
 import hashlib
 import logging
 import os
-from typing import Optional
+from typing import Optional, Tuple
 
 log = logging.getLogger("amauta.rlm_embeddings")
 
@@ -25,52 +55,115 @@ VOYAGE_OUTPUT_DIMENSION = 1024
 QODO_MODEL = "qodo-embed-1-1.5b"
 QODO_OLLAMA_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 
-# In-memory embedding cache: sha256(text) -> embedding list
+#: Valid input_type values. "document" for indexed chunks, "query" for searches.
+INPUT_TYPE_DOCUMENT = "document"
+INPUT_TYPE_QUERY = "query"
+
+# In-memory embedding cache: (model, input_type, sha256(full text)) -> embedding
 _EMBED_CACHE: dict = {}
 _EMBED_CACHE_MAX = 500
 
 
-def generate_code_embedding(text: str) -> Optional[list]:
+def active_embedding_model() -> Optional[str]:
+    """Name of the model that would embed right now, without calling it.
+
+    Used by the search path to filter the vector leg to rows embedded by the
+    same model. Returns None when no provider is configured (BM25-only).
+    """
+    if os.environ.get("VOYAGE_API_KEY", ""):
+        return VOYAGE_MODEL
+    if os.environ.get("GSD_RLM_DISABLE_QODO", ""):
+        return None
+    return QODO_MODEL
+
+
+def _cache_key(text: str, model: str, input_type: str) -> str:
+    """Key on the FULL text plus the model and input_type.
+
+    The previous key was sha256(text[:512]) with no model and no input_type:
+    any two chunks sharing a 512-char prefix collided, and a query and a
+    document of the same text shared one vector despite being embedded with
+    different prompts.
+    """
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    return f"{model}|{input_type}|{digest}"
+
+
+def _cache_put(key, embedding):
+    if len(_EMBED_CACHE) >= _EMBED_CACHE_MAX:
+        _EMBED_CACHE.pop(next(iter(_EMBED_CACHE)))
+    _EMBED_CACHE[key] = embedding
+
+
+def embed_code(text: str, input_type: str = INPUT_TYPE_DOCUMENT
+               ) -> Optional[Tuple[list, str]]:
+    """Embed *text* and report WHICH model produced the vector.
+
+    Args:
+        text: the content to embed.
+        input_type: "document" when indexing a chunk, "query" when embedding
+            a search query. voyage-code-3 is asymmetric; this matters.
+
+    Returns:
+        ``(embedding, model_name)`` or None when no provider is available.
+    """
+    if not text or not text.strip():
+        return None
+    if input_type not in (INPUT_TYPE_DOCUMENT, INPUT_TYPE_QUERY):
+        raise ValueError(
+            f"input_type must be {INPUT_TYPE_DOCUMENT!r} or {INPUT_TYPE_QUERY!r}, "
+            f"got {input_type!r}"
+        )
+
+    voyage_key = _cache_key(text, VOYAGE_MODEL, input_type)
+    if voyage_key in _EMBED_CACHE:
+        return _EMBED_CACHE[voyage_key], VOYAGE_MODEL
+    qodo_key = _cache_key(text, QODO_MODEL, input_type)
+    if qodo_key in _EMBED_CACHE:
+        return _EMBED_CACHE[qodo_key], QODO_MODEL
+
+    embedding = _try_voyage(text, input_type)
+    if embedding is not None:
+        _cache_put(voyage_key, embedding)
+        return embedding, VOYAGE_MODEL
+
+    embedding = _try_qodo(text)
+    if embedding is not None:
+        _cache_put(qodo_key, embedding)
+        return embedding, QODO_MODEL
+
+    return None
+
+
+def generate_code_embedding(text: str,
+                            input_type: str = INPUT_TYPE_DOCUMENT) -> Optional[list]:
     """
     Generate a 1024-dimensional code embedding for the given text.
 
     Returns a list of 1024 floats, or None if no embedding model is available.
-    None triggers BM25-only retrieval -- this is the expected graceful degradation path.
-
-    Caches results by SHA-256 of text to avoid redundant API calls during batch ingestion.
+    None triggers BM25-only retrieval -- this is the expected graceful
+    degradation path. Thin wrapper over :func:`embed_code` for callers that do
+    not need the model name.
     """
-    if not text or not text.strip():
-        return None
-
-    # Cache key: SHA-256 of text (first 512 chars for speed)
-    cache_key = hashlib.sha256(text[:512].encode("utf-8")).hexdigest()
-    if cache_key in _EMBED_CACHE:
-        return _EMBED_CACHE[cache_key]
-
-    embedding = _try_voyage(text) or _try_qodo(text)
-
-    if embedding is not None:
-        # Evict if cache full
-        if len(_EMBED_CACHE) >= _EMBED_CACHE_MAX:
-            # Remove oldest (first key)
-            _EMBED_CACHE.pop(next(iter(_EMBED_CACHE)))
-        _EMBED_CACHE[cache_key] = embedding
-
-    return embedding
+    result = embed_code(text, input_type=input_type)
+    return None if result is None else result[0]
 
 
 def embed_for_query(text: str) -> Optional[list]:
     """
-    Generate a 256-dim embedding for query-time fast lookup (Matryoshka truncation).
-    Returns the first 256 dimensions of generate_code_embedding result, or None.
+    Generate a 256-dim embedding for query-time fast lookup (Matryoshka
+    truncation), embedded with the QUERY input type.
+
+    NOTE: not usable against rlm_chunks.embedding_code, which is vector(1024)
+    and whose cast enforces an exact dimension match (TK-1741).
     """
-    full = generate_code_embedding(text)
+    full = generate_code_embedding(text, input_type=INPUT_TYPE_QUERY)
     if full is None:
         return None
     return full[:256]
 
 
-def _try_voyage(text: str) -> Optional[list]:
+def _try_voyage(text: str, input_type: str = INPUT_TYPE_DOCUMENT) -> Optional[list]:
     """Attempt embedding via Voyage Code 3 API.
 
     Supports both voyageai>=0.3.0 (output_dimension kwarg) and 0.2.x (no output_dimension).
@@ -87,7 +180,7 @@ def _try_voyage(text: str) -> Optional[list]:
             result = client.embed(
                 [text[:8192]],
                 model=VOYAGE_MODEL,
-                input_type="document",
+                input_type=input_type,
                 output_dimension=VOYAGE_OUTPUT_DIMENSION,
             )
         except TypeError:
@@ -95,7 +188,7 @@ def _try_voyage(text: str) -> Optional[list]:
             result = client.embed(
                 [text[:8192]],
                 model=VOYAGE_MODEL,
-                input_type="document",
+                input_type=input_type,
             )
         embedding = result.embeddings[0]
         # Ensure exactly 1024 dims (truncate or pad)
@@ -104,7 +197,7 @@ def _try_voyage(text: str) -> Optional[list]:
             embedding = embedding + [0.0] * (VOYAGE_OUTPUT_DIMENSION - len(embedding))
         else:
             embedding = embedding[:VOYAGE_OUTPUT_DIMENSION]
-        log.debug("voyage_embed_ok dims=%d", len(embedding))
+        log.debug("voyage_embed_ok dims=%d input_type=%s", len(embedding), input_type)
         return embedding
     except Exception as e:
         log.warning("voyage_embed_failed error=%s", str(e))
@@ -112,7 +205,14 @@ def _try_voyage(text: str) -> Optional[list]:
 
 
 def _try_qodo(text: str) -> Optional[list]:
-    """Attempt embedding via Qodo-Embed-1-1.5B through local Ollama."""
+    """Attempt embedding via Qodo-Embed-1-1.5B through local Ollama.
+
+    Ollama's /api/embeddings has no input_type concept — the model is
+    symmetric — so the parameter is not forwarded. The result is truncated or
+    zero-padded to 1024 dims purely so it FITS the column; it is not
+    comparable with a Voyage vector, which is why the caller records the model
+    (migration 030) and the search filters on it.
+    """
     try:
         import urllib.request
         import json as _json

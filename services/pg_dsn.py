@@ -42,13 +42,23 @@ machine you did successfully reach.
 from __future__ import annotations
 
 import os
+import re
 from typing import Iterable, Optional
+from urllib.parse import quote, urlsplit
 
 __all__ = [
     "CONTAINMENT_TEST_DSN",
     "UnconfiguredPostgresDSN",
     "require_dsn",
     "resolve_dsn",
+    "dsn_source",
+    "local_docker_dsn",
+    "pg_port",
+    "redis_port",
+    "mcp_port",
+    "dsn_with_database",
+    "dsn_parts",
+    "mask_dsn",
 ]
 
 # A DSN that is structurally unable to reach a shared host.
@@ -62,8 +72,13 @@ CONTAINMENT_TEST_DSN = (
     "postgresql:///gsd_amauta_test?host=/nonexistent/gsd-amauta-containment"
 )
 
-# Environment variables consulted, in priority order, by default.
-DEFAULT_ENV_NAMES = ("DATABASE_URL", "GSD_POSTGRES_URL")
+# Environment variables consulted, in priority order, by default.  ONE order
+# for every component: before this, infra_detect read only GSD_POSTGRES_URL
+# while the scorer / skill store / orchestrator read DATABASE_URL first, so
+# exporting DATABASE_URL alone sent the daemon to SQLite and the orchestrator
+# to PostgreSQL.  The project-specific variable wins over the generic one.
+DEFAULT_ENV_NAMES = ("GSD_POSTGRES_URL", "DATABASE_URL", "AMAUTA_MEMORY_DATABASE_URL")
+DSN_ENV_ORDER = DEFAULT_ENV_NAMES  # alias used by tooling
 
 
 class UnconfiguredPostgresDSN(RuntimeError):
@@ -109,6 +124,7 @@ def resolve_dsn(
     *,
     env_names: Iterable[str] = DEFAULT_ENV_NAMES,
     environ: Optional[dict] = None,
+    env: Optional[dict] = None,
 ) -> Optional[str]:
     """Return the configured DSN, or ``None`` if nothing is configured.
 
@@ -119,6 +135,8 @@ def resolve_dsn(
     """
     if explicit is not None and str(explicit).strip():
         return str(explicit)
+    if environ is None:
+        environ = env  # `env=` is accepted as an alias of `environ=`
     env = os.environ if environ is None else environ
     for name in env_names:
         val = (env.get(name) or "").strip()
@@ -144,3 +162,95 @@ def require_dsn(
     if dsn is None:
         raise UnconfiguredPostgresDSN(_message(component, env_names))
     return dsn
+
+
+# ─── Tooling helpers ─────────────────────────────────────────────────────────
+#
+# Nothing below resolves a DSN implicitly.  `local_docker_dsn()` BUILDS the
+# address of this project's own Docker PostgreSQL and is only ever used by
+# callers that name it on purpose: infrastructure detection (which probes it
+# and, on success, exports GSD_POSTGRES_URL — explicit configuration from then
+# on) and command-line tools given `--local-docker`.  It is never a fallback
+# for an unset variable; `require_dsn()` above still has no fallback branch.
+
+DEFAULT_PG_USER = "gsd"
+DEFAULT_PG_PASSWORD = "gsd"
+DEFAULT_PG_HOST = "127.0.0.1"
+DEFAULT_PG_PORT = "5433"
+DEFAULT_PG_DB = "gsd_amauta"
+
+
+def pg_port(env: Optional[dict] = None) -> str:
+    """Host-side Postgres port (``GSD_PG_PORT``, default 5433).
+
+    The same variable docker/docker-compose.yml uses for the host-side publish,
+    so moving the container off 5433 moves every client with it.
+    """
+    env = os.environ if env is None else env
+    return (env.get("GSD_PG_PORT") or DEFAULT_PG_PORT).strip()
+
+
+def redis_port(env: Optional[dict] = None) -> str:
+    """Host-side Redis/Valkey port (``GSD_REDIS_PORT``, default 6379)."""
+    env = os.environ if env is None else env
+    return (env.get("GSD_REDIS_PORT") or "6379").strip()
+
+
+def mcp_port(env: Optional[dict] = None) -> str:
+    """Host-side MCP SSE port (``GSD_MCP_PORT``, default 18800)."""
+    env = os.environ if env is None else env
+    return (env.get("GSD_MCP_PORT") or "18800").strip()
+
+
+def local_docker_dsn(env: Optional[dict] = None) -> str:
+    """Address of this project's own Docker PostgreSQL, built from parts.
+
+    POSTGRES_USER / POSTGRES_PASSWORD / GSD_PG_HOST / GSD_PG_PORT / GSD_PG_DB,
+    with the docker-compose defaults.  Call it only where reaching the local
+    container is the stated intent — never to paper over an unset DSN.
+    """
+    env = os.environ if env is None else env
+    user = env.get("POSTGRES_USER") or DEFAULT_PG_USER
+    password = env.get("POSTGRES_PASSWORD")
+    if password is None:
+        password = DEFAULT_PG_PASSWORD
+    host = env.get("GSD_PG_HOST") or DEFAULT_PG_HOST
+    db = env.get("GSD_PG_DB") or DEFAULT_PG_DB
+    auth = quote(user, safe="")
+    if password != "":
+        auth += ":" + quote(password, safe="")
+    return f"postgresql://{auth}@{host}:{pg_port(env)}/{db}"
+
+
+def dsn_source(env: Optional[dict] = None) -> Optional[str]:
+    """Name of the environment variable that supplies the DSN, or None."""
+    env = os.environ if env is None else env
+    for name in DEFAULT_ENV_NAMES:
+        if (env.get(name) or "").strip():
+            return name
+    return None
+
+
+def dsn_with_database(dsn: str, database: str) -> str:
+    """Same DSN pointed at a different database (for CREATE DATABASE work)."""
+    parts = urlsplit(dsn)
+    scheme = parts.scheme or "postgresql"
+    query = f"?{parts.query}" if parts.query else ""
+    return f"{scheme}://{parts.netloc}/{database}{query}"
+
+
+def dsn_parts(dsn: str) -> dict:
+    """Split a DSN into {user, password, host, port, database}."""
+    parts = urlsplit(dsn)
+    return {
+        "user": parts.username or DEFAULT_PG_USER,
+        "password": parts.password or "",
+        "host": parts.hostname or DEFAULT_PG_HOST,
+        "port": str(parts.port or DEFAULT_PG_PORT),
+        "database": (parts.path or "/").lstrip("/") or DEFAULT_PG_DB,
+    }
+
+
+def mask_dsn(dsn: Optional[str]) -> str:
+    """Mask the password in a DSN for logging."""
+    return re.sub(r"://([^:/@]+):([^@]*)@", r"://\1:***@", dsn or "")

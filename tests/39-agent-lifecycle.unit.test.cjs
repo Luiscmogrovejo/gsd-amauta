@@ -182,7 +182,7 @@ describe('[LIFE-02] Agent metrics PG table + daemon endpoints + gsd-tools', () =
 
   it('LIFE-02: migration has CREATE TABLE agent_metrics', () => {
     const content = readFile(path.join(MIGRATIONS_DIR, '016-agent-metrics.sql'));
-    assert.ok(content.includes('CREATE TABLE agent_metrics'), 'migration missing CREATE TABLE agent_metrics');
+    assert.ok(/CREATE TABLE (IF NOT EXISTS )?agent_metrics/.test(content), 'migration missing CREATE TABLE agent_metrics');
   });
 
   it('LIFE-02: migration has agent_name column', () => {

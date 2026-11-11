@@ -45,8 +45,12 @@ describe('COMPOSE-01: Redis in docker-compose', () => {
   it('1. redis service with valkey/valkey:8-alpine image (INFRA-01 Valkey swap)', () => {
     assert.ok(COMPOSE.includes('image: valkey/valkey:8-alpine'), 'Missing valkey/valkey:8-alpine image');
   });
-  it('2. Localhost-only port binding', () => {
-    assert.ok(COMPOSE.includes('127.0.0.1:6379:6379'), 'Missing localhost-only Redis port');
+  it('2. Localhost-only port binding, overridable via GSD_REDIS_PORT', () => {
+    // The host port is now ${GSD_REDIS_PORT:-6379} so the container can be
+    // moved off a port an existing Homebrew redis-server already holds.
+    // 6379 is still the default; the 127.0.0.1 binding is unchanged.
+    assert.ok(COMPOSE.includes('127.0.0.1:${GSD_REDIS_PORT:-6379}:6379'),
+      'Missing localhost-only Redis port with GSD_REDIS_PORT default 6379');
   });
   it('3. Healthcheck with valkey-cli ping (INFRA-01 Valkey swap)', () => {
     assert.ok(COMPOSE.includes('valkey-cli'), 'Missing valkey-cli healthcheck');

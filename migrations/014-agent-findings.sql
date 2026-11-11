@@ -9,7 +9,7 @@ BEGIN;
 -- COMM-01: Agent findings blackboard table.
 -- Agents write observations, decisions, warnings, and blockers here
 -- so other agents can read them during task execution.
-CREATE TABLE agent_findings (
+CREATE TABLE IF NOT EXISTS agent_findings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   agent_name VARCHAR(64) NOT NULL,
   task_id VARCHAR(128) NOT NULL,
@@ -20,6 +20,6 @@ CREATE TABLE agent_findings (
 );
 
 -- Primary lookup: retrieve all findings for a task in recency order.
-CREATE INDEX idx_findings_task ON agent_findings(task_id);
+CREATE INDEX IF NOT EXISTS idx_findings_task ON agent_findings(task_id);
 
 COMMIT;
