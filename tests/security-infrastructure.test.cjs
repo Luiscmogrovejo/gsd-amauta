@@ -535,7 +535,10 @@ describe('Spec Files Existence', () => {
 
 describe('Agent Architecture Spec Compliance (AGT-*)', () => {
   const agentsDir = path.join(ROOT, 'agents');
-  const agents = fs.readdirSync(agentsDir).filter(f => f.endsWith('.md'));
+  // The roster is the gsd-*.md files. The prefix filter also keeps a transient fixture out of the list:
+  // tests/module-lifecycle-e2e installs agents/test-agent.md into the repository for the length of one case
+  // (the module installer writes relative to the repo root), and node --test runs files in parallel.
+  const agents = fs.readdirSync(agentsDir).filter(f => f.startsWith('gsd-') && f.endsWith('.md'));
 
   test('every compiled agent has a source AGENT.yaml and vice versa', () => {
     // Was `=== 11`; the roster is 35 now. Count against the compile source of
