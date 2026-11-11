@@ -145,20 +145,29 @@ def which_all(name):
     return found
 
 
-def resolves_into_package(binary_path):
-    """True when `binary_path` (following symlinks) lives inside this package."""
+def classify_path_binary(binary_path):
+    """'self' (this package), 'other' (another gsd-amauta copy) or 'foreign'."""
     try:
         real = pathlib.Path(binary_path).resolve()
     except Exception:
-        return False
+        return "foreign"
     try:
         real.relative_to(REPO_ROOT)
-        return True
+        return "self"
     except ValueError:
         pass
     # npm/global installs land in node_modules/gsd-amauta/... — accept those too.
     parts = real.parts
-    return "gsd-amauta" in parts and "node_modules" in parts
+    if "gsd-amauta" in parts and "node_modules" in parts:
+        return "self"
+    try:
+        with open(real, "rb") as fh:
+            head = fh.read(4096).decode("utf-8", "replace")
+        if "gsd-amauta" in head or "GSD-Amauta" in head:
+            return "other"
+    except Exception:
+        pass
+    return "foreign"
 
 
 # ══ Check 1: Paths ════════════════════════════════════════════════════════════
@@ -188,7 +197,8 @@ def check_path_collision():
     program.
     """
     try:
-        collisions = []
+        collisions = []   # foreign program shadowing us — FAIL
+        other_copies = []  # a DIFFERENT gsd-amauta copy ahead of us — WARN
         checked = []
         for name in ("amauta", "gsd-amauta"):
             hits = which_all(name)
@@ -196,21 +206,31 @@ def check_path_collision():
                 continue
             first = hits[0]
             checked.append(name)
-            if not resolves_into_package(first):
-                collisions.append({
-                    "name": name,
-                    "resolves_to": first,
-                    "real_path": str(pathlib.Path(first).resolve()),
-                    "ours_on_path": [h for h in hits if resolves_into_package(h)],
-                })
+            kind = classify_path_binary(first)
+            if kind == "self":
+                continue
+            entry = {
+                "name": name,
+                "resolves_to": first,
+                "real_path": str(pathlib.Path(first).resolve()),
+                "kind": kind,
+            }
+            (collisions if kind == "foreign" else other_copies).append(entry)
         if collisions:
             detail = "; ".join(
-                f"`{c['name']}` resolves to {c['resolves_to']} (not this package)"
+                f"`{c['name']}` resolves to {c['real_path']} — NOT gsd-amauta"
                 for c in collisions
             )
             row(FAIL, "path_collision",
                 f"{detail} — fix PATH order, or `pipx uninstall amauta-ai`",
-                {"collisions": collisions})
+                {"collisions": collisions, "other_copies": other_copies})
+        elif other_copies:
+            detail = "; ".join(
+                f"`{c['name']}` runs another gsd-amauta copy at {c['real_path']}"
+                for c in other_copies
+            )
+            row(WARN, "path_collision", f"{detail} — not this checkout",
+                {"collisions": [], "other_copies": other_copies})
         elif checked:
             row(OK, "path_collision", f"{', '.join(checked)} on PATH resolve to this package")
         else:

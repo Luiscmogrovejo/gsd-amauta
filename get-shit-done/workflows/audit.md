@@ -31,16 +31,22 @@ The `gsd-tools audit` verb drives the shared `audit-runner` engine: it runs the 
 node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" audit $DOMAIN $SCOPE_FLAG
 ```
 
-The verb is daemon-optional:
-- With the daemon up, it POSTs each detected finding and reports the open audit findings from the sweep.
-- With the daemon unreachable, it reports the detected findings and notes the substrate was down (`daemon:false`, `posted:0`) — the detection still runs; nothing is filed.
+The verb runs the detects regardless of the substrate's state, but it is NOT silent about failing to file what it found. Exit codes:
+
+- `0` — every detected finding was posted and the sweep returned successfully.
+- `1` — the substrate was unreachable, the findings endpoint returned an HTTP error, or `posted < detected`. The detections are still printed; they were not (all) recorded.
 
 Parse the JSON report:
 - `domain`: the audited domain (or `all`)
 - `detected`: number of findings the detects produced
 - `posted`: number filed to the substrate
-- `open_findings[]`: the open audit findings from the sweep (`rule_id`, `domain`, `severity`, `file_path`, `evidence`, `suggested_fix`)
+- `not_posted`: `detected - posted`
+- `post_errors[]`: one entry per finding that failed to file (`rule_id`, `file_path`, `daemon`, `status`, `body`)
+- `findings_endpoint`: `{ ok, status, error }` for the sweep request
+- `open_findings[]`: the open audit findings from the sweep (`rule_id`, `domain`, `severity`, `file_path`, `evidence`, `suggested_fix`), or `null` when the sweep did not succeed
 - `daemon`: `false` when the substrate was unreachable
+
+`open_findings: null` means UNKNOWN. Never report it as "0 open".
 </step>
 
 <step name="format_output">
@@ -51,7 +57,7 @@ Parse the JSON report:
  AMAUTA Audit — {domain or "all domains"}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Detected: N | Filed to substrate: N | Substrate: up | down
+Detected: N | Filed to substrate: N | Not filed: N | Substrate: up | down | HTTP <status>
 ```
 
 **Findings by domain/severity:**
@@ -63,11 +69,28 @@ Detected: N | Filed to substrate: N | Substrate: up | down
   Suggested fix: {suggested_fix}
 ```
 
-**If the substrate was down:**
+**If the substrate was unreachable (`daemon: false`):**
 ```
 Substrate unreachable — detections shown above were NOT filed.
-Start the daemon and re-run to record them as findings.
+Start the daemon and re-run to record them as findings.   (verb exit 1)
 ```
+
+**If the substrate answered with an HTTP error (`findings_endpoint.ok: false`):**
+```
+Findings endpoint returned HTTP {status}: {error}.
+The open-findings sweep is UNKNOWN, not empty — do NOT report "0 open".
+Fix the daemon error and re-run.                          (verb exit 1)
+```
+
+**If some findings were detected but not filed (`not_posted > 0`):**
+```
+{not_posted} of {detected} finding(s) were NOT recorded: {post_errors summary}.
+This audit is incomplete — the substrate does not hold what was found. (verb exit 1)
+```
+
+A non-zero exit from the verb is a reportable failure of the audit, not a
+clean result. Never summarize a failed run as "N detected, 0 posted, 0 open"
+with a success line.
 
 **If no findings:**
 ```
@@ -96,6 +119,8 @@ the validator gates (separation of powers).
 - [ ] `gsd-tools audit` verb invoked with the domain and scope
 - [ ] Detected + posted counts reported
 - [ ] Open audit findings from the SUBS-04 sweep reported, grouped by domain/severity
-- [ ] Daemon-down case handled gracefully (detection reported, nothing filed)
+- [ ] Daemon-down case reported AND surfaced as a failure (exit 1), not a clean result
+- [ ] HTTP-error case reported: `open_findings: null` is UNKNOWN, never "0 open"
+- [ ] `posted < detected` reported as an incomplete audit (exit 1)
 - [ ] Advisory boundary noted — read-only, never fixes, never auto-tickets
 </success_criteria>

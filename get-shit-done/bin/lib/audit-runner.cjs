@@ -621,10 +621,13 @@ function postFinding(finding, port) {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
-// (c) runAudit(domain, { scope, files, post, port, cwd, root }) → { findings, posted }
-//   detect + (optionally) POST each finding to the Phase-78 substrate. Best-effort:
-//   daemon down ⇒ posted:0, findings still returned. Copies the http idiom + the
-//   AMAUTA_PORT || 18799 convention from findings-to-plan / audit-close-loop.
+// (c) runAudit(domain, { scope, files, post, port, cwd, root })
+//        → { findings, posted, post_errors }
+//   detect + (optionally) POST each finding to the Phase-78 substrate. A failed
+//   POST is no longer swallowed: every failure lands in post_errors so the
+//   caller can report "N detected, M posted" honestly and exit non-zero.
+//   Copies the http idiom + the AMAUTA_PORT || 18799 convention from
+//   findings-to-plan / audit-close-loop.
 // ───────────────────────────────────────────────────────────────────────────
 
 async function runAudit(domain, opts) {
@@ -637,14 +640,25 @@ async function runAudit(domain, opts) {
   }
   const findings = detect(domain, fileList || [], { root: options.root });
   let posted = 0;
+  const postErrors = [];
   if (options.post) {
     const port = parseInt(options.port || process.env.AMAUTA_PORT || '18799', 10);
     for (const f of findings) {
       const res = await postFinding(f, port);
-      if (res.ok) posted += 1;
+      if (res.ok) {
+        posted += 1;
+      } else {
+        postErrors.push({
+          rule_id: f.rule_id || null,
+          file_path: f.file_path || null,
+          daemon: res.daemon === true,
+          status: res.status || null,
+          body: res.json && res.json.error ? String(res.json.error).slice(0, 200) : null,
+        });
+      }
     }
   }
-  return { findings, posted };
+  return { findings, posted, post_errors: postErrors };
 }
 
 // ───────────────────────────────────────────────────────────────────────────
