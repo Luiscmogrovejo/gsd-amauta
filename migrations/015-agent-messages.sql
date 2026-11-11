@@ -9,7 +9,7 @@ BEGIN;
 -- COMM-02: Agent messages blackboard table.
 -- Agents send typed messages to each other via this table.
 -- Operator reads pending messages during normal orchestration loop.
-CREATE TABLE agent_messages (
+CREATE TABLE IF NOT EXISTS agent_messages (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   from_agent VARCHAR(64) NOT NULL,
   to_agent VARCHAR(64) NOT NULL,
@@ -24,9 +24,9 @@ CREATE TABLE agent_messages (
 );
 
 -- Primary lookup: retrieve all messages for a task in chronological order.
-CREATE INDEX idx_messages_task ON agent_messages(task_id);
+CREATE INDEX IF NOT EXISTS idx_messages_task ON agent_messages(task_id);
 
 -- Inbox lookup: retrieve pending/approved messages for a recipient agent.
-CREATE INDEX idx_messages_to ON agent_messages(to_agent, status);
+CREATE INDEX IF NOT EXISTS idx_messages_to ON agent_messages(to_agent, status);
 
 COMMIT;

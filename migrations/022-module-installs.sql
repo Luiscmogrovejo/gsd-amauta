@@ -5,7 +5,7 @@
 
 BEGIN;
 
-CREATE TABLE module_installs (
+CREATE TABLE IF NOT EXISTS module_installs (
   module_name VARCHAR(64) PRIMARY KEY,
   version VARCHAR(32) NOT NULL,
   manifest_hash CHAR(64) NOT NULL,
