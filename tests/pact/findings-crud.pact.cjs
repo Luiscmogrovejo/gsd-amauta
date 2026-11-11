@@ -19,12 +19,12 @@ const http = require('http');
 
 const { like, string } = MatchersV3;
 
-const provider = new PactV3({
+const provider = require('../support/pact-settle.cjs').settle(new PactV3({
   consumer: 'gsd-tools',
   provider: 'amauta-daemon',
   dir: require('../support/pact-dir.cjs').pactDir(), // per-process: see tests/support/pact-dir.cjs
   logLevel: 'warn',
-});
+}));
 
 // Helper: POST JSON body to mock server using Node built-in http
 function postJson(baseUrl, urlPath, body) {
