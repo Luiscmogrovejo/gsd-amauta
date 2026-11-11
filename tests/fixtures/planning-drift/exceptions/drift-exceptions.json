@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "exceptions": [
+    {
+      "target": "11-02-PLAN.md",
+      "phase": "11-beta",
+      "finding": "DRIFT_PLAN_WITHOUT_SUMMARY",
+      "reason": "plan 11-02 was dropped before execution; recorded in MILESTONES.md",
+      "recorded_in": "MILESTONES.md#v9.0",
+      "date": "2026-11-11"
+    }
+  ]
+}
