@@ -181,11 +181,10 @@ describe('Docker Configuration', () => {
     );
     assert.ok(!compose.includes('migrations:/docker-entrypoint-initdb.d:ro'),
       'Must NOT mount entire migrations dir (DOWN files would run!)');
-    // Should mount individual UP files only
-    assert.ok(compose.includes('001-init.sql:/docker-entrypoint-initdb.d/001-init.sql'),
-      'Must mount individual UP migration files');
-    assert.ok(compose.includes('005-agent-performance.sql:/docker-entrypoint-initdb.d/005-agent-performance.sql'),
-      'Must mount all 5 UP migrations');
+    // Nothing is mounted into initdb any more: the tracked runner applies UP
+    // files and structurally never applies a *-DOWN.sql.
+    assert.ok(!compose.includes('docker-entrypoint-initdb.d'),
+      'compose must not mount anything into initdb');
   });
 
   test('docker-compose.yml does not have deprecated version key', () => {
@@ -202,12 +201,15 @@ describe('Docker Configuration', () => {
     assert.ok(dockerfile.includes('"run"'), 'CMD must include "run" argument');
   });
 
-  test('docker-compose.yml mounts exactly 5 UP migrations', () => {
+  test('docker-compose.yml mounts no migrations: the tracked runner is the single path', () => {
+    // initdb used to mount 001-005 while the other migrations ran untracked from
+    // the host. services/migrate_runner.py now applies and records every one.
     const compose = fs.readFileSync(
       path.join(ROOT, 'docker', 'docker-compose.yml'), 'utf-8'
     );
-    const migrationMounts = compose.match(/\d{3}-[^D].*\.sql:/g);
-    assert.strictEqual(migrationMounts?.length, 5, 'Must mount exactly 5 UP migration files');
+    const migrationMounts = compose.match(/\d{3}-.*\.sql:/g);
+    assert.strictEqual(migrationMounts, null, 'compose must not mount migration files into initdb');
+    assert.ok(fs.existsSync(path.join(ROOT, 'services', 'migrate_runner.py')), 'tracked runner must exist');
   });
 });
 
@@ -442,9 +444,10 @@ describe('Package.json Configuration', () => {
     assert.ok(pkg.scripts?.migrate, 'Must have migrate script');
     assert.ok(!pkg.scripts.migrate.includes('-f /docker-entrypoint-initdb.d/001-init.sql'),
       'Must NOT hardcode only 001 migration');
-    // Should iterate over all migration files
-    assert.ok(pkg.scripts.migrate.includes('for f in') || pkg.scripts.migrate.includes('0*.sql'),
-      'Must iterate over migration files');
+    // The tracked runner discovers and applies every UP migration itself.
+    assert.ok(pkg.scripts.migrate.includes('migrate_runner.py') ||
+      pkg.scripts.migrate.includes('for f in') || pkg.scripts.migrate.includes('0*.sql'),
+      'Must run every migration (tracked runner or an explicit loop)');
   });
 
   test('engine requirement is node >= 20', () => {

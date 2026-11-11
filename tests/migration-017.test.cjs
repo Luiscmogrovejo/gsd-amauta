@@ -98,7 +98,7 @@ describe('[SHARD-04] Migration 017 file structure', () => {
   it('migration 017 contains CREATE TABLE step_handoffs', () => {
     const content = fs.readFileSync(MIGRATION_FILE, 'utf-8');
     assert.ok(
-      content.includes('CREATE TABLE step_handoffs'),
+      /CREATE TABLE (IF NOT EXISTS )?step_handoffs/.test(content),
       'migration 017 missing CREATE TABLE step_handoffs'
     );
   });
