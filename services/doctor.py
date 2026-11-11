@@ -190,6 +190,19 @@ def check_paths():
 
 
 # ══ Check 2: PATH collision ═══════════════════════════════════════════════════
+def _path_entries(name, hits):
+    """Evidence for one command name: every PATH hit, its real target and class."""
+    out = []
+    for hit in hits:
+        try:
+            target = str(pathlib.Path(hit).resolve())
+        except Exception:
+            target = hit
+        out.append({"name": name, "path": hit, "target": target,
+                    "classification": classify_path_binary(hit)})
+    return out
+
+
 def check_path_collision():
     """A foreign `amauta` / `gsd-amauta` ahead of ours on PATH is a FAIL.
 
@@ -197,10 +210,19 @@ def check_path_collision():
     `amauta` in ~/.local/bin. `which amauta-ai` finds nothing, so the old
     init.cjs check missed it while every `amauta ...` command ran the wrong
     program.
+
+    Resolution policy: a collision is resolved by removing the shadowing entry
+    (or fixing PATH order), not by teaching this checker to ignore it. In
+    particular a binary that resolves into the runtime config directory is NOT
+    treated as "self": that would silence the warning on every other install too.
+
+    `data["entries"]` lists, for each colliding name, every PATH hit with its
+    resolved `target` and the `classification` classify_path_binary gave it.
     """
     try:
         collisions = []   # foreign program shadowing us — FAIL
         other_copies = []  # a DIFFERENT gsd-amauta copy ahead of us — WARN
+        entries = []
         checked = []
         for name in ("amauta", "gsd-amauta"):
             hits = which_all(name)
@@ -217,22 +239,33 @@ def check_path_collision():
                 "real_path": str(pathlib.Path(first).resolve()),
                 "kind": kind,
             }
+            hit_entries = _path_entries(name, hits)
+            entries.extend(hit_entries)
+            if len(hit_entries) > 1:
+                a, b = hit_entries[0], hit_entries[1]
+                entry["shadowing"] = (
+                    f"{name} resolves to {a['target']} ({a['classification']}), "
+                    f"shadowing {b['target']} ({b['classification']}); "
+                    "the first entry on PATH wins"
+                )
             (collisions if kind == "foreign" else other_copies).append(entry)
         if collisions:
             detail = "; ".join(
                 f"`{c['name']}` resolves to {c['real_path']} — NOT gsd-amauta"
+                + (f" ({c['shadowing']})" if c.get("shadowing") else "")
                 for c in collisions
             )
             row(FAIL, "path_collision",
                 f"{detail} — fix PATH order, or `pipx uninstall amauta-ai`",
-                {"collisions": collisions, "other_copies": other_copies})
+                {"collisions": collisions, "other_copies": other_copies, "entries": entries})
         elif other_copies:
             detail = "; ".join(
-                f"`{c['name']}` runs another gsd-amauta copy at {c['real_path']}"
+                c["shadowing"] if c.get("shadowing")
+                else f"`{c['name']}` runs another gsd-amauta copy at {c['real_path']}"
                 for c in other_copies
             )
             row(WARN, "path_collision", f"{detail} — not this checkout",
-                {"collisions": [], "other_copies": other_copies})
+                {"collisions": [], "other_copies": other_copies, "entries": entries})
         elif checked:
             row(OK, "path_collision", f"{', '.join(checked)} on PATH resolve to this package")
         else:
