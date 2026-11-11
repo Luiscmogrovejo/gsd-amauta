@@ -56,8 +56,169 @@ DOWN_FILE_RE = re.compile(r"-DOWN\.sql$", re.IGNORECASE)
 TRACKING_TABLE = "schema_migrations"
 
 #: Any one of these relations existing means the DB already carries GSD schema.
-#: Used for baseline detection only — never to skip an individual migration.
+#: Used to recognise a database migrated by the old untracked psql loop.
 LEGACY_SENTINELS = ("gsd_memory", "gsd_tasks", "gsd_shared_kb")
+
+# ══════════════════════════════════════════════════════════════════
+# Schema sentinels — "is this migration already applied?"
+# ══════════════════════════════════════════════════════════════════
+#
+# The real target database was migrated by the old untracked psql loop up to
+# SOME migration and then abandoned for SQLite. It has no schema_migrations
+# table, so the runner has to work out what is already there by looking at the
+# schema, not by assuming all-or-nothing.
+#
+# Each entry lists objects that exist IF AND ONLY IF that migration ran. A
+# migration counts as already applied only when EVERY sentinel is satisfied;
+# anything else stays pending and is applied normally (every UP file is
+# idempotent, so a false "pending" costs time, not data).
+#
+# Why this matters beyond speed: 003-embedding-1024.sql contains
+#   UPDATE gsd_memory SET embedding = NULL WHERE embedding IS NOT NULL;
+# inside a guard that fires when gsd_memory.embedding is not already
+# vector(1024). Its sentinel is exactly that column type, so on a database
+# whose 5 267 embeddings are already vector(1024) the file is recognised as
+# applied and never re-entered. 025 likewise DROPs and rebuilds a BM25 index
+# over gsd_memory, and 012's bm25 index covers 164 311 rlm_chunks rows —
+# both expensive to redo for nothing.
+#
+# Sentinel kinds:
+#   ("relation", name)                  -- table/index/view exists
+#   ("column", table, column)           -- column exists
+#   ("extension", name)                 -- extension installed
+#   ("coltype", table, column, type)    -- column has exactly this format_type
+#   ("unbounded", table, column)        -- column has no length limit (TEXT)
+MIGRATION_SENTINELS = {
+    "001-init.sql": [
+        ("relation", "gsd_memory"), ("relation", "gsd_shared_kb"),
+        ("relation", "gsd_tasks"), ("relation", "gsd_task_validations"),
+        ("relation", "gitflow_log"),
+    ],
+    "002-embedding-index.sql": [("relation", "idx_gsd_memory_embedding_hnsw")],
+    # The DO block's own guard condition — see the note above.
+    "003-embedding-1024.sql": [
+        ("coltype", "gsd_memory", "embedding", "vector(1024)"),
+        ("relation", "idx_gsd_memory_embedding_hnsw"),
+    ],
+    "004-fulltext-indexes.sql": [
+        ("relation", "idx_gsd_memory_fts"), ("relation", "idx_gsd_skb_fts"),
+        ("relation", "idx_gsd_task_validations_task_created"),
+        ("relation", "idx_gsd_tasks_project_status"),
+    ],
+    "005-agent-performance.sql": [("relation", "gsd_agent_performance")],
+    "006-audit-log.sql": [("relation", "gsd_audit_log")],
+    "007-task-fields.sql": [
+        ("column", "gsd_tasks", "doc_refs"), ("column", "gsd_tasks", "risks"),
+        ("column", "gsd_tasks", "validation_checklist"),
+        ("column", "gsd_tasks", "estimated_hours"),
+        ("column", "gsd_tasks", "due_date"), ("column", "gsd_tasks", "sprint"),
+        ("column", "gsd_tasks", "children"),
+    ],
+    "008-applied-count.sql": [("column", "gsd_memory", "applied_count")],
+    "009-rpetd-context.sql": [("relation", "rpetd_context")],
+    "010-semantic-cache.sql": [("relation", "semantic_cache")],
+    "011-paradedb-setup.sql": [
+        ("extension", "pg_search"), ("relation", "bm25_test_table"),
+        ("relation", "bm25_test_idx"),
+    ],
+    "012-rlm-chunks.sql": [
+        ("relation", "rlm_chunks"), ("relation", "idx_rlm_chunks_bm25"),
+    ],
+    "013-code-embeddings.sql": [("column", "rlm_chunks", "embedding_code")],
+    "014-agent-findings.sql": [("relation", "agent_findings")],
+    "015-agent-messages.sql": [("relation", "agent_messages")],
+    "016-agent-metrics.sql": [("relation", "agent_metrics")],
+    "017-step-handoffs.sql": [("relation", "step_handoffs")],
+    "018-task-completions.sql": [("relation", "task_completions")],
+    "019-skill-invocations.sql": [("relation", "skill_invocations")],
+    "020-agent-findings-hydration.sql": [
+        ("column", "agent_findings", "recipient_agent"),
+        ("column", "agent_findings", "severity"),
+    ],
+    "021-party-sessions.sql": [
+        ("relation", "party_sessions"),
+        ("column", "agent_findings", "session_id"),
+    ],
+    "022-module-installs.sql": [("relation", "module_installs")],
+    "023-party-decisions.sql": [("column", "agent_findings", "decision_type")],
+    "024-a2a-messages.sql": [("relation", "a2a_messages")],
+    "025-memory-hybrid-index.sql": [
+        ("extension", "pg_trgm"), ("relation", "idx_gsd_memory_bm25"),
+    ],
+    "026-bitemporal-memory.sql": [
+        ("column", "gsd_memory", "valid_at"),
+        ("column", "gsd_memory", "invalid_at"),
+    ],
+    "027-audit-findings.sql": [
+        ("column", "agent_findings", "rule_id"),
+        ("column", "agent_findings", "dedup_key"),
+    ],
+    "028-sqlite-import-compat.sql": [
+        ("relation", "gsd_memory_archive"),
+        ("unbounded", "gsd_tasks", "title"),
+    ],
+    "029-rlm-chunk-provenance.sql": [
+        ("column", "rlm_chunks", "embedding_model"),
+        ("column", "rlm_chunks", "file_mtime"),
+        ("column", "rlm_chunks", "file_size"),
+    ],
+}
+
+
+def _sentinel_satisfied(cur, sentinel):
+    """Evaluate one sentinel spec against the live catalog."""
+    kind = sentinel[0]
+    if kind == "relation":
+        cur.execute("SELECT to_regclass(%s) IS NOT NULL", (sentinel[1],))
+        return bool(cur.fetchone()[0])
+    if kind == "column":
+        cur.execute("""
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = %s AND column_name = %s
+        """, (sentinel[1], sentinel[2]))
+        return cur.fetchone() is not None
+    if kind == "extension":
+        cur.execute("SELECT 1 FROM pg_extension WHERE extname = %s", (sentinel[1],))
+        return cur.fetchone() is not None
+    if kind == "coltype":
+        cur.execute("""
+            SELECT format_type(a.atttypid, a.atttypmod)
+            FROM pg_attribute a
+            WHERE a.attrelid = to_regclass(%s) AND a.attname = %s
+              AND a.attnum > 0 AND NOT a.attisdropped
+        """, (sentinel[1], sentinel[2]))
+        row = cur.fetchone()
+        return bool(row) and row[0] == sentinel[3]
+    if kind == "unbounded":
+        cur.execute("""
+            SELECT character_maximum_length IS NULL
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = %s AND column_name = %s
+        """, (sentinel[1], sentinel[2]))
+        row = cur.fetchone()
+        return bool(row) and bool(row[0])
+    raise ValueError(f"unknown sentinel kind: {kind!r}")
+
+
+def detect_applied_by_schema(conn, migrations_dir=DEFAULT_MIGRATIONS_DIR):
+    """Which migrations the live schema says are already applied.
+
+    Returns ``(applied, unknown)``: filenames whose every sentinel is
+    satisfied, and filenames with no sentinel entry (those are never assumed
+    applied — they stay pending).
+    """
+    applied, unknown = [], []
+    with conn.cursor() as cur:
+        for filename, _path, _digest in discover_migrations(migrations_dir):
+            sentinels = MIGRATION_SENTINELS.get(filename)
+            if not sentinels:
+                unknown.append(filename)
+                continue
+            if all(_sentinel_satisfied(cur, s) for s in sentinels):
+                applied.append(filename)
+    return applied, unknown
 
 
 class MigrationError(RuntimeError):
@@ -200,9 +361,37 @@ def plan(conn, migrations_dir=DEFAULT_MIGRATIONS_DIR):
     return pending, already, drifted
 
 
+def auto_baseline(conn, migrations_dir=DEFAULT_MIGRATIONS_DIR, dry_run=False,
+                  log=print):
+    """Record, as applied, the migrations the live schema already satisfies.
+
+    Called once on a database that carries GSD schema but has no tracking
+    table — the fingerprint of the old untracked psql loop, which is exactly
+    the state of the real ``gsd-pg-data`` volume. Returns the list of
+    filenames baselined.
+    """
+    detected, unknown = detect_applied_by_schema(conn, migrations_dir)
+    for filename in unknown:
+        log(f"  NOTE  {filename} has no schema sentinel — treated as pending")
+    if not dry_run and detected:
+        digests = {n: d for n, _, d in discover_migrations(migrations_dir)}
+        for filename in detected:
+            _record(conn, filename, digests[filename], 0, True)
+        conn.commit()
+    return detected
+
+
 def apply_migrations(dsn=None, migrations_dir=DEFAULT_MIGRATIONS_DIR,
-                     dry_run=False, baseline=False, log=print):
+                     dry_run=False, baseline=False, auto_baseline_enabled=True,
+                     log=print):
     """Apply every pending UP migration, each in its own transaction.
+
+    Args:
+        baseline: record EVERY pending migration as applied without running it.
+        auto_baseline_enabled: on an untracked database that already carries
+            GSD schema, record the migrations whose schema sentinels are all
+            satisfied (see MIGRATION_SENTINELS) and apply only the rest.
+            Default True. Pass False to apply every file regardless.
 
     Returns a result dict. Raises :class:`MigrationError` on the first failure
     (after rolling that file back); earlier files stay applied and recorded.
@@ -213,10 +402,29 @@ def apply_migrations(dsn=None, migrations_dir=DEFAULT_MIGRATIONS_DIR,
         pre_migrated = looks_pre_migrated(conn) and not tracking_table_exists(conn)
         if not dry_run:
             ensure_tracking_table(conn)
+
+        baselined = []
+        if pre_migrated and auto_baseline_enabled and not baseline:
+            log(
+                "NOTE: this database carries GSD tables but has no "
+                "schema_migrations — it was migrated by the old untracked psql "
+                "loop. Inspecting the schema to work out which migrations are "
+                "already applied."
+            )
+            baselined = auto_baseline(conn, migrations_dir, dry_run=dry_run,
+                                      log=log)
+            log(f"  baselined from schema: {len(baselined)} migration(s)"
+                + (f" (through {baselined[-1]})" if baselined else ""))
+
         pending, already, drifted = (
             plan(conn, migrations_dir) if tracking_table_exists(conn)
             else (discover_migrations(migrations_dir), [], [])
         )
+        if dry_run and pre_migrated and auto_baseline_enabled and not baseline:
+            # Nothing was recorded, so subtract the detected set by hand.
+            detected = set(baselined)
+            already = [row for row in pending if row[0] in detected]
+            pending = [row for row in pending if row[0] not in detected]
 
         result = {
             "dsn": mask_dsn(dsn),
@@ -224,19 +432,13 @@ def apply_migrations(dsn=None, migrations_dir=DEFAULT_MIGRATIONS_DIR,
             "already_applied": len(already),
             "pending": [name for name, _, _ in pending],
             "applied": [],
+            "baselined": baselined,
             "drifted": [name for name, _, _ in drifted],
             "dry_run": dry_run,
             "baseline": baseline,
             "pre_migrated_detected": pre_migrated,
         }
 
-        if pre_migrated:
-            log(
-                "NOTE: this database has GSD tables but no schema_migrations — "
-                "it was migrated by the old untracked psql loop. Every UP file "
-                "in migrations/ is idempotent, so re-applying is safe; use "
-                "--baseline to record them as applied without executing."
-            )
         for name in result["drifted"]:
             log(f"WARN: {name} changed on disk after it was applied — not re-run.")
 
@@ -292,14 +494,23 @@ def status(dsn=None, migrations_dir=DEFAULT_MIGRATIONS_DIR):
     try:
         tracked = tracking_table_exists(conn)
         pre_migrated = looks_pre_migrated(conn) and not tracked
+        detected_by_schema = []
         if tracked:
             pending, already, drifted = plan(conn, migrations_dir)
         else:
             pending, already, drifted = discover_migrations(migrations_dir), [], []
+            if pre_migrated:
+                # Report what an `apply` would auto-baseline, without writing.
+                detected_by_schema, _unknown = detect_applied_by_schema(
+                    conn, migrations_dir)
+                detected = set(detected_by_schema)
+                already = [row for row in pending if row[0] in detected]
+                pending = [row for row in pending if row[0] not in detected]
         return {
             "dsn": mask_dsn(dsn),
             "tracking_table": tracked,
             "pre_migrated_detected": pre_migrated,
+            "detected_by_schema": detected_by_schema,
             "total": len(pending) + len(already),
             "applied": [name for name, _, _ in already],
             "pending": [name for name, _, _ in pending],
@@ -324,8 +535,13 @@ def main(argv=None):
     parser.add_argument("--dry-run", action="store_true",
                         help="List what would be applied; change nothing.")
     parser.add_argument("--baseline", action="store_true",
-                        help="Record pending migrations as applied WITHOUT running "
-                             "them (for a DB already migrated by the old psql loop).")
+                        help="Record ALL pending migrations as applied WITHOUT "
+                             "running them.")
+    parser.add_argument("--no-auto-baseline", action="store_true",
+                        help="On an untracked database, do not infer which "
+                             "migrations are already applied from the schema — "
+                             "apply every file (safe but slow: rebuilds BM25 "
+                             "indexes).")
     parser.add_argument("--json", action="store_true", help="Machine-readable output.")
     args = parser.parse_args(argv)
 
@@ -345,7 +561,10 @@ def main(argv=None):
                 print(f"DSN:      {payload['dsn']}")
                 print(f"tracked:  {payload['tracking_table']}")
                 if payload["pre_migrated_detected"]:
-                    print("NOTE:     pre-existing GSD schema with no tracking table")
+                    print("NOTE:     pre-existing GSD schema with no tracking "
+                          "table — the listing below is what the schema says")
+                    print(f"          schema says applied: "
+                          f"{len(payload['detected_by_schema'])}")
                 print(f"applied:  {len(payload['applied'])}/{payload['total']}")
                 for name in payload["pending"]:
                     print(f"  pending  {name}")
@@ -358,6 +577,7 @@ def main(argv=None):
             migrations_dir=args.migrations_dir,
             dry_run=args.dry_run,
             baseline=args.baseline,
+            auto_baseline_enabled=not args.no_auto_baseline,
             log=log,
         )
         if args.json:
@@ -365,7 +585,8 @@ def main(argv=None):
         else:
             print(
                 f"migrations: {len(result['applied'])} applied, "
-                f"{result['already_applied']} already applied, "
+                f"{result['already_applied']} already applied "
+                f"({len(result['baselined'])} baselined from schema), "
                 f"{len(result['drifted'])} drifted"
             )
         return 0

@@ -30,9 +30,16 @@ describe('init flow integration', () => {
       return;
     }
 
-    const result = execFileSync('python3', [detectScript], {
+    // HERMETIC: infra_detect.py defaults to --auto-start, which runs
+    // `docker compose up -d postgres` / `docker start gsd-postgres`. Run
+    // bare, this test brought the developer's REAL gsd-postgres container up
+    // on 5433 mid-suite. GSD_FORCE_SQLITE short-circuits detection entirely
+    // and --no-auto-start is a second belt. The assertions below accept
+    // either backend, so neither flag weakens them.
+    const result = execFileSync('python3', [detectScript, '--no-auto-start'], {
       encoding: 'utf-8',
       timeout: 30000,
+      env: { ...process.env, GSD_FORCE_SQLITE: '1' },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
@@ -101,9 +108,15 @@ describe('init flow integration', () => {
       return;
     }
 
-    // Run infra_detect with empty PG URL to block PG detection
-    const env = { ...process.env, GSD_POSTGRES_URL: '' };
-    const result = execFileSync('python3', [detectScript], {
+    // Run infra_detect with PG detection blocked. GSD_POSTGRES_URL alone was
+    // NOT enough: with no DSN the detector falls through to probing ports
+    // 5432-5434 and auto-STARTING the Docker container. GSD_FORCE_SQLITE is
+    // the flag that actually blocks PG detection, which is what this test
+    // claims to be doing.
+    const env = {
+      ...process.env, GSD_POSTGRES_URL: '', GSD_FORCE_SQLITE: '1',
+    };
+    const result = execFileSync('python3', [detectScript, '--no-auto-start'], {
       encoding: 'utf-8',
       timeout: 30000,
       env,

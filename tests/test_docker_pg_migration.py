@@ -361,7 +361,11 @@ class TestMigrationRunnerIntegration:
         status = migrate_runner.status(dsn=migrated_dsn)
         assert status["pre_migrated_detected"] is True
 
-        result = migrate_runner.apply_migrations(dsn=migrated_dsn, log=lambda *_: None)
+        # auto_baseline_enabled=False forces every file to be executed again,
+        # which is the point here: proving the UP files are genuinely
+        # idempotent, not just that baseline detection skipped them.
+        result = migrate_runner.apply_migrations(
+            dsn=migrated_dsn, auto_baseline_enabled=False, log=lambda *_: None)
         assert len(result["applied"]) == result["total"]
 
     def test_dry_run_changes_nothing(self, scratch_dsn):
@@ -485,8 +489,12 @@ class TestCapabilityPrecheckUnit:
         assert report["reachable"] is False
         assert report["reason"]
 
-    def test_detect_reports_each_service_separately(self):
+    def test_detect_reports_each_service_separately(self, monkeypatch):
+        # HERMETIC: GSD_FORCE_SQLITE short-circuits detection so this can
+        # never probe 5432-5434 or auto-start the real gsd-postgres container.
+        monkeypatch.setenv("GSD_FORCE_SQLITE", "1")
         result = infra_detect.detect_infrastructure(auto_start=False)
+        assert result["backend"] == "sqlite"
         assert "services" in result and "rejected" in result
         assert set(result["services"]) >= {"postgres", "redis"}
         for service in result["services"].values():
@@ -726,8 +734,10 @@ class TestSqliteMigrationIntegration:
         ok, again = mig.migrate(sqlite_path=path, dsn=migrated_dsn,
                                 log=lambda *_: None)
         assert ok
+        assert all(t["insert"] == 0 for t in again["tables"])
         assert all(t["inserted"] == 0 for t in again["tables"])
-        assert sum(t["skipped"] for t in again["tables"]) == 10
+        assert sum(t["identical"] for t in again["tables"]) == 10
+        assert sum(t["conflict"] for t in again["tables"]) == 0
 
     def test_long_task_titles_survive(self, migrated_dsn, tmp_path):
         from services import migrate_sqlite_to_pg as mig
@@ -1081,3 +1091,359 @@ class TestRlmIntegration:
         finally:
             conn.close()
             emb.clear_cache()
+
+
+# ══════════════════════════════════════════════════════════════════
+# Baseline detection against a database migrated by the old psql loop
+# ══════════════════════════════════════════════════════════════════
+
+class TestSentinelsUnit:
+    def test_every_migration_has_a_sentinel(self):
+        """A new migration without a sentinel would be silently un-baselineable."""
+        names = {n for n, _, _ in migrate_runner.discover_migrations(MIGRATIONS_DIR)}
+        missing = sorted(names - set(migrate_runner.MIGRATION_SENTINELS))
+        assert missing == [], f"add MIGRATION_SENTINELS entries for: {missing}"
+
+    def test_no_sentinel_for_a_migration_that_does_not_exist(self):
+        names = {n for n, _, _ in migrate_runner.discover_migrations(MIGRATIONS_DIR)}
+        stale = sorted(set(migrate_runner.MIGRATION_SENTINELS) - names)
+        assert stale == [], f"stale MIGRATION_SENTINELS entries: {stale}"
+
+    def test_every_sentinel_kind_is_known(self):
+        known = {"relation", "column", "extension", "coltype", "unbounded"}
+        for name, sentinels in migrate_runner.MIGRATION_SENTINELS.items():
+            assert sentinels, f"{name} has an empty sentinel list"
+            for sentinel in sentinels:
+                assert sentinel[0] in known, f"{name}: unknown kind {sentinel[0]!r}"
+
+    def test_003_sentinel_is_the_column_type_it_would_otherwise_rewrite(self):
+        """003 NULLs every embedding unless the column is already vector(1024)."""
+        sql = (MIGRATIONS_DIR / "003-embedding-1024.sql").read_text()
+        assert "SET embedding = NULL" in sql
+        assert ("coltype", "gsd_memory", "embedding", "vector(1024)") in \
+            migrate_runner.MIGRATION_SENTINELS["003-embedding-1024.sql"]
+
+
+@requires_pg
+class TestBaselineDetectionIntegration:
+    def _apply_the_old_way(self, dsn, through, migrations_dir=MIGRATIONS_DIR):
+        """Run migrations 001..through with psql-style raw execution.
+
+        Reproduces the state of the real gsd-pg-data volume: schema applied by
+        the old untracked bin/init.cjs loop, no schema_migrations table.
+        """
+        import psycopg2
+        conn = psycopg2.connect(dsn)
+        conn.autocommit = True
+        for name, path, _digest in migrate_runner.discover_migrations(migrations_dir):
+            if int(name.split("-")[0]) > through:
+                continue
+            with conn.cursor() as cur:
+                cur.execute(pathlib.Path(path).read_text())
+        conn.close()
+
+    def test_status_infers_what_is_applied_without_writing(self, scratch_dsn):
+        self._apply_the_old_way(scratch_dsn, 26)
+        report = migrate_runner.status(dsn=scratch_dsn)
+        assert report["tracking_table"] is False
+        assert report["pre_migrated_detected"] is True
+        assert len(report["detected_by_schema"]) == 26
+        assert report["pending"] == [
+            "027-audit-findings.sql",
+            "028-sqlite-import-compat.sql",
+            "029-rlm-chunk-provenance.sql",
+        ]
+
+    def test_only_the_missing_migrations_are_applied(self, scratch_dsn):
+        self._apply_the_old_way(scratch_dsn, 26)
+        result = migrate_runner.apply_migrations(dsn=scratch_dsn,
+                                                 log=lambda *_: None)
+        assert len(result["baselined"]) == 26
+        assert result["applied"] == [
+            "027-audit-findings.sql",
+            "028-sqlite-import-compat.sql",
+            "029-rlm-chunk-provenance.sql",
+        ]
+        again = migrate_runner.apply_migrations(dsn=scratch_dsn, log=lambda *_: None)
+        assert again["applied"] == []
+
+    def test_a_gap_in_the_middle_is_found_not_assumed_away(self, scratch_dsn):
+        """Baseline is per-migration, not 'everything through N'."""
+        import psycopg2
+        self._apply_the_old_way(scratch_dsn, 29)
+        conn = psycopg2.connect(scratch_dsn)
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute("DROP TABLE module_installs")       # migration 022
+            cur.execute("DROP TABLE agent_metrics")          # migration 016
+        conn.close()
+
+        result = migrate_runner.apply_migrations(dsn=scratch_dsn,
+                                                 log=lambda *_: None)
+        assert set(result["applied"]) == {
+            "016-agent-metrics.sql", "022-module-installs.sql"}
+        assert len(result["baselined"]) == 27
+
+    def test_existing_embeddings_survive_the_baseline_run(self, scratch_dsn):
+        """003 must never be re-entered on a database that already has vectors."""
+        import psycopg2
+        self._apply_the_old_way(scratch_dsn, 29)
+        conn = psycopg2.connect(scratch_dsn)
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO gsd_memory (id, text, embedding) VALUES "
+                "('mem-vec', 'has a vector', "
+                "(SELECT ('['||string_agg('0.01', ',')||']')::vector "
+                " FROM generate_series(1, 1024)))")
+            cur.execute("DROP TABLE module_installs")  # force a real apply pass
+        conn.close()
+
+        migrate_runner.apply_migrations(dsn=scratch_dsn, log=lambda *_: None)
+
+        conn = psycopg2.connect(scratch_dsn)
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM gsd_memory WHERE embedding IS NOT NULL")
+            assert cur.fetchone()[0] == 1
+        conn.close()
+
+    def test_no_auto_baseline_applies_everything(self, scratch_dsn):
+        self._apply_the_old_way(scratch_dsn, 26)
+        result = migrate_runner.apply_migrations(
+            dsn=scratch_dsn, auto_baseline_enabled=False, log=lambda *_: None)
+        assert result["baselined"] == []
+        assert len(result["applied"]) == result["total"]
+
+
+# ══════════════════════════════════════════════════════════════════
+# Merge semantics against a POPULATED PostgreSQL
+# ══════════════════════════════════════════════════════════════════
+
+@requires_pg
+class TestMergeIntoPopulatedDatabase:
+    def _seed(self, dsn, memory_rows=(), tasks=(), with_embedding=True):
+        import psycopg2
+        vector = "[" + ",".join(["0.01"] * 1024) + "]"
+        conn = psycopg2.connect(dsn)
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            for row_id, text in memory_rows:
+                if with_embedding:
+                    cur.execute(
+                        "INSERT INTO gsd_memory (id, text, embedding) "
+                        "VALUES (%s, %s, %s::vector)", (row_id, text, vector))
+                else:
+                    cur.execute("INSERT INTO gsd_memory (id, text) VALUES (%s, %s)",
+                                (row_id, text))
+            for task_id, title in tasks:
+                cur.execute("INSERT INTO gsd_tasks (id, title) VALUES (%s, %s)",
+                            (task_id, title))
+        conn.close()
+
+    def test_an_existing_row_is_kept_and_its_embedding_is_never_nulled(
+            self, migrated_dsn, tmp_path):
+        from services import migrate_sqlite_to_pg as mig
+        path = _make_sqlite(str(tmp_path / "s.db"), memory_rows=3)
+        # mem-0000 exists in Postgres WITH an embedding and the SAME text.
+        self._seed(migrated_dsn, memory_rows=[("mem-0000", "memory text 0")])
+
+        ok, report = mig.migrate(sqlite_path=path, dsn=migrated_dsn,
+                                 log=lambda *_: None)
+        assert ok, report
+        memory = next(t for t in report["tables"] if t["table"] == "gsd_memory")
+        assert memory["identical"] == 1
+        assert memory["insert"] == 2
+        assert memory["conflict"] == 0
+        assert report["embeddings_before"]["gsd_memory"] == 1
+        assert report["embeddings_after"]["gsd_memory"] == 1
+
+        import psycopg2
+        conn = psycopg2.connect(migrated_dsn)
+        with conn.cursor() as cur:
+            cur.execute("SELECT embedding IS NOT NULL FROM gsd_memory "
+                        "WHERE id='mem-0000'")
+            assert cur.fetchone()[0] is True
+        conn.close()
+
+    def test_same_id_different_content_is_a_conflict_and_postgres_wins(
+            self, migrated_dsn, tmp_path):
+        from services import migrate_sqlite_to_pg as mig
+        path = _make_sqlite(str(tmp_path / "s.db"), memory_rows=1, task_rows=2)
+        self._seed(migrated_dsn, tasks=[("TK-0000", "DIVERGED IN POSTGRES")])
+
+        ok, report = mig.migrate(sqlite_path=path, dsn=migrated_dsn,
+                                 log=lambda *_: None)
+        assert ok is False, "a conflict must fail the run by default"
+        tasks = next(t for t in report["tables"] if t["table"] == "gsd_tasks")
+        assert tasks["conflict"] == 1
+        conflict = tasks["conflicts"][0]
+        assert conflict["id"] == "TK-0000"
+        assert conflict["differences"][0]["column"] == "title"
+        assert conflict["differences"][0]["postgres"] == "DIVERGED IN POSTGRES"
+
+        import psycopg2
+        conn = psycopg2.connect(migrated_dsn)
+        with conn.cursor() as cur:
+            cur.execute("SELECT title FROM gsd_tasks WHERE id='TK-0000'")
+            assert cur.fetchone()[0] == "DIVERGED IN POSTGRES"
+            cur.execute("SELECT COUNT(*) FROM gsd_tasks WHERE id='TK-0000'")
+            assert cur.fetchone()[0] == 1, "never duplicated"
+        conn.close()
+
+    def test_allow_conflicts_downgrades_the_conflict_to_a_report(
+            self, migrated_dsn, tmp_path):
+        from services import migrate_sqlite_to_pg as mig
+        path = _make_sqlite(str(tmp_path / "s.db"), memory_rows=1, task_rows=2)
+        self._seed(migrated_dsn, tasks=[("TK-0000", "DIVERGED IN POSTGRES")])
+        ok, report = mig.migrate(sqlite_path=path, dsn=migrated_dsn,
+                                 allow_conflicts=True, log=lambda *_: None)
+        assert ok is True
+        assert report["total_conflicts"] == 1
+
+    def test_same_content_under_a_different_id_is_reported(
+            self, migrated_dsn, tmp_path):
+        from services import migrate_sqlite_to_pg as mig
+        path = _make_sqlite(str(tmp_path / "s.db"), memory_rows=3)
+        # Same TEXT as mem-0001, re-issued under a new id by the daemon.
+        self._seed(migrated_dsn, memory_rows=[("mem-reissued", "memory text 1")])
+
+        ok, report = mig.migrate(sqlite_path=path, dsn=migrated_dsn,
+                                 log=lambda *_: None)
+        assert ok, report
+        memory = next(t for t in report["tables"] if t["table"] == "gsd_memory")
+        assert memory["content_duplicate"] == 1
+        assert memory["duplicates"][0]["same_content_as"] == "mem-reissued"
+        # Reported, but inserted by default.
+        assert memory["inserted"] == 3
+
+    def test_skip_content_duplicates_omits_them_without_failing_verification(
+            self, migrated_dsn, tmp_path):
+        from services import migrate_sqlite_to_pg as mig
+        path = _make_sqlite(str(tmp_path / "s.db"), memory_rows=3)
+        self._seed(migrated_dsn, memory_rows=[("mem-reissued", "memory text 1")])
+
+        ok, report = mig.migrate(sqlite_path=path, dsn=migrated_dsn,
+                                 skip_content_duplicates=True,
+                                 log=lambda *_: None)
+        assert ok, report
+        memory = next(t for t in report["tables"] if t["table"] == "gsd_memory")
+        assert memory["content_duplicate"] == 1
+        assert memory["inserted"] == 2
+        check = next(v for v in report["verification"] if v["table"] == "gsd_memory")
+        assert check["missing"] == 0
+        assert check["skipped_on_purpose"] == 1
+
+    def test_tasks_have_no_content_key_so_repeated_titles_are_not_duplicates(
+            self, migrated_dsn):
+        from services import migrate_sqlite_to_pg as mig
+        assert mig.TABLE_POLICY["gsd_tasks"]["content"] is None
+        assert mig.TABLE_POLICY["gsd_tasks"]["identity"] == ("title",)
+
+    def test_exclude_table_skips_tasks_entirely(self, migrated_dsn, tmp_path):
+        from services import migrate_sqlite_to_pg as mig
+        path = _make_sqlite(str(tmp_path / "s.db"), task_rows=2)
+        ok, report = mig.migrate(sqlite_path=path, dsn=migrated_dsn,
+                                 exclude_tables=["gsd_tasks"],
+                                 log=lambda *_: None)
+        assert ok, report
+        assert "gsd_tasks" not in {t["table"] for t in report["tables"]}
+        assert "gsd_tasks" in report["tables_skipped"]
+        import psycopg2
+        conn = psycopg2.connect(migrated_dsn)
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM gsd_tasks")
+            assert cur.fetchone()[0] == 0
+        conn.close()
+
+    def test_dry_run_prints_the_full_merge_plan_and_writes_nothing(
+            self, migrated_dsn, tmp_path):
+        from services import migrate_sqlite_to_pg as mig
+        path = _make_sqlite(str(tmp_path / "s.db"), memory_rows=3, task_rows=2)
+        self._seed(migrated_dsn,
+                   memory_rows=[("mem-0000", "memory text 0"),
+                                ("mem-reissued", "memory text 1")],
+                   tasks=[("TK-0000", "DIVERGED IN POSTGRES")])
+
+        lines = []
+        ok, report = mig.migrate(sqlite_path=path, dsn=migrated_dsn,
+                                 dry_run=True, log=lines.append)
+        memory = next(t for t in report["tables"] if t["table"] == "gsd_memory")
+        tasks = next(t for t in report["tables"] if t["table"] == "gsd_tasks")
+        assert (memory["insert"], memory["identical"], memory["content_duplicate"]) \
+            == (2, 1, 1)
+        assert tasks["conflict"] == 1
+        assert ok is False  # the conflict
+        text = "\n".join(lines)
+        assert "MERGE PLAN (nothing written)" in text
+        assert "CONFLICTS in gsd_tasks" in text
+        assert "LIKELY DUPLICATES in gsd_memory" in text
+
+        import psycopg2
+        conn = psycopg2.connect(migrated_dsn)
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM gsd_memory")
+            assert cur.fetchone()[0] == 2, "dry run must not write"
+        conn.close()
+
+    def test_replace_mode_requires_an_explicit_confirmation(self, migrated_dsn,
+                                                            tmp_path):
+        from services import migrate_sqlite_to_pg as mig
+        path = _make_sqlite(str(tmp_path / "s.db"))
+        assert mig.main(["--sqlite", path, "--dsn", migrated_dsn,
+                         "--mode", "replace"]) == 2
+
+
+class TestForceSqlite:
+    def test_force_sqlite_recognises_both_spellings(self):
+        assert infra_detect.force_sqlite(env={"GSD_FORCE_SQLITE": "1"})
+        assert infra_detect.force_sqlite(env={"GSD_FORCE_SQLITE": "TRUE"})
+        assert infra_detect.force_sqlite(env={"GSD_BACKEND": "sqlite"})
+        assert not infra_detect.force_sqlite(env={})
+        assert not infra_detect.force_sqlite(env={"GSD_FORCE_SQLITE": "0"})
+
+    def test_forced_sqlite_never_probes_postgres_or_starts_a_container(
+            self, monkeypatch):
+        """No PostgreSQL probe, no `docker ps`, no container start.
+
+        The Redis probe still runs: a TCP connect to an already-running cache
+        plus a read-only `docker ps` to label it, neither of which can start
+        anything. Starting a PostgreSQL container is the hazard this flag
+        exists to prevent, so the test also asserts that no subprocess call is
+        a start/up command.
+        """
+        calls = []
+        commands = []
+        monkeypatch.setenv("GSD_FORCE_SQLITE", "1")
+        monkeypatch.setattr(infra_detect, "check_pg_capabilities",
+                            lambda *a, **k: calls.append("pg") or (False, {}))
+        monkeypatch.setattr(infra_detect, "_detect_local_postgresql",
+                            lambda rejected: calls.append("local") or (None, None))
+        monkeypatch.setattr(infra_detect, "_detect_docker_postgresql",
+                            lambda *a: calls.append("docker") or None)
+        monkeypatch.setattr(infra_detect, "_auto_start_docker_postgresql",
+                            lambda: calls.append("start") or (None, {}))
+
+
+        class _Done:
+            returncode, stdout, stderr = 0, "", ""
+
+        monkeypatch.setattr(infra_detect.subprocess, "run",
+                            lambda argv, *a, **k: commands.append(argv) or _Done())
+
+        result = infra_detect.detect_infrastructure(auto_start=True)
+        assert result["backend"] == "sqlite"
+        assert "GSD_FORCE_SQLITE" in result["message"]
+        assert result["services"]["postgres"]["status"] == "skipped"
+        assert calls == [], f"forced SQLite must not touch PostgreSQL: {calls}"
+        for argv in commands:
+            assert "ps" in argv, f"only read-only docker ps is allowed: {argv}"
+            for forbidden in ("start", "up", "compose", "run", "create"):
+                assert forbidden not in argv, f"forced SQLite ran: {argv}"
+
+    def test_the_init_flow_test_no_longer_runs_detection_with_auto_start(self):
+        src = (REPO_ROOT / "tests" / "test-init-flow.test.cjs").read_text()
+        # Both invocations must be hermetic — this is the test that started
+        # the developer's real gsd-postgres container mid-suite.
+        assert src.count("GSD_FORCE_SQLITE: '1'") == 2
+        assert src.count("[detectScript, '--no-auto-start']") == 2
+        assert "execFileSync('python3', [detectScript], {" not in src

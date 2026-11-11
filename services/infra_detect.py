@@ -62,6 +62,25 @@ DOCKER_PG_CONTAINER = "gsd-postgres"
 DOCKER_REDIS_CONTAINER = "gsd-redis"
 
 
+#: Truthy spellings accepted for GSD_FORCE_SQLITE (matches amauta-daemon.py).
+_TRUTHY = ("1", "true", "yes", "on")
+
+
+def force_sqlite(env=None):
+    """True when the operator pinned the backend to SQLite.
+
+    ``GSD_FORCE_SQLITE=1`` or ``GSD_BACKEND=sqlite``. services/amauta-daemon.py
+    already honours this; infra_detect has to honour it too, because it is the
+    component that probes ports 5432-5434 and auto-STARTS a Docker PostgreSQL
+    container. A test that imports this module, or `bin/init.cjs` on a machine
+    that deliberately runs degraded, must not do either.
+    """
+    env = os.environ if env is None else env
+    if (env.get("GSD_FORCE_SQLITE", "") or "").strip().lower() in _TRUTHY:
+        return True
+    return (env.get("GSD_BACKEND", "") or "").strip().lower() == "sqlite"
+
+
 def _version_tuple(text):
     """'0.8.2' -> (0, 8, 2). Non-numeric trailers are dropped."""
     parts = []
@@ -206,6 +225,24 @@ def detect_infrastructure(auto_start=True):
         return result
 
     pg_features = ["memory", "tasks", "skb", "validation", "embeddings", "fts"]
+
+    # Priority 0: the operator selected SQLite. Same flag the daemon reads
+    # (GSD_FORCE_SQLITE / GSD_BACKEND=sqlite). Detection is skipped ENTIRELY:
+    # no port probes, no `docker ps`, and above all no container auto-start.
+    # A test run that merely imports this module must never be able to bring
+    # up the real gsd-postgres container.
+    if force_sqlite():
+        sqlite_path = _get_sqlite_path()
+        result["services"]["postgres"] = {
+            "status": "skipped",
+            "detail": "SQLite selected by GSD_FORCE_SQLITE/GSD_BACKEND",
+        }
+        return finish(
+            "sqlite",
+            f"sqlite:///{sqlite_path}",
+            ["memory", "tasks", "skb", "validation", "fts"],
+            "SQLite forced by GSD_FORCE_SQLITE",
+        )
 
     # Priority 1: explicit DSN (GSD_POSTGRES_URL / DATABASE_URL / ...).
     # An explicitly configured server is the operator's decision: it is used if
