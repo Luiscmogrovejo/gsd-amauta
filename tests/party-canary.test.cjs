@@ -1,5 +1,11 @@
 'use strict';
 /**
+ * CANARY POLICY (plan 88-12): a PR that changes a path this file pins re-baselines this canary
+ * IN THE SAME PR and names the change in its description. This canary exists to make such
+ * a change deliberate, not to forbid it. Never skip, retire or weaken an assertion to go
+ * green. Worked example: PR #24 changed the pinned bin/init.cjs without re-baselining and
+ * left master red on four cells until plan 88-12 moved the bases.
+ *
  * Plan 50-04-02: Phase 50 cross-surface canary.
  *
  * Verifies via git diff that Phase 50 did NOT touch protected surfaces:
@@ -45,7 +51,13 @@ const path = require('node:path');
 //   e6dbc5122c0eb7b10f1861970d450e540ed269ec  Merge pull request #20 from Luiscmogrovejo/phase88/04-validate-fixtures-numpy
 // and every assertion is kept: the canary guards these paths against unintended change from here on. The files
 // that changed since the old base, and the commits that changed them, are in 88-06-RECORD.md.
-const PHASE_50_BASE = 'e6dbc5122c0eb7b10f1861970d450e540ed269ec';
+// RE-BASELINED AGAIN 2026-11-11 (plan 88-12, operator sign-off: delegated 2026-11-11). Three pinned files changed on
+// purpose since the base above: bin/init.cjs (PR #24, commit 04e17ed, and plan 88-12 task 03), services/module_schema.py
+// (88-12 task 08, the fallback YAML parser fix) and services/module_lifecycle.py (88-12 task 09, the target-root
+// override). The base is now the last commit of that series that touches a pinned path:
+//   f79f1eed08188b05a54e628364550858379fe586  fix(88-12): module install honours GSD_MODULE_TARGET_ROOT so the e2e never writes into the repository
+// Every assertion is kept. The full list of pinned files and commits is in 88-12-RECORD.md.
+const PHASE_50_BASE = 'f79f1eed08188b05a54e628364550858379fe586';
 
 const ROOT = path.resolve(__dirname, '..');
 
