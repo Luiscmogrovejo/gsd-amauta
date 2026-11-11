@@ -650,14 +650,21 @@ function httpJson(method, urlPath, body) {
   });
 }
 
+// 88-06: the live layer is opt-in. It POSTs findings to a real daemon, and the default port is shared with every other
+// test file in a parallel run: a daemon another file starts (and stops) on that port during this one made these cases
+// pass the /health probe and then fail mid-request (ubuntu node 20, "sweep returns 200: 0 !== 200"). Point it at a
+// disposable daemon on purpose with GSD_LIVE_DAEMON_TESTS=1 and AMAUTA_PORT=<port>.
+const LIVE_OPT_IN = process.env.GSD_LIVE_DAEMON_TESTS === '1';
+
 async function daemonReachable() {
+  if (!LIVE_OPT_IN) return false;
   const r = await httpJson('GET', '/health');
   return r.status === 200 && r.json && r.json.status === 'ok';
 }
 
 for (const a of AUDITORS) {
   test(`LIVE ${a.req}: ${a.name} audit finding POSTs to /api/findings, lands in the SUBS-04 sweep, then PATCHes cleared`, async (t) => {
-    if (!(await daemonReachable())) { t.skip('daemon unreachable on 127.0.0.1:' + PORT); return; }
+    if (!(await daemonReachable())) { t.skip(LIVE_OPT_IN ? 'daemon unreachable on 127.0.0.1:' + PORT : 'live-daemon layer is opt-in: set GSD_LIVE_DAEMON_TESTS=1 and AMAUTA_PORT to a disposable daemon'); return; }
 
     // A unique file_path keeps the server dedup_key (rule_id:sha1(file_path))
     // distinct so the POST creates rather than dedups.

@@ -114,7 +114,14 @@ function httpJson(method, urlPath, body) {
   });
 }
 
+// 88-06: the live layer is opt-in. It POSTs findings to a real daemon, and the default port is shared with every other
+// test file in a parallel run: a daemon another file starts (and stops) on that port during this one made these cases
+// pass the /health probe and then fail mid-request (ubuntu node 20, "sweep returns 200: 0 !== 200"). Point it at a
+// disposable daemon on purpose with GSD_LIVE_DAEMON_TESTS=1 and AMAUTA_PORT=<port>.
+const LIVE_OPT_IN = process.env.GSD_LIVE_DAEMON_TESTS === '1';
+
 async function daemonReachable() {
+  if (!LIVE_OPT_IN) return false;
   const r = await httpJson('GET', '/health');
   return r.status === 200 && r.json && r.json.status === 'ok';
 }
@@ -349,7 +356,7 @@ test('LOOP-01: commands/amauta/audit.md exists, is read-only (no Write/Edit), an
 // ===========================================================================
 
 test('LOOP-03 CAPSTONE (LIVE): full loop clears a finding — engine files it -> findings-to-plan gated ticket -> fix + validate -> audit-close-loop CLEARS', async (t) => {
-  if (!(await daemonReachable())) { t.skip('daemon unreachable on 127.0.0.1:' + PORT); return; }
+  if (!(await daemonReachable())) { t.skip(LIVE_OPT_IN ? 'daemon unreachable on 127.0.0.1:' + PORT : 'live-daemon layer is opt-in: set GSD_LIVE_DAEMON_TESTS=1 and AMAUTA_PORT to a disposable daemon'); return; }
 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'loop83-cap-'));
   // A unique fixture path keeps the server dedup_key distinct (fresh insert).
@@ -426,7 +433,7 @@ test('LOOP-03 CAPSTONE (LIVE): full loop clears a finding — engine files it ->
 });
 
 test('LOOP-03 CAPSTONE (LIVE): no-op-fix CONTROL reopens the finding + emits a validator/finding DIVERGENCE', async (t) => {
-  if (!(await daemonReachable())) { t.skip('daemon unreachable on 127.0.0.1:' + PORT); return; }
+  if (!(await daemonReachable())) { t.skip(LIVE_OPT_IN ? 'daemon unreachable on 127.0.0.1:' + PORT : 'live-daemon layer is opt-in: set GSD_LIVE_DAEMON_TESTS=1 and AMAUTA_PORT to a disposable daemon'); return; }
 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'loop83-ctrl-'));
   const fixture = path.join(dir, `api-${Date.now()}-ctrl.js`);
