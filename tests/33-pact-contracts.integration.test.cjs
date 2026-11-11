@@ -32,9 +32,24 @@ describe('[TEST-08] Pact contract files exist for 3 daemon endpoints', () => {
       );
     });
   }
-  it('exactly 3 pact contract files in tests/pact/', () => {
-    const files = fs.readdirSync(PACT_DIR).filter(f => f.endsWith('.pact.cjs'));
-    assert.strictEqual(files.length, 3, `Expected 3 pact files, found ${files.length}: ${files.join(', ')}`);
+  it('the 3 locked contracts are present among the pact files; every pact file is well formed', () => {
+    // The old expectation (exactly 3) was stale, not the code: TEST-08 asks for ">= 3 daemon endpoints", and two
+    // more consumer contracts were added later (findings-crud, messages-crud for the blackboard in Phase 38).
+    // The count is derived from the directory and the five names are listed in the failure message; each file must
+    // compile (checked without executing it: a contract starts a mock server when run) and declare both parties.
+    const vm = require('node:vm');
+    const files = fs.readdirSync(PACT_DIR).filter(f => f.endsWith('.pact.cjs')).sort();
+    const listing = `${files.length} pact files: ${files.join(', ')}`;
+    assert.ok(files.length >= REQUIRED_PACT_FILES.length, `TEST-08 needs >= 3 contracts; found ${listing}`);
+    for (const { file } of REQUIRED_PACT_FILES) {
+      assert.ok(files.includes(file), `locked contract ${file} missing; found ${listing}`);
+    }
+    for (const f of files) {
+      const src = fs.readFileSync(path.join(PACT_DIR, f), 'utf-8');
+      assert.doesNotThrow(() => new vm.Script(src, { filename: f }), `${f} must parse; ${listing}`);
+      assert.ok(src.includes('gsd-tools'), `${f} must declare consumer gsd-tools; ${listing}`);
+      assert.ok(src.includes('amauta-daemon'), `${f} must declare provider amauta-daemon; ${listing}`);
+    }
   });
 });
 

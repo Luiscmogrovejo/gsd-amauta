@@ -110,21 +110,25 @@ test('distill fallback: the Anthropic API key never appears on a command line', 
   fs.chmodSync(fakeClaude, 0o755);
 
   // `curl` records its argv + the mode of any --config file, then answers.
+  // Written as a node script, not sh: the old `stat -f '%Lp' || stat -c '%a'` probe is BSD-first, and on GNU
+  // stat (ubuntu CI) `-f` means "filesystem status" and exits 0 printing a multi-line report, so the `||`
+  // fallback never ran and the log held `CFGMODE:   File: "/tmp/..."` instead of the mode (88-CI-BASELINE,
+  // ubuntu/20 + ubuntu/22). The code under test was right; the probe was not portable. fs.statSync is.
   const fakeCurl = path.join(binDir, 'curl');
   fs.writeFileSync(fakeCurl, [
-    '#!/bin/sh',
-    `echo "ARGV: $@" >> "${argvLog}"`,
-    'cfg=""',
-    'prev=""',
-    'for a in "$@"; do',
-    '  if [ "$prev" = "--config" ]; then cfg="$a"; fi',
-    '  prev="$a"',
-    'done',
-    'if [ -n "$cfg" ]; then',
-    `  echo "CFGMODE: $(stat -f '%Lp' "$cfg" 2>/dev/null || stat -c '%a' "$cfg")" >> "${argvLog}"`,
-    `  echo "CFGHASKEY: $(grep -c 'x-api-key' "$cfg")" >> "${argvLog}"`,
-    'fi',
-    'printf \'{"content":[{"text":"A distilled summary long enough to pass the twenty character floor."}]}\'',
+    `#!${process.execPath}`,
+    "const fs = require('fs');",
+    `const log = ${JSON.stringify(argvLog)};`,
+    'const args = process.argv.slice(2);',
+    "fs.appendFileSync(log, 'ARGV: ' + args.join(' ') + '\\n');",
+    "const i = args.indexOf('--config');",
+    'if (i >= 0) {',
+    '  const cfg = args[i + 1];',
+    "  fs.appendFileSync(log, 'CFGMODE: ' + (fs.statSync(cfg).mode & 0o777).toString(8) + '\\n');",
+    "  const hits = fs.readFileSync(cfg, 'utf8').split('\\n').filter(l => l.includes('x-api-key')).length;",
+    "  fs.appendFileSync(log, 'CFGHASKEY: ' + hits + '\\n');",
+    '}',
+    'process.stdout.write(\'{"content":[{"text":"A distilled summary long enough to pass the twenty character floor."}]}\');',
     '',
   ].join('\n'));
   fs.chmodSync(fakeCurl, 0o755);
@@ -159,7 +163,7 @@ test('distill fallback: the Anthropic API key never appears on a command line', 
     `the API key must not appear in curl's argv:\n${log}`);
   assert.match(log, /--config/, 'the key must travel in a curl config file');
   assert.match(log, /CFGHASKEY: 1/, 'the config file carries the header');
-  assert.match(log, /CFGMODE: 600/, 'the config file must be 0600');
+  assert.match(log, /CFGMODE: 600\b/, 'the config file must be 0o600 (mode & 0o777 read with fs.statSync)');
 });
 
 test('distill fallback: no shell interpolation of the key in the source', () => {

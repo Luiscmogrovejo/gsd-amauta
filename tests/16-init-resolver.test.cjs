@@ -375,18 +375,32 @@ test('no cross-milestone bleed: v2.7 milestone ignores v2.3-phases/15-data-purge
 });
 
 test('live smoke: init phase-op 16 from real repo returns v2.7 directory', () => {
-  // Bootstrap transition validator: once RESOLVE-01 ships, the real repo's
-  // init call for phase 16 must return the v2.7 directory, not the v2.3 ghost.
-  // Failure here means depth 10 has recurred in the actual repo.
-  const realCwd = path.resolve(__dirname, '..');
-  const result = findPhaseInternal(realCwd, '16');
-  assert.ok(result, 'Phase 16 must be found in the real repo');
-  assert.ok(
-    result.directory.includes('v2.7-phases/16-init-resolver-fix'),
-    'Must return v2.7 directory, not v2.3 ghost. Got: ' + result.directory,
-  );
-  assert.ok(
-    !result.directory.includes('v2.3'),
-    'Must NOT return v2.3-phases/16-data-integrity. Got: ' + result.directory,
-  );
+  // Bootstrap transition validator: once RESOLVE-01 ships, the init call for phase 16 must return the v2.7
+  // directory, not the v2.3 ghost. Failure here means depth 10 has recurred.
+  //
+  // This used to run against the repository's own .planning/ tree. That tree is gitignored (CI never has it) and
+  // the operator's copy moved on past v2.7, so the old expectation was wrong, not the resolver. The same
+  // layout is built here, with the historical directory names verbatim: the v2.7 phase and the v2.3 ghost that
+  // shares phase number 16. The resolver is pointed at the fixture, never at the repository's .planning/.
+  const fixtureRoot = createFixture({
+    config: { current_milestone: 'v2.7' },
+    milestones: {
+      'v2.7-phases': [{ name: '16-init-resolver-fix', plans: ['16-01-PLAN.md'] }],
+      'v2.3-phases': [{ name: '16-data-integrity', plans: ['16-01-PLAN.md'] }],
+    },
+  });
+  let err;
+  try {
+    const result = findPhaseInternal(fixtureRoot, '16');
+    assert.ok(result, 'Phase 16 must be found');
+    assert.ok(
+      result.directory.includes('v2.7-phases/16-init-resolver-fix'),
+      'Must return v2.7 directory, not v2.3 ghost. Got: ' + result.directory,
+    );
+    assert.ok(
+      !result.directory.includes('v2.3'),
+      'Must NOT return v2.3-phases/16-data-integrity. Got: ' + result.directory,
+    );
+  } catch (e) { err = e; }
+  cleanupOrPreserve(fixtureRoot, err);
 });
