@@ -52,7 +52,7 @@ function copyTree(name) {
  */
 function edit(dir, file, from, to) {
   const p = path.join(dir, file);
-  const text = fs.readFileSync(p, 'utf-8');
+  const text = fs.readFileSync(p, 'utf-8').replace(/\r\n/g, '\n');
   const next = text.replace(from, to);
   assert.notStrictEqual(next, text, `mutation target not found in ${file}: ${from}`);
   fs.writeFileSync(p, next);
@@ -83,7 +83,7 @@ function cli(args) {
  * @returns {Object<string, {ids: string[], exit: number}>}
  */
 function readContract() {
-  const text = fs.readFileSync(path.join(FIXTURES, 'README.md'), 'utf-8');
+  const text = fs.readFileSync(path.join(FIXTURES, 'README.md'), 'utf-8').replace(/\r\n/g, '\n');
   const out = {};
   for (const block of text.split(/^### tree: /m).slice(1)) {
     const name = block.match(/^`([\w-]+)`/)[1];
@@ -335,6 +335,17 @@ describe('88-09 rules recorded in 88-CONTEXT.md and 88-09-PLAN.md', () => {
     const rows = copyTree('agree');
     edit(rows, 'REQUIREMENTS.md', /\| FIX-04 \|[^\n]*\n/, '');
     assert.ok(planningDrift(rows).findings.some((x) => x.id === 'DRIFT_REQUIREMENT_TOTAL' && /traceability/.test(x.message)));
+  });
+
+  test('CRLF checkouts (Windows autocrlf) read the same as LF ones', () => {
+    for (const name of ['agree', 'disagree']) {
+      const dir = copyTree(name);
+      for (const f of ['ROADMAP.md', 'STATE.md', 'REQUIREMENTS.md', 'PROJECT.md']) {
+        const p = path.join(dir, f);
+        fs.writeFileSync(p, fs.readFileSync(p, 'utf-8').replace(/\n/g, '\r\n'));
+      }
+      assert.deepStrictEqual(ids(dir), CONTRACT[name].ids, name);
+    }
   });
 
   test('a decimal phase directory (94.1-*) is matched to its heading, not to 94', () => {

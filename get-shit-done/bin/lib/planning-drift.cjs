@@ -51,7 +51,9 @@ const EXCEPTION_FIELDS = ['target', 'phase', 'finding', 'reason', 'recorded_in',
 
 function readText(file) {
   try {
-    return fs.readFileSync(file, 'utf-8');
+    // CRLF checkouts (Windows autocrlf) would leave a \r on every captured value and
+    // break the frontmatter delimiter, so every parser below sees LF only.
+    return fs.readFileSync(file, 'utf-8').replace(/\r\n/g, '\n');
   } catch (_) {
     return null;
   }
