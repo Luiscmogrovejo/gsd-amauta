@@ -43,3 +43,21 @@ test('a symlink with an arbitrary name also runs the CLI', () => {
   fs.symlinkSync(WRAPPER, link);
   assert.ok(help(link).stdout.trim().length > 0);
 });
+
+test('every package bin script is committed executable', () => {
+  // `amauta` is a symlink to a bin script: without the executable bit the
+  // shell answers "permission denied" however correct the script is.
+  const { execFileSync } = require('child_process');
+  const root = path.resolve(__dirname, '..');
+  const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+  const bins = Object.values(pkg.bin).concat(['get-shit-done/bin/gsd-shunt.cjs']);
+  let listing;
+  try {
+    listing = execFileSync('git', ['-C', root, 'ls-files', '-s', '--', ...bins], { encoding: 'utf8' });
+  } catch {
+    return; // not a git checkout (installed package): nothing to assert
+  }
+  const notExec = listing.trim().split('\n').filter(Boolean)
+    .filter(l => !l.startsWith('100755')).map(l => l.split('\t')[1]);
+  assert.deepEqual(notExec, [], 'bin scripts must be mode 100755 in git');
+});
