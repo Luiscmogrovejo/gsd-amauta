@@ -205,7 +205,8 @@ def test_restarted_daemon_reclaims_its_own_orphaned_rlm(monkeypatch, tmp_path, c
         own = _spawn_listener(port_a, script=_stub_rlm_script(script_dir))
         (script_dir / "rlm-service.pid").write_text(str(own.pid))
         allowed = mod._rlm_allowed_pids()
-        assert own.pid in allowed
+        assert own.pid in allowed, "pid file %r -> command line seen: %r" % (
+            (script_dir / "rlm-service.pid").read_text(), mod._pid_command_line(own.pid))
         assert mod._kill_port_holder(port_a, allowed) is True
         assert own.wait(timeout=5) in (-signal.SIGTERM, -signal.SIGKILL)
 

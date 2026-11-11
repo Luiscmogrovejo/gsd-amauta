@@ -552,8 +552,39 @@ def _rlm_pid_file_path():
     return Path(RLM_SERVICE_PY).resolve().parent / "rlm-service.pid"
 
 
+def _pid_command_line(pid):
+    """Command line of `pid`, or "" when it cannot be read.
+
+    Reads ``ps -ww -o command= -p <pid>`` (``-ww`` lifts any column cap on procps
+    and BSD ps) and, on Linux, also ``/proc/<pid>/cmdline``; the two are joined so
+    a pid is judged on whichever source answered.
+
+    Args:
+        pid: Process id to inspect.
+
+    Returns:
+        str: the command line(s) found, possibly empty.
+    """
+    parts = []
+    try:
+        out = subprocess.run(
+            ["ps", "-ww", "-o", "command=", "-p", str(int(pid))],
+            capture_output=True, text=True, timeout=5,
+        )
+        if out.returncode == 0:
+            parts.append(out.stdout)
+    except Exception as e:
+        log.warning("rlm_pid_identity_check_failed pid=%s error=%s", pid, e)
+    try:
+        with open("/proc/%d/cmdline" % int(pid), "rb") as fh:
+            parts.append(fh.read().replace(b"\0", b" ").decode("utf-8", "replace"))
+    except (OSError, ValueError):
+        pass  # no /proc (macOS) or the process is gone
+    return " ".join(parts)
+
+
 def _pid_is_rlm_service(pid):
-    """True when `ps -o command= -p pid` shows an rlm-service.py process.
+    """True when the live process behind `pid` is an rlm-service.py process.
 
     A pid file can outlive its process and the pid can be recycled onto something
     unrelated; this check is what makes a pid-file pid "our own RLM" rather than
@@ -563,17 +594,9 @@ def _pid_is_rlm_service(pid):
         pid: Process id to inspect.
 
     Returns:
-        bool: True only if the live process command line contains rlm-service.py.
+        bool: True only if the process command line contains rlm-service.py.
     """
-    try:
-        out = subprocess.run(
-            ["ps", "-o", "command=", "-p", str(int(pid))],
-            capture_output=True, text=True, timeout=5,
-        )
-    except Exception as e:
-        log.warning("rlm_pid_identity_check_failed pid=%s error=%s", pid, e)
-        return False
-    return out.returncode == 0 and "rlm-service.py" in out.stdout
+    return "rlm-service.py" in _pid_command_line(pid)
 
 
 def _rlm_allowed_pids():
