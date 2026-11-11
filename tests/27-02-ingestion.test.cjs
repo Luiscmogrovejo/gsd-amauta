@@ -4,6 +4,13 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const http = require('http');
 
+// Phase 88 (88-07) disposition: named skip. The live-service tests below need the RLM
+// (services/rlm-service.py with PostgreSQL), which the hermetic environment does not provide
+// (GSD_RLM_ENABLED=false; the Postgres merge is Phase 89). They used to default to 127.0.0.1:18798,
+// i.e. the operator's live RLM; the port now comes only from an explicit GSD_RLM_PORT.
+const RLM_SKIP = 'the RLM service is not available under the hermetic environment (GSD_RLM_ENABLED=false); covered by the Phase 89 RLM integration suite';
+const RLM_PORT = parseInt(process.env.GSD_RLM_PORT, 10);
+
 // RLM-01: rlm_ingestion module checks
 test('27-02: rlm_ingestion.py has ingest_file and ingest_directory', () => {
   const src = fs.readFileSync('services/rlm_ingestion.py', 'utf8');
@@ -62,12 +69,12 @@ test('27-02: rlm_embeddings.py returns None for graceful degradation', () => {
 });
 
 // RLM-02: /reindex endpoint live test (requires rlm-service running)
-test('27-02: /reindex endpoint responds without crashing', async () => {
+test('27-02: /reindex endpoint responds without crashing', { skip: RLM_SKIP }, async () => {
   await new Promise((resolve, reject) => {
     const body = JSON.stringify({ path: 'services/', force: false });
     const req = http.request({
       hostname: '127.0.0.1',
-      port: parseInt(process.env.GSD_RLM_PORT || '18798'),
+      port: RLM_PORT,
       path: '/reindex',
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
