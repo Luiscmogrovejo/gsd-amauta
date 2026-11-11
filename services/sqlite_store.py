@@ -24,6 +24,7 @@ import re
 import sqlite3
 import threading
 import hashlib
+import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
@@ -104,6 +105,49 @@ def _gen_id(prefix="mem"):
     """Generate a short random ID matching PG's format."""
     rand = hashlib.md5(os.urandom(16)).hexdigest()[:12]
     return f"{prefix}-{rand}"
+
+
+def _gen_uuid():
+    """Generate a UUID string.
+
+    The blackboard / handoff / metrics tables use `UUID PRIMARY KEY DEFAULT
+    gen_random_uuid()` on PostgreSQL (migrations 014-017). SQLite has no UUID
+    type and no default generator, so ids are minted in Python and stored as
+    TEXT in the same canonical 8-4-4-4-12 form, which keeps every id the HTTP
+    API hands out shaped identically on both backends.
+    """
+    return str(uuid.uuid4())
+
+
+def _utc_now_iso():
+    """Current UTC time as an ISO-8601 string with milliseconds.
+
+    PG's TIMESTAMPTZ columns come back as datetimes the daemon calls
+    `.isoformat()` on. SQLite stores text, so the store writes the ISO form
+    directly and readers return it unchanged — same wire shape, no parsing
+    round-trip. Millisecond precision (SQLite's `datetime('now')` is
+    second-resolution) matters because handoff/finding ordering is
+    `created_at DESC` and several rows can land inside one second.
+    """
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "+00:00"
+
+
+def normalize_phase_number(raw):
+    """Normalize a phase identifier to int when integral, else float.
+
+    Phase 41's `step_handoffs.phase_number` is INTEGER on PostgreSQL, but GSD
+    inserts urgent work as decimal phases (`/amauta:insert-phase` 72.1). The
+    SQLite column is TEXT so it carries both; this is the one place that
+    decides what "72", "72.0" and "72.1" mean.
+
+    Raises ValueError when `raw` is not a number at all.
+    """
+    val = float(raw)
+    if val != val or val in (float("inf"), float("-inf")):
+        raise ValueError(f"phase must be a finite number, got {raw!r}")
+    if val.is_integer():
+        return int(val)
+    return val
 
 
 class SQLiteStore:
@@ -295,7 +339,92 @@ class SQLiteStore:
                     archived_at TEXT DEFAULT (datetime('now'))
                 );
 
+                -- ── Blackboard: agent findings (PG migrations 014 + 020/021/023/027) ──
+                -- Column set mirrors agent_findings after every extension
+                -- migration, so the daemon's /api/findings handlers read and
+                -- write the same field names on both backends. UUID -> TEXT,
+                -- TIMESTAMPTZ -> ISO-8601 TEXT, BOOLEAN -> INTEGER.
+                CREATE TABLE IF NOT EXISTS agent_findings (
+                    id              TEXT PRIMARY KEY,
+                    agent_name      TEXT NOT NULL,
+                    task_id         TEXT,            -- nullable since migration 027
+                    finding_type    TEXT NOT NULL,
+                    content         TEXT NOT NULL,
+                    confidence      REAL DEFAULT 0.8,
+                    created_at      TEXT NOT NULL,
+                    recipient_agent TEXT,            -- migration 020
+                    severity        TEXT,            -- migration 020
+                    session_id      TEXT,            -- migration 021
+                    decision_type   TEXT,            -- migration 023
+                    rule_id         TEXT,            -- migration 027
+                    domain          TEXT,
+                    file_path       TEXT,
+                    evidence        TEXT,
+                    suggested_fix   TEXT,
+                    dedup_key       TEXT,
+                    status          TEXT DEFAULT 'open',
+                    ticket_id       TEXT,
+                    audit_run_id    TEXT
+                );
+
+                -- ── Blackboard: agent messages (PG migration 015) ──
+                CREATE TABLE IF NOT EXISTS agent_messages (
+                    id                TEXT PRIMARY KEY,
+                    from_agent        TEXT NOT NULL,
+                    to_agent          TEXT NOT NULL,
+                    task_id           TEXT NOT NULL,
+                    message_type      TEXT NOT NULL,
+                    content           TEXT NOT NULL,
+                    response          TEXT,
+                    status            TEXT DEFAULT 'pending',
+                    operator_approved INTEGER DEFAULT 0,
+                    created_at        TEXT NOT NULL,
+                    responded_at      TEXT
+                );
+
+                -- ── Sharded workflows: step handoffs (PG migration 017) ──
+                -- phase_number is TEXT here, not INTEGER: SQLite carries the
+                -- decimal phases (`72.1`) that /amauta:insert-phase creates and
+                -- that the PG INTEGER column cannot hold. JSON/array columns
+                -- (TEXT[]/JSONB on PG) are JSON text.
+                CREATE TABLE IF NOT EXISTS step_handoffs (
+                    id               TEXT PRIMARY KEY,
+                    workflow_name    TEXT NOT NULL,
+                    step_id          TEXT NOT NULL,
+                    task_id          TEXT NOT NULL,
+                    phase_number     TEXT NOT NULL,
+                    completed_steps  TEXT DEFAULT '[]',
+                    context_snapshot TEXT NOT NULL,
+                    artifacts        TEXT DEFAULT '{}',
+                    decisions        TEXT DEFAULT '[]',
+                    user_inputs      TEXT DEFAULT '[]',
+                    next_step        TEXT,
+                    escalation_flags TEXT DEFAULT '[]',
+                    created_at       TEXT NOT NULL
+                );
+
+                -- ── Agent lifecycle metrics (PG migration 016) ──
+                CREATE TABLE IF NOT EXISTS agent_metrics (
+                    id                 TEXT PRIMARY KEY,
+                    agent_name         TEXT NOT NULL,
+                    task_id            TEXT NOT NULL,
+                    completion_time_ms INTEGER,
+                    token_usage        INTEGER,
+                    error_count        INTEGER DEFAULT 0,
+                    outcome            TEXT NOT NULL,
+                    created_at         TEXT NOT NULL
+                );
+
                 -- Indexes
+                CREATE INDEX IF NOT EXISTS idx_findings_task ON agent_findings(task_id);
+                CREATE INDEX IF NOT EXISTS idx_findings_dedup ON agent_findings(dedup_key, status);
+                CREATE INDEX IF NOT EXISTS idx_findings_domain ON agent_findings(domain, severity);
+                CREATE INDEX IF NOT EXISTS idx_findings_recipient ON agent_findings(recipient_agent, created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_messages_task ON agent_messages(task_id);
+                CREATE INDEX IF NOT EXISTS idx_messages_to ON agent_messages(to_agent, status);
+                CREATE INDEX IF NOT EXISTS idx_handoffs_task ON step_handoffs(task_id, workflow_name);
+                CREATE INDEX IF NOT EXISTS idx_handoffs_latest ON step_handoffs(workflow_name, phase_number, created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_metrics_agent ON agent_metrics(agent_name);
                 CREATE INDEX IF NOT EXISTS idx_memory_project ON gsd_memory(project_id);
                 CREATE INDEX IF NOT EXISTS idx_memory_source ON gsd_memory(source);
                 CREATE INDEX IF NOT EXISTS idx_memory_created ON gsd_memory(created_at);
@@ -347,14 +476,32 @@ class SQLiteStore:
         return self.memory_store(text, source, agent_id, tags, metadata, project_id)
 
     def memory_search(self, query, project_id=None, source=None, limit=20,
-                      exclude_sources=DEFAULT_EXCLUDE_SOURCES):
+                      exclude_sources=DEFAULT_EXCLUDE_SOURCES,
+                      tags=None, category=None):
         """Search memories using FTS5 with source-aware scoring.
 
         Args:
             exclude_sources: Tuple/list of source strings to exclude from results.
                              Defaults to DEFAULT_EXCLUDE_SOURCES (task_event, rpetd_phase).
                              Pass None to include all sources.
+            tags: Phase 10 LEARN-03 — optional list of tags; a row matches when it
+                  carries ANY of them (same `?|` "overlap" semantics as PG's
+                  GIN-indexed filter). SQLite has no JSONB operators, so the
+                  stored `["a","b"]` JSON text is matched with LIKE '%"a"%',
+                  which is exact at the element level because the quotes are
+                  part of the pattern. Tags are normalized first, so `pg` and
+                  `postgres` both match a row tagged `postgresql`.
+            category: Phase 10 LEARN-03 — optional metadata->>'category' filter.
+                      Matched against the JSON metadata text via SQLite's
+                      json_extract so a key named "category" nested elsewhere
+                      cannot produce a false hit.
+
+        The daemon forwards both kwargs on /api/memory/search for either
+        backend; before they existed here every filtered search raised
+        TypeError and the endpoint answered 500.
         """
+        if tags:
+            tags = normalize_tags(tags)
         with self._get_conn() as conn:
             # Try FTS5 first
             conditions = []
@@ -376,6 +523,17 @@ class SQLiteStore:
                 placeholders = ", ".join(["?"] * len(exclude_sources))
                 conditions.append(f"m.source NOT IN ({placeholders})")
                 params.extend(exclude_sources)
+
+            # LEARN-03: tag overlap filter (ANY-of, like PG's `tags ?| array`)
+            if tags:
+                tag_conds = " OR ".join(["m.tags LIKE ?"] * len(tags))
+                conditions.append(f"({tag_conds})")
+                params.extend([f'%"{t}"%' for t in tags])
+
+            # LEARN-03: metadata->>'category' equivalent
+            if category:
+                conditions.append("json_extract(m.metadata, '$.category') = ?")
+                params.append(category)
 
             where_extra = (" AND " + " AND ".join(conditions)) if conditions else ""
 
@@ -545,9 +703,44 @@ class SQLiteStore:
             return row[0]
 
     def memory_delete(self, mem_id):
-        """Delete a memory entry by ID."""
+        """Delete a memory entry by ID. Returns True when a row was removed.
+
+        Used to return None unconditionally, so POST /api/memory/delete
+        answered `{"deleted": true}` for ids that were never in the table.
+        """
         with self._get_conn() as conn:
-            conn.execute("DELETE FROM gsd_memory WHERE id = ?", (mem_id,))
+            cur = conn.execute("DELETE FROM gsd_memory WHERE id = ?", (mem_id,))
+            return cur.rowcount > 0
+
+    def memory_archive_and_delete(self, mem_id):
+        """Copy one memory row into gsd_memory_archive, then delete it.
+
+        Soft delete for the distill carry-forward: the text survives in
+        gsd_memory_archive (same table memory_retention_cleanup() uses) while
+        leaving the live table, so a distilled summary does not sit beside the
+        rows it summarizes.
+
+        Returns {"archived": bool, "deleted": bool, "id": mem_id}. A missing id
+        is not an error — it reports both flags False.
+        """
+        with self._get_conn() as conn:
+            row = conn.execute(
+                "SELECT id FROM gsd_memory WHERE id = ?", (mem_id,)
+            ).fetchone()
+            if row is None:
+                return {"archived": False, "deleted": False, "id": mem_id}
+            archived = conn.execute("""
+                INSERT OR IGNORE INTO gsd_memory_archive
+                    (id, text, agent_id, source, tags, metadata,
+                     project_id, created_at, updated_at)
+                SELECT id, text, agent_id, source, tags, metadata,
+                       project_id, created_at, updated_at
+                FROM gsd_memory WHERE id = ?
+            """, (mem_id,)).rowcount > 0
+            deleted = conn.execute(
+                "DELETE FROM gsd_memory WHERE id = ?", (mem_id,)
+            ).rowcount > 0
+            return {"archived": archived, "deleted": deleted, "id": mem_id}
 
     def memory_count_by_source(self):
         """Count memories grouped by source."""
@@ -681,6 +874,397 @@ class SQLiteStore:
                 results[f"{source}_archived"] = moved
         results["total"] = sum(results.values())
         return results
+
+    # ═══════════════════════════════════════════════════════
+    # Blackboard: agent findings + agent messages
+    # (Phase 38 COMM-01/02, Phase 78/79 audit substrate)
+    #
+    # These mirror the raw SQL the daemon runs against PostgreSQL. The daemon
+    # dispatches to them when the active store is SQLite; the PG path is
+    # unchanged. Every method returns plain dicts with ISO-8601 timestamp
+    # strings, so the daemon's JSON payloads are identical on both backends.
+    # ═══════════════════════════════════════════════════════
+
+    @staticmethod
+    def _finding_row(row):
+        """Shape one agent_findings row the way the sweep endpoint reports it."""
+        return {
+            "id": row["id"],
+            "agent_name": row["agent_name"],
+            "task_id": row["task_id"],
+            "finding_type": row["finding_type"],
+            "severity": row["severity"],
+            "domain": row["domain"],
+            "file_path": row["file_path"],
+            "rule_id": row["rule_id"],
+            "status": row["status"],
+            "content": row["content"],
+            "created_at": row["created_at"],
+        }
+
+    def findings_sweep(self, status="open", domain=None, severity=None,
+                       finding_type=None, since=None, limit=200):
+        """Audit sweep over agent_findings (GET /api/findings)."""
+        clauses = ["status = ?"]
+        args = [status]
+        if domain:
+            clauses.append("domain = ?")
+            args.append(domain)
+        if severity:
+            clauses.append("severity = ?")
+            args.append(severity)
+        if finding_type:
+            clauses.append("finding_type = ?")
+            args.append(finding_type)
+        if since:
+            clauses.append("created_at >= ?")
+            args.append(since)
+        sql = (
+            "SELECT * FROM agent_findings WHERE " + " AND ".join(clauses) +
+            " ORDER BY created_at DESC, rowid DESC LIMIT ?"
+        )
+        with self._get_conn() as conn:
+            rows = conn.execute(sql, args + [limit]).fetchall()
+        return [self._finding_row(r) for r in rows]
+
+    def findings_by_task(self, task_id):
+        """All findings for one task (GET /api/findings/:task_id)."""
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                "SELECT id, agent_name, task_id, finding_type, content, confidence,"
+                " created_at FROM agent_findings WHERE task_id = ?"
+                " ORDER BY created_at DESC, rowid DESC",
+                (task_id,),
+            ).fetchall()
+        return [
+            {
+                "id": r["id"],
+                "agent_name": r["agent_name"],
+                "task_id": r["task_id"],
+                "finding_type": r["finding_type"],
+                "content": r["content"],
+                "confidence": r["confidence"],
+                "created_at": r["created_at"],
+            }
+            for r in rows
+        ]
+
+    def finding_insert(self, agent_name, finding_type, content, task_id=None,
+                       confidence=0.8, severity=None, rule_id=None, domain=None,
+                       file_path=None, evidence=None, suggested_fix=None,
+                       status="open", audit_run_id=None, dedup_key=None):
+        """Insert a finding, deduplicating on dedup_key (SUBS-05 Layer A).
+
+        Returns {"deduped": True, "existing_id": ...} when an open/ticketed
+        finding already carries the same dedup_key, else
+        {"id": ..., "created_at": ...}. Same contract as the PG branch; the
+        caller computes dedup_key, never the client.
+        """
+        with self._get_conn() as conn:
+            if dedup_key is not None:
+                existing = conn.execute(
+                    "SELECT id FROM agent_findings WHERE dedup_key = ?"
+                    " AND status IN ('open','ticketed')"
+                    " ORDER BY created_at DESC, rowid DESC LIMIT 1",
+                    (dedup_key,),
+                ).fetchone()
+                if existing:
+                    return {"deduped": True, "existing_id": existing["id"]}
+            fid = _gen_uuid()
+            created_at = _utc_now_iso()
+            conn.execute(
+                "INSERT INTO agent_findings"
+                " (id, agent_name, task_id, finding_type, content, confidence,"
+                "  severity, rule_id, domain, file_path, evidence, suggested_fix,"
+                "  status, audit_run_id, dedup_key, created_at)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (fid, agent_name, task_id, finding_type, content, float(confidence),
+                 severity, rule_id, domain, file_path, evidence, suggested_fix,
+                 status, audit_run_id, dedup_key, created_at),
+            )
+            return {"id": fid, "created_at": created_at}
+
+    def finding_update(self, finding_id, status=None, ticket_id=None,
+                       ticket_id_present=False):
+        """Transition a finding's status/ticket (PATCH /api/findings/:id).
+
+        `ticket_id_present` distinguishes "ticket_id was supplied as null"
+        (clear it) from "ticket_id was not in the body" (leave it), which the
+        PG branch expresses with `"ticket_id" in body`. Returns None when no
+        such finding exists.
+        """
+        updates = []
+        params = []
+        if status:
+            updates.append("status = ?")
+            params.append(status)
+        if ticket_id_present:
+            updates.append("ticket_id = ?")
+            params.append(ticket_id)
+        if not updates:
+            return None
+        params.append(finding_id)
+        with self._get_conn() as conn:
+            cur = conn.execute(
+                f"UPDATE agent_findings SET {', '.join(updates)} WHERE id = ?",
+                params,
+            )
+            if cur.rowcount == 0:
+                return None
+            row = conn.execute(
+                "SELECT id, status, ticket_id FROM agent_findings WHERE id = ?",
+                (finding_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {"id": row["id"], "status": row["status"], "ticket_id": row["ticket_id"]}
+
+    def messages_for_agent(self, agent_name):
+        """Inbox: pending/approved messages addressed to one agent."""
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM agent_messages WHERE to_agent = ?"
+                " AND status IN ('pending', 'approved')"
+                " ORDER BY created_at ASC, rowid ASC",
+                (agent_name,),
+            ).fetchall()
+        return [
+            {
+                "id": r["id"],
+                "from_agent": r["from_agent"],
+                "to_agent": r["to_agent"],
+                "task_id": r["task_id"],
+                "message_type": r["message_type"],
+                "content": r["content"],
+                "response": r["response"],
+                "status": r["status"],
+                # BOOLEAN -> INTEGER on SQLite; the API contract is a JSON bool.
+                "operator_approved": bool(r["operator_approved"]),
+                "created_at": r["created_at"],
+                "responded_at": r["responded_at"],
+            }
+            for r in rows
+        ]
+
+    def message_insert(self, from_agent, to_agent, task_id, message_type,
+                       content, status="pending", operator_approved=False):
+        """Send a message. Returns {"id": ..., "created_at": ...}."""
+        mid = _gen_uuid()
+        created_at = _utc_now_iso()
+        with self._get_conn() as conn:
+            conn.execute(
+                "INSERT INTO agent_messages"
+                " (id, from_agent, to_agent, task_id, message_type, content,"
+                "  status, operator_approved, created_at)"
+                " VALUES (?,?,?,?,?,?,?,?,?)",
+                (mid, from_agent, to_agent, task_id, message_type, content,
+                 status, 1 if operator_approved else 0, created_at),
+            )
+        return {"id": mid, "created_at": created_at}
+
+    def message_update(self, msg_id, status=None, response=None,
+                       response_present=False, operator_approved=None):
+        """Approve / deny / respond to a message. None when the id is absent.
+
+        Setting a response also stamps responded_at, matching the PG branch's
+        `responded_at = NOW()`.
+        """
+        updates = []
+        params = []
+        if status:
+            updates.append("status = ?")
+            params.append(status)
+        if response_present:
+            updates.append("response = ?")
+            params.append(response)
+            updates.append("responded_at = ?")
+            params.append(_utc_now_iso())
+        if operator_approved is not None:
+            updates.append("operator_approved = ?")
+            params.append(1 if operator_approved else 0)
+        if not updates:
+            return None
+        params.append(msg_id)
+        with self._get_conn() as conn:
+            cur = conn.execute(
+                f"UPDATE agent_messages SET {', '.join(updates)} WHERE id = ?",
+                params,
+            )
+            if cur.rowcount == 0:
+                return None
+            row = conn.execute(
+                "SELECT id, status, operator_approved, responded_at"
+                " FROM agent_messages WHERE id = ?",
+                (msg_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "id": row["id"],
+            "status": row["status"],
+            "operator_approved": bool(row["operator_approved"]),
+            "responded_at": row["responded_at"],
+        }
+
+    # ═══════════════════════════════════════════════════════
+    # Sharded workflows: step handoffs (Phase 41 SHARD-04)
+    # ═══════════════════════════════════════════════════════
+
+    @staticmethod
+    def _loads(raw, default):
+        try:
+            return json.loads(raw) if raw else default
+        except (json.JSONDecodeError, TypeError):
+            return default
+
+    def step_handoff_latest(self, workflow_name, phase_number):
+        """Most recent handoff for a workflow+phase, or None.
+
+        `phase_number` is normalized before lookup so "72", 72 and 72.0 all
+        find the same rows, and "72.1" finds only the decimal phase.
+        """
+        key = str(normalize_phase_number(phase_number))
+        with self._get_conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM step_handoffs WHERE workflow_name = ?"
+                " AND phase_number = ?"
+                " ORDER BY created_at DESC, rowid DESC LIMIT 1",
+                (workflow_name, key),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "id": row["id"],
+            "workflow_name": row["workflow_name"],
+            "step_id": row["step_id"],
+            "task_id": row["task_id"],
+            "phase_number": normalize_phase_number(row["phase_number"]),
+            "completed_steps": self._loads(row["completed_steps"], []),
+            "context_snapshot": self._loads(row["context_snapshot"], {}),
+            "artifacts": self._loads(row["artifacts"], {}),
+            "decisions": self._loads(row["decisions"], []),
+            "user_inputs": self._loads(row["user_inputs"], []),
+            "next_step": row["next_step"],
+            "escalation_flags": self._loads(row["escalation_flags"], []),
+            "created_at": row["created_at"],
+        }
+
+    def step_handoff_insert(self, workflow_name, phase_number, step_id="",
+                            task_id="", completed_steps=None,
+                            context_snapshot=None, artifacts=None,
+                            decisions=None, user_inputs=None, next_step=None,
+                            escalation_flags=None):
+        """Append one handoff row. Returns {"id": ..., "created_at": ...}.
+
+        Append-only, like the PG table — handoffs are a log, never upserted.
+        """
+        key = str(normalize_phase_number(phase_number))
+        hid = _gen_uuid()
+        created_at = _utc_now_iso()
+        with self._get_conn() as conn:
+            conn.execute(
+                "INSERT INTO step_handoffs"
+                " (id, workflow_name, step_id, task_id, phase_number,"
+                "  completed_steps, context_snapshot, artifacts, decisions,"
+                "  user_inputs, next_step, escalation_flags, created_at)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (hid, workflow_name, step_id or "", task_id or "", key,
+                 json.dumps(completed_steps or []),
+                 json.dumps(context_snapshot or {}),
+                 json.dumps(artifacts or {}),
+                 json.dumps(decisions or []),
+                 json.dumps(user_inputs or []),
+                 next_step,
+                 json.dumps(escalation_flags or []),
+                 created_at),
+            )
+        return {"id": hid, "created_at": created_at}
+
+    # ═══════════════════════════════════════════════════════
+    # Agent lifecycle metrics (Phase 39 LIFE-02)
+    # ═══════════════════════════════════════════════════════
+
+    def agent_metric_insert(self, agent_name, task_id, outcome,
+                            completion_time_ms=None, token_usage=None,
+                            error_count=0):
+        """Record one agent execution metric."""
+        mid = _gen_uuid()
+        created_at = _utc_now_iso()
+        with self._get_conn() as conn:
+            conn.execute(
+                "INSERT INTO agent_metrics"
+                " (id, agent_name, task_id, completion_time_ms, token_usage,"
+                "  error_count, outcome, created_at)"
+                " VALUES (?,?,?,?,?,?,?,?)",
+                (mid, agent_name, task_id, completion_time_ms, token_usage,
+                 int(error_count or 0), outcome, created_at),
+            )
+        return {"id": mid, "created_at": created_at}
+
+    def agent_metrics_stats(self):
+        """Per-agent aggregates, matching the PG GROUP BY in /api/metrics/stats.
+
+        `AVG(...)::int` becomes a Python round-to-int, and PG's
+        `COUNT(*) FILTER (WHERE outcome = 'pass')` becomes a SUM over a CASE —
+        SQLite has no FILTER clause before 3.30 on every platform, and the CASE
+        form is equivalent everywhere.
+        """
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                "SELECT agent_name,"
+                " COUNT(*) AS tasks_completed,"
+                " AVG(completion_time_ms) AS avg_time_ms,"
+                " AVG(token_usage) AS avg_tokens,"
+                " (CAST(SUM(error_count) AS REAL) / COUNT(*)) AS error_rate,"
+                " (CAST(SUM(CASE WHEN outcome = 'pass' THEN 1 ELSE 0 END) AS REAL)"
+                "   / COUNT(*)) AS pass_rate"
+                " FROM agent_metrics GROUP BY agent_name ORDER BY agent_name"
+            ).fetchall()
+        return [
+            {
+                "agent_name": r["agent_name"],
+                "tasks_completed": r["tasks_completed"],
+                "avg_time_ms": int(round(r["avg_time_ms"])) if r["avg_time_ms"] is not None else None,
+                "avg_tokens": int(round(r["avg_tokens"])) if r["avg_tokens"] is not None else None,
+                "error_rate": float(r["error_rate"]) if r["error_rate"] is not None else None,
+                "pass_rate": float(r["pass_rate"]) if r["pass_rate"] is not None else None,
+            }
+            for r in rows
+        ]
+
+    # ═══════════════════════════════════════════════════════
+    # Degraded-mode reporting
+    # ═══════════════════════════════════════════════════════
+
+    #: Features that exist only on the PostgreSQL backend. The daemon reports
+    #: this list on /health and refuses the matching endpoints with a typed
+    #: 503 rather than a dialect-error 500.
+    PG_ONLY_FEATURES = (
+        "vector_search",
+        "rlm_index",
+        "semantic_cache",
+        "a2a",
+        "party_sessions",
+        "skill_invocations",
+        "task_completions",
+    )
+
+    def degraded_counts(self):
+        """Cheap counts for the /health degraded section.
+
+        Three COUNT(*)s at most, no table scan of content. `rlm_chunks` and
+        embeddings do not exist on SQLite, so they report 0 rather than being
+        omitted — a consumer graphing coverage sees a real zero, not a gap.
+        """
+        counts = {"memory_rows": 0, "memory_rows_with_embeddings": 0, "rlm_chunks": 0}
+        try:
+            with self._get_conn() as conn:
+                counts["memory_rows"] = conn.execute(
+                    "SELECT COUNT(*) FROM gsd_memory"
+                ).fetchone()[0]
+        except Exception:
+            counts["memory_rows"] = -1
+        return counts
 
     # ═══════════════════════════════════════════════════════
     # Shared Knowledge Base (SKB) Operations

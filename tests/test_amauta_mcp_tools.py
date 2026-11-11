@@ -120,12 +120,29 @@ class TestMemoryStoreTool(unittest.TestCase):
         store.memory_store_with_embedding.assert_called_once()
         self.assertEqual(str(data.get("id")), "mem-1", f"Expected id=mem-1, got: {data}")
 
-    def test_memory_store_pg_unavailable(self):
-        """amauta/memory-store returns pg_unavailable when store is None."""
-        with patch.object(_mod, "_get_pg_store", return_value=None):
+    def test_memory_store_no_database(self):
+        """amauta/memory-store returns pg_unavailable only when NO store exists.
+
+        The tool now resolves its store through _get_store(), which falls back
+        to SQLite when PostgreSQL is down — so the error case is "no database
+        at all", not "no PostgreSQL". Patching _get_store (not _get_pg_store)
+        also keeps the test from opening the real ~/.amauta SQLite file.
+        """
+        with patch.object(_mod, "_get_store", return_value=None):
             result = _run(_mod.call_tool("amauta/memory-store", {"text": "hello"}))
         data = _result_json(result)
         self.assertEqual(data.get("error"), "pg_unavailable")
+
+    def test_memory_store_uses_sqlite_when_pg_down(self):
+        """With PG down, memory-store writes through the SQLite store."""
+        store = _mock_store(memory_store_return="mem-sqlite-1")
+        with patch.object(_mod, "_get_pg_store", return_value=None), \
+             patch.object(_mod, "_get_sqlite_store", return_value=store):
+            result = _run(_mod.call_tool("amauta/memory-store", {"text": "hello"}))
+        data = _result_json(result)
+        store.memory_store_with_embedding.assert_called_once()
+        self.assertEqual(data.get("id"), "mem-sqlite-1", f"got: {data}")
+        self.assertIsNone(data.get("error"), f"must not error on SQLite: {data}")
 
 
 class TestMemorySearchTool(unittest.TestCase):
@@ -134,12 +151,22 @@ class TestMemorySearchTool(unittest.TestCase):
         if not _MOD_AVAILABLE:
             self.skipTest(f"Module failed to load: {_LOAD_ERROR}")
 
-    def test_memory_search_pg_unavailable(self):
-        """amauta/memory-search returns pg_unavailable when _get_pg_store() is None."""
-        with patch.object(_mod, "_get_pg_store", return_value=None):
+    def test_memory_search_no_database(self):
+        """amauta/memory-search returns pg_unavailable only when NO store exists."""
+        with patch.object(_mod, "_get_store", return_value=None):
             result = _run(_mod.call_tool("amauta/memory-search", {"query": "x"}))
         data = _result_json(result)
         self.assertEqual(data.get("error"), "pg_unavailable")
+
+    def test_memory_search_uses_sqlite_when_pg_down(self):
+        """With PG down, memory-search answers from the SQLite store."""
+        store = _mock_store(memory_search_return=[{"text": "sqlite hit", "id": "m9"}])
+        with patch.object(_mod, "_get_pg_store", return_value=None), \
+             patch.object(_mod, "_get_sqlite_store", return_value=store):
+            result = _run(_mod.call_tool("amauta/memory-search", {"query": "x"}))
+        data = _result_json(result)
+        self.assertIsNone(data.get("error"), f"must not error on SQLite: {data}")
+        self.assertEqual(len(data.get("results", [])), 1, f"got: {data}")
 
     def test_memory_search_invalid_input(self):
         """amauta/memory-search with empty query returns invalid_input."""
@@ -207,9 +234,13 @@ class TestSearchCodeTool(unittest.TestCase):
         self.assertEqual(results[0]["symbol_name"], "PGStore")
         self.assertEqual(results[0]["score"], 0.9)
 
-    def test_search_code_pg_unavailable(self):
-        """amauta/search-code returns pg_unavailable when store is None."""
-        with patch.object(_mod, "_get_pg_store", return_value=None):
+    def test_search_code_no_database(self):
+        """amauta/search-code errors only when NO store is available.
+
+        It resolves through _get_store() now, so a PG outage falls back to the
+        SQLite memory index rather than erroring out.
+        """
+        with patch.object(_mod, "_get_store", return_value=None):
             result = _run(_mod.call_tool("amauta/search-code", {"query": "find something"}))
         data = _result_json(result)
         self.assertEqual(data.get("error"), "pg_unavailable")
@@ -270,7 +301,16 @@ class TestSearchCodeTool(unittest.TestCase):
             result = _run(_mod.call_tool("amauta/search-code", {"query": "anything"}))
         data = _result_json(result)
         self.assertEqual(data.get("engine"), "memory_fallback")
-        self.assertEqual(data.get("results"), known_rows)
+        # The fallback now normalizes memory rows into the same
+        # {path,text,symbol_name,score} shape as the hybrid results, so the
+        # post-filters have a `path` to compare against instead of silently
+        # dropping every row. Content must survive the normalization.
+        results = data.get("results")
+        self.assertEqual(len(results), len(known_rows))
+        self.assertEqual(results[0]["path"], known_rows[0]["path"])
+        self.assertEqual(results[0]["text"], known_rows[0]["text"])
+        for key in ("path", "text", "symbol_name", "score"):
+            self.assertIn(key, results[0])
 
     def test_search_code_hybrid_empty_is_a_valid_answer(self):
         """An empty hybrid_search result ([]) is a VALID terminal answer — it must
