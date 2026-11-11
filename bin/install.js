@@ -220,12 +220,13 @@ const hasHelp = args.includes('--help') || args.includes('-h');
 const forceStatusline = args.includes('--force-statusline');
 const enableMobileMcp = args.includes('--enable-mobile-mcp') || process.env.GSD_MOBILE_MCP === 'on';
 const enableCompression = args.includes('--enable-compression') || process.env.GSD_COMPRESS === 'on';
+const enableShunt = args.includes('--enable-shunt') || process.env.GSD_SHUNT === 'on';
 
 console.log(banner);
 
 // Show help if requested
 if (hasHelp) {
-  console.log(`  ${yellow}Usage:${reset} node bin/install.js [options]\n\n  ${yellow}Options:${reset}\n    ${cyan}-g, --global${reset}              Install globally (to config directory)\n    ${cyan}-l, --local${reset}               Install locally (to current directory)\n    ${cyan}--claude${reset}                  Install for Claude Code only\n    ${cyan}--opencode${reset}                Install for OpenCode only\n    ${cyan}--gemini${reset}                  Install for Gemini only\n    ${cyan}--codex${reset}                   Install for Codex only\n    ${cyan}--all${reset}                     Install for all runtimes\n    ${cyan}-u, --uninstall${reset}           Uninstall Amauta (remove all files)\n    ${cyan}-c, --config-dir <path>${reset}   Specify custom config directory\n    ${cyan}-h, --help${reset}                Show this help message\n    ${cyan}--force-statusline${reset}        Replace existing statusline config\n    ${cyan}--enable-compression${reset}      Opt in to output-compression hooks (Claude only; default off)\n\n  ${yellow}Examples:${reset}\n    ${dim}# Interactive install (prompts for runtime and location)${reset}\n    npx get-shit-done-cc\n\n    ${dim}# Install for Claude Code globally${reset}\n    npx get-shit-done-cc --claude --global\n\n    ${dim}# Install for Gemini globally${reset}\n    npx get-shit-done-cc --gemini --global\n\n    ${dim}# Install for Codex globally${reset}\n    npx get-shit-done-cc --codex --global\n\n    ${dim}# Install for all runtimes globally${reset}\n    npx get-shit-done-cc --all --global\n\n    ${dim}# Install to custom config directory${reset}\n    npx get-shit-done-cc --codex --global --config-dir ~/.codex-work\n\n    ${dim}# Install to current project only${reset}\n    npx get-shit-done-cc --claude --local\n\n    ${dim}# Uninstall GSD from Codex globally${reset}\n    npx get-shit-done-cc --codex --global --uninstall\n\n  ${yellow}Notes:${reset}\n    The --config-dir option is useful when you have multiple configurations.\n    It takes priority over CLAUDE_CONFIG_DIR / GEMINI_CONFIG_DIR / CODEX_HOME environment variables.\n`);
+  console.log(`  ${yellow}Usage:${reset} node bin/install.js [options]\n\n  ${yellow}Options:${reset}\n    ${cyan}-g, --global${reset}              Install globally (to config directory)\n    ${cyan}-l, --local${reset}               Install locally (to current directory)\n    ${cyan}--claude${reset}                  Install for Claude Code only\n    ${cyan}--opencode${reset}                Install for OpenCode only\n    ${cyan}--gemini${reset}                  Install for Gemini only\n    ${cyan}--codex${reset}                   Install for Codex only\n    ${cyan}--all${reset}                     Install for all runtimes\n    ${cyan}-u, --uninstall${reset}           Uninstall Amauta (remove all files)\n    ${cyan}-c, --config-dir <path>${reset}   Specify custom config directory\n    ${cyan}-h, --help${reset}                Show this help message\n    ${cyan}--force-statusline${reset}        Replace existing statusline config\n    ${cyan}--enable-compression${reset}      Opt in to output-compression hooks (Claude only; default off)\n    ${cyan}--enable-shunt${reset}            Opt in to the token-saving read shunt (Claude only; default off)\n\n  ${yellow}Examples:${reset}\n    ${dim}# Interactive install (prompts for runtime and location)${reset}\n    npx get-shit-done-cc\n\n    ${dim}# Install for Claude Code globally${reset}\n    npx get-shit-done-cc --claude --global\n\n    ${dim}# Install for Gemini globally${reset}\n    npx get-shit-done-cc --gemini --global\n\n    ${dim}# Install for Codex globally${reset}\n    npx get-shit-done-cc --codex --global\n\n    ${dim}# Install for all runtimes globally${reset}\n    npx get-shit-done-cc --all --global\n\n    ${dim}# Install to custom config directory${reset}\n    npx get-shit-done-cc --codex --global --config-dir ~/.codex-work\n\n    ${dim}# Install to current project only${reset}\n    npx get-shit-done-cc --claude --local\n\n    ${dim}# Uninstall GSD from Codex globally${reset}\n    npx get-shit-done-cc --codex --global --uninstall\n\n  ${yellow}Notes:${reset}\n    The --config-dir option is useful when you have multiple configurations.\n    It takes priority over CLAUDE_CONFIG_DIR / GEMINI_CONFIG_DIR / CODEX_HOME environment variables.\n`);
   process.exit(0);
 }
 
@@ -1606,7 +1607,7 @@ function uninstall(isGlobal, runtime = 'claude') {
   // 4. Remove GSD hooks
   const hooksDir = path.join(targetDir, 'hooks');
   if (fs.existsSync(hooksDir)) {
-    const gsdHooks = ['gsd-statusline.js', 'gsd-check-update.js', 'gsd-check-update.sh', 'gsd-context-monitor.js'];
+    const gsdHooks = ['gsd-statusline.js', 'gsd-check-update.js', 'gsd-check-update.sh', 'gsd-context-monitor.js', 'gsd-shunt-gate.cjs'];
     let hookCount = 0;
     for (const hook of gsdHooks) {
       const hookPath = path.join(hooksDir, hook);
@@ -1704,7 +1705,7 @@ function uninstall(isGlobal, runtime = 'claude') {
       settings.hooks.PreToolUse = settings.hooks.PreToolUse.filter(entry => {
         if (entry.hooks && Array.isArray(entry.hooks)) {
           const hasGsdHook = entry.hooks.some(h =>
-            h.command && h.command.includes('gsd-compress-gate')
+            h.command && (h.command.includes('gsd-compress-gate') || h.command.includes('gsd-shunt-gate'))
           );
           return !hasGsdHook;
         }
@@ -1717,6 +1718,13 @@ function uninstall(isGlobal, runtime = 'claude') {
       if (settings.hooks.PreToolUse.length === 0) {
         delete settings.hooks.PreToolUse;
       }
+    }
+
+    // Remove the env switch the shunt install wrote (symmetric with --enable-shunt).
+    if (settings.env && settings.env.GSD_SHUNT !== undefined) {
+      delete settings.env.GSD_SHUNT;
+      if (Object.keys(settings.env).length === 0) delete settings.env;
+      settingsModified = true;
     }
 
     // Clean up empty hooks object
@@ -2689,6 +2697,38 @@ function install(isGlobal, runtime = 'claude') {
       console.log(`  ${green}✓${reset} Registered output-compression hooks (--enable-compression)`);
     } else if (runtime === 'claude') {
       console.log(`  ${dim}Skipped compression (opt-in) -- pass --enable-compression or set GSD_COMPRESS=on to register it${reset}`);
+    }
+
+    // Token-saving read shunt (PreToolUse gate on Read|Bash). Claude-only, OPT-IN behind
+    // --enable-shunt / GSD_SHUNT=on, idempotent. Unlike compression, the install also
+    // persists the switch (env.GSD_SHUNT=on): a registered gate that stays off saves nothing.
+    if (runtime === 'claude' && enableShunt) {
+      if (!settings.hooks.PreToolUse) {
+        settings.hooks.PreToolUse = [];
+      }
+      const shuntGateCommand = isGlobal
+        ? buildHookCommand(targetDir, 'gsd-shunt-gate.cjs')
+        : 'node ' + dirName + '/hooks/gsd-shunt-gate.cjs';
+      const hasShuntGateHook = settings.hooks.PreToolUse.some(entry =>
+        entry.hooks && entry.hooks.some(h => h.command && h.command.includes('gsd-shunt-gate'))
+      );
+      if (!hasShuntGateHook) {
+        settings.hooks.PreToolUse.push({
+          matcher: 'Read|Bash',
+          hooks: [
+            {
+              type: 'command',
+              command: shuntGateCommand,
+              timeout: 5
+            }
+          ]
+        });
+      }
+      if (!settings.env) settings.env = {};
+      if (settings.env.GSD_SHUNT === undefined) settings.env.GSD_SHUNT = 'on';
+      console.log(`  ${green}✓${reset} Registered token-saving read shunt (--enable-shunt)`);
+    } else if (runtime === 'claude') {
+      console.log(`  ${dim}Skipped read shunt (opt-in) -- pass --enable-shunt or set GSD_SHUNT=on to register it${reset}`);
     }
   }
 

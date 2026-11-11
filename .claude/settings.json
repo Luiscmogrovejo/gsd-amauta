@@ -18,6 +18,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "Read|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/hooks/gsd-shunt-gate.cjs\"",
+            "timeout": 5
+          }
+        ]
       }
     ],
     "Stop": [

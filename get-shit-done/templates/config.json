@@ -76,5 +76,10 @@
     "exclude_commands": [],
     "max_output_lines": 200,
     "emit_savings_telemetry": false
+  },
+  "shunt": {
+    "enabled": false,
+    "min_lines": 400,
+    "min_bytes": 40000
   }
 }
