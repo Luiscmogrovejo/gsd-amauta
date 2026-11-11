@@ -30,29 +30,37 @@ git-verified repository — never from npm.
 ```
 </step>
 
-<step name="manual_update_procedure">
-Show the safe manual update procedure (verified file sync from the local repo):
+<step name="local_update_procedure">
+Show the real update procedure — the installer, run from the verified local repo:
 
 ```
-### Safe manual update (from the local repo)
+### Update from the local repo
 
-1. cd /Users/luismogrovejo/Code/gsd-amauta
+1. cd <your gsd-amauta clone>          # e.g. ~/Code/gsd-amauta
 2. Verify integrity first:
      git fsck --no-dangling && git log --oneline -3   # confirm HEAD is your own work
-3. Sync the verified content manually (plain copies — do not run installer scripts
-   you have not just reviewed):
-     - agents:    cp agents/gsd-*.md ~/.claude/agents/
-       (note: installed copies legitimately differ from repo where the installer
-        expanded `~/.claude/` to absolute paths inside command examples)
-     - engine:    rsync -a --delete get-shit-done/bin/ ~/.claude/get-shit-done/bin/
-     - workflows: rsync -a get-shit-done/workflows/ ~/.claude/get-shit-done/workflows/
-     - hooks:     cp hooks/dist/*.js hooks/dist/*.cjs ~/.claude/hooks/ 2>/dev/null;
-                  cp hooks/dist/lib/*.cjs ~/.claude/hooks/lib/
-     - version:   cp get-shit-done/VERSION ~/.claude/get-shit-done/VERSION 2>/dev/null || true
-4. Verify after sync: spot-hash a few files against the repo
-     (shasum -a 256 <installed> <repo> — pairs must match).
-5. Restart Claude Code to pick up changes.
+3. git pull                                           # from your own remote only
+4. node bin/init.cjs --upgrade
+     - re-runs bin/install.js, which rewrites `~/.claude/` paths inside the
+       installed copies and regenerates gsd-file-manifest.json
+     - applies new SQL migrations on PostgreSQL (on SQLite nothing is applied
+       and nothing is recorded as applied)
+     - updates ~/.amauta/data/install_record.json and restarts the daemon
+     Preview first with: node bin/init.cjs --upgrade --dry-run --json
+5. Verify: node bin/cli.cjs doctor
+     install_drift must be OK and version_skew must show installed == package.
+     Exit 0 = healthy, 1 = degraded, 2 = failing.
+6. Restart Claude Code to pick up changes.
 ```
+
+**Do NOT hand-copy files into `~/.claude/`.** A raw `cp` / `rsync` sync:
+  - skips install.js's path rewriting, so the installed copies point at the
+    wrong config dir;
+  - never regenerates `gsd-file-manifest.json`, so every later drift check and
+    local-patch backup compares against a stale baseline (and `doctor` then
+    reports drift for files you copied correctly);
+  - used to copy `get-shit-done/VERSION`, a file that does not exist in the
+    repo — the `|| true` hid that, leaving the installed VERSION stale forever.
 
 If the operator asks to re-enable automated updates, require an explicit
 decision naming a TRUSTED source (the local repo path or a private registry) —
@@ -64,5 +72,7 @@ never default back to the public npm package.
 <success_criteria>
 - [ ] NO npm/npx command executed (no `npm view`, no `npx get-shit-done-cc`)
 - [ ] Refusal + reason displayed
-- [ ] Manual, verified local-repo sync procedure shown
+- [ ] The installer-based local-repo update shown (`git pull && node bin/init.cjs --upgrade`)
+- [ ] Raw copy/rsync NOT presented as an update path (it loses path rewriting and the manifest)
+- [ ] Post-update verification with `gsd-amauta doctor` shown
 </success_criteria>

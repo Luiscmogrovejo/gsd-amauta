@@ -2,7 +2,7 @@
 
 This guide takes you from zero to your first shipped feature phase in about 15 minutes.
 
-**Prerequisites:** Node.js >= 20, Docker (for PostgreSQL + Valkey), Python 3.11+, Claude Code or any MCP-compatible AI coding agent.
+**Prerequisites:** Node.js >= 20, Python 3.11+, Claude Code or any MCP-compatible AI coding agent. Docker (for PostgreSQL + Valkey) is **recommended**: without it the install completes on a SQLite fallback with semantic memory search, the RLM code index, the blackboard, the semantic cache and the A2A exchange log switched off. `gsd-amauta doctor` reports which backend you are on — see the README's "SQLite fallback: what actually works".
 
 ---
 
@@ -222,17 +222,28 @@ gsd-amauta module search payments        # Search the registry
 gsd-amauta module install registry:stripe-integration@1.0.0
 ```
 
-**Monitor A2A agent-to-agent activity (v3.3+):**
+**Monitor A2A agent-to-agent activity (v3.3+) — EXPERIMENTAL:**
+
+A2A and party sessions are a preview surface: nothing in the RPETD pipeline
+sends A2A messages yet, the per-pair circuit breaker is never armed (no Redis
+client is injected into it), and the exchange log requires PostgreSQL.
 
 ```bash
-gsd-amauta a2a tail                      # Stream live agent-to-agent exchanges
+gsd-amauta a2a tail                      # Stream agent-to-agent exchanges (daemon required)
 ```
 
 **Run a full system health check:**
 
 ```bash
-gsd-amauta doctor
+gsd-amauta doctor            # exit 0 healthy, 1 degraded, 2 failing
+gsd-amauta doctor --json     # same rows, machine-readable
+gsd-amauta doctor --strict   # warnings count as failures (CI gate)
 ```
+
+`doctor` checks more than liveness: a foreign binary shadowing `amauta` on
+PATH, drift between the installed copy and the install manifest, version skew,
+a SQLite fallback and the features it disables, an empty RLM index, and memory
+rows with no embedding.
 
 **Upgrade to the latest release:**
 

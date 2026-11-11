@@ -46,7 +46,9 @@ Work
   board | list | next | show     Task board and queue
   add | claim | rpetd | validate Task lifecycle (validator is never the author)
   agents ...                     Agent registry commands
-  module ... | party ...         Module and multi-agent session commands
+  module ...                     Module marketplace commands
+  party ... | a2a ...            Multi-agent sessions / agent-to-agent protocol
+                                 (both EXPERIMENTAL — see README)
 
 Docs: https://github.com/Luiscmogrovejo/gsd-amauta#readme`;
 
@@ -166,6 +168,28 @@ if (command === 'agents') {
   const toolsPath = path.resolve(__dirname, '..', 'get-shit-done', 'bin', 'gsd-tools.cjs');
   const agentsArgs = process.argv.slice(3);
   const result = spawnSync('node', [toolsPath, 'agents', ...agentsArgs], {
+    stdio: 'inherit',
+    cwd: path.resolve(__dirname, '..'),
+  });
+  process.exit(result.status === null ? 1 : result.status);
+}
+
+// ─── A2A subcommand (EXPERIMENTAL) ─────────────────────────────────────────
+//
+// gsd-amauta a2a tail [--from <agent>] [--to <agent>] [--since <ISO>]
+// gsd-amauta a2a list | capabilities <agent>
+//
+// The README documented `gsd-amauta a2a tail` while only `gsd-tools a2a tail`
+// existed, so the documented command errored out. Same spawnSync passthrough
+// as module/party/agents above.
+//
+// A2A itself is EXPERIMENTAL: no production code path sends A2A messages and
+// the client's circuit breaker is never armed (no Redis client is injected).
+
+if (command === 'a2a') {
+  const toolsPath = path.resolve(__dirname, '..', 'get-shit-done', 'bin', 'gsd-tools.cjs');
+  const a2aArgs = process.argv.slice(3);
+  const result = spawnSync('node', [toolsPath, 'a2a', ...a2aArgs], {
     stdio: 'inherit',
     cwd: path.resolve(__dirname, '..'),
   });
