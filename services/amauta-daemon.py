@@ -1243,9 +1243,119 @@ def _get_store():
     return _pg_store or _sqlite_store
 
 
+# The backend the operator asked for, captured at import time: the daemon
+# itself later writes GSD_BACKEND=sqlite into os.environ when it FALLS BACK,
+# and that must not be mistaken for a choice.
+_REQUESTED_BACKEND = os.environ.get("GSD_BACKEND", "").strip().lower()
+
+
 def _force_sqlite():
-    """True when GSD_FORCE_SQLITE pins the daemon to the SQLite backend."""
-    return os.environ.get("GSD_FORCE_SQLITE", "").strip().lower() in ("1", "true", "yes", "on")
+    """True when the operator selected SQLite as the main backend.
+
+    Either GSD_FORCE_SQLITE=1 or GSD_BACKEND=sqlite in the daemon's starting
+    environment. A selected SQLite backend is not a degraded fallback: no
+    PostgreSQL detection, no retries, no container auto-start.
+    """
+    if os.environ.get("GSD_FORCE_SQLITE", "").strip().lower() in ("1", "true", "yes", "on"):
+        return True
+    return _REQUESTED_BACKEND == "sqlite"
+
+
+def _env_int(name, default, lo, hi):
+    try:
+        return max(lo, min(hi, int(os.environ.get(name, "") or default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _env_float(name, default, lo, hi):
+    try:
+        return max(lo, min(hi, float(os.environ.get(name, "") or default)))
+    except (TypeError, ValueError):
+        return default
+
+
+# Startup backend selection record, surfaced on /health as `backend_selection`.
+_backend_selection = {"mode": "auto", "pg_expected": False, "pg_attempts": 0, "reason": None}
+
+
+def _last_backend_path():
+    return os.path.join(DATA_DIR, "last_backend")
+
+
+def _read_last_backend():
+    try:
+        with open(_last_backend_path(), "r", encoding="utf-8") as f:
+            return f.read().strip().lower()
+    except OSError:
+        return ""
+
+
+def _write_last_backend(name):
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        tmp = _last_backend_path() + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(name + "\n")
+        os.replace(tmp, _last_backend_path())
+    except OSError:
+        pass  # best-effort hint only
+
+
+def _pg_expected():
+    """True when this install is meant to run on PostgreSQL.
+
+    Retrying costs startup seconds, so it is spent only where PostgreSQL is
+    expected: a DSN is configured, the operator asked for it, or the previous
+    run was on PostgreSQL (a reboot where Docker is still starting is the
+    common case). A machine that has only ever run SQLite starts instantly.
+    """
+    if _REQUESTED_BACKEND in ("postgres", "postgresql", "pg"):
+        return True
+    if os.environ.get("GSD_POSTGRES_URL") or os.environ.get("DATABASE_URL"):
+        return True
+    return _read_last_backend() == "postgresql"
+
+
+def _connect_postgres_with_retry(detect, connect, sleep=time.sleep):
+    """Detect + connect to PostgreSQL, retrying before any SQLite fallback.
+
+    detect()            -> infra result dict (as detect_infrastructure()).
+    connect(url)        -> a connected store, or raises.
+    Returns (infra_result, pg_store_or_None, attempts, last_error).
+
+    One attempt when PostgreSQL is not expected; otherwise up to
+    GSD_PG_STARTUP_RETRIES attempts (default 4) with exponential backoff
+    starting at GSD_PG_STARTUP_BACKOFF seconds (default 3 -> 3s, 6s, 12s).
+    """
+    attempts_max = _env_int("GSD_PG_STARTUP_RETRIES", 4, 1, 20) if _pg_expected() else 1
+    backoff = _env_float("GSD_PG_STARTUP_BACKOFF", 3.0, 0.0, 60.0)
+    infra, store, last_error = None, None, None
+    attempt = 0
+    while attempt < attempts_max:
+        attempt += 1
+        try:
+            infra = detect()
+        except Exception as e:  # detection must never kill startup
+            infra, last_error = None, _safe_error(e)
+        if infra and infra.get("backend") == "postgresql":
+            try:
+                store = connect(infra["connection_url"])
+                last_error = None
+                break
+            except Exception as e:
+                store, last_error = None, _safe_error(e)
+        elif infra is not None:
+            last_error = last_error or "postgresql not detected"
+        if attempt < attempts_max:
+            delay = backoff * (2 ** (attempt - 1))
+            log.warning(
+                "pg_startup_retry attempt=%d/%d delay=%.1fs error=%s",
+                attempt, attempts_max, delay, last_error,
+            )
+            print(f"  PostgreSQL: not ready (attempt {attempt}/{attempts_max}: {last_error}) — retrying in {delay:.0f}s")
+            sleep(delay)
+    return infra, store, attempt, last_error
 
 
 def _is_sqlite(store):
@@ -1730,6 +1840,10 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             # /health alone which features are off, instead of discovering it
             # from a 503 at call time.
             health["degraded"] = bool(_sqlite_store and not _pg_store)
+            # How the backend was chosen at startup: operator-selected SQLite
+            # ("mode": "sqlite") is a choice; "auto" + a fallback reason means
+            # PostgreSQL was tried (pg_attempts times) and did not answer.
+            health["backend_selection"] = dict(_backend_selection)
             if health["degraded"]:
                 health["features_off"] = [
                     "vector_search",     # no pgvector: memory search is FTS5 only
@@ -4985,6 +5099,7 @@ def start_server(foreground=False):
                 _infra_result["connection_url"] = f"sqlite:///{_sqlite_store.db_path}"
                 print(f"  SQLite: active, forced ({_sqlite_store.db_path})")
                 log.info("sqlite_forced path=%s", _sqlite_store.db_path)
+                _backend_selection.update(mode="sqlite", reason="sqlite selected by operator")
                 os.environ["GSD_BACKEND"] = "sqlite"
                 os.environ["GSD_SQLITE_PATH"] = _sqlite_store.db_path
             except Exception as e:
@@ -4994,24 +5109,43 @@ def start_server(foreground=False):
         else:
             print("  SQLite: sqlite_store module not found")
     elif _HAS_INFRA_DETECT:
-        _infra_result = detect_infrastructure()
-        log.info("infra_detected backend=%s", _infra_result["backend"])
+        def _connect_pg(url):
+            if not _HAS_PG_MODULE:
+                raise RuntimeError("pg_store module not found")
+            store = PGStore(dsn=url)
+            store.health()
+            return store
+
+        _backend_selection["pg_expected"] = _pg_expected()
+        _infra_result, _pg_store, _attempts, _pg_err = _connect_postgres_with_retry(
+            detect_infrastructure, _connect_pg)
+        _backend_selection["pg_attempts"] = _attempts
+        if _infra_result is None:
+            _infra_result = {
+                "backend": "sqlite", "connection_url": "",
+                "features": ["memory", "tasks", "skb", "validation", "fts"],
+                "message": "Infrastructure detection failed; using SQLite",
+            }
+        log.info("infra_detected backend=%s attempts=%d", _infra_result["backend"], _attempts)
         print(f"  Infrastructure: {_infra_result['message']}")
         print(f"  Features: {', '.join(_infra_result['features'])}")
 
-        if _infra_result["backend"] == "postgresql":
+        if _pg_store is not None:
             # Set env var so downstream components (amauta.py, etc.) can use it
             os.environ["GSD_POSTGRES_URL"] = _infra_result["connection_url"]
-            if _HAS_PG_MODULE:
-                try:
-                    _pg_store = PGStore(dsn=_infra_result["connection_url"])
-                    h = _pg_store.health()
-                    print(f"  PostgreSQL: connected ({h.get('dsn_host', 'unknown')})")
-                except Exception as e:
-                    print(f"  PostgreSQL: FAILED ({_safe_error(e)}) — trying SQLite fallback")
-                    _pg_store = None
-            else:
-                print("  PostgreSQL: pg_store module not found")
+            h = _pg_store.health()
+            print(f"  PostgreSQL: connected ({h.get('dsn_host', 'unknown')}, attempt {_attempts})")
+            _backend_selection["reason"] = "postgresql connected"
+            _write_last_backend("postgresql")
+        else:
+            _backend_selection["reason"] = (
+                f"fell back to sqlite after {_attempts} PostgreSQL attempt(s): {_pg_err}")
+            if _backend_selection["pg_expected"]:
+                log.error("pg_startup_gave_up attempts=%d error=%s", _attempts, _pg_err)
+                print(f"  PostgreSQL: FAILED after {_attempts} attempt(s) ({_pg_err}) — falling back to SQLite")
+            if _infra_result["backend"] == "postgresql":
+                # Detected but unreachable: do not hand a PG url to the SQLite path.
+                _infra_result = dict(_infra_result, backend="sqlite", connection_url="")
 
         if _infra_result["backend"] == "sqlite" or (_infra_result["backend"] == "postgresql" and _pg_store is None):
             # SQLite fallback
