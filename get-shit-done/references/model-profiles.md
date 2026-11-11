@@ -4,24 +4,47 @@ Model profiles control which Claude model each GSD agent uses. This allows balan
 
 ## Profile Definitions
 
+Mirror of `MODEL_PROFILES` in `get-shit-done/bin/lib/core.cjs`. **Every agent in `agents/` has a
+row.** A missing row resolves to `sonnet` silently, which is a decision nobody made — so when an
+agent is added, add it to both places in the same change.
+
 | Agent | `quality` | `balanced` | `budget` |
 |-------|-----------|------------|----------|
 | gsd-operator | opus | opus | sonnet |
 | gsd-planner | opus | opus | sonnet |
+| gsd-architect | opus | opus | sonnet |
 | gsd-roadmapper | opus | sonnet | sonnet |
 | gsd-researcher | opus | sonnet | haiku |
 | gsd-executor-frontend | opus | sonnet | sonnet |
 | gsd-executor-backend | opus | sonnet | sonnet |
 | gsd-executor-infra | opus | sonnet | sonnet |
 | gsd-executor-general | opus | sonnet | sonnet |
+| gsd-executor-data | opus | sonnet | sonnet |
 | gsd-executor-mobile-android | opus | sonnet | sonnet |
 | gsd-executor-mobile-ios | opus | sonnet | sonnet |
 | gsd-executor-mobile-cross | opus | sonnet | sonnet |
 | gsd-executor-wearables | opus | sonnet | sonnet |
 | gsd-executor-ai | opus | sonnet | sonnet |
+| gsd-persona-senior-backend | opus | sonnet | sonnet |
+| gsd-persona-frontend-specialist | opus | sonnet | sonnet |
+| gsd-persona-systems-architect | opus | sonnet | sonnet |
+| gsd-debugger | opus | sonnet | sonnet |
+| gsd-security | opus | sonnet | sonnet |
+| gsd-tester | opus | sonnet | sonnet |
+| gsd-qa | sonnet | sonnet | haiku |
+| gsd-reviewer | sonnet | sonnet | sonnet |
 | gsd-checker | sonnet | sonnet | haiku |
 | gsd-validator | sonnet | sonnet | haiku |
-| gsd-debugger | opus | sonnet | sonnet |
+| gsd-auditor-agentic-flow | sonnet | sonnet | sonnet |
+| gsd-auditor-api-connections | sonnet | sonnet | sonnet |
+| gsd-auditor-backend | sonnet | sonnet | sonnet |
+| gsd-auditor-frontend | sonnet | sonnet | sonnet |
+| gsd-auditor-infra | sonnet | sonnet | sonnet |
+| gsd-auditor-mobile | sonnet | sonnet | sonnet |
+| gsd-auditor-general | sonnet | sonnet | haiku |
+| gsd-auditor-harness-self | sonnet | sonnet | haiku |
+| gsd-auditor-models | sonnet | sonnet | haiku |
+| gsd-auditor-reference | sonnet | sonnet | haiku |
 
 ## Profile Philosophy
 
@@ -39,6 +62,21 @@ Model profiles control which Claude model each GSD agent uses. This allows balan
 - Sonnet for anything that writes code
 - Haiku for research, checking, and validation
 - Use when: conserving quota, high-volume work, less critical phases
+
+**Floors that hold in every profile:** nothing that makes a security or debugging judgment drops
+to haiku — `gsd-security`, `gsd-debugger`, `gsd-reviewer` and the six security-judging domain
+auditors (agentic-flow, api-connections, backend, frontend, infra, mobile) stay at sonnet or
+above. The remaining auditors (general, harness-self, models, reference) check hygiene, drift and
+config currency, so they may drop to haiku in `budget`.
+
+## Per-specialist executor resolution
+
+`gsd-tools init execute-phase` emits `executor_model` (the `gsd-executor-general` tier, kept for
+backward compatibility) **and** `executor_models`, a map of every executor/persona agent to its
+resolved tier. The orchestrator routes a plan to a specialist first, then takes that specialist's
+entry from `executor_models` — it does not reuse `executor_model` for a routed specialist, which
+would make every per-specialist row above dead config. `gsd-tools resolve-model <agent>` resolves
+one agent on demand (for an agent not in the map, e.g. a newly added specialist).
 
 ## Resolution Logic
 

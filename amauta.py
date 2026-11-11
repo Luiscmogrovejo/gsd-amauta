@@ -160,6 +160,26 @@ PHASE_NAMES = {"R": "Research", "P": "Plan", "E": "Execute", "T": "Test", "D": "
 ENRICHMENT_DEDUP_WINDOW = 300  # seconds (5 min) -- skip Layer 2 R-phase if Layer 1 ran within this window
 
 RPETD_SOFT_CAP = 2000  # chars -- warn (don't block) when phase content exceeds this
+
+
+def _rpetd_hard_cap() -> int:
+    """Hard ceiling for a single RPETD --content payload, in characters.
+
+    Generous by design (the soft cap at 2000 already nudges toward brevity);
+    this exists so an agent cannot paste a whole transcript or test log into
+    the task record. Override with GSD_RPETD_MAX_CHARS; a non-numeric or
+    non-positive value falls back to the default.
+    """
+    raw = os.environ.get("GSD_RPETD_MAX_CHARS", "")
+    try:
+        val = int(str(raw).strip())
+        if val > 0:
+            return val
+    except (TypeError, ValueError):
+        pass
+    return 4000
+
+
 RPETD_PHASE_GUIDANCE = {
     "R": 500,   # key findings only, not raw output
     "P": 300,   # approach + key files
@@ -190,6 +210,25 @@ CODE_AGENTS: set = {
     # gsd-debugger writes bug-fix code and PRs — always requires gitflow gates
     "gsd-debugger",
 } | OPENCODE_AGENTS
+# Agents whose job IS validation. A task claimed by one of these cannot be
+# closed by the bare `--validator validator` default: that default carries no
+# information, so it would silently permit a validator to validate itself.
+VALIDATOR_AGENTS: set = {"validator", "checker"}
+
+
+def _normalize_agent_name(name) -> str:
+    """Canonical form used for agent-IDENTITY comparison.
+
+    `gsd-executor-backend`, `GSD-Executor-Backend` and `executor-backend` are
+    the same agent wearing three spellings; the self-validation gate compares
+    the canonical form so a rename of the prefix cannot defeat it.
+    """
+    n = str(name or "").strip().lower()
+    if n.startswith("gsd-"):
+        n = n[len("gsd-"):]
+    return n
+
+
 NON_CODE_AGENTS: set = {
     # Legacy naming
     "researcher", "finance", "marketing", "security-auditor", "operator", "validator",
@@ -3966,6 +4005,26 @@ def cmd_rpetd(args):
         if phase not in PHASES:
             print(c(f"Phase must be one of: {', '.join(PHASES)}", RED)); sys.exit(1)
 
+        # ── Hard cap: a phase log is a record, not a transcript ──
+        # Checked BEFORE any mutation so a rejected write leaves the task untouched.
+        content_len = len(args.content or "")
+        hard_cap = _rpetd_hard_cap()
+        if content_len > hard_cap:
+            print(
+                c(
+                    f"RPETD CONTENT TOO LONG: phase {phase} content is {content_len} chars, "
+                    f"hard cap is {hard_cap}.",
+                    RED,
+                )
+            )
+            print(dim(
+                f"  Target for {phase}-phase: ~{RPETD_PHASE_GUIDANCE.get(phase, RPETD_SOFT_CAP)} chars. "
+                "Log key findings, commands and verdicts -- not raw output. "
+                "Put long artifacts in a file and reference its path. "
+                "Raise the ceiling with GSD_RPETD_MAX_CHARS=<n> if a task genuinely needs it."
+            ))
+            sys.exit(1)
+
         phases = item.setdefault("rpetd_phases", {ph: "" for ph in PHASES})
         existing = phases.get(phase, "")
 
@@ -3976,7 +4035,6 @@ def cmd_rpetd(args):
             phases[phase] = (existing + "\n" + args.content).strip() if existing else args.content
 
         # ── Soft cap warning: guide agents toward concise phase content ──
-        content_len = len(args.content)
         if content_len > RPETD_SOFT_CAP:
             phase_target = RPETD_PHASE_GUIDANCE.get(phase, RPETD_SOFT_CAP)
             print(
@@ -4488,19 +4546,45 @@ def cmd_validate(args):
                 sys.exit(1)
 
         # ── SELF-VALIDATION CHECK: claimed_by != validated_by ──
-        claimer = (item.get("claimed_by") or "").strip().lower()
-        validator_id = (args.validator or "validator").strip().lower()
+        #
+        # LIMIT (be honest about what this buys): `--validator` is SELF-REPORTED.
+        # This gate stops an agent that names itself truthfully from closing its
+        # own work, and it stops the uninformative bare default. It cannot stop an
+        # agent that lies about its name. A stronger guarantee needs an identity
+        # the caller does not choose -- e.g. the daemon issuing a per-spawn token
+        # at claim time and `validate` requiring a DIFFERENT live token, or the
+        # orchestrator (not the subagent) invoking `validate`.
+        raw_validator = str(getattr(args, "validator", "") or "").strip()
+        validator_defaulted = not raw_validator
+        claimer_raw = (item.get("claimed_by") or "").strip()
+        claimer = _normalize_agent_name(claimer_raw)
+        validator_id = _normalize_agent_name(raw_validator or "validator")
         force_reason = getattr(args, "force_reason", "") or ""
-        if claimer and validator_id and claimer == validator_id:
+
+        same_agent = bool(claimer and validator_id and claimer == validator_id)
+        # A validator-type agent claimed the task and `--validator` was omitted:
+        # the default resolves to a validator name that proves nothing.
+        bare_default_on_validator_claim = bool(
+            validator_defaulted and claimer and claimer in VALIDATOR_AGENTS
+        )
+
+        if same_agent or bare_default_on_validator_claim:
+            reason_label = (
+                f"claimed by @{claimer_raw or claimer}, validated by @{raw_validator or 'validator'}"
+                if same_agent
+                else f"claimed by validator-type agent @{claimer_raw or claimer} and --validator was not supplied"
+            )
             if force_reason:
-                print(c(f"Warning: self-validation for {args.id} (claimed by @{claimer}, validated by @{validator_id}). "
+                print(c(f"Warning: self-validation for {args.id} ({reason_label}). "
                         f"Override reason: {force_reason}", YELLOW))
                 # Persist force_reason to task notes for audit trail -- AGT-05 fix
                 _append_note(item, f"FORCE_OVERRIDE: self-validation override. Reason: {force_reason}",
                             validator_id)
             else:
-                print(c(f"SELF-VALIDATION BLOCKED: {args.id} was claimed by @{claimer}. "
-                        f"Cannot be validated by the same agent.", RED))
+                print(c(f"SELF-VALIDATION BLOCKED: {args.id} — {reason_label}. "
+                        f"A task cannot be validated by the agent that did the work.", RED))
+                if bare_default_on_validator_claim:
+                    print(dim("  Pass the REAL validating agent, e.g. --validator gsd-validator."))
                 print(dim("  Use --force-reason 'justification' to override self-validation check."))
                 _append_note(item, f"SELF_VALIDATION_BLOCKED: claimed_by={claimer}, validator={validator_id}",
                             validator_id)

@@ -20,10 +20,10 @@ const REGISTRY_PATH = path.join(__dirname, 'model-registry.json');
 // Last-known-good defaults so a missing/corrupt registry never crashes a caller
 // (memory distill / classifier are fail-open by contract).
 const _FALLBACK_ALIASES = {
-  fable: 'claude-fable-5',
-  opus: 'claude-opus-4-8',
-  sonnet: 'claude-sonnet-5',
-  haiku: 'claude-haiku-4-5-20251001',
+  fable: 'claude-fable-5-2',
+  opus: 'claude-opus-5-5',
+  sonnet: 'claude-sonnet-5-5',
+  haiku: 'claude-haiku-5-5',
 };
 const _FALLBACK_FALLBACK = { fable: 'opus' };
 

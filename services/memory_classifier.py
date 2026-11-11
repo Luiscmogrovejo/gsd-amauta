@@ -45,7 +45,7 @@ try:
     from model_registry import resolve_model_id as _resolve_model_id
     _CLASSIFIER_MODEL_ID = _resolve_model_id("haiku")
 except Exception:
-    _CLASSIFIER_MODEL_ID = "claude-haiku-4-5-20251001"  # last-known-good fallback (model-registry unavailable)
+    _CLASSIFIER_MODEL_ID = "claude-haiku-5-5"  # last-known-good fallback (model-registry unavailable)
 _ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 _HTTP_TIMEOUT_SECONDS = 10
 _MAX_TOKENS = 200

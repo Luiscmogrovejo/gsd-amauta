@@ -5,7 +5,26 @@
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
-const { loadConfig, resolveModelInternal, findPhaseInternal, getRoadmapPhaseInternal, pathExistsInternal, generateSlugInternal, getMilestoneInfo, normalizePhaseName, toPosixPath, output, error } = require('./core.cjs');
+const { loadConfig, resolveModelInternal, MODEL_PROFILES, findPhaseInternal, getRoadmapPhaseInternal, pathExistsInternal, generateSlugInternal, getMilestoneInfo, normalizePhaseName, toPosixPath, output, error } = require('./core.cjs');
+
+/**
+ * Resolve a model for EVERY agent an executor-routing step can land on.
+ *
+ * `executor_model` alone is not enough: the orchestrator routes a plan to a
+ * specialist (frontend / backend / infra / data / mobile / persona …) AFTER
+ * init runs, and resolving only `gsd-executor-general` made every
+ * per-specialist row in MODEL_PROFILES dead config. The caller indexes this
+ * map by the agent `route-executor` picked.
+ */
+function resolveExecutorModels(cwd) {
+  const models = {};
+  for (const agent of Object.keys(MODEL_PROFILES)) {
+    if (agent.startsWith('gsd-executor-') || agent.startsWith('gsd-persona-')) {
+      models[agent] = resolveModelInternal(cwd, agent);
+    }
+  }
+  return models;
+}
 
 /**
  * Validate and normalize a --phase-dir override path (RESOLVE-02).
@@ -115,10 +134,19 @@ function cmdInitExecutePhase(cwd, phase, raw, phaseDirOverride) {
 
   const result = {
     // Models
+    // `executor_model` = the fallback tier (gsd-executor-general). Use it ONLY
+    // when routing produced no specialist; otherwise index `executor_models`
+    // by the routed agent so the specialist's own profile row is honored.
     executor_model: resolveModelInternal(cwd, 'gsd-executor-general'),
+    executor_models: resolveExecutorModels(cwd),
     verifier_model: resolveModelInternal(cwd, 'gsd-validator'),
-    // Phase 24 ROUTE-01: Tiered model routing per RPETD phase
-    model_routing: config.model_routing || {R: "sonnet", P: "sonnet", E: "sonnet", T: "haiku", D: "haiku", compaction: "haiku"},
+    // Phase 24 ROUTE-01/ROUTE-02: only `compaction` is read (by the daemon's
+    // _make_compaction_llm_call). The former per-RPETD-phase keys
+    // (R/P/E/T/D) had no reader anywhere in the codebase — R..D all run inside
+    // ONE executor spawn, so there is no dispatch point to apply them at — and
+    // are no longer defaulted here. A project config that still declares them
+    // is passed through untouched.
+    model_routing: config.model_routing || { compaction: 'haiku' },
 
     // Config flags
     commit_docs: config.commit_docs,
@@ -366,6 +394,7 @@ function cmdInitQuick(cwd, description, raw) {
     // Models
     planner_model: resolveModelInternal(cwd, 'gsd-planner'),
     executor_model: resolveModelInternal(cwd, 'gsd-executor-general'),
+    executor_models: resolveExecutorModels(cwd),
     checker_model: resolveModelInternal(cwd, 'gsd-checker'),
     verifier_model: resolveModelInternal(cwd, 'gsd-validator'),
 
@@ -757,6 +786,7 @@ function cmdInitProgress(cwd, raw) {
   const result = {
     // Models
     executor_model: resolveModelInternal(cwd, 'gsd-executor-general'),
+    executor_models: resolveExecutorModels(cwd),
     planner_model: resolveModelInternal(cwd, 'gsd-planner'),
 
     // Config
