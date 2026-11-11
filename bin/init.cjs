@@ -1405,6 +1405,90 @@ function packageCommit() {
   }
 }
 
+// Never part of the shipped set, wherever they sit in a shipped directory.
+// Must stay in step with SHIPPED_EXCLUDE_* in services/doctor.py (a test pins
+// that both implementations return the same digest).
+const SHIPPED_EXCLUDE_DIRS = new Set(['.git', 'node_modules', '__pycache__']);
+const SHIPPED_EXCLUDE_NAMES = new Set(['.DS_Store']);
+const SHIPPED_EXCLUDE_SUFFIXES = ['.pyc', '.pyo'];
+
+/**
+ * {relative posix path: sha256 hex of content} for every file the package ships.
+ * The set is the `files` array of package.json, directories expanded recursively.
+ * No mtimes, no absolute paths, no directory-order dependence.
+ *
+ * @param {string} root - directory holding package.json
+ * @returns {Object<string,string>} relative path to content digest
+ * @throws {Error} package.json unreadable or malformed
+ */
+function shippedFileMap(root) {
+  const crypto = require('crypto');
+  const entries = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf-8')).files || [];
+  const found = {};
+  const add = (full) => {
+    const name = path.basename(full);
+    if (SHIPPED_EXCLUDE_NAMES.has(name) || SHIPPED_EXCLUDE_SUFFIXES.some(x => name.endsWith(x))) return;
+    let st;
+    try { st = fs.statSync(full); } catch (_e) { return; }   // dangling symlink
+    if (!st.isFile()) return;
+    const rel = path.relative(root, full).split(path.sep).join('/');
+    found[rel] = crypto.createHash('sha256').update(fs.readFileSync(full)).digest('hex');
+  };
+  const walk = (dir) => {
+    for (const d of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, d.name);
+      if (d.isDirectory()) {
+        if (!SHIPPED_EXCLUDE_DIRS.has(d.name)) walk(full);
+      } else {
+        add(full);
+      }
+    }
+  };
+  for (const entry of entries) {
+    const top = path.join(root, entry);
+    let lst;
+    try { lst = fs.lstatSync(top); } catch (_e) { continue; }
+    if (lst.isDirectory()) walk(top);
+    else add(top);
+  }
+  return found;
+}
+
+/**
+ * Fold per-file digests into one hex digest: sha256 over, for each path in
+ * byte-wise sorted order, sha256(path + NUL + content digest) as raw bytes.
+ * Same algorithm as shipped_hash_from_map in services/doctor.py.
+ *
+ * @param {Object<string,string>} fileMap - output of shippedFileMap
+ * @returns {string} 64-char hex digest
+ */
+function shippedHashFromMap(fileMap) {
+  const crypto = require('crypto');
+  const acc = crypto.createHash('sha256');
+  const keys = Object.keys(fileMap).sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)));
+  for (const rel of keys) {
+    acc.update(crypto.createHash('sha256').update(`${rel}\0${fileMap[rel]}`, 'utf8').digest());
+  }
+  return acc.digest('hex');
+}
+
+/**
+ * Provenance of the package the installed files were refreshed from. `shipped_hash`
+ * (not `package_commit`) is what `doctor` compares: a merge that changes no
+ * shipped file leaves it unchanged. Null fields when package.json cannot be read.
+ *
+ * @returns {{package_commit: (string|null), shipped_hash: (string|null), shipped_files: (Object|null)}}
+ */
+function packageProvenance() {
+  let map = null;
+  try { map = shippedFileMap(PLUGIN_ROOT); } catch (_e) { map = null; }
+  return {
+    package_commit: packageCommit(),
+    shipped_hash: map ? shippedHashFromMap(map) : null,
+    shipped_files: map,
+  };
+}
+
 function writeInstallRecord(fields) {
   const record = {
     version: packageVersion(),
@@ -1415,7 +1499,8 @@ function writeInstallRecord(fields) {
     // The package version rarely changes between commits, so the commit the
     // files were installed from is what lets doctor tell a stale install
     // from a current one.
-    package_commit: packageCommit(),
+    // package_commit is provenance only; shipped_hash is the staleness signal.
+    ...packageProvenance(),
     applied_migrations: fields.appliedMigrations || [],
   };
   try {
@@ -1776,9 +1861,27 @@ async function runUpgrade(f) {
   // ends up with a half-migrated schema.
   {
     const start = Date.now();
+    // The files were really refreshed from this package: the record must say which
+    // shipped content they came from, even when there is no migration to record.
+    const refreshedFiles = results.some(x => x.name === 'refresh_installed_files' && x.status === 'pass');
     if (idempotentSkip) {
+      // Status stays 'skip' (frozen schema: nothing to migrate), but when the files
+      // were refreshed the record still takes the new shipped-content provenance.
+      // Without this, a release that changes files but no migration would leave
+      // doctor reporting install_stale forever.
+      let provenanceNote = '';
+      if (refreshedFiles && !f.dryRun) {
+        try {
+          fs.writeFileSync(INSTALL_RECORD_PATH, JSON.stringify(
+            { ...installRecord, ...packageProvenance(), upgraded_at: new Date().toISOString() },
+            null, 2), 'utf-8');
+          provenanceNote = '; install provenance (shipped_hash) refreshed';
+        } catch (err) {
+          provenanceNote = `; install provenance NOT refreshed (${err.message})`;
+        }
+      }
       const r = buildStepResult('update_install_record', 'skip',
-        'skipped — already up-to-date (idempotent)', null);
+        `skipped — already up-to-date (idempotent)${provenanceNote}`, null);
       r.duration_ms = Date.now() - start;
       results.push(r);
     } else if (f.dryRun) {
@@ -1796,6 +1899,7 @@ async function runUpgrade(f) {
           version: packageVersion() || installRecord.version,
           applied_migrations: [...previous].sort(),
           upgraded_at: new Date().toISOString(),
+          ...(refreshedFiles ? packageProvenance() : {}),
         };
         delete updatedRecord.derived;
         delete updatedRecord.derived_from;
@@ -2427,4 +2531,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { stepDetectIdes, buildStepResult, renderStepTable, migrateLegacyCommands, stepAssertions, runUpgrade, runUninstall };
+module.exports = { stepDetectIdes, buildStepResult, renderStepTable, migrateLegacyCommands, stepAssertions, runUpgrade, runUninstall, shippedFileMap, shippedHashFromMap };
