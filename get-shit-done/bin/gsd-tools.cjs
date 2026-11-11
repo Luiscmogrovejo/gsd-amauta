@@ -91,6 +91,8 @@
  * Validation:
  *   validate consistency               Check phase numbering, disk/roadmap sync
  *   validate health [--repair]         Check .planning/ integrity, optionally repair
+ *   planning-drift [--root <dir>] [--json]   Report disagreements between STATE.md, ROADMAP.md and the phase folders
+ *                                      Exit 0 when they agree (recorded exceptions allowed), 1 otherwise
  *
  * Progress:
  *   progress [json|table|bar]          Render progress in various formats
@@ -3161,6 +3163,64 @@ if (require.main !== module) {
 
 // ─── CLI Router ───────────────────────────────────────────────────────────────
 
+const USAGE_HEAD = 'Usage: gsd-tools <command> [args] [--raw] [--cwd <path>]';
+const USAGE_COMMANDS = 'state, resolve-model, find-phase, commit, verify-summary, verify, frontmatter, template, generate-slug, current-timestamp, list-todos, verify-path-exists, config-ensure-section, init, complexity-score, complexity-complete, complexity-escalate, skills, planning-drift';
+const PLANNING_DRIFT_HELP = '  planning-drift [--root <dir>] [--json]   Report disagreements between STATE.md, ROADMAP.md and the phase folders\n' +
+  '                                           exit 0 when they agree (recorded exceptions allowed), 1 when any finding is not excepted';
+
+/**
+ * Run the planning-drift verb (plan 88-09, FND-06/FND-07).
+ *
+ * @param {string[]} args - Arguments after the verb name (`--root <dir>`, `--json`).
+ * @param {string} cwd - Working directory; the default root is `<cwd>/.planning`.
+ * @returns {number} Process exit code: 0 records agree, 1 drift, 2 usage error.
+ * @throws {never} Failures are reported on stderr and returned as exit code 2.
+ */
+function _runPlanningDriftCli(args, cwd) {
+  const rootIdx = args.indexOf('--root');
+  let root = path.join(cwd, '.planning');
+  if (rootIdx !== -1) {
+    const value = args[rootIdx + 1];
+    if (!value || value.startsWith('--')) {
+      process.stderr.write('planning-drift: missing value for --root\n');
+      return 2;
+    }
+    root = path.resolve(cwd, value);
+  }
+  if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) {
+    process.stderr.write(`planning-drift: root is not a directory: ${root}\n`);
+    return 2;
+  }
+  let result;
+  try {
+    result = require('./lib/planning-drift.cjs').planningDrift(root);
+  } catch (err) {
+    process.stderr.write(`planning-drift: ${err.message}\n`);
+    return 2;
+  }
+  const open = result.findings.filter((f) => !f.excepted);
+  if (args.includes('--json')) {
+    process.stdout.write(JSON.stringify({
+      root: result.root,
+      exit_code: result.exit_code,
+      findings: result.findings,
+      excepted: result.excepted,
+      counts: {
+        error: open.filter((f) => f.severity === 'error').length,
+        warning: open.filter((f) => f.severity === 'warning').length,
+        excepted: result.excepted.length,
+      },
+    }) + '\n');
+  } else {
+    const lines = result.findings.map((f) => `${f.severity} ${f.id} ${f.files.join(',')}: ${f.message}${f.excepted ? ' [excepted]' : ''}`);
+    lines.push(open.length === 0
+      ? `planning-drift: records agree (${result.excepted.length} excepted)`
+      : `planning-drift: ${result.findings.length} findings (${result.excepted.length} excepted)`);
+    process.stdout.write(lines.join('\n') + '\n');
+  }
+  return result.exit_code;
+}
+
 async function main() {
   const args = process.argv.slice(2);
 
@@ -3191,10 +3251,18 @@ async function main() {
   const command = args[0];
 
   if (!command) {
-    error('Usage: gsd-tools <command> [args] [--raw] [--cwd <path>]\nCommands: state, resolve-model, find-phase, commit, verify-summary, verify, frontmatter, template, generate-slug, current-timestamp, list-todos, verify-path-exists, config-ensure-section, init, complexity-score, complexity-complete, complexity-escalate, skills');
+    error(`${USAGE_HEAD}\nCommands: ${USAGE_COMMANDS}`);
   }
 
   switch (command) {
+    case '--help':
+    case '-h':
+    case 'help': {
+      // Plan 88-09: gsd-tools had no --help; the usage text now lists the verbs added since.
+      process.stdout.write(`${USAGE_HEAD}\nCommands: ${USAGE_COMMANDS}\n\n${PLANNING_DRIFT_HELP}\n`);
+      break;
+    }
+
     case 'state': {
       const subcommand = args[1];
       if (subcommand === 'json') {
@@ -3532,6 +3600,13 @@ async function main() {
       } else {
         error('Unknown validate subcommand. Available: consistency, health');
       }
+      break;
+    }
+
+    case 'planning-drift': {
+      // Plan 88-09 (FND-07). exitCode, not process.exit(): a large --json payload
+      // piped to jq must be flushed before the process ends.
+      process.exitCode = _runPlanningDriftCli(args.slice(1), cwd);
       break;
     }
 
