@@ -250,6 +250,11 @@ function buildHookCommand(configDir, hookName) {
   return `node "${hooksPath}"`;
 }
 
+// Seconds. Every hook this installer registers carries a timeout, matching the
+// repo's own .claude/settings.json (timeout: 5). Without it a wedged hook
+// blocks the session on the host's default.
+const HOOK_TIMEOUT_SECONDS = 5;
+
 /**
  * Read and parse settings.json, returning empty object if it doesn't exist
  */
@@ -1607,7 +1612,7 @@ function uninstall(isGlobal, runtime = 'claude') {
   // 4. Remove GSD hooks
   const hooksDir = path.join(targetDir, 'hooks');
   if (fs.existsSync(hooksDir)) {
-    const gsdHooks = ['gsd-statusline.js', 'gsd-check-update.js', 'gsd-check-update.sh', 'gsd-context-monitor.js', 'gsd-shunt-gate.cjs'];
+    const gsdHooks = ['gsd-statusline.js', 'gsd-check-update.js', 'gsd-check-update.sh', 'gsd-context-monitor.js', 'gsd-compress-gate.cjs', 'gsd-compress-post.cjs', 'gsd-shunt-gate.cjs'];
     let hookCount = 0;
     for (const hook of gsdHooks) {
       const hookPath = path.join(hooksDir, hook);
@@ -1615,6 +1620,22 @@ function uninstall(isGlobal, runtime = 'claude') {
         fs.unlinkSync(hookPath);
         hookCount++;
       }
+    }
+    // hooks/lib/ holds the compression hooks' staged deps (hook-common.cjs,
+    // compress-classify.cjs). Installed by install(), so uninstall removes
+    // them too — only the files this installer stages, never the whole dir.
+    const hooksLibDir = path.join(hooksDir, 'lib');
+    if (fs.existsSync(hooksLibDir)) {
+      for (const libFile of ['hook-common.cjs', 'compress-classify.cjs']) {
+        const libPath = path.join(hooksLibDir, libFile);
+        if (fs.existsSync(libPath)) {
+          fs.unlinkSync(libPath);
+          hookCount++;
+        }
+      }
+      try {
+        if (fs.readdirSync(hooksLibDir).length === 0) fs.rmdirSync(hooksLibDir);
+      } catch (e) { /* non-empty or racing — leave it */ }
     }
     if (hookCount > 0) {
       removedCount++;
@@ -2624,7 +2645,8 @@ function install(isGlobal, runtime = 'claude') {
         hooks: [
           {
             type: 'command',
-            command: updateCheckCommand
+            command: updateCheckCommand,
+            timeout: HOOK_TIMEOUT_SECONDS
           }
         ]
       });
@@ -2645,7 +2667,8 @@ function install(isGlobal, runtime = 'claude') {
         hooks: [
           {
             type: 'command',
-            command: contextMonitorCommand
+            command: contextMonitorCommand,
+            timeout: HOOK_TIMEOUT_SECONDS
           }
         ]
       });
@@ -2671,7 +2694,8 @@ function install(isGlobal, runtime = 'claude') {
           hooks: [
             {
               type: 'command',
-              command: compressGateCommand
+              command: compressGateCommand,
+              timeout: HOOK_TIMEOUT_SECONDS
             }
           ]
         });
@@ -2689,7 +2713,8 @@ function install(isGlobal, runtime = 'claude') {
           hooks: [
             {
               type: 'command',
-              command: compressPostCommand
+              command: compressPostCommand,
+              timeout: HOOK_TIMEOUT_SECONDS
             }
           ]
         });
