@@ -54,7 +54,7 @@ node ~/.claude/get-shit-done/bin/amauta.cjs rpetd TK-0001 --phase P --content "P
 node ~/.claude/get-shit-done/bin/amauta.cjs rpetd TK-0001 --phase E --content "E: implemented..."
 node ~/.claude/get-shit-done/bin/amauta.cjs rpetd TK-0001 --phase T --content "T: tests pass..."
 node ~/.claude/get-shit-done/bin/amauta.cjs rpetd TK-0001 --phase D --content "D: done. LEARNING: ..."
-node ~/.claude/get-shit-done/bin/amauta.cjs validate TK-0001 --pass --validator validator --notes "PASS"
+node ~/.claude/get-shit-done/bin/amauta.cjs validate TK-0001 --pass --validator gsd-validator --notes "PASS"
 ```
 
 ## Quick Start — GSD (Phase Planning)
@@ -440,8 +440,8 @@ $CLI rpetd TK-0001 --phase T --content "T: npm test output..."
 $CLI rpetd TK-0001 --phase D --content "D: delivered. LEARNING: ..."
 
 # Validation (never self-validate — always a different agent)
-$CLI validate TK-0001 --pass --validator validator --notes "PASS: evidence"
-$CLI validate TK-0001 --fail --validator validator --notes "FAIL: reason" --subtasks "Fix A|Add test B"
+$CLI validate TK-0001 --pass --validator gsd-validator --notes "PASS: evidence"
+$CLI validate TK-0001 --fail --validator gsd-validator --notes "FAIL: reason" --subtasks "Fix A|Add test B"
 $CLI validate TK-0001 --pass --force --validator operator --notes "PASS: trivial task"
 
 # Search & score

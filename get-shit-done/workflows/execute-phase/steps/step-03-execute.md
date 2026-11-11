@@ -47,7 +47,41 @@ fi
    - Bad: "Executing terrain generation plan"
    - Good: "Procedural terrain generator using Perlin noise — creates height maps, biome zones, and collision meshes. Required before vehicle physics can interact with ground."
 
-2. **Spawn executor agents:**
+2. **Pre-wave disjointness check (MANDATORY before any parallel spawn):**
+
+   Two plans in the same wave run against the same working tree. If they declare overlapping
+   files, their edits race and the per-task manifest check cannot attribute the result. Nothing
+   downstream catches this, so check it here, before spawning.
+
+   ```bash
+   # files_modified comes from each PLAN's frontmatter; waves group the plan ids.
+   PLAN_INDEX_JSON=$(node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" phase-plan-index "${PHASE_NUMBER}" --raw)
+
+   # Plans in THIS wave that declare no files at all — a hole in the manifest, not a pass.
+   echo "$PLAN_INDEX_JSON" | jq -r --arg w "$WAVE" '
+     (.waves[$w] // []) as $ids
+     | .plans[] | select(.id as $i | $ids | index($i))
+     | select((.files_modified | length) == 0) | "UNDECLARED: \(.id)"'
+
+   # Any path claimed by more than one plan in this wave.
+   echo "$PLAN_INDEX_JSON" | jq -r --arg w "$WAVE" '
+     (.waves[$w] // []) as $ids
+     | [ .plans[] | select(.id as $i | $ids | index($i))
+         | {id, f: .files_modified[]} ]
+     | group_by(.f) | map(select(length > 1))
+     | .[] | "OVERLAP: \(.[0].f) <- \(map(.id) | join(", "))"'
+   ```
+
+   - Any `OVERLAP:` line → do NOT run this wave in parallel. Either run those plans
+     sequentially (treat them as consecutive sub-waves, re-checking after each) or stop and
+     route the overlapping plans back to `gsd-planner` to split the file sets. Record which
+     you chose in the wave report.
+   - Any `UNDECLARED:` line → the plan cannot be disjointness-checked and its
+     `manifest-check` has nothing to compare against. Treat as a planner gap: stop and ask,
+     or run that plan alone in its own wave.
+   - `PARALLELIZATION=false` → the check is advisory; log overlaps and continue sequentially.
+
+3. **Spawn executor agents:**
 
    Pass paths only — executors read files themselves with their fresh 200k context.
    This keeps orchestrator context lean (~10-15%).
@@ -63,17 +97,25 @@ fi
     - `{plan_number}` = the plan ID (e.g. `01-03`)
     - `{phase_number}-{phase_name}` = e.g. `01-setup`
     - `{plan_objective}` = extracted from PLAN_INDEX_JSON for this plan (3-8 words describing what it builds)
-    - `{routed_executor}` = one of: `gsd-executor-frontend`, `gsd-executor-backend`, `gsd-executor-infra`, `gsd-executor-general`
-    - `{executor_model}` = from init JSON
+    - `{routed_executor}` = whatever `route-executor` returned, e.g. `gsd-executor-frontend`, `gsd-executor-backend`, `gsd-executor-infra`, `gsd-executor-data`, `gsd-executor-general`
+    - `{executor_model}` = **the routed specialist's tier**, i.e. `executor_models["{routed_executor}"]` from the init JSON — NOT the bare `executor_model` key, which is only the `gsd-executor-general` fallback. If the routed agent is missing from the map (a newly added specialist), resolve it on demand:
+      ```bash
+      EXECUTOR_MODEL=$(echo "$INIT_JSON" | jq -r --arg a "$ROUTED_EXECUTOR" '.executor_models[$a] // empty')
+      [ -n "$EXECUTOR_MODEL" ] || EXECUTOR_MODEL=$(node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" resolve-model "$ROUTED_EXECUTOR" --raw)
+      ```
     - `{plan_task_id}` = the Amauta TK-XXXX assigned to this plan (from PLAN_TASK_* var captured above), or empty string if Amauta unavailable
     - `{phase_dir}` = phase directory path (e.g. `.planning/phases/01-setup/`)
     - `{plan_file}` = plan filename (e.g. `01-03-PLAN.md`)
 
     ```bash
-    # Phase 53 POLISH-05 hydration hook
-    # Phase 53 POLISH-05: hydration hook (honors GSD_HYDRATE_TASKS=off kill switch)
-    if [ "${GSD_HYDRATE_TASKS:-on}" != "off" ]; then
-      HYDRATION=$($HYDRATE_CMD "${AGENT_NAME}" --task-id "${TASK_ID:-}" --terse 2>/dev/null || echo "")
+    # Phase 53 POLISH-05: hydration hook (honors GSD_HYDRATE_TASKS=off kill switch).
+    # AGENT_NAME and TASK_ID are set HERE, per spawn, from the values resolved just
+    # above — they are not inherited from anywhere. Unset, `agent-hydrate` was being
+    # called with an empty agent name and returned nothing on every spawn.
+    AGENT_NAME="$ROUTED_EXECUTOR"
+    TASK_ID="$PLAN_TASK_ID"        # may legitimately be empty when Amauta is down
+    if [ "${GSD_HYDRATE_TASKS:-on}" != "off" ] && [ -n "$AGENT_NAME" ]; then
+      HYDRATION=$($HYDRATE_CMD "$AGENT_NAME" --task-id "${TASK_ID:-}" --terse 2>/dev/null || echo "")
     else
       HYDRATION=""
     fi
@@ -89,88 +131,102 @@ fi
          <objective>
          Execute plan {plan_number} of phase {phase_number}-{phase_name}.
          Objective: {plan_objective}
-         Commit each task atomically. Create SUMMARY.md. Update STATE.md and ROADMAP.md.
+         Commit each task atomically. Create SUMMARY.md.
+         Do NOT edit .planning/STATE.md, ROADMAP.md or REQUIREMENTS.md — they are
+         orchestrator-owned and touching them hard-halts the wave. Report what should be
+         recorded in them under STATE_FOR_ORCHESTRATOR in your return; I apply it.
          </objective>
 
          <execution_context>
-         @/Users/luismogrovejo/.claude/get-shit-done/workflows/execute-plan.md
-         @/Users/luismogrovejo/.claude/get-shit-done/templates/summary.md
-         @/Users/luismogrovejo/.claude/get-shit-done/references/checkpoints.md
-         @/Users/luismogrovejo/.claude/get-shit-done/references/tdd.md
+         Read this one file in full — it is the whole execution contract:
+         /Users/luismogrovejo/.claude/get-shit-done/workflows/execute-plan-core.md
+
+         It lists checkpoints.md, tdd.md and the summary template as paths with a trigger.
+         Read each ONLY if its trigger fires for THIS plan. Do not pre-load them.
+         Do not read execute-plan.md — the orchestrator half of it is not yours to run.
          </execution_context>
 
          <amauta_enrichment>
-         BEFORE starting any work, run these context-enrichment commands (all wrapped in || true):
-
-         1. RLM — find relevant existing code for '{plan_objective}':
-            node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-rlm.cjs query '{plan_objective}' --dir . --top-k 5 --compact 2>/dev/null || true
-
-         2. Memory — find past learnings for '{plan_objective}':
-            node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-memory.cjs search '{plan_objective}' 2>/dev/null || true
-
-         2b. Research chain — get current info (memory -> SKB -> Context7 -> Perplexity -> WebFetch):
-             # Phase 13: --creative + --task-type enable creative query variants for research/exploration tasks
-             # Creative is gated by task type -- implementation/bug-fix tasks use conservative cascade
-             # Kill switch: GSD_R_CREATIVE=off disables creative entirely
-             node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-research.cjs search '{plan_objective}' --creative --task-type {execution_type} 2>/dev/null || true
-
-         3. Amauta task ID for this plan: {plan_task_id}
-            If non-empty, claim and log RPETD phases:
-            CLI='node /Users/luismogrovejo/.claude/get-shit-done/bin/amauta.cjs'
-         $CLI claim {plan_task_id} --agent {routed_executor} 2>/dev/null || true
-         # Read back enriched context (Layer 1 injects dependency/sibling/memory/SKB context at claim time)
-         $CLI show {plan_task_id} 2>/dev/null || true
-         # Log each phase as you complete it:
-            $CLI rpetd {plan_task_id} --phase R --content 'R: [RLM findings + memory matches]' 2>/dev/null || true
-            $CLI rpetd {plan_task_id} --phase P --content 'P: [approach, files to change]' 2>/dev/null || true
-            $CLI rpetd {plan_task_id} --phase E --content 'E: [what was built, files changed, branch name]' 2>/dev/null || true
-            $CLI rpetd {plan_task_id} --phase T --content 'T: [paste actual test/build output here]' 2>/dev/null || true
-            $CLI rpetd {plan_task_id} --phase D --content 'D: [delivery summary]. LEARNING: [reusable insight]' 2>/dev/null || true
-
-         4. After ALL work is done, store the key learning to memory:
-            node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-memory.cjs learn '[one sentence: what you learned that future agents should know]' 2>/dev/null || true
+         Your `{routed_executor}-workflow` skill already carries the context pipeline and the
+         RPETD command block. Run it as written there; it is not repeated here.
+         - Enrichment topic: '{plan_objective}'
+         - Amauta task id: {plan_task_id}  (empty string = Amauta unavailable, skip all $CLI calls)
+         - Claim as: --agent {routed_executor}
+         - Research task type: {execution_type}  (pass as `--task-type`; GSD_R_CREATIVE=off disables creative variants)
+         - After ALL work: `$MEM learn '<one reusable sentence>'`
+         Every amauta/memory/research call is wrapped in `2>/dev/null || true` — never block on a
+         service being down. Keep each `rpetd --content` well under the 4000-char hard cap.
          </amauta_enrichment>
 
          <files_to_read>
-         Read these files at execution start using the Read tool:
-         - {phase_dir}/{plan_file} (Plan — this IS your execution instructions)
-         - .planning/STATE.md (Project state)
-         - .planning/config.json (Config, if exists)
-         - ./CLAUDE.md (Project instructions, if exists — follow all project-specific guidelines)
-         - .claude/skills/ or .agents/skills/ (Project skills, if either path exists — list then read each SKILL.md)
+         At execution start, using the Read tool:
+         - {phase_dir}/{plan_file} — the Plan. Read it IN FULL; it IS your instructions.
+         - ./CLAUDE.md (if it exists — follow all project-specific guidelines)
+         - .claude/skills/ or .agents/skills/ (if either exists — list, then read each SKILL.md)
+
+         Project state — do NOT read .planning/STATE.md whole (it is tens of KB and you need a
+         handful of fields). Take the compact snapshot instead:
+           node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-tools.cjs state-snapshot
+         It returns current phase/plan, status, progress, decisions and blockers as JSON.
+         Need a section it does not carry? Grep for that heading and read the matched range:
+           grep -n '^## ' .planning/STATE.md   # then Read with offset/limit
+         Same for config: `gsd-tools config-get <key>` beats reading .planning/config.json.
          </files_to_read>
 
          <success_criteria>
          - [ ] All plan tasks executed
-         - [ ] Each task committed individually with meaningful message
-         - [ ] SUMMARY.md created in plan directory
-         - [ ] STATE.md updated with position and decisions
-         - [ ] ROADMAP.md updated with plan progress
-         - [ ] RLM queried for '{plan_objective}' before execution
-         - [ ] Memory searched for '{plan_objective}' before execution
+         - [ ] Each task committed individually, message scoped `({phase_number}-{plan_number})`
+         - [ ] SUMMARY.md created in plan directory, with requirements-completed copied verbatim
+         - [ ] STATE/ROADMAP/REQUIREMENTS changes REPORTED (not written) via STATE_FOR_ORCHESTRATOR
+         - [ ] RLM queried and memory searched for '{plan_objective}' before execution
          - [ ] RPETD R/P/E/T/D phases logged to {plan_task_id} (if non-empty)
          - [ ] Key learning stored to memory after completion
+         - [ ] Return is the bounded block from <bounded_return> — no transcripts, no file dumps
          </success_criteria>
        "
      )
      ```
 
-3. **Wait for all agents in wave to complete.**
+4. **Wait for all agents in wave to complete.**
 
    #### Per-task manifest check (HARDEN-01)
 
-   The `manifest-check` subcommand from `get-shit-done/bin/gsd-tools.cjs` runs once per task and compares the git diff between the before/after shas against the task's declared `files_expected:` block.
+   The `manifest-check` subcommand from `get-shit-done/bin/gsd-tools.cjs` runs once per task and compares the git diff between a before/after sha pair against the task's declared `files_expected:` block.
 
-   For each task in the wave:
+   **The sha pair must bracket THIS task's commits only.** `git rev-parse HEAD` before dispatch
+   and again after the return does not do that in a parallel wave: every executor commits onto
+   the same HEAD, so the range picks up siblings' commits and the task is blamed for files it
+   never touched. Derive the range from the task's own commits instead — the commit-message
+   scope `{type}({phase}-{plan}): …` mandated by `execute-plan-core.md` <task_commit> is what
+   makes them findable.
 
-   1. **Before dispatching the executor**, capture the baseline sha:
+   For each task in the wave, AFTER the executor returns:
+
+   1. **Find this plan's commits** (oldest → newest), restricted to commits made since the
+      wave started so a re-run of the same plan does not match an earlier execution:
+      ```bash
+      WAVE_BASE=$(git rev-parse HEAD)          # capture ONCE, before the wave is dispatched
+      # … wave runs …
+      PLAN_COMMITS=$(git log --reverse --format=%H "${WAVE_BASE}..HEAD" --grep="(${PHASE_NUMBER}-${PLAN_NUMBER})")
       ```
-      GIT_SHA_BEFORE=$(git rev-parse HEAD)
+   2. **Build the range from those commits:**
+      ```bash
+      if [ -z "$PLAN_COMMITS" ]; then
+        # No commit carries this plan's scope. That is a finding, not a pass: either the
+        # executor committed nothing, or it ignored the commit-message contract. Halt the
+        # task and surface it — do NOT fall back to a HEAD..HEAD comparison.
+        echo "MANIFEST: no commits scoped (${PHASE_NUMBER}-${PLAN_NUMBER}) since ${WAVE_BASE}"
+      else
+        FIRST=$(echo "$PLAN_COMMITS" | head -1)
+        LAST=$(echo "$PLAN_COMMITS" | tail -1)
+        GIT_SHA_BEFORE="${FIRST}^"   # parent of the plan's first commit
+        GIT_SHA_AFTER="$LAST"
+      fi
       ```
-   2. **After the executor returns**, capture the post sha:
-      ```
-      GIT_SHA_AFTER=$(git rev-parse HEAD)
-      ```
+      `manifest-check` diffs `GIT_SHA_BEFORE..GIT_SHA_AFTER`. If a sibling's commits are
+      interleaved inside that range, the range is still wrong — which is exactly why the
+      pre-wave disjointness check in step 2 is mandatory, and why a wave with an `OVERLAP:`
+      must be run sequentially. Sequential plans never interleave, so the range is exact.
    3. **Staging `.planning/` files declared in `files_expected:`** — there are two cases:
       - **already-tracked `.planning/` files** (e.g. `.planning/STATE.md`, `.planning/REQUIREMENTS.md`, `.planning/ROADMAP.md` — all tracked despite the `.planning/` gitignore rule because they were force-added once at project init): stage with `git add -u <path>`. The `-u` flag updates tracked files only and bypasses the gitignore rule without forcing. Both the orchestrator AND executors may use `-u` for paths declared in `files_expected:` — it is not a privileged operation. This is the common case.
       - **Newly created `.planning/` files** (a path that is gitignored and not yet tracked — e.g. first-time creation of a new artifact under `.planning/`): only the orchestrator uses `git add -f <path>`. Executors are FORBIDDEN from using `git add -f` under any circumstance. An executor that encounters this case MUST surface a divergence via `get-shit-done/references/divergence-protocol.md` and return control to the orchestrator — do NOT force-add and do NOT silently skip.
@@ -209,7 +265,7 @@ fi
 
    **Validator pre-gate scan interlock:** If the validator finds unresolved divergence reports in `.planning/phases/<phase>/divergence-reports/`, it floors the verdict at `gaps_found`. See `get-shit-done/references/divergence-protocol.md` for the scan protocol.
 
-4. **Report completion — spot-check claims first:**
+5. **Report completion — spot-check claims first:**
 
    For each SUMMARY.md:
    - Verify first 2 files from `key-files.created` exist on disk
@@ -241,15 +297,15 @@ fi
    - Bad: "Wave 2 complete. Proceeding to Wave 3."
    - Good: "Terrain system complete — 3 biome types, height-based texturing, physics collision meshes. Vehicle physics (Wave 3) can now reference ground surfaces."
 
-5. **Handle failures:**
+6. **Handle failures:**
 
    **Known Claude Code bug (classifyHandoffIfNeeded):** If an agent reports "failed" with error containing `classifyHandoffIfNeeded is not defined`, this is a Claude Code runtime bug — not a GSD or agent issue. The error fires in the completion handler AFTER all tool calls finish. In this case: run the same spot-checks as step 4 (SUMMARY.md exists, git commits present, no Self-Check: FAILED). If spot-checks PASS → treat as **successful**. If spot-checks FAIL → treat as real failure below.
 
    For real failures: report which plan failed → ask "Continue?" or "Stop?" → if continue, dependent plans may also fail. If stop, partial completion report.
 
-6. **Execute checkpoint plans between waves** — see checkpoint handling below.
+7. **Execute checkpoint plans between waves** — see checkpoint handling below.
 
-7. **Proceed to next wave.**
+8. **Proceed to next wave.**
 
 ## 2. Checkpoint Handling
 
@@ -370,8 +426,8 @@ fi
 **For each task in validation status, spawn a validator agent:**
 
 ```bash
-# Phase 53 POLISH-05 hydration hook
-# Phase 53 POLISH-05: hydration hook (honors GSD_HYDRATE_TASKS=off kill switch)
+# Phase 53 POLISH-05: hydration hook (honors GSD_HYDRATE_TASKS=off kill switch).
+# TASK_ID is the task being validated — set it per spawn from VALIDATION_QUEUE.
 if [ "${GSD_HYDRATE_TASKS:-on}" != "off" ]; then
   HYDRATION=$($HYDRATE_CMD "gsd-validator" --task-id "${TASK_ID:-}" --terse 2>/dev/null || echo "")
 else
@@ -386,8 +442,7 @@ Task(
 
 You are gsd-validator. Validate task {TASK_ID}.
 
-  Read the validator protocol:
-  @/Users/luismogrovejo/.claude/agents/gsd-validator.md
+  Your protocol is already your system prompt — do not re-read agents/gsd-validator.md.
 
   Steps:
   1. Review task: node /Users/luismogrovejo/.claude/get-shit-done/bin/amauta.cjs show {TASK_ID}
@@ -397,12 +452,16 @@ You are gsd-validator. Validate task {TASK_ID}.
   5. Verify success criteria against artifacts (files, git commits, test output)
   6. Check git: git log --oneline --grep='{TASK_ID}'
 
-  If ALL criteria met:
-    node /Users/luismogrovejo/.claude/get-shit-done/bin/amauta.cjs validate {TASK_ID} --pass --validator validator --notes 'PASS: <evidence>'
-  If criteria NOT met:
-    node /Users/luismogrovejo/.claude/get-shit-done/bin/amauta.cjs validate {TASK_ID} --fail --validator validator --notes 'FAIL: <reason>' --subtasks '<fix1>|<fix2>'
+  Pass your REAL agent name to --validator. `validator` is the bare default and amauta
+  rejects it when the claimer is a validator-type agent; it also rejects any name that
+  normalises to the claimer's (the gsd- prefix is stripped before comparison).
 
-  Return: task ID, pass/fail, and notes."
+  If ALL criteria met:
+    node /Users/luismogrovejo/.claude/get-shit-done/bin/amauta.cjs validate {TASK_ID} --pass --validator gsd-validator --notes 'PASS: <evidence>'
+  If criteria NOT met:
+    node /Users/luismogrovejo/.claude/get-shit-done/bin/amauta.cjs validate {TASK_ID} --fail --validator gsd-validator --notes 'FAIL: <reason>' --subtasks '<fix1>|<fix2>'
+
+  Return: task ID, pass/fail, and notes. Bounded — no transcripts."
 )
 ```
 

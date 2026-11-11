@@ -200,11 +200,14 @@ sections:
     # Show the task to load all enrichment context and RPETD phases.
     $CLI show TK-XXXX
     
-    # Pass validation
-    $CLI validate TK-XXXX --pass --validator validator --notes "PASS: All 5 success criteria verified. Tests pass."
-    
+    # Pass validation. ALWAYS pass your real agent name to --validator: the bare
+    # `validator` default is rejected when a validator-type agent holds the claim,
+    # and any name that normalises to the claimer's (the gsd- prefix is stripped
+    # before comparison) is rejected as self-validation.
+    $CLI validate TK-XXXX --pass --validator gsd-validator --notes "PASS: All 5 success criteria verified. Tests pass."
+
     # Fail validation (creates sub-tasks for fixes)
-    $CLI validate TK-XXXX --fail --validator validator --notes "FAIL: Missing edge case test" --subtasks "Add null input test|Fix error message"
+    $CLI validate TK-XXXX --fail --validator gsd-validator --notes "FAIL: Missing edge case test" --subtasks "Add null input test|Fix error message"
     
     # Add review note without pass/fail
     $CLI note TK-XXXX --text "REVIEW: Function handles happy path but needs error handling" --agent validator

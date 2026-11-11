@@ -41,7 +41,28 @@ SUMMARY_FILES=$(ls "${PHASE_DIR}"/*-SUMMARY.md 2>/dev/null)
 
 ### 2a. Read Phase Artifacts
 
-Read all PLAN and SUMMARY files. Extract: task lists, requirement IDs, key-files changed, verify blocks.
+You need four structured things out of the phase's PLAN and SUMMARY files: task lists,
+requirement IDs, key-files changed, and verify blocks. A phase with eight plans is well over
+100 KB of markdown; do not read it whole to pull four fields.
+
+```bash
+# Plan inventory: ids, waves, objectives, files_modified, task counts, summary presence.
+node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" phase-plan-index "${PHASE}" --raw
+
+# SUMMARY frontmatter (requirements-completed, key-files, key-decisions) per plan:
+for s in .planning/phases/*${PHASE}*/*-SUMMARY.md; do
+  node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" summary-extract "$s" --raw
+done
+
+# Task ids, requirement ids and verify blocks inside the PLANs — grep for line numbers,
+# then Read only those ranges:
+grep -n -E '<task id=|<requirements>|<verification>|requirements:' .planning/phases/*${PHASE}*/*-PLAN.md
+```
+
+Read a PLAN or SUMMARY in full only when a gap you are judging actually turns on its prose.
+For several large plans at once, `$SHUNT bulk-read --question "which tasks have no
+verification block?" --paths <plans>` answers at Haiku cost and returns `path:line`
+pointers — verify the lines before recording a gap against them.
 
 ### 2b. Build Requirement-to-Task Map
 

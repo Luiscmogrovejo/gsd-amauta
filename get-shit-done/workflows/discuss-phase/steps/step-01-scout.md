@@ -141,18 +141,30 @@ If "Cancel": Exit workflow.
 
 Read project-level and prior phase context to avoid re-asking decided questions and maintain consistency.
 
-**Step 1: Read project-level files**
+**Step 1: Load project-level context — targeted, not `cat`**
+
+You need three named things, not three whole files. `cat`ing REQUIREMENTS.md and STATE.md
+pulls tens of KB in to extract a progress line and a constraints list.
+
 ```bash
-# Core project files
-cat .planning/PROJECT.md 2>/dev/null
-cat .planning/REQUIREMENTS.md 2>/dev/null
-cat .planning/STATE.md 2>/dev/null
+# STATE — compact JSON: phase, plan, status, progress, decisions, blockers.
+node ~/.claude/get-shit-done/bin/gsd-tools.cjs state-snapshot
+
+# REQUIREMENTS — this phase's IDs only (from the roadmap section below), then Read the
+# matched ranges with offset/limit:
+node ~/.claude/get-shit-done/bin/gsd-tools.cjs roadmap get-phase "${PHASE}" --raw
+grep -n -E "$(echo "$PHASE_REQ_IDS" | tr -d ' ' | tr ',' '|')" .planning/REQUIREMENTS.md
+
+# Constraints / must-haves that are not tied to an ID — jump to the headings:
+grep -n '^#\{2,3\} ' .planning/REQUIREMENTS.md
 ```
 
-Extract from these:
-- **PROJECT.md** — Vision, principles, non-negotiables, user preferences
-- **REQUIREMENTS.md** — Acceptance criteria, constraints, must-haves vs nice-to-haves
-- **STATE.md** — Current progress, any flags or session notes
+- **PROJECT.md** — vision, principles, non-negotiables, user preferences. Read this one in
+  full: it is the phase's north star and there is no structured extract of it.
+- **REQUIREMENTS.md** — acceptance criteria, constraints, must-haves vs nice-to-haves. Read
+  the ranges the greps above matched; read whole only if the phase declares no IDs.
+- **STATE.md** — current progress, flags, session notes. The snapshot above IS this; only
+  grep for a heading and read its range if you need something the snapshot omits.
 
 **Step 2: Read all prior CONTEXT.md files**
 ```bash
