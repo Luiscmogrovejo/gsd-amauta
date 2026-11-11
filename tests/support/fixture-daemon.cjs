@@ -24,7 +24,9 @@ const http = require('http');
 const { spawn } = require('child_process');
 
 const REPO = path.resolve(__dirname, '..', '..');
-const READY_TIMEOUT_MS = Number(process.env.GSD_FIXTURE_READY_TIMEOUT_MS) || 20000;
+// 60 s: on a loaded macOS CI runner (node --test runs many files at once) the daemon needed more
+// than the earlier 20 s before it printed DAEMON_PORT (88-03 first full matrix run).
+const READY_TIMEOUT_MS = Number(process.env.GSD_FIXTURE_READY_TIMEOUT_MS) || 60000;
 const POLL_INTERVAL_MS = 100;
 const STOP_GRACE_MS = Number(process.env.GSD_FIXTURE_STOP_GRACE_MS) || 5000;
 
@@ -125,7 +127,7 @@ async function startFixtureDaemon(opts = {}) {
   }
 
   if (!ready) {
-    const tail = stderrBuf.slice(-2000);
+    const tail = stderrBuf.slice(-2000) + (stdoutBuf ? '\n[stdout] ' + stdoutBuf.slice(-1000) : '');
     try {
       proc.kill('SIGKILL');
     } catch (_e) {

@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "note": "Response-time budgets (QUA-04: 300 ms p95 for interactive read and write endpoints). Phases 90-93 append entries as endpoints are added; a Postgres row per endpoint arrives with Phase 89. Read by tests/support/budget.cjs loadBudgets().",
+  "budgets": [
+    { "endpoint": "GET /health",   "p95Ms": 300, "backend": "sqlite", "source": "QUA-04" },
+    { "endpoint": "GET /api/list", "p95Ms": 300, "backend": "sqlite", "source": "QUA-04" }
+  ]
+}
