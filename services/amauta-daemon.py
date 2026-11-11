@@ -1757,6 +1757,18 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             if _proj_dir:
                 args.extend(["--project-dir", _proj_dir])
 
+        # Phase 88 (88-07): plan-to-tasks registers tasks with `--source plan-to-tasks --from-plan <id>`;
+        # amauta.py's dedup guard skips tasks of the SAME plan only when both reach it. Neither was
+        # forwarded, so over the daemon two similar tasks of one plan hit DEDUP BLOCKED. `add` only:
+        # other subparsers do not declare these flags.
+        if command == "add":
+            _src = str(body.get("source") or "").strip()
+            if _src:
+                args.extend(["--source", _src])
+            _from_plan = str(body.get("from-plan") or body.get("from_plan") or "").strip()
+            if _from_plan:
+                args.extend(["--from-plan", _from_plan])
+
         for key, flag in flag_map.items():
             if key not in body:
                 continue
