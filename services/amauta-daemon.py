@@ -121,10 +121,15 @@ except ImportError:
 _sqlite_store = None
 _HAS_SQLITE_MODULE = False
 try:
-    from sqlite_store import SQLiteStore
+    from sqlite_store import SQLiteStore, normalize_phase_number as _sqlite_normalize_phase
     _HAS_SQLITE_MODULE = True
 except ImportError:
     SQLiteStore = None  # type: ignore
+
+    def _sqlite_normalize_phase(raw):  # type: ignore[misc]
+        """Fallback when sqlite_store is absent — same int/float contract."""
+        val = float(raw)
+        return int(val) if val.is_integer() else val
 
 # Backup manager (Phase 8: Data Durability)
 _backup_manager = None
@@ -175,6 +180,52 @@ DATA_DIR = os.environ.get(
     str(Path(__file__).resolve().parent.parent / "data"),
 )
 PID_FILE = Path(__file__).resolve().parent / "amauta-daemon.pid"
+
+# ── Log file ──────────────────────────────────────────────────────────────────
+# Both spawners start the daemon with stdio discarded (bin/install.js uses
+# `stdio: 'ignore'`, bin/init.cjs the same), and `npm run start-daemon` throws
+# it into a shell background job, so everything this process logs to stderr —
+# every warning, every handler traceback — went to /dev/null. A crash left no
+# evidence at all. The daemon therefore also writes its own log file under the
+# data dir, size-bounded so an unattended daemon cannot fill the disk (the
+# dkms_516GB lesson). Console logging is unchanged, so a foreground `run` still
+# prints everything.
+LOG_FILE = os.environ.get("AMAUTA_LOG_FILE", str(Path(DATA_DIR) / "amauta-daemon.log"))
+LOG_FILE_MAX_BYTES = int(os.environ.get("AMAUTA_LOG_MAX_BYTES", str(5 * 1024 * 1024)))
+LOG_FILE_BACKUPS = int(os.environ.get("AMAUTA_LOG_BACKUPS", "3"))
+
+
+def _attach_log_file(path=None, max_bytes=None, backups=None):
+    """Add a size-rotating file handler to the root logger. Idempotent.
+
+    Returns the handler, or None when logging to file is disabled
+    (AMAUTA_LOG_FILE=off) or the path is not writable — an unwritable log
+    directory must never stop the daemon from serving.
+    """
+    target = path or LOG_FILE
+    if not target or str(target).lower() in ("off", "none", "0", "false"):
+        return None
+    root = logging.getLogger()
+    resolved = str(Path(target).expanduser())
+    for existing in root.handlers:
+        if getattr(existing, "baseFilename", None) == str(Path(resolved).resolve()):
+            return existing
+    try:
+        from logging.handlers import RotatingFileHandler
+        Path(resolved).parent.mkdir(parents=True, exist_ok=True)
+        handler = RotatingFileHandler(
+            resolved,
+            maxBytes=max_bytes if max_bytes is not None else LOG_FILE_MAX_BYTES,
+            backupCount=backups if backups is not None else LOG_FILE_BACKUPS,
+        )
+        handler.setFormatter(logging.Formatter(
+            "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+        ))
+        root.addHandler(handler)
+        return handler
+    except Exception as e:  # noqa: BLE001 — logging must never be fatal
+        print(f"[daemon] WARNING: could not open log file {resolved}: {e}", file=sys.stderr)
+        return None
 
 # ── amauta.py subprocess ceiling ──────────────────────────────────────────────
 # Every amauta.py subprocess launched by _run_amauta() is bounded by
@@ -1000,6 +1051,66 @@ def _retry_queue_flusher():
 
 # ── Memory Retention Thread ──────────────────────────────────────────────────
 
+#: Set by _pg_recovery_probe_thread once PostgreSQL answers while the daemon
+#: is running on the SQLite fallback. Surfaced on /health; never acted on
+#: automatically — see the thread's docstring.
+_pg_recovery_available = False
+PG_RECOVERY_PROBE_INTERVAL = int(os.environ.get("GSD_PG_REPROBE_INTERVAL", "300"))
+
+
+def _pg_recovery_probe_thread():
+    """Detect PostgreSQL coming back while the daemon runs on SQLite.
+
+    It REPORTS, it does not switch. Hot-swapping _pg_store would be two lines,
+    and it would be wrong: everything written while PG was down — memory rows,
+    tasks, findings, step handoffs — lives in the SQLite file, and nothing
+    copies it across. A workflow that wrote its phase handoff to SQLite and
+    then read it back from a freshly-promoted PG store would get "No handoff
+    found" and halt mid-phase, and the degraded-mode writes would silently
+    disappear from every search. A backend switch is a data migration, not a
+    pointer assignment.
+
+    So the probe sets a flag, logs once at WARNING, and /health reports
+    `pg_recovery_available: true` with the restart instruction. The operator
+    (or a supervisor) decides when to restart, which is the point at which the
+    SQLite contents can be exported and imported deliberately.
+
+    Costs one TCP connect + SELECT 1 every GSD_PG_REPROBE_INTERVAL seconds
+    (default 300), and only while PG is absent — it exits once it has fired.
+    """
+    global _pg_recovery_available
+    if _pg_store is not None or _sqlite_store is None:
+        return
+    if not _HAS_PG_MODULE or _force_sqlite():
+        return
+    while not _shutdown_event.is_set():
+        _shutdown_event.wait(timeout=PG_RECOVERY_PROBE_INTERVAL)
+        if _shutdown_event.is_set():
+            return
+        try:
+            dsn = os.environ.get("GSD_POSTGRES_URL")
+            probe = PGStore(dsn=dsn) if dsn else PGStore()
+            try:
+                healthy = probe.health().get("status") == "ok"
+            finally:
+                try:
+                    probe.close()
+                except Exception:
+                    pass
+        except Exception:
+            continue
+        if healthy:
+            _pg_recovery_available = True
+            log.warning(
+                "pg_recovery_available: PostgreSQL is answering again, but this "
+                "daemon is still serving from SQLite (%s). Restart it to switch "
+                "backends — the rows written while PG was down stay in the "
+                "SQLite file and are NOT migrated automatically.",
+                getattr(_sqlite_store, "db_path", "?"),
+            )
+            return
+
+
 def _memory_retention_thread():
     """Background thread: archive stale memory entries every RETENTION_CHECK_INTERVAL seconds.
 
@@ -1130,6 +1241,107 @@ def _scrub_evidence_args(args):
 def _get_store():
     """Return the active store (PGStore or SQLiteStore), or None."""
     return _pg_store or _sqlite_store
+
+
+def _force_sqlite():
+    """True when GSD_FORCE_SQLITE pins the daemon to the SQLite backend."""
+    return os.environ.get("GSD_FORCE_SQLITE", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _is_sqlite(store):
+    """True when `store` is the SQLite fallback rather than PGStore.
+
+    Handlers written against PostgreSQL run raw SQL with %s placeholders
+    through `store._get_conn()`. SQLite's DB-API cursor is not a context
+    manager and its placeholder is `?`, so those handlers answered HTTP 500
+    with "'sqlite3.Cursor' object does not support the context manager
+    protocol" on every blackboard and handoff call. Each such handler now
+    branches on this predicate and dispatches to a SQLiteStore method
+    instead; the PostgreSQL path is byte-for-byte unchanged.
+
+    Identified by class name, not isinstance: sqlite_store is imported
+    under different module names depending on how the daemon was launched
+    (package import vs. spec_from_file_location in the tests), so an
+    isinstance check against one of them is not reliable.
+    """
+    return store is not None and type(store).__name__ == "SQLiteStore"
+
+
+#: Features with no SQLite implementation. Keys are the `feature` value in the
+#: 503 body; values are the operator-facing explanation. Kept beside the
+#: handlers that raise them so the list cannot drift from reality.
+PG_ONLY_FEATURE_DETAIL = {
+    "a2a": (
+        "A2A exchange auditing reads the a2a_messages table, which exists only "
+        "as a PostgreSQL migration (024). Start PostgreSQL "
+        "(docker compose -f docker/docker-compose.yml up -d) and restart the daemon."
+    ),
+    "semantic_cache": (
+        "The semantic cache matches queries by pgvector similarity; SQLite has "
+        "no vector index. Start PostgreSQL to enable it."
+    ),
+    "party_sessions": (
+        "Party sessions live in the party_sessions table (PostgreSQL migration "
+        "021) and are keyed by UUID FKs from agent_findings. Start PostgreSQL "
+        "to enable them."
+    ),
+    "vector_search": (
+        "Embedding search needs pgvector. On SQLite, memory search degrades to "
+        "FTS5 full-text ranking."
+    ),
+    "rlm_index": (
+        "The RLM code index (rlm_chunks) is PostgreSQL-only. Code search is "
+        "unavailable on the SQLite fallback."
+    ),
+}
+
+
+def _parse_phase_arg(raw, store):
+    """Parse a phase identifier from a URL segment.
+
+    Returns (value, None) on success, where value is an int for whole phases
+    and a float for decimal ones, or (None, (payload, status)) to send.
+
+    GSD creates decimal phases with /amauta:insert-phase (72.1 between 72 and
+    73), and the step-handoff routes used to `int(parts[1])` them straight
+    into a 400 "phase must be integer", which halted execute-phase on any
+    inserted phase. SQLite stores phase_number as TEXT and carries them.
+    PostgreSQL cannot: step_handoffs.phase_number is INTEGER (migration 017)
+    and changing that column is a schema migration this change does not own,
+    so a decimal phase on PG gets an explicit 400 that says why, instead of an
+    integer-truncated row silently filed under the wrong phase.
+    """
+    try:
+        value = _sqlite_normalize_phase(raw)
+    except (TypeError, ValueError):
+        return None, ({"error": "phase must be a number (e.g. 72 or 72.1)"}, 400)
+    if isinstance(value, float) and not _is_sqlite(store):
+        return None, ({
+            "error": "decimal_phase_unsupported_on_postgres",
+            "detail": (
+                "step_handoffs.phase_number is INTEGER on PostgreSQL (migration "
+                "017), so decimal phase %s cannot be stored or looked up. Use the "
+                "whole phase number, or run the daemon on the SQLite backend, "
+                "which stores phase identifiers as text." % raw
+            ),
+        }, 400)
+    return value, None
+
+
+def _requires_postgres_payload(feature, detail=None):
+    """Body for a PG-only endpoint reached on the SQLite backend.
+
+    A typed 503 the caller can branch on — never a raw 500 from a SQL dialect
+    error, which is indistinguishable from a real fault.
+    """
+    return {
+        "error": "requires_postgres",
+        "feature": feature,
+        "detail": detail or PG_ONLY_FEATURE_DETAIL.get(
+            feature, f"{feature} is only available on the PostgreSQL backend."
+        ),
+        "backend": "sqlite",
+    }
 
 
 def _make_compaction_llm_call():
@@ -1511,6 +1723,46 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 health["pg_health"] = _pg_probe
             elif _sqlite_store:
                 health["sqlite_health"] = _sqlite_probe if _sqlite_probe is not None else _sqlite_store.health()
+
+            # ── Degraded-mode section (SQLite fallback) ──────────────────────
+            # Additive: every pre-existing key above is untouched, so current
+            # consumers keep working. On SQLite a caller can now tell from
+            # /health alone which features are off, instead of discovering it
+            # from a 503 at call time.
+            health["degraded"] = bool(_sqlite_store and not _pg_store)
+            if health["degraded"]:
+                health["features_off"] = [
+                    "vector_search",     # no pgvector: memory search is FTS5 only
+                    "semantic_search",   # memory_semantic_search -> text_fallback
+                    "embeddings",        # no embedding column, no backfill
+                    "rlm_index",         # rlm_chunks is PG-only
+                    "semantic_cache",    # similarity lookup needs pgvector
+                    "a2a",               # a2a_messages is PG-only (migration 024)
+                    "party_sessions",    # party_sessions is PG-only (migration 021)
+                    "skill_invocations", # skill_invocation_store is PG-only
+                    "task_completions",  # complexity_scorer.store_completion is PG-only
+                    "cross_encoder_rerank",
+                ]
+                counts = {"memory_rows": -1, "memory_rows_with_embeddings": 0, "rlm_chunks": 0}
+                try:
+                    if hasattr(_sqlite_store, "degraded_counts"):
+                        counts = _sqlite_store.degraded_counts()
+                    else:
+                        counts["memory_rows"] = _sqlite_store.memory_count()
+                except Exception as _ce:
+                    log.warning("/health degraded counts failed: %s", _ce)
+                health["degraded_counts"] = counts
+                # Set by the background probe when PG answers again. Reported,
+                # not acted on: switching backends live would strand every row
+                # written while PG was down. Restart to switch.
+                health["pg_recovery_available"] = _pg_recovery_available
+                if _pg_recovery_available:
+                    health["pg_recovery_hint"] = (
+                        "PostgreSQL is reachable again. Restart the daemon to use it; "
+                        "rows written to SQLite in the meantime are not migrated automatically."
+                    )
+            else:
+                health["features_off"] = []
 
             # INF-05: Pipeline status and data flow health
             service_errors = []
@@ -2108,6 +2360,16 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             if not store:
                 self._send_json({"error": "No database available"}, 503)
                 return
+            if _is_sqlite(store):
+                try:
+                    results = store.findings_sweep(
+                        status=status, domain=domain, severity=severity,
+                        finding_type=ftype, since=since, limit=200,
+                    )
+                    self._send_json({"findings": results, "count": len(results)})
+                except Exception as e:
+                    self._send_json({"error": _safe_error(e)}, 500)
+                return
             try:
                 clauses = ["status = %s"]
                 args = [status]
@@ -2163,6 +2425,13 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             if not store:
                 self._send_json({"error": "No database available"}, 503)
                 return
+            if _is_sqlite(store):
+                try:
+                    results = store.findings_by_task(task_id)
+                    self._send_json({"findings": results, "count": len(results)})
+                except Exception as e:
+                    self._send_json({"error": _safe_error(e)}, 500)
+                return
             try:
                 with store._get_conn() as conn, conn.cursor() as cur:
                     cur.execute(
@@ -2196,6 +2465,13 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             store = _get_store()
             if not store:
                 self._send_json({"error": "No database available"}, 503)
+                return
+            if _is_sqlite(store):
+                try:
+                    messages = store.messages_for_agent(agent_name)
+                    self._send_json({"messages": messages, "count": len(messages)})
+                except Exception as e:
+                    self._send_json({"error": _safe_error(e)}, 500)
                 return
             try:
                 with store._get_conn() as conn, conn.cursor() as cur:
@@ -2238,6 +2514,13 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             if not store:
                 self._send_json({"error": "No database available"}, 503)
                 return
+            if _is_sqlite(store):
+                try:
+                    stats = store.agent_metrics_stats()
+                    self._send_json({"stats": stats, "count": len(stats)})
+                except Exception as e:
+                    self._send_json({"error": _safe_error(e)}, 500)
+                return
             try:
                 with store._get_conn() as conn, conn.cursor() as cur:
                     cur.execute(
@@ -2278,14 +2561,23 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": "Usage: /api/steps/:workflow/:phase"}, 400)
                 return
             workflow_name = parts[0]
-            try:
-                phase_number = int(parts[1])
-            except ValueError:
-                self._send_json({"error": "phase must be integer"}, 400)
-                return
             store = _get_store()
             if not store:
                 self._send_json({"error": "No database available"}, 503)
+                return
+            phase_number, phase_err = _parse_phase_arg(parts[1], store)
+            if phase_err:
+                self._send_json(phase_err[0], phase_err[1])
+                return
+            if _is_sqlite(store):
+                try:
+                    result = store.step_handoff_latest(workflow_name, phase_number)
+                    if result:
+                        self._send_json(result)
+                    else:
+                        self._send_json({"step_id": None, "message": "No handoff found"})
+                except Exception as e:
+                    self._send_json({"error": _safe_error(e)}, 500)
                 return
             try:
                 with store._get_conn() as conn, conn.cursor() as cur:
@@ -2340,6 +2632,12 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             store = _get_store()
             if not store:
                 self._send_json({"error": "No database available"}, 503)
+                return
+            if _is_sqlite(store):
+                # a2a_messages is a PostgreSQL-only table (migration 024) and
+                # this handler needs RealDictCursor besides. Typed 503, not a
+                # dialect-error 500.
+                self._send_json(_requires_postgres_payload("a2a"), 503)
                 return
             try:
                 qs = parse_qs(urlparse(self.path).query)
@@ -2888,8 +3186,17 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": "id is required"}, 400)
                 return
             try:
-                store.memory_delete(mem_id)
-                self._send_json({"deleted": True, "id": mem_id})
+                # SQLiteStore.memory_delete reports whether a row actually
+                # went away; it used to return None, so this endpoint
+                # answered deleted:true for ids that were never in the table.
+                # PGStore.memory_delete still returns None (it is owned
+                # elsewhere), and None keeps the historical optimistic
+                # answer rather than reporting a delete as failed.
+                deleted = store.memory_delete(mem_id)
+                self._send_json({
+                    "deleted": True if deleted is None else bool(deleted),
+                    "id": mem_id,
+                })
             except Exception as e:
                 self._send_json({"error": _safe_error(e)}, 500)
             return
@@ -3464,18 +3771,41 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": "Usage: /api/steps/:workflow/:phase/handoff"}, 400)
                 return
             workflow_name = parts[0]
-            try:
-                phase_number = int(parts[1])
-            except ValueError:
-                self._send_json({"error": "phase must be integer"}, 400)
-                return
             store = _get_store()
             if not store:
                 self._send_json({"error": "No database available"}, 503)
                 return
+            phase_number, phase_err = _parse_phase_arg(parts[1], store)
+            if phase_err:
+                self._send_json(phase_err[0], phase_err[1])
+                return
+            if _is_sqlite(store):
+                try:
+                    body_data = body if isinstance(body, dict) else {}
+                    created = store.step_handoff_insert(
+                        workflow_name, phase_number,
+                        step_id=body_data.get("step_id", ""),
+                        task_id=body_data.get("task_id", ""),
+                        completed_steps=body_data.get("completed_steps", []),
+                        context_snapshot=body_data.get("context_snapshot", {}),
+                        artifacts=body_data.get("artifacts", {}),
+                        decisions=body_data.get("decisions", []),
+                        user_inputs=body_data.get("user_inputs", []),
+                        next_step=body_data.get("next_step"),
+                        escalation_flags=body_data.get("escalation_flags", []),
+                    )
+                    self._send_json(created, 201)
+                except Exception as e:
+                    self._send_json({"error": _safe_error(e)}, 500)
+                return
             try:
                 import json as _json
-                body_data = _json.loads(self._read_body())
+                # do_POST already consumed and parsed the request body into
+                # `body`. This used to call self._read_body() a second time,
+                # which re-reads Content-Length bytes from an already-drained
+                # rfile — it blocks rather than returning the payload. Reuse
+                # the parsed body.
+                body_data = body if isinstance(body, dict) else {}
                 with store._get_conn() as conn, conn.cursor() as cur:
                     cur.execute(
                         "INSERT INTO step_handoffs"
@@ -3767,36 +4097,51 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     return
 
                 _handoff_dict = None
-                try:
-                    with store._get_conn() as conn, conn.cursor() as cur:
-                        cur.execute(
-                            "SELECT id, workflow_name, step_id, task_id, phase_number,"
-                            " completed_steps, context_snapshot, artifacts, decisions,"
-                            " user_inputs, next_step, escalation_flags, created_at"
-                            " FROM step_handoffs"
-                            " WHERE workflow_name = %s AND phase_number = %s"
-                            " ORDER BY created_at DESC LIMIT 1",
-                            (_wf_name, _phase_num),
+                if _is_sqlite(store):
+                    # On SQLite phase_number is TEXT, so a decimal phase
+                    # (72.1) is looked up as itself rather than truncated by
+                    # the int() above — which would read phase 72's handoff.
+                    try:
+                        _phase_num = _sqlite_normalize_phase(
+                            body.get("phase_number") or 0
                         )
-                        _row = cur.fetchone()
-                    if _row:
-                        _handoff_dict = {
-                            "id": str(_row[0]),
-                            "workflow_name": _row[1],
-                            "step_id": _row[2],
-                            "task_id": _row[3],
-                            "phase_number": _row[4],
-                            "completed_steps": _row[5] or [],
-                            "context_snapshot": _row[6] or {},
-                            "artifacts": _row[7] or {},
-                            "decisions": _row[8] or [],
-                            "user_inputs": _row[9] or [],
-                            "next_step": _row[10],
-                            "escalation_flags": _row[11] or [],
-                            "created_at": _row[12].isoformat() if _row[12] else None,
-                        }
-                except Exception as _qe:
-                    log.warning("/api/complexity/escalate: handoff query failed: %s", _qe)
+                    except (TypeError, ValueError):
+                        pass
+                    try:
+                        _handoff_dict = store.step_handoff_latest(_wf_name, _phase_num)
+                    except Exception as _qe:
+                        log.warning("/api/complexity/escalate: handoff query failed: %s", _qe)
+                else:
+                    try:
+                        with store._get_conn() as conn, conn.cursor() as cur:
+                            cur.execute(
+                                "SELECT id, workflow_name, step_id, task_id, phase_number,"
+                                " completed_steps, context_snapshot, artifacts, decisions,"
+                                " user_inputs, next_step, escalation_flags, created_at"
+                                " FROM step_handoffs"
+                                " WHERE workflow_name = %s AND phase_number = %s"
+                                " ORDER BY created_at DESC LIMIT 1",
+                                (_wf_name, _phase_num),
+                            )
+                            _row = cur.fetchone()
+                        if _row:
+                            _handoff_dict = {
+                                "id": str(_row[0]),
+                                "workflow_name": _row[1],
+                                "step_id": _row[2],
+                                "task_id": _row[3],
+                                "phase_number": _row[4],
+                                "completed_steps": _row[5] or [],
+                                "context_snapshot": _row[6] or {},
+                                "artifacts": _row[7] or {},
+                                "decisions": _row[8] or [],
+                                "user_inputs": _row[9] or [],
+                                "next_step": _row[10],
+                                "escalation_flags": _row[11] or [],
+                                "created_at": _row[12].isoformat() if _row[12] else None,
+                            }
+                    except Exception as _qe:
+                        log.warning("/api/complexity/escalate: handoff query failed: %s", _qe)
 
                 if _handoff_dict is None:
                     self._send_json({"escalated": False, "reason": "no_handoff"})
@@ -3829,30 +4174,44 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 _new_context["complexity_score"] = _new_score
                 _new_context["chosen_phases"] = _new_phases
                 try:
-                    with store._get_conn() as conn, conn.cursor() as cur:
-                        cur.execute(
-                            "INSERT INTO step_handoffs"
-                            " (workflow_name, step_id, task_id, phase_number,"
-                            "  completed_steps, context_snapshot, artifacts,"
-                            "  decisions, user_inputs, next_step, escalation_flags)"
-                            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
-                            " RETURNING id, created_at",
-                            (
-                                _wf_name,
-                                _handoff_dict.get("step_id", ""),
-                                _task_id or _handoff_dict.get("task_id", ""),
-                                _phase_num,
-                                _handoff_dict.get("completed_steps", []),
-                                json.dumps(_new_context),
-                                json.dumps(_handoff_dict.get("artifacts", {})),
-                                json.dumps(_handoff_dict.get("decisions", [])),
-                                json.dumps(_handoff_dict.get("user_inputs", [])),
-                                _handoff_dict.get("next_step"),
-                                _new_flags,
-                            ),
+                    if _is_sqlite(store):
+                        store.step_handoff_insert(
+                            _wf_name, _phase_num,
+                            step_id=_handoff_dict.get("step_id", ""),
+                            task_id=_task_id or _handoff_dict.get("task_id", ""),
+                            completed_steps=_handoff_dict.get("completed_steps", []),
+                            context_snapshot=_new_context,
+                            artifacts=_handoff_dict.get("artifacts", {}),
+                            decisions=_handoff_dict.get("decisions", []),
+                            user_inputs=_handoff_dict.get("user_inputs", []),
+                            next_step=_handoff_dict.get("next_step"),
+                            escalation_flags=_new_flags,
                         )
-                        _ins_row = cur.fetchone()
-                        conn.commit()
+                    else:
+                        with store._get_conn() as conn, conn.cursor() as cur:
+                            cur.execute(
+                                "INSERT INTO step_handoffs"
+                                " (workflow_name, step_id, task_id, phase_number,"
+                                "  completed_steps, context_snapshot, artifacts,"
+                                "  decisions, user_inputs, next_step, escalation_flags)"
+                                " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+                                " RETURNING id, created_at",
+                                (
+                                    _wf_name,
+                                    _handoff_dict.get("step_id", ""),
+                                    _task_id or _handoff_dict.get("task_id", ""),
+                                    _phase_num,
+                                    _handoff_dict.get("completed_steps", []),
+                                    json.dumps(_new_context),
+                                    json.dumps(_handoff_dict.get("artifacts", {})),
+                                    json.dumps(_handoff_dict.get("decisions", [])),
+                                    json.dumps(_handoff_dict.get("user_inputs", [])),
+                                    _handoff_dict.get("next_step"),
+                                    _new_flags,
+                                ),
+                            )
+                            _ins_row = cur.fetchone()
+                            conn.commit()
                     log.info(
                         "[escalation] task=%s triggers=%s score=%d→%d cap_hit=%s",
                         _task_id, _fired, _old_score, _new_score, _cap_hit,
@@ -4029,6 +4388,32 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 dedup_key = f"{rule_id}:{hashlib.sha1(file_path.encode('utf-8')).hexdigest()}"
             else:
                 dedup_key = None
+            if _is_sqlite(store):
+                try:
+                    created = store.finding_insert(
+                        agent_name=body["agent_name"],
+                        finding_type=body["finding_type"],
+                        content=body["content"],
+                        task_id=task_id,
+                        confidence=float(body.get("confidence", 0.8)),
+                        severity=severity, rule_id=rule_id, domain=domain,
+                        file_path=file_path, evidence=evidence,
+                        suggested_fix=suggested_fix, status=status,
+                        audit_run_id=audit_run_id, dedup_key=dedup_key,
+                    )
+                    if created.get("deduped"):
+                        self._send_json({
+                            "deduped": True, "created": False,
+                            "existing_id": created["existing_id"],
+                        }, 200)
+                    else:
+                        self._send_json({
+                            "id": created["id"], "created": True,
+                            "created_at": created["created_at"],
+                        }, 201)
+                except Exception as e:
+                    self._send_json({"error": _safe_error(e)}, 500)
+                return
             try:
                 with store._get_conn() as conn, conn.cursor() as cur:
                     # SUBS-05 Layer-A: an open/ticketed finding with the same dedup_key
@@ -4091,6 +4476,27 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             store = _get_store()
             if not store:
                 self._send_json({"error": "No database available"}, 503)
+                return
+            if _is_sqlite(store):
+                try:
+                    created = store.message_insert(
+                        from_agent=body["from_agent"],
+                        to_agent=body["to_agent"],
+                        task_id=body["task_id"],
+                        message_type=body["message_type"],
+                        content=body["content"],
+                        status=status,
+                        operator_approved=auto_approved,
+                    )
+                    self._send_json({
+                        "id": created["id"],
+                        "created": True,
+                        "status": status,
+                        "operator_approved": auto_approved,
+                        "created_at": created["created_at"],
+                    }, 201)
+                except Exception as e:
+                    self._send_json({"error": _safe_error(e)}, 500)
                 return
             try:
                 with store._get_conn() as conn, conn.cursor() as cur:
@@ -4179,6 +4585,23 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             store = _get_store()
             if not store:
                 self._send_json({"error": "No database available"}, 503)
+                return
+            if _is_sqlite(store):
+                try:
+                    created = store.agent_metric_insert(
+                        agent_name=body["agent_name"],
+                        task_id=body["task_id"],
+                        outcome=body["outcome"],
+                        completion_time_ms=body.get("completion_time_ms"),
+                        token_usage=body.get("token_usage"),
+                        error_count=int(body.get("error_count", 0)),
+                    )
+                    self._send_json({
+                        "id": created["id"], "created": True,
+                        "created_at": created["created_at"],
+                    }, 201)
+                except Exception as e:
+                    self._send_json({"error": _safe_error(e)}, 500)
                 return
             try:
                 with store._get_conn() as conn, conn.cursor() as cur:
@@ -4278,6 +4701,28 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             if not store:
                 self._send_json({"error": "No database available"}, 503)
                 return
+            if _is_sqlite(store):
+                try:
+                    if not (new_status or "response" in body or "operator_approved" in body):
+                        self._send_json({"error": "No updatable fields provided"}, 400)
+                        return
+                    updated = store.message_update(
+                        msg_id,
+                        status=new_status,
+                        response=body.get("response"),
+                        response_present="response" in body,
+                        operator_approved=(
+                            bool(body["operator_approved"])
+                            if "operator_approved" in body else None
+                        ),
+                    )
+                    if not updated:
+                        self._send_json({"error": "message not found"}, 404)
+                        return
+                    self._send_json({**updated, "updated": True})
+                except Exception as e:
+                    self._send_json({"error": _safe_error(e)}, 500)
+                return
             try:
                 with store._get_conn() as conn, conn.cursor() as cur:
                     # Build update SET clauses from provided fields
@@ -4341,6 +4786,24 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             store = _get_store()
             if not store:
                 self._send_json({"error": "No database available"}, 503)
+                return
+            if _is_sqlite(store):
+                try:
+                    if not (new_status or "ticket_id" in body):
+                        self._send_json({"error": "No updatable fields provided"}, 400)
+                        return
+                    updated = store.finding_update(
+                        finding_id,
+                        status=new_status,
+                        ticket_id=body.get("ticket_id"),
+                        ticket_id_present="ticket_id" in body,
+                    )
+                    if not updated:
+                        self._send_json({"error": "finding not found"}, 404)
+                        return
+                    self._send_json({**updated, "updated": True})
+                except Exception as e:
+                    self._send_json({"error": _safe_error(e)}, 500)
                 return
             try:
                 with store._get_conn() as conn, conn.cursor() as cur:
@@ -4495,7 +4958,42 @@ def start_server(foreground=False):
     # ─── Smart Infrastructure Detection ─────────────
     global _pg_store, _sqlite_store, _infra_result
 
-    if _HAS_INFRA_DETECT:
+    _log_handler = _attach_log_file()
+    if _log_handler is not None:
+        print(f"  Log file: {_log_handler.baseFilename}")
+        log.info(
+            "log_file_attached path=%s max_bytes=%d backups=%d",
+            _log_handler.baseFilename, LOG_FILE_MAX_BYTES, LOG_FILE_BACKUPS,
+        )
+
+    if _force_sqlite():
+        # GSD_FORCE_SQLITE pins the daemon to the SQLite fallback and skips
+        # infrastructure detection entirely — detect_infrastructure() probes
+        # ports 5432-5434 and will auto-START a Docker PostgreSQL container,
+        # which a test run (or a deliberately degraded deployment) must not
+        # do. Nothing else in the daemon branches on this flag: the backend
+        # it selects is the ordinary SQLite fallback path.
+        _infra_result = {
+            "backend": "sqlite",
+            "connection_url": None,
+            "features": ["memory", "tasks", "skb", "validation", "fts"],
+            "message": "SQLite forced by GSD_FORCE_SQLITE",
+        }
+        if _HAS_SQLITE_MODULE:
+            try:
+                _sqlite_store = SQLiteStore(db_path=os.environ.get("GSD_SQLITE_PATH") or None)
+                _infra_result["connection_url"] = f"sqlite:///{_sqlite_store.db_path}"
+                print(f"  SQLite: active, forced ({_sqlite_store.db_path})")
+                log.info("sqlite_forced path=%s", _sqlite_store.db_path)
+                os.environ["GSD_BACKEND"] = "sqlite"
+                os.environ["GSD_SQLITE_PATH"] = _sqlite_store.db_path
+            except Exception as e:
+                print(f"  SQLite: FAILED ({e})")
+                log.error("sqlite_forced_failed error=%s", e)
+                _sqlite_store = None
+        else:
+            print("  SQLite: sqlite_store module not found")
+    elif _HAS_INFRA_DETECT:
         _infra_result = detect_infrastructure()
         log.info("infra_detected backend=%s", _infra_result["backend"])
         print(f"  Infrastructure: {_infra_result['message']}")
@@ -4592,7 +5090,16 @@ def start_server(foreground=False):
     # ── Initialize BackupManager + auto-backup (Phase 8: DUR-05) ─────────
     global _backup_manager
     _active_store = _get_store()
-    if _HAS_BACKUP_MODULE and _active_store:
+    # AMAUTA_AUTO_BACKUP=off suppresses the startup auto-backup. BackupManager
+    # writes into a hard-coded ~/.amauta/backups and prunes to the last 7, so a
+    # throwaway daemon (a test run, a scratch instance) must not run it: it
+    # would file an empty store as today's backup and evict a real one.
+    _auto_backup_on = os.environ.get("AMAUTA_AUTO_BACKUP", "on").strip().lower() not in (
+        "off", "0", "false", "no"
+    )
+    if _HAS_BACKUP_MODULE and _active_store and not _auto_backup_on:
+        print("  Auto-backup: disabled (AMAUTA_AUTO_BACKUP=off)")
+    elif _HAS_BACKUP_MODULE and _active_store:
         try:
             _backup_manager = BackupManager(_active_store)
             auto_path = _backup_manager.auto_backup()
@@ -4690,6 +5197,12 @@ def start_server(foreground=False):
     retention_thread = threading.Thread(target=_memory_retention_thread, daemon=True)
     retention_thread.start()
     print(f"  Retention: started (check every {RETENTION_CHECK_INTERVAL}s)")
+
+    # ── Start PG recovery probe (SQLite fallback only) ────────────────────────
+    if _sqlite_store and not _pg_store and _HAS_PG_MODULE and not _force_sqlite():
+        pg_probe_thread = threading.Thread(target=_pg_recovery_probe_thread, daemon=True)
+        pg_probe_thread.start()
+        print(f"  PG re-probe: started (every {PG_RECOVERY_PROBE_INTERVAL}s, reports only)")
 
     # -- Startup Service Inventory (data flow alert) ---------------------------
     print(f"\n  --- Service Status ---")
