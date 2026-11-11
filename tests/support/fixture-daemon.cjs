@@ -30,13 +30,13 @@ const STOP_GRACE_MS = Number(process.env.GSD_FIXTURE_STOP_GRACE_MS) || 5000;
 
 /**
  * Choose the Python interpreter.
- * @returns {string} /opt/homebrew/bin/python3 on macOS when present, else GSD_PYTHON or python3
+ * @returns {string} /opt/homebrew/bin/python3 on macOS when present, else GSD_PYTHON, else python (Windows) or python3
  */
 function pythonBin() {
   if (process.platform === 'darwin' && fs.existsSync('/opt/homebrew/bin/python3')) {
     return '/opt/homebrew/bin/python3';
   }
-  return process.env.GSD_PYTHON || 'python3';
+  return process.env.GSD_PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
 }
 
 /**
