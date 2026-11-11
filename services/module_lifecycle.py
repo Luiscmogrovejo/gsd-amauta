@@ -419,8 +419,24 @@ def _install_register_services(ctx: Dict[str, Any]) -> StepResult:
     )
 
 
+def _target_root() -> str:
+    """Root directory that agent and skill files are installed under.
+
+    Test and alternate-root installs only: GSD_MODULE_TARGET_ROOT redirects
+    ``agents/`` and ``get-shit-done/skills/`` into another tree. Production leaves it
+    unset and the root is the process working directory, exactly as before (the
+    gsd-tools dispatcher sets the cwd to the repository root). Without the override a
+    test run wrote ``agents/test-agent.md`` into the working tree, where any
+    concurrently running roster test could read it.
+
+    Returns:
+        str: the override when set and non-empty, else ``os.getcwd()``.
+    """
+    return os.environ.get("GSD_MODULE_TARGET_ROOT") or os.getcwd()
+
+
 def _install_copy_agents(ctx: Dict[str, Any]) -> StepResult:
-    """Step 5: Copy agent files into agents/ directory."""
+    """Step 5: Copy agent files into the agents directory under the target root."""
     if ctx.get("existing_record") is not None:
         return build_step_result("copy_agents", "skip", "module already installed")
 
@@ -438,7 +454,7 @@ def _install_copy_agents(ctx: Dict[str, Any]) -> StepResult:
 
     for agent_rel_path in agents:
         src = os.path.join(module_dir, agent_rel_path)
-        dest = os.path.join("agents", os.path.basename(agent_rel_path))
+        dest = os.path.join(_target_root(), "agents", os.path.basename(agent_rel_path))
 
         if os.path.exists(dest) and not ctx["force"]:
             return build_step_result(
@@ -463,7 +479,7 @@ def _install_copy_agents(ctx: Dict[str, Any]) -> StepResult:
 
 
 def _install_copy_skills(ctx: Dict[str, Any]) -> StepResult:
-    """Step 6: Copy skill files into get-shit-done/skills/ directory."""
+    """Step 6: Copy skill files into the skills directory under the target root."""
     if ctx.get("existing_record") is not None:
         return build_step_result("copy_skills", "skip", "module already installed")
 
@@ -488,7 +504,7 @@ def _install_copy_skills(ctx: Dict[str, Any]) -> StepResult:
         if not skill_name or skill_name == ".":
             skill_name = os.path.splitext(os.path.basename(skill_rel_path))[0]
 
-        dest = os.path.join("get-shit-done", "skills", skill_name, "SKILL.md")
+        dest = os.path.join(_target_root(), "get-shit-done", "skills", skill_name, "SKILL.md")
 
         if os.path.exists(dest) and not ctx["force"]:
             return build_step_result(
