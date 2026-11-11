@@ -342,7 +342,7 @@ describe('88-09 rules recorded in 88-CONTEXT.md and 88-09-PLAN.md', () => {
       const dir = copyTree(name);
       for (const f of ['ROADMAP.md', 'STATE.md', 'REQUIREMENTS.md', 'PROJECT.md']) {
         const p = path.join(dir, f);
-        fs.writeFileSync(p, fs.readFileSync(p, 'utf-8').replace(/\n/g, '\r\n'));
+        fs.writeFileSync(p, fs.readFileSync(p, 'utf-8').replace(/\r?\n/g, '\r\n'));
       }
       assert.deepStrictEqual(ids(dir), CONTRACT[name].ids, name);
     }
