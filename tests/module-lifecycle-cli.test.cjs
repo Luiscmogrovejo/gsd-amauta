@@ -86,20 +86,8 @@ const NEEDS_PYYAML = new Set([
   'test_install_json_output_has_frozen_keys',
 ]);
 
-// `module validate` itself does not need PyYAML, but with pydantic present and PyYAML absent the fallback parser in
-// services/module_schema.py stores an indented `services:` mapping as [] and pydantic rejects it. That module is a
-// protected Phase 48 output (canary-pinned), so these cases skip by name and the defect is routed in 88-06-SUMMARY.md.
-const SKIP_FALLBACK_PARSER = !HAVE_PYYAML && pyHas('pydantic')
-  ? 'PyYAML is not installed and pydantic is: the module.yaml fallback parser returns [] for an indented services mapping (routed from plan 88-06)'
-  : false;
-const NEEDS_FALLBACK_PARSER = new Set([
-  'test_validate_still_works_phase48_regression',
-  'test_cli_cjs_shortcut_module_validate_phase48_compat',
-]);
-
 function run(name, fn) {
-  const skip = NEEDS_PYYAML.has(name) ? SKIP_NO_PYYAML : (NEEDS_FALLBACK_PARSER.has(name) ? SKIP_FALLBACK_PARSER : false);
-  test(name, { skip }, fn);
+  test(name, { skip: NEEDS_PYYAML.has(name) ? SKIP_NO_PYYAML : false }, fn);
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

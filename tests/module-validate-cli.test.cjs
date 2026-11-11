@@ -39,25 +39,13 @@ function runCli(extraArgs) {
 // Was a hand-rolled runner that showed up as one pass/fail per file. It now registers each case with node:test so a
 // case that needs a tool the environment lacks can be skipped BY NAME instead of failing.
 //
-// The two cases that validate the `feature-requires-core` fixture fail on a machine that has pydantic but no PyYAML
-// (the GitHub macOS runner): services/module_schema.py then falls back to a minimal YAML parser that stores
-// `services:` with an indented mapping as `[]`, and pydantic rejects it ("Input should be a valid dictionary").
-// Without pydantic the dataclass fallback accepts it (ubuntu), with PyYAML the mapping parses (developer machines).
-// The parser is a protected Phase 48 output (the party/phase-52/phase-53 canaries pin services/module_schema.py), so it
-// is not edited here; the defect is routed in 88-06-SUMMARY.md.
+// Every case runs on every environment. (Until plan 88-12 two of them were skipped by name on a machine with pydantic
+// and no PyYAML, because the fallback parser in services/module_schema.py stored an indented `services:` mapping as
+// `[]`; the parser now reads the mapping, so the skip is gone.)
 const { test } = require('node:test');
-const pyHas = (mod) => spawnSync('python3', ['-c', `import ${mod}`], { stdio: 'ignore' }).status === 0;
-const FALLBACK_PARSER_BROKEN = !pyHas('yaml') && pyHas('pydantic');
-const SKIP_FALLBACK_PARSER = FALLBACK_PARSER_BROKEN
-  ? 'PyYAML is not installed and pydantic is: the module.yaml fallback parser returns [] for an indented services mapping (routed from plan 88-06)'
-  : false;
-const NEEDS_FALLBACK_PARSER = new Set([
-  'validate both fixtures exits 0 and install_order is deterministic',
-  'validate with conflict-injected third manifest exits 1 and reports conflict',
-]);
 
 function run(name, fn) {
-  test(name, { skip: NEEDS_FALLBACK_PARSER.has(name) ? SKIP_FALLBACK_PARSER : false }, fn);
+  test(name, fn);
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
