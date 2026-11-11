@@ -17,7 +17,9 @@ const HOOKS_TO_COPY = [
   // v3.5 output-compression rewrite hooks (.cjs, copied verbatim). These
   // require('./lib/...') deps, staged into dist/lib below.
   'gsd-compress-gate.cjs',
-  'gsd-compress-post.cjs'
+  'gsd-compress-post.cjs',
+  // Token-saving read shunt (.cjs, copied verbatim; requires ./lib/hook-common.cjs).
+  'gsd-shunt-gate.cjs'
 ];
 
 // Shared lib deps the compression hooks require at runtime
