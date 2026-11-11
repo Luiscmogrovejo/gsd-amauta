@@ -6,6 +6,7 @@ directories, ports moved off the operator's live services, and the socket guard
 installed. HOME is not modified (replacing it hides user-site packages).
 """
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -256,3 +257,20 @@ def postgres_dsn():
         The DSN string from ``GSD_TEST_POSTGRES_URL``.
     """
     return _postgres_dsn_or_skip()
+
+
+def have_tool(name):
+    """True when an executable called ``name`` is on PATH.
+
+    Use it to skip, by name, a test that needs a tool CI cannot have.
+
+    Args:
+        name: executable name, for example ``"claude"`` or ``"gitleaks"``.
+
+    Returns:
+        bool: whether ``shutil.which(name)`` finds it.
+
+    Example:
+        @pytest.mark.skipif(not have_tool("claude"), reason="the claude CLI is not available in this environment")
+    """
+    return shutil.which(name) is not None
