@@ -21,6 +21,10 @@
  *   <LIVE>/services/rlm-service.pid    the live RLM's pid file
  *   <this repo>/data/tasks.json        when this repo is not the live checkout
  *
+ * It also reports processes: the fixture daemon writes a pid ledger
+ * (GSD_PROCESS_LEDGER) and strayProcesses() lists what a run left alive, so a daemon
+ * that outlives its test becomes a red run instead of an invisible neighbour.
+ *
  * Directory listings hash NAMES only (mtimes and sizes are recorded for diagnosis).
  * The live daemon appends to its own logs all day, so hashing mtimes would raise a
  * false finding on every run; a created or deleted file is the signal.
@@ -30,6 +34,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { execFileSync } = require('child_process');
 
 const OWN_REPO = path.resolve(__dirname, '..', '..');
 
@@ -181,4 +186,169 @@ function format(findings) {
   );
 }
 
-module.exports = { snapshot, diff, format, _setLiveCheckoutForTest, _setTargetsForTest };
+const DAEMON_RE = /amauta-daemon\.py|rlm-service\.py/;
+
+/**
+ * Pids that are never reportable as killable, whatever the ledger says: this
+ * process, its parent, and the pids in the live daemon's own pid files.
+ * @returns {Set<number>}
+ */
+function protectedPids() {
+  const set = new Set([process.pid, process.ppid]);
+  const live = liveCheckout();
+  for (const f of ['amauta-daemon.pid', 'rlm-service.pid']) {
+    try {
+      const n = parseInt(fs.readFileSync(path.join(live, 'services', f), 'utf8').trim(), 10);
+      if (n > 0) set.add(n);
+    } catch (_e) {
+      /* no such pid file */
+    }
+  }
+  return set;
+}
+
+/**
+ * Whether a pid is one this harness must never signal.
+ * @param {number} pid
+ * @returns {boolean}
+ */
+function isProtectedPid(pid) {
+  return protectedPids().has(Number(pid));
+}
+
+/**
+ * Whether a pid answers signal 0. EPERM means alive but not ours.
+ * @param {number} pid
+ * @returns {'alive'|'dead'|'eperm'}
+ */
+function livenessOf(pid) {
+  try {
+    process.kill(pid, 0);
+    return 'alive';
+  } catch (e) {
+    return e.code === 'EPERM' ? 'eperm' : 'dead';
+  }
+}
+
+/**
+ * `ps -o command= -p <pid>` through execFileSync (never a shell).
+ * @param {number} pid
+ * @returns {string} the command line, or '' when unavailable
+ */
+function commandOf(pid) {
+  try {
+    return execFileSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8', timeout: 5000 }).trim();
+  } catch (_e) {
+    return '';
+  }
+}
+
+/**
+ * TCP ports the pid is listening on (empty when lsof is missing or finds none).
+ * @param {number} pid
+ * @returns {number[]}
+ */
+function listeningPorts(pid) {
+  try {
+    const out = execFileSync('lsof', ['-nP', '-a', '-p', String(pid), '-iTCP', '-sTCP:LISTEN', '-Fn'], {
+      encoding: 'utf8',
+      timeout: 5000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return [...out.matchAll(/^n.*:(\d+)$/gm)].map((m) => Number(m[1]));
+  } catch (_e) {
+    return [];
+  }
+}
+
+/**
+ * Decide whether a live ledger entry is this harness's own daemon or RLM. All of:
+ * not a protected pid; the command line names amauta-daemon.py or rlm-service.py;
+ * and the command line contains the ledger's dataDir or the process listens on
+ * the ledger's port (a recycled pid will match neither).
+ *
+ * @param {{pid: number, kind?: string, port?: number|null, dataDir?: string}} entry
+ * @returns {{identified: boolean, reason: string}}
+ */
+function identify(entry) {
+  if (isProtectedPid(entry.pid)) return { identified: false, reason: 'protected pid' };
+  const cmd = commandOf(entry.pid);
+  if (!DAEMON_RE.test(cmd)) return { identified: false, reason: 'not an amauta daemon/rlm process' };
+  const byDir = entry.dataDir && cmd.includes(entry.dataDir);
+  const byPort = entry.port && listeningPorts(entry.pid).includes(Number(entry.port));
+  if (!byDir && !byPort) return { identified: false, reason: 'ledger mismatch' };
+  return { identified: true, reason: 'identified' };
+}
+
+/**
+ * Daemons and RLM services the ledger says were started and never stopped, that
+ * are still alive. Signals nothing; identification is advisory input for the
+ * runner's kill pass. A missing ledger is the normal "nothing started" case; a
+ * malformed line is skipped with a warning. Never throws.
+ *
+ * @param {string} ledgerPath path of the JSONL ledger
+ * @returns {{pid: number, kind: string, port: number|null, dataDir: string|null, identified: boolean, reason: string}[]}
+ */
+function strayProcesses(ledgerPath) {
+  let text;
+  try {
+    text = fs.readFileSync(ledgerPath, 'utf8');
+  } catch (e) {
+    if (e.code !== 'ENOENT') console.error('live-store-canary: cannot read process ledger ' + ledgerPath + ': ' + e.message);
+    return [];
+  }
+  const latest = new Map();
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    let rec;
+    try {
+      rec = JSON.parse(line);
+    } catch (_e) {
+      console.error('live-store-canary: skipping malformed process-ledger line: ' + line.slice(0, 120));
+      continue;
+    }
+    if (!rec || !Number.isInteger(rec.pid) || rec.pid <= 0) continue;
+    if (rec.event === 'started') latest.set(rec.pid, rec);
+    else if (rec.event === 'stopped') latest.set(rec.pid, null);
+  }
+  const strays = [];
+  for (const [pid, rec] of latest) {
+    if (!rec) continue;
+    const alive = livenessOf(pid);
+    if (alive === 'dead') continue;
+    const entry = { pid, kind: rec.kind || 'daemon', port: rec.port || null, dataDir: rec.dataDir || null };
+    const id = alive === 'eperm' ? { identified: false, reason: 'not ours (EPERM)' } : identify(entry);
+    strays.push({ ...entry, ...id });
+  }
+  return strays;
+}
+
+/**
+ * Render strays for stderr.
+ * @param {ReturnType<typeof strayProcesses>} strays
+ * @returns {string}
+ */
+function formatStrays(strays) {
+  return (
+    'STRAY PROCESS: the test run left a daemon or RLM service alive\n' +
+    strays
+      .map(
+        (s) =>
+          '  pid ' + s.pid + ' (' + s.kind + (s.port ? ', port ' + s.port : '') + '): ' +
+          (s.identified ? 'identified, will be stopped by pid' : 'NOT signalled: ' + s.reason)
+      )
+      .join('\n')
+  );
+}
+
+module.exports = {
+  snapshot,
+  diff,
+  format,
+  strayProcesses,
+  formatStrays,
+  identify,
+  isProtectedPid,
+  _setLiveCheckoutForTest,
+  _setTargetsForTest,
+};
