@@ -37,7 +37,10 @@ function py(args, dataDir, extraEnv = {}) {
   try {
     const out = execFileSync('python3', [PY, ...args], {
       encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, AMAUTA_DATA_DIR: dataDir, NO_COLOR: '1', GSD_AMAUTA_PORT: '19999', ...extraEnv },
+      // GSD_GITFLOW is pinned ON: the tracked .planning/config.json sets workflow.gitflow=false,
+      // which would make every fixture a "non-code" task and skip the BRANCH_EVIDENCE / PR_URL
+      // gates these tests exercise. Callers may override through extraEnv.
+      env: { ...process.env, AMAUTA_DATA_DIR: dataDir, NO_COLOR: '1', GSD_AMAUTA_PORT: '19999', GSD_GITFLOW: 'on', ...extraEnv },
       cwd: dataDir, timeout: 20000,
     });
     return { ok: true, out: out.trim(), err: '' };
@@ -82,7 +85,7 @@ function makeTask(d, overrides = {}) {
         R: 'R: Researched existing implementation patterns and reviewed architecture docs for edge cases and constraints.',
         P: 'P: Planned implementation with Given/When/Then criteria. Risk assessed, dependencies mapped, rollback defined.',
         E: 'E: git checkout -b feat/TK-0001. feat/TK-0001 branch.',
-        T: 'T: npm test\n10 tests passed\nexit 0',
+        T: 'T: ran npm test under the hermetic runner; 37 subtests, 37 passing, 0 failing, 0 skipped; exit 0; duration 2.1s',
         D: 'D: https://github.com/org/repo/pull/1 merged. LEARNING: Always run the full test suite before marking a task as done. Edge cases around validation gates, branch naming conventions, and PR URL extraction must be verified with real data, not just build passes.'
       },
       rpetd_complete: true, notes: overrides.notes || [],
@@ -700,9 +703,10 @@ describe('Spec Compliance — 9 specs tested against code', () => {
       'Status transition should check gitflow gates');
   });
 
-  test('6.10 SPEC-06 Agents: 11 agents all have memory:user', () => {
+  test('6.10 SPEC-06 Agents: every agent file has memory:user', () => {
+    // The agent roster grows; derive it from disk instead of hard-coding a count.
     const agentFiles = fs.readdirSync(AGENTS_DIR).filter(f => f.endsWith('.md'));
-    assert.strictEqual(agentFiles.length, 11, `Expected 11 agents, got ${agentFiles.length}`);
+    assert.ok(agentFiles.length > 0, 'agents/ should contain at least one agent definition');
     for (const f of agentFiles) {
       const content = fs.readFileSync(path.join(AGENTS_DIR, f), 'utf-8');
       assert.ok(content.includes('memory: user') || content.includes('memory:user'), 

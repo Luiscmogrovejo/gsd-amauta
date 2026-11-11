@@ -3078,14 +3078,19 @@ def cmd_update(args):
 def _gitflow_globally_disabled() -> bool:
     """True when this repo opts out of PR-gating (trunk-based development).
 
-    Precedence: GSD_GITFLOW env (off/false/0 → disabled) > .planning/config.json
-    workflow.gitflow (false → disabled). Default is ENABLED — the gate stays on
-    for end-user projects; only a repo that explicitly develops direct-to-master
-    (e.g. gsd-amauta's own tree) turns it off. Read fresh per call (no restart).
+    Precedence: GSD_GITFLOW env (off/false/0 → disabled; on/true/1/yes → enabled,
+    overriding the repo config) > .planning/config.json workflow.gitflow
+    (false → disabled). Default is ENABLED — the gate stays on for end-user
+    projects; only a repo that explicitly develops direct-to-master (e.g.
+    gsd-amauta's own tree) turns it off. Read fresh per call (no restart).
+    The explicit "on" lets a test pin the gate regardless of the tracked
+    .planning/config.json of the tree it runs from.
     """
     env = os.environ.get("GSD_GITFLOW")
     if env is not None and env.strip().lower() in {"off", "false", "0", "no"}:
         return True
+    if env is not None and env.strip().lower() in {"on", "true", "1", "yes"}:
+        return False
     try:
         cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 ".planning", "config.json")
