@@ -15,6 +15,11 @@ const { execFileSync } = require('child_process');
 const http = require('http');
 const path = require('path');
 
+// Hermetic (Phase 88): probe the daemon on the port the runner chose (a free port with no
+// daemon behind it), never the operator's live 18799. The tests skip when it is absent.
+// Converting them to the fixture daemon is plan 88-07.
+const DAEMON_PORT = process.env.GSD_AMAUTA_PORT || '18799';
+
 const CLI_PATH = path.join(__dirname, '..', 'get-shit-done', 'bin', 'gsd-amauta.cjs');
 
 // ═══════════════════════════════════════════════════════
@@ -28,7 +33,7 @@ function run(args, { expectFail = false } = {}) {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: {
         ...process.env,
-        AMAUTA_DATA_DIR: path.join(__dirname, '..', 'data'),
+        AMAUTA_DATA_DIR: process.env.AMAUTA_DATA_DIR || path.join(__dirname, '..', 'data'),
       },
       timeout: 30000,   // was 15000 — claim/validate can take 15-20s on busy daemon
     });
@@ -57,7 +62,7 @@ function runJSON(args) {
 
 function daemonHealth() {
   return new Promise((resolve) => {
-    const req = http.get('http://127.0.0.1:18799/health', { timeout: 3000 }, (res) => {
+    const req = http.get('http://127.0.0.1:' + DAEMON_PORT + '/health', { timeout: 3000 }, (res) => {
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
       res.on('end', () => {

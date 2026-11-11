@@ -143,6 +143,7 @@ async function startFixtureDaemon(opts = {}) {
     env: {
       GSD_AMAUTA_PORT: String(port),
       GSD_DAEMON_PORT: String(port),
+      AMAUTA_PORT: String(port),
       AMAUTA_DATA_DIR: dataDir,
       GSD_TEST_MODE: '1',
       GSD_FORCE_SQLITE: '1',

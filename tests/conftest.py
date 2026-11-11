@@ -82,6 +82,10 @@ def _gsd_hermetic_env(tmp_path_factory):
     os.environ["GSD_AMAUTA_PORT"] = str(daemon_port)
     os.environ["GSD_DAEMON_PORT"] = str(daemon_port)
     os.environ["GSD_RLM_PORT"] = str(rlm_port)
+    redis_port = _free_port(avoid=(daemon_port, rlm_port))
+    os.environ["AMAUTA_PORT"] = str(daemon_port)
+    os.environ["GSD_REDIS_PORT"] = str(redis_port)
+    os.environ["GSD_REDIS_URL"] = "redis://127.0.0.1:%d/0" % redis_port
 
     pypath = str(_SUPPORT / "pythonpath")
     existing = os.environ.get("PYTHONPATH", "")

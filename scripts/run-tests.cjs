@@ -95,6 +95,11 @@ function buildHermeticEnv(baseEnv) {
   env.GSD_AMAUTA_PORT = String(daemonPort);
   env.GSD_DAEMON_PORT = String(daemonPort);
   env.GSD_RLM_PORT = String(rlmPort);
+  // Other names the repository reads for the same ports: AMAUTA_PORT is the daemon
+  // port in the LIVE-daemon tests, GSD_REDIS_PORT is what services/pg_dsn.py
+  // redis_port() reads (services/infra_detect.py probes it even when SQLite is forced).
+  env.AMAUTA_PORT = String(daemonPort);
+  env.GSD_REDIS_PORT = String(redisPort);
   env.GSD_REDIS_URL = 'redis://127.0.0.1:' + redisPort + '/0';
 
   const supportDir = path.join(__dirname, '..', 'tests', 'support');
