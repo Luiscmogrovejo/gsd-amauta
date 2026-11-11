@@ -404,10 +404,14 @@ Task(
 Execute quick task ${quick_id}.
 
 <files_to_read>
-- ${QUICK_DIR}/${quick_id}-PLAN.md (Plan)
-- .planning/STATE.md (Project state)
+- ${QUICK_DIR}/${quick_id}-PLAN.md (Plan — read in full; it IS your instructions)
 - ./CLAUDE.md (Project instructions, if exists)
 - .claude/skills/ or .agents/skills/ (Project skills, if either exists — list skills, read SKILL.md for each, follow relevant rules during implementation)
+
+Project state: do NOT read .planning/STATE.md whole. Run
+  node ~/.claude/get-shit-done/bin/gsd-tools.cjs state-snapshot
+for the compact JSON (phase, plan, status, progress, decisions, blockers). If you need a
+section it omits, `grep -n '^## ' .planning/STATE.md` and Read that range only.
 </files_to_read>
 
 <amauta_enrichment>
@@ -442,9 +446,13 @@ All commands are wrapped in || true — if services are unavailable, execution p
 - Execute all tasks in the plan
 - Commit each task atomically
 - Create summary at: ${QUICK_DIR}/${quick_id}-SUMMARY.md
-- Do NOT update ROADMAP.md (quick tasks are separate from planned phases)
+- Do NOT update .planning/STATE.md, ROADMAP.md or REQUIREMENTS.md. All three are
+  ORCHESTRATOR-OWNED; a commit touching them triggers `halt_orchestrator_owned`. Report
+  anything that belongs in them in your return; the orchestrator writes it.
 - Query RLM/memory before execution (if available)
 - Store key learning to memory after execution (if available)
+- Return bounded: plan id, status, SUMMARY path, commit hashes, one issues line. No
+  transcripts, no diffs, no file dumps.
 </constraints>
 ",
   subagent_type="gsd-executor-general",

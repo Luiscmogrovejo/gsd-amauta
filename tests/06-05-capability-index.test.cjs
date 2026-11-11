@@ -73,8 +73,22 @@ describe('INDEX-01: File existence and validity', () => {
 });
 
 describe('INDEX-02: Completeness', () => {
-  it('5. Exactly 16 agent entries', () => {
-    assert.equal(index.agents.length, 16, `Expected 16 agents, got ${index.agents.length}`);
+  it('5. Every indexed agent is a real agent, and ALL_IDS are all covered', () => {
+    // Was `=== 16`. The index grew to 19 (the three gsd-persona-* overlays were
+    // added) and the literal went stale. The properties worth holding are that
+    // every id in the index names an agent that exists on disk, and that the
+    // index covers at least the ALL_IDS roster this suite checks below.
+    const agentsDir = path.join(__dirname, '..', 'agents');
+    const onDisk = new Set(
+      fs.readdirSync(agentsDir)
+        .filter(f => f.startsWith('gsd-') && f.endsWith('.md'))
+        .map(f => f.slice(0, -'.md'.length))
+    );
+    const ids = index.agents.map(a => a.id);
+    const phantom = ids.filter(id => !onDisk.has(id));
+    assert.deepStrictEqual(phantom, [], `indexed ids with no agents/*.md file: ${phantom.join(', ')}`);
+    assert.ok(ids.length >= ALL_IDS.length,
+      `index must cover at least the ${ALL_IDS.length} core agents, has ${ids.length}`);
   });
   it('6. All 16 agent IDs present', () => {
     const ids = index.agents.map(a => a.id);

@@ -15,6 +15,7 @@ RLM="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-rlm.cjs"
 MEM="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-memory.cjs"
 RESEARCH="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-research.cjs"
 TOOLS="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-tools.cjs"
+SHUNT="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-shunt.cjs"
 
 # Phase 53 POLISH-05: hydration hook for workflow runner Task() spawn sites.
 # Honors GSD_HYDRATE_TASKS=off kill switch (default ON).
@@ -39,6 +40,7 @@ RLM="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-rlm.cjs"        # f
 MEM="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-memory.cjs"     # fallback: memory/learning
 RESEARCH="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-research.cjs"  # fallback: research chain
 TOOLS="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-tools.cjs"    # fallback: routing/audit
+SHUNT="node /Users/luismogrovejo/.claude/get-shit-done/bin/gsd-shunt.cjs"    # fallback: cheap bulk-read / code-write worker
 LEARNING_FORMAT="/Users/luismogrovejo/.claude/get-shit-done/references/learning-format.md"  # fallback: D-phase template
 TAG_RULES="/Users/luismogrovejo/.claude/get-shit-done/config/tag-rules.json"                # fallback: tag governance
 PRE_EXECUTION_CHECKLIST="/Users/luismogrovejo/.claude/get-shit-done/references/pre-execution-checklist.md"  # fallback: E-phase mandate checklist
@@ -59,6 +61,27 @@ PRE_EXECUTION_CHECKLIST="/Users/luismogrovejo/.claude/get-shit-done/references/p
 | `LEARNING_FORMAT`| references/learning-format.md | WHAT/WHY/WHEN/TAGS template (D-phase reference) |
 | `TAG_RULES`      | config/tag-rules.json      | Banned tags, synonyms, vocabulary, tiers           |
 | `PRE_EXECUTION_CHECKLIST` | references/pre-execution-checklist.md | E-phase query templates + security checklist (pre-exec mandate) |
+| `SHUNT`          | gsd-shunt.cjs              | Cheap Haiku worker: `bulk-read` (understand large files) and `code-write` (pattern-following output) |
+
+---
+
+## Read routing (token discipline — applies to EVERY agent)
+
+Pick the cheapest route that answers the need. Full reference: `get-shit-done/references/shunt.md`.
+
+| Need | Route |
+|---|---|
+| A section you can already locate | `Read` with `offset`/`limit` (`Grep` first for the line number) |
+| "Where does X live?" | `$RLM query "<what>" --paths <file>` — line ranges, no model cost |
+| Understand one large file, or several at once (≳400 lines / 40 KB) | `$SHUNT bulk-read --question "<q>" --paths <file>...` → bullets with `path:line`; verify the lines with a targeted read before editing |
+| Pattern-following output: tests mirroring a sibling test, config/type stubs, fixtures | `$SHUNT code-write --spec "<spec>" --reference <file> --target <file>` → writes to disk, returns the path; review the diff, then run the tests |
+
+**Never shunt:** debugging, design decisions, security review, or anything safety-critical —
+the worker lists locations and says "needs main-model review"; read those ranges yourself.
+The file you are actively editing, and your own PLAN.md, are always read in full.
+
+`GSD_SHUNT=on` makes the gate DENY an oversized whole-file read and name these routes; `warn`
+only messages; `off` disables. A denied read is not an error — take the route it names.
 
 ---
 

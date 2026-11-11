@@ -26,15 +26,19 @@ Gate 4 — PR URL (D-phase, E-phase, or notes): github.com/.../pull/NNN or "merg
 ```
 
 ## Validate Command
+`--validator` takes your REAL agent name. The bare `validator` default is rejected when a
+validator-type agent holds the claim, and amauta strips the `gsd-` prefix before comparing,
+so it also catches `gsd-executor-backend` validating work claimed by `executor-backend`.
+
 ```bash
 # Pass (all gates met):
-$CLI validate TK-XXXX --pass --validator validator --notes "PASS: All 4 gates met." 2>/dev/null || true
+$CLI validate TK-XXXX --pass --validator gsd-validator --notes "PASS: All 4 gates met." 2>/dev/null || true
 
 # Fail (gate violation):
-$CLI validate TK-XXXX --fail --validator validator --notes "FAIL: [gate] — [reason]." 2>/dev/null || true
+$CLI validate TK-XXXX --fail --validator gsd-validator --notes "FAIL: [gate] — [reason]." 2>/dev/null || true
 
-# Force override (legitimate exceptions only):
-$CLI validate TK-XXXX --pass --force --validator validator --notes "PASS: [reason for override]." 2>/dev/null || true
+# Force override (legitimate exceptions only — audited in task notes):
+$CLI validate TK-XXXX --pass --force --validator gsd-validator --notes "PASS: [reason for override]." 2>/dev/null || true
 ```
 
 ## Store learnings after validating

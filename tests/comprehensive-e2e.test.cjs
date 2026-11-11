@@ -570,10 +570,15 @@ describe('Research Chain — complex E2E', () => {
     assert.ok(content.includes('web_search_result'));
   });
 
-  test('4.5 all 11 agents have RESEARCH=', () => {
+  test('4.5 every research-chain agent has RESEARCH=', () => {
+    // Was `=== 11` plus a loop over every agent. Both went stale: the roster is 35,
+    // and the ten read-only gsd-auditor-* agents deliberately carry no research
+    // chain (they scan and file findings; they do not research). Assert the
+    // property on the agents it is actually a contract for, derived from disk.
     const dir = path.join(__dirname, '..', 'agents');
-    const agents = fs.readdirSync(dir).filter(f => f.startsWith('gsd-') && f.endsWith('.md'));
-    assert.strictEqual(agents.length, 11);
+    const all = fs.readdirSync(dir).filter(f => f.startsWith('gsd-') && f.endsWith('.md'));
+    const agents = all.filter(f => !f.startsWith('gsd-auditor-'));
+    assert.ok(agents.length > 0, 'expected at least one non-auditor agent');
     for (const a of agents) {
       const c = fs.readFileSync(path.join(dir, a), 'utf-8');
       assert.ok(c.includes('RESEARCH=') || c.includes("RESEARCH='"), `${a} missing RESEARCH=`);
@@ -655,7 +660,15 @@ describe('Agent Architecture — spec compliance', () => {
   const skillsDir = path.join(__dirname, '..', 'skills');
   const agents = fs.readdirSync(agentsDir).filter(f => f.startsWith('gsd-') && f.endsWith('.md'));
 
-  test('5.1 exactly 11 agents exist', () => { assert.strictEqual(agents.length, 11); });
+  test('5.1 compiled agents match their AGENT.yaml sources', () => {
+    // Was `=== 11`. Compare against the compile source of truth instead.
+    const yamlDir = path.join(__dirname, '..', 'get-shit-done', 'agents');
+    const sources = fs.readdirSync(yamlDir, { withFileTypes: true })
+      .filter(e => e.isDirectory() && fs.existsSync(path.join(yamlDir, e.name, 'AGENT.yaml')))
+      .map(e => e.name).sort();
+    assert.ok(sources.length > 0, 'expected at least one AGENT.yaml source');
+    assert.deepStrictEqual(agents.map(a => a.replace(/\.md$/, '')).sort(), sources);
+  });
   test('5.2 exactly 11 skill directories exist', () => {
     assert.strictEqual(fs.readdirSync(skillsDir).filter(f => f.endsWith('-workflow')).length, 11);
   });

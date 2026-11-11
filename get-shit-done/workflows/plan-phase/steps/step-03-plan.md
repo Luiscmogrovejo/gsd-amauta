@@ -49,13 +49,25 @@ Planner prompt:
 **Mode:** {standard | gap_closure}
 
 <files_to_read>
-- {state_path} (Project State)
-- {roadmap_path} (Roadmap)
-- {requirements_path} (Requirements)
+Read IN FULL — these are the phase's intent and you must hold all of it:
 - {context_path} (USER DECISIONS from /amauta:discuss-phase)
 - {research_path} (Technical Research)
 - {verification_path} (Verification Gaps - if --gaps)
 - {uat_path} (UAT Gaps - if --gaps)
+
+Read TARGETED — STATE, ROADMAP and REQUIREMENTS together run to tens of KB and you need
+three slices of them, not the whole set:
+- Project state: `node ~/.claude/get-shit-done/bin/gsd-tools.cjs state-snapshot`
+  (phase, plan, status, progress, decisions, blockers as JSON).
+- Roadmap: `node ~/.claude/get-shit-done/bin/gsd-tools.cjs roadmap get-phase {phase_number} --raw`
+  returns THIS phase's section (goal, depends-on, requirement IDs, success criteria) — about
+  1 KB against ~12 KB for the file. Read {roadmap_path} whole only to see sibling phases.
+- Requirements: you are given the phase's IDs below. Pull just those:
+  `grep -n -E '{phase_req_ids_regex}' {requirements_path}` then Read the matched ranges with
+  offset/limit. Read {requirements_path} whole only when the phase has no declared IDs.
+
+Need to understand several large files at once? `$SHUNT bulk-read --question "<q>" --paths
+<files>` returns `path:line` bullets at Haiku cost; verify the lines before relying on them.
 </files_to_read>
 
 **Phase requirement IDs (every ID MUST appear in a plan's `requirements` field):** {phase_req_ids}

@@ -2,6 +2,19 @@
 Execute a phase prompt (PLAN.md) and create the outcome summary (SUMMARY.md).
 </purpose>
 
+<audience>
+**This file is the ORCHESTRATOR's workflow.** It discovers plans, routes and spawns executors,
+and — after they return — applies the `.planning/` state writes.
+
+**A spawned executor must NOT be given this file.** Its executor-facing half lives in
+`get-shit-done/workflows/execute-plan-core.md` (≈9 KB vs 25 KB here), which is what the
+execute-phase spawn prompt points at. The steps below marked `owner="orchestrator"` write
+`.planning/STATE.md`, `.planning/ROADMAP.md` and `.planning/REQUIREMENTS.md`, which are
+ORCHESTRATOR_OWNED in `gsd-tools.cjs`: an executor commit touching any of them raises
+`halt_orchestrator_owned` and hard-halts the wave, ignoring `GSD_MANIFEST_CHECK=warn`.
+Handing an executor this file told it to do exactly that.
+</audience>
+
 ## Tool Paths (Phase 10 LEARN-07 — runtime Read dedup)
 
 At the start of any bash invocation in this workflow, Read the shared CLI variable file and paste the shell block into your bash session:
@@ -22,10 +35,19 @@ At the start of any bash invocation in this workflow, Read the shared CLI variab
 ```
 
 <required_reading>
-Read STATE.md before any operation to load project context.
-Read config.json for planning behavior settings.
+Project context: take the compact snapshot, not the whole file —
+`node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" state-snapshot` returns current
+phase/plan, status, progress, decisions and blockers as JSON (hundreds of bytes against tens
+of KB for `.planning/STATE.md`). Need a section it omits? `grep -n '^## ' .planning/STATE.md`
+and Read only the matched range.
 
-@~/.claude/get-shit-done/references/git-integration.md
+Config: `gsd-tools config-get <key>` for the specific setting; the `init` call in
+`init_context` below already returns `commit_docs`, `parallelization`, `branching_strategy`
+and the rest, so a second read of `.planning/config.json` is usually redundant.
+
+Branch and commit conventions: Read
+`~/.claude/get-shit-done/references/git-integration.md` when you need them (`@` is not an
+include — see `references/cli-variables.md`).
 </required_reading>
 
 <process>
@@ -96,35 +118,31 @@ Before spawning, extract from plan file:
 - `{plan_task_id}` — any TK-XXXX found in plan file (`grep -oE 'TK-[0-9]+' {plan_file} | head -1`), or empty string
 
 ```
-Execute plan at {plan_path}. Autonomous — all tasks + SUMMARY + commit. Follow deviation/auth rules. Report: plan name, tasks, SUMMARY path, commit hash.
+Execute plan at {plan_path}. Autonomous — all tasks + SUMMARY + commit.
+
+<execution_context>
+Read in full, it is the whole contract:
+/Users/luismogrovejo/.claude/get-shit-done/workflows/execute-plan-core.md
+Do NOT read execute-plan.md — its state-writing steps are orchestrator-owned.
+</execution_context>
 
 <amauta_enrichment>
-BEFORE starting any work, run these (all wrapped in || true — safe if services down):
+Run the context pipeline (RLM + memory) and the RPETD command block from your
+`{routed_executor}-workflow` skill — they are there verbatim and are not repeated here.
 
-1. RLM — find relevant code for this plan's topic:
-   node ~/.claude/get-shit-done/bin/gsd-rlm.cjs query '{plan_objective}' --dir . --top-k 5 --compact 2>/dev/null || true
+The research chain is MANDATORY before any work, and is stated here in full because it is a
+pipeline guarantee rather than a convenience:
+   node ~/.claude/get-shit-done/bin/gsd-research.cjs search '{plan_objective}' 2>/dev/null || true
 
-2. Memory — find past learnings on this topic:
-   node ~/.claude/get-shit-done/bin/gsd-memory.cjs search '{plan_objective}' 2>/dev/null || true
-
-2b. Research chain — get current info (memory -> SKB -> Context7 -> Perplexity -> WebFetch):
-    node ~/.claude/get-shit-done/bin/gsd-research.cjs search '{plan_objective}' 2>/dev/null || true
-
-3. Amauta task tracking (task ID: {plan_task_id}):
-   If {plan_task_id} is non-empty, log RPETD phases as you complete each:
-   CLI='node ~/.claude/get-shit-done/bin/amauta.cjs'
-   $CLI claim {plan_task_id} --agent {routed_executor} 2>/dev/null || true
-   # Read back enriched context (Layer 1 injects dependency/sibling/memory/SKB context at claim time)
-   $CLI show {plan_task_id} 2>/dev/null || true
-   $CLI rpetd {plan_task_id} --phase R --content 'R: [RLM findings + memory matches + codebase context]' 2>/dev/null || true
-   $CLI rpetd {plan_task_id} --phase P --content 'P: [approach, files to change, risks identified]' 2>/dev/null || true
-   $CLI rpetd {plan_task_id} --phase E --content 'E: [what was built, files changed, branch name]' 2>/dev/null || true
-   $CLI rpetd {plan_task_id} --phase T --content 'T: [paste actual test/build command output]' 2>/dev/null || true
-   $CLI rpetd {plan_task_id} --phase D --content 'D: [delivery summary]. LEARNING: [reusable insight]' 2>/dev/null || true
-
-4. After ALL work done, store the key learning:
-   node ~/.claude/get-shit-done/bin/gsd-memory.cjs learn '[one reusable sentence about what you learned]' 2>/dev/null || true
+- Enrichment topic: '{plan_objective}'
+- Amauta task id: {plan_task_id}  (empty = Amauta unavailable, skip every $CLI call)
+- Claim as: --agent {routed_executor}
+- After ALL work: `$MEM learn '<one reusable sentence>'`
+Every call is `2>/dev/null || true`. Keep each `rpetd --content` well under the 4000-char cap.
 </amauta_enrichment>
+
+Return the bounded block from <bounded_return> in execute-plan-core.md: plan name, task
+count, SUMMARY path, commit hashes, state-for-orchestrator, issues. No transcripts.
 ```
 
 → track agent_id → wait → update tracking → report.
@@ -424,7 +442,11 @@ Include: duration, start/end times, task count, file count.
 Next: more plans → "Ready for {next-plan}" | last → "Phase complete, ready for transition".
 </step>
 
-<step name="update_current_position">
+<step name="update_current_position" owner="orchestrator">
+**ORCHESTRATOR ONLY.** STATE.md is ORCHESTRATOR_OWNED — an executor that runs this hard-halts
+the wave. Executors report position/decisions/blockers in their SUMMARY and bounded return;
+the orchestrator reads those and runs the commands below.
+
 Update STATE.md using gsd-tools:
 
 ```bash
@@ -441,7 +463,7 @@ node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" state record-metric \
 ```
 </step>
 
-<step name="extract_decisions_and_issues">
+<step name="extract_decisions_and_issues" owner="orchestrator">
 From SUMMARY: Extract decisions and add to STATE.md:
 
 ```bash
@@ -471,14 +493,20 @@ Keep STATE.md under 150 lines.
 If SUMMARY "Issues Encountered" ≠ "None": yolo → log and continue. Interactive → present issues, wait for acknowledgment.
 </step>
 
-<step name="update_roadmap">
+<step name="update_roadmap" owner="orchestrator">
+**ORCHESTRATOR ONLY** — ROADMAP.md is ORCHESTRATOR_OWNED.
+
 ```bash
 node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" roadmap update-plan-progress "${PHASE}"
 ```
 Counts PLAN vs SUMMARY files on disk. Updates progress table row with correct count and status (`In Progress` or `Complete` with date).
 </step>
 
-<step name="update_requirements">
+<step name="update_requirements" owner="orchestrator">
+**ORCHESTRATOR ONLY** — REQUIREMENTS.md is ORCHESTRATOR_OWNED. The executor copies the
+`requirements` array into its SUMMARY frontmatter as `requirements-completed`; the
+orchestrator marks them here.
+
 Mark completed requirements from the PLAN.md frontmatter `requirements:` field:
 
 ```bash
@@ -488,7 +516,10 @@ node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" requirements mark-complete 
 Extract requirement IDs from the plan's frontmatter (e.g., `requirements: [AUTH-01, AUTH-02]`). If no requirements field, skip.
 </step>
 
-<step name="git_commit_metadata">
+<step name="git_commit_metadata" owner="orchestrator">
+**ORCHESTRATOR ONLY** — this commit carries three ORCHESTRATOR_OWNED paths. An executor
+making it fails the manifest check for every task in its plan.
+
 Task code already committed per-task. Commit plan metadata:
 
 ```bash
@@ -496,7 +527,7 @@ node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" commit "docs({phase}-{plan}
 ```
 </step>
 
-<step name="update_codebase_map">
+<step name="update_codebase_map" owner="orchestrator">
 If .planning/codebase/ doesn't exist: skip.
 
 ```bash
@@ -532,12 +563,18 @@ All routes: `/clear` first for fresh context.
 
 <success_criteria>
 
+Executor (or the main context in Pattern C):
 - All tasks from PLAN.md completed
 - All verifications pass
 - USER-SETUP.md generated if user_setup in frontmatter
-- SUMMARY.md created with substantive content
+- SUMMARY.md created with substantive content, `requirements-completed` copied verbatim
+- Position, decisions, issues and completed requirements REPORTED for the orchestrator —
+  not written into STATE.md / ROADMAP.md / REQUIREMENTS.md
+
+Orchestrator (after the executor returns):
 - STATE.md updated (position, decisions, issues, session)
 - ROADMAP.md updated
+- REQUIREMENTS.md marked from the SUMMARY's `requirements-completed`
 - If codebase map exists: map updated with execution changes (or skipped if no significant changes)
 - If USER-SETUP.md created: prominently surfaced in completion output
 </success_criteria>

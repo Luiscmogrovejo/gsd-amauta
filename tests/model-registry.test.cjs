@@ -20,10 +20,10 @@ test('registry json is the single source and lists the current tiers', () => {
 });
 
 test('aliases resolve to the CURRENT canonical ids (MODL-01)', () => {
-  assert.strictEqual(REG.resolveModelId('sonnet'), 'claude-sonnet-5');
-  assert.strictEqual(REG.resolveModelId('haiku'), 'claude-haiku-4-5-20251001');
-  assert.strictEqual(REG.resolveModelId('opus'), 'claude-opus-4-8');
-  assert.strictEqual(REG.resolveModelId('fable'), 'claude-fable-5');
+  assert.strictEqual(REG.resolveModelId('sonnet'), 'claude-sonnet-5-5');
+  assert.strictEqual(REG.resolveModelId('haiku'), 'claude-haiku-5-5');
+  assert.strictEqual(REG.resolveModelId('opus'), 'claude-opus-5-5');
+  assert.strictEqual(REG.resolveModelId('fable'), 'claude-fable-5-2');
 });
 
 test('no stale claude-sonnet-4-5-20250514 id survives resolution', () => {
@@ -33,10 +33,10 @@ test('no stale claude-sonnet-4-5-20250514 id survives resolution', () => {
 });
 
 test('fable degrades to the latest opus when unavailable (per-call opt)', () => {
-  assert.strictEqual(REG.resolveModelId('fable', { fableAvailable: false }), 'claude-opus-4-8');
+  assert.strictEqual(REG.resolveModelId('fable', { fableAvailable: false }), 'claude-opus-5-5');
   assert.strictEqual(REG.resolveModelAlias('fable', { fableAvailable: false }), 'opus');
   // available (default) keeps fable
-  assert.strictEqual(REG.resolveModelId('fable', { fableAvailable: true }), 'claude-fable-5');
+  assert.strictEqual(REG.resolveModelId('fable', { fableAvailable: true }), 'claude-fable-5-2');
 });
 
 test('GSD_FABLE_AVAILABLE=0 forces the fable→opus fallback', () => {
@@ -44,9 +44,9 @@ test('GSD_FABLE_AVAILABLE=0 forces the fable→opus fallback', () => {
   try {
     process.env.GSD_FABLE_AVAILABLE = '0';
     assert.strictEqual(REG.fableAvailable(), false);
-    assert.strictEqual(REG.resolveModelId('fable'), 'claude-opus-4-8');
+    assert.strictEqual(REG.resolveModelId('fable'), 'claude-opus-5-5');
     process.env.GSD_FABLE_AVAILABLE = 'off';
-    assert.strictEqual(REG.resolveModelId('fable'), 'claude-opus-4-8');
+    assert.strictEqual(REG.resolveModelId('fable'), 'claude-opus-5-5');
   } finally {
     if (prev === undefined) delete process.env.GSD_FABLE_AVAILABLE;
     else process.env.GSD_FABLE_AVAILABLE = prev;
@@ -59,6 +59,6 @@ test('a concrete id (non-alias) passes through unchanged', () => {
 });
 
 test('non-fable aliases never take the fallback path', () => {
-  assert.strictEqual(REG.resolveModelId('sonnet', { fableAvailable: false }), 'claude-sonnet-5');
-  assert.strictEqual(REG.resolveModelId('haiku', { fableAvailable: false }), 'claude-haiku-4-5-20251001');
+  assert.strictEqual(REG.resolveModelId('sonnet', { fableAvailable: false }), 'claude-sonnet-5-5');
+  assert.strictEqual(REG.resolveModelId('haiku', { fableAvailable: false }), 'claude-haiku-5-5');
 });

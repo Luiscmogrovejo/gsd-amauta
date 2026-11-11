@@ -22,10 +22,10 @@ import os
 # Last-known-good defaults (mirror model-registry.json). Used only if the JSON
 # is unreadable so this module never raises at import or resolve time.
 _FALLBACK_ALIASES = {
-    "fable": "claude-fable-5",
-    "opus": "claude-opus-4-8",
-    "sonnet": "claude-sonnet-5",
-    "haiku": "claude-haiku-4-5-20251001",
+    "fable": "claude-fable-5-2",
+    "opus": "claude-opus-5-5",
+    "sonnet": "claude-sonnet-5-5",
+    "haiku": "claude-haiku-5-5",
 }
 _FALLBACK_FALLBACK = {"fable": "opus"}
 

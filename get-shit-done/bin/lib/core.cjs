@@ -15,23 +15,68 @@ function toPosixPath(p) {
 
 // ─── Model Profile Table ─────────────────────────────────────────────────────
 
+// Every agent in `agents/` MUST have a row here. A missing row falls through to
+// the `sonnet` default in resolveModelInternal(), which is silent and therefore
+// wrong-by-omission rather than wrong-by-decision. Keep this table and
+// `get-shit-done/references/model-profiles.md` in step.
+//
+// Tiering rules:
+//   - Orchestration / planning / architecture: opus where decisions are made.
+//   - Anything that WRITES code (executors, personas, test generator): opus at
+//     `quality`, sonnet below — the plan carries the reasoning.
+//   - Read-only checkers and auditors: cheaper than executors at every tier.
+//   - Nothing that makes a SECURITY or DEBUGGING judgment ever drops to haiku.
 const MODEL_PROFILES = {
+  // ── Orchestration & planning ────────────────────────────────────────────
   'gsd-operator':             { quality: 'opus', balanced: 'opus',   budget: 'sonnet' },
   'gsd-planner':              { quality: 'opus', balanced: 'opus',   budget: 'sonnet' },
+  'gsd-architect':            { quality: 'opus', balanced: 'opus',   budget: 'sonnet' },
   'gsd-roadmapper':           { quality: 'opus', balanced: 'sonnet', budget: 'sonnet' },
   'gsd-researcher':           { quality: 'opus', balanced: 'sonnet', budget: 'haiku' },
+
+  // ── Executors (write code) ──────────────────────────────────────────────
   'gsd-executor-frontend':    { quality: 'opus', balanced: 'sonnet', budget: 'sonnet' },
   'gsd-executor-backend':     { quality: 'opus', balanced: 'sonnet', budget: 'sonnet' },
   'gsd-executor-infra':       { quality: 'opus', balanced: 'sonnet', budget: 'sonnet' },
   'gsd-executor-general':     { quality: 'opus', balanced: 'sonnet', budget: 'sonnet' },
+  'gsd-executor-data':        { quality: 'opus', balanced: 'sonnet', budget: 'sonnet' },
   'gsd-executor-mobile-android': { quality: 'opus', balanced: 'sonnet', budget: 'sonnet' },
   'gsd-executor-mobile-ios':  { quality: 'opus', balanced: 'sonnet', budget: 'sonnet' },
   'gsd-executor-mobile-cross': { quality: 'opus', balanced: 'sonnet', budget: 'sonnet' },
   'gsd-executor-wearables':   { quality: 'opus', balanced: 'sonnet', budget: 'sonnet' },
   'gsd-executor-ai':          { quality: 'opus', balanced: 'sonnet', budget: 'sonnet' },
+
+  // ── Personas (role overlays on an executor base — same tier as the base) ─
+  'gsd-persona-senior-backend':      { quality: 'opus', balanced: 'sonnet', budget: 'sonnet' },
+  'gsd-persona-frontend-specialist': { quality: 'opus', balanced: 'sonnet', budget: 'sonnet' },
+  'gsd-persona-systems-architect':   { quality: 'opus', balanced: 'sonnet', budget: 'sonnet' },
+
+  // ── Debugging & security (never below sonnet) ───────────────────────────
+  'gsd-debugger':             { quality: 'opus', balanced: 'sonnet', budget: 'sonnet' },
+  'gsd-security':             { quality: 'opus', balanced: 'sonnet', budget: 'sonnet' },
+
+  // ── Test generation writes code; QA only evaluates thresholds ───────────
+  'gsd-tester':               { quality: 'opus',   balanced: 'sonnet', budget: 'sonnet' },
+  'gsd-qa':                   { quality: 'sonnet', balanced: 'sonnet', budget: 'haiku' },
+
+  // ── Read-only reviewers / gatekeepers ───────────────────────────────────
+  'gsd-reviewer':             { quality: 'sonnet', balanced: 'sonnet', budget: 'sonnet' },
   'gsd-checker':              { quality: 'sonnet', balanced: 'sonnet', budget: 'haiku' },
   'gsd-validator':            { quality: 'sonnet', balanced: 'sonnet', budget: 'haiku' },
-  'gsd-debugger':             { quality: 'opus', balanced: 'sonnet', budget: 'sonnet' },
+
+  // ── Domain auditors (read-only scanners, report-only) ───────────────────
+  // Those that judge a SECURITY property hold at sonnet in every profile.
+  'gsd-auditor-agentic-flow':   { quality: 'sonnet', balanced: 'sonnet', budget: 'sonnet' },
+  'gsd-auditor-api-connections':{ quality: 'sonnet', balanced: 'sonnet', budget: 'sonnet' },
+  'gsd-auditor-backend':        { quality: 'sonnet', balanced: 'sonnet', budget: 'sonnet' },
+  'gsd-auditor-frontend':       { quality: 'sonnet', balanced: 'sonnet', budget: 'sonnet' },
+  'gsd-auditor-infra':          { quality: 'sonnet', balanced: 'sonnet', budget: 'sonnet' },
+  'gsd-auditor-mobile':         { quality: 'sonnet', balanced: 'sonnet', budget: 'sonnet' },
+  // These judge hygiene / drift / config currency — no security verdict.
+  'gsd-auditor-general':        { quality: 'sonnet', balanced: 'sonnet', budget: 'haiku' },
+  'gsd-auditor-harness-self':   { quality: 'sonnet', balanced: 'sonnet', budget: 'haiku' },
+  'gsd-auditor-models':         { quality: 'sonnet', balanced: 'sonnet', budget: 'haiku' },
+  'gsd-auditor-reference':      { quality: 'sonnet', balanced: 'sonnet', budget: 'haiku' },
 };
 
 function detectInstalledRuntime() {

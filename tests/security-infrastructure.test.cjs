@@ -530,8 +530,19 @@ describe('Agent Architecture Spec Compliance (AGT-*)', () => {
   const agentsDir = path.join(ROOT, 'agents');
   const agents = fs.readdirSync(agentsDir).filter(f => f.endsWith('.md'));
 
-  test('All 11 agents exist', () => {
-    assert.strictEqual(agents.length, 11, 'Must have exactly 11 agents');
+  test('every compiled agent has a source AGENT.yaml and vice versa', () => {
+    // Was `=== 11`; the roster is 35 now. Count against the compile source of
+    // truth (get-shit-done/agents/<name>/AGENT.yaml) rather than a literal, so
+    // the test catches a real drift — a compiled .md with no YAML behind it, or
+    // a YAML that was never compiled — instead of going stale on every new agent.
+    const yamlDir = path.join(ROOT, 'get-shit-done', 'agents');
+    const sources = fs.readdirSync(yamlDir, { withFileTypes: true })
+      .filter(e => e.isDirectory() && fs.existsSync(path.join(yamlDir, e.name, 'AGENT.yaml')))
+      .map(e => e.name)
+      .sort();
+    const compiled = agents.map(a => a.replace(/\.md$/, '')).sort();
+    assert.ok(sources.length > 0, 'expected at least one AGENT.yaml source');
+    assert.deepStrictEqual(compiled, sources, 'agents/*.md must match get-shit-done/agents/*/AGENT.yaml exactly');
   });
 
   test('All agents have CLI, MEM, and RESEARCH variables (AGT-2 contract)', () => {

@@ -68,11 +68,20 @@ const AGENT_FILES = fs.readdirSync(AGENTS_DIR)
 // Test 1: All 11 agent files exist
 // ---------------------------------------------------------------------------
 describe('CACHE-01: Agent file presence', () => {
-  it('all 11 agent files exist in agents/ directory', () => {
-    assert.strictEqual(
-      AGENT_FILES.length,
-      11,
-      `Expected 11 gsd-*.md files in agents/, found ${AGENT_FILES.length}: ${AGENT_FILES.map(f => f.name).join(', ')}`
+  it('compiled agent files match their AGENT.yaml sources, and the core 11 are present', () => {
+    // Was `=== 11`. The roster is 35; count against the compile source of truth
+    // (get-shit-done/agents/<name>/AGENT.yaml) so this catches real drift rather
+    // than going stale each time an agent is added. EXPECTED_AGENT_NAMES stays as
+    // a presence floor for the original eleven.
+    const yamlDir = path.join(PROJECT_ROOT, 'get-shit-done', 'agents');
+    const sources = fs.readdirSync(yamlDir, { withFileTypes: true })
+      .filter(e => e.isDirectory() && fs.existsSync(path.join(yamlDir, e.name, 'AGENT.yaml')))
+      .map(e => e.name).sort();
+    assert.ok(sources.length > 0, 'expected at least one AGENT.yaml source');
+    assert.deepStrictEqual(
+      AGENT_FILES.map(f => f.name.replace(/\.md$/, '')).sort(),
+      sources,
+      'agents/*.md must match get-shit-done/agents/*/AGENT.yaml exactly'
     );
     for (const expectedName of EXPECTED_AGENT_NAMES) {
       const found = AGENT_FILES.some(f => f.name === expectedName);
