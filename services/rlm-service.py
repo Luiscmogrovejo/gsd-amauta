@@ -94,7 +94,15 @@ DEFAULT_TOP_K = int(os.environ.get("RLM_DEFAULT_TOP_K", "10"))
 CACHE_MAX_SIZE = int(os.environ.get("RLM_CACHE_SIZE", "200"))
 CACHE_MAX_BYTES = int(os.environ.get("RLM_CACHE_MAX_MB", "512")) * 1024 * 1024  # 512MB default
 POSITION_DECAY = float(os.environ.get("RLM_POSITION_DECAY", "0.05"))
-PID_FILE = Path(__file__).resolve().parent / "rlm-service.pid"
+# Under GSD_TEST_MODE the pid file lives in the data dir, never beside the script
+# where the operator's live RLM service keeps its own.
+_TEST_MODE = os.environ.get("GSD_TEST_MODE", "").strip().lower() in ("1", "true", "yes", "on")
+_PID_DIR = (
+    Path(os.environ["AMAUTA_DATA_DIR"]).resolve()
+    if _TEST_MODE and os.environ.get("AMAUTA_DATA_DIR")
+    else Path(__file__).resolve().parent
+)
+PID_FILE = _PID_DIR / "rlm-service.pid"
 
 # File extensions we know how to chunk.
 # AST-handled membership is canonically owned by services/ast_chunker.py's

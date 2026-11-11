@@ -169,7 +169,20 @@ except ImportError as _evidence_scrub_import_err:
 # Configuration
 # ═══════════════════════════════════════════════════════
 
+def _test_mode():
+    """True when GSD_TEST_MODE is truthy (1/true/yes/on).
+
+    Test mode (Phase 88) is real isolation, not only a project_id label: SQLite is
+    forced, infrastructure detection and container auto-start are skipped, Redis
+    and the RLM service are not started, every write stays under AMAUTA_DATA_DIR,
+    and the daemon refuses to start when that directory is the live store.
+    Non-truthy values such as GSD_TEST_MODE=behavioral do not enable it.
+    """
+    return os.environ.get("GSD_TEST_MODE", "").strip().lower() in ("1", "true", "yes", "on")
+
+
 HOST = "127.0.0.1"
+# GSD_AMAUTA_PORT=0 means "bind an ephemeral port and print DAEMON_PORT=<n>".
 PORT = int(os.environ.get("GSD_AMAUTA_PORT", "18799"))
 AMAUTA_PY = os.environ.get(
     "GSD_AMAUTA_PY",
@@ -179,7 +192,12 @@ DATA_DIR = os.environ.get(
     "AMAUTA_DATA_DIR",
     str(Path(__file__).resolve().parent.parent / "data"),
 )
-PID_FILE = Path(__file__).resolve().parent / "amauta-daemon.pid"
+# The live daemon keeps its pid file beside this script. Under test mode it lives
+# in the data dir instead, so a fixture daemon can never overwrite or delete it.
+if _test_mode():
+    PID_FILE = Path(DATA_DIR) / "amauta-daemon.pid"
+else:
+    PID_FILE = Path(__file__).resolve().parent / "amauta-daemon.pid"
 
 # ── Log file ──────────────────────────────────────────────────────────────────
 # Both spawners start the daemon with stdio discarded (bin/install.js uses
@@ -476,7 +494,7 @@ _rlm_process = None
 _rlm_restart_count = 0
 _rlm_restarts_lifetime = 0  # STAB-03: cumulative counter — never reset; tracks total restart events across session
 _rlm_last_successful_uptime = None  # epoch seconds of first healthy observation post-restart; resets to None after each restart event so the 300s uptime gate re-arms
-_rlm_enabled = os.environ.get("GSD_RLM_ENABLED", "true").lower() != "false"
+_rlm_enabled = os.environ.get("GSD_RLM_ENABLED", "true").lower() != "false" and not _test_mode()
 
 
 def _kill_port_holder(port):
@@ -757,7 +775,7 @@ REDIS_URL = os.environ.get("GSD_REDIS_URL", "redis://127.0.0.1:6379/0")
 REDIS_MAX_RESTARTS = 3
 _redis_restart_count = 0
 _redis_last_successful_uptime = None  # epoch seconds of first healthy observation post-reconnect; resets to None after each reconnect event so the 300s uptime gate re-arms
-_redis_enabled = os.environ.get("GSD_REDIS_ENABLED", "true").lower() != "false"
+_redis_enabled = os.environ.get("GSD_REDIS_ENABLED", "true").lower() != "false" and not _test_mode()
 # TOK-06: Redis-backed Perplexity response cache constants
 REDIS_PERPLEXITY_TTL = 21600  # 6 hours, matches file cache TTL
 REDIS_PERPLEXITY_PREFIX = "gsd:ppx:"
@@ -1280,6 +1298,8 @@ def _force_sqlite():
     environment. A selected SQLite backend is not a degraded fallback: no
     PostgreSQL detection, no retries, no container auto-start.
     """
+    if _test_mode():
+        return True
     if os.environ.get("GSD_FORCE_SQLITE", "").strip().lower() in ("1", "true", "yes", "on"):
         return True
     return _REQUESTED_BACKEND == "sqlite"
@@ -5083,8 +5103,44 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
 # Daemon lifecycle
 # ═══════════════════════════════════════════════════════
 
+def _refuse_live_store_in_test_mode():
+    """Exit with code 3 when test mode is on and the data dir is the live store.
+
+    The live store is ~/.amauta (and anything under it) and <repo>/data. The same
+    rule applies to GSD_SQLITE_PATH, which selects the SQLite file independently
+    of AMAUTA_DATA_DIR.
+    """
+    if not _test_mode():
+        return
+    live_roots = [
+        os.path.realpath(os.path.expanduser("~/.amauta")),
+        os.path.realpath(str(Path(__file__).resolve().parent.parent / "data")),
+        os.path.realpath(os.path.join(
+            os.environ.get("GSD_LIVE_CHECKOUT") or os.path.expanduser("~/Code/gsd-amauta"), "data")),
+    ]
+    candidates = [("GSD_TEST_MODE refuses DATA_DIR=", DATA_DIR)]
+    if os.environ.get("GSD_SQLITE_PATH"):
+        candidates.append(("GSD_TEST_MODE refuses GSD_SQLITE_PATH=", os.environ["GSD_SQLITE_PATH"]))
+    for prefix, raw in candidates:
+        resolved = os.path.realpath(os.path.abspath(raw))
+        for root in live_roots:
+            if resolved == root or resolved.startswith(root + os.sep):
+                print(
+                    f"{prefix}{resolved}: it is the live store. "
+                    "Set AMAUTA_DATA_DIR to a temporary directory.",
+                    file=sys.stderr,
+                )
+                sys.exit(3)
+
+
 def start_server(foreground=False):
     """Start the HTTP server."""
+    global PORT
+    _refuse_live_store_in_test_mode()
+    if _test_mode():
+        # SQLiteStore ignores AMAUTA_DATA_DIR and would otherwise default to the
+        # live ~/.amauta/data/gsd_amauta.db; pin it under the (checked) data dir.
+        os.environ.setdefault("GSD_SQLITE_PATH", str(Path(DATA_DIR) / "gsd_amauta.db"))
     if not foreground:
         # Check if already running
         if PID_FILE.exists():
@@ -5105,6 +5161,14 @@ def start_server(foreground=False):
     Path(DATA_DIR).mkdir(parents=True, exist_ok=True)
 
     server = ThreadedHTTPServer((HOST, PORT), AmautaHandler)
+    if PORT == 0:
+        # Ephemeral bind (fixture daemons): publish the real port to the caller
+        # and to child processes, then announce it on stdout.
+        PORT = server.server_address[1]
+        os.environ["GSD_AMAUTA_PORT"] = str(PORT)
+        os.environ["GSD_DAEMON_PORT"] = str(PORT)
+        print(f"DAEMON_PORT={PORT}")
+        sys.stdout.flush()
 
     # Write PID file
     PID_FILE.write_text(str(os.getpid()))
@@ -5164,7 +5228,10 @@ def start_server(foreground=False):
             "backend": "sqlite",
             "connection_url": None,
             "features": ["memory", "tasks", "skb", "validation", "fts"],
-            "message": "SQLite forced by GSD_FORCE_SQLITE",
+            "message": (
+                "SQLite forced by GSD_TEST_MODE" if _test_mode()
+                else "SQLite forced by GSD_FORCE_SQLITE"
+            ),
         }
         if _HAS_SQLITE_MODULE:
             try:
@@ -5301,6 +5368,11 @@ def start_server(foreground=False):
     # writes into a hard-coded ~/.amauta/backups and prunes to the last 7, so a
     # throwaway daemon (a test run, a scratch instance) must not run it: it
     # would file an empty store as today's backup and evict a real one.
+    if _test_mode() and BackupManager is not None:
+        # BACKUP_DIR is a module constant (~/.amauta/backups); under test mode
+        # every backup, automatic or requested over HTTP, lands in the data dir.
+        import backup as _backup_module
+        _backup_module.BACKUP_DIR = os.path.join(DATA_DIR, "backups")
     _auto_backup_on = os.environ.get("AMAUTA_AUTO_BACKUP", "on").strip().lower() not in (
         "off", "0", "false", "no"
     )
