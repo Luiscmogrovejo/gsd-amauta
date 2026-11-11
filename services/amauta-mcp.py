@@ -287,17 +287,39 @@ class MCPValkey:
 # ── Module-level singleton accessors ──────────────────────────────────────────
 
 _pg_store_singleton = None
-_pg_store_attempted = False
 _mcp_valkey_singleton = None
 _mcp_valkey_attempted = False
 
+# PG acquisition backoff. The MCP server is a long-lived stdio process started
+# with the editor; it used to try PGStore() exactly once and latch the failure
+# forever (`_pg_store_attempted = True` before the try), so a server started
+# thirty seconds before Docker finished booting served pg_unavailable for the
+# rest of the session. Now a failed attempt schedules a retry, doubling from
+# PG_RETRY_BASE_S up to PG_RETRY_MAX_S.
+PG_RETRY_BASE_S = float(os.environ.get("MCP_PG_RETRY_BASE_S", "5"))
+PG_RETRY_MAX_S = float(os.environ.get("MCP_PG_RETRY_MAX_S", "300"))
+_pg_retry_after = 0.0       # monotonic deadline before which we do not retry
+_pg_retry_delay = 0.0       # current backoff step
+
+_sqlite_store_singleton = None
+_sqlite_store_attempted = False
+
 
 def _get_pg_store():
-    """Lazily instantiate and return a PGStore singleton. Returns None on error."""
-    global _pg_store_singleton, _pg_store_attempted
-    if _pg_store_attempted:
+    """Return the PGStore singleton, retrying acquisition with backoff.
+
+    Returns None while PostgreSQL is unreachable. Unlike the previous
+    once-and-never version, a later call after the backoff window has elapsed
+    tries again, so a server that outlives a database outage recovers without
+    being restarted.
+    """
+    global _pg_store_singleton, _pg_retry_after, _pg_retry_delay
+    if _pg_store_singleton is not None:
         return _pg_store_singleton
-    _pg_store_attempted = True
+    import time as _time
+    now = _time.monotonic()
+    if now < _pg_retry_after:
+        return None
     try:
         import importlib.util as _ilu
         _services_dir = os.path.dirname(os.path.abspath(__file__))
@@ -308,10 +330,64 @@ def _get_pg_store():
         _mod = _ilu.module_from_spec(_spec)
         _spec.loader.exec_module(_mod)
         _pg_store_singleton = _mod.PGStore()
+        _pg_retry_delay = 0.0
+        _pg_retry_after = 0.0
     except Exception as e:
-        print(f"[amauta-mcp] WARNING: PGStore init failed: {e}", file=sys.stderr)
+        _pg_retry_delay = min(
+            PG_RETRY_MAX_S, PG_RETRY_BASE_S if _pg_retry_delay <= 0 else _pg_retry_delay * 2
+        )
+        _pg_retry_after = now + _pg_retry_delay
+        print(
+            f"[amauta-mcp] WARNING: PGStore init failed: {e} "
+            f"— retrying in {_pg_retry_delay:.0f}s",
+            file=sys.stderr,
+        )
         _pg_store_singleton = None
     return _pg_store_singleton
+
+
+def _get_sqlite_store():
+    """Return the SQLiteStore singleton, or None when it cannot be opened.
+
+    Honors GSD_SQLITE_PATH / GSD_DATA_DIR exactly as SQLiteStore does, so a
+    test or a scratch instance never touches the default database.
+    """
+    global _sqlite_store_singleton, _sqlite_store_attempted
+    if _sqlite_store_attempted:
+        return _sqlite_store_singleton
+    _sqlite_store_attempted = True
+    try:
+        import importlib.util as _ilu
+        _services_dir = os.path.dirname(os.path.abspath(__file__))
+        _spec = _ilu.spec_from_file_location(
+            "sqlite_store_mcp",
+            os.path.join(_services_dir, "sqlite_store.py"),
+        )
+        _mod = _ilu.module_from_spec(_spec)
+        _spec.loader.exec_module(_mod)
+        _sqlite_store_singleton = _mod.SQLiteStore()
+    except Exception as e:
+        print(f"[amauta-mcp] WARNING: SQLiteStore init failed: {e}", file=sys.stderr)
+        _sqlite_store_singleton = None
+    return _sqlite_store_singleton
+
+
+def _get_store():
+    """Return the best available store: PostgreSQL, else the SQLite fallback.
+
+    Used by the tools that have a working SQLite implementation (memory-store,
+    memory-search, search-code). Those answered pg_unavailable on a
+    SQLite-backed install even though SQLiteStore implements every method they
+    call — the whole memory surface of the MCP server was dark whenever
+    PostgreSQL was not running. Tools that genuinely need PG-only tables keep
+    calling _get_pg_store() and keep returning pg_unavailable.
+    """
+    return _get_pg_store() or _get_sqlite_store()
+
+
+def _store_is_sqlite(store):
+    """True when `store` is the SQLite fallback rather than PGStore."""
+    return store is not None and type(store).__name__ == "SQLiteStore"
 
 
 def _get_mcp_valkey():
@@ -486,10 +562,10 @@ async def call_tool(name: str, arguments: dict) -> CallToolResult:
         top_k = int(arguments.get("top_k", 5))  # Phase 46 default: 5 (CONTEXT Area 4)
         file_filter = arguments.get("file_filter")
         directory = arguments.get("directory")
-        store = _get_pg_store()
+        store = _get_store()
         if store is None:
             return CallToolResult(content=[TextContent(type="text",
-                text=json.dumps({"error": "pg_unavailable", "detail": "PGStore unavailable"}))])
+                text=json.dumps({"error": "pg_unavailable", "detail": "No database available (PostgreSQL and SQLite both unusable)"}))])
         try:
             # Phase 65 RETR-03: delegate to rlm_search.hybrid_search over rlm_chunks
             # (the same single retrieval stack /search and /query use) instead of
@@ -498,7 +574,10 @@ async def call_tool(name: str, arguments: dict) -> CallToolResult:
             # to memory_semantic_search on every call).
             results = None
             engine = None
-            if _HYBRID_SEARCH_AVAILABLE and store is not None:
+            # hybrid_search runs pgvector + ParadeDB SQL against rlm_chunks —
+            # a PostgreSQL-only table. On SQLite go straight to the memory
+            # fallback instead of raising inside the helper.
+            if _HYBRID_SEARCH_AVAILABLE and store is not None and not _store_is_sqlite(store):
                 try:
                     with store._get_conn() as conn:
                         rows = hybrid_search(
@@ -526,20 +605,61 @@ async def call_tool(name: str, arguments: dict) -> CallToolResult:
                 # through here — only `results is None` triggers this branch.
                 raw = store.memory_semantic_search(query=query, project_id=None, source=None, limit=top_k)
                 raw_results, _ = raw if isinstance(raw, tuple) else (raw, "unknown")
-                results = raw_results if isinstance(raw_results, list) else []
+                raw_results = raw_results if isinstance(raw_results, list) else []
+                # Memory rows carry no `path` — they are notes, not files. They
+                # used to be returned raw, so the post-filters below compared
+                # file_filter against "" and dropped EVERY row whenever either
+                # filter was set, reporting "no results" for a query that had
+                # them. Normalize to the same {path,text,symbol_name,score}
+                # shape as the hybrid results, taking a path from metadata when
+                # the memory recorded one.
+                results = []
+                for row in raw_results:
+                    meta = row.get("metadata") if isinstance(row, dict) else None
+                    meta = meta if isinstance(meta, dict) else {}
+                    results.append({
+                        "path": row.get("path") or row.get("file")
+                                or meta.get("file_path") or meta.get("path") or "",
+                        "text": row.get("text", "") or "",
+                        "symbol_name": row.get("symbol_name", "") or "",
+                        "score": float(row.get("score") or 0.0),
+                        "source": "memory",
+                        "id": row.get("id"),
+                    })
                 engine = "memory_fallback"
 
-            # Post-filter: file_filter (substring on path) and directory (prefix on path).
-            # hybrid_search already applies the directory prefix filter server-side;
-            # these remain as a no-op safety net there, and the active filter on the
-            # memory_fallback path (which has no server-side directory filtering).
-            if file_filter:
-                results = [r for r in results if file_filter in str(r.get("path", "") or r.get("file", ""))]
-            if directory:
-                results = [r for r in results if str(r.get("path", "") or r.get("file", "")).startswith(directory)]
+            # Post-filter: file_filter (substring on path) and directory (prefix
+            # on path). hybrid_search already applies the directory prefix
+            # filter server-side, so these are a no-op safety net there.
+            #
+            # On the memory fallback a row with NO path is not evidence that it
+            # fails the filter — it is evidence the filter cannot be evaluated.
+            # Dropping those rows turned "I cannot tell" into "no match" and
+            # emptied the result set. Pathless rows are kept, and the response
+            # says the filter could not be applied to them.
+            unfiltered_pathless = 0
+            if file_filter or directory:
+                kept = []
+                for r in results:
+                    p = str(r.get("path", "") or "")
+                    if not p:
+                        unfiltered_pathless += 1
+                        kept.append(r)
+                        continue
+                    if file_filter and file_filter not in p:
+                        continue
+                    if directory and not p.startswith(directory):
+                        continue
+                    kept.append(r)
+                results = kept
 
-            return CallToolResult(content=[TextContent(type="text",
-                text=json.dumps({"results": results, "top_k": top_k, "engine": engine}))])
+            payload = {"results": results, "top_k": top_k, "engine": engine}
+            if unfiltered_pathless:
+                payload["unfiltered_pathless"] = unfiltered_pathless
+            if _store_is_sqlite(store):
+                payload["backend"] = "sqlite"
+                payload["degraded"] = "rlm_chunks is PostgreSQL-only; results come from memory full-text search"
+            return CallToolResult(content=[TextContent(type="text", text=json.dumps(payload))])
         except Exception as e:
             return CallToolResult(content=[TextContent(type="text",
                 text=json.dumps({"error": "internal_error", "detail": str(e)}))])
@@ -549,10 +669,10 @@ async def call_tool(name: str, arguments: dict) -> CallToolResult:
         if not isinstance(text, str) or not text.strip():
             return CallToolResult(content=[TextContent(type="text",
                 text=json.dumps({"error": "invalid_input", "detail": "text is required"}))])
-        store = _get_pg_store()
+        store = _get_store()
         if store is None:
             return CallToolResult(content=[TextContent(type="text",
-                text=json.dumps({"error": "pg_unavailable", "detail": "PGStore unavailable"}))])
+                text=json.dumps({"error": "pg_unavailable", "detail": "No database available (PostgreSQL and SQLite both unusable)"}))])
         try:
             result = store.memory_store_with_embedding(
                 text=text,
@@ -565,7 +685,13 @@ async def call_tool(name: str, arguments: dict) -> CallToolResult:
             # result may be a UUID string or a dedup dict
             if isinstance(result, dict):
                 return CallToolResult(content=[TextContent(type="text", text=json.dumps(result))])
-            return CallToolResult(content=[TextContent(type="text", text=json.dumps({"id": str(result), "stored": True}))])
+            payload = {"id": str(result), "stored": True}
+            if _store_is_sqlite(store):
+                # Honest about what was NOT done: SQLiteStore's
+                # memory_store_with_embedding stores the text only.
+                payload["backend"] = "sqlite"
+                payload["embedded"] = False
+            return CallToolResult(content=[TextContent(type="text", text=json.dumps(payload))])
         except Exception as e:
             return CallToolResult(content=[TextContent(type="text",
                 text=json.dumps({"error": "internal_error", "detail": str(e)}))])
@@ -575,10 +701,10 @@ async def call_tool(name: str, arguments: dict) -> CallToolResult:
         if not isinstance(query, str) or not query.strip():
             return CallToolResult(content=[TextContent(type="text",
                 text=json.dumps({"error": "invalid_input", "detail": "query is required"}))])
-        store = _get_pg_store()
+        store = _get_store()
         if store is None:
             return CallToolResult(content=[TextContent(type="text",
-                text=json.dumps({"error": "pg_unavailable", "detail": "PGStore unavailable"}))])
+                text=json.dumps({"error": "pg_unavailable", "detail": "No database available (PostgreSQL and SQLite both unusable)"}))])
         try:
             raw = store.memory_semantic_search(
                 query=query,
@@ -586,10 +712,15 @@ async def call_tool(name: str, arguments: dict) -> CallToolResult:
                 source=arguments.get("source"),
                 limit=int(arguments.get("limit", 20)),
             )
-            # memory_semantic_search returns (results, method) tuple
+            # memory_semantic_search returns (results, method) tuple.
+            # On SQLite `method` is already "text_fallback", so the caller can
+            # see the search was lexical, not semantic.
             results, method = raw if isinstance(raw, tuple) else (raw, "unknown")
+            payload = {"results": results, "method": method}
+            if _store_is_sqlite(store):
+                payload["backend"] = "sqlite"
             return CallToolResult(content=[TextContent(type="text",
-                text=json.dumps({"results": results, "method": method}))])
+                text=json.dumps(payload, default=str))])
         except Exception as e:
             return CallToolResult(content=[TextContent(type="text",
                 text=json.dumps({"error": "internal_error", "detail": str(e)}))])

@@ -110,14 +110,30 @@ def _read_jsonrpc(proc, request_id, timeout=5.0):
 
 # ── Subprocess fixture ─────────────────────────────────────────────────────────
 
+#: Temp SQLite databases created by _spawn_server_pg_down, removed at exit.
+_TMP_SQLITE_DIRS = []
+
+
 def _spawn_server_pg_down():
     """Spawn the MCP stdio server with PG deliberately unreachable.
 
     GSD_POSTGRES_URL=postgresql://invalid:1/none — bogus DSN that cannot resolve.
+
+    GSD_SQLITE_PATH points at a throwaway file: the memory tools now fall back
+    to the SQLite store when PG is down, and this test must not read or write
+    the developer's real ~/.amauta/data/gsd_amauta.db.
+
     Returns Popen or None on startup failure.
     """
+    import shutil
+    import tempfile
+
     env = os.environ.copy()
     env["GSD_POSTGRES_URL"] = "postgresql://invalid:1/none"
+    _tmp = tempfile.mkdtemp(prefix="mcp-pgdown-")
+    _TMP_SQLITE_DIRS.append(_tmp)
+    env["GSD_DATA_DIR"] = _tmp
+    env["GSD_SQLITE_PATH"] = os.path.join(_tmp, "gsd_amauta.db")
 
     try:
         proc = subprocess.Popen(
@@ -139,21 +155,24 @@ def _spawn_server_pg_down():
 
 
 def _teardown(proc):
-    """Terminate and reap the subprocess."""
-    if proc is None:
-        return
-    try:
-        proc.stdin.close()
-    except Exception:
-        pass
-    try:
-        proc.terminate()
-        proc.wait(timeout=5)
-    except Exception:
+    """Terminate and reap the subprocess, then remove its temp SQLite dir."""
+    import shutil
+
+    if proc is not None:
         try:
-            proc.kill()
+            proc.stdin.close()
         except Exception:
             pass
+        try:
+            proc.terminate()
+            proc.wait(timeout=5)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+    while _TMP_SQLITE_DIRS:
+        shutil.rmtree(_TMP_SQLITE_DIRS.pop(), ignore_errors=True)
 
 
 # ── Tests ──────────────────────────────────────────────────────────────────────
@@ -214,14 +233,48 @@ class TestPGDownResilience:
             f"Server crashed or tool surface degraded under PG-down: missing {missing}"
         )
 
-    def test_pg_down_tool_call_returns_pg_unavailable(self):
-        """amauta/memory-search with PG down returns error='pg_unavailable' in content."""
+    def test_pg_down_memory_search_falls_back_to_sqlite(self):
+        """amauta/memory-search with PG down now answers from the SQLite store.
+
+        Previously it returned pg_unavailable even though SQLiteStore
+        implements memory_semantic_search — the whole memory surface of the
+        MCP server went dark whenever PostgreSQL was not running. The answer
+        must be a real (possibly empty) result set tagged backend=sqlite, not
+        an error.
+        """
         self._do_initialize()
 
         rid = self._next_id()
         _send_jsonrpc(self.proc, "tools/call", {
             "name": "amauta/memory-search",
             "arguments": {"query": "anything"},
+        }, request_id=rid)
+        resp = _read_jsonrpc(self.proc, request_id=rid, timeout=20.0)
+        if resp is None:
+            pytest.skip("No tools/call response within timeout")
+        content = resp.get("result", {}).get("content", [])
+        assert content, f"No content in tools/call response: {resp}"
+        text_block = next((c for c in content if c.get("type") == "text"), None)
+        assert text_block is not None, f"No text content block in response: {content}"
+        payload = json.loads(text_block["text"])
+        assert payload.get("error") is None, (
+            f"memory-search must not error on the SQLite fallback, got: {payload}"
+        )
+        assert isinstance(payload.get("results"), list), (
+            f"Expected a results list from the SQLite fallback, got: {payload}"
+        )
+        assert payload.get("backend") == "sqlite", (
+            f"Expected backend=sqlite marker, got: {payload}"
+        )
+
+    def test_pg_down_pg_only_tool_returns_pg_unavailable(self):
+        """amauta/memory-distill (PG-only) still returns error='pg_unavailable'."""
+        self._do_initialize()
+
+        rid = self._next_id()
+        _send_jsonrpc(self.proc, "tools/call", {
+            "name": "amauta/memory-distill",
+            "arguments": {},
         }, request_id=rid)
         resp = _read_jsonrpc(self.proc, request_id=rid, timeout=10.0)
         if resp is None:
