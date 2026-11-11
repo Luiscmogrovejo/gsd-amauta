@@ -32,22 +32,29 @@ const MIGRATIONS_DIR = path.join(ROOT, 'migrations');
 
 // ─── FROZEN step names ────────────────────────────────────────────────────────
 
-// Upgrade (6): FROZEN per 53-CONTEXT.md §Area 2
+// Upgrade (7): the 6 POLISH-02 names + refresh_installed_files.
+// CONTRACT CHANGE (install-truth pass): upgrade applied migrations only, so
+// the installed copy under ~/.claude was never refreshed — `--upgrade` could
+// not upgrade a single file. The new step re-runs install.js.
 const FROZEN_UPGRADE_STEPS = [
   'detect_current_version',
   'compute_migration_delta',
+  'refresh_installed_files',
   'apply_upgrade_migrations',
   'update_install_record',
   'restart_daemon',
   'run_assertions',
 ];
 
-// Uninstall (6): FROZEN per 53-CONTEXT.md §Area 2
+// Uninstall (7): the 6 POLISH-02 names + remove_global_install.
+// CONTRACT CHANGE (install-truth pass): uninstall only deleted generated files
+// under the CURRENT project's .claude and left the global install untouched.
 const FROZEN_UNINSTALL_STEPS = [
   'read_install_record',
   'remove_skills',
   'remove_agents',
   'remove_generated_config',
+  'remove_global_install',
   'clear_install_record',
   'post_uninstall_verify',
 ];

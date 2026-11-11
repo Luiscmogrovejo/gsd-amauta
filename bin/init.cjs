@@ -121,14 +121,26 @@ Options:
   --help, -h             Print this help and exit 0
 
 Upgrade / Uninstall (POLISH-02 — mutually exclusive):
-  --upgrade              Upgrade Amauta in-place: detect version, apply new migrations,
-                         update install record, restart daemon, run assertions.
-  --uninstall            Remove Amauta from project (preserves .planning/, agents/,
-                         skills/, tests/, source services/). Only deletes IDE-generated
-                         outputs in .claude/skills/, .cursor/rules/, .opencode/skills/ etc.
+  --upgrade              Upgrade Amauta in-place: detect version (derived from the
+                         installed VERSION/manifest when no install record exists),
+                         re-run install.js to refresh the installed copy, apply new
+                         migrations (PostgreSQL only — SQLite records nothing as
+                         applied), update the install record, restart the daemon,
+                         run assertions.
+  --uninstall            Remove Amauta from the project (preserves .planning/, agents/,
+                         skills/, tests/, source services/): deletes IDE-generated
+                         outputs in .claude/skills/, .cursor/rules/, .opencode/skills/,
+                         AND the GLOBAL install (~/.claude/get-shit-done, gsd-* agents,
+                         commands, hooks, settings entries) via install.js --uninstall.
+                         The global removal is gated: pass --yes, or confirm at the
+                         prompt; a non-interactive run without --yes skips it and says so.
   --dry-run              Preview what upgrade/uninstall WOULD do without making changes.
                          State-modifying steps return status='skip' with would_apply /
                          would_delete details.
+
+A SQLite-fallback install finishes with a DEGRADED banner listing the features that
+are off and the exact commands to enable PostgreSQL. A successful install writes
+~/.amauta/data/install_record.json (read by --upgrade).
 
 Note: --upgrade and --uninstall are mutually exclusive.
 `);
@@ -435,20 +447,84 @@ async function stepDetectIdes() {
 }
 
 /**
- * STAB-04: Detect pipx amauta-ai PATH collision.
- * Returns an object { conflict: bool, pipxPath: string|null }.
- * Uses `which` (POSIX) / `where` (Windows) — same pattern as cliOnPath.
+ * Return every executable called `name` on PATH, in PATH order.
+ */
+function whichAll(name) {
+  const out = [];
+  const sep = process.platform === 'win32' ? ';' : ':';
+  const exts = process.platform === 'win32' ? ['.cmd', '.exe', '.bat', ''] : [''];
+  for (const dir of String(process.env.PATH || '').split(sep)) {
+    if (!dir) continue;
+    for (const ext of exts) {
+      const cand = path.join(dir, name + ext);
+      try {
+        fs.accessSync(cand, fs.constants.X_OK);
+        if (fs.statSync(cand).isFile()) out.push(cand);
+      } catch (_e) { /* not here */ }
+    }
+  }
+  return out;
+}
+
+/**
+ * Classify a binary found on PATH:
+ *   'self'    — this package
+ *   'other'   — ANOTHER copy of gsd-amauta (different clone / installed copy)
+ *   'foreign' — something else entirely (e.g. the pipx `amauta-ai` binary)
+ */
+function classifyPathBinary(binPath) {
+  let real;
+  try { real = fs.realpathSync(binPath); } catch (_e) { return 'foreign'; }
+  if (real === PLUGIN_ROOT || real.startsWith(PLUGIN_ROOT + path.sep)) return 'self';
+  const parts = real.split(path.sep);
+  if (parts.includes('node_modules') && parts.includes('gsd-amauta')) return 'self';
+  try {
+    const head = fs.readFileSync(real, 'utf-8').slice(0, 4096);
+    if (/gsd-amauta|GSD-Amauta/.test(head)) return 'other';
+  } catch (_e) { /* binary / unreadable → foreign */ }
+  return 'foreign';
+}
+
+/**
+ * STAB-04: Detect an `amauta` / `gsd-amauta` PATH collision.
+ *
+ * Returns { conflict, pipxPath, shadowed: [{ name, path }] }.
+ *
+ * The original check only ran `which amauta-ai`, which MISSES the real-world
+ * case: the pipx package `amauta-ai` installs its binary under the name
+ * `amauta` in ~/.local/bin. Nothing named `amauta-ai` is on PATH, so the check
+ * passed while every bare `amauta ...` command ran the wrong program. The
+ * authoritative test is therefore: does the FIRST `amauta` / `gsd-amauta` on
+ * PATH resolve into this package?
+ *
  * Advisory only — never throws, never blocks startup.
  */
 function detectAmautaAiConflict() {
+  const result = { conflict: false, pipxPath: null, shadowed: [] };
   try {
     const whichCmd = process.platform === 'win32' ? 'where' : 'which';
-    const result = spawnSync(whichCmd, ['amauta-ai'], { stdio: 'pipe', encoding: 'utf-8' });
-    if (result.status === 0 && result.stdout.trim()) {
-      return { conflict: true, pipxPath: result.stdout.trim().split('\n')[0] };
+    const r = spawnSync(whichCmd, ['amauta-ai'], { stdio: 'pipe', encoding: 'utf-8' });
+    if (r.status === 0 && r.stdout.trim()) {
+      result.conflict = true;
+      result.pipxPath = r.stdout.trim().split('\n')[0];
     }
   } catch (_e) { /* advisory only */ }
-  return { conflict: false, pipxPath: null };
+
+  try {
+    for (const name of ['amauta', 'gsd-amauta']) {
+      const hits = whichAll(name);
+      if (hits.length === 0) continue;
+      const kind = classifyPathBinary(hits[0]);
+      if (kind === 'foreign') {
+        result.conflict = true;
+        result.shadowed.push({ name, path: hits[0], kind, real: (() => {
+          try { return fs.realpathSync(hits[0]); } catch (_e) { return hits[0]; }
+        })() });
+      }
+    }
+  } catch (_e) { /* advisory only */ }
+
+  return result;
 }
 
 /**
@@ -1243,6 +1319,125 @@ function migrateLegacyCommands(opts) {
 }
 
 // ═══════════════════════════════════════════════════════
+// Install record + degraded-mode reporting
+// ═══════════════════════════════════════════════════════
+
+const INSTALL_RECORD_PATH = path.join(os.homedir(), '.amauta', 'data', 'install_record.json');
+
+/**
+ * Features that exist ONLY on the PostgreSQL backend. A SQLite-fallback
+ * install runs without them — init used to finish "installed" and say nothing.
+ */
+const PG_ONLY_FEATURES = [
+  'vector / semantic memory search (pgvector)',
+  'RLM code index (rlm_chunks)',
+  'blackboard (agent_findings / agent_messages)',
+  'semantic cache',
+  'A2A exchange log',
+];
+
+const ENABLE_PG_COMMANDS = [
+  'docker compose -f docker/docker-compose.yml up -d',
+  'node bin/init.cjs --backend pg',
+  'gsd-amauta doctor            # confirms backend=postgresql',
+];
+
+/** Read the package version (used for the install record + version skew). */
+function packageVersion() {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(PLUGIN_ROOT, 'package.json'), 'utf-8')).version;
+  } catch (_e) {
+    return null;
+  }
+}
+
+/** Pull the raw infra payload out of a FROZEN step result. */
+function infraRawOf(infraResult) {
+  if (!infraResult) return null;
+  if (infraResult.details && infraResult.details.raw) return infraResult.details.raw;
+  return infraResult;
+}
+
+/**
+ * Describe degraded mode, or null when the install is on PostgreSQL.
+ */
+function degradedReport(infraResult) {
+  const raw = infraRawOf(infraResult);
+  const backend = (raw && raw.backend) || 'unknown';
+  if (backend === 'postgresql') return null;
+  return {
+    backend,
+    connection_url: (raw && raw.connection_url) || null,
+    features_off: [...PG_ONLY_FEATURES],
+    enable_commands: [...ENABLE_PG_COMMANDS],
+  };
+}
+
+/**
+ * Print an unmissable degraded-mode banner. Printed LAST so it is the thing
+ * the operator reads after "installed".
+ */
+function printDegradedBanner(report) {
+  if (!report || flags.json) return;
+  const bar = '═'.repeat(70);
+  console.log(`\n${yellow}${bar}${reset}`);
+  console.log(`${yellow}${bold}  DEGRADED INSTALL — backend: ${report.backend} (PostgreSQL is NOT in use)${reset}`);
+  console.log(`${yellow}${bar}${reset}`);
+  console.log(`  ${bold}These features are OFF:${reset}`);
+  for (const f of report.features_off) console.log(`    - ${f}`);
+  console.log(`\n  ${bold}To enable PostgreSQL:${reset}`);
+  for (const c of report.enable_commands) console.log(`    ${cyan}${c}${reset}`);
+  console.log(`${yellow}${bar}${reset}\n`);
+}
+
+/**
+ * Write ~/.amauta/data/install_record.json after a successful install.
+ *
+ * Nothing used to write this file, so `init --upgrade` ("install record not
+ * found — run init first") could never succeed after a real init.
+ *
+ * `applied_migrations` records ONLY migrations that actually ran against a
+ * database — never the SQLite case, where no SQL is executed.
+ */
+function writeInstallRecord(fields) {
+  const record = {
+    version: packageVersion(),
+    installed_at: new Date().toISOString(),
+    upgraded_at: null,
+    backend: fields.backend || 'unknown',
+    plugin_root: PLUGIN_ROOT,
+    applied_migrations: fields.appliedMigrations || [],
+  };
+  try {
+    const existing = fs.existsSync(INSTALL_RECORD_PATH)
+      ? JSON.parse(fs.readFileSync(INSTALL_RECORD_PATH, 'utf-8'))
+      : null;
+    if (existing && existing.installed_at) record.installed_at = existing.installed_at;
+  } catch (_e) { /* corrupt record is replaced */ }
+  fs.mkdirSync(path.dirname(INSTALL_RECORD_PATH), { recursive: true });
+  fs.writeFileSync(INSTALL_RECORD_PATH, JSON.stringify(record, null, 2), 'utf-8');
+  return record;
+}
+
+/**
+ * Migrations that actually ran, derived from the FROZEN migrations step.
+ * SQLite / skipped runs contribute nothing.
+ */
+function appliedMigrationsFrom(migrationsResult) {
+  if (!migrationsResult || migrationsResult.status === 'skip' || migrationsResult.status === 'fail') {
+    return [];
+  }
+  const d = migrationsResult.details || {};
+  if (Array.isArray(d.applied_files)) return d.applied_files;
+  if (!fs.existsSync(MIGRATIONS_DIR)) return [];
+  // The step reports counts, not names; a pass means every UP file was run.
+  if (d.applied === undefined || d.applied === null) return [];
+  return fs.readdirSync(MIGRATIONS_DIR)
+    .filter((f) => f.endsWith('.sql') && !f.includes('DOWN'))
+    .sort();
+}
+
+// ═══════════════════════════════════════════════════════
 // POLISH-02 helpers: emitResults + runUpgrade + runUninstall
 // ═══════════════════════════════════════════════════════
 
@@ -1271,14 +1466,93 @@ function emitResults(results, elapsed) {
 }
 
 /**
- * POLISH-02: Run Amauta upgrade flow (6 frozen step names).
+ * Locate the INSTALLED copy of the harness (the config dir install.js wrote to).
+ * Mirrors hooks/gsd-check-update.js's detection.
+ */
+function detectInstalledConfigDir() {
+  const envDir = process.env.CLAUDE_CONFIG_DIR;
+  if (envDir && fs.existsSync(path.join(envDir, 'get-shit-done', 'VERSION'))) return envDir;
+  const home = os.homedir();
+  for (const rel of ['.claude', path.join('.config', 'opencode'), '.opencode', '.gemini', '.codex']) {
+    const cand = path.join(home, rel);
+    if (fs.existsSync(path.join(cand, 'get-shit-done', 'VERSION'))) return cand;
+  }
+  return envDir || path.join(home, '.claude');
+}
+
+/**
+ * Ask before deleting a GLOBAL install. Returns false on any non-TTY run, so
+ * scripted/CI invocations never destroy a global install by accident; --yes is
+ * the explicit opt-in.
+ */
+function confirmGlobalUninstall(globalDir) {
+  if (!process.stdin.isTTY) return false;
+  process.stdout.write(
+    `\n${yellow}About to REMOVE the global install at ${globalDir}${reset}\n` +
+    '  (get-shit-done/, gsd-* agents, gsd/amauta commands, gsd-* hooks, settings entries, manifest)\n' +
+    '  Type "yes" to continue: '
+  );
+  const buf = Buffer.alloc(64);
+  let answer = '';
+  try {
+    const n = fs.readSync(0, buf, 0, buf.length, null);
+    answer = buf.slice(0, n).toString('utf-8').trim().toLowerCase();
+  } catch (_e) {
+    return false;
+  }
+  return answer === 'yes' || answer === 'y';
+}
+
+/**
+ * Derive an install record from what is on disk, for upgrades of installs that
+ * predate install-record writing. Reads the installed VERSION and the
+ * install manifest; applied_migrations is left empty (unknown), which makes
+ * compute_migration_delta re-offer every migration rather than silently
+ * assuming they ran.
+ */
+function deriveInstallRecord() {
+  const configDir = detectInstalledConfigDir();
+  const versionFile = path.join(configDir, 'get-shit-done', 'VERSION');
+  const manifestFile = path.join(configDir, 'gsd-file-manifest.json');
+  let version = null;
+  let source = 'none';
+  try {
+    if (fs.existsSync(versionFile)) {
+      version = fs.readFileSync(versionFile, 'utf-8').trim();
+      source = 'VERSION';
+    }
+  } catch (_e) { /* fall through */ }
+  if (!version) {
+    try {
+      if (fs.existsSync(manifestFile)) {
+        version = JSON.parse(fs.readFileSync(manifestFile, 'utf-8')).version || null;
+        if (version) source = 'manifest';
+      }
+    } catch (_e) { /* fall through */ }
+  }
+  return {
+    version: version || '<unknown>',
+    applied_migrations: [],
+    derived: true,
+    derived_from: source,
+    config_dir: configDir,
+  };
+}
+
+/**
+ * POLISH-02: Run Amauta upgrade flow (7 frozen step names).
  *
- * Steps (FROZEN per 53-CONTEXT.md §Area 2):
- *   detect_current_version → compute_migration_delta → apply_upgrade_migrations →
- *   update_install_record → restart_daemon → run_assertions
+ * Steps:
+ *   detect_current_version → compute_migration_delta → refresh_installed_files →
+ *   apply_upgrade_migrations → update_install_record → restart_daemon → run_assertions
  *
- * Idempotency: if compute_migration_delta finds 0 new migrations, all subsequent
- * state-modifying steps return status='skip'. Overall exit 0.
+ * `refresh_installed_files` was added in the install-truth pass: upgrade used
+ * to apply migrations only, so the INSTALLED copy under ~/.claude was never
+ * refreshed and `--upgrade` could not actually upgrade anything.
+ *
+ * Idempotency: if compute_migration_delta finds 0 new migrations, the
+ * migration/record steps return status='skip' — but the file refresh still
+ * runs, because a same-schema release still ships new agent/CLI files.
  *
  * Dry-run: state-modifying steps return status='skip' with would_apply details.
  *
@@ -1286,35 +1560,34 @@ function emitResults(results, elapsed) {
  * @returns {Promise<Array>} array of per-step result objects (FROZEN schema)
  */
 async function runUpgrade(f) {
-  // Install record path (JSON fallback — mirrors SQLITE_FALLBACK_PATH in module_lifecycle.py)
-  const INSTALL_RECORD_PATH = path.join(os.homedir(), '.amauta', 'data', 'install_record.json');
-
   const results = [];
   let idempotentSkip = false; // set true when migration delta is empty
   let installRecord = null;
   let deltaFiles = [];
+  let appliedFiles = [];      // migrations that ACTUALLY ran (never SQLite)
 
   // ── Step 1: detect_current_version ─────────────────────────────────────────
   {
     const start = Date.now();
     try {
       if (!fs.existsSync(INSTALL_RECORD_PATH)) {
-        if (f.dryRun) {
-          // In dry-run mode: no existing install is a 'warn' (allow previewing remaining steps)
-          installRecord = { version: '<not-installed>', applied_migrations: [] };
-          const r = buildStepResult('detect_current_version', 'warn',
-            `dry-run: install record not found at ${INSTALL_RECORD_PATH} — assuming fresh state`,
-            { install_record_path: INSTALL_RECORD_PATH, version: '<not-installed>' });
-          r.duration_ms = Date.now() - start;
-          results.push(r);
-        } else {
-          const r = buildStepResult('detect_current_version', 'fail',
-            `install record not found at ${INSTALL_RECORD_PATH} — run init first`,
-            { install_record_path: INSTALL_RECORD_PATH });
-          r.duration_ms = Date.now() - start;
-          results.push(r);
-          return results; // abort: cannot continue without install record
-        }
+        // No record: derive from the installed VERSION / manifest rather than
+        // refusing. Nothing wrote this file before the install-truth pass, so
+        // every pre-existing install would otherwise be un-upgradable.
+        installRecord = deriveInstallRecord();
+        const r = buildStepResult('detect_current_version', 'warn',
+          `${f.dryRun ? 'dry-run: ' : ''}no install record at ${INSTALL_RECORD_PATH} — ` +
+          `derived version ${installRecord.version} from ${installRecord.derived_from} ` +
+          `(${installRecord.config_dir})`,
+          {
+            install_record_path: INSTALL_RECORD_PATH,
+            version: installRecord.version,
+            derived: true,
+            derived_from: installRecord.derived_from,
+            config_dir: installRecord.config_dir,
+          });
+        r.duration_ms = Date.now() - start;
+        results.push(r);
       } else {
         const raw = fs.readFileSync(INSTALL_RECORD_PATH, 'utf-8');
         installRecord = JSON.parse(raw);
@@ -1376,7 +1649,53 @@ async function runUpgrade(f) {
     }
   }
 
-  // ── Step 3: apply_upgrade_migrations ───────────────────────────────────────
+  // ── Step 3: refresh_installed_files ────────────────────────────────────────
+  // Re-run the real installer so the INSTALLED copy (agents, commands, skills,
+  // hooks, VERSION, manifest) matches the package. Upgrade used to touch only
+  // migrations, so `--upgrade` never upgraded any file. Shelling out to
+  // install.js (rather than copying) keeps its path rewriting and manifest
+  // regeneration — the two things a hand-rolled copy silently loses.
+  {
+    const start = Date.now();
+    if (f.skipInstall) {
+      const r = buildStepResult('refresh_installed_files', 'skip', 'skipped via --skip-install', null);
+      r.duration_ms = Date.now() - start;
+      results.push(r);
+    } else if (f.dryRun) {
+      const r = buildStepResult('refresh_installed_files', 'skip',
+        `dry-run: would re-run ${INSTALL_SCRIPT} to refresh the installed copy`,
+        { would_apply: { installer: INSTALL_SCRIPT, runtime: f.runtime } });
+      r.duration_ms = Date.now() - start;
+      results.push(r);
+    } else if (!fs.existsSync(INSTALL_SCRIPT)) {
+      const r = buildStepResult('refresh_installed_files', 'warn',
+        `install.js not found at ${INSTALL_SCRIPT} — installed copy NOT refreshed`, null);
+      r.duration_ms = Date.now() - start;
+      results.push(r);
+    } else {
+      const runtimeFlag = f.runtime === 'opencode' ? '--opencode' : '--claude';
+      try {
+        execFileSync(process.execPath, [INSTALL_SCRIPT, runtimeFlag], {
+          stdio: f.json ? 'pipe' : 'inherit',
+          cwd: PLUGIN_ROOT,
+          timeout: 120000,
+        });
+        const r = buildStepResult('refresh_installed_files', 'pass',
+          'installed copy refreshed via install.js (path rewriting + manifest regenerated)',
+          { installer: INSTALL_SCRIPT, runtime: runtimeFlag });
+        r.duration_ms = Date.now() - start;
+        results.push(r);
+      } catch (err) {
+        const r = buildStepResult('refresh_installed_files', 'warn',
+          `install.js failed: ${friendlyError(err)} — installed copy may be stale`,
+          { installer: INSTALL_SCRIPT, error: err.message });
+        r.duration_ms = Date.now() - start;
+        results.push(r);
+      }
+    }
+  }
+
+  // ── Step 4: apply_upgrade_migrations ───────────────────────────────────────
   {
     const start = Date.now();
     if (idempotentSkip) {
@@ -1399,10 +1718,13 @@ async function runUpgrade(f) {
         : { backend: 'sqlite' };
 
       if (infraRaw.backend !== 'postgresql') {
-        // SQLite mode: record migrations as applied without executing SQL
+        // SQLite mode: NO SQL runs here, so nothing may be recorded as applied.
+        // (This step used to skip while update_install_record marked the whole
+        // delta applied — a later switch to PG would then skip real migrations.)
+        appliedFiles = [];
         const r = buildStepResult('apply_upgrade_migrations', 'skip',
-          'skipped — SQLite backend (schema is self-creating; migrations apply at daemon start)',
-          { backend: infraRaw.backend, would_apply: deltaFiles });
+          'skipped — SQLite backend; migrations NOT applied and NOT recorded as applied',
+          { backend: infraRaw.backend, would_apply: deltaFiles, recorded_as_applied: [] });
         r.duration_ms = Date.now() - start;
         results.push(r);
       } else {
@@ -1423,6 +1745,7 @@ async function runUpgrade(f) {
           try {
             execFileSync('psql', psqlArgs, { timeout: 30000, stdio: 'pipe', env });
             applied++;
+            appliedFiles.push(file);
           } catch {
             errors++;
           }
@@ -1430,14 +1753,17 @@ async function runUpgrade(f) {
         const status = errors > 0 && applied === 0 ? 'warn' : 'pass';
         const r = buildStepResult('apply_upgrade_migrations', status,
           `${applied} applied, ${errors} already applied / errors`,
-          { applied, errors, delta: deltaFiles });
+          { applied, errors, delta: deltaFiles, recorded_as_applied: [...appliedFiles] });
         r.duration_ms = Date.now() - start;
         results.push(r);
       }
     }
   }
 
-  // ── Step 4: update_install_record ──────────────────────────────────────────
+  // ── Step 5: update_install_record ──────────────────────────────────────────
+  // Records ONLY migrations that actually ran (appliedFiles). On SQLite that is
+  // the empty list: marking un-run SQL as applied is how a later move to PG
+  // ends up with a half-migrated schema.
   {
     const start = Date.now();
     if (idempotentSkip) {
@@ -1447,23 +1773,32 @@ async function runUpgrade(f) {
       results.push(r);
     } else if (f.dryRun) {
       const r = buildStepResult('update_install_record', 'skip',
-        'dry-run: would update install record with new applied_migrations + upgraded_at',
-        { would_apply: { new_applied_migrations: deltaFiles } });
+        'dry-run: would update install record with the migrations that actually ran + upgraded_at',
+        { would_apply: { candidate_migrations: deltaFiles } });
       r.duration_ms = Date.now() - start;
       results.push(r);
     } else {
       try {
+        const previous = new Set(installRecord.applied_migrations || []);
+        for (const f2 of appliedFiles) previous.add(f2);
         const updatedRecord = {
           ...installRecord,
-          applied_migrations: [...(installRecord.applied_migrations || []), ...deltaFiles],
+          version: packageVersion() || installRecord.version,
+          applied_migrations: [...previous].sort(),
           upgraded_at: new Date().toISOString(),
         };
+        delete updatedRecord.derived;
+        delete updatedRecord.derived_from;
         const dir = path.dirname(INSTALL_RECORD_PATH);
         fs.mkdirSync(dir, { recursive: true });
         fs.writeFileSync(INSTALL_RECORD_PATH, JSON.stringify(updatedRecord, null, 2), 'utf-8');
         const r = buildStepResult('update_install_record', 'pass',
-          `install record updated (${deltaFiles.length} new migration(s) recorded)`,
-          { upgraded_at: updatedRecord.upgraded_at, applied_count: updatedRecord.applied_migrations.length });
+          `install record updated (${appliedFiles.length} migration(s) recorded as applied)`,
+          {
+            upgraded_at: updatedRecord.upgraded_at,
+            applied_count: updatedRecord.applied_migrations.length,
+            recorded_as_applied: [...appliedFiles],
+          });
         r.duration_ms = Date.now() - start;
         results.push(r);
       } catch (err) {
@@ -1477,7 +1812,7 @@ async function runUpgrade(f) {
     }
   }
 
-  // ── Step 5: restart_daemon ─────────────────────────────────────────────────
+  // ── Step 6: restart_daemon ─────────────────────────────────────────────────
   {
     const start = Date.now();
     if (idempotentSkip || f.skipDaemon) {
@@ -1524,7 +1859,7 @@ async function runUpgrade(f) {
     }
   }
 
-  // ── Step 6: run_assertions ─────────────────────────────────────────────────
+  // ── Step 7: run_assertions ─────────────────────────────────────────────────
   {
     // Reuse Phase 44 stepAssertions — pass prior results for cross-step lookups.
     // stepAssertions looks for 'start_daemon' to gate daemon_health assertion.
@@ -1560,11 +1895,12 @@ async function runUpgrade(f) {
  * @returns {Promise<Array>} array of per-step result objects (FROZEN schema)
  */
 async function runUninstall(f) {
-  const INSTALL_RECORD_PATH = path.join(os.homedir(), '.amauta', 'data', 'install_record.json');
   const CWD = process.cwd();
 
   // PRESERVATION CONTRACT: these paths are NEVER touched by uninstall
-  // (enforced by post_uninstall_verify — their existence is asserted at end)
+  // (enforced by post_uninstall_verify — their existence is asserted at end,
+  // but only for the ones that existed BEFORE uninstall ran: a project that
+  // never had tests/ must not be reported as a contract violation)
   const PRESERVED_PATHS = [
     path.join(CWD, '.planning'),
     path.join(CWD, 'tests'),
@@ -1572,6 +1908,8 @@ async function runUninstall(f) {
     path.join(CWD, 'agents'),
     path.join(CWD, 'migrations'),
   ];
+  // Snapshot taken BEFORE anything is removed.
+  const PRESERVED_PRESENT_BEFORE = PRESERVED_PATHS.filter((p) => fs.existsSync(p));
 
   // Generated IDE skill output dirs (derived from platform-codes.yaml / frozen fallback)
   const IDE_SKILL_DIRS = [
@@ -1777,7 +2115,73 @@ async function runUninstall(f) {
     }
   }
 
-  // ── Step 5: clear_install_record ──────────────────────────────────────────
+  // ── Step 5: remove_global_install ─────────────────────────────────────────
+  // The project-scope steps above only touch ./.claude etc. The GLOBAL install
+  // (~/.claude/get-shit-done, agents, commands, hooks, settings entries, the
+  // file manifest) used to survive `init --uninstall` entirely. Delegated to
+  // install.js --uninstall so the removal list stays single-sourced.
+  //
+  // Destructive, so it is GATED: --yes, or an interactive confirmation.
+  // --dry-run previews; a non-TTY run without --yes skips and says so.
+  {
+    const start = Date.now();
+    const globalDir = detectInstalledConfigDir();
+    const hasGlobalInstall =
+      fs.existsSync(path.join(globalDir, 'get-shit-done')) ||
+      fs.existsSync(path.join(globalDir, 'gsd-file-manifest.json'));
+
+    if (!hasGlobalInstall) {
+      const r = buildStepResult('remove_global_install', 'skip',
+        `no global install found at ${globalDir}`, { config_dir: globalDir });
+      r.duration_ms = Date.now() - start;
+      results.push(r);
+    } else if (f.dryRun) {
+      const wouldDelete = [
+        path.join(globalDir, 'get-shit-done'),
+        path.join(globalDir, 'commands', 'gsd'),
+        path.join(globalDir, 'commands', 'amauta'),
+        path.join(globalDir, 'agents', 'gsd-*.md'),
+        path.join(globalDir, 'hooks', 'gsd-*'),
+        path.join(globalDir, 'gsd-file-manifest.json'),
+      ];
+      const r = buildStepResult('remove_global_install', 'skip',
+        `dry-run: would run install.js --uninstall --global on ${globalDir}`,
+        { config_dir: globalDir, would_delete: wouldDelete });
+      r.duration_ms = Date.now() - start;
+      results.push(r);
+    } else if (!f.yes && !confirmGlobalUninstall(globalDir)) {
+      const r = buildStepResult('remove_global_install', 'skip',
+        `global install at ${globalDir} LEFT IN PLACE — re-run with --yes (or confirm interactively) to remove it`,
+        { config_dir: globalDir, confirmed: false });
+      r.duration_ms = Date.now() - start;
+      results.push(r);
+    } else if (!fs.existsSync(INSTALL_SCRIPT)) {
+      const r = buildStepResult('remove_global_install', 'warn',
+        `install.js not found at ${INSTALL_SCRIPT} — global install NOT removed`,
+        { config_dir: globalDir });
+      r.duration_ms = Date.now() - start;
+      results.push(r);
+    } else {
+      try {
+        execFileSync(process.execPath,
+          [INSTALL_SCRIPT, '--uninstall', '--global', '--claude', '--config-dir', globalDir],
+          { stdio: f.json ? 'pipe' : 'inherit', cwd: PLUGIN_ROOT, timeout: 60000 });
+        const r = buildStepResult('remove_global_install', 'pass',
+          `global install removed from ${globalDir} (via install.js --uninstall)`,
+          { config_dir: globalDir, confirmed: true });
+        r.duration_ms = Date.now() - start;
+        results.push(r);
+      } catch (err) {
+        const r = buildStepResult('remove_global_install', 'fail',
+          `install.js --uninstall failed: ${friendlyError(err)}`,
+          { config_dir: globalDir, error: err.message });
+        r.duration_ms = Date.now() - start;
+        results.push(r);
+      }
+    }
+  }
+
+  // ── Step 6: clear_install_record ──────────────────────────────────────────
   {
     const start = Date.now();
     if (absent) {
@@ -1812,7 +2216,7 @@ async function runUninstall(f) {
     }
   }
 
-  // ── Step 6: post_uninstall_verify ─────────────────────────────────────────
+  // ── Step 7: post_uninstall_verify ─────────────────────────────────────────
   // PRESERVATION CONTRACT verification: confirm preserved paths still exist.
   // This is a load-bearing assertion — fails if .planning/, tests/ etc. were
   // accidentally deleted (should never happen given preservation logic above).
@@ -1825,12 +2229,10 @@ async function runUninstall(f) {
       r.duration_ms = Date.now() - start;
       results.push(r);
     } else {
-      const missing = [];
-      for (const p of PRESERVED_PATHS) {
-        if (!fs.existsSync(p)) {
-          missing.push(p);
-        }
-      }
+      // Only paths that EXISTED before uninstall can have been destroyed by
+      // it. Asserting the others would report a "violation" in any project
+      // that simply never had a tests/ or migrations/ directory.
+      const missing = PRESERVED_PRESENT_BEFORE.filter((p) => !fs.existsSync(p));
       if (missing.length > 0) {
         // This should NEVER happen — preserved paths were deleted
         const r = buildStepResult('post_uninstall_verify', 'fail',
@@ -1840,8 +2242,10 @@ async function runUninstall(f) {
         results.push(r);
       } else {
         const r = buildStepResult('post_uninstall_verify', 'pass',
-          'uninstall complete — all preserved paths intact (.planning, tests, services, agents, migrations)',
-          { preserved: PRESERVED_PATHS.filter(p => fs.existsSync(p)) });
+          PRESERVED_PRESENT_BEFORE.length > 0
+            ? `uninstall complete — ${PRESERVED_PRESENT_BEFORE.length} preserved path(s) intact`
+            : 'uninstall complete — no preserved paths existed in this project',
+          { preserved: PRESERVED_PRESENT_BEFORE, checked: PRESERVED_PATHS });
         r.duration_ms = Date.now() - start;
         results.push(r);
       }
@@ -1881,13 +2285,20 @@ async function main() {
   // STAB-04: PATH collision detection
   const _amautaConflict = detectAmautaAiConflict();
   if (_amautaConflict.conflict) {
-    process.stdout.write(
-      '\n[WARNING] PATH collision detected: `amauta-ai` (pipx package) is on PATH at:\n' +
-      `  ${_amautaConflict.pipxPath}\n` +
+    let msg = '\n[WARNING] PATH collision detected.\n';
+    if (_amautaConflict.pipxPath) {
+      msg += `  \`amauta-ai\` (pipx package) is on PATH at: ${_amautaConflict.pipxPath}\n`;
+    }
+    for (const s of _amautaConflict.shadowed) {
+      msg += `  \`${s.name}\` on PATH resolves to ${s.real} — NOT this package.\n`;
+    }
+    msg +=
       'When both are installed, bare `amauta` may resolve to `amauta-ai` instead of this plugin.\n' +
       'Use `gsd-amauta` as the unambiguous canonical command for this tool.\n' +
-      'To remove the conflict: pipx uninstall amauta-ai\n\n'
-    );
+      'To remove the conflict: pipx uninstall amauta-ai (or put this package first on PATH)\n\n';
+    // In --json mode this goes to stderr: a human warning on stdout corrupts
+    // the JSON document callers parse (`[WARNING]` parsed as a JSON array).
+    (flags.json ? process.stderr : process.stdout).write(msg);
   }
 
   const startTime = Date.now();
@@ -1951,20 +2362,43 @@ async function main() {
   results.push(assertResult);
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+  const hasFailure = results.some(r => r.status === 'fail');
+  const degraded = degradedReport(infraResult);
+
+  // Record the install so `--upgrade` has something to read. Nothing wrote
+  // this file before, which is why --upgrade always failed on a real install.
+  let installRecordError = null;
+  if (!hasFailure) {
+    try {
+      writeInstallRecord({
+        backend: (infraRawOf(infraResult) || {}).backend,
+        appliedMigrations: appliedMigrationsFrom(migrationsResult),
+      });
+    } catch (err) {
+      installRecordError = err.message;
+    }
+  }
 
   if (flags.json) {
     console.log(JSON.stringify({
       elapsed_seconds: parseFloat(elapsed),
       results,
+      degraded: degraded || null,
+      install_record: hasFailure ? null : (installRecordError ? { error: installRecordError } : INSTALL_RECORD_PATH),
     }, null, 2));
   } else {
     renderStepTable(results);
-    const hasFailure = results.some(r => r.status === 'fail');
     if (hasFailure) {
       console.log(`\n${red}Setup completed with errors.${reset} ${dim}(${elapsed}s)${reset} Run ${cyan}\`gsd-amauta doctor\`${reset} to diagnose.`);
+    } else if (degraded) {
+      console.log(`\n${yellow}gsd-amauta installed in DEGRADED mode${reset} ${dim}(${elapsed}s)${reset} — run ${cyan}\`gsd-amauta doctor\`${reset} to verify.`);
     } else {
       console.log(`\n${green}gsd-amauta installed${reset} ${dim}(${elapsed}s)${reset} — run ${cyan}\`gsd-amauta doctor\`${reset} to verify.`);
     }
+    if (installRecordError) {
+      console.log(`${yellow}Warning: could not write install record (${installRecordError}) — \`init --upgrade\` will derive state instead.${reset}`);
+    }
+    printDegradedBanner(degraded);
   }
 
   // FROZEN exit-code rule per 44-CONTEXT.md §Specifics.
