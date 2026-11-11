@@ -2,13 +2,13 @@
 """
 Complexity Scorer — Phase 42 / SCALE-01 + SCALE-02.
 
-Scores task complexity on a 0-100 integer scale using a 7-feature vector,
+Scores task complexity on a 0-100 integer scale using an 8-feature vector,
 selects the minimum effective RPETD phase set from configurable buckets,
 and persists historical outcomes to the task_completions PG table for
 SCALE-03 logistic regression calibration.
 
 Public API (4 functions):
-  extract_features  — derive 7-feature dict from plan path + task metadata
+  extract_features  — derive 8-feature dict from plan path + task metadata
   score_features    — compute 0-100 integer from feature dict (pure, deterministic)
   select_phases     — pick RPETD phase set from complexity_buckets config
   store_completion  — INSERT into task_completions; return UUID string
@@ -69,6 +69,7 @@ FEATURE_KEYS = [
     "has_migration",
     "has_api_change",
     "security_sensitivity",
+    "top_level_dir_width",
 ]
 
 OUTCOME_LABELS = [
@@ -111,7 +112,19 @@ _API_CHANGE_PATTERNS = [
     r"/routes\.py$",
 ]
 
-_DEFAULT_PG_URL = "postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta"
+# CONTAINMENT 2026-09-07: no hardcoded DSN. This line used to read
+#     _DEFAULT_PG_URL = "postgresql://gsd:<redacted>@127.0.0.1:5433/gsd_amauta"
+# i.e. the shared development database, used whenever DATABASE_URL and
+# GSD_POSTGRES_URL were both unset. Same shape as the pg_store fallback
+# that wrote 8 rows to that database. An absent DSN now fails closed.
+# ── Containment: DSN resolution has exactly one home ──────────────────────────
+# services/pg_dsn.py. Dual-import because this module is loaded both as
+# ``services.complexity_scorer`` (repo root on sys.path) and as ``complexity_scorer``
+# (services/ itself on sys.path) -- see party_session.py L58-69.
+try:
+    from services.pg_dsn import require_dsn as _require_dsn  # type: ignore
+except ImportError:  # pragma: no cover - depends on caller's sys.path
+    from pg_dsn import require_dsn as _require_dsn  # type: ignore
 
 # ═══════════════════════════════════════════════════════
 # Calibration constants (SCALE-03 logistic regression)
@@ -127,16 +140,19 @@ _CALIBRATION_LR_RATE = 0.05        # learning rate for logistic regression
 # ═══════════════════════════════════════════════════════
 
 def _get_conn():
-    """Return a psycopg2 connection using DATABASE_URL, GSD_POSTGRES_URL, or default.
+    """Return a psycopg2 connection using DATABASE_URL or GSD_POSTGRES_URL.
+
+    There is no default. An absent DSN raises
+    pg_dsn.UnconfiguredPostgresDSN rather than guessing a host.
 
     Raises RuntimeError if psycopg2 is not installed.
     """
     if not _HAS_PG:
         raise RuntimeError("psycopg2 not installed — cannot connect to PostgreSQL")
-    db_url = (
-        os.environ.get("DATABASE_URL")
-        or os.environ.get("GSD_POSTGRES_URL")
-        or _DEFAULT_PG_URL
+    # No fallback branch, by design. See services/pg_dsn.py.
+    db_url = _require_dsn(
+        component="complexity_scorer._get_conn",
+        env_names=("DATABASE_URL", "GSD_POSTGRES_URL"),
     )
     conn = psycopg2.connect(db_url)
     conn.autocommit = False
@@ -229,7 +245,7 @@ def extract_features(
     task_meta: dict,
     project_root: str = ".",
 ) -> dict:
-    """Derive the canonical 7-feature vector from a plan file + task metadata.
+    """Derive the canonical 8-feature vector from a plan file + task metadata.
 
     Parameters
     ----------
@@ -248,8 +264,8 @@ def extract_features(
     Returns
     -------
     dict
-        Exactly the 7 FEATURE_KEYS keys. Raises KeyError if any key is missing
-        (regression-guard — callers rely on all 7 keys being present).
+        Exactly the 8 FEATURE_KEYS keys. Raises KeyError if any key is missing
+        (regression-guard — callers rely on all 8 keys being present).
 
     Feature notes
     -------------
@@ -322,6 +338,14 @@ def extract_features(
     # calibration once a file-keyed graph layer is available.
     dependency_depth = min(files_expected_count // 3, 10)
 
+    # FIDEL-05: count distinct first path segments across files_expected.
+    top_level_dirs = set()
+    for f in files:
+        parts = str(f).replace("\\", "/").split("/")
+        if len(parts) >= 2 and parts[0]:
+            top_level_dirs.add(parts[0])
+    top_level_dir_width = len(top_level_dirs)
+
     features = {
         "files_expected": files_expected_count,
         "estimated_loc": estimated_loc,
@@ -330,9 +354,10 @@ def extract_features(
         "has_migration": has_migration,
         "has_api_change": has_api_change,
         "security_sensitivity": security_sensitivity,
+        "top_level_dir_width": top_level_dir_width,
     }
 
-    # Regression-guard: ensure all 7 keys are present
+    # Regression-guard: ensure all 8 keys are present
     for key in FEATURE_KEYS:
         if key not in features:
             raise KeyError(f"extract_features: missing key '{key}' in output")
@@ -360,7 +385,7 @@ def score_features(features: dict) -> int:
     Parameters
     ----------
     features : dict
-        Must contain exactly the 7 FEATURE_KEYS. Raises KeyError if any key
+        Must contain exactly the 8 FEATURE_KEYS. Raises KeyError if any key
         is missing.
 
     Returns
@@ -887,7 +912,7 @@ def _logistic_regression(
         return 0.5  # insufficient data
 
     def _to_vec(fv: dict) -> "list[float]":
-        """Convert a feature dict to a 7-element numeric list (same order as FEATURE_KEYS)."""
+        """Convert a feature dict to an 8-element numeric list (same order as FEATURE_KEYS)."""
         return [
             float(fv.get("files_expected", 0)),
             float(fv.get("estimated_loc", 0)),
@@ -896,6 +921,7 @@ def _logistic_regression(
             float(1 if fv.get("has_migration") else 0),
             float(1 if fv.get("has_api_change") else 0),
             float(fv.get("security_sensitivity", 0)),
+            float(fv.get("top_level_dir_width", 0)),
         ]
 
     # Build X and y
