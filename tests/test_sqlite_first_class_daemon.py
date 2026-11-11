@@ -133,6 +133,15 @@ def tearDownModule():
         except subprocess.TimeoutExpired:
             _proc.kill()
             _proc.wait(timeout=5)
+        # The daemon unlinks its PID file on a clean shutdown; if it was
+        # killed it cannot, and a stale file would make `status` lie to the
+        # next run. PID_FILE lives beside the script, not in the temp dir.
+        pid_file = os.path.join(_ROOT, "services", "amauta-daemon.pid")
+        try:
+            if os.path.exists(pid_file) and int(open(pid_file).read().strip()) == _proc.pid:
+                os.unlink(pid_file)
+        except Exception:
+            pass
     _proc = None
     if _tmp:
         shutil.rmtree(_tmp, ignore_errors=True)
