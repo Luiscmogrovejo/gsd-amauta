@@ -30,6 +30,7 @@ import sys
 import tempfile
 import time
 import unittest
+import unittest.mock
 import urllib.error
 import urllib.request
 
@@ -488,6 +489,91 @@ class TestDaemonLogFile(_DaemonCase):
                         "the daemon must leave a log behind — both spawners discard stderr")
         self.assertGreater(os.path.getsize(log_path), 0)
         self.assertIn("daemon_started", open(log_path).read())
+
+
+def _load_daemon_module():
+    """Import amauta-daemon.py as a module (hyphenated filename).
+
+    Module import does not start a server — start_server() only runs under
+    __main__ — so this is safe in-process.
+    """
+    import importlib.util
+    os.environ.setdefault("GSD_AMAUTA_NO_AUTO_START", "1")
+    spec = importlib.util.spec_from_file_location("amauta_daemon_unit", _DAEMON)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class _FakePGStore:
+    """Stands in for PGStore: anything whose class is not SQLiteStore."""
+
+
+class _FakeSQLiteStore:
+    """Stands in for SQLiteStore — _is_sqlite matches on the class name."""
+
+
+_FakeSQLiteStore.__name__ = "SQLiteStore"
+
+
+class TestPhaseParsingAgainstEachBackend(unittest.TestCase):
+    """_parse_phase_arg is the one place that decides what a phase string means.
+
+    The PostgreSQL branch cannot be exercised end-to-end here (no database),
+    so it is tested directly with a stand-in store.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.mod = _load_daemon_module()
+
+    def test_sqlite_accepts_a_decimal_phase(self):
+        value, err = self.mod._parse_phase_arg("72.1", _FakeSQLiteStore())
+        self.assertIsNone(err, err)
+        self.assertEqual(value, 72.1)
+
+    def test_postgres_rejects_a_decimal_phase_with_an_explanatory_400(self):
+        """The PG column is INTEGER (migration 017): refuse, never truncate."""
+        value, err = self.mod._parse_phase_arg("72.1", _FakePGStore())
+        self.assertIsNone(value)
+        payload, status = err
+        self.assertEqual(status, 400)
+        self.assertEqual(payload["error"], "decimal_phase_unsupported_on_postgres")
+        self.assertIn("INTEGER", payload["detail"])
+        self.assertIn("72.1", payload["detail"])
+
+    def test_whole_phases_pass_on_both_backends(self):
+        for store in (_FakeSQLiteStore(), _FakePGStore()):
+            value, err = self.mod._parse_phase_arg("72", store)
+            self.assertIsNone(err, err)
+            self.assertEqual(value, 72)
+            self.assertIsInstance(value, int)
+
+    def test_garbage_is_a_400_on_both_backends(self):
+        for store in (_FakeSQLiteStore(), _FakePGStore()):
+            value, err = self.mod._parse_phase_arg("seventy-two", store)
+            self.assertIsNone(value)
+            self.assertEqual(err[1], 400)
+
+    def test_is_sqlite_distinguishes_the_backends(self):
+        self.assertTrue(self.mod._is_sqlite(_FakeSQLiteStore()))
+        self.assertFalse(self.mod._is_sqlite(_FakePGStore()))
+        self.assertFalse(self.mod._is_sqlite(None))
+
+    def test_requires_postgres_payload_is_typed_and_explains_itself(self):
+        payload = self.mod._requires_postgres_payload("a2a")
+        self.assertEqual(payload["error"], "requires_postgres")
+        self.assertEqual(payload["feature"], "a2a")
+        self.assertEqual(payload["backend"], "sqlite")
+        self.assertTrue(payload["detail"])
+        # An unlisted feature still gets a usable sentence, not a KeyError.
+        self.assertIn("unlisted", self.mod._requires_postgres_payload("unlisted")["detail"])
+
+    def test_force_sqlite_reads_the_env_flag(self):
+        for raw, expected in (("1", True), ("true", True), ("on", True),
+                              ("", False), ("0", False), ("no", False)):
+            with unittest.mock.patch.dict(os.environ, {"GSD_FORCE_SQLITE": raw}):
+                self.assertIs(self.mod._force_sqlite(), expected, raw)
 
 
 class TestLogRotationIsBounded(unittest.TestCase):
