@@ -4,7 +4,8 @@
 STAB-06 + "doctor tells the truth" pass.
 
 Checks (in order):
-  paths, path_collision, install_drift, version_skew, daemon, backend,
+  paths, path_collision, install_drift, version_skew, install_stale,
+  github_access, daemon, backend,
   postgres, valkey, rlm_index, embeddings, api_keys, migrations, agents,
   skills, mobile
 
@@ -25,6 +26,8 @@ Run: python3 services/doctor.py  OR  gsd-amauta doctor
 import json
 import os
 import pathlib
+import re
+import shutil
 import subprocess
 from pathlib import Path
 import sys
@@ -514,6 +517,110 @@ def check_install_stale(record_path=None, package_root=None):
         row(WARN, "install_stale", f"Check error: {e}")
 
 
+# ══ Check 4c: GitHub access (can this machine push the repo it is a checkout of?) ══
+GITHUB_REMOTE_RE = re.compile(
+    r"^(?:https?://(?:[^@/]+@)?github\.com/|ssh://git@github\.com/|git@github\.com:)"
+    r"(?P<owner>[^/\s]+)/(?P<repo>[^/\s]+?)(?:\.git)?/?$"
+)
+GH_TIMEOUT = float(os.environ.get("GSD_DOCTOR_GH_TIMEOUT", "15"))
+
+
+def parse_github_remote(url):
+    """(owner, repo) of a github.com remote URL, or None for anything else."""
+    m = GITHUB_REMOTE_RE.match((url or "").strip())
+    return (m.group("owner"), m.group("repo")) if m else None
+
+
+def parse_gh_auth_status(text):
+    """{account: {"scopes": [..] | None, "valid": bool}} for github.com.
+
+    Reads only the account line and the `Token scopes:` line of `gh auth status`.
+    The `Token:` line is never kept, so nothing secret can reach a row.
+    """
+    accounts = {}
+    current = None
+    for line in text.splitlines():
+        m = re.search(r"(Logged in to|Failed to log in to) (\S+) account (\S+)", line)
+        if m:
+            current = None
+            if m.group(2) == "github.com":
+                current = m.group(3)
+                accounts[current] = {"scopes": None, "valid": m.group(1) == "Logged in to"}
+            continue
+        if current and "Token scopes:" in line:
+            raw = line.split("Token scopes:", 1)[1]
+            accounts[current]["scopes"] = [t.strip().strip("'\"") for t in raw.split(",") if t.strip()]
+    return accounts
+
+
+def check_github_access(package_root=None):
+    """Can the account that owns `origin` push to it, workflow files included?
+
+    Reports whether `gh` is installed, whether the origin owner is logged in to
+    gh, and whether that token has the `repo` and `workflow` scopes. Pushing a
+    change under .github/workflows/ needs `workflow`. Never prints a token.
+
+    Skipped cleanly (an OK row saying so, never a WARN) when `gh` is absent, there
+    is no origin, the remote is not github.com, or gh gives no usable answer. WARN
+    only when the remote is GitHub and the owner is not logged in or a scope is
+    missing.
+    """
+    try:
+        package_root = Path(package_root) if package_root else REPO_ROOT
+        gh = shutil.which("gh")
+        if not gh:
+            row(OK, "github_access", "skipped — `gh` is not installed", {"skipped": "gh_absent"})
+            return
+        try:
+            r = subprocess.run(["git", "-C", str(package_root), "remote", "get-url", "origin"],
+                               capture_output=True, text=True, timeout=5)
+            url = (r.stdout or "").strip() if r.returncode == 0 else ""
+        except Exception:
+            url = ""
+        parsed = parse_github_remote(url)
+        if not parsed:
+            row(OK, "github_access", "skipped — origin is not a github.com remote",
+                {"skipped": "not_github"})
+            return
+        owner, repo = parsed
+        data = {"owner": owner, "repo": repo}
+        try:
+            res = subprocess.run([gh, "auth", "status", "--hostname", "github.com"],
+                                 capture_output=True, text=True, timeout=GH_TIMEOUT)
+            accounts = parse_gh_auth_status((res.stdout or "") + "\n" + (res.stderr or ""))
+        except Exception as e:  # noqa: BLE001 — diagnostics must never crash
+            row(OK, "github_access", f"skipped — could not run `gh auth status` ({type(e).__name__})",
+                dict(data, skipped="gh_unusable"))
+            return
+        data["accounts"] = sorted(accounts)
+        match = next((a for a in accounts if a.lower() == owner.lower()), None)
+        if match is None or not accounts[match]["valid"]:
+            have = ", ".join(sorted(accounts)) or "none"
+            row(WARN, "github_access",
+                f"gh has no working login for {owner} (origin owner; logged in: {have}) — "
+                f"run: gh auth login -h github.com   then   gh auth switch -u {owner}",
+                dict(data, owner_logged_in=False))
+            return
+        scopes = accounts[match]["scopes"]
+        if scopes is None:
+            row(OK, "github_access",
+                f"skipped — gh reports no token scopes for {match} (fine-grained or env token)",
+                dict(data, owner_logged_in=True, skipped="no_scopes_reported"))
+            return
+        data.update({"owner_logged_in": True, "scopes": scopes})
+        missing = [sc for sc in ("repo", "workflow") if sc not in scopes]
+        if not missing:
+            row(OK, "github_access", f"{match} is logged in to gh with repo + workflow scopes", data)
+            return
+        data["missing_scopes"] = missing
+        fix = f"gh auth switch -u {owner}   then   gh auth refresh -h github.com -s {','.join(missing)}"
+        row(WARN, "github_access",
+            f"{match}'s gh token lacks scope {', '.join(missing)} (pushing .github/workflows needs "
+            f"workflow) — run: {fix}", data)
+    except Exception as e:
+        row(WARN, "github_access", f"Check error: {e}")
+
+
 # ══ Check 5: Daemon ═══════════════════════════════════════════════════════════
 def check_daemon():
     health, err = http_json(DAEMON_URL)
@@ -806,6 +913,7 @@ def main(argv):
     manifest = check_install_drift(config_dir)
     check_version_skew(config_dir, manifest)
     check_install_stale()
+    check_github_access()
     health = check_daemon()
     check_backend(health)
     check_postgres(health)
