@@ -38,6 +38,7 @@ function postRlmSearch(baseUrl, body) {
     const payload = JSON.stringify(body);
     const url = new URL('/api/rlm/search', baseUrl);
     const options = {
+      agent: false, // one connection per request: a pooled socket can outlive its mock server and meet a later one on the same port
       hostname: url.hostname,
       port: url.port,
       path: url.pathname,
