@@ -62,6 +62,19 @@ const crypto = require('node:crypto');
 //   21438ae43fd368d814b5aa27732aeb8379d2f7c5  docs(phase-51): complete party mode decisions + operator CLI
 const PHASE_52_BASE = '21438ae43fd368d814b5aa27732aeb8379d2f7c5';
 
+// ─── CANARY_BASE (RE-BASELINED 2026-11-11, plan 88-06, operator sign-off: delegated 2026-11-11) ──
+//
+// The "protected path is UNMODIFIED" assertions used to compare against PHASE_52_BASE and failed once later phases
+// changed those paths on purpose (new agents and auditors, model registry, doctor/init rework, gsd-tools and
+// amauta-mcp changes). They now compare against this master commit, so the canary guards the paths against
+// unintended change from here on:
+//   e6dbc5122c0eb7b10f1861970d450e540ed269ec  Merge pull request #20 from Luiscmogrovejo/phase88/04-validate-fixtures-numpy
+// PHASE_52_BASE stays as the historical anchor for the assertions that are ABOUT the Phase 52 delta (a path that did
+// not exist at the base, a `case 'agents':` that was not in gsd-tools.cjs at the base); those cannot move to a later
+// commit without becoming false. The files that changed since PHASE_52_BASE, and the commits that changed them,
+// are in 88-06-RECORD.md.
+const CANARY_BASE = 'e6dbc5122c0eb7b10f1861970d450e540ed269ec';
+
 const ROOT = path.resolve(__dirname, '..');
 
 /**
@@ -76,19 +89,20 @@ function historyAvailable(sha) {
   } catch { return false; }
 }
 
-const HISTORY = historyAvailable(PHASE_52_BASE);
+const HISTORY = historyAvailable(PHASE_52_BASE) && historyAvailable(CANARY_BASE);
 const SKIP_NO_HISTORY = HISTORY
   ? false
-  : `git history for ${PHASE_52_BASE} is not present in this checkout (shallow clone or git archive copy)`;
+  : `git history for ${PHASE_52_BASE} / ${CANARY_BASE} is not present in this checkout (shallow clone or git archive copy)`;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
- * Run `git diff <PHASE_52_BASE> -- <path>` and return stdout string.
+ * Run `git diff <CANARY_BASE> -- <path>` and return stdout string.
  * Returns empty string if the path is unchanged. Throws on error.
+ * (Re-baselined from PHASE_52_BASE by plan 88-06; see CANARY_BASE.)
  */
 function gitDiff(targetPath) {
-  return execSync(`git diff ${PHASE_52_BASE} -- ${targetPath}`, {
+  return execSync(`git diff ${CANARY_BASE} -- ${targetPath}`, {
     encoding: 'utf8',
     cwd: ROOT,
     timeout: 15000,
@@ -101,6 +115,18 @@ function gitDiff(targetPath) {
  */
 function gitShowBase(filePath) {
   return execSync(`git show ${PHASE_52_BASE}:${filePath}`, {
+    encoding: 'utf8',
+    cwd: ROOT,
+    timeout: 15000,
+  });
+}
+
+/**
+ * Retrieve file content at CANARY_BASE (the re-baselined master commit) via `git show <SHA>:<path>`.
+ * Used for the "block is byte-identical to the base" comparisons.
+ */
+function gitShowCanary(filePath) {
+  return execSync(`git show ${CANARY_BASE}:${filePath}`, {
     encoding: 'utf8',
     cwd: ROOT,
     timeout: 15000,
@@ -196,6 +222,10 @@ test('canary-phase-52-base-resolves', { skip: SKIP_NO_HISTORY }, () => {
     typeof _baseSubject === 'string' && _baseSubject.length > 0,
     `PHASE_52_BASE ${PHASE_52_BASE} must resolve; subject: ${_baseSubject}`
   );
+  const canarySubject = execSync(`git show --format="%s" -s ${CANARY_BASE}`, {
+    encoding: 'utf8', cwd: ROOT, timeout: 10000,
+  }).trim();
+  assert.ok(canarySubject.length > 0, `CANARY_BASE ${CANARY_BASE} must resolve`);
 });
 
 // ── Subtest 2: Protected paths — Phase 47 + Phase 43 services ─────────────
@@ -212,7 +242,7 @@ test('canary-phase-47-phase-43-services-untouched', { skip: SKIP_NO_HISTORY }, (
     assert.strictEqual(
       diff,
       '',
-      `${t} must be UNMODIFIED since PHASE_52_BASE ${PHASE_52_BASE}; diff:\n${diff}`
+      `${t} must be UNMODIFIED since CANARY_BASE ${CANARY_BASE}; diff:\n${diff}`
     );
   }
 });
@@ -224,7 +254,7 @@ test('canary-scripts-skill-compiler-untouched', { skip: SKIP_NO_HISTORY }, () =>
   assert.strictEqual(
     diff,
     '',
-    `scripts/skill-compiler.cjs must be UNMODIFIED since PHASE_52_BASE; diff:\n${diff}`
+    `scripts/skill-compiler.cjs must be UNMODIFIED since CANARY_BASE; diff:\n${diff}`
   );
 });
 
@@ -309,7 +339,7 @@ test('canary-agents-md-sc1-lock-untouched', { skip: SKIP_NO_HISTORY }, () => {
     assert.strictEqual(
       diff,
       '',
-      `${t} must be UNMODIFIED since PHASE_52_BASE (SC1 canonical claude-code output);\n` +
+      `${t} must be UNMODIFIED since CANARY_BASE (SC1 canonical claude-code output);\n` +
       `diff:\n${diff}`
     );
   }
@@ -357,7 +387,8 @@ test('canary-expected-additions-exist-at-head', { skip: SKIP_NO_HISTORY }, () =>
 test('canary-gsd-tools-case-agents-new-adjacent-cases-preserved', { skip: SKIP_NO_HISTORY }, () => {
   const toolsRelPath = 'get-shit-done/bin/gsd-tools.cjs';
   const headSrc = fs.readFileSync(path.join(ROOT, toolsRelPath), 'utf8');
-  const baseSrc = gitShowBase(toolsRelPath);
+  const baseSrc = gitShowBase(toolsRelPath);          // PHASE_52_BASE: the Phase 52 delta (no `case 'agents':`)
+  const canarySrc = gitShowCanary(toolsRelPath);      // CANARY_BASE: the re-baselined preserved-block comparison
 
   // HEAD must contain case 'agents': (Phase 52 Wave 4 addition)
   assert.ok(
@@ -387,15 +418,15 @@ test('canary-gsd-tools-case-agents-new-adjacent-cases-preserved', { skip: SKIP_N
       assert.fail(`HEAD gsd-tools.cjs: could not extract ${JSON.stringify(marker)}: ${e.message}`);
     }
     try {
-      baseBlock = extractCaseBlock(baseSrc, marker);
+      baseBlock = extractCaseBlock(canarySrc, marker);
     } catch (e) {
-      assert.fail(`BASE gsd-tools.cjs: could not extract ${JSON.stringify(marker)}: ${e.message}`);
+      assert.fail(`CANARY_BASE gsd-tools.cjs: could not extract ${JSON.stringify(marker)}: ${e.message}`);
     }
 
     assert.strictEqual(
       headBlock,
       baseBlock,
-      `${marker} block in gsd-tools.cjs must be byte-identical to PHASE_52_BASE.\n` +
+      `${marker} block in gsd-tools.cjs must be byte-identical to CANARY_BASE.\n` +
       `head sha=${sha256(headBlock)}, base sha=${sha256(baseBlock)}\n` +
       `git diff:\n${gitDiff(toolsRelPath).slice(0, 2000)}`
     );
@@ -407,7 +438,8 @@ test('canary-gsd-tools-case-agents-new-adjacent-cases-preserved', { skip: SKIP_N
 test('canary-bin-cli-agents-new-module-party-status-preserved', { skip: SKIP_NO_HISTORY }, () => {
   const cliRelPath = 'bin/cli.cjs';
   const headSrc = fs.readFileSync(path.join(ROOT, cliRelPath), 'utf8');
-  const baseSrc = gitShowBase(cliRelPath);
+  const baseSrc = gitShowBase(cliRelPath);            // PHASE_52_BASE: the Phase 52 delta (no command === 'agents')
+  const canarySrc = gitShowCanary(cliRelPath);        // CANARY_BASE: the re-baselined preserved-block comparison
 
   // HEAD must contain command === 'agents'
   assert.ok(
@@ -435,15 +467,15 @@ test('canary-bin-cli-agents-new-module-party-status-preserved', { skip: SKIP_NO_
       assert.fail(`HEAD bin/cli.cjs: could not extract ${JSON.stringify(marker)}: ${e.message}`);
     }
     try {
-      baseBlock = extractIfBlock(baseSrc, marker);
+      baseBlock = extractIfBlock(canarySrc, marker);
     } catch (e) {
-      assert.fail(`BASE bin/cli.cjs: could not extract ${JSON.stringify(marker)}: ${e.message}`);
+      assert.fail(`CANARY_BASE bin/cli.cjs: could not extract ${JSON.stringify(marker)}: ${e.message}`);
     }
 
     assert.strictEqual(
       headBlock,
       baseBlock,
-      `${marker} block in bin/cli.cjs must be byte-identical to PHASE_52_BASE.\n` +
+      `${marker} block in bin/cli.cjs must be byte-identical to CANARY_BASE.\n` +
       `head sha=${sha256(headBlock)}, base sha=${sha256(baseBlock)}\n` +
       `git diff:\n${gitDiff(cliRelPath).slice(0, 1000)}`
     );
@@ -453,7 +485,7 @@ test('canary-bin-cli-agents-new-module-party-status-preserved', { skip: SKIP_NO_
   // Anchor: "const isStatusSystemCheck = command === 'status'"
   const statusAnchor = "const isStatusSystemCheck = command === 'status'";
   const headStatusIdx = headSrc.indexOf(statusAnchor);
-  const baseStatusIdx = baseSrc.indexOf(statusAnchor);
+  const baseStatusIdx = canarySrc.indexOf(statusAnchor);
   assert.ok(
     headStatusIdx !== -1,
     `HEAD bin/cli.cjs must contain isStatusSystemCheck constant`
@@ -465,7 +497,7 @@ test('canary-bin-cli-agents-new-module-party-status-preserved', { skip: SKIP_NO_
 
   // Extract from isStatusSystemCheck to end of file and compare
   const headStatus = headSrc.slice(headStatusIdx);
-  const baseStatus = baseSrc.slice(baseStatusIdx);
+  const baseStatus = canarySrc.slice(baseStatusIdx);
   assert.strictEqual(
     headStatus,
     baseStatus,
