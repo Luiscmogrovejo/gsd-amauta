@@ -45,6 +45,9 @@ function runCLI(args, env = {}) {
         ...process.env,
         GSD_AMAUTA_PORT: '19999',        // non-existent port → direct/offline mode
         GSD_AMAUTA_NO_AUTO_START: '1',   // skip 5s daemon startup wait in tests
+        // Pin the PR gate ON: the tracked .planning/config.json sets workflow.gitflow=false,
+        // which would turn every fixture into a "non-code" task and skip BRANCH_EVIDENCE/PR_URL.
+        GSD_GITFLOW: 'on',
         AMAUTA_DATA_DIR: tmpDir,
         ...env,
       },
@@ -298,7 +301,7 @@ describe('Validation gates (CLI offline mode)', () => {
     const { dataDir, taskId } = setupTask(tmpDir, {
       D: 'Summary: implemented. LEARNING: always write tests first and validate edge cases thoroughly because skipping test-first development leads to fragile code that breaks during integration and costs more time to fix later. https://github.com/org/repo/pull/12',
       E: 'feat/my-branch: implemented changes.',
-      T: '$ npm test\n10 tests passed, 0 failed\nexit 0',
+      T: '$ npm test\n> node --test tests/\nℹ tests 10\nℹ pass 10\nℹ fail 0\nℹ skipped 0\nexit 0 (duration 2.1s)',
     });
     const r = runCLI(['validate', taskId, '--pass', '--validator', 'test', '--notes', 'gate test'],
       { AMAUTA_DATA_DIR: dataDir });
