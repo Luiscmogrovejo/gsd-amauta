@@ -2,9 +2,9 @@
 """STAB-06: gsd-amauta doctor command tests.
 
 Covers:
-  - doctor always exits 0
+  - doctor exit code reflects the worst severity (0 healthy / 1 warn / 2 fail)
   - doctor emits >= 8 status rows
-  - doctor output contains all 8 required category names
+  - doctor output contains all required category names
   - doctor header present
   - rlm_restarts_lifetime field consumed (STAB-03 consumer chain)
   - doctor source parses as valid Python
@@ -12,25 +12,47 @@ Covers:
   - bin/cli.cjs references services/doctor.py
   - Result summary line present
 
+NOTE (truthful-doctor pass): doctor no longer always exits 0 — a degraded
+install exits 1 and a failing one exits 2. The old `test_exits_0` asserted the
+defect, so it is replaced by `test_exit_code_reflects_severity`.
+
+Every run here is hermetic: a throwaway HOME and unused daemon/RLM ports, so
+the test never talks to a real daemon.
+
 Run: pytest tests/test_doctor.py -q
 """
 import ast
+import os
 import re
 import subprocess
 import sys
+import tempfile
 import unittest
 
 PYTHON = sys.executable
 
+# Ports deliberately outside the live daemon (18799) / RLM (18798) range.
+HERMETIC_PORTS = {"GSD_AMAUTA_PORT": "18991", "GSD_RLM_PORT": "18992"}
 
-def run_doctor(env=None):
+
+def hermetic_env(extra=None):
+    env = dict(os.environ)
+    env.update(HERMETIC_PORTS)
+    env["HOME"] = tempfile.mkdtemp(prefix="doctor-home-")
+    env.pop("CLAUDE_CONFIG_DIR", None)
+    if extra:
+        env.update(extra)
+    return env
+
+
+def run_doctor(env=None, args=()):
     """Run services/doctor.py and return (returncode, stdout, stderr)."""
     result = subprocess.run(
-        [PYTHON, "services/doctor.py"],
+        [PYTHON, "services/doctor.py", *args],
         capture_output=True,
         text=True,
-        timeout=10,
-        env=env,
+        timeout=20,
+        env=env if env is not None else hermetic_env(),
     )
     return result.returncode, result.stdout, result.stderr
 
@@ -41,10 +63,16 @@ class TestDoctorStructure(unittest.TestCase):
         self.src = open("services/doctor.py").read()
         self.tree = ast.parse(self.src)
 
-    def test_exits_0(self):
-        """doctor always exits 0."""
-        rc, _, _ = run_doctor()
-        self.assertEqual(rc, 0, "doctor must always exit 0")
+    def test_exit_code_reflects_severity(self):
+        """doctor exits 0/1/2 and the code matches the rendered counts."""
+        rc, out, _ = run_doctor()
+        self.assertIn(rc, (0, 1, 2), f"doctor must exit 0, 1 or 2 — got {rc}")
+        m = re.search(r"Result: (\d+) OK, (\d+) WARN, (\d+) FAIL", out)
+        self.assertIsNotNone(m, f"no Result summary line in output:\n{out}")
+        _ok, warn, fail = (int(g) for g in m.groups())
+        expected = 2 if fail else (1 if warn else 0)
+        self.assertEqual(rc, expected,
+                         f"exit {rc} does not match {warn} WARN / {fail} FAIL")
 
     def test_emits_8_rows(self):
         """doctor emits at least 8 status rows."""

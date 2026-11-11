@@ -36,7 +36,8 @@ Usage: gsd-amauta <command> [options]
 
 Setup
   init [--upgrade|--uninstall]   Interactive setup: IDE detection, migrations, daemon
-  doctor                         Diagnose the install (paths, daemon, Postgres, Valkey, keys)
+  doctor [--json] [--strict]     Diagnose the install (PATH, drift, backend, daemon, keys)
+                                 Exit 0 healthy / 1 degraded / 2 failing
   mcp register | status          Register / check the MCP server with Claude Code
 
 Work
@@ -173,10 +174,14 @@ if (command === 'agents') {
 
 // ─── Doctor subcommand (Phase 54 STAB-06) ──────────────────────────────────
 //
-// gsd-amauta doctor
+// gsd-amauta doctor [--json] [--strict] [--config-dir <path>]
 //
-// Diagnoses install state: paths, daemon, PG, Valkey, API keys,
-// migrations, agents, skills. Exits 0 always.
+// Diagnoses install state: paths, PATH collisions, install drift vs the
+// install manifest, version skew, daemon, backend (SQLite fallback + the
+// features it turns off), PG, Valkey, RLM index, embedding coverage, API
+// keys, migrations, agents, skills, mobile toolchain.
+// Exit codes: 0 healthy, 1 degraded (warnings), 2 failures. --strict makes
+// warnings exit 2. All flags are forwarded to services/doctor.py.
 
 if (command === 'doctor') {
   const doctorPath = path.resolve(__dirname, '../services/doctor.py');
