@@ -141,6 +141,39 @@ except ImportError:  # pragma: no cover - depends on caller's sys.path
         _spec.loader.exec_module(_pg_dsn)
         _require_dsn = _pg_dsn.require_dsn
 
+
+
+class ImportResult(int):
+    """Rows inserted, carrying per-row failure detail.
+
+    Subclasses ``int`` so every existing caller that treats an import_* return
+    value as a plain count (services/backup.py, the daemon's restore endpoint,
+    JSON serialisation) keeps working unchanged, while callers that care can
+    read ``.failed`` / ``.failures`` and refuse to call a lossy restore a
+    success.
+    """
+
+    def __new__(cls, inserted, failed=0, failures=None, skipped=0):
+        obj = super().__new__(cls, inserted)
+        obj.inserted = int(inserted)
+        obj.failed = int(failed)
+        obj.failures = list(failures or ())
+        obj.skipped = int(skipped)
+        return obj
+
+    @property
+    def ok(self):
+        """True when no row failed."""
+        return self.failed == 0
+
+    def as_dict(self):
+        return {
+            "inserted": self.inserted,
+            "skipped": self.skipped,
+            "failed": self.failed,
+            "failures": self.failures[:50],
+        }
+
 SOURCE_SCORES = {
     "lesson-learned": 4,
     "best-practice": 4,
@@ -3287,240 +3320,213 @@ class PGStore:
         except Exception:
             return []
 
+    # ═══════════════════════════════════════════════════════
+    # Backup / migration import (savepoint-per-row)
+    # ═══════════════════════════════════════════════════════
+    #
+    # Every import_* method below used to be a hand-written INSERT with a
+    # fixed column list wrapped in `try: ... except Exception: pass`. Two
+    # consequences, both of which lost data silently:
+    #
+    #   1. No savepoint. In psycopg2 the FIRST failing statement aborts the
+    #      whole transaction (25P02, "current transaction is aborted"), so
+    #      every subsequent row in the loop also raised and was also
+    #      swallowed. One bad row dropped the entire rest of the table and
+    #      the method still returned a count and a green restore.
+    #   2. The column list was frozen at the time it was written.
+    #      import_memory named 9 columns, so migration 008's applied_count
+    #      and migration 026's valid_at/invalid_at were dropped on every
+    #      restore — a bi-temporal row came back as "currently valid".
+    #
+    # Both are fixed by one generic importer: it intersects the row's keys
+    # with the destination table's live column list (information_schema), so
+    # new migrations are carried automatically, and it wraps each row in a
+    # SAVEPOINT so one bad row costs exactly one row.
+
+    #: Columns never carried by an import. `embedding` is excluded because
+    #: export_all_* strips it (large, not JSON-portable) and imported rows are
+    #: meant to be re-embedded by `gsd-memory backfill-embeddings`.
+    _IMPORT_EXCLUDED_COLUMNS = frozenset({"embedding", "context_embedding"})
+
+    def _table_columns(self, conn, table):
+        """Live ``{column_name: data_type}`` for *table*, or {} if absent."""
+        cache = getattr(self, "_column_cache", None)
+        if cache is None:
+            cache = self._column_cache = {}
+        if table in cache:
+            return cache[table]
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT column_name, data_type
+                FROM information_schema.columns
+                WHERE table_schema = current_schema() AND table_name = %s
+                ORDER BY ordinal_position
+            """, (table,))
+            columns = {row[0]: row[1] for row in cur.fetchall()}
+        cache[table] = columns
+        return columns
+
+    @staticmethod
+    def _coerce_value(value, data_type):
+        """Render a Python value for a column of *data_type*."""
+        if data_type == "jsonb" and isinstance(value, (list, dict)):
+            return json.dumps(value)
+        if data_type == "boolean" and isinstance(value, int):
+            return bool(value)
+        return value
+
+    def _sync_serial_sequence(self, conn, table, column="id"):
+        """Fast-forward a SERIAL sequence past explicitly imported ids.
+
+        Importing rows WITH their original integer ids (which is what makes a
+        re-run idempotent) leaves the sequence behind, so the next natural
+        INSERT collides on the primary key. Harmless no-op for text ids.
+        """
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT pg_get_serial_sequence(%s, %s)", (table, column))
+                row = cur.fetchone()
+                if not row or not row[0]:
+                    return
+                cur.execute(
+                    f"SELECT setval(%s, COALESCE((SELECT MAX({column}) FROM {table}), 0) + 1, false)",
+                    (row[0],),
+                )
+        except Exception:
+            pass
+
+    def _import_rows(self, table, rows, mode="merge", conflict_column="id"):
+        """Import *rows* into *table*, one savepoint per row.
+
+        Args:
+            table: destination table name.
+            rows: list of row dicts (keys that are not columns are ignored).
+            mode: 'merge' (ON CONFLICT DO NOTHING) or 'replace' (TRUNCATE first).
+            conflict_column: primary key column for the ON CONFLICT target,
+                             or None to insert without a conflict clause.
+
+        Returns:
+            ImportResult — an int (rows inserted, so existing callers that
+            treat it as a count keep working) carrying .inserted, .skipped,
+            .failed and .failures ``[{'id', 'error'}]``.
+        """
+        if not rows:
+            return ImportResult(0)
+
+        failures = []
+        inserted = 0
+        skipped = 0
+        with self._get_conn() as conn:
+            columns = self._table_columns(conn, table)
+            if not columns:
+                return ImportResult(
+                    0, failed=len(rows),
+                    failures=[{"id": None,
+                               "error": f"table {table} does not exist"}],
+                )
+            usable = [c for c in columns if c not in self._IMPORT_EXCLUDED_COLUMNS]
+            with conn.cursor() as cur:
+                if mode == "replace":
+                    cur.execute(f"TRUNCATE {table} CASCADE")
+                for index, row in enumerate(rows):
+                    if not isinstance(row, dict):
+                        failures.append({"id": None,
+                                         "error": f"row {index} is not a dict"})
+                        continue
+                    present = [c for c in usable
+                               if c in row and row.get(c) is not None]
+                    row_id = row.get(conflict_column) if conflict_column else None
+                    if not present:
+                        failures.append({
+                            "id": row_id,
+                            "error": f"row {index} has no column in common with {table}",
+                        })
+                        continue
+                    placeholders = ", ".join(
+                        "%s::jsonb" if columns[c] == "jsonb" else "%s"
+                        for c in present
+                    )
+                    conflict = (
+                        f" ON CONFLICT ({conflict_column}) DO NOTHING"
+                        if conflict_column and conflict_column in columns else ""
+                    )
+                    statement = (
+                        f"INSERT INTO {table} ({', '.join(present)}) "
+                        f"VALUES ({placeholders}){conflict}"
+                    )
+                    values = [self._coerce_value(row[c], columns[c]) for c in present]
+                    # One savepoint per row: a failure rolls back exactly this
+                    # row and leaves the transaction usable for the next one.
+                    cur.execute("SAVEPOINT gsd_import_row")
+                    try:
+                        cur.execute(statement, values)
+                    except Exception as exc:
+                        cur.execute("ROLLBACK TO SAVEPOINT gsd_import_row")
+                        message = str(exc).strip().splitlines()
+                        failures.append({
+                            "id": row_id,
+                            "error": (message[0] if message else repr(exc)),
+                        })
+                        continue
+                    # Read rowcount BEFORE RELEASE SAVEPOINT: RELEASE is not a
+                    # DML statement, so executing it first resets rowcount to
+                    # -1 and every inserted row counts as minus one.
+                    affected = cur.rowcount
+                    cur.execute("RELEASE SAVEPOINT gsd_import_row")
+                    if affected > 0:
+                        inserted += affected
+                    else:
+                        skipped += 1  # ON CONFLICT DO NOTHING — already present
+            self._sync_serial_sequence(conn, table, conflict_column or "id")
+        return ImportResult(inserted, failed=len(failures),
+                            failures=failures, skipped=skipped)
+
     def import_audit(self, rows, mode="merge"):
         """Import audit log rows from backup.
 
-        Merge mode: INSERT ... ON CONFLICT (id) DO NOTHING — preserves existing history.
-        Replace mode: TRUNCATE + INSERT — mirrors behavior of all other import methods.
-        Note: replace mode is the only case where append-only semantics are relaxed;
-        the user explicitly requested a full restore, so existing records are dropped.
-
-        Args:
-            rows: List of row dicts from export_all_audit().
-            mode: 'merge' or 'replace'.
-
-        Returns:
-            Number of rows imported.
+        Merge mode: INSERT ... ON CONFLICT (id) DO NOTHING — preserves existing
+        history. Replace mode: TRUNCATE + INSERT. Replace is the only case where
+        append-only semantics are relaxed; the user explicitly asked for a full
+        restore, so existing records are dropped.
         """
-        if not rows:
-            return 0
-        with self._get_conn() as conn:
-            with conn.cursor() as cur:
-                if mode == "replace":
-                    cur.execute("TRUNCATE gsd_audit_log CASCADE")
-                count = 0
-                for row in rows:
-                    try:
-                        cur.execute("""
-                            INSERT INTO gsd_audit_log
-                                (id, task_id, event_type, agent_id, actor, phase, status,
-                                 gate_results, content, metadata, created_at)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s::jsonb, %s)
-                            ON CONFLICT (id) DO NOTHING
-                        """, (
-                            row.get("id"),
-                            row.get("task_id"),
-                            row.get("event_type"),
-                            row.get("agent_id"),
-                            row.get("actor"),
-                            row.get("phase"),
-                            row.get("status"),
-                            json.dumps(row.get("gate_results", {})) if isinstance(row.get("gate_results"), (list, dict)) else row.get("gate_results", "{}"),
-                            row.get("content"),
-                            json.dumps(row.get("metadata", {})) if isinstance(row.get("metadata"), (list, dict)) else row.get("metadata", "{}"),
-                            row.get("created_at"),
-                        ))
-                        count += cur.rowcount
-                    except Exception:
-                        pass
-                return count
+        return self._import_rows("gsd_audit_log", rows, mode, "id")
 
     def import_memory(self, rows, mode="merge"):
-        """Import memory rows from backup.
+        """Import memory rows from backup or a SQLite migration.
 
-        Args:
-            rows: List of row dicts.
-            mode: 'merge' (INSERT ... ON CONFLICT DO NOTHING) or
-                  'replace' (TRUNCATE + INSERT).
-
-        Returns:
-            Number of rows imported.
+        Carries EVERY column the destination table has and the row supplies —
+        including applied_count (migration 008) and valid_at / invalid_at
+        (migration 026), which the previous fixed 9-column INSERT dropped.
+        `embedding` is deliberately not carried: run
+        `gsd-memory backfill-embeddings` after the import.
         """
-        if not rows:
-            return 0
-        with self._get_conn() as conn:
-            with conn.cursor() as cur:
-                if mode == "replace":
-                    cur.execute("TRUNCATE gsd_memory CASCADE")
-                count = 0
-                for row in rows:
-                    try:
-                        cur.execute("""
-                            INSERT INTO gsd_memory (id, text, source, agent_id, tags, metadata, project_id, created_at, updated_at)
-                            VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s, %s)
-                            ON CONFLICT (id) DO NOTHING
-                        """, (
-                            row.get("id"),
-                            row.get("text", ""),
-                            row.get("source", "agent"),
-                            row.get("agent_id"),
-                            json.dumps(row.get("tags", [])) if isinstance(row.get("tags"), (list, dict)) else row.get("tags", "[]"),
-                            json.dumps(row.get("metadata", {})) if isinstance(row.get("metadata"), (list, dict)) else row.get("metadata", "{}"),
-                            row.get("project_id"),
-                            row.get("created_at"),
-                            row.get("updated_at"),
-                        ))
-                        count += cur.rowcount
-                    except Exception:
-                        pass  # Skip bad rows
-                return count
+        return self._import_rows("gsd_memory", rows, mode, "id")
+
+    def import_memory_archive(self, rows, mode="merge"):
+        """Import archived (soft-deleted) memory rows. See migration 028."""
+        self._ensure_archive_table()
+        return self._import_rows("gsd_memory_archive", rows, mode, "id")
 
     def import_tasks(self, rows, mode="merge"):
         """Import task rows from backup."""
-        if not rows:
-            return 0
-        with self._get_conn() as conn:
-            with conn.cursor() as cur:
-                if mode == "replace":
-                    cur.execute("TRUNCATE gsd_tasks CASCADE")
-                count = 0
-                for row in rows:
-                    try:
-                        cur.execute("""
-                            INSERT INTO gsd_tasks (
-                                id, project_id, type, title, description, details,
-                                status, priority, assigned_to, claimed_by, claimed_at,
-                                rpetd_r, rpetd_p, rpetd_e, rpetd_t, rpetd_d, rpetd_complete,
-                                importance, urgency,
-                                success_criteria, deliverables, dependencies,
-                                tags, notes, parent_id, validation_notes, validated_by,
-                                test_strategy, phase, plan, evidence, outcome, lesson,
-                                created_at, updated_at
-                            ) VALUES (
-                                %s, %s, %s, %s, %s, %s,
-                                %s, %s, %s, %s, %s,
-                                %s, %s, %s, %s, %s, %s,
-                                %s, %s,
-                                %s::jsonb, %s::jsonb, %s::jsonb,
-                                %s::jsonb, %s::jsonb, %s, %s, %s,
-                                %s, %s, %s, %s::jsonb, %s, %s,
-                                %s, %s
-                            )
-                            ON CONFLICT (id) DO NOTHING
-                        """, (
-                            row.get("id"), row.get("project_id", "default"),
-                            row.get("type", "task"), row.get("title", ""),
-                            row.get("description", ""), row.get("details", ""),
-                            row.get("status", "pending"), row.get("priority", "medium"),
-                            row.get("assigned_to", ""), row.get("claimed_by"),
-                            row.get("claimed_at"),
-                            row.get("rpetd_r", ""), row.get("rpetd_p", ""),
-                            row.get("rpetd_e", ""), row.get("rpetd_t", ""),
-                            row.get("rpetd_d", ""), row.get("rpetd_complete", False),
-                            row.get("importance", 3), row.get("urgency", 3),
-                            json.dumps(row.get("success_criteria", [])) if isinstance(row.get("success_criteria"), (list, dict)) else row.get("success_criteria", "[]"),
-                            json.dumps(row.get("deliverables", [])) if isinstance(row.get("deliverables"), (list, dict)) else row.get("deliverables", "[]"),
-                            json.dumps(row.get("dependencies", [])) if isinstance(row.get("dependencies"), (list, dict)) else row.get("dependencies", "[]"),
-                            json.dumps(row.get("tags", [])) if isinstance(row.get("tags"), (list, dict)) else row.get("tags", "[]"),
-                            json.dumps(row.get("notes", [])) if isinstance(row.get("notes"), (list, dict)) else row.get("notes", "[]"),
-                            row.get("parent_id"), row.get("validation_notes", ""),
-                            row.get("validated_by", ""),
-                            row.get("test_strategy", ""), row.get("phase", ""),
-                            row.get("plan", ""),
-                            json.dumps(row.get("evidence", {})) if isinstance(row.get("evidence"), (list, dict)) else row.get("evidence", "{}"),
-                            row.get("outcome", ""), row.get("lesson", ""),
-                            row.get("created_at"), row.get("updated_at"),
-                        ))
-                        count += cur.rowcount
-                    except Exception:
-                        pass
-                return count
+        return self._import_rows("gsd_tasks", rows, mode, "id")
 
     def import_skb(self, rows, mode="merge"):
         """Import SKB rows from backup."""
-        if not rows:
-            return 0
-        with self._get_conn() as conn:
-            with conn.cursor() as cur:
-                if mode == "replace":
-                    cur.execute("TRUNCATE gsd_shared_kb CASCADE")
-                count = 0
-                for row in rows:
-                    try:
-                        cur.execute("""
-                            INSERT INTO gsd_shared_kb (id, title, content, category, agent_id, tags, importance, source_task, created_at, updated_at)
-                            VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s)
-                            ON CONFLICT (id) DO NOTHING
-                        """, (
-                            row.get("id"), row.get("title", ""),
-                            row.get("content", ""), row.get("category"),
-                            row.get("agent_id"),
-                            json.dumps(row.get("tags", [])) if isinstance(row.get("tags"), (list, dict)) else row.get("tags", "[]"),
-                            row.get("importance", 5), row.get("source_task"),
-                            row.get("created_at"), row.get("updated_at"),
-                        ))
-                        count += cur.rowcount
-                    except Exception:
-                        pass
-                return count
+        return self._import_rows("gsd_shared_kb", rows, mode, "id")
 
     def import_validations(self, rows, mode="merge"):
-        """Import validation rows from backup."""
-        if not rows:
-            return 0
-        with self._get_conn() as conn:
-            with conn.cursor() as cur:
-                if mode == "replace":
-                    cur.execute("TRUNCATE gsd_task_validations CASCADE")
-                count = 0
-                for row in rows:
-                    try:
-                        cur.execute("""
-                            INSERT INTO gsd_task_validations (task_id, validator_id, status, evidence, rejection_reason, created_at)
-                            VALUES (%s, %s, %s, %s::jsonb, %s, %s)
-                        """, (
-                            row.get("task_id"), row.get("validator_id"),
-                            row.get("status"),
-                            json.dumps(row.get("evidence", {})) if isinstance(row.get("evidence"), (list, dict)) else row.get("evidence", "{}"),
-                            row.get("rejection_reason"),
-                            row.get("created_at"),
-                        ))
-                        count += cur.rowcount
-                    except Exception:
-                        pass
-                return count
+        """Import validation rows from backup.
+
+        The id IS carried now. Without it every restore appended a fresh copy
+        of all 254 validation rows, because the old INSERT had neither an id
+        nor an ON CONFLICT clause.
+        """
+        return self._import_rows("gsd_task_validations", rows, mode, "id")
 
     def import_agent_performance(self, rows, mode="merge"):
         """Import agent performance rows from backup."""
-        if not rows:
-            return 0
-        try:
-            with self._get_conn() as conn:
-                with conn.cursor() as cur:
-                    if mode == "replace":
-                        cur.execute("TRUNCATE gsd_agent_performance CASCADE")
-                    count = 0
-                    for row in rows:
-                        try:
-                            cur.execute("""
-                                INSERT INTO gsd_agent_performance
-                                    (agent_id, task_id, task_type, project_id, outcome,
-                                     gate_failed, failure_reason, duration_minutes, learning_captured, created_at)
-                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                            """, (
-                                row.get("agent_id"), row.get("task_id"),
-                                row.get("task_type", "task"), row.get("project_id", "default"),
-                                row.get("outcome", "pass"),
-                                row.get("gate_failed"), row.get("failure_reason"),
-                                row.get("duration_minutes"), row.get("learning_captured"),
-                                row.get("created_at"),
-                            ))
-                            count += cur.rowcount
-                        except Exception:
-                            pass
-                    return count
-        except Exception:
-            return 0
+        return self._import_rows("gsd_agent_performance", rows, mode, "id")
 
     # ═══════════════════════════════════════════════════════
     # Semantic Cache Operations (Phase 24 / SEMANTIC-01..03)

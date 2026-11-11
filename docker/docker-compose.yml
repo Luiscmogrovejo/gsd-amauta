@@ -1,3 +1,29 @@
+# GSD-Amauta local stack.
+#
+#   docker compose -f docker/docker-compose.yml up -d
+#       -> Postgres ONLY. This is the supported default: the daemon needs
+#          Postgres; Valkey and the MCP container are optional extras.
+#   docker compose -f docker/docker-compose.yml --profile cache up -d
+#       -> + Valkey. Skip this if you already run Redis/Valkey on
+#          ${GSD_REDIS_PORT} (Homebrew redis-server, for example) — the
+#          daemon reuses whatever is listening there.
+#   docker compose -f docker/docker-compose.yml --profile mcp up -d
+#       -> + the MCP SSE container.
+#   docker compose -f docker/docker-compose.yml --profile full up -d
+#       -> everything.
+#
+# Every published host port is overridable so the stack can coexist with
+# whatever else is on this machine. Copy docker/.env.example to docker/.env
+# (compose reads it automatically) or export the vars:
+#
+#   GSD_PG_PORT     host port for Postgres   (default 5433)
+#   GSD_REDIS_PORT  host port for Valkey     (default 6379)
+#   GSD_MCP_PORT    host port for MCP SSE    (default 18800)
+#   POSTGRES_USER / POSTGRES_PASSWORD        (default gsd / gsd)
+#
+# services/pg_dsn.py reads the SAME GSD_PG_PORT / POSTGRES_USER /
+# POSTGRES_PASSWORD, so moving a port here moves every client with it.
+
 services:
   postgres:
     # paradedb/paradedb:latest-pg16 ships pgvector >= 0.8.0 + pg_search (BM25) — INFRA-02, INFRA-03
@@ -5,23 +31,32 @@ services:
     image: paradedb/paradedb:latest-pg16@sha256:21518b4005ad4111bdd41a6687ef37ca2abc363d7af30e700900ad6b8cb33e1e
     container_name: gsd-postgres
     restart: unless-stopped
-    # INFRA-03: pg_search requires shared_preload_libraries — set via postgres command args
-    command: postgres -c shared_preload_libraries=pg_search
+    # NO `command:` override. The image already starts with
+    #   shared_preload_libraries = pg_search,pg_cron,pg_stat_statements
+    # (verified: SHOW shared_preload_libraries in a stock container).
+    # The previous `postgres -c shared_preload_libraries=pg_search` REPLACED
+    # that list and dropped pg_cron, so the image's own init script
+    # (/docker-entrypoint-initdb.d/10_bootstrap_paradedb.sh, which runs
+    # `CREATE EXTENSION IF NOT EXISTS pg_cron`) failed with
+    #   ERROR: pg_cron can only be loaded via shared_preload_libraries
+    # and `set -Eeuo pipefail` aborted the entrypoint — a FRESH volume could
+    # never finish initialising. Reproduced, then fixed by deleting the line.
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-gsd}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gsd}
-      POSTGRES_DB: gsd_amauta
+      POSTGRES_DB: ${GSD_PG_DB:-gsd_amauta}
     ports:
-      - "127.0.0.1:5433:5432"
+      - "127.0.0.1:${GSD_PG_PORT:-5433}:5432"
     volumes:
       - gsd-pg-data:/var/lib/postgresql/data
-      - ../migrations/001-init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
-      - ../migrations/002-embedding-index.sql:/docker-entrypoint-initdb.d/002-embedding-index.sql:ro
-      - ../migrations/003-embedding-1024.sql:/docker-entrypoint-initdb.d/003-embedding-1024.sql:ro
-      - ../migrations/004-fulltext-indexes.sql:/docker-entrypoint-initdb.d/004-fulltext-indexes.sql:ro
-      - ../migrations/005-agent-performance.sql:/docker-entrypoint-initdb.d/005-agent-performance.sql:ro
+      # Migrations are NOT mounted into /docker-entrypoint-initdb.d any more.
+      # Only 001-005 were ever mounted, they ran exactly once (first volume
+      # creation) and the remaining 24 depended on a separate, untracked psql
+      # loop in bin/init.cjs. There is now ONE path for all of them:
+      #   python3 services/migrate_runner.py
+      # which tracks what it applied in schema_migrations and is re-runnable.
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U gsd -d gsd_amauta"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-gsd} -d $${POSTGRES_DB:-gsd_amauta}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -29,12 +64,16 @@ services:
 
   redis:
     # Valkey 8.x — BSD 3-Clause license (drop-in Redis 7 replacement, INFRA-01)
-    image: valkey/valkey:8-alpine
+    # Digest resolved for valkey/valkey:8-alpine on 2026-11-11.
+    image: valkey/valkey:8-alpine@sha256:2602ace2be6569bc2bbb06f873776516ab9089821525be34f4305c67eb9db02a
     container_name: gsd-redis
     restart: unless-stopped
+    # Optional: only started with --profile cache (or full). An existing
+    # Redis/Valkey on ${GSD_REDIS_PORT} is reused by services/infra_detect.py.
+    profiles: ["cache", "full"]
     command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --save ""
     ports:
-      - "127.0.0.1:6379:6379"
+      - "127.0.0.1:${GSD_REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "valkey-cli", "ping"]
       interval: 10s
@@ -44,19 +83,28 @@ services:
 
   amauta-mcp:
     # Phase 29 MCP-01: MCP server — stdio (Claude Code) + SSE (port 18800)
-    image: python:3.12-slim
+    # Base image pinned by digest (python:3.12-slim, resolved 2026-11-11) and
+    # the pip install pinned to an exact version. It was `pip install 'mcp>=1.0'`
+    # on every container start, which resolves to whatever is newest on PyPI at
+    # restart time — mcp 2.3.0 is already published, so an unattended restart
+    # could pull a new major into a container written against 1.x. Pinned to the
+    # last 1.x release. Building from docker/Dockerfile.services instead would
+    # drag in all of requirements.txt (sentence-transformers -> torch, GBs) for
+    # a container that needs one package, so pinning is the smaller safe change.
+    image: python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
     container_name: gsd-mcp
     restart: unless-stopped
+    profiles: ["mcp", "full"]
     working_dir: /app
     command: >
-      sh -c "pip install 'mcp>=1.0' --quiet &&
+      sh -c "pip install 'mcp==1.30.0' --quiet &&
              python3 services/amauta-mcp.py --sse"
     environment:
       AMAUTA_DAEMON_URL: "http://host.docker.internal:18799"
       AMAUTA_RLM_URL: "http://host.docker.internal:18798"
       AMAUTA_MCP_PORT: "18800"
     ports:
-      - "127.0.0.1:18800:18800"
+      - "127.0.0.1:${GSD_MCP_PORT:-18800}:18800"
     volumes:
       - ..:/app:ro
     healthcheck:
@@ -71,4 +119,4 @@ services:
 
 volumes:
   gsd-pg-data:
-    name: gsd-pg-data
+    name: ${GSD_PG_VOLUME:-gsd-pg-data}
