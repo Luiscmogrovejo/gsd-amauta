@@ -3911,7 +3911,7 @@ Examples:
 
       // Engine run (pure detect + optional POST). runAudit resolves --scope files
       // for per-file detects; repo-scope detects (agentic-flow) inspect the tree.
-      const { findings, posted } = await auditRunner.runAudit(auditDomain, {
+      const { findings, posted, post_errors: postErrors } = await auditRunner.runAudit(auditDomain, {
         scope, post: !dryRun, port: avPort,
       });
 
@@ -3923,10 +3923,16 @@ Examples:
       }
 
       // Report the SUBS-04 sweep: GET /api/findings?status=open&type=audit (domain-filtered).
+      //
+      // TRUTH CONTRACT: a 500 from the findings endpoint used to be parsed into
+      // `open_findings: []` and reported at exit 0, so "N detected, 0 posted,
+      // 0 open" read as a clean audit. The sweep now carries its HTTP status,
+      // and the verb exits non-zero whenever the substrate errored or fewer
+      // findings were posted than detected.
       const _http = require('http');
       const sweepQs = ['status=open', 'type=audit'];
       if (auditDomain) sweepQs.push(`domain=${encodeURIComponent(auditDomain)}`);
-      const openFindings = await new Promise((resolve) => {
+      const sweep = await new Promise((resolve) => {
         const req = _http.request({
           hostname: '127.0.0.1', port: avPort,
           path: `/api/findings?${sweepQs.join('&')}`, method: 'GET',
@@ -3934,24 +3940,60 @@ Examples:
           let data = '';
           res.on('data', (c) => { data += c; });
           res.on('end', () => {
-            try { const p = JSON.parse(data); resolve(Array.isArray(p) ? p : (p.findings || [])); }
-            catch { resolve(null); }
+            let parsed = null;
+            try { parsed = JSON.parse(data); } catch { /* non-JSON body */ }
+            const ok = res.statusCode >= 200 && res.statusCode < 300;
+            const list = Array.isArray(parsed) ? parsed : (parsed && parsed.findings) || null;
+            resolve({
+              reachable: true,
+              ok,
+              status: res.statusCode,
+              findings: ok ? (list || []) : null,
+              error: ok ? null : (
+                (parsed && parsed.error) ? String(parsed.error).slice(0, 300) : data.slice(0, 300)
+              ),
+            });
           });
         });
-        req.on('error', () => resolve(null));
+        req.on('error', (e) => resolve({
+          reachable: false, ok: false, status: null, findings: null, error: e.message,
+        }));
         req.end();
       });
 
-      if (openFindings === null) {
-        // Substrate down — report the detection, note the daemon was unreachable.
-        process.stdout.write(JSON.stringify({
-          domain: auditDomain || 'all', detected: findings.length, posted: 0, daemon: false,
-        }) + '\n');
-        process.exit(0);
+      const notPosted = findings.length - posted;
+      const report = {
+        domain: auditDomain || 'all',
+        detected: findings.length,
+        posted,
+        not_posted: notPosted,
+        post_errors: postErrors || [],
+        daemon: sweep.reachable,
+        findings_endpoint: { ok: sweep.ok, status: sweep.status, error: sweep.error },
+        open_findings: sweep.findings,
+      };
+      process.stdout.write(JSON.stringify(report) + '\n');
+
+      if (!sweep.reachable) {
+        process.stderr.write(
+          `[audit] substrate unreachable at 127.0.0.1:${avPort} (${sweep.error}) — ` +
+          `${findings.length} finding(s) detected, ${posted} filed. NOTHING was recorded.\n`);
+        process.exit(1);
       }
-      process.stdout.write(JSON.stringify({
-        domain: auditDomain || 'all', detected: findings.length, posted, open_findings: openFindings,
-      }) + '\n');
+      if (!sweep.ok) {
+        process.stderr.write(
+          `[audit] findings endpoint returned HTTP ${sweep.status}: ${sweep.error} — ` +
+          `the open-findings sweep is UNKNOWN, not empty.\n`);
+        process.exit(1);
+      }
+      if (notPosted > 0) {
+        const first = (postErrors || [])[0];
+        process.stderr.write(
+          `[audit] ${notPosted} of ${findings.length} detected finding(s) were NOT posted` +
+          (first ? ` (first failure: ${first.rule_id || 'unknown rule'} → ` +
+            `${first.daemon ? `HTTP ${first.status}` : 'daemon unreachable'})` : '') + '\n');
+        process.exit(1);
+      }
       process.exit(0);
     }
 
@@ -4287,14 +4329,22 @@ Examples:
 
     case 'reindex': {
       // Phase 27 RLM-02: trigger explicit full re-index of code files via rlm-service /reindex endpoint
-      const targetDir = args[1] || '.';
+      //
+      // Two truth fixes:
+      //   - the path was sent verbatim and defaulted to '.', which the service
+      //     resolved against ITS OWN cwd — so `reindex` from a project dir
+      //     could silently index a different tree. It is absolute now.
+      //   - the HTTP status was never checked, so a 503 printed the error body
+      //     and exited 0. Non-2xx now exits 1.
+      const targetDir = path.resolve(cwd, args[1] && !args[1].startsWith('--') ? args[1] : '.');
       const forceFlag = args.includes('--force');
       const body = JSON.stringify({ path: targetDir, force: forceFlag });
       const http = require('http');
-      await new Promise((resolve, reject) => {
+      const rlmPort = parseInt(process.env.GSD_RLM_PORT || '18798');
+      const outcome = await new Promise((resolve) => {
         const req = http.request({
           hostname: '127.0.0.1',
-          port: parseInt(process.env.GSD_RLM_PORT || '18798'),
+          port: rlmPort,
           path: '/reindex',
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
@@ -4302,15 +4352,30 @@ Examples:
           let data = '';
           res.on('data', (chunk) => { data += chunk; });
           res.on('end', () => {
-            try { process.stdout.write(JSON.stringify(JSON.parse(data), null, 2) + '\n'); }
-            catch { process.stdout.write(data + '\n'); }
-            resolve();
+            let parsed = null;
+            try { parsed = JSON.parse(data); } catch { /* non-JSON body */ }
+            resolve({
+              reachable: true,
+              ok: res.statusCode >= 200 && res.statusCode < 300,
+              status: res.statusCode,
+              text: parsed ? JSON.stringify(parsed, null, 2) : data,
+            });
           });
         });
-        req.on('error', (e) => { reject(new Error(`reindex failed: ${e.message}`)); });
+        req.on('error', (e) => resolve({ reachable: false, ok: false, status: null, text: e.message }));
         req.write(body);
         req.end();
       });
+
+      if (!outcome.reachable) {
+        process.stderr.write(`reindex failed: rlm-service unreachable at 127.0.0.1:${rlmPort} (${outcome.text})\n`);
+        process.exit(1);
+      }
+      process.stdout.write(outcome.text + '\n');
+      if (!outcome.ok) {
+        process.stderr.write(`reindex failed: HTTP ${outcome.status} from rlm-service — ${targetDir} was NOT indexed\n`);
+        process.exit(1);
+      }
       break;
     }
 
@@ -5210,7 +5275,9 @@ Options:
           else if (tailArgs[i] === '--since' && tailArgs[i + 1]) { sinceTs = tailArgs[++i]; }
         }
 
-        const daemonPort = process.env.AMAUTA_PORT || 8899;
+        // 18799 is the daemon port everywhere else in this CLI; the old 8899
+        // default meant a bare `a2a tail` always polled a port nothing listens on.
+        const daemonPort = process.env.AMAUTA_PORT || 18799;
         const http = require('http');
 
         // Initial since = provided value or ISO now-24h
@@ -5228,29 +5295,55 @@ Options:
           return `/a2a/exchanges?${q}`;
         }
 
+        // A 5xx used to look exactly like "no exchanges": the body failed to
+        // parse (or carried no `exchanges`), the loop logged nothing useful and
+        // polled forever. A server error and an unparseable body now stop the
+        // tail with a non-zero exit; only a transport-level failure retries,
+        // and only for a bounded number of attempts.
+        const MAX_TRANSPORT_RETRIES = 10;
+        let transportRetries = 0;
+
         function poll() {
           const urlPath = buildUrl(sinceTs);
           const req = http.get({ host: '127.0.0.1', port: daemonPort, path: urlPath }, (res) => {
             let body = '';
             res.on('data', (chunk) => { body += chunk; });
             res.on('end', () => {
+              if (res.statusCode < 200 || res.statusCode >= 300) {
+                process.stderr.write(
+                  `a2a tail: daemon returned HTTP ${res.statusCode} for ${urlPath} — ` +
+                  `stopping (this is an error, NOT "no exchanges"). Body: ${body.slice(0, 300)}\n`);
+                process.exit(1);
+              }
+              let data;
               try {
-                const data = JSON.parse(body);
-                const exchanges = data.exchanges || [];
-                for (const ex of exchanges) {
-                  process.stdout.write(JSON.stringify(ex) + '\n');
-                }
-                if (data.next_cursor) {
-                  sinceTs = data.next_cursor;
-                }
+                data = JSON.parse(body);
               } catch (e) {
-                process.stderr.write(`parse error: ${e.message}\n`);
+                process.stderr.write(
+                  `a2a tail: unparseable response from the daemon (${e.message}) — stopping. ` +
+                  `Body: ${body.slice(0, 300)}\n`);
+                process.exit(1);
+              }
+              transportRetries = 0;
+              const exchanges = data.exchanges || [];
+              for (const ex of exchanges) {
+                process.stdout.write(JSON.stringify(ex) + '\n');
+              }
+              if (data.next_cursor) {
+                sinceTs = data.next_cursor;
               }
               setTimeout(poll, 500);
             });
           });
           req.on('error', (e) => {
-            process.stderr.write(`daemon unreachable: ${e.message}\n`);
+            transportRetries += 1;
+            if (transportRetries > MAX_TRANSPORT_RETRIES) {
+              process.stderr.write(
+                `a2a tail: daemon unreachable at 127.0.0.1:${daemonPort} after ` +
+                `${MAX_TRANSPORT_RETRIES} retries (${e.message}) — stopping.\n`);
+              process.exit(1);
+            }
+            process.stderr.write(`daemon unreachable: ${e.message} (retry ${transportRetries}/${MAX_TRANSPORT_RETRIES})\n`);
             setTimeout(poll, 500);
           });
           req.end();

@@ -2425,19 +2425,44 @@ function claudeSummarize(entries, model) {
     }
   }
 
-  // Fall back to Anthropic HTTP API if key is available
+  // Fall back to Anthropic HTTP API if key is available.
+  //
+  // SECRET HYGIENE: the key used to be interpolated into a shell command line,
+  // so `ps` / process accounting on a shared or logged machine saw the whole
+  // API key. curl reads the key (and the request body) from a 0600 config file
+  // in a private temp dir instead — nothing secret ever reaches argv — and the
+  // file is removed in a finally block.
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (apiKey) {
+    const osmod = require('os');
+    const { execFileSync } = require('child_process');
+    let tmpDir = null;
     try {
       const modelId = resolveModelId(model);
       const body = JSON.stringify({
         model: modelId, max_tokens: 500,
         messages: [{ role: 'user', content: prompt }],
       });
-      const curlCmd = `curl -s --max-time 30 -X POST https://api.anthropic.com/v1/messages ` +
-        `-H "x-api-key: ${apiKey}" -H "anthropic-version: 2023-06-01" -H "content-type: application/json" ` +
-        `-d ${JSON.stringify(body)}`;
-      const apiResult = execSync(curlCmd, { timeout: 35000, encoding: 'utf8' });
+      tmpDir = fs.mkdtempSync(path.join(osmod.tmpdir(), 'gsd-distill-'));
+      fs.chmodSync(tmpDir, 0o700);
+      const bodyPath = path.join(tmpDir, 'body.json');
+      const cfgPath = path.join(tmpDir, 'curl.cfg');
+      fs.writeFileSync(bodyPath, body, { mode: 0o600 });
+      fs.writeFileSync(cfgPath, [
+        'silent',
+        'max-time = 30',
+        'request = "POST"',
+        'url = "https://api.anthropic.com/v1/messages"',
+        `header = "x-api-key: ${apiKey}"`,
+        'header = "anthropic-version: 2023-06-01"',
+        'header = "content-type: application/json"',
+        `data = "@${bodyPath}"`,
+        '',
+      ].join('\n'), { mode: 0o600 });
+
+      const apiResult = execFileSync('curl', ['--config', cfgPath], {
+        timeout: 35000, encoding: 'utf8',
+      });
       const parsed = JSON.parse(apiResult);
       if (parsed.content && parsed.content[0] && parsed.content[0].text) {
         const summary = parsed.content[0].text.trim();
@@ -2445,6 +2470,10 @@ function claudeSummarize(entries, model) {
       }
     } catch (apiErr) {
       process.stderr.write(`[distill] Claude API (${model}) fallback failed: ${apiErr.message.split('\n')[0]}\n`);
+    } finally {
+      if (tmpDir) {
+        try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_e) { /* best effort */ }
+      }
     }
   }
 

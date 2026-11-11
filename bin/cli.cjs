@@ -36,7 +36,8 @@ Usage: gsd-amauta <command> [options]
 
 Setup
   init [--upgrade|--uninstall]   Interactive setup: IDE detection, migrations, daemon
-  doctor                         Diagnose the install (paths, daemon, Postgres, Valkey, keys)
+  doctor [--json] [--strict]     Diagnose the install (PATH, drift, backend, daemon, keys)
+                                 Exit 0 healthy / 1 degraded / 2 failing
   mcp register | status          Register / check the MCP server with Claude Code
 
 Work
@@ -45,7 +46,9 @@ Work
   board | list | next | show     Task board and queue
   add | claim | rpetd | validate Task lifecycle (validator is never the author)
   agents ...                     Agent registry commands
-  module ... | party ...         Module and multi-agent session commands
+  module ...                     Module marketplace commands
+  party ... | a2a ...            Multi-agent sessions / agent-to-agent protocol
+                                 (both EXPERIMENTAL — see README)
 
 Docs: https://github.com/Luiscmogrovejo/gsd-amauta#readme`;
 
@@ -171,12 +174,38 @@ if (command === 'agents') {
   process.exit(result.status === null ? 1 : result.status);
 }
 
+// ─── A2A subcommand (EXPERIMENTAL) ─────────────────────────────────────────
+//
+// gsd-amauta a2a tail [--from <agent>] [--to <agent>] [--since <ISO>]
+// gsd-amauta a2a list | capabilities <agent>
+//
+// The README documented `gsd-amauta a2a tail` while only `gsd-tools a2a tail`
+// existed, so the documented command errored out. Same spawnSync passthrough
+// as module/party/agents above.
+//
+// A2A itself is EXPERIMENTAL: no production code path sends A2A messages and
+// the client's circuit breaker is never armed (no Redis client is injected).
+
+if (command === 'a2a') {
+  const toolsPath = path.resolve(__dirname, '..', 'get-shit-done', 'bin', 'gsd-tools.cjs');
+  const a2aArgs = process.argv.slice(3);
+  const result = spawnSync('node', [toolsPath, 'a2a', ...a2aArgs], {
+    stdio: 'inherit',
+    cwd: path.resolve(__dirname, '..'),
+  });
+  process.exit(result.status === null ? 1 : result.status);
+}
+
 // ─── Doctor subcommand (Phase 54 STAB-06) ──────────────────────────────────
 //
-// gsd-amauta doctor
+// gsd-amauta doctor [--json] [--strict] [--config-dir <path>]
 //
-// Diagnoses install state: paths, daemon, PG, Valkey, API keys,
-// migrations, agents, skills. Exits 0 always.
+// Diagnoses install state: paths, PATH collisions, install drift vs the
+// install manifest, version skew, daemon, backend (SQLite fallback + the
+// features it turns off), PG, Valkey, RLM index, embedding coverage, API
+// keys, migrations, agents, skills, mobile toolchain.
+// Exit codes: 0 healthy, 1 degraded (warnings), 2 failures. --strict makes
+// warnings exit 2. All flags are forwarded to services/doctor.py.
 
 if (command === 'doctor') {
   const doctorPath = path.resolve(__dirname, '../services/doctor.py');
