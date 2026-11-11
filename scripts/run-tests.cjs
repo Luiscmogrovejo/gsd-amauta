@@ -17,6 +17,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const canary = require('../tests/support/live-store-canary.cjs');
 
 /** Variables that would point a test at a live database or cache. */
 const DELETED_KEYS = [
@@ -153,11 +154,36 @@ function main() {
       ' guard=on files=' + files.length + (explicit ? ' (explicit)' : '')
   );
 
+  // Independent file-level alarm: the socket guard cannot see a write that goes
+  // through a subprocess, so compare the live store before and after the run.
+  const watch = process.env.GSD_SKIP_LIVE_STORE_CANARY !== '1';
+  let before = null;
+  if (watch) {
+    try {
+      before = canary.snapshot();
+    } catch (err) {
+      console.error('run-tests: live-store canary could not snapshot: ' + err.message);
+    }
+  }
+
   let status = 0;
   try {
     execFileSync(process.execPath, ['--test', ...files], { stdio: 'inherit', env });
   } catch (err) {
     status = err.status || 1;
+  } finally {
+    if (before) {
+      let findings = [];
+      try {
+        findings = canary.diff(before, canary.snapshot());
+      } catch (err) {
+        console.error('run-tests: live-store canary could not compare: ' + err.message);
+      }
+      if (findings.length > 0) {
+        console.error(canary.format(findings));
+        status = 4; // fails even when the tests themselves passed
+      }
+    }
   }
   try {
     fs.rmSync(path.dirname(env.AMAUTA_DATA_DIR), { recursive: true, force: true });
