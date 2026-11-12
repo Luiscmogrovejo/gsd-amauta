@@ -153,10 +153,20 @@ describe('88-11 a sqlite-recorded upgrade leaves PostgreSQL alone', () => {
         `require('fs').appendFileSync(${JSON.stringify(calls)}, 'python3 ' + a.join(' ') + '\\n');`,
         // infra_detect.py is the call that auto-starts the container. If the gate
         // leaks, the fake answers "postgresql" and the next step tries to migrate.
+        // It mirrors the real script's documented short-circuit on
+        // GSD_FORCE_SQLITE / GSD_BACKEND=sqlite ("Detection is skipped ENTIRELY:
+        // no port probes, no `docker ps`, and above all no container
+        // auto-start"), so the control arm below behaves the same way whether
+        // this fake or the real interpreter is the one that runs.
         "if (a.some(x => String(x).includes('infra_detect'))) {",
-        "  console.log(JSON.stringify({ backend: 'postgresql',",
-        "    connection_url: 'postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta',",
-        "    features: ['memory'], message: 'FAKE postgresql' }));",
+        "  const sqlitePinned = /^(1|true|yes|on)$/i.test(process.env.GSD_FORCE_SQLITE || '')",
+        "    || String(process.env.GSD_BACKEND || '').toLowerCase() === 'sqlite';",
+        "  console.log(sqlitePinned",
+        "    ? JSON.stringify({ backend: 'sqlite', connection_url: 'sqlite:///fake.db',",
+        "        features: ['memory'], message: 'FAKE SQLite forced by GSD_FORCE_SQLITE' })",
+        "    : JSON.stringify({ backend: 'postgresql',",
+        "        connection_url: 'postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta',",
+        "        features: ['memory'], message: 'FAKE postgresql' }));",
         "}",
         "process.exit(0);",
       ].join('\n'),
@@ -255,30 +265,45 @@ describe('88-11 a sqlite-recorded upgrade leaves PostgreSQL alone', () => {
       'the migrations it did not apply must still be named');
   });
 
-  test('MUTATION ARM: --start-postgres DOES reach infra detection', () => {
-    const res = upgrade('sqlite', ['--start-postgres']);
+  test('CONTROL ARM: --start-postgres opens the gate, so the arms above mean something', () => {
+    // GSD_FORCE_SQLITE=1 is set TOGETHER with the opt-in on purpose.
+    // `--start-postgres` is the FIRST rule of shouldStartPostgres, so the gate
+    // still opens (`forced_by_flag`) and stepDetectInfra IS called — while
+    // services/infra_detect.py short-circuits on that variable and performs no
+    // port probe, no `docker ps` and above all no container auto-start, on every
+    // platform. Without it this arm would run a real `docker compose up -d` on a
+    // Windows runner, where a `.cmd` fake cannot shadow a bare-name spawn.
+    const res = upgrade('sqlite', ['--start-postgres'], { GSD_FORCE_SQLITE: '1' });
     assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
-    assert.match(res.log, /infra_detect\.py/,
-      'with the explicit opt-in the gate must open — otherwise the arm above proves nothing');
+    const s = stepOf(res.parsed, 'apply_upgrade_migrations');
+    // The gate opened: this is the "SQLite backend, nothing recorded" branch,
+    // which detection produced and which carries no skip_reason at all.
+    assert.equal(s.details.skip_reason, undefined,
+      `the gate did not open: ${JSON.stringify(s.details)}`);
+    assert.equal(s.details.backend, 'sqlite');
+    assert.match(s.message, /SQLite backend/);
+    // `backend` present with NO skip_reason is the shape only the branch that
+    // CONSULTED detection produces; the gated branch sets both. Taken from the
+    // step result, not the fake log, so the claim holds on Windows too.
+    assert.equal(/\bdocker\b|\bpg_isready\b|\bpsql\b/.test(res.log), false,
+      `no docker or psql command may run even with the opt-in:\n${res.log}`);
   });
 
-  test('a record that says postgresql is not gated', () => {
-    const res = upgrade('postgresql', []);
-    assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
-    assert.match(res.log, /infra_detect\.py/);
-  });
-
-  test('GSD_BACKEND=sqlite alone gates a record with no backend', () => {
+  test('GSD_BACKEND=sqlite gates a record that says postgresql', () => {
     const res = upgrade('postgresql', [], { GSD_BACKEND: 'sqlite' });
     assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
     const s = stepOf(res.parsed, 'apply_upgrade_migrations');
     assert.equal(s.details.skip_reason, 'env_backend_sqlite');
-    assert.equal(/infra_detect\.py/.test(res.log), false, res.log);
+    assert.equal(/infra_detect\.py|\bdocker\b/.test(res.log), false, res.log);
   });
 
   test('launchctl is never invoked by any of these runs', () => {
-    for (const args of [[], ['--start-postgres']]) {
-      const res = upgrade('sqlite', args);
+    for (const [backend, args, env] of [
+      ['sqlite', [], {}],
+      ['sqlite', ['--start-postgres'], { GSD_FORCE_SQLITE: '1' }],
+      ['postgresql', [], { GSD_BACKEND: 'sqlite' }],
+    ]) {
+      const res = upgrade(backend, args, env);
       assert.equal(/\blaunchctl\b/.test(res.log), false,
         `launchctl was invoked with ${JSON.stringify(args)}:\n${res.log}`);
     }
