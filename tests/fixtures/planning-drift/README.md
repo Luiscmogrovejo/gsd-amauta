@@ -1,6 +1,6 @@
 # planning-drift fixtures
 
-Five minimal `.planning`-shaped trees. `.planning/` is gitignored in this repository,
+Seven minimal `.planning`-shaped trees. `.planning/` is gitignored in this repository,
 so CI can only test `gsd-tools planning-drift` against these committed trees.
 They are generated once and committed as plain files; edit them by hand if a check changes.
 
@@ -44,6 +44,37 @@ Do not restate these lists anywhere else.
   Phase 92 writes `**Goal**:` with the colon outside the bold. Phase 93 is the control with
   every field in the exact shape the parser needs and must not be reported. All three have a
   directory and an `In progress` row, so only the two parse findings can appear.
+
+### tree: `skip-ledger-agrees`
+- expected-ids: (none)
+- expected-exit: 0
+- The `agree` tree with phase 94.1 renamed to **13** (the new findings need an INTEGER
+  owning phase, and the decimal coverage stays in `agree`), plus a `Carried Test
+  Obligations` ledger with the four-column `Class id` form and its own
+  `tests/skip-exceptions.json`. Two entries of class `fixture-pending` name
+  `owner_phase: 13`; the ledger row for that class names Phase 13; phase 13 is
+  `Not started`. A ledger row whose `Class id` is `—` deliberately has no entry and
+  must stay silent — the real ROADMAP's Voyage row is exactly that case.
+
+### tree: `skip-ledger-disagrees`
+- expected-ids: DRIFT_SKIP_OWNER_PHASE_COMPLETE, DRIFT_SKIP_LEDGER_MISMATCH
+- expected-exit: 1
+- The same tree with one case of each direction, four findings in total: an entry whose
+  `owner_phase` is **11**, which the progress table marks `Complete`
+  (`DRIFT_SKIP_OWNER_PHASE_COMPLETE`) and which therefore also disagrees with its ledger
+  row (`DIFFERING PHASE`); an entry of class `fixture-orphan` with no ledger row
+  (`ENTRY WITH NO LEDGER ROW`); and a ledger row `fixture-ghost` with no entry
+  (`LEDGER ROW WITH NO ENTRY`). The `—` row must still be silent.
+
+## Rule: the exceptions file these two trees read
+
+`planningDrift(root)` resolves it with ONE expression: `tests/skip-exceptions.json`
+under the directory that CONTAINS the planning records — the parent of a root named
+`.planning` (the operator's real repository) and the root itself for a fixture tree,
+which is a self-contained, repository-shaped directory carrying its own `tests/`.
+**An absent file produces no finding at all**: the five trees above have none, and a
+"missing file" finding would turn all thirteen pre-existing findings into noise in every
+repository that runs the verb.
 
 ## Rule: the loose heading scan
 

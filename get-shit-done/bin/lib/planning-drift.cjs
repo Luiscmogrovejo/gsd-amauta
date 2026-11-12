@@ -21,6 +21,10 @@
  *   DRIFT_EXCEPTION_MALFORMED         an exceptions entry missing a field
  *   DRIFT_EXCEPTION_STALE             an exception whose finding no longer fires
  *   DRIFT_EXCEPTION_UNMATCHED         an exception naming nothing on disk
+ *   DRIFT_SKIP_OWNER_PHASE_COMPLETE   a skip-exceptions entry owned by a phase the
+ *                                     ROADMAP already marks complete
+ *   DRIFT_SKIP_LEDGER_MISMATCH        tests/skip-exceptions.json and the ROADMAP's
+ *                                     Carried Test Obligations ledger disagree
  */
 
 'use strict';
@@ -384,6 +388,9 @@ function planningDrift(rootDir, opts = {}) {
   // ── Check 4: requirement totals ───────────────────────────────────────────
   checkRequirementTotals(root, raw);
 
+  // ── Check 7 (plan 88-19): the skip ledger ─────────────────────────────────
+  checkSkipLedger(root, raw, roadmapText, progressRows, checkboxes);
+
   // ── Check 5: plan / summary / verification coverage ───────────────────────
   // The `wave` frontmatter check from `validate consistency` is deliberately
   // omitted: 14 existing plans lack it and 88-RESEARCH.md section 3.4 marks it
@@ -420,6 +427,198 @@ function planningDrift(rootDir, opts = {}) {
   }
 
   return applyExceptions(root, raw, opts);
+}
+
+// ─── The skip ledger (plan 88-19) ────────────────────────────────────────────
+//
+// The operator's standing decision is that NOTHING DEFERRED GETS LOST. A skip with
+// an owner is a deferral; without a link to the records it is a deferral nobody will
+// revisit. Two findings close that:
+//
+//   DRIFT_SKIP_OWNER_PHASE_COMPLETE  an entry whose owner_phase the ROADMAP marks
+//                                    complete — a test deferred to a phase that then
+//                                    finished without closing it.
+//   DRIFT_SKIP_LEDGER_MISMATCH       the exceptions file and the ROADMAP's "Carried
+//                                    Test Obligations" ledger disagree, in one of
+//                                    three directions, each reported distinctly.
+
+/** Fields of a skip-exceptions entry this verb needs. The GATE owns the full schema. */
+const SKIP_ENTRY_FIELDS = ['reason_class', 'owner_phase'];
+
+/**
+ * Where the skip-exceptions file lives, relative to a planning root. ONE rule, one
+ * expression: the file is `tests/skip-exceptions.json` under the directory that
+ * CONTAINS the planning records — the parent of a root named `.planning` (the
+ * operator's real repository) and the root itself for a fixture tree, which is a
+ * self-contained, repository-shaped directory carrying its own `tests/`.
+ *
+ * An ABSENT file produces no finding at all. That is not leniency: the five
+ * pre-existing fixture trees and any other repository that runs this verb have no
+ * such file, and a "missing file" finding would turn all thirteen existing findings
+ * into noise everywhere.
+ *
+ * @param {string} root absolute planning root
+ * @returns {string} absolute path of the exceptions file
+ */
+function skipExceptionsPath(root) {
+  return path.join(path.basename(root) === '.planning' ? path.dirname(root) : root, 'tests', 'skip-exceptions.json');
+}
+
+/**
+ * Parse the ROADMAP's "Carried Test Obligations" ledger.
+ *
+ * The table was free text with three columns and nothing tying a row to an entry;
+ * plan 88-19 adds a fourth, machine-readable column, `Class id`, holding the
+ * `reason_class` LABEL the entries of a row share, with `—` for a row that
+ * deliberately has no entries (the Voyage row is exactly that case). A table with no
+ * `Class id` header is read as having no keyed rows, so the only findings it can
+ * produce are "this class has no ledger row" — which is the honest report for a
+ * ledger that has not been updated yet.
+ *
+ * @param {string} text the ROADMAP.md source
+ * @returns {{present: boolean, keyed: boolean, rows: {classId: string, phase: number|null, phaseText: string}[]}}
+ */
+function parseSkipLedger(text) {
+  const lines = text.split('\n');
+  const start = lines.findIndex((l) => /^##\s+Carried Test Obligations/i.test(l));
+  if (start === -1) return { present: false, keyed: false, rows: [] };
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^##\s/.test(lines[i])) { end = i; break; }
+  }
+  const rows = [];
+  let keyed = false;
+  let classCol = -1;
+  let phaseCol = -1;
+  for (let i = start + 1; i < end; i++) {
+    if (!/^\s*\|/.test(lines[i])) continue;
+    const cells = splitCells(lines[i]);
+    const ci = cells.findIndex((c) => /^class id$/i.test(c));
+    if (ci !== -1) {
+      keyed = true;
+      classCol = ci;
+      phaseCol = cells.findIndex((c) => /^owning phase$/i.test(c));
+      continue;
+    }
+    if (cells.every((c) => /^:?-{2,}:?$/.test(c))) continue;
+    if (!keyed) continue;
+    const classId = (cells[classCol] || '').replace(/`/g, '').trim();
+    if (!classId || classId === '—' || classId === '-') continue;
+    const phaseText = (phaseCol >= 0 ? cells[phaseCol] : cells[cells.length - 1]) || '';
+    const m = phaseText.match(/Phase\s+(\d+)/i);
+    rows.push({ classId, phase: m ? parseInt(m[1], 10) : null, phaseText: phaseText.trim() });
+  }
+  return { present: true, keyed, rows };
+}
+
+/**
+ * Phases the ROADMAP marks complete: progress-table status first, ticked checkbox second.
+ *
+ * @param {{num: string, status: string}[]} progressRows
+ * @param {Map<string, boolean>} checkboxes
+ * @returns {Map<string, string>} phase key -> the words that say it is complete
+ */
+function completePhases(progressRows, checkboxes) {
+  const done = new Map();
+  for (const r of progressRows) {
+    if (isComplete(r.status)) done.set(key(r.num), `"${r.status.trim()}" in the ROADMAP progress table`);
+  }
+  for (const [k, ticked] of checkboxes) {
+    if (ticked && !done.has(k)) done.set(k, 'ticked in the ROADMAP phase list');
+  }
+  return done;
+}
+
+/**
+ * Compare `tests/skip-exceptions.json` with the ROADMAP ledger (plan 88-19).
+ *
+ * @param {string} root planning root
+ * @param {object[]} raw the findings array to append to
+ * @param {string} roadmapText ROADMAP.md source
+ * @param {{num: string, status: string}[]} progressRows
+ * @param {Map<string, boolean>} checkboxes
+ * @returns {void}
+ */
+function checkSkipLedger(root, raw, roadmapText, progressRows, checkboxes) {
+  const rel = 'tests/skip-exceptions.json';
+  const text = readText(skipExceptionsPath(root));
+  if (text === null) return; // absent: no finding, by design
+
+  let entries = null;
+  try {
+    entries = JSON.parse(text);
+  } catch (e) {
+    raw.push(finding('DRIFT_SKIP_LEDGER_MISMATCH', 'error', [rel],
+      `${rel} is not valid JSON (${e.message}), so the ledger cannot be compared with it`, rel));
+    return;
+  }
+  if (!Array.isArray(entries)) {
+    raw.push(finding('DRIFT_SKIP_LEDGER_MISMATCH', 'error', [rel],
+      `${rel} must be a flat array of entries; the ledger cannot be compared with a ${typeof entries}`, rel));
+    return;
+  }
+  const malformed = entries.filter((e) => !e || typeof e !== 'object'
+    || typeof e.reason_class !== 'string' || !Number.isInteger(e.owner_phase));
+  if (malformed.length) {
+    raw.push(finding('DRIFT_SKIP_LEDGER_MISMATCH', 'error', [rel],
+      `${malformed.length} of ${entries.length} entries in ${rel} lack a string reason_class or an integer owner_phase, so the ledger cannot be compared with them`, rel));
+    return;
+  }
+
+  // ── Finding 1: an entry owned by a phase that is already complete ───────────
+  // Grouped by (owner_phase, reason_class), which is the actionable unit: a class is
+  // what a ledger row covers. One finding per group, naming the entries it holds, so
+  // a phase with 400 open entries yields a readable report instead of 400 lines.
+  const done = completePhases(progressRows, checkboxes);
+  const groups = new Map();
+  for (const e of entries) {
+    const k = `${e.owner_phase}|${e.reason_class}`;
+    if (!groups.has(k)) groups.set(k, { phase: e.owner_phase, classId: e.reason_class, names: [] });
+    groups.get(k).names.push(`${e.file} :: ${e.name}`);
+  }
+  for (const g of [...groups.values()].sort((a, b) => (a.phase - b.phase) || a.classId.localeCompare(b.classId))) {
+    const status = done.get(key(String(g.phase)));
+    if (!status) continue;
+    const shown = g.names.slice(0, 5).join('; ');
+    const more = g.names.length > 5 ? ` and ${g.names.length - 5} more` : '';
+    raw.push(finding('DRIFT_SKIP_OWNER_PHASE_COMPLETE', 'error', [rel, 'ROADMAP.md'],
+      `${g.names.length} entr${g.names.length === 1 ? 'y' : 'ies'} in ${rel} with reason_class "${g.classId}" name owner_phase ${g.phase}, but ROADMAP.md marks phase ${g.phase} ${status}: ${shown}${more}`,
+      `${g.classId}@phase${g.phase}`));
+  }
+
+  // ── Finding 2: the file and the ledger disagree, in three named directions ──
+  const ledger = parseSkipLedger(roadmapText);
+  const byClass = new Map();
+  for (const e of entries) {
+    if (!byClass.has(e.reason_class)) byClass.set(e.reason_class, { count: 0, phases: new Set() });
+    const c = byClass.get(e.reason_class);
+    c.count += 1;
+    c.phases.add(e.owner_phase);
+  }
+  const rowOfClass = new Map(ledger.rows.map((r) => [r.classId, r]));
+
+  for (const classId of [...byClass.keys()].sort()) {
+    const info = byClass.get(classId);
+    const row = rowOfClass.get(classId);
+    if (!row) {
+      raw.push(finding('DRIFT_SKIP_LEDGER_MISMATCH', 'error', [rel, 'ROADMAP.md'],
+        `direction: ENTRY WITH NO LEDGER ROW — ${rel} has ${info.count} entr${info.count === 1 ? 'y' : 'ies'} with reason_class "${classId}" (owner_phase ${[...info.phases].sort((a, b) => a - b).join(', ')}) but the ROADMAP's Carried Test Obligations ledger has no row with that Class id`,
+        classId));
+      continue;
+    }
+    for (const phase of [...info.phases].sort((a, b) => a - b)) {
+      if (row.phase === phase) continue;
+      raw.push(finding('DRIFT_SKIP_LEDGER_MISMATCH', 'error', [rel, 'ROADMAP.md'],
+        `direction: DIFFERING PHASE — entries with reason_class "${classId}" in ${rel} name owner_phase ${phase}, but the ledger row for that Class id names "${row.phaseText}"`,
+        classId));
+    }
+  }
+  for (const row of ledger.rows) {
+    if (byClass.has(row.classId)) continue;
+    raw.push(finding('DRIFT_SKIP_LEDGER_MISMATCH', 'error', [rel, 'ROADMAP.md'],
+      `direction: LEDGER ROW WITH NO ENTRY — the Carried Test Obligations row with Class id "${row.classId}" (${row.phaseText}) matches no entry in ${rel}; delete the row, or give the entries it describes that reason_class`,
+      row.classId));
+  }
 }
 
 function checkRequirementTotals(root, raw) {

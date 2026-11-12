@@ -736,7 +736,233 @@ def fixture_rlm(tmp_path):
         _stop_rlm(handle)
 
 
-def pytest_sessionfinish(session, exitstatus):
+# ─────────────────────────────────────────────────────────────────────────────
+# Plan 88-19: the skip gate, Python half (FND-04).
+#
+# The SAME tests/skip-exceptions.json and the SAME rules as scripts/skip-gate.cjs,
+# implemented in tests/support/skip_gate.py. The two cannot drift silently:
+# tests/88-19-skip-gate.test.cjs feeds both `--evaluate` interfaces the same fixture
+# file and the same synthetic observations and compares the verdicts field by field.
+# A shared module across the language boundary is not possible (pytest cannot import
+# a .cjs), so "proven identical" is the mechanism, not "written once".
+#
+# What this half adds beyond the Node one: pytest reports xfails SEPARATELY from
+# skips, and conflating them hides an xpass. The gate counts them apart and asserts
+# the strict-xfail number against the entries carrying
+# reason_class: "stale-metric-xfail" — five on every platform today, derived from the
+# file and never typed as a literal.
+# ─────────────────────────────────────────────────────────────────────────────
+
+import skip_gate  # noqa: E402  (tests/support is on sys.path, see the top of this file)
+
+#: Observations of this session, keyed so a test reported twice (setup + call) counts once.
+_SKIP_GATE_OBSERVED = {}
+
+#: Non-strict xpasses, kept for the summary line. They are deliberately NOT observations:
+#: an xpass means the test stopped failing, so its entry must go STALE, not match.
+_SKIP_GATE_XPASSED = []
+
+
+def _gate_platform():
+    """``sys.platform`` in the three values the exceptions file uses.
+
+    Returns:
+        str: ``"win32"``, ``"darwin"`` or ``"linux"``.
+    """
+    if sys.platform.startswith("win"):
+        return "win32"
+    if sys.platform == "darwin":
+        return "darwin"
+    return "linux"
+
+
+def _collapse(text):
+    """Whitespace-collapse a reason, as the exceptions file stores them."""
+    return " ".join(str(text or "").split())
+
+
+def _gate_reason(report):
+    """The runtime's own reason text for a skipped or xfailed report."""
+    wasxfail = getattr(report, "wasxfail", None)
+    if wasxfail:
+        return _collapse(wasxfail)
+    longrepr = getattr(report, "longrepr", None)
+    if isinstance(longrepr, tuple) and len(longrepr) == 3:
+        text = str(longrepr[2])
+        for prefix in ("Skipped: ", "Skipped "):
+            if text.startswith(prefix):
+                text = text[len(prefix):]
+                break
+        return _collapse(text)
+    return _collapse(longrepr)
+
+
+def _gate_identity(nodeid):
+    """``(file, name)`` of a test, in the identity the exceptions file was generated from.
+
+    Plan 88-16 generated the file from CI's JUnit XML, where a test is
+    ``classname="tests.test_x[.TestClass]" name="test_y[param]"``. The FILE is the
+    module part of the classname and the NAME is the method alone — **the class
+    segment is not part of the name**. Measured: the five ``test_grammar_strip``
+    entries read ``test_agent_file_reduction_ge_30_percent[agents/gsd-checker.md]``
+    while their node id is
+    ``tests/test_grammar_strip.py::TestCompressionRatio::test_agent_file_reduction_ge_30_percent[agents/gsd-checker.md]``.
+
+    So: file = the node id up to the first ``::``; name = the part after the LAST
+    ``::``. The consequence is stated rather than hidden: two same-named methods in
+    two classes of one file share one entry. The exceptions file's uniqueness check
+    is where that would surface, and no such pair exists today.
+
+    Args:
+        nodeid: a pytest node id.
+
+    Returns:
+        tuple[str, str]: the repo-relative file and the test name.
+    """
+    parts = nodeid.split("::")
+    return parts[0], parts[-1] if len(parts) > 1 else ""
+
+
+def _gate_collection_identity(nodeid):
+    """``("(collection)", <dotted module>)`` for a module that could not be collected.
+
+    The JUnit XML has no file for a collection skip, so plan 88-16 recorded the
+    pseudo-file ``(collection)`` and the module's dotted path. The four existing
+    entries of that shape are reproduced exactly by this rule.
+    """
+    module = nodeid[:-3] if nodeid.endswith(".py") else nodeid
+    return "(collection)", module.replace("\\", "/").replace("/", ".")
+
+
+def _gate_is_partial(config):
+    """Whether this session selected a SUBSET of the suite (rule 4a).
+
+    Staleness is a full-run property: a run of one file, one node id, ``-k``, ``-m``,
+    ``--deselect`` or ``--lf`` leaves almost every entry unmatched by construction, so
+    it checks unlisted skips and nothing else.
+
+    Args:
+        config: the pytest config.
+
+    Returns:
+        bool: True when the run is partial.
+    """
+    option = config.option
+    if getattr(option, "keyword", "") or getattr(option, "markexpr", ""):
+        return True
+    if getattr(option, "deselect", None):
+        return True
+    if getattr(option, "last_failed", False) or getattr(option, "failed_first", False):
+        return True
+    for arg in list(config.args or []):
+        if "::" in arg:
+            return True
+        if os.path.isfile(arg):
+            return True
+    return False
+
+
+def pytest_runtest_logreport(report):
+    """Record every skipped and xfailed test for the skip gate (plan 88-19).
+
+    Args:
+        report: the pytest ``TestReport``.
+
+    Returns:
+        None.
+    """
+    wasxfail = getattr(report, "wasxfail", None) is not None
+    if wasxfail and report.passed:
+        _SKIP_GATE_XPASSED.append(report.nodeid)
+        return
+    if not report.skipped:
+        return
+    if report.nodeid in _SKIP_GATE_OBSERVED:
+        return
+    file_value, name = _gate_identity(report.nodeid)
+    _SKIP_GATE_OBSERVED[report.nodeid] = {
+        "kind": "xfail" if wasxfail else "skip",
+        "file": file_value,
+        "name": name,
+        "reason": _gate_reason(report),
+    }
+
+
+def pytest_collectreport(report):
+    """Record a module the collector skipped (plan 88-19).
+
+    A module-level skip collects no tests at all, so ``pytest_runtest_logreport``
+    never sees it; without this hook a whole file could stop running unnoticed.
+
+    Args:
+        report: the pytest ``CollectReport``.
+
+    Returns:
+        None.
+    """
+    if not report.skipped or not str(report.nodeid).endswith(".py"):
+        return
+    file_value, name = _gate_collection_identity(str(report.nodeid))
+    key = "(collection)::%s" % report.nodeid
+    if key in _SKIP_GATE_OBSERVED:
+        return
+    _SKIP_GATE_OBSERVED[key] = {
+        "kind": "skip",
+        "file": file_value,
+        "name": name,
+        "reason": _gate_reason(report) or "collection skipped",
+    }
+
+
+def _run_skip_gate(session):
+    """Apply the gate and set the session exit status (plan 88-19).
+
+    Args:
+        session: the pytest session.
+
+    Returns:
+        None. Sets ``session.exitstatus`` to 6 when the run was otherwise green and
+        the gate found anything; when the session already failed, the findings are
+        printed and the first failure's status is kept.
+    """
+    platform = _gate_platform()
+    ci = skip_gate.ci_is_set()
+    explicit = _gate_is_partial(session.config)
+    observed = list(_SKIP_GATE_OBSERVED.values())
+
+    entries, problems = skip_gate.load_exceptions(str(_REPO / "tests" / "skip-exceptions.json"))
+    if problems:
+        print("\n--- skip gate (python, %s) ---" % platform)
+        for problem in problems:
+            print("%s %s :: %s" % (problem["code"], skip_gate.EXCEPTIONS_REL, problem["detail"]))
+        print("--- skip gate: %d finding(s); exit %d ---" % (len(problems), skip_gate.EXIT_SKIP_GATE))
+        if session.exitstatus == 0:
+            session.exitstatus = skip_gate.EXIT_SKIP_GATE
+        return
+
+    result = skip_gate.evaluate(entries, observed, "python", platform, ci, explicit)
+    result["findings"].extend(
+        skip_gate.strict_xfail_check(entries, observed, platform, ci, explicit)
+    )
+    result["findings"].sort(key=lambda f: (f["code"], f["file"], f["name"], f["platform"]))
+
+    skips = len([o for o in observed if o["kind"] == "skip"])
+    xfails = len([o for o in observed if o["kind"] == "xfail"])
+    print("\nskip gate: %d skipped + %d xfailed = %d observed; %d applicable entries; "
+          "%d xpassed" % (skips, xfails, skips + xfails,
+                          result["counts"]["applicable_entries"], len(_SKIP_GATE_XPASSED)))
+    print(skip_gate.format_result(result, "python", platform, ci, explicit))
+    if not result["findings"]:
+        return
+    if session.exitstatus == 0:
+        session.exitstatus = skip_gate.EXIT_SKIP_GATE
+    else:
+        print("skip gate: %d finding(s) above, but the session already failed with status %s, "
+              "which is kept so the first failure is not hidden."
+              % (len(result["findings"]), session.exitstatus))
+
+
+def _print_guard_refusals():
     """Print what the hermetic guard refused during this session.
 
     In log-only mode (``GSD_HERMETIC_GUARD_MODE=log``) this IS the
@@ -745,18 +971,9 @@ def pytest_sessionfinish(session, exitstatus):
     refusal. Printing beats an artifact: it lands in the job log, which is
     where a reader of a red cell already is.
 
-    Args:
-        session: the pytest session (unused).
-        exitstatus: the session's exit status (unused).
-
     Returns:
         None.
     """
-    if _SESSION_RLM["handle"] is not None:
-        _stop_rlm(_SESSION_RLM["handle"])
-        shutil.rmtree(_SESSION_RLM["tmpdir"], ignore_errors=True)
-        _SESSION_RLM["handle"] = None
-
     path = os.environ.get("GSD_HERMETIC_GUARD_LOG")
     if not path or not os.path.exists(path):
         print("\nhermetic guard: no refusals")
@@ -773,6 +990,30 @@ def pytest_sessionfinish(session, exitstatus):
     print("\n--- hermetic guard refusals (time pid mode runtime host port reason argv) ---")
     print(body)
     print("--- end hermetic guard refusals (%d line(s)) ---" % len(body.splitlines()))
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Stop the session RLM, print the guard refusals, then run the skip gate.
+
+    The three steps are separate functions and all three always run: before plan
+    88-19 the guard-log printing returned early in three places, and a gate behind an
+    early return is a gate that is sometimes absent.
+
+    Args:
+        session: the pytest session; the skip gate sets its ``exitstatus``.
+        exitstatus: the session's exit status (read from ``session`` instead, so the
+            gate sees the value it is about to change).
+
+    Returns:
+        None.
+    """
+    if _SESSION_RLM["handle"] is not None:
+        _stop_rlm(_SESSION_RLM["handle"])
+        shutil.rmtree(_SESSION_RLM["tmpdir"], ignore_errors=True)
+        _SESSION_RLM["handle"] = None
+
+    _print_guard_refusals()
+    _run_skip_gate(session)
 
 
 def have_tool(name):
