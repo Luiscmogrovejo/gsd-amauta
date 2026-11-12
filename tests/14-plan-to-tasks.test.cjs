@@ -589,9 +589,18 @@ test('_loadRegisteredTasks: missing file and corrupt file both return an empty l
     fs.writeFileSync(path.join(dir, 'tasks.json'), '{ not json');
     const corrupt = await _loadRegisteredTasks({ dataDir: dir, planId: 'x' });
     assert.deepEqual(corrupt, { source: 'tasks.json', tasks: [] });
-    fs.writeFileSync(path.join(dir, 'tasks.json'), JSON.stringify({ items: [{ id: 'TK-0001' }] }));
-    const ok = await _loadRegisteredTasks({ dataDir: dir, planId: 'x' });
+    // Plan 89-00: the seam is SCOPED now (plan id + project), because a global lookup accepted
+    // another project's `task:89-01-01` as this plan's task. The fixture item therefore has to
+    // claim plan `x` in project `p` to come back; an item that claims neither must not, which is
+    // the second assertion below. (Before 89-00 a bare `{id: 'TK-0001'}` was returned — that
+    // expectation WAS the defect, so it is replaced rather than kept.)
+    fs.writeFileSync(path.join(dir, 'tasks.json'), JSON.stringify({ items: [
+      { id: 'TK-0001', type: 'task', project_id: 'p', tags: ['plan:x', 'task:x-01'] },
+      { id: 'TK-0002', type: 'task', project_id: null, tags: ['plan:null', 'task:x-01'] },
+    ] }));
+    const ok = await _loadRegisteredTasks({ dataDir: dir, planId: 'x', projectId: 'p' });
     assert.equal(ok.tasks.length, 1);
+    assert.equal(ok.tasks[0].id, 'TK-0001');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
