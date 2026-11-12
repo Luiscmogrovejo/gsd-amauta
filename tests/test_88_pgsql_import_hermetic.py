@@ -59,7 +59,10 @@ def test_pgsql_module_imports_without_touching_a_live_port(filename):
 def test_postgres_dsn_skips_without_the_test_variable(monkeypatch):
     monkeypatch.delenv("GSD_TEST_POSTGRES_URL", raising=False)
     # The live variable must not be consulted even when it is present.
-    monkeypatch.setenv("GSD_POSTGRES_URL", "postgresql://live:live@127.0.0.1:5433/live")
+    live_port = sorted(_conftest()._LIVE_PORTS)[0]  # 5433, the operator's PostgreSQL
+    monkeypatch.setenv(
+        "GSD_POSTGRES_URL", "postgresql://live:live@127.0.0.1:%d/live" % live_port
+    )
     with pytest.raises(pytest.skip.Exception) as exc:
         _conftest()._postgres_dsn_or_skip()
     assert "no disposable Postgres" in str(exc.value)

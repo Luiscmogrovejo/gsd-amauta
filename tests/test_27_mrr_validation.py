@@ -29,7 +29,12 @@ import urllib.error
 import pytest
 
 FIXTURE_PATH = "tests/fixtures/27-golden-queries.json"
-RLM_URL = f"http://127.0.0.1:{os.environ.get('GSD_RLM_PORT', '18798')}"
+# Phase 88 plan 88-16-05: no default port. The default was the operator's LIVE RLM;
+# a default here meant a test that "skips when the service is unavailable"
+# first dialled it to find out. The port now comes only from GSD_RLM_PORT,
+# which tests/conftest.py's session fixture RLM sets when CI has a database.
+_RLM_PORT = os.environ.get("GSD_RLM_PORT", "").strip()
+RLM_URL = f"http://127.0.0.1:{_RLM_PORT}" if _RLM_PORT else ""
 
 
 def _load_golden():
@@ -80,11 +85,17 @@ def test_rlm_mrr_validation():
     baseline_mrr = data["baseline_mrr"]
     queries = data["queries"]
 
-    # Check if rlm-service is running
+    # The session fixture RLM (tests/conftest.py) starts one when CI has a
+    # disposable PostgreSQL; there is no live service to fall back on.
+    if not RLM_URL:
+        pytest.skip(
+            "no RLM service: tests/conftest.py starts one for the session when a "
+            "disposable PostgreSQL is configured (GSD_TEST_POSTGRES_URL)"
+        )
     try:
         urllib.request.urlopen(f"{RLM_URL}/health", timeout=3)
-    except Exception:
-        pytest.skip("rlm-service not running — skipping MRR validation")
+    except Exception as exc:
+        pytest.fail("the fixture RLM at %s did not answer /health: %r" % (RLM_URL, exc))
 
     mrr_contributions = []
     engine_used = "unknown"

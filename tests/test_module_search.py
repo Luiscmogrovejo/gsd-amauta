@@ -9,6 +9,7 @@
 """
 import io
 import json
+import socket
 import subprocess
 import sys
 import tempfile
@@ -131,9 +132,22 @@ class TestLoadIndex(unittest.TestCase):
 
 class TestFetchRemote(unittest.TestCase):
     def test_url_error_raises_registry_unreachable(self):
-        """Unreachable URL raises SearchError(registry_unreachable)."""
+        """Unreachable URL raises SearchError(registry_unreachable).
+
+        Phase 88 plan 88-16-03: this used to name an unresolvable public host
+        (`nonexistent.invalid.localhost.test`), which made the test depend on
+        DNS answering NXDOMAIN — a resolver with a wildcard or a captive portal
+        answers something else — and made it a non-loopback destination the
+        default-deny guard refuses with a RuntimeError the product does not
+        wrap. A closed LOOPBACK port is unreachable by construction, on every
+        platform, with no resolver involved at all.
+        """
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            closed_port = probe.getsockname()[1]
+        # The socket is closed again, so nothing is listening on that port.
         with self.assertRaises(SearchError) as ctx:
-            fetch_remote("http://nonexistent.invalid.localhost.test/x.json")
+            fetch_remote("http://127.0.0.1:%d/x.json" % closed_port)
         self.assertEqual(ctx.exception.error_code, "registry_unreachable")
 
     def test_remote_with_wrong_version_raises_manifest_invalid(self):

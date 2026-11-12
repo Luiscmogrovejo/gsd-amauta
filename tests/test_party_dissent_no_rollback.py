@@ -71,8 +71,8 @@ def _apply_migration_023_if_needed() -> None:
     try:
         import psycopg2
         db_url = os.environ.get(
-            "DATABASE_URL", "postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta"
-        )
+            "DATABASE_URL"
+        ) or __import__("conftest").postgres_dsn_or_none()
         conn = psycopg2.connect(db_url)
         conn.autocommit = True
         with conn.cursor() as cur:

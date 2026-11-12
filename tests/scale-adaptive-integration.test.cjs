@@ -107,10 +107,17 @@ if (daemonAvailable) {
 // (returns 400/500 if schema missing, but not network error if daemon is up)
 function checkPgAvailable() {
   if (!daemonAvailable) return false;
-  const result = spawnSync('psql', [
-    process.env.DATABASE_URL || process.env.GSD_POSTGRES_URL || 'postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta',
-    '-c', 'SELECT 1',
-  ], { encoding: 'utf8', timeout: 3000 });
+  // Plan 88-16: this used to fall back to a literal 127.0.0.1:5433 and spawn
+  // `psql` against it. A subprocess is OUTSIDE the in-process socket guard, so
+  // the probe really did dial the operator's live PostgreSQL to find out
+  // whether it should skip. There is no default now: no disposable DSN means
+  // no Postgres.
+  const dsn = pg.postgresDsn();
+  if (!dsn) return false;
+  const result = spawnSync('psql', [dsn, '-c', 'SELECT 1'], {
+    encoding: 'utf8',
+    timeout: 3000,
+  });
   return result.status === 0;
 }
 const pgAvailable = checkPgAvailable();

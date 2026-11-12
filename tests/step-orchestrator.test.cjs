@@ -430,7 +430,7 @@ assert loaded.task_id == 'test-save-retrieve-01', f'task_id wrong: {loaded.task_
 assert loaded.workflow_name == 'plan-phase', f'workflow_name wrong: {loaded.workflow_name}'
 assert loaded.phase_number == 99, f'phase_number wrong: {loaded.phase_number}'
 # Cleanup
-db_url = os.environ.get('DATABASE_URL') or os.environ.get('GSD_POSTGRES_URL') or 'postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta'
+db_url = os.environ['DATABASE_URL'] if os.environ.get('DATABASE_URL') else os.environ['GSD_POSTGRES_URL']
 conn = psycopg2.connect(db_url)
 conn.autocommit = True
 with conn.cursor() as cur:
@@ -460,7 +460,7 @@ assert rolled.step_id == 'step-02-research', f'step_id wrong after rollback: {ro
 assert rolled.completed_steps == ['step-01-init'], f'completed_steps wrong: {rolled.completed_steps}'
 assert rolled.next_step == 'step-03-plan', f'next_step wrong after rollback: {rolled.next_step}'
 # Cleanup
-db_url = os.environ.get('DATABASE_URL') or os.environ.get('GSD_POSTGRES_URL') or 'postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta'
+db_url = os.environ['DATABASE_URL'] if os.environ.get('DATABASE_URL') else os.environ['GSD_POSTGRES_URL']
 conn = psycopg2.connect(db_url)
 conn.autocommit = True
 with conn.cursor() as cur:

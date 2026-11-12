@@ -14,7 +14,11 @@ import pytest
 
 _DAEMON = os.path.join(os.path.dirname(__file__), "..", "services", "amauta-daemon.py")
 
-PG = {"backend": "postgresql", "connection_url": "postgresql://u:p@127.0.0.1:5433/db",
+# A pure data fixture: the retry loop takes detect/connect/sleep as arguments
+# and never opens a socket. The port is deliberately NOT the operator's live
+# one, so a future refactor that did connect would fail loudly instead of
+# quietly reaching the real database.
+PG = {"backend": "postgresql", "connection_url": "postgresql://u:p@127.0.0.1:65432/db",
       "features": [], "message": "pg"}
 SQLITE = {"backend": "sqlite", "connection_url": "sqlite:///x.db", "features": [], "message": "sqlite"}
 

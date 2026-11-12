@@ -54,8 +54,8 @@ def _apply_migration(sql_path: str) -> None:
     """Execute a migration SQL file using psycopg2 directly via DATABASE_URL."""
     import psycopg2
     db_url = os.environ.get(
-        "DATABASE_URL", "postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta"
-    )
+        "DATABASE_URL"
+    ) or __import__("conftest").postgres_dsn_or_none()
     with open(sql_path, "r", encoding="utf-8") as fh:
         sql = fh.read()
     conn = psycopg2.connect(db_url)

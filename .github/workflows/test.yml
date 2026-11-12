@@ -15,6 +15,20 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
+env:
+  # ── Hermetic guard rollout, plan 88-16-03 ──────────────────────────────────
+  # The guards became DEFAULT-DENY for every non-loopback destination in this
+  # plan. The inventory of what the suite legitimately reaches cannot come from
+  # the same run that first enforces it: an unknown test reaching the network
+  # would turn that run red and the inventory would never be collected. So the
+  # guard lands in log-only mode for one full run across all nine cells, the
+  # refusal log is read (the runner and conftest both print it at the end of a
+  # run), each finding is allow-listed BY HOST, PER TEST, and only then is this
+  # line removed so the default — enforce — takes over.
+  #
+  # ROLLOUT STEP 1 of 2. Removing this key is step 2.
+  GSD_HERMETIC_GUARD_MODE: log
+
 jobs:
   test:
     name: test (${{ matrix.os }}, node ${{ matrix.node-version }})
@@ -75,7 +89,95 @@ jobs:
 
       - name: Install the Python packages the Node tests import
         shell: bash
-        run: python -m pip install --disable-pip-version-check pyyaml pydantic
+        # psycopg2-binary joins pyyaml/pydantic here (plan 88-16-03): the
+        # schema bootstrap below drives services/migrate_runner.py, and
+        # tests/86-01-dsn-containment.test.cjs skipped three cases purely
+        # because psycopg2 was not importable.
+        run: python -m pip install --disable-pip-version-check pyyaml pydantic psycopg2-binary
+
+      - name: Pick a free host port for the disposable PostgreSQL
+        shell: bash
+        # The runner's OWN helper, so the port can never be one of the live
+        # service ports (freePort() excludes LIVE_PORTS by construction) and
+        # nothing anywhere is hard-coded.
+        run: |
+          set -euo pipefail
+          PORT=$(node -e "process.stdout.write(String(require('./scripts/run-tests.cjs').freePort()))")
+          echo "PG_TEST_PORT=$PORT" >> "$GITHUB_ENV"
+          echo "disposable PostgreSQL will listen on host port $PORT"
+
+      - name: Probe the runner's PostgreSQL capability (macOS and Windows)
+        if: runner.os != 'Linux'
+        continue-on-error: true
+        shell: bash
+        # Plan 88-16-04 measures before it chooses. The research marks the
+        # pgvector-on-Windows question LOW confidence and `ankane/setup-postgres`
+        # MEDIUM; both are hypotheses, and this step is how they stop being
+        # hypotheses. continue-on-error so a missing tool reports rather than
+        # fails the cell.
+        run: |
+          echo "=== runner: ${{ runner.os }} / ${{ runner.arch }}"
+          echo "--- postgres --version";  postgres --version  2>&1 || echo "(absent)"
+          echo "--- pg_ctl --version";    pg_ctl --version    2>&1 || echo "(absent)"
+          echo "--- initdb --version";    initdb --version    2>&1 || echo "(absent)"
+          echo "--- pg_config --version"; pg_config --version 2>&1 || echo "(absent)"
+          echo "--- pg_config --pkglibdir / --sharedir"
+          pg_config --pkglibdir 2>&1 || true
+          pg_config --sharedir 2>&1 || true
+          echo "--- PGBIN=${PGBIN:-<unset>} PGROOT=${PGROOT:-<unset>} PGDATA=${PGDATA:-<unset>}"
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            echo "--- brew list | grep -i postgres"; brew list 2>/dev/null | grep -i postgres || echo "(none)"
+            echo "--- brew info pgvector";          brew info pgvector 2>&1 | head -5 || echo "(no formula)"
+            echo "--- which psql";                  command -v psql || echo "(absent)"
+          else
+            echo "--- windows service state";       powershell -NoProfile -Command "Get-Service postgresql* | Format-Table -AutoSize" 2>&1 || true
+            echo "--- nmake on PATH";               command -v nmake || echo "(absent)"
+            echo "--- cl on PATH";                  command -v cl || echo "(absent)"
+            echo "--- vswhere";                     "/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products '*' -property installationPath 2>&1 || echo "(absent)"
+            echo "--- conda";                       command -v conda || echo "(absent)"
+            echo "--- wsl";                         command -v wsl || echo "(absent)"
+            echo "--- docker info OSType";          docker info --format '{{.OSType}}' 2>&1 || echo "(absent)"
+          fi
+          echo "=== end capability probe"
+
+      - name: Start the disposable PostgreSQL (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        # GitHub service containers are declared at job level and would break
+        # the macOS and Windows rows of this matrix, so the container is started
+        # as a step instead. Same image memory-safety.yml pins; gsd_memory
+        # declares `embedding vector(1024)`, hence pgvector rather than plain
+        # postgres. macOS and Windows are plan 88-16-04.
+        run: |
+          set -euo pipefail
+          docker run -d --name gsd-test-pg \
+            -e POSTGRES_USER=gsd -e POSTGRES_PASSWORD=gsd -e POSTGRES_DB=gsd_test \
+            -p "127.0.0.1:${PG_TEST_PORT}:5432" \
+            pgvector/pgvector:pg16
+          ready=
+          for _ in $(seq 1 60); do
+            if docker exec gsd-test-pg pg_isready -U gsd -q; then ready=1; break; fi
+            sleep 2
+          done
+          if [ -z "$ready" ]; then
+            docker logs gsd-test-pg || true
+            echo "the disposable PostgreSQL did not become ready in 120 s" >&2
+            exit 1
+          fi
+          docker exec gsd-test-pg psql -U gsd -d gsd_test -v ON_ERROR_STOP=1 \
+            -c "CREATE EXTENSION IF NOT EXISTS vector"
+          echo "GSD_TEST_POSTGRES_URL=postgresql://gsd:gsd@127.0.0.1:${PG_TEST_PORT}/gsd_test" >> "$GITHUB_ENV"
+
+      - name: Apply the schema to the disposable PostgreSQL
+        if: env.GSD_TEST_POSTGRES_URL != ''
+        shell: bash
+        # The suite's Postgres tests expect the product's own schema. This runs
+        # the repository's migration runner, so CI exercises the same code a
+        # user runs. tests/test_docker_pg_migration.py is unaffected: it creates
+        # and drops its OWN scratch database per test and never touches this one.
+        run: |
+          set -euo pipefail
+          python -c "import sys; sys.path.insert(0, '.'); from services import migrate_runner; print('migrations applied:', migrate_runner.apply_migrations(dsn='${GSD_TEST_POSTGRES_URL}'))"
 
       - name: Run tests with coverage
         # c8 v11 requires Node 20+ (engines: ^20.0.0 || >=22.0.0).
@@ -86,6 +188,11 @@ jobs:
       - name: Run coverage ratchet
         shell: bash
         run: node scripts/coverage-ratchet.cjs
+
+      - name: Stop the disposable PostgreSQL (Linux)
+        if: always() && runner.os == 'Linux'
+        shell: bash
+        run: docker rm -f gsd-test-pg || true
 
   pytest:
     name: pytest (${{ matrix.os }}, python ${{ matrix.python-version }})
@@ -136,6 +243,82 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt -r requirements-dev.txt
 
+      - name: Pick a free host port for the disposable PostgreSQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT=$(node -e "process.stdout.write(String(require('./scripts/run-tests.cjs').freePort()))")
+          echo "PG_TEST_PORT=$PORT" >> "$GITHUB_ENV"
+          echo "disposable PostgreSQL will listen on host port $PORT"
+
+      - name: Probe the runner's PostgreSQL capability (macOS and Windows)
+        if: runner.os != 'Linux'
+        continue-on-error: true
+        shell: bash
+        # Plan 88-16-04 measures before it chooses. The research marks the
+        # pgvector-on-Windows question LOW confidence and `ankane/setup-postgres`
+        # MEDIUM; both are hypotheses, and this step is how they stop being
+        # hypotheses. continue-on-error so a missing tool reports rather than
+        # fails the cell.
+        run: |
+          echo "=== runner: ${{ runner.os }} / ${{ runner.arch }}"
+          echo "--- postgres --version";  postgres --version  2>&1 || echo "(absent)"
+          echo "--- pg_ctl --version";    pg_ctl --version    2>&1 || echo "(absent)"
+          echo "--- initdb --version";    initdb --version    2>&1 || echo "(absent)"
+          echo "--- pg_config --version"; pg_config --version 2>&1 || echo "(absent)"
+          echo "--- pg_config --pkglibdir / --sharedir"
+          pg_config --pkglibdir 2>&1 || true
+          pg_config --sharedir 2>&1 || true
+          echo "--- PGBIN=${PGBIN:-<unset>} PGROOT=${PGROOT:-<unset>} PGDATA=${PGDATA:-<unset>}"
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            echo "--- brew list | grep -i postgres"; brew list 2>/dev/null | grep -i postgres || echo "(none)"
+            echo "--- brew info pgvector";          brew info pgvector 2>&1 | head -5 || echo "(no formula)"
+            echo "--- which psql";                  command -v psql || echo "(absent)"
+          else
+            echo "--- windows service state";       powershell -NoProfile -Command "Get-Service postgresql* | Format-Table -AutoSize" 2>&1 || true
+            echo "--- nmake on PATH";               command -v nmake || echo "(absent)"
+            echo "--- cl on PATH";                  command -v cl || echo "(absent)"
+            echo "--- vswhere";                     "/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products '*' -property installationPath 2>&1 || echo "(absent)"
+            echo "--- conda";                       command -v conda || echo "(absent)"
+            echo "--- wsl";                         command -v wsl || echo "(absent)"
+            echo "--- docker info OSType";          docker info --format '{{.OSType}}' 2>&1 || echo "(absent)"
+          fi
+          echo "=== end capability probe"
+
+      - name: Start the disposable PostgreSQL (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --name gsd-test-pg \
+            -e POSTGRES_USER=gsd -e POSTGRES_PASSWORD=gsd -e POSTGRES_DB=gsd_test \
+            -p "127.0.0.1:${PG_TEST_PORT}:5432" \
+            pgvector/pgvector:pg16
+          ready=
+          for _ in $(seq 1 60); do
+            if docker exec gsd-test-pg pg_isready -U gsd -q; then ready=1; break; fi
+            sleep 2
+          done
+          if [ -z "$ready" ]; then
+            docker logs gsd-test-pg || true
+            echo "the disposable PostgreSQL did not become ready in 120 s" >&2
+            exit 1
+          fi
+          docker exec gsd-test-pg psql -U gsd -d gsd_test -v ON_ERROR_STOP=1 \
+            -c "CREATE EXTENSION IF NOT EXISTS vector"
+          echo "GSD_TEST_POSTGRES_URL=postgresql://gsd:gsd@127.0.0.1:${PG_TEST_PORT}/gsd_test" >> "$GITHUB_ENV"
+
+      - name: Apply the schema to the disposable PostgreSQL
+        if: env.GSD_TEST_POSTGRES_URL != ''
+        shell: bash
+        # The suite's Postgres tests expect the product's own schema. This runs
+        # the repository's migration runner, so CI exercises the same code a
+        # user runs. tests/test_docker_pg_migration.py is unaffected: it creates
+        # and drops its OWN scratch database per test and never touches this one.
+        run: |
+          set -euo pipefail
+          python -c "import sys; sys.path.insert(0, '.'); from services import migrate_runner; print('migrations applied:', migrate_runner.apply_migrations(dsn='${GSD_TEST_POSTGRES_URL}'))"
+
       - name: Run the Python suite
         shell: bash
         # `set -e` is deliberately OFF so the exit code can be captured and
@@ -157,3 +340,8 @@ jobs:
         with:
           name: pytest-report-${{ matrix.os }}
           path: pytest-report.xml
+
+      - name: Stop the disposable PostgreSQL (Linux)
+        if: always() && runner.os == 'Linux'
+        shell: bash
+        run: docker rm -f gsd-test-pg || true

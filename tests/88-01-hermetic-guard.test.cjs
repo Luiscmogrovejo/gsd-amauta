@@ -147,8 +147,19 @@ describe('hermetic guard (Node)', () => {
     const log = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'guard-log-')), 'guard.log');
     runGuarded("require('net').connect(18799,'127.0.0.1')", { GSD_HERMETIC_GUARD_LOG: log });
     const line = fs.readFileSync(log, 'utf-8').split('\n')[0].split('\t');
-    assert.strictEqual(line.length, 4);
-    assert.strictEqual(line[2], '18799');
+    // Plan 88-16-03 widened the line from 4 columns (time, pid, port, argv) to
+    // 8: the guard is default-deny for non-loopback destinations now, so a
+    // reader of the log needs the MODE it was running in, which RUNTIME wrote
+    // the line (the Python guard writes the same shape, and had no log at all
+    // before), the HOST and the machine-readable REASON. Deliberate format
+    // change, recorded in 88-16-RECORD.md; the property the old assertion
+    // guarded — "the refused port is in the line" — is kept and strengthened.
+    assert.strictEqual(line.length, 8, 'line: ' + JSON.stringify(line));
+    assert.strictEqual(line[2], 'enforce');
+    assert.strictEqual(line[3], 'node');
+    assert.strictEqual(line[4], '127.0.0.1');
+    assert.strictEqual(line[5], '18799');
+    assert.strictEqual(line[6], 'live-port');
     fs.rmSync(path.dirname(log), { recursive: true, force: true });
   });
 });

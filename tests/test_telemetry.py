@@ -63,7 +63,10 @@ def _pg_conn_or_none():
     precedent)."""
     try:
         import psycopg2
-        dsn = os.environ.get("GSD_POSTGRES_URL", "postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta")
+        from conftest import postgres_dsn_or_none
+        dsn = postgres_dsn_or_none()
+        if not dsn:
+            return None
         return psycopg2.connect(dsn)
     except Exception:
         return None

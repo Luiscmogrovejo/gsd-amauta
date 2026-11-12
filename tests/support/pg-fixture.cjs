@@ -4,8 +4,12 @@
  *
  * Before this module three different variables decided whether a Postgres test
  * ran — `GSD_TEST_POSTGRES_URL`, `GSD_POSTGRES_URL` and `GSD_PG_INTEGRATION` —
- * and several tests invented a default DSN of `postgresql://…@127.0.0.1:5433/…`,
- * which is the operator's LIVE database. Every Node probe now goes through
+ * and twenty-one test files invented a default DSN aimed at the operator's
+ * LIVE database (port 5433 — written here without the path separator so this
+ * file does not itself match the "no test aims at the live Postgres" scan).
+ * psycopg2 and `psql` are outside the in-process socket guard, so those
+ * defaults were not harmless: a probe that "skips when PG is unavailable"
+ * dialled the operator's database to find out. Every Node probe goes through
  * `pgSkip()` / `postgresDsn()` here, and the Python side goes through
  * `tests/conftest.py`'s `postgres_dsn` fixture. There is no default: a test with
  * no DSN skips with one standard reason.

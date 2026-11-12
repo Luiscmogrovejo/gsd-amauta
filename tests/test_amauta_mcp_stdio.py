@@ -77,6 +77,15 @@ from jsonrpc_stdio import read_jsonrpc as _read_jsonrpc  # noqa: E402
 from jsonrpc_stdio import send_jsonrpc as _send_jsonrpc  # noqa: E402
 from jsonrpc_stdio import stderr_tail as _stderr_tail  # noqa: E402
 
+#: JSON-RPC read budget. A loaded Windows runner needs far more than the 5-10 s
+#: these calls used to allow: plan 88-16-02 turned "no response in time" from a
+#: silent skip into a failure, and the first enforcing run showed
+#: `amauta/complexity-score` exceeding 10 s there while every other call passed.
+#: Generous is correct for a budget whose only job is to stop a hang: a server
+#: that answers in 2 s is unaffected, and a server that never answers still
+#: fails, just later.
+_RPC_TIMEOUT = float(os.environ.get("GSD_MCP_RPC_TIMEOUT", "60"))
+
 
 # ── Subprocess fixture ─────────────────────────────────────────────────────────
 
@@ -144,14 +153,14 @@ class TestStdioIntegration:
             "capabilities": {},
             "clientInfo": {"name": "test-client", "version": "0.0.1"},
         }, request_id=1)
-        return _read_jsonrpc(self.proc, request_id=1, timeout=5.0)
+        return _read_jsonrpc(self.proc, request_id=1, timeout=_RPC_TIMEOUT)
 
     def test_stdio_initialize_handshake(self):
         """Server responds to initialize with a non-error JSON-RPC response."""
         resp = self._do_initialize()
         if resp is None:
             pytest.fail(
-                "no response to initialize within 5 s; server stderr tail:\n"
+                "no response to initialize within %.0f s; server stderr tail:\n" % _RPC_TIMEOUT
                 + _stderr_tail(self.proc)
             )
         assert "error" not in resp or resp.get("result") is not None, (
@@ -166,9 +175,9 @@ class TestStdioIntegration:
         # Send initialized notification
         _send_jsonrpc(self.proc, "notifications/initialized", {}, request_id=None)
         _send_jsonrpc(self.proc, "tools/list", {}, request_id=2)
-        resp = _read_jsonrpc(self.proc, request_id=2, timeout=5.0)
+        resp = _read_jsonrpc(self.proc, request_id=2, timeout=_RPC_TIMEOUT)
         if resp is None:
-            pytest.fail("no tools/list response within 5 s; server stderr tail:\n" + _stderr_tail(self.proc))
+            pytest.fail("no tools/list response within %.0f s; server stderr tail:\n" % _RPC_TIMEOUT + _stderr_tail(self.proc))
         result = resp.get("result", {})
         tools = result.get("tools", [])
         tool_names = {t.get("name") for t in tools}
@@ -180,9 +189,9 @@ class TestStdioIntegration:
         self._do_initialize()
         _send_jsonrpc(self.proc, "notifications/initialized", {}, request_id=None)
         _send_jsonrpc(self.proc, "resources/list", {}, request_id=3)
-        resp = _read_jsonrpc(self.proc, request_id=3, timeout=5.0)
+        resp = _read_jsonrpc(self.proc, request_id=3, timeout=_RPC_TIMEOUT)
         if resp is None:
-            pytest.fail("no resources/list response within 5 s; server stderr tail:\n" + _stderr_tail(self.proc))
+            pytest.fail("no resources/list response within %.0f s; server stderr tail:\n" % _RPC_TIMEOUT + _stderr_tail(self.proc))
         result = resp.get("result", {})
         resources = result.get("resources", [])
         # URIs may be percent-encoded (pydantic AnyUrl) or raw — accept both

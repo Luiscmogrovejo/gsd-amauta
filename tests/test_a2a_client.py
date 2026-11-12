@@ -2,9 +2,10 @@
 tests/test_a2a_client.py — Phase 55 A2A-03: structural tests for a2a_client.py.
 
 AST-based structural verification (no PG required by default).
-PG integration tests gated behind GSD_PG_INTEGRATION=true env var.
+PG integration tests gated behind the one Postgres fixture (tests/conftest.py).
 
-Never skips structural tests. Integration tests skip when GSD_PG_INTEGRATION unset.
+Never skips structural tests. Integration tests skip with the one standard reason
+when no disposable PostgreSQL is configured.
 """
 
 import ast
@@ -31,6 +32,17 @@ from services.a2a_client import (
     send_response,
     _validate_payload,
 )
+
+# Phase 88 plan 88-16-03: a third PG opt-in variable used to gate these classes,
+# beside GSD_TEST_POSTGRES_URL and GSD_POSTGRES_URL — three names for the one
+# question "is there a disposable PostgreSQL?". There is one answer now:
+# tests/conftest.py's fixture. The product's own clients
+# (services/pg_store.py, services/a2a_client.py) read GSD_POSTGRES_URL, which
+# the session scrub deletes, so `product_pg_dsn` restores it for the duration
+# of these classes and takes it away again.
+from conftest import PG_SKIP_REASON, postgres_dsn_or_none, product_pg_dsn  # noqa: E402
+
+_PG_DSN = postgres_dsn_or_none()
 
 CLIENT_PY = os.path.join(_REPO_ROOT, "services", "a2a_client.py")
 
@@ -194,9 +206,15 @@ class TestASTSourceInspection(unittest.TestCase):
             f"parent_correlation_id must appear >= 3 times, found {count}")
 
 
-@unittest.skipUnless(os.environ.get("GSD_PG_INTEGRATION"), "GSD_PG_INTEGRATION not set")
+@unittest.skipUnless(_PG_DSN, PG_SKIP_REASON)
 class TestA2AClientPGIntegration(unittest.TestCase):
-    """PG integration tests — require live DB. Skipped unless GSD_PG_INTEGRATION=true."""
+    """PG integration tests, against the disposable database only."""
+
+    def setUp(self):
+        """Point the product's PG client at the disposable database for this test."""
+        self._pg_env = product_pg_dsn()
+        self._pg_env.__enter__()
+        self.addCleanup(self._pg_env.__exit__, None, None, None)
 
     def test_send_request_returns_correlation_id(self):
         """send_request() inserts row and returns 36-char UUID string."""

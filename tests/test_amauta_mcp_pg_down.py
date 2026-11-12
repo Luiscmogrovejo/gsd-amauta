@@ -60,6 +60,15 @@ from jsonrpc_stdio import read_jsonrpc as _read_jsonrpc  # noqa: E402
 from jsonrpc_stdio import send_jsonrpc as _send_jsonrpc  # noqa: E402
 from jsonrpc_stdio import stderr_tail as _stderr_tail  # noqa: E402
 
+#: JSON-RPC read budget. A loaded Windows runner needs far more than the 5-10 s
+#: these calls used to allow: plan 88-16-02 turned "no response in time" from a
+#: silent skip into a failure, and the first enforcing run showed
+#: `amauta/complexity-score` exceeding 10 s there while every other call passed.
+#: Generous is correct for a budget whose only job is to stop a hang: a server
+#: that answers in 2 s is unaffected, and a server that never answers still
+#: fails, just later.
+_RPC_TIMEOUT = float(os.environ.get("GSD_MCP_RPC_TIMEOUT", "60"))
+
 
 # ── Subprocess fixture ─────────────────────────────────────────────────────────
 
@@ -163,7 +172,7 @@ class TestPGDownResilience:
             "capabilities": {},
             "clientInfo": {"name": "test-pg-down", "version": "0.0.1"},
         }, request_id=rid)
-        resp = _read_jsonrpc(self.proc, request_id=rid, timeout=5.0)
+        resp = _read_jsonrpc(self.proc, request_id=rid, timeout=_RPC_TIMEOUT)
         # Send initialized notification (no response expected)
         _send_jsonrpc(self.proc, "notifications/initialized", {}, request_id=None)
         return resp
@@ -172,14 +181,14 @@ class TestPGDownResilience:
         """Server starts with PG down and tools/list returns all 6 frozen names."""
         init_resp = self._do_initialize()
         if init_resp is None:
-            pytest.fail("no initialize response within 5 s; server stderr tail:\n" + _stderr_tail(self.proc))
+            pytest.fail("no initialize response within %.0f s; server stderr tail:\n" % _RPC_TIMEOUT + _stderr_tail(self.proc))
 
         # tools/list must succeed even with PG unreachable
         rid = self._next_id()
         _send_jsonrpc(self.proc, "tools/list", {}, request_id=rid)
-        resp = _read_jsonrpc(self.proc, request_id=rid, timeout=5.0)
+        resp = _read_jsonrpc(self.proc, request_id=rid, timeout=_RPC_TIMEOUT)
         if resp is None:
-            pytest.fail("no tools/list response within 5 s; server stderr tail:\n" + _stderr_tail(self.proc))
+            pytest.fail("no tools/list response within %.0f s; server stderr tail:\n" % _RPC_TIMEOUT + _stderr_tail(self.proc))
 
         result = resp.get("result", {})
         tools = result.get("tools", [])
@@ -205,9 +214,9 @@ class TestPGDownResilience:
             "name": "amauta/memory-search",
             "arguments": {"query": "anything"},
         }, request_id=rid)
-        resp = _read_jsonrpc(self.proc, request_id=rid, timeout=20.0)
+        resp = _read_jsonrpc(self.proc, request_id=rid, timeout=_RPC_TIMEOUT)
         if resp is None:
-            pytest.fail("no tools/call response within 5 s; server stderr tail:\n" + _stderr_tail(self.proc))
+            pytest.fail("no tools/call response within %.0f s; server stderr tail:\n" % _RPC_TIMEOUT + _stderr_tail(self.proc))
         content = resp.get("result", {}).get("content", [])
         assert content, f"No content in tools/call response: {resp}"
         text_block = next((c for c in content if c.get("type") == "text"), None)
@@ -232,9 +241,9 @@ class TestPGDownResilience:
             "name": "amauta/memory-distill",
             "arguments": {},
         }, request_id=rid)
-        resp = _read_jsonrpc(self.proc, request_id=rid, timeout=10.0)
+        resp = _read_jsonrpc(self.proc, request_id=rid, timeout=_RPC_TIMEOUT)
         if resp is None:
-            pytest.fail("no tools/call response within 5 s; server stderr tail:\n" + _stderr_tail(self.proc))
+            pytest.fail("no tools/call response within %.0f s; server stderr tail:\n" % _RPC_TIMEOUT + _stderr_tail(self.proc))
 
         # The result may be in resp["result"]["content"] (CallToolResult shape)
         result = resp.get("result", {})
@@ -258,9 +267,9 @@ class TestPGDownResilience:
         _send_jsonrpc(self.proc, "resources/read", {
             "uri": "amauta://findings/TK-0001",
         }, request_id=rid)
-        resp = _read_jsonrpc(self.proc, request_id=rid, timeout=10.0)
+        resp = _read_jsonrpc(self.proc, request_id=rid, timeout=_RPC_TIMEOUT)
         if resp is None:
-            pytest.fail("no resources/read response within 5 s; server stderr tail:\n" + _stderr_tail(self.proc))
+            pytest.fail("no resources/read response within %.0f s; server stderr tail:\n" % _RPC_TIMEOUT + _stderr_tail(self.proc))
 
         # Per CONTEXT Area 5: structured error is returned as resource content,
         # NOT as a JSON-RPC error code. The SDK returns it inside the content.
@@ -300,7 +309,7 @@ class TestPGDownResilience:
             "name": "amauta/memory-search",
             "arguments": {"query": "test"},
         }, request_id=rid)
-        _read_jsonrpc(self.proc, request_id=rid, timeout=5.0)
+        _read_jsonrpc(self.proc, request_id=rid, timeout=_RPC_TIMEOUT)
 
         # Activity 2: another tool call (memory-distill → pg_unavailable)
         rid = self._next_id()
@@ -308,7 +317,7 @@ class TestPGDownResilience:
             "name": "amauta/memory-distill",
             "arguments": {},
         }, request_id=rid)
-        _read_jsonrpc(self.proc, request_id=rid, timeout=5.0)
+        _read_jsonrpc(self.proc, request_id=rid, timeout=_RPC_TIMEOUT)
 
         # Wait 2 seconds — then assert still alive
         time.sleep(2)
@@ -336,9 +345,9 @@ class TestPGDownResilience:
                 },
             },
         }, request_id=rid)
-        resp = _read_jsonrpc(self.proc, request_id=rid, timeout=10.0)
+        resp = _read_jsonrpc(self.proc, request_id=rid, timeout=_RPC_TIMEOUT)
         if resp is None:
-            pytest.fail("no complexity-score response within 5 s; server stderr tail:\n" + _stderr_tail(self.proc))
+            pytest.fail("no complexity-score response within %.0f s; server stderr tail:\n" % _RPC_TIMEOUT + _stderr_tail(self.proc))
 
         result = resp.get("result", {})
         content = result.get("content", [])
