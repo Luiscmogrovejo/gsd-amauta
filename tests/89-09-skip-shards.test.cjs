@@ -61,17 +61,317 @@ const PRE_SHARD_DIGEST = '75cd221c305f84dec466e190ca55e108b55e2a78a838fe91c91dfb
 // the same discipline `tests/skip-exceptions.d/README.md` rule 2 states.
 
 /** `[name, file, platform, context, reason, reason_class, owner, owner_phase, exit_criterion]` tuples removed since the migration. */
-const REMOVED_SINCE_SHARDING = [];
+const REMOVED_SINCE_SHARDING = [
+  [
+    "test_rlm_mrr_validation",
+    "tests/test_27_mrr_validation.py",
+    "linux",
+    "any",
+    "plan 88-16-09 routed this to Phase 89: with a real PostgreSQL the RLM retrieval leg answers `legacy_in_memory_fallback` / no rows instead of the hybrid engine. The cause is in the retrieval pipeline Phase 89 rewrites (ingestion populates rlm_chunks without embeddings when no provider is configured, which the main pytest step deliberately has not), not in anything this plan owns. EXIT CRITERION: re",
+    "retrieval-leg-routed-89",
+    "Phase 89 (the retrieval pipeline rewrite)",
+    89,
+    "the hybrid retrieval engine answers for a freshly ingested fixture project against a real PostgreSQL on the Linux cell, instead of falling back to legacy_in_memory. These are NON-strict xfails: they turn into passes the moment the pipeline works, and plan 88-16 made them visible by giving the suite a real database for the first time.",
+  ],
+  [
+    "test_cli_prints_hybrid_provenance",
+    "tests/test_65_retrieval_e2e.py",
+    "linux",
+    "any",
+    "plan 88-16-09 routed this to Phase 89: with a real PostgreSQL the RLM retrieval leg answers `legacy_in_memory_fallback` / no rows instead of the hybrid engine. The cause is in the retrieval pipeline Phase 89 rewrites (ingestion populates rlm_chunks without embeddings when no provider is configured, which the main pytest step deliberately has not), not in anything this plan owns. EXIT CRITERION: re",
+    "retrieval-leg-routed-89",
+    "Phase 89 (the retrieval pipeline rewrite)",
+    89,
+    "the hybrid retrieval engine answers for a freshly ingested fixture project against a real PostgreSQL on the Linux cell, instead of falling back to legacy_in_memory. These are NON-strict xfails: they turn into passes the moment the pipeline works, and plan 88-16 made them visible by giving the suite a real database for the first time.",
+  ],
+  [
+    "test_mcp_search_code_ranks_by_query",
+    "tests/test_65_retrieval_e2e.py",
+    "linux",
+    "any",
+    "plan 88-16-09 routed this to Phase 89: with a real PostgreSQL the RLM retrieval leg answers `legacy_in_memory_fallback` / no rows instead of the hybrid engine. The cause is in the retrieval pipeline Phase 89 rewrites (ingestion populates rlm_chunks without embeddings when no provider is configured, which the main pytest step deliberately has not), not in anything this plan owns. EXIT CRITERION: re",
+    "retrieval-leg-routed-89",
+    "Phase 89 (the retrieval pipeline rewrite)",
+    89,
+    "the hybrid retrieval engine answers for a freshly ingested fixture project against a real PostgreSQL on the Linux cell, instead of falling back to legacy_in_memory. These are NON-strict xfails: they turn into passes the moment the pipeline works, and plan 88-16 made them visible by giving the suite a real database for the first time.",
+  ],
+  [
+    "test_query_answers_hybrid",
+    "tests/test_65_retrieval_e2e.py",
+    "linux",
+    "any",
+    "plan 88-16-09 routed this to Phase 89: with a real PostgreSQL the RLM retrieval leg answers `legacy_in_memory_fallback` / no rows instead of the hybrid engine. The cause is in the retrieval pipeline Phase 89 rewrites (ingestion populates rlm_chunks without embeddings when no provider is configured, which the main pytest step deliberately has not), not in anything this plan owns. EXIT CRITERION: re",
+    "retrieval-leg-routed-89",
+    "Phase 89 (the retrieval pipeline rewrite)",
+    89,
+    "the hybrid retrieval engine answers for a freshly ingested fixture project against a real PostgreSQL on the Linux cell, instead of falling back to legacy_in_memory. These are NON-strict xfails: they turn into passes the moment the pipeline works, and plan 88-16 made them visible by giving the suite a real database for the first time.",
+  ],
+  [
+    "test_graph_names_the_real_caller",
+    "tests/test_65_retrieval_e2e.py",
+    "linux",
+    "any",
+    "with a real PostgreSQL the RLM retrieval leg answers `legacy_in_memory_fallback`, so /query never reaches the hybrid branch that attaches graph_callers",
+    "retrieval-leg-routed-89",
+    "Phase 89 (retrieval pipeline)",
+    89,
+    "the hybrid engine answers for a freshly ingested fixture project on the Linux cell, the same criterion the other ten entries of this class carry. Plan 88-11 MEASURED that Valkey was never the obstacle the old `valkey-not-provided` entry claimed: it gave the Linux pytest cell a disposable Valkey on a port freePort() chose (run 43217682043, job 131180975509, `disposable Valkey answering on host port 40019`), the probe returned True, the positive branch ran for the first time on any cell, and it failed with `graph_callers missing main_entry: None` -- the key is ABSENT, because services/rlm-service.py attaches it only on the hybrid branch (`expand_chunks_with_graph`). The Valkey service stays in the workflow so the recorded reason is the true one.",
+  ],
+  [
+    "test_hybrid_search_end_to_end_rrf_score_is_float_live",
+    "tests/test_65_vector_leg.py",
+    "linux",
+    "any",
+    "plan 88-16-09 routed this to Phase 89: with a real PostgreSQL the RLM retrieval leg answers `legacy_in_memory_fallback` / no rows instead of the hybrid engine. The cause is in the retrieval pipeline Phase 89 rewrites (ingestion populates rlm_chunks without embeddings when no provider is configured, which the main pytest step deliberately has not), not in anything this plan owns. EXIT CRITERION: re",
+    "retrieval-leg-routed-89",
+    "Phase 89 (the retrieval pipeline rewrite)",
+    89,
+    "the hybrid retrieval engine answers for a freshly ingested fixture project against a real PostgreSQL on the Linux cell, instead of falling back to legacy_in_memory. These are NON-strict xfails: they turn into passes the moment the pipeline works, and plan 88-16 made them visible by giving the suite a real database for the first time.",
+  ],
+  [
+    "test_go_symbol_query_retrieves_defining_chunk",
+    "tests/test_69_ast_parity_e2e.py",
+    "linux",
+    "any",
+    "plan 88-16-09 routed this to Phase 89: with a real PostgreSQL the RLM retrieval leg answers `legacy_in_memory_fallback` / no rows instead of the hybrid engine. The cause is in the retrieval pipeline Phase 89 rewrites (ingestion populates rlm_chunks without embeddings when no provider is configured, which the main pytest step deliberately has not), not in anything this plan owns. EXIT CRITERION: re",
+    "retrieval-leg-routed-89",
+    "Phase 89 (the retrieval pipeline rewrite)",
+    89,
+    "the hybrid retrieval engine answers for a freshly ingested fixture project against a real PostgreSQL on the Linux cell, instead of falling back to legacy_in_memory. These are NON-strict xfails: they turn into passes the moment the pipeline works, and plan 88-16 made them visible by giving the suite a real database for the first time.",
+  ],
+  [
+    "test_java_symbol_query_retrieves_defining_chunk",
+    "tests/test_69_ast_parity_e2e.py",
+    "linux",
+    "any",
+    "plan 88-16-09 routed this to Phase 89: with a real PostgreSQL the RLM retrieval leg answers `legacy_in_memory_fallback` / no rows instead of the hybrid engine. The cause is in the retrieval pipeline Phase 89 rewrites (ingestion populates rlm_chunks without embeddings when no provider is configured, which the main pytest step deliberately has not), not in anything this plan owns. EXIT CRITERION: re",
+    "retrieval-leg-routed-89",
+    "Phase 89 (the retrieval pipeline rewrite)",
+    89,
+    "the hybrid retrieval engine answers for a freshly ingested fixture project against a real PostgreSQL on the Linux cell, instead of falling back to legacy_in_memory. These are NON-strict xfails: they turn into passes the moment the pipeline works, and plan 88-16 made them visible by giving the suite a real database for the first time.",
+  ],
+  [
+    "test_kotlin_symbol_query_retrieves_defining_chunk",
+    "tests/test_69_ast_parity_e2e.py",
+    "linux",
+    "any",
+    "plan 88-16-09 routed this to Phase 89: with a real PostgreSQL the RLM retrieval leg answers `legacy_in_memory_fallback` / no rows instead of the hybrid engine. The cause is in the retrieval pipeline Phase 89 rewrites (ingestion populates rlm_chunks without embeddings when no provider is configured, which the main pytest step deliberately has not), not in anything this plan owns. EXIT CRITERION: re",
+    "retrieval-leg-routed-89",
+    "Phase 89 (the retrieval pipeline rewrite)",
+    89,
+    "the hybrid retrieval engine answers for a freshly ingested fixture project against a real PostgreSQL on the Linux cell, instead of falling back to legacy_in_memory. These are NON-strict xfails: they turn into passes the moment the pipeline works, and plan 88-16 made them visible by giving the suite a real database for the first time.",
+  ],
+  [
+    "test_rust_symbol_query_retrieves_defining_chunk",
+    "tests/test_69_ast_parity_e2e.py",
+    "linux",
+    "any",
+    "plan 88-16-09 routed this to Phase 89: with a real PostgreSQL the RLM retrieval leg answers `legacy_in_memory_fallback` / no rows instead of the hybrid engine. The cause is in the retrieval pipeline Phase 89 rewrites (ingestion populates rlm_chunks without embeddings when no provider is configured, which the main pytest step deliberately has not), not in anything this plan owns. EXIT CRITERION: re",
+    "retrieval-leg-routed-89",
+    "Phase 89 (the retrieval pipeline rewrite)",
+    89,
+    "the hybrid retrieval engine answers for a freshly ingested fixture project against a real PostgreSQL on the Linux cell, instead of falling back to legacy_in_memory. These are NON-strict xfails: they turn into passes the moment the pipeline works, and plan 88-16 made them visible by giving the suite a real database for the first time.",
+  ],
+  [
+    "test_swift_symbol_query_retrieves_defining_chunk",
+    "tests/test_69_ast_parity_e2e.py",
+    "linux",
+    "any",
+    "plan 88-16-09 routed this to Phase 89: with a real PostgreSQL the RLM retrieval leg answers `legacy_in_memory_fallback` / no rows instead of the hybrid engine. The cause is in the retrieval pipeline Phase 89 rewrites (ingestion populates rlm_chunks without embeddings when no provider is configured, which the main pytest step deliberately has not), not in anything this plan owns. EXIT CRITERION: re",
+    "retrieval-leg-routed-89",
+    "Phase 89 (the retrieval pipeline rewrite)",
+    89,
+    "the hybrid retrieval engine answers for a freshly ingested fixture project against a real PostgreSQL on the Linux cell, instead of falling back to legacy_in_memory. These are NON-strict xfails: they turn into passes the moment the pipeline works, and plan 88-16 made them visible by giving the suite a real database for the first time.",
+  ],
+];
 
 /** The same shape, for entries added since the migration. */
-// Plan 89-02 (FND-11) added the 48 entries of tests/skip-exceptions.d/89-02.json: the
-// 24 PostgreSQL arms of tests/test_89_02_decimal_phase.py on each of the two cells
-// that have no disposable database (darwin, win32). They are declared here because
-// tests/skip-exceptions.d/README.md rule 2 and the set-equality proof below require
-// it -- without the declaration this file reports the ledger as having GAINED 48
-// entries and goes red. Task 89-07-04 removes them and moves each tuple to
-// REMOVED_SINCE_SHARDING.
-const ADDED_BY_89_02 = [
+// Plan 89-01 (RET-02) added 16 entries (tests/skip-exceptions.d/89-01.json) and plan 89-02
+// (FND-11) added 56 (tests/skip-exceptions.d/89-02.json): PostgreSQL arms on the two cells
+// that have no disposable database (darwin, win32). Task 89-07-04 removes them and moves
+// each tuple to REMOVED_SINCE_SHARDING.
+//
+// Plan 89-04 renamed this constant and unions its own declaration into
+// ADDED_SINCE_SHARDING below. Three lanes now declare entries here, and git resolves a
+// conflict in this file by taking ONE side -- which is exactly the loss the set-equality
+// proof below exists to catch, so every lane's entries are kept rather than merged away.
+const ADDED_BY_MASTER_LANES = [
+  [
+    "test_cell1_alias_qualified_filter_with_embedding_returns_rows",
+    "tests/test_89_01_bm25_alias_matrix.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+    89,
+    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
+  ],
+  [
+    "test_cell1_alias_qualified_filter_with_embedding_returns_rows",
+    "tests/test_89_01_bm25_alias_matrix.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+    89,
+    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
+  ],
+  [
+    "test_cell2_alias_qualified_filter_without_embedding_returns_rows",
+    "tests/test_89_01_bm25_alias_matrix.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+    89,
+    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
+  ],
+  [
+    "test_cell2_alias_qualified_filter_without_embedding_returns_rows",
+    "tests/test_89_01_bm25_alias_matrix.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+    89,
+    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
+  ],
+  [
+    "test_cell3_unqualified_filter_with_embedding_returns_rows",
+    "tests/test_89_01_bm25_alias_matrix.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+    89,
+    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
+  ],
+  [
+    "test_cell3_unqualified_filter_with_embedding_returns_rows",
+    "tests/test_89_01_bm25_alias_matrix.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+    89,
+    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
+  ],
+  [
+    "test_cell4_unqualified_filter_without_embedding_returns_rows",
+    "tests/test_89_01_bm25_alias_matrix.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+    89,
+    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
+  ],
+  [
+    "test_cell4_unqualified_filter_without_embedding_returns_rows",
+    "tests/test_89_01_bm25_alias_matrix.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+    89,
+    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
+  ],
+  [
+    "test_sql_programming_error_raises_typed_and_never_returns_empty",
+    "tests/test_89_01_bm25_alias_matrix.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+    89,
+    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
+  ],
+  [
+    "test_sql_programming_error_raises_typed_and_never_returns_empty",
+    "tests/test_89_01_bm25_alias_matrix.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+    89,
+    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
+  ],
+  [
+    "test_the_pre_fix_unaliased_shape_answers_sqlstate_42p01",
+    "tests/test_89_01_bm25_alias_matrix.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+    89,
+    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
+  ],
+  [
+    "test_the_pre_fix_unaliased_shape_answers_sqlstate_42p01",
+    "tests/test_89_01_bm25_alias_matrix.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+    89,
+    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
+  ],
+  [
+    "test_relevance_mrr_at_k_on_the_deterministic_provider",
+    "tests/test_89_01_relevance_check.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+    89,
+    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
+  ],
+  [
+    "test_relevance_mrr_at_k_on_the_deterministic_provider",
+    "tests/test_89_01_relevance_check.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+    89,
+    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
+  ],
+  [
+    "test_relevance_mrr_with_the_real_embedding_provider",
+    "tests/test_89_01_relevance_check.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+    89,
+    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
+  ],
+  [
+    "test_relevance_mrr_with_the_real_embedding_provider",
+    "tests/test_89_01_relevance_check.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+    89,
+    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
+  ],
   [
     "test_72_and_72_0_do_read_each_other_back[postgres]",
     "tests/test_89_02_decimal_phase.py",
@@ -687,7 +987,7 @@ const ADDED_BY_89_02 = [
     "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
     89,
     "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
-  ]
+  ],
 ];
 /**
  * The same shape, for entries added since the migration.
@@ -722,18 +1022,21 @@ const ADDED_BY_89_04 = JSON.parse(
 const ADDED_EXPECTED = 51;
 
 /**
- * The union of both lanes' declarations.
+ * The union of every lane's declarations.
  *
- * Plan 89-02 and plan 89-04 each added entries, in parallel, and git merged
- * this file by taking one side. Both sides are kept: dropping either would
- * make the set-equality proof below report the OTHER plan's entries as an
- * undeclared gain, which is precisely the loss the proof exists to catch.
+ * Plans 89-01, 89-02 and 89-04 each added entries in parallel, and git resolves
+ * a conflict in this file by taking ONE side. Every side is kept: dropping any
+ * of them would make the set-equality proof below report the surviving plans'
+ * entries as an undeclared gain, which is precisely the loss the proof exists
+ * to catch.
  *
- * 89-02 declared its tuples literally (56 of them, measured — the comment above
- * that block says 48 and is stale); 89-04 derives its 51 from the shard it owns
- * and pins the count separately (ADDED_EXPECTED).
+ * `ADDED_BY_MASTER_LANES` holds 89-01's 16 plus 89-02's 56 as literal tuples,
+ * exactly as they arrived on master; 89-04 derives its 51 from the shard it owns
+ * and pins that count separately (`ADDED_EXPECTED`). The literal count is NOT
+ * hard-coded here — it is compared against those plans' own shards, so it cannot
+ * go stale when they edit them.
  */
-const ADDED_SINCE_SHARDING = [...ADDED_BY_89_02, ...ADDED_BY_89_04];
+const ADDED_SINCE_SHARDING = [...ADDED_BY_MASTER_LANES, ...ADDED_BY_89_04];
 
 const TMP_DIRS = [];
 
@@ -821,14 +1124,15 @@ describe('89-09 the shard migration lost nothing', () => {
     // literal tuples plus 89-04's 51 derived ones: if either side had been
     // dropped, the set-equality proof below would blame the surviving plan for
     // an undeclared gain.
-    // Counted against 89-02's OWN shard rather than against a literal, so this
-    // assertion cannot go stale when that plan's count changes — and measured:
-    // its declaration is 56 entries, not the 48 its comment above says.
-    const shard8902 = JSON.parse(fs.readFileSync(path.join(DIR, '89-02.json'), 'utf8'));
-    assert.strictEqual(ADDED_BY_89_02.length, shard8902.length,
-      "plan 89-02's declaration no longer matches its own shard");
+    // Counted against the OTHER lanes' own shards rather than against a
+    // literal, so this assertion cannot go stale when they edit them.
+    const otherLanes = ['89-01.json', '89-02.json'].reduce((n, f) =>
+      n + JSON.parse(fs.readFileSync(path.join(DIR, f), 'utf8')).length, 0);
+    assert.strictEqual(ADDED_BY_MASTER_LANES.length, otherLanes,
+      "a lane's declaration no longer matches its own shard: 89-01 + 89-02 "
+      + `shards hold ${otherLanes}, the declaration holds ${ADDED_BY_MASTER_LANES.length}`);
     assert.strictEqual(ADDED_SINCE_SHARDING.length,
-      ADDED_BY_89_02.length + ADDED_EXPECTED);
+      ADDED_BY_MASTER_LANES.length + ADDED_EXPECTED);
     const at = (t, f) => t[FIELDS.indexOf(f)];
     const platforms = new Set(ADDED_BY_89_04.map((t) => at(t, 'platform')));
     assert.deepStrictEqual([...platforms].sort(), ['darwin', 'linux', 'win32']);

@@ -1,0 +1,40 @@
+[
+  {
+    "query": "psycopg connection pooling exhaustion",
+    "expected_ids": ["mem-89rel-01"],
+    "rank_at_most": 2,
+    "measured_rank": 1,
+    "voyage_sample": true
+  },
+  {
+    "query": "idempotent alembic migration downgrade",
+    "expected_ids": ["mem-89rel-05"],
+    "rank_at_most": 2,
+    "measured_rank": 1
+  },
+  {
+    "query": "jwt verification expired token raise",
+    "expected_ids": ["mem-89rel-09"],
+    "rank_at_most": 2,
+    "measured_rank": 1
+  },
+  {
+    "query": "valkey cache stampede single flight",
+    "expected_ids": ["mem-89rel-13"],
+    "rank_at_most": 2,
+    "measured_rank": 1
+  },
+  {
+    "query": "paradedb bm25 alias qualified fragment",
+    "expected_ids": ["mem-89rel-17"],
+    "rank_at_most": 2,
+    "measured_rank": 1,
+    "voyage_sample": true
+  },
+  {
+    "query": "voyage embedding dimension matryoshka truncation",
+    "expected_ids": ["mem-89rel-21"],
+    "rank_at_most": 3,
+    "measured_rank": 2
+  }
+]

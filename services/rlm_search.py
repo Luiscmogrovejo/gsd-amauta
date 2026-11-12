@@ -87,6 +87,11 @@ def _check_ident(name: str) -> None:
         raise ValueError(f"unsafe SQL identifier: {name!r}")
 
 
+# Phase 89 / RET-02: the typed-error machinery the three `except ... -> []`
+# sites below use is at the BOTTOM of this file, deliberately after its callers
+# — plan 89-01's acceptance measures `_generic_bm25_only` by line range, and
+# module-level names resolve at call time, so the order is a reading order only.
+
 #: Per-connection cache for the migration-029 column probe.
 _HAS_EMBEDDING_MODEL_COLUMN = {}
 
@@ -254,7 +259,6 @@ def hybrid_search_generic(query: str, pg_conn, *, table: str, id_column: str,
         log.debug("hybrid_search_generic_ok table=%s results=%d", table, len(rows))
         return rows
     except Exception as e:
-        log.warning("hybrid_search_generic_failed table=%s error=%s — falling back to BM25", table, str(e))
         # TK-1741: a failed cur.execute() leaves the psycopg2 transaction
         # aborted (PostgreSQL requires ROLLBACK before any further statement
         # on the same connection/transaction). Without this, the fallback
@@ -264,10 +268,24 @@ def hybrid_search_generic(query: str, pg_conn, *, table: str, id_column: str,
         # best-effort: pg_conn may be a stub/fake in unit tests with no
         # rollback method, or already closed — swallow those cases and let
         # the fallback path's own try/except handle whatever comes next.
-        try:
-            pg_conn.rollback()
-        except Exception as rollback_err:
-            log.debug("hybrid_search_generic_rollback_skipped table=%s error=%s", table, str(rollback_err))
+        _rollback_quietly(pg_conn, "hybrid_search_generic")
+
+        # Phase 89 / RET-02. This leg HAS a lower rung, so the degradation is
+        # kept for every error class (the contract TK-1741 relies on) — but a
+        # programming error is a defect in this module's own SQL, so it is
+        # counted, logged with its sqlstate, and re-raised under GSD_TEST_MODE:
+        # a lower rung answering must not let CI pass over unplannable SQL.
+        sqlstate = _programming_error_sqlstate(e)
+        if sqlstate is not None:
+            typed = _engine_programming_error("hybrid_rrf", table, sqlstate, e)
+            if _test_mode():
+                raise typed from e
+            log.warning(
+                "hybrid_search_generic_failed table=%s sqlstate=%s — falling back to BM25",
+                table, typed.sqlstate,
+            )
+        else:
+            log.warning("hybrid_search_generic_failed table=%s error=%s — falling back to BM25", table, str(e))
         return _generic_bm25_only(bm25_query, pg_conn, table=table, id_column=id_column,
                                    select_columns=select_columns, filter_sql=filter_sql,
                                    filter_params=filter_params, top_k=top_k)
@@ -281,6 +299,29 @@ def _generic_bm25_only(bm25_query: str, pg_conn, *, table: str, id_column: str,
     (no query_embedding) and its exception fallback (hybrid SQL failed). Same
     table/column-agnostic contract as hybrid_search_generic — no literal schema
     references.
+
+    Phase 89 / RET-02: this statement aliases its single table as `c`, exactly
+    as hybrid_search_generic's per-leg CTEs do, so that ONE `filter_sql`
+    fragment is valid in BOTH branches. It used to query the bare unaliased
+    table name in both its FROM and its `@@@` operand, and `hybrid_search` splices
+    an alias-qualified fragment ("AND (c.file_path = %s OR c.file_path LIKE
+    %s)"): every call with a file filter and no query embedding -- the only
+    combination the main CI pytest step can take, since it deliberately carries
+    no embedding key -- made PostgreSQL answer `missing FROM-clause entry for
+    table "c"` (sqlstate 42P01), which the `except` below turned into an empty
+    result set. Eleven tests were carried as expected failures on that.
+
+    Aliasing HERE rather than un-qualifying the caller's fragment is the
+    deliberate choice (89-RESEARCH.md §6.3 item 1): the one-line alternative
+    (make `hybrid_search` emit bare `file_path`) fixes today's caller and leaves
+    the trap armed for the next one. An unqualified column still resolves
+    against a single aliased table, so `services/pg_store.py`'s deliberately
+    unqualified fragments (`_memory_filter_sql`, documented at :333-338) keep
+    working unchanged -- that is cells 3 and 4 of
+    tests/test_89_01_bm25_alias_matrix.py.
+
+    The result SHAPE, the ordering contract and the degradation semantics are
+    untouched; the only change is which name the statement gives its one table.
     """
     _check_ident(table)
     _check_ident(id_column)
@@ -290,7 +331,7 @@ def _generic_bm25_only(bm25_query: str, pg_conn, *, table: str, id_column: str,
     if not bm25_query:
         return []
 
-    select_cols_sql = ", ".join(select_columns)
+    select_cols_sql = ", ".join(f"c.{col}" for col in select_columns)
     filter_params = list(filter_params)
 
     sql = f"""
@@ -299,10 +340,10 @@ def _generic_bm25_only(bm25_query: str, pg_conn, *, table: str, id_column: str,
             NULL::float AS rrf_score,
             1 AS rank_bm25,
             NULL::int AS rank_vector
-        FROM {table}
-        WHERE {table} @@@ %s
+        FROM {table} c
+        WHERE c @@@ %s
         {filter_sql}
-        ORDER BY paradedb.score({id_column}) DESC
+        ORDER BY paradedb.score(c.{id_column}) DESC
         LIMIT %s
     """
     params = [bm25_query] + filter_params + [top_k]
@@ -317,16 +358,25 @@ def _generic_bm25_only(bm25_query: str, pg_conn, *, table: str, id_column: str,
             rows = [dict(zip(result_cols, row)) for row in cur.fetchall()]
         return rows
     except Exception as e:
-        log.warning("generic_bm25_only_failed table=%s error=%s", table, str(e))
         # TK-1741: mirror the rollback in hybrid_search_generic's except --
         # this branch is both the graceful-degradation path (no
         # query_embedding) and the exception-fallback path, either of which
         # can be called again on the same pg_conn by a subsequent request,
         # so leaving the transaction aborted here is just as harmful.
-        try:
-            pg_conn.rollback()
-        except Exception as rollback_err:
-            log.debug("generic_bm25_only_rollback_skipped table=%s error=%s", table, str(rollback_err))
+        _rollback_quietly(pg_conn, "generic_bm25_only")
+
+        # Phase 89 / RET-02. Unlike hybrid_search_generic, this branch has NO
+        # lower rung: the `return []` below IS the silence that hid the alias
+        # defect for two phases. So a programming error here is raised as a
+        # typed EngineProgrammingError in every mode, not only under test mode
+        # — that is what lets /query and /search report `engine_error` at all,
+        # and the HTTP callers are the layer that decides whether to degrade.
+        # Operational errors (connection lost, lock timeout, disk full) keep
+        # the degraded empty result, unchanged.
+        sqlstate = _programming_error_sqlstate(e)
+        if sqlstate is not None:
+            raise _engine_programming_error("bm25_only", table, sqlstate, e) from e
+        log.warning("generic_bm25_only_failed table=%s error=%s", table, str(e))
         return []
 
 
@@ -526,6 +576,18 @@ def bm25_only_search(query: str, pg_conn, top_k: int = DEFAULT_TOP_K,
             rows = [dict(zip(cols, row)) for row in cur.fetchall()]
         return rows
     except Exception as e:
+        # Phase 89 / RET-02: the third `except … -> []` in this module gets the
+        # same split as the other two. This statement builds its own file
+        # clause and is UNQUALIFIED throughout, so the alias defect could never
+        # reach it (it takes no caller fragment) — but "the statement failed"
+        # was still indistinguishable from "no matches", which is the class this
+        # task closes, and fixing two of three sites would just move the trap.
+        _rollback_quietly(pg_conn, "bm25_only_search")
+        sqlstate = _programming_error_sqlstate(e)
+        if sqlstate is not None:
+            raise _engine_programming_error(
+                "bm25_only_search", "rlm_chunks", sqlstate, e
+            ) from e
         log.warning("bm25_only_search_failed query=%s error=%s", query[:50], str(e))
         return []
 
@@ -540,3 +602,204 @@ def _sanitize_query(query: str) -> str:
     sanitized = re.sub(r'[!^~@()\[\]{}"]', ' ', query)
     sanitized = ' '.join(sanitized.split())
     return sanitized[:500] if sanitized.strip() else ""
+
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Phase 89 / RET-02: a SQL programming error is not "no matches"
+#
+# Until this phase, both legs ended in `except Exception` -> empty result, so a
+# statement PostgreSQL could not even plan was indistinguishable from an empty
+# corpus. That is how the alias defect above survived for two phases with a
+# green suite: eleven tests recorded "the engine answers nothing" as an expected
+# failure, and nobody could see that the engine had answered 42P01.
+#
+# The split is by error CLASS, deliberately narrow:
+#   * psycopg2.ProgrammingError (sqlstate class 42xxx — undefined table,
+#     undefined column, syntax error) is a DEFECT in this module's own SQL. It
+#     becomes a typed EngineProgrammingError, is counted, and is reported to the
+#     caller. No amount of retrying or degrading will make it answer.
+#   * every other class — OperationalError and friends: connection lost, lock
+#     timeout, disk full — keeps the existing degraded empty result. That path
+#     is the product's resilience contract and this phase does not touch it.
+# ───────────────────────────────────────────────────────────────────────────────
+
+#: Per-sqlstate counter for programming errors raised out of a retrieval leg, so
+#: the condition is visible without reading logs. Keyed by sqlstate, with a
+#: bounded key space (sqlstates are five characters from a fixed vocabulary).
+_ENGINE_ERROR_COUNTS = {}
+
+
+class EngineProgrammingError(RuntimeError):
+    """A retrieval leg's own SQL could not be planned or compiled.
+
+    Raised instead of returning an empty result, so "the query failed" can never
+    again be read as "the corpus has no matches". Carries the sqlstate and the
+    NAME of the statement — never the statement text with its bound values, and
+    never a DSN.
+
+    Attributes:
+        statement: short name of the failing statement (e.g. ``"bm25_only"``).
+        table: the table the statement was built against.
+        sqlstate: the PostgreSQL sqlstate, e.g. ``"42P01"``.
+        error_class: the psycopg2 exception class name, e.g.
+            ``"UndefinedTable"``.
+
+    Example:
+        >>> e = EngineProgrammingError("bm25_only", "rlm_chunks", "42P01",
+        ...                            "UndefinedTable")
+        >>> e.as_engine_error()["sqlstate"]
+        '42P01'
+    """
+
+    def __init__(self, statement: str, table: str, sqlstate: str,
+                 error_class: str):
+        super().__init__(
+            "%s: the %s statement against %s could not be planned "
+            "(sqlstate %s)" % (error_class, statement, table, sqlstate)
+        )
+        self.statement = statement
+        self.table = table
+        self.sqlstate = sqlstate
+        self.error_class = error_class
+
+    def as_engine_error(self) -> dict:
+        """The typed body an HTTP caller reports as ``engine_error``.
+
+        Shaped like ``services/amauta-daemon.py``'s ``_requires_postgres_payload``
+        — a snake_case ``error`` type the caller can branch on, a human
+        ``detail``, and context keys — so the two typed failure bodies in the
+        product read the same way.
+
+        Returns:
+            dict: ``error``, ``detail``, ``statement``, ``table``, ``sqlstate``
+            and ``error_class``. Deliberately carries no SQL text, no bound
+            parameter value and no DSN.
+
+        Example:
+            >>> EngineProgrammingError("bm25_only", "t", "42703",
+            ...                        "UndefinedColumn").as_engine_error()["error"]
+            'engine_sql_programming_error'
+        """
+        return {
+            "error": "engine_sql_programming_error",
+            "detail": (
+                "the %s statement against %s could not be planned by PostgreSQL "
+                "(%s, sqlstate %s). This is a defect in the retrieval engine's "
+                "own SQL, not an empty corpus: the results below come from a "
+                "degraded engine." % (
+                    self.statement, self.table, self.error_class, self.sqlstate,
+                )
+            ),
+            "statement": self.statement,
+            "table": self.table,
+            "sqlstate": self.sqlstate,
+            "error_class": self.error_class,
+        }
+
+
+def engine_error_counts() -> dict:
+    """A copy of the per-sqlstate programming-error counters.
+
+    Returns:
+        dict[str, int]: sqlstate -> how many times a leg raised it this process.
+
+    Example:
+        >>> isinstance(engine_error_counts(), dict)
+        True
+    """
+    return dict(_ENGINE_ERROR_COUNTS)
+
+
+def reset_engine_error_counts() -> None:
+    """Zero the programming-error counters (test support only)."""
+    _ENGINE_ERROR_COUNTS.clear()
+
+
+def _programming_error_sqlstate(exc) -> Optional[str]:
+    """The sqlstate of *exc* when it is a psycopg2 programming error, else None.
+
+    psycopg2 is imported lazily and defensively: this module is handed a
+    connection rather than opening one, and its unit tests drive it with plain
+    stub connections on machines where psycopg2 may not be installed at all.
+
+    Args:
+        exc: the exception a leg's ``cur.execute`` raised.
+
+    Returns:
+        str | None: the sqlstate (``""`` when psycopg2 reported none), or None
+        when *exc* is not of the programming class — in which case the caller
+        keeps its existing degraded behaviour.
+    """
+    try:
+        import psycopg2
+    except Exception:
+        return None
+    if not isinstance(exc, psycopg2.ProgrammingError):
+        return None
+    return getattr(exc, "pgcode", None) or ""
+
+
+def _engine_programming_error(statement: str, table: str, sqlstate: str,
+                              exc) -> EngineProgrammingError:
+    """Count, log and build the typed error for a programming-class failure.
+
+    The log line carries the sqlstate, the statement NAME and the exception
+    class only. It deliberately carries neither the SQL text (which holds
+    ``%s`` placeholders and, in a formatted form, the caller's bound values) nor
+    any connection detail — there is no DSN in scope at either call site, since
+    this module never opens a connection. ``services/pg_dsn.py``'s ``mask_dsn``
+    is therefore not reachable from here and not needed; see the record.
+
+    Args:
+        statement: short name of the failing statement.
+        table: the table it was built against.
+        sqlstate: the PostgreSQL sqlstate.
+        exc: the original psycopg2 exception.
+
+    Returns:
+        EngineProgrammingError: ready to raise.
+    """
+    key = sqlstate or "unknown"
+    _ENGINE_ERROR_COUNTS[key] = _ENGINE_ERROR_COUNTS.get(key, 0) + 1
+    error_class = type(exc).__name__
+    log.error(
+        "engine_sql_programming_error statement=%s table=%s sqlstate=%s "
+        "error_class=%s count=%d",
+        statement, table, key, error_class, _ENGINE_ERROR_COUNTS[key],
+    )
+    return EngineProgrammingError(statement, table, key, error_class)
+
+
+def _rollback_quietly(pg_conn, where: str) -> None:
+    """Best-effort ``pg_conn.rollback()`` — TK-1741's invariant, factored out.
+
+    A failed ``cur.execute()`` leaves the psycopg2 transaction aborted, and
+    PostgreSQL refuses every further statement on it until a ROLLBACK. Both legs
+    issue another statement afterwards (or hand the connection back to a caller
+    that will), so leaving it aborted masks the real error behind "current
+    transaction is aborted". Best-effort because ``pg_conn`` may be a stub with
+    no ``rollback`` method, or already closed.
+
+    Args:
+        pg_conn: the connection, or any stub standing in for one.
+        where: the call site name, for the debug line.
+    """
+    try:
+        pg_conn.rollback()
+    except Exception as rollback_err:
+        log.debug("%s_rollback_skipped error=%s", where, str(rollback_err))
+
+
+def _test_mode() -> bool:
+    """Whether ``GSD_TEST_MODE`` is truthy.
+
+    Under test mode a programming error in the HYBRID statement re-raises
+    instead of degrading to the BM25-only leg, so CI can never stay green over
+    SQL the engine cannot plan. Production keeps the degradation.
+
+    Returns:
+        bool
+    """
+    return (os.environ.get("GSD_TEST_MODE") or "").strip().lower() not in (
+        "", "0", "false", "no", "off",
+    )

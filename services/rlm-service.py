@@ -263,6 +263,37 @@ def _get_pg_conn():
         return None
 
 
+def _engine_programming_error_class():
+    """``rlm_search.EngineProgrammingError``, or a stand-in that never matches.
+
+    Phase 89 / RET-02. The retrieval legs now raise a typed error when their own
+    SQL cannot be planned (sqlstate class 42xxx) instead of returning an empty
+    list that reads as "no matches". The handlers need the class in an ``except``
+    clause, which has to be resolved BEFORE the ``try`` that imports the rest of
+    the pipeline — and this file is launched both as a script and as a package
+    module, so every services import carries the same two-way fallback.
+
+    Returns:
+        type[BaseException]: the real class, or a private Exception subclass that
+        nothing raises, so the handler's ``except`` clause stays valid even on an
+        installation where ``rlm_search`` cannot be imported at all (the pipeline
+        branch below already degrades for that case).
+    """
+    try:
+        from services.rlm_search import EngineProgrammingError
+        return EngineProgrammingError
+    except ImportError:
+        pass
+    try:
+        from rlm_search import EngineProgrammingError
+        return EngineProgrammingError
+    except ImportError:
+        class _EngineProgrammingErrorUnavailable(Exception):
+            """Never raised — keeps the handlers' except clauses well-formed."""
+
+        return _EngineProgrammingErrorUnavailable
+
+
 def _trigger_lazy_ingestion(paths: list):
     """Trigger lazy on-demand ingestion for a list of file paths (Phase 27 / RLM-01)."""
     try:
@@ -1065,6 +1096,12 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
         pg_conn = _get_pg_conn()
         results = []
         used_engine = "in_memory_bm25"
+        # Phase 89 / RET-02: a typed body when the engine's OWN SQL could not be
+        # planned, so a programming error stops being reported as an empty
+        # corpus. None on every healthy request; the key is omitted from the
+        # response body unless it is set.
+        engine_error = None
+        _EngineProgrammingError = _engine_programming_error_class()
 
         if pg_conn is not None:
             try:
@@ -1086,6 +1123,18 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
                     results = _normalize_hybrid_chunks(expanded)
 
                     used_engine = "hybrid_rrf_reranked"
+            except _EngineProgrammingError as e:
+                # The engine's own SQL is broken. Report it as a typed error
+                # rather than letting the BM25 fallback dress it up as "the
+                # corpus had nothing". `used_engine` stays truthful: it still
+                # names whatever actually answered.
+                engine_error = e.as_engine_error()
+                log.error(
+                    "search_engine_sql_programming_error statement=%s sqlstate=%s "
+                    "error_class=%s",
+                    e.statement, e.sqlstate, e.error_class,
+                )
+                results = []
             except Exception as e:
                 log.warning("pg_pipeline_failed error=%s — falling back to BM25", str(e))
                 results = []
@@ -1094,6 +1143,21 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
                     pg_conn.close()
                 except Exception:
                     pass
+
+        # Under GSD_TEST_MODE a SQL programming error is FATAL to the request:
+        # CI must never be able to go green over a statement PostgreSQL cannot
+        # plan just because the in-memory scan answered instead. In production
+        # the same condition degrades and reports `engine_error` in a 200 body.
+        if engine_error is not None and _TEST_MODE:
+            self._send_json({
+                "ok": False,
+                "query": query,
+                "error": engine_error["error"],
+                "detail": engine_error["detail"],
+                "engine": used_engine,
+                "engine_error": engine_error,
+            }, 500)
+            return
 
         # Fallback: in-memory BM25 (existing behavior, unchanged)
         if not results:
@@ -1117,14 +1181,17 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
         log.info("search_done query=%s engine=%s results=%d elapsed_ms=%.1f",
                  query[:50], used_engine, len(results), elapsed_ms)
 
-        self._send_json({
+        payload = {
             "ok": True,
             "query": query,
             "results": results,
             "total_chunks": len(results),
             "engine": used_engine,
             "elapsed_ms": elapsed_ms,
-        })
+        }
+        if engine_error is not None:
+            payload["engine_error"] = engine_error
+        self._send_json(payload)
 
     def _handle_reindex(self, body):
         """
@@ -1213,6 +1280,9 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
         files_changed = 0
         files_cached = 0
         total_chunks = 0
+        # Phase 89 / RET-02: see _handle_search. None on every healthy request.
+        engine_error = None
+        _EngineProgrammingError = _engine_programming_error_class()
 
         # ── Hybrid branch: scan -> ingest -> BM25+vector RRF -> rerank -> graph-expand ──
         pg_conn = _get_pg_conn()
@@ -1254,6 +1324,20 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
                 files_changed = stats.get("inserted", 0)
                 files_cached = stats.get("skipped", 0)
                 total_chunks = len(results)
+            except _EngineProgrammingError as e:
+                # Phase 89 / RET-02, the site that produced the eleven carried
+                # expected failures: this `except` used to catch the alias error
+                # along with everything else and set `results = []`, which the
+                # legacy scan below then answered — so the response looked like
+                # a healthy legacy fallback over an empty hybrid index. It is now
+                # a typed error the caller can branch on.
+                engine_error = e.as_engine_error()
+                log.error(
+                    "query_engine_sql_programming_error statement=%s sqlstate=%s "
+                    "error_class=%s",
+                    e.statement, e.sqlstate, e.error_class,
+                )
+                results = []
             except Exception as e:
                 log.warning("query_hybrid_pipeline_failed error=%s — falling back to legacy scan", str(e))
                 results = []
@@ -1262,6 +1346,21 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
                     pg_conn.close()
                 except Exception:
                     pass
+
+        # Under GSD_TEST_MODE a SQL programming error is FATAL to the request —
+        # see _handle_search for why. In production it degrades to the legacy
+        # scan below and reports `engine_error` in the 200 body.
+        if engine_error is not None and _TEST_MODE:
+            self._send_json({
+                "ok": False,
+                "query": query,
+                "directory": directory,
+                "error": engine_error["error"],
+                "detail": engine_error["detail"],
+                "engine": used_engine,
+                "engine_error": engine_error,
+            }, 500)
+            return
 
         # ── Legacy fallback branch: explicit in-memory BM25 scan (never deleted) ──
         if not results:
@@ -1297,7 +1396,7 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
         log.info("query_done query=%s engine=%s results=%d elapsed_ms=%.1f",
                  query[:50], used_engine, len(results), elapsed_ms)
 
-        self._send_json({
+        payload = {
             "ok": True,
             "query": query,
             "directory": directory,
@@ -1309,7 +1408,10 @@ class RLMHandler(http.server.BaseHTTPRequestHandler):
             "returned": len(results),
             "elapsed_ms": elapsed_ms,
             "engine": used_engine,
-        })
+        }
+        if engine_error is not None:
+            payload["engine_error"] = engine_error
+        self._send_json(payload)
 
 
 # ═══════════════════════════════════════════════════════
