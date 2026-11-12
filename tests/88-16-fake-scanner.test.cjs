@@ -41,9 +41,27 @@ function runEnforcementWith(env, targetDir) {
   );
 }
 
+
+// The three cases below drive `scripts/skill-semgrep-runner.cjs`, whose
+// `spawnSync('semgrep', …)` runs with `shell: false`. On Windows the fake is a
+// `.cmd` shim (tests/support/fake-exe.cjs, plan 88-14) and current Node refuses
+// to spawn a `.cmd` without a shell — the CVE-2024-27980 hardening plan 88-15
+// already recorded for `resolvePython`. The product's call site is correct and
+// must not grow a `shell: true`, so the three carry a named Windows skip with
+// an entry in tests/skip-exceptions.json. The other three cases in this file —
+// the version probe, the gitleaks report and the trivy report — spawn the fake
+// themselves and DO run on all nine cells, so the fake is exercised everywhere.
+const WIN_CMD_SHIM_SKIP =
+  process.platform === 'win32'
+    ? 'the product spawns `semgrep` with shell:false and the fake is a .cmd shim, ' +
+      'and current Node refuses to spawn a .cmd without a shell (CVE-2024-27980 ' +
+      'hardening); ' +
+      'the real semgrep is measured separately on this cell'
+    : false;
+
 // ── semgrep: parsing and the ERROR-severity policy ──────────────────────────
 
-test('88-16-07: the semgrep runner reports a finding the fake emits', () => {
+test('88-16-07: the semgrep runner reports a finding the fake emits', { skip: WIN_CMD_SHIM_SKIP }, () => {
   const { dir, env } = stageFake('semgrep', { findings: 1, severity: 'ERROR' });
   try {
     const r = runEnforcementWith(env, path.join(ROOT, 'get-shit-done', 'skills'));
@@ -58,7 +76,7 @@ test('88-16-07: the semgrep runner reports a finding the fake emits', () => {
   }
 });
 
-test('88-16-07: the same runner reports clean when the fake finds nothing', () => {
+test('88-16-07: the same runner reports clean when the fake finds nothing', { skip: WIN_CMD_SHIM_SKIP }, () => {
   const { dir, env } = stageFake('semgrep', { findings: 0 });
   try {
     const r = runEnforcementWith(env, path.join(ROOT, 'get-shit-done', 'skills'));
@@ -69,7 +87,7 @@ test('88-16-07: the same runner reports clean when the fake finds nothing', () =
   }
 });
 
-test('88-16-07: only ERROR-severity semgrep findings count', () => {
+test('88-16-07: only ERROR-severity semgrep findings count', { skip: WIN_CMD_SHIM_SKIP }, () => {
   // The policy under test: `runEnforcement` filters to extra.severity ERROR.
   // A WARNING must be parsed and then NOT counted — which is exactly the kind
   // of thing a real scanner run would never exercise deterministically.
