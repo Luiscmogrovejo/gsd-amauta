@@ -932,6 +932,8 @@ def _mem_semantic_search(query: str, top_k: int = 5, include_noise: bool = False
     """
     import urllib.request, urllib.error, json as _json
     try:
+        if _live_port_blocked("GSD_DAEMON_PORT", "18799"):
+            raise RuntimeError("daemon route skipped in test mode")  # take the fallback below
         port = os.environ.get("GSD_DAEMON_PORT", "18799")
         url = f"http://127.0.0.1:{port}/api/memory/semantic-search"
         req_body = {"query": query, "limit": top_k}
@@ -989,6 +991,29 @@ def _mem_semantic_search(query: str, top_k: int = 5, include_noise: bool = False
         if _mem_pg_available():
             return _mem_pg_search(query, None, top_k)
     return []
+
+def _live_port_blocked(port_env: str, default_port: str) -> bool:
+    """True when a CLI helper must not dial this local service (test mode only).
+
+    The helpers that POST to the daemon (default 18799) or the RLM service (default 18798)
+    are best-effort and used to run under ``GSD_TEST_MODE=1`` too, so a test or a hand-run
+    probe reached the operator's live services whenever its environment did not pin every
+    port variable (Phase 88, plan 88-13: five ``claim`` runs reached the live RLM).
+    In test mode the call is skipped when the port variable is unset, empty, ``0`` or equal
+    to either live default (18798 RLM, 18799 daemon). A test that points the variable at a fixture service on an
+    ephemeral port still gets the call.
+
+    Args:
+        port_env: Name of the environment variable holding the port.
+        default_port: The live default port as a string.
+
+    Returns:
+        bool: True when ``GSD_TEST_MODE`` is "1" and the port is unset, empty, "0" or a live default.
+    """
+    if os.environ.get("GSD_TEST_MODE", "") != "1":
+        return False
+    return os.environ.get(port_env, default_port).strip() in ("", "0", "18798", "18799", default_port)
+
 
 def _research_chain_blocked() -> bool:
     """True when the research chain must not spawn anything (test mode).
@@ -1240,6 +1265,8 @@ def _mem_log_event(agent_id: str, tags: list[str], text: str, *, source: str = "
             stored_via_daemon = False
             try:
                 import urllib.request, json as _json
+                if _live_port_blocked("GSD_DAEMON_PORT", "18799"):
+                    raise RuntimeError("daemon route skipped in test mode")
                 port = os.environ.get("GSD_DAEMON_PORT", "18799")
                 url = f"http://127.0.0.1:{port}/api/memory/store"
                 body = _json.dumps({
@@ -1349,7 +1376,10 @@ def _mem_log_task_transition(item: dict, old_status: str, new_status: str, actor
 
 def _agent_performance_summary(agent_id: str):
     """Query agent performance from the daemon's pg_store (via HTTP).
-    Returns summary dict or None if PG unavailable."""
+    Returns summary dict or None if PG unavailable (and None, with no network call,
+    in test mode when GSD_AMAUTA_PORT is unset, 0 or the live default)."""
+    if _live_port_blocked("GSD_AMAUTA_PORT", "18799"):
+        return None
     try:
         import urllib.request, urllib.error
         port = int(os.environ.get("GSD_AMAUTA_PORT", "18799"))
@@ -1403,7 +1433,10 @@ def _calc_duration_minutes(item):
 
 
 def _record_agent_performance(agent_id, task_id, outcome, **kwargs):
-    """Record agent performance via daemon HTTP API. Best-effort."""
+    """Record agent performance via daemon HTTP API. Best-effort.
+    No-op, with no network call, in test mode when GSD_AMAUTA_PORT is unset, 0 or the live default."""
+    if _live_port_blocked("GSD_AMAUTA_PORT", "18799"):
+        return
     try:
         import urllib.request, urllib.error
         port = int(os.environ.get("GSD_AMAUTA_PORT", "18799"))
@@ -1424,8 +1457,11 @@ def _audit_log_event(task_id, event_type, agent_id=None, actor=None,
     """Write an immutable audit log entry via daemon HTTP API.
 
     Best-effort: never blocks or raises. Uses /api/audit/log endpoint.
-    Falls back silently if daemon is unreachable.
+    Falls back silently if daemon is unreachable. No-op, with no network call, in test
+    mode when GSD_AMAUTA_PORT is unset, 0 or the live default.
     """
+    if _live_port_blocked("GSD_AMAUTA_PORT", "18799"):
+        return
     try:
         import urllib.request
         port = int(os.environ.get("GSD_AMAUTA_PORT", "18799"))
@@ -2223,9 +2259,12 @@ def _rlm_query(query: str, doc_path: str = "", text: str = "", task_id: str = ""
     Uses /search for single-file queries, /query for directory queries.
     Falls back to querying project CWD when no doc_path is provided.
     Returns top-k chunk text concatenated, or empty string on failure.
-    Best-effort -- never raises.
+    Best-effort -- never raises. Returns "" with no network call in test mode when
+    GSD_RLM_PORT is unset, 0 or the live default (see _live_port_blocked).
     """
     import urllib.request, urllib.error, json as _json
+    if _live_port_blocked("GSD_RLM_PORT", "18798"):
+        return ""
     try:
         port = os.environ.get("GSD_RLM_PORT", "18798")
         base_url = f"http://127.0.0.1:{port}"
