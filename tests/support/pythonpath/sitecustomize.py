@@ -1,4 +1,4 @@
-"""Chaining sitecustomize that installs the hermetic socket guard (plan 88-01).
+"""Chaining sitecustomize that arms test mode and the hermetic socket guard (plan 88-01).
 
 The Node runner puts this directory on PYTHONPATH so Python subprocesses spawned by
 Node tests (amauta.py, services/amauta-daemon.py) are guarded too.
@@ -33,6 +33,22 @@ def _opted_out():
     return os.environ.get("GSD_HERMETIC_GUARD", "").strip().lower() == "off"
 
 
+def _arm_test_mode():
+    """Put ``GSD_TEST_MODE=1`` in a child's environment when it carries no answer.
+
+    Plan 88-11 task 04. The four Python entry points load ``<repo>/.env`` at
+    import time and decide whether to by reading this name, so a child that
+    reached the product without it read the operator's live file. Every caller
+    that matters already sets it (``scripts/run-tests.cjs`` for Node-spawned
+    children, ``tests/conftest.py`` at import for pytest); this is the floor
+    under both, in the same place the socket guard is armed.
+
+    ``setdefault`` on purpose: a test that hands a child ``GSD_TEST_MODE=''``
+    to exercise a non-test-mode path keeps its empty value.
+    """
+    os.environ.setdefault("GSD_TEST_MODE", "1")
+
+
 def _arm_guard():
     """Load ``tests/support/hermetic_guard.py`` by absolute path and install it.
 
@@ -56,6 +72,9 @@ def _arm_guard():
 
 
 def _chain_and_guard():
+    # 0. Test mode, before anything this interpreter goes on to import.
+    _arm_test_mode()
+
     # 1. Chain to the interpreter's own sitecustomize (we are shadowing it).
     removed = [p for p in sys.path if os.path.abspath(p or os.getcwd()) == _HERE]
     for p in removed:

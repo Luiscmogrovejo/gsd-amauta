@@ -25,6 +25,23 @@ if str(_SUPPORT) not in sys.path:
 
 import hermetic_guard  # noqa: E402
 
+# ---------------------------------------------------------------------------
+# Plan 88-11 task 04: test mode goes on HERE, at conftest import, not only in
+# the session fixture below.
+#
+# pytest imports every test module during collection, which is before any
+# fixture runs, and several test modules import a product entry point at their
+# top level. All four of amauta.py, services/amauta-daemon.py,
+# services/rlm-service.py and services/amauta-mcp.py call `_load_dotenv()` at
+# import time; on the operator's machine — the only checkout that has a
+# repository-root .env — that re-injected the live DSN, the live daemon and RLM
+# ports and the API keys into the environment the fixture below had scrubbed,
+# and tests/test_88_hermetic_guard.py, tests/test_88_pgsql_import_hermetic.py
+# and tests/test_88_rlm_port_safety.py failed there and nowhere else. The
+# loaders answer to this name; it has to be set before they can run.
+# ---------------------------------------------------------------------------
+os.environ["GSD_TEST_MODE"] = "1"
+
 _DELETED_KEYS = (
     "GSD_POSTGRES_URL",
     "DATABASE_URL",

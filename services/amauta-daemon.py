@@ -21,12 +21,62 @@ import signal
 import subprocess
 
 # ── Load .env file (project root or /srv/amauta) ──────────────────────────────
+#
+# Two names carry every per-file difference: the directory the repository-root
+# .env is resolved from, and the extra variables that switch this loader off.
+# EVERYTHING BELOW THEM IS BYTE-IDENTICAL in amauta.py,
+# services/amauta-daemon.py, services/rlm-service.py and services/amauta-mcp.py.
+# It is copied rather than imported because three of the four call it before
+# their own imports are resolved, and an import at that point would add a
+# failure mode to four entry points to save twenty lines.
+# tests/test_88_11_dotenv_loader.py fails if the four copies drift.
+_DOTENV_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+_DOTENV_EXTRA_SKIP = ()
+
+
+def _dotenv_suppressed():
+    """True when this process must not read an ambient .env file.
+
+    Plan 88-11 task 04: this loader runs at import time in four entry points,
+    so a test that imported any of them used to re-inject the operator's live
+    DSN, live ports and API keys into an environment tests/conftest.py had
+    just scrubbed. Inside a test session the answer is always True.
+
+    Returns:
+        bool: True when any name in ``_DOTENV_EXTRA_SKIP`` is set, when
+        ``GSD_TEST_MODE`` is 1/true/yes/on, or when pytest is running
+        (``PYTEST_CURRENT_TEST``, which tests/test_88_rlm_port_safety.py needs
+        because it deletes ``GSD_TEST_MODE`` before importing the daemon).
+        False in every other case, including ``GSD_TEST_MODE=0``.
+    """
+    for _name in _DOTENV_EXTRA_SKIP:
+        if os.environ.get(_name):
+            return True
+    if os.environ.get("GSD_TEST_MODE", "").strip().lower() in ("1", "true", "yes", "on"):
+        return True
+    return bool(os.environ.get("PYTEST_CURRENT_TEST"))
+
+
 def _load_dotenv():
-    """Load .env file into os.environ (simple parser, no dependency)."""
-    for candidate in [
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".env"),
-        "/srv/amauta/.env",
-    ]:
+    """Load a .env file into os.environ (simple parser, no dependency).
+
+    A variable that is already set always wins; comments, blank lines and
+    lines without ``=`` are skipped; one layer of quotes comes off; the first
+    candidate that exists is the only one read. Outside test mode the
+    candidates are ``<root>/.env`` then ``/srv/amauta/.env``, exactly as the
+    installed daemon has always read them. Under :func:`_dotenv_suppressed`
+    nothing is read at all, unless ``GSD_DOTENV_PATH`` names one file — the
+    single opt-in, which exists so the loader's own tests can drive the parser
+    without an ambient file.
+    """
+    if _dotenv_suppressed():
+        explicit = os.environ.get("GSD_DOTENV_PATH", "")
+        if not explicit:
+            return
+        candidates = [explicit]
+    else:
+        candidates = [os.path.join(_DOTENV_ROOT, ".env"), "/srv/amauta/.env"]
+    for candidate in candidates:
         if os.path.isfile(candidate):
             with open(candidate, encoding="utf-8") as f:
                 for line in f:
@@ -38,9 +88,10 @@ def _load_dotenv():
                     key, _, val = line.partition("=")
                     key = key.strip()
                     val = val.strip().strip("'\"")
-                    if key and key not in os.environ:
+                    if key and key not in os.environ:  # Don't override existing env
                         os.environ[key] = val
             break
+
 
 _load_dotenv()
 import sys

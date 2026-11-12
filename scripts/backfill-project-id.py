@@ -294,6 +294,22 @@ def classify(items, ctx):
 
 # ── PG side ───────────────────────────────────────────────────────────────────
 
+def _dotenv_suppressed():
+    """True when this process must not read the repository's .env file.
+
+    Plan 88-11 task 04: the same answer the four entry points give. Inside a
+    test session the environment is the only source of a DSN, because a .env
+    would reintroduce the live one that tests/conftest.py scrubs.
+
+    Returns:
+        bool: True under ``GSD_TEST_MODE`` (1/true/yes/on) or under pytest
+        (``PYTEST_CURRENT_TEST``); False otherwise, including ``=0``.
+    """
+    if os.environ.get("GSD_TEST_MODE", "").strip().lower() in ("1", "true", "yes", "on"):
+        return True
+    return bool(os.environ.get("PYTEST_CURRENT_TEST"))
+
+
 def _pg_url():
     """Resolve the PG DSN from the environment. Never printed.
 
@@ -305,7 +321,7 @@ def _pg_url():
         if v:
             return v
     env_file = ROOT / ".env"
-    if env_file.is_file():
+    if env_file.is_file() and not _dotenv_suppressed():
         for line in env_file.read_text(encoding="utf-8").splitlines():
             if line.startswith("GSD_POSTGRES_URL="):
                 return line.split("=", 1)[1].strip()
