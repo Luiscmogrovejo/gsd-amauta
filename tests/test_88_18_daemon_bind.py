@@ -67,3 +67,25 @@ def test_threaded_server_keeps_its_class_attributes(monkeypatch, tmp_path):
     mod = _load_daemon(monkeypatch, tmp_path)
     assert mod.ThreadedHTTPServer.daemon_threads is True
     assert mod.ThreadedHTTPServer.allow_reuse_address is True
+
+
+def test_log_file_handler_writes_utf8(monkeypatch, tmp_path):
+    """The daemon log file is UTF-8 whatever the locale (on Windows the default is cp1252)."""
+    import logging
+
+    mod = _load_daemon(monkeypatch, tmp_path)
+    root = logging.getLogger()
+    before = list(root.handlers)
+    handler = mod._attach_log_file(path=str(tmp_path / "daemon.log"))
+    try:
+        assert handler is not None
+        assert handler.encoding == "utf-8"
+        logging.getLogger("amauta.daemon").warning("dash \u2014 and arrow \u2192 survive")
+        handler.flush()
+        data = (tmp_path / "daemon.log").read_bytes()
+        assert "dash \u2014 and arrow \u2192 survive" in data.decode("utf-8")
+    finally:
+        for h in list(root.handlers):
+            if h not in before:
+                root.removeHandler(h)
+                h.close()

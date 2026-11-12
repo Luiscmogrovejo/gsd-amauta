@@ -237,6 +237,10 @@ def _attach_log_file(path=None, max_bytes=None, backups=None):
             resolved,
             maxBytes=max_bytes if max_bytes is not None else LOG_FILE_MAX_BYTES,
             backupCount=backups if backups is not None else LOG_FILE_BACKUPS,
+            # The file is read back as UTF-8 (tests, `tail`, editors). Without this the handler
+            # writes the locale code page, which is cp1252 on Windows: a U+2014 dash became the
+            # single byte 0x97 and the log was not valid UTF-8 (found by 88-18 on the Windows cell).
+            encoding="utf-8",
         )
         handler.setFormatter(logging.Formatter(
             "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
