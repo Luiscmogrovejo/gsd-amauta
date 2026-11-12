@@ -97,10 +97,14 @@ def base_env(**extra):
     # A fake `gh` leads it: the real one (present on CI runners) is never run.
     env["PATH"] = isolated_path(_fake_gh_dir())
     env.pop("CLAUDE_CONFIG_DIR", None)
-    # check_api_keys is FAIL with none set. A runner has none and a laptop has
-    # some, so the exit code depended on the machine; fix them.
+    # check_api_keys USED to be FAIL with none set, so a runner (none) and a laptop
+    # (some) disagreed on the exit code and the dummies pinned it. Phase 88 plan 88-17
+    # (ORC-05) removed that FAIL branch: no key is required, Anthropic is "not needed",
+    # and Voyage/Perplexity are OK-and-off. The keys are now DELETED instead of faked,
+    # so the row is pinned the other way -- to the state a correctly configured machine
+    # is really in -- and the operator's own keys still cannot change the outcome.
     for key in ("VOYAGE_API_KEY", "PERPLEXITY_API_KEY", "ANTHROPIC_API_KEY"):
-        env[key] = "dummy-not-a-real-key"
+        env.pop(key, None)
     env.update({k: str(v) for k, v in extra.items()})
     return env
 
@@ -366,6 +370,45 @@ class TestBackendTruth(unittest.TestCase):
         rowc = check_row(parsed, "embeddings")
         self.assertEqual(rowc["status"], "WARN", rowc["detail"])
         self.assertIn("not exposed", rowc["detail"])
+
+
+# ── api_keys: ORC-05, plan 88-17 ──────────────────────────────────────────────
+
+class TestApiKeysOrc05(unittest.TestCase):
+    """A correctly configured ORC-05 machine has NO Anthropic key, and doctor must say so.
+
+    Before plan 88-17 this row was FAIL with none set, which told a correct installation
+    it was broken. The FAIL branch is gone; nothing here may reintroduce it.
+    """
+
+    def test_with_no_keys_at_all_api_keys_is_not_a_failure(self):
+        env = base_env()  # base_env deletes all three keys
+        _rc, _out, _err, parsed = run_doctor(env)
+        rowc = check_row(parsed, "api_keys")
+        self.assertNotEqual(rowc["status"], "FAIL", rowc["detail"])
+        self.assertIn("not needed", rowc["detail"])
+        self.assertNotIn("Required:", rowc["detail"])
+
+    def test_with_a_runtime_cli_on_path_the_row_is_ok_and_names_the_backend(self):
+        bindir = tempfile.mkdtemp(prefix="doctor-fakeclaude-")
+        fake_exe.write_fake_exe(bindir, "claude", "raise SystemExit(0)\n")
+        # The fake `gh` must still lead, so github_access does not reach a real gh.
+        env = base_env()
+        env["PATH"] = os.pathsep.join([_fake_gh_dir(), bindir, env["PATH"]])
+        _rc, _out, _err, parsed = run_doctor(env)
+        rowc = check_row(parsed, "api_keys")
+        self.assertEqual(rowc["status"], "OK", rowc["detail"])
+        self.assertIn("host runtime", rowc["detail"])
+        self.assertEqual(rowc["data"]["model_backend"], "cli", rowc)
+
+    def test_optional_features_are_reported_on_when_their_key_is_present(self):
+        env = base_env()
+        env["VOYAGE_API_KEY"] = "dummy-not-a-real-key"
+        _rc, _out, _err, parsed = run_doctor(env)
+        rowc = check_row(parsed, "api_keys")
+        self.assertNotEqual(rowc["status"], "FAIL", rowc["detail"])
+        self.assertIn("embeddings on", rowc["detail"])
+        self.assertIn("research-chain web leg off", rowc["detail"])
 
 
 # ── Output modes / exit codes ─────────────────────────────────────────────────

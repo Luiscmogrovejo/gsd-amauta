@@ -775,18 +775,57 @@ def check_embeddings(health):
 
 # ══ Check 11: API keys ════════════════════════════════════════════════════════
 def check_api_keys():
+    """Report the model backend and the two OPTIONAL feature keys (ORC-05, plan 88-17).
+
+    Before this plan the check reported FAIL with the message
+    "None set. Required: VOYAGE_API_KEY, PERPLEXITY_API_KEY, ANTHROPIC_API_KEY" when no
+    key was present -- i.e. it told a CORRECTLY configured user their installation had
+    failed. Under ORC-05 no Anthropic key is needed at all (model calls go through the
+    host runtime), and the other two enable optional features.
+
+    Three distinct statements, and never a FAIL:
+      * Anthropic: not needed. OK when a model backend resolves; WARN, never FAIL, when
+        none does -- that is a degraded feature, not a broken install.
+      * Voyage and Perplexity: OK, "optional, off". NOT a WARN: ``--strict`` promotes a
+        WARN to a failure, and plan 88-11 task 88-11-07 asserts a clean ``--strict`` on a
+        correctly configured machine.
+
+    The check name stays ``api_keys``: tests/test_doctor.py asserts that category list and
+    plan 88-11's close-out reads doctor's JSON by check name.
+    """
     try:
-        missing_keys, present_keys = [], []
-        for name in ("VOYAGE_API_KEY", "PERPLEXITY_API_KEY", "ANTHROPIC_API_KEY"):
-            (present_keys if os.environ.get(name, "") else missing_keys).append(name)
-        if not missing_keys:
-            row(OK, "api_keys", f"All 3 present: {', '.join(present_keys)}")
-        elif not present_keys:
-            row(FAIL, "api_keys",
-                "None set. Required: VOYAGE_API_KEY, PERPLEXITY_API_KEY, ANTHROPIC_API_KEY")
+        try:
+            services_dir = str(pathlib.Path(__file__).resolve().parent)
+            if services_dir not in sys.path:
+                sys.path.insert(0, services_dir)
+            from runtime_llm import resolve_backend
+            backend, reason, _cli = resolve_backend()
+        except Exception as e:  # pragma: no cover - a tree without services/ on sys.path
+            backend, reason = "none", f"runtime_llm unavailable: {type(e).__name__}"
+
+        optional = []
+        for name, feature in (("VOYAGE_API_KEY", "embeddings"),
+                              ("PERPLEXITY_API_KEY", "research-chain web leg")):
+            state = "on" if os.environ.get(name, "") else "off"
+            optional.append(f"{feature} {state}")
+        optional_text = "; ".join(optional)
+
+        if backend == "cli":
+            row(OK, "api_keys",
+                f"Anthropic: not needed (model calls use the host runtime CLI). "
+                f"Optional: {optional_text}",
+                {"model_backend": backend, "model_backend_reason": reason})
+        elif backend == "api":
+            row(OK, "api_keys",
+                f"Anthropic: not needed (direct API selected by explicit opt-in). "
+                f"Optional: {optional_text}",
+                {"model_backend": backend, "model_backend_reason": reason})
         else:
             row(WARN, "api_keys",
-                f"Present: {', '.join(present_keys)} | Missing: {', '.join(missing_keys)}")
+                f"Anthropic: not needed, but no model backend is available "
+                f"({reason}) -- features that call a model are off. "
+                f"Optional: {optional_text}",
+                {"model_backend": backend, "model_backend_reason": reason})
     except Exception as e:
         row(WARN, "api_keys", f"Check error: {e}")
 
