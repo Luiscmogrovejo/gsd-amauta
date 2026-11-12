@@ -281,6 +281,29 @@ def _generic_bm25_only(bm25_query: str, pg_conn, *, table: str, id_column: str,
     (no query_embedding) and its exception fallback (hybrid SQL failed). Same
     table/column-agnostic contract as hybrid_search_generic — no literal schema
     references.
+
+    Phase 89 / RET-02: this statement aliases its single table as `c`, exactly
+    as hybrid_search_generic's per-leg CTEs do, so that ONE `filter_sql`
+    fragment is valid in BOTH branches. It used to query the bare unaliased
+    table name in both its FROM and its `@@@` operand, and `hybrid_search`
+    splices an alias-qualified fragment ("AND (c.file_path = %s OR c.file_path
+    LIKE %s)"): every call with a file filter and no query embedding -- the only
+    combination the main CI pytest step can take, since it deliberately carries
+    no embedding key -- made PostgreSQL answer `missing FROM-clause entry for
+    table "c"` (sqlstate 42P01), which the `except` below turned into an empty
+    result set. Eleven tests were carried as expected failures on that.
+
+    Aliasing HERE rather than un-qualifying the caller's fragment is the
+    deliberate choice (89-RESEARCH.md §6.3 item 1): the one-line alternative
+    (make `hybrid_search` emit bare `file_path`) fixes today's caller and leaves
+    the trap armed for the next one. An unqualified column still resolves
+    against a single aliased table, so `services/pg_store.py`'s deliberately
+    unqualified fragments (`_memory_filter_sql`, documented at :333-338) keep
+    working unchanged -- that is cells 3 and 4 of
+    tests/test_89_01_bm25_alias_matrix.py.
+
+    The result SHAPE, the ordering contract and the degradation semantics are
+    untouched; the only change is which name the statement gives its one table.
     """
     _check_ident(table)
     _check_ident(id_column)
@@ -290,7 +313,7 @@ def _generic_bm25_only(bm25_query: str, pg_conn, *, table: str, id_column: str,
     if not bm25_query:
         return []
 
-    select_cols_sql = ", ".join(select_columns)
+    select_cols_sql = ", ".join(f"c.{col}" for col in select_columns)
     filter_params = list(filter_params)
 
     sql = f"""
@@ -299,10 +322,10 @@ def _generic_bm25_only(bm25_query: str, pg_conn, *, table: str, id_column: str,
             NULL::float AS rrf_score,
             1 AS rank_bm25,
             NULL::int AS rank_vector
-        FROM {table}
-        WHERE {table} @@@ %s
+        FROM {table} c
+        WHERE c @@@ %s
         {filter_sql}
-        ORDER BY paradedb.score({id_column}) DESC
+        ORDER BY paradedb.score(c.{id_column}) DESC
         LIMIT %s
     """
     params = [bm25_query] + filter_params + [top_k]
