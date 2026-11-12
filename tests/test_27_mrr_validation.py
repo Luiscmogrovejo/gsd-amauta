@@ -22,6 +22,7 @@ Intended to be run as part of phase validation, not CI baseline.
 """
 import json
 import os
+import re
 import sys
 import time
 import urllib.request
@@ -34,6 +35,16 @@ FIXTURE_PATH = "tests/fixtures/27-golden-queries.json"
 # first dialled it to find out. The port now comes only from GSD_RLM_PORT,
 # which tests/conftest.py's session fixture RLM sets when CI has a database.
 _RLM_PORT = os.environ.get("GSD_RLM_PORT", "").strip()
+# Plan 89-01: "0" means the same as unset HERE. To a server, port 0 is "let the
+# kernel choose"; to a client it is not an address at all. The pinned test
+# environment exports GSD_RLM_PORT=0 precisely so that nothing can dial the
+# operator's live RLM on 18798 — and while this test carried a non-strict
+# expected-failure marker, dialling 127.0.0.1:0 and failing the /health probe
+# below was invisible. With the marker gone (the retrieval leg answers now),
+# that would be a red test on any machine using the pinned environment, so the
+# guard is corrected rather than the failure re-excused.
+if _RLM_PORT in ("", "0"):
+    _RLM_PORT = ""
 RLM_URL = f"http://127.0.0.1:{_RLM_PORT}" if _RLM_PORT else ""
 
 
@@ -44,7 +55,8 @@ def _load_golden():
         return json.load(f)
 
 
-def _query_rlm(query: str, paths: list = None, top_k: int = 10) -> dict:
+def _query_rlm(query: str, paths: list = None, top_k: int = 10,
+               timeout: int = 30) -> dict:
     paths = paths or ["services/", "get-shit-done/bin/"]
     payload = json.dumps({"query": query, "paths": paths, "top_k": top_k}).encode()
     req = urllib.request.Request(
@@ -54,30 +66,109 @@ def _query_rlm(query: str, paths: list = None, top_k: int = 10) -> dict:
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read())
     except Exception as e:
         return {"error": str(e), "results": []}
 
 
-def _compute_mrr(results: list, expected_top3: list) -> float:
-    """Compute MRR contribution: 1/rank of first expected result in results."""
-    expected_labels = {e["label"] for e in expected_top3}
-    expected_paths = {e["filepath"] for e in expected_top3}
+#: The legacy in-memory chunker's declaration prefix, e.g. `"def score_chunks"`.
+_LABEL_DECL_RE = re.compile(r"^\s*(?:async\s+)?(?:def|class)\s+")
+
+#: The legacy chunker's oversized-chunk suffix, e.g. `"class PGStore (part 1)"`.
+_LABEL_PART_RE = re.compile(r"\s*\(part\s+\d+\)\s*$")
+
+
+def _normalize_label(label: str) -> str:
+    """A symbol identity BOTH engines can produce.
+
+    Plan 89-01 / RET-02. The golden fixture was captured from the legacy
+    in-memory engine, which labels a chunk ``"def score_chunks"`` or
+    ``"class PGStore (part 1)"``. The hybrid engine carries the bare
+    ``symbol_name`` (``score_chunks``, ``PGStore``) into ``label`` through
+    ``_normalize_hybrid_chunks`` (services/rlm-service.py). Comparing the two
+    raw strings can therefore NEVER match once the engine answers from the
+    hybrid branch — which is what this plan made it do — so the measurement was
+    reporting zero for reasons that had nothing to do with retrieval.
+
+    Stripping the declaration keyword and the ``(part N)`` suffix makes the
+    comparison about the SYMBOL rather than about which chunker formatted the
+    label. Nothing is loosened: it is the same identity, spelled once.
+
+    Args:
+        label: a chunk label or symbol name from either engine.
+
+    Returns:
+        str: the bare symbol name, or ``""``.
+
+    Example:
+        >>> _normalize_label("class PGStore (part 1)")
+        'PGStore'
+        >>> _normalize_label("PGStore")
+        'PGStore'
+    """
+    text = str(label or "")
+    text = _LABEL_PART_RE.sub("", text)
+    text = _LABEL_DECL_RE.sub("", text)
+    return text.strip()
+
+
+def _paths_match(result_path: str, expected_path: str) -> bool:
+    """Whether a result path IS the expected repository-relative path.
+
+    The fixture holds repository-relative paths (``services/pg_store.py``); the
+    hybrid engine returns absolute ones, because ingestion stores
+    ``os.path.abspath``. A tail comparison on a separator boundary is exact —
+    ``services/pg_store.py`` matches ``/home/runner/.../services/pg_store.py``
+    and does not match ``/other/myservices/pg_store.py``.
+
+    Args:
+        result_path: the path a result row carries.
+        expected_path: the repository-relative path from the fixture.
+
+    Returns:
+        bool
+
+    Example:
+        >>> _paths_match("/repo/services/pg_store.py", "services/pg_store.py")
+        True
+        >>> _paths_match("/repo/xservices/pg_store.py", "services/pg_store.py")
+        False
+    """
+    got = str(result_path or "").replace("\\", "/")
+    want = str(expected_path or "").replace("\\", "/").lstrip("./")
+    if not got or not want:
+        return False
+    return got == want or got.endswith("/" + want)
+
+
+def _compute_mrr(results: list, expected_top3: list) -> tuple:
+    """Reciprocal rank of the first expected result, and the rank it sat at.
+
+    Args:
+        results: result rows, best first.
+        expected_top3: the fixture's expected entries for this query.
+
+    Returns:
+        tuple[float, int | None]: ``1/rank`` (zero when absent) and the rank
+        (None when absent).
+    """
+    expected_labels = {
+        _normalize_label(e["label"]) for e in expected_top3
+    } - {""}
+    expected_paths = [e["filepath"] for e in expected_top3]
     for rank, chunk in enumerate(results, 1):
-        label = chunk.get("symbol_name", chunk.get("label", ""))
-        path = chunk.get("file_path", chunk.get("filepath", ""))
-        if label in expected_labels or path in expected_paths:
-            return 1.0 / rank
-    return 0.0
+        label = _normalize_label(
+            chunk.get("symbol_name") or chunk.get("label") or ""
+        )
+        path = chunk.get("file_path") or chunk.get("filepath") or ""
+        if label and label in expected_labels:
+            return 1.0 / rank, rank
+        if any(_paths_match(path, want) for want in expected_paths):
+            return 1.0 / rank, rank
+    return 0.0, None
 
 
-@pytest.mark.xfail(
-    reason=(
-        "plan 88-16-09 routed this to Phase 89: with a real PostgreSQL the RLM retrieval leg answers `legacy_in_memory_fallback` / no rows instead of the hybrid engine. The cause is in the retrieval pipeline Phase 89 rewrites (ingestion populates rlm_chunks without embeddings when no provider is configured, which the main pytest step deliberately has not), not in anything this plan owns. EXIT CRITERION: remove this marker when the hybrid engine answers for a freshly ingested fixture project on the Linux cell. It is a NON-strict xfail, so a fix does not turn the cell red before anyone notices."
-    ),
-    strict=False,
-)
 def test_rlm_mrr_validation():
     """
     Run all 20 golden queries and measure MRR.
@@ -103,18 +194,50 @@ def test_rlm_mrr_validation():
     except Exception as exc:
         pytest.fail("the fixture RLM at %s did not answer /health: %r" % (RLM_URL, exc))
 
+    # Plan 89-01: one warm-up request before the measurement. /search triggers
+    # lazy ingestion, so the FIRST call pays for indexing both query paths while
+    # the per-query timeout below is counting — a measurement of ingestion
+    # latency, not of ranking. The warm-up is given its own generous budget and
+    # its result is discarded.
+    warm = _query_rlm(queries[0]["query"], top_k=10, timeout=300)
+    print("\nwarm-up: engine=%r results=%d error=%r" % (
+        warm.get("engine"), len(warm.get("results", [])), warm.get("error"),
+    ))
+
     mrr_contributions = []
+    per_query = []
     engine_used = "unknown"
+    engines_seen = set()
 
     for q in queries:
         resp = _query_rlm(q["query"], top_k=10)
         if resp.get("error"):
             mrr_contributions.append(0.0)
+            per_query.append((q["id"], None, 0.0, resp["error"], []))
             continue
         engine_used = resp.get("engine", "unknown")
-        contrib = _compute_mrr(resp.get("results", []), q["expected_top3"])
+        engines_seen.add(engine_used)
+        results = resp.get("results", [])
+        contrib, rank = _compute_mrr(results, q["expected_top3"])
         mrr_contributions.append(contrib)
+        per_query.append((
+            q["id"], rank, contrib, None,
+            [
+                (
+                    _normalize_label(r.get("symbol_name") or r.get("label") or ""),
+                    (r.get("file_path") or r.get("filepath") or "").replace("\\", "/").split("/")[-1],
+                )
+                for r in results[:3]
+            ],
+        ))
         time.sleep(0.05)  # Brief pause to avoid hammering service
+
+    print("\nper-query (id, rank, rr, error, top-3 as (symbol, basename)):")
+    for row in per_query:
+        print("  %-4s rank=%-5s rr=%.4f err=%r %r" % (
+            row[0], row[1] if row[1] else "MISS", row[2], row[3], row[4],
+        ))
+    print("engines seen: %r" % (sorted(engines_seen),))
 
     actual_mrr = sum(mrr_contributions) / max(1, len(mrr_contributions))
     mrr_delta = (actual_mrr - baseline_mrr) / max(0.001, baseline_mrr)

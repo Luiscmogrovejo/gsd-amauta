@@ -292,7 +292,9 @@ _UNALIASED_BM25_SQL = """
 """
 
 
-def test_the_pre_fix_unaliased_shape_answers_sqlstate_42p01(pg_conn, seeded):
+def test_the_pre_fix_unaliased_shape_answers_sqlstate_42p01(
+    pg_conn, seeded, capsys
+):
     """The reverted alias, measured: sqlstate 42P01 naming the table ``c``.
 
     This is the other half of cell 2's mutation pair. It executes the statement
@@ -319,10 +321,14 @@ def test_the_pre_fix_unaliased_shape_answers_sqlstate_42p01(pg_conn, seeded):
         pg_conn.rollback()
 
     err = caught.value
-    print(
-        "\nthe pre-89-01 unaliased shape answers: pgcode=%s class=%s message=%r"
-        % (err.pgcode, type(err).__name__, str(err))
-    )
+    # capsys.disabled(): the main CI step captures stdout and runs -q, so a
+    # PASSING test's print is swallowed — and this literal sqlstate is the
+    # measurement plan 89-01 task 01 has to quote.
+    with capsys.disabled():
+        print(
+            "\nthe pre-89-01 unaliased shape answers: pgcode=%s class=%s message=%r"
+            % (err.pgcode, type(err).__name__, str(err))
+        )
     assert err.pgcode == "42P01", (
         "expected sqlstate 42P01 (undefined_table), got %r: %s"
         % (err.pgcode, err)

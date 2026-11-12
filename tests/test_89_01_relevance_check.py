@@ -230,6 +230,23 @@ def _search(pg_conn, query, query_embedding):
     )
 
 
+def _emit(capsys, lines):
+    """Print *lines* so they survive into the CI log.
+
+    The main CI pytest step runs with capture on and ``-q``, so a passing test's
+    stdout is swallowed — and the whole point of this check is a number someone
+    can READ off the run. ``capsys.disabled()`` suspends capture for the block,
+    which is the supported way to write to the real terminal.
+
+    Args:
+        capsys: pytest's capture fixture.
+        lines: the lines to emit, in order.
+    """
+    with capsys.disabled():
+        for line in lines:
+            print(line)
+
+
 def _measure(pg_conn, cases, embed_query, arm):
     """Run every case and report MRR@k plus the per-query ranks.
 
@@ -237,10 +254,11 @@ def _measure(pg_conn, cases, embed_query, arm):
         pg_conn: the connection.
         cases: entries from ``queries.json``.
         embed_query: callable ``(query) -> list[float] | None``, the QUERY side.
-        arm: a label for the printed lines.
+        arm: a label for the reported lines.
 
     Returns:
-        tuple[float, list[dict]]: MRR@k and one record per query.
+        tuple[float, list[dict], list[str]]: MRR@k, one record per query, and
+        the lines the caller emits through ``_emit``.
     """
     per_query = []
     for case in cases:
@@ -260,9 +278,9 @@ def _measure(pg_conn, cases, embed_query, arm):
         })
     mrr = sum(r["reciprocal_rank"] for r in per_query) / max(1, len(per_query))
 
-    print("\nRET-02 relevance check [%s]" % arm)
+    lines = ["", "RET-02 relevance check [%s]" % arm]
     for record in per_query:
-        print(
+        lines.append(
             "  rank=%-4s (at most %s) rr=%.4f  %r -> %r"
             % (
                 record["rank"] if record["rank"] else "MISS",
@@ -270,8 +288,10 @@ def _measure(pg_conn, cases, embed_query, arm):
                 record["query"], record["returned"],
             )
         )
-    print("  MRR@%d = %.4f over %d queries [%s]" % (TOP_K, mrr, len(per_query), arm))
-    return mrr, per_query
+    lines.append(
+        "  MRR@%d = %.4f over %d queries [%s]" % (TOP_K, mrr, len(per_query), arm)
+    )
+    return mrr, per_query, lines
 
 
 def _assert_ranks(per_query, arm):
@@ -291,7 +311,7 @@ def _assert_ranks(per_query, arm):
         )
 
 
-def test_relevance_mrr_at_k_on_the_deterministic_provider(pg_conn):
+def test_relevance_mrr_at_k_on_the_deterministic_provider(pg_conn, capsys):
     """MRR@k over the whole tracked corpus, on vectors any cell can reproduce.
 
     No API key, no network, no provider drift: both sides of the comparison come
@@ -318,9 +338,10 @@ def test_relevance_mrr_at_k_on_the_deterministic_provider(pg_conn):
 
         _seed(pg_conn, documents, embed_document)
         try:
-            mrr, per_query = _measure(
+            mrr, per_query, lines = _measure(
                 pg_conn, cases, embed_query, "deterministic stand-in"
             )
+            _emit(capsys, lines)
             _assert_ranks(per_query, "deterministic stand-in")
             assert mrr >= DETERMINISTIC_MRR_FLOOR, (
                 "MRR@%d fell to %.4f, below the measured floor of %.4f. The "
@@ -333,7 +354,7 @@ def test_relevance_mrr_at_k_on_the_deterministic_provider(pg_conn):
         rlm_embeddings.set_provider_override(previous)
 
 
-def test_relevance_mrr_with_the_real_embedding_provider(pg_conn, allow_host):
+def test_relevance_mrr_with_the_real_embedding_provider(pg_conn, allow_host, capsys):
     """The same measurement through whichever provider this environment has.
 
     On the one key-bearing CI step this is REAL Voyage, and the vector leg is
@@ -379,7 +400,8 @@ def test_relevance_mrr_with_the_real_embedding_provider(pg_conn, allow_host):
 
         _seed(pg_conn, documents, embed_document)
         try:
-            mrr, per_query = _measure(pg_conn, cases, embed_query, arm)
+            mrr, per_query, lines = _measure(pg_conn, cases, embed_query, arm)
+            _emit(capsys, lines)
             _assert_ranks(per_query, arm)
             assert mrr >= SAMPLE_MRR_FLOOR, (
                 "MRR@%d on the %s sample fell to %.4f, below %.4f"

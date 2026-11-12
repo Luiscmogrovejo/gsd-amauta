@@ -210,12 +210,6 @@ def _load_mcp_mod():
 
 # ── Tests ────────────────────────────────────────────────────────────────────
 
-@pytest.mark.xfail(
-    reason=(
-        "plan 88-16-09 routed this to Phase 89: with a real PostgreSQL the RLM retrieval leg answers `legacy_in_memory_fallback` / no rows instead of the hybrid engine. The cause is in the retrieval pipeline Phase 89 rewrites (ingestion populates rlm_chunks without embeddings when no provider is configured, which the main pytest step deliberately has not), not in anything this plan owns. EXIT CRITERION: remove this marker when the hybrid engine answers for a freshly ingested fixture project on the Linux cell. It is a NON-strict xfail, so a fix does not turn the cell red before anyone notices."
-    ),
-    strict=False,
-)
 class TestQueryAnswersHybrid:
     def test_query_answers_hybrid(self, fixture_project):
         """RETR-01 live: /query answers via the hybrid pipeline with the
@@ -254,25 +248,36 @@ class TestSymbolNameOnlyQueryScoresNonzero:
         assert target.get("relevance_score", 0) > 0, f"expected relevance_score > 0, got: {target}"
 
 
-@pytest.mark.xfail(
-    reason=(
-        "plan 88-11 gave the Linux cell a disposable Valkey and MEASURED the result: the Valkey half is closed, the retrieval half is Phase 89's. Run 43217682043 / job 131180975509: `disposable Valkey answering on host port 40019`, the PING probe green, `_valkey_reachable()` True, so this test ran its POSITIVE branch for the first time on any cell -- and failed with `graph_callers missing main_entry: None`, i.e. the key is ABSENT from the result, not empty. That is the same cause as the ten `retrieval-leg-routed-89` cases and as `TestQueryAnswersHybrid` in this file: `graph_callers` is attached only on the HYBRID branch of /query (services/rlm-service.py, `expand_chunks_with_graph`), and on this cell the engine still answers `legacy_in_memory_fallback`, so nothing ever calls the graph expansion. Valkey was never the obstacle this entry claimed it was. EXIT CRITERION: remove this marker when the hybrid engine answers for a freshly ingested fixture project on the Linux cell -- the same criterion the other ten carry. It is a NON-strict xfail, so the fix does not turn the cell red before anyone notices."
-    ),
-    strict=False,
-)
 class TestGraphNamesRealCaller:
     def test_graph_names_the_real_caller(self, fixture_project):
         """RETR-05 live: the frobnicate_widget result's graph_callers names
-        main_entry (reindex triggered rebuild_graph; Valkey adjacency
-        populated). Graph degradation without Valkey is by-design -> xfail
-        rather than hard-fail."""
-        if not _valkey_reachable():
-            from conftest import VALKEY_SKIP_REASON
+        main_entry (reindex triggered rebuild_graph, Valkey adjacency
+        populated) — and, without a disposable Valkey, the result still
+        arrives with the graph keys simply unpopulated.
 
-            pytest.xfail(
-                "graph degradation is by-design (RETR-05): " + VALKEY_SKIP_REASON
-            )
+        Plan 89-01 replaced two expected-failure escapes here with two real
+        assertions.
 
+        Plan 88-11 gave the Linux cell a disposable Valkey and measured the
+        result: the Valkey half was closed, the retrieval half was Phase 89's.
+        Run 43217682043 / job 131180975509 ran this test's POSITIVE branch for
+        the first time on any cell and failed with
+        `graph_callers missing main_entry: None` — the key ABSENT from the
+        result, not empty — because `expand_chunks_with_graph` is called only
+        inside /query's `if hybrid_results:` guard, and on that cell the engine
+        still answered `legacy_in_memory_fallback`. Valkey was never the
+        obstacle that entry claimed. Plan 89-01 fixed the engine
+        (services/rlm_search.py: the BM25 degradation branch now aliases its
+        table, so an alias-qualified file filter can be planned), so the key is
+        present and correct and this is an ordinary assertion again.
+
+        The no-Valkey branch used to take an expected-failure escape. Graph
+        degradation
+        without a cache IS by design, but "by design" is a CONTRACT, so it is
+        now asserted rather than excused: the response must still be a healthy
+        hybrid answer whose graph keys are absent or empty. An escape there
+        would have hidden the very defect above on any cell without a cache.
+        """
         status, data = _post(
             "/query", {"query": "frobnicate_widget", "directory": fixture_project, "top_k": 5}
         )
@@ -286,17 +291,27 @@ class TestGraphNamesRealCaller:
             None,
         )
         assert target is not None, f"frobnicate_widget chunk missing from results: {data.get('results')}"
+
+        if not _valkey_reachable():
+            from conftest import VALKEY_SKIP_REASON
+
+            # By-design degradation, asserted: the engine answered, and the
+            # graph keys are simply unpopulated. Never an escape.
+            assert data.get("engine") == "hybrid_rrf_reranked", (
+                "even with no cache the hybrid engine must answer "
+                f"({VALKEY_SKIP_REASON}); got engine={data.get('engine')!r}"
+            )
+            assert not target.get("graph_callers"), (
+                "graph adjacency comes from the cache, so with none reachable "
+                f"the key must be absent or empty: {target.get('graph_callers')!r}"
+            )
+            return
+
         assert "main_entry" in target.get("graph_callers", []), (
             f"graph_callers missing main_entry: {target.get('graph_callers')}"
         )
 
 
-@pytest.mark.xfail(
-    reason=(
-        "plan 88-16-09 routed this to Phase 89: with a real PostgreSQL the RLM retrieval leg answers `legacy_in_memory_fallback` / no rows instead of the hybrid engine. The cause is in the retrieval pipeline Phase 89 rewrites (ingestion populates rlm_chunks without embeddings when no provider is configured, which the main pytest step deliberately has not), not in anything this plan owns. EXIT CRITERION: remove this marker when the hybrid engine answers for a freshly ingested fixture project on the Linux cell. It is a NON-strict xfail, so a fix does not turn the cell red before anyone notices."
-    ),
-    strict=False,
-)
 class TestCliPrintsHybridProvenance:
     def test_cli_prints_hybrid_provenance(self, fixture_project):
         """65-01-06 live: gsd-rlm.cjs query --json surfaces the hybrid engine
@@ -321,12 +336,6 @@ class TestCliPrintsHybridProvenance:
         )
 
 
-@pytest.mark.xfail(
-    reason=(
-        "plan 88-16-09 routed this to Phase 89: with a real PostgreSQL the RLM retrieval leg answers `legacy_in_memory_fallback` / no rows instead of the hybrid engine. The cause is in the retrieval pipeline Phase 89 rewrites (ingestion populates rlm_chunks without embeddings when no provider is configured, which the main pytest step deliberately has not), not in anything this plan owns. EXIT CRITERION: remove this marker when the hybrid engine answers for a freshly ingested fixture project on the Linux cell. It is a NON-strict xfail, so a fix does not turn the cell red before anyone notices."
-    ),
-    strict=False,
-)
 class TestMcpSearchCodeRanksByQuery:
     def test_mcp_search_code_ranks_by_query(self, fixture_project):
         """RETR-03 live: amauta/search-code delegates to hybrid_search and
