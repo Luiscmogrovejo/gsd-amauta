@@ -237,14 +237,21 @@ jobs:
             -e POSTGRES_USER=gsd -e POSTGRES_PASSWORD=gsd -e POSTGRES_DB=gsd_test \
             -p "127.0.0.1:${PG_TEST_PORT}:5432" \
             paradedb/paradedb:latest-pg16@sha256:21518b4005ad4111bdd41a6687ef37ca2abc363d7af30e700900ad6b8cb33e1e
+          # Readiness is checked FROM THE HOST, with a real connection, not with
+          # `docker exec pg_isready`. Measured on run 43178016790: the exec
+          # probe answers the entrypoint's TEMPORARY init server, which listens
+          # on the container's unix socket only; the published port is not
+          # serving yet, and the next step died with "server closed the
+          # connection unexpectedly". The condition that matters is the one the
+          # next step needs, so that is the one to wait for.
           ready=
-          for _ in $(seq 1 60); do
-            if docker exec gsd-test-pg pg_isready -U gsd -q; then ready=1; break; fi
+          for _ in $(seq 1 90); do
+            if python -c "import psycopg2; psycopg2.connect('postgresql://gsd:gsd@127.0.0.1:${PG_TEST_PORT}/gsd_test', connect_timeout=3).close()" 2>/dev/null; then ready=1; break; fi
             sleep 2
           done
           if [ -z "$ready" ]; then
             docker logs gsd-test-pg || true
-            echo "the disposable PostgreSQL did not become ready in 120 s" >&2
+            echo "the disposable PostgreSQL did not accept a host connection in 180 s" >&2
             exit 1
           fi
           docker exec gsd-test-pg psql -U gsd -d gsd_test -v ON_ERROR_STOP=1 \
@@ -377,14 +384,21 @@ jobs:
             -e POSTGRES_USER=gsd -e POSTGRES_PASSWORD=gsd -e POSTGRES_DB=gsd_test \
             -p "127.0.0.1:${PG_TEST_PORT}:5432" \
             paradedb/paradedb:latest-pg16@sha256:21518b4005ad4111bdd41a6687ef37ca2abc363d7af30e700900ad6b8cb33e1e
+          # Readiness is checked FROM THE HOST, with a real connection, not with
+          # `docker exec pg_isready`. Measured on run 43178016790: the exec
+          # probe answers the entrypoint's TEMPORARY init server, which listens
+          # on the container's unix socket only; the published port is not
+          # serving yet, and the next step died with "server closed the
+          # connection unexpectedly". The condition that matters is the one the
+          # next step needs, so that is the one to wait for.
           ready=
-          for _ in $(seq 1 60); do
-            if docker exec gsd-test-pg pg_isready -U gsd -q; then ready=1; break; fi
+          for _ in $(seq 1 90); do
+            if python -c "import psycopg2; psycopg2.connect('postgresql://gsd:gsd@127.0.0.1:${PG_TEST_PORT}/gsd_test', connect_timeout=3).close()" 2>/dev/null; then ready=1; break; fi
             sleep 2
           done
           if [ -z "$ready" ]; then
             docker logs gsd-test-pg || true
-            echo "the disposable PostgreSQL did not become ready in 120 s" >&2
+            echo "the disposable PostgreSQL did not accept a host connection in 180 s" >&2
             exit 1
           fi
           docker exec gsd-test-pg psql -U gsd -d gsd_test -v ON_ERROR_STOP=1 \
