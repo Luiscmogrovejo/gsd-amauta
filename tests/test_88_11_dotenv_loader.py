@@ -398,26 +398,35 @@ def test_sitecustomize_sets_test_mode_for_a_child_that_lacks_it():
 # The four copies, and the two other places a .env is read
 # ═══════════════════════════════════════════════════════════════════════════
 
-#: First line of the part that must be identical in all four entry points.
-_BLOCK_START = "def _dotenv_suppressed():"
+#: First line of the part that must be identical in all four entry points. Plan
+#: 89-09 task 03 moved the loader itself into services/_dotenv.py; what is still
+#: copied four times is the six-line PRELUDE that loads it by path, and that is
+#: what must not drift now.
+_BLOCK_START = "_dotenv_spec = importlib.util.spec_from_file_location("
 
 #: The call that ends it, at column 0.
-_BLOCK_END = "\n_load_dotenv()"
+_BLOCK_END = "\n_dotenv.load_dotenv(_DOTENV_ROOT, _DOTENV_EXTRA_SKIP)"
+
+#: The ONE module that defines the loader.
+_LOADER_REL = "services/_dotenv.py"
+
+#: The loader's function names, as they are defined in :data:`_LOADER_REL`.
+_LOADER_DEFS = ("def dotenv_suppressed(", "def load_dotenv(")
 
 
 def _canonical_block(rel):
-    """The shared loader text out of one entry point.
+    """The shared loader PRELUDE out of one entry point.
 
     Args:
         rel: one of :data:`ENTRY_POINTS`.
 
     Returns:
-        str: everything from ``def _dotenv_suppressed():`` to the
-        module-level ``_load_dotenv()`` call, inclusive.
+        str: everything from the ``spec_from_file_location`` call to the
+        module-level ``_dotenv.load_dotenv(...)`` call, inclusive.
 
     Raises:
         AssertionError: when the markers are missing or appear twice, which
-            means the extraction is no longer reading the whole loader.
+            means the extraction is no longer reading the whole prelude.
     """
     source = (dotenv_probe.REPO.joinpath(*rel.split("/"))).read_text(encoding="utf-8")
     assert source.count(_BLOCK_START) == 1, "%s: %d copies of %r" % (
@@ -429,17 +438,42 @@ def _canonical_block(rel):
     return source[start:end]
 
 
-def test_the_four_copies_of_the_loader_are_byte_identical():
-    """The loader is copied into four entry points; the copies may not drift.
+def test_services_dotenv_is_the_only_definition_of_the_loader():
+    """ONE definition, in services/_dotenv.py (plan 89-09 task 03).
 
-    One shared module would be better engineering and is not available here:
-    services/amauta-daemon.py, services/rlm-service.py and
-    services/amauta-mcp.py all call the loader BEFORE their own imports are
-    resolved, so importing a helper at that point would add a failure mode to
-    three entry points to save twenty lines. The copies are therefore kept
-    byte-identical and this test is what keeps them that way. Everything that
-    differs per file lives in the two constants above the block
-    (``_DOTENV_ROOT``, ``_DOTENV_EXTRA_SKIP``).
+    Until then the loader was four byte-identical forty-line copies and this
+    file compared them, so the drift it prevented (three of four updated) was
+    DETECTED rather than impossible. It is impossible now: the functions exist
+    in one file and the entry points load that file. Two of the four are
+    byte-pinned by the canaries, so this is also what makes a later change to
+    the loader cost zero re-baselines instead of up to four.
+    """
+    loader = (dotenv_probe.REPO / _LOADER_REL).read_text(encoding="utf-8")
+    for definition in _LOADER_DEFS:
+        assert loader.count(definition) == 1, "%s defines %r %d times" % (
+            _LOADER_REL, definition, loader.count(definition))
+    for rel in ENTRY_POINTS:
+        source = (dotenv_probe.REPO.joinpath(*rel.split("/"))).read_text(encoding="utf-8")
+        for definition in _LOADER_DEFS:
+            assert definition not in source, (
+                "%s defines %r itself; the loader has ONE definition, in %s"
+                % (rel, definition, _LOADER_REL))
+        # the pre-89-09 private names are gone from the entry points entirely
+        assert "def _dotenv_suppressed(" not in source, rel
+        assert "def _load_dotenv(" not in source, rel
+
+
+def test_the_four_preludes_that_load_it_are_byte_identical():
+    """Each entry point loads the module by PATH, and the six lines that do it
+    may not drift.
+
+    The loader cannot be a plain ``import``: services/amauta-daemon.py,
+    services/rlm-service.py and services/amauta-mcp.py all run it BEFORE their
+    own imports are resolved, and amauta.py is at the repository root while the
+    module is in services/. A ``spec_from_file_location`` load needs no
+    ``sys.path`` manipulation and behaves identically from either directory.
+    Everything that differs per file lives in the two constants above the
+    prelude (``_DOTENV_ROOT``, ``_DOTENV_EXTRA_SKIP``).
     """
     blocks = {rel: _canonical_block(rel) for rel in ENTRY_POINTS}
     reference = blocks[ENTRY_POINTS[0]]
@@ -455,12 +489,29 @@ def test_the_four_copies_of_the_loader_are_byte_identical():
                     tofile=rel,
                 )
             )
-            raise AssertionError("the loader copies have drifted:\n" + diff)
-    # and the block really is the loader, not an empty match
-    assert "GSD_TEST_MODE" in reference
-    assert "GSD_DOTENV_PATH" in reference
-    assert '"/srv/amauta/.env"' in reference
-    assert "os.path.join(_DOTENV_ROOT" in reference
+            raise AssertionError("the loader preludes have drifted:\n" + diff)
+    # and the block really is the prelude, not an empty match
+    assert "gsd_dotenv" in reference
+    assert "services" in reference and "_dotenv.py" in reference
+    assert "exec_module" in reference
+    assert "_dotenv.load_dotenv(_DOTENV_ROOT, _DOTENV_EXTRA_SKIP)" in reference
+    # no sys.path manipulation was smuggled in
+    assert "sys.path" not in reference
+
+
+@pytest.mark.parametrize("rel", ENTRY_POINTS)
+def test_the_prelude_is_load_bearing_without_the_module_nothing_is_read(tmp_path, rel):
+    """A tree WITHOUT services/_dotenv.py reads no .env — the mutation proof.
+
+    Without this case the four preludes could be dead code and every
+    characterisation case above would still pass for the wrong reason.
+    """
+    target = dotenv_probe.build_tree(tmp_path, rel, loader=False)
+    report = dotenv_probe.probe(target, env=_keys_env(dotenv_probe.SENTINEL_KEYS))
+    assert report["GSD_DOTENV_SENTINEL"] is None, (
+        "the entry point read a .env with no loader module present, so the prelude "
+        "is not what reads it"
+    )
 
 
 @pytest.mark.parametrize("rel", ENTRY_POINTS)

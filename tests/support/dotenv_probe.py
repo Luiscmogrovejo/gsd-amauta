@@ -1,12 +1,22 @@
 """Probe for the import-time ``.env`` loaders (Phase 88, plan 88-11 task 04).
 
 Four entry points — ``amauta.py``, ``services/amauta-daemon.py``,
-``services/rlm-service.py`` and ``services/amauta-mcp.py`` — each carry a copy of
-``_load_dotenv()`` and call it at IMPORT time, before their own imports are
-resolved. Exercising that loader therefore means importing one of those files,
-and each file decides which ``.env`` to read from its own ``__file__``. So the
-probe copies one entry point into a temporary tree, gives THAT tree a ``.env``
-holding sentinel values, and imports the copy in a child interpreter.
+``services/rlm-service.py`` and ``services/amauta-mcp.py`` — each run the loader
+at IMPORT time, before their own imports are resolved. Exercising that loader
+therefore means importing one of those files, and each file decides which ``.env``
+to read from its own ``__file__``. So the probe copies one entry point into a
+temporary tree, gives THAT tree a ``.env`` holding sentinel values, and imports the
+copy in a child interpreter.
+
+Plan 89-09 task 03 replaced the four copies of the loader by ONE module,
+``services/_dotenv.py``, which each entry point loads FROM ITS PATH
+(``<root>/services/_dotenv.py``, where ``<root>`` is the repository root for all
+four). :func:`build_tree` therefore copies that module into the temporary tree
+beside the entry point — without it the prelude would raise and the probe would
+report a module that died before the loader. The path load goes through
+``importlib.util.spec_from_file_location``, which does NOT consult
+``sys.meta_path``, so :class:`_StopAtFirstForeignImport` below does not see it and
+the loader still runs to completion.
 
 The repository's own ``.env`` is never read, written, moved or copied. On the
 operator's machine it holds live credentials and the live service ports — which
@@ -66,6 +76,10 @@ SENTINEL_ENV = (
     "VOYAGE_API_KEY=sentinel-not-a-real-key\n"
 )
 
+#: The ONE loader module every entry point loads by path (plan 89-09 task 03).
+#: Copied into every probe tree, because without it the prelude raises.
+LOADER_REL = "services/_dotenv.py"
+
 #: Names whose presence changes what the loader does. The probe removes all of
 #: them from the child's environment and the caller puts back only what the
 #: case under test is about.
@@ -77,14 +91,19 @@ MARKER_KEYS = (
 )
 
 
-def build_tree(root, rel, env_text=SENTINEL_ENV, env_name=".env"):
+def build_tree(root, rel, env_text=SENTINEL_ENV, env_name=".env", loader=True):
     """Copy one entry point into ``root`` and give the tree its own ``.env``.
+
+    The loader module :data:`LOADER_REL` is copied too, because every entry point
+    loads it from ``<root>/services/_dotenv.py`` (plan 89-09 task 03).
 
     Args:
         root: directory to build the tree in (a pytest ``tmp_path``).
         rel: one of :data:`ENTRY_POINTS`.
         env_text: body of the ``.env`` file; None writes no file at all.
         env_name: file name to write ``env_text`` to, relative to ``root``.
+        loader: whether to copy the loader module; False builds a DELIBERATELY
+            broken tree, which is how a case proves the prelude is load-bearing.
 
     Returns:
         pathlib.Path: the copied entry point, ready to hand to :func:`probe`.
@@ -97,6 +116,11 @@ def build_tree(root, rel, env_text=SENTINEL_ENV, env_name=".env"):
     dest = root.joinpath(*parts)
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(REPO.joinpath(*parts), dest)
+    if loader:
+        loader_parts = LOADER_REL.split("/")
+        loader_dest = root.joinpath(*loader_parts)
+        loader_dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(REPO.joinpath(*loader_parts), loader_dest)
     if env_text is not None:
         (root / env_name).write_text(env_text, encoding="utf-8")
     return dest
