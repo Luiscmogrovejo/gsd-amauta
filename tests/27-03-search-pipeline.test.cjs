@@ -4,12 +4,12 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const http = require('http');
 
-// Phase 88 (88-07) disposition: named skip. The live-service tests below need the RLM
-// (services/rlm-service.py with PostgreSQL), which the hermetic environment does not provide
-// (GSD_RLM_ENABLED=false; the Postgres merge is Phase 89). They used to default to 127.0.0.1:18798,
-// i.e. the operator's live RLM; the port now comes only from an explicit GSD_RLM_PORT.
-const RLM_SKIP = 'the RLM service is not available under the hermetic environment (GSD_RLM_ENABLED=false); covered by the Phase 89 RLM integration suite';
-const RLM_PORT = parseInt(process.env.GSD_RLM_PORT, 10);
+// Phase 88 plan 88-16-05: these live-service tests no longer skip. 88-07 named the
+// skip because the hermetic environment provides no RLM; this plan provides one.
+// tests/support/fixture-rlm.cjs starts services/rlm-service.py on a port it chooses
+// itself, records the pid in the process ledger and stops it by pid in a finally.
+// No test names the operator's live RLM port in a bind, a connect or a URL.
+const { startFixtureRlm, stopFixtureRlm } = require('./support/fixture-rlm.cjs');
 
 // RLM-04: rlm_search.py checks
 test('27-03: rlm_search.py has hybrid_search with RRF_K=60', () => {
@@ -80,12 +80,14 @@ test('27-03: rlm-service.py /search uses hybrid_rrf_reranked engine', () => {
 });
 
 // Live test: /search returns engine field
-test('27-03: live /search returns engine field', { skip: RLM_SKIP }, async () => {
+test('27-03: live /search returns engine field', async () => {
+  const rlm = await startFixtureRlm();
+  try {
   await new Promise((resolve, reject) => {
     const body = JSON.stringify({ query: 'chunk file function', paths: ['services/'] });
     const req = http.request({
       hostname: '127.0.0.1',
-      port: RLM_PORT,
+      port: rlm.port,
       path: '/search',
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
@@ -107,14 +109,19 @@ test('27-03: live /search returns engine field', { skip: RLM_SKIP }, async () =>
     req.write(body);
     req.end();
   });
+  } finally {
+    await stopFixtureRlm(rlm);
+  }
 });
 
 // Live test: /health returns pg_chunks_count
-test('27-03: live /health returns pg_chunks_count field', { skip: RLM_SKIP }, async () => {
+test('27-03: live /health returns pg_chunks_count field', async () => {
+  const rlm = await startFixtureRlm();
+  try {
   await new Promise((resolve, reject) => {
     const req = http.request({
       hostname: '127.0.0.1',
-      port: RLM_PORT,
+      port: rlm.port,
       path: '/health',
       method: 'GET',
       timeout: 5000,
@@ -132,4 +139,7 @@ test('27-03: live /health returns pg_chunks_count field', { skip: RLM_SKIP }, as
     req.on('error', (e) => reject(new Error(`/health failed: ${e.message}`)));
     req.end();
   });
+  } finally {
+    await stopFixtureRlm(rlm);
+  }
 });

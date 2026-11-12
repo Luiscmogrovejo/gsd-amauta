@@ -231,7 +231,12 @@ class TestDsnResolution:
 
     def test_local_docker_dsn_matches_the_compose_file(self):
         # Built only on request (detection, --local-docker), never as a fallback.
-        assert pg_dsn.local_docker_dsn({}) == "postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta"
+        # Built from the product constant rather than written out, so no test
+        # file contains a literal DSN aimed at the operator's live PostgreSQL.
+        assert pg_dsn.DEFAULT_PG_PORT == "5433", "the documented default port moved"
+        assert pg_dsn.local_docker_dsn({}) == (
+            "postgresql://gsd:gsd@127.0.0.1:%s/gsd_amauta" % pg_dsn.DEFAULT_PG_PORT
+        )
 
     def test_postgres_user_password_and_port_overrides_are_honoured(self):
         env = {"POSTGRES_USER": "alice", "POSTGRES_PASSWORD": "s3cr3t",
@@ -249,7 +254,7 @@ class TestDsnResolution:
         assert pg_dsn.mcp_port(env={}) == "18800"
 
     def test_mask_dsn_hides_the_password(self):
-        masked = pg_dsn.mask_dsn("postgresql://gsd:hunter2@h:5433/db")
+        masked = pg_dsn.mask_dsn("postgresql://gsd:hunter2@h:65432/db")
         assert "hunter2" not in masked and "***" in masked
 
     def test_dsn_parts_round_trips(self):

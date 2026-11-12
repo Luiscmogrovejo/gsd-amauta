@@ -7,7 +7,7 @@ Structural tests (no daemon/PG required):
   TestAuditResponseSchema    — response schema_version "1.0" in source
   TestAuditQueryParams       — since/from/to param parsing in source
 
-PG integration tests (GSD_PG_INTEGRATION=1 required):
+PG integration tests (a disposable PostgreSQL required, see tests/conftest.py):
   TestAuditEndpointPGIntegration — live insert + query via PG directly
 """
 
@@ -21,7 +21,16 @@ _REPO_ROOT = os.path.dirname(_HERE)
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-GSD_PG_INTEGRATION = os.environ.get("GSD_PG_INTEGRATION") == "1"
+# Phase 88 plan 88-16-03: a third PG opt-in variable used to gate these classes,
+# beside GSD_TEST_POSTGRES_URL and GSD_POSTGRES_URL — three names for the one
+# question "is there a disposable PostgreSQL?". There is one answer now:
+# tests/conftest.py's fixture. The product's own clients
+# (services/pg_store.py, services/a2a_client.py) read GSD_POSTGRES_URL, which
+# the session scrub deletes, so `product_pg_dsn` restores it for the duration
+# of these classes and takes it away again.
+from conftest import PG_SKIP_REASON, postgres_dsn_or_none, product_pg_dsn  # noqa: E402
+
+_PG_DSN = postgres_dsn_or_none()
 
 DAEMON_PATH = os.path.join(_REPO_ROOT, "services", "amauta-daemon.py")
 
@@ -95,16 +104,20 @@ class TestAuditQueryParams(unittest.TestCase):
         )
 
 
-@unittest.skipUnless(GSD_PG_INTEGRATION, "Set GSD_PG_INTEGRATION=1 to run PG integration tests")
+@unittest.skipUnless(_PG_DSN, PG_SKIP_REASON)
 class TestAuditEndpointPGIntegration(unittest.TestCase):
     """4 PG integration tests — live query via PG directly (no HTTP daemon required)."""
 
     @classmethod
     def setUpClass(cls):
-        """Connect to PG and set up test table state."""
+        """Connect to the disposable PG and set up test table state."""
         import psycopg2
         import psycopg2.extras
-        db_url = os.environ.get("DATABASE_URL", "postgresql://localhost/gsd_amauta")
+        # No invented default. The old `os.environ.get("DATABASE_URL",
+        # "postgresql://localhost/gsd_amauta")` would have dialled whatever
+        # PostgreSQL happened to be on the machine.
+        cls._pg_env = product_pg_dsn()
+        db_url = cls._pg_env.__enter__()
         cls.conn = psycopg2.connect(db_url)
         cls.conn.autocommit = False
         # Use a savepoint so we can rollback all inserts after each test
@@ -119,6 +132,7 @@ class TestAuditEndpointPGIntegration(unittest.TestCase):
                     cur.execute("DELETE FROM a2a_messages WHERE correlation_id = %s", (cid,))
         cls.conn.commit()
         cls.conn.close()
+        cls._pg_env.__exit__(None, None, None)
 
     def _insert_row(self, from_agent, to_agent, capability="test.cap", kind="request",
                     status="pending", payload=None):

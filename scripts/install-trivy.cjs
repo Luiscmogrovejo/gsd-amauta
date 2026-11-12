@@ -14,14 +14,38 @@
  *   (also hooked via postinstall in package.json if desired)
  */
 
-const { existsSync, mkdirSync, createWriteStream, chmodSync, unlinkSync } = require('fs');
+const { existsSync, mkdirSync, createWriteStream, chmodSync, unlinkSync, readFileSync } = require('fs');
 const { execSync, execFileSync } = require('child_process');
 const https = require('https');
 const path = require('path');
 const os = require('os');
 
-const TRIVY_VERSION = 'v0.50.1';
-const TRIVY_VERSION_PLAIN = '0.50.1'; // used in filename (no 'v' prefix)
+// Plan 88-16-07. The previous pin, v0.50.1, NO LONGER EXISTS: the tag and every
+// asset under it return 404, including `trivy_0.50.1_Linux-64bit.tar.gz`, which
+// this installer had always used. Trivy could therefore not be installed on any
+// platform. Measured 2026-11-12 with
+// `gh api /repos/aquasecurity/trivy/releases/tags/v0.50.1` -> 404.
+//
+// v0.76.1 was published 2026-10-21 — three weeks old, so it clears the
+// "nothing published within the last 7 days" rule, unlike v0.76.2 (2026-11-05).
+// The asset naming convention is unchanged.
+const TRIVY_VERSION = 'v0.76.1';
+const TRIVY_VERSION_PLAIN = '0.76.1'; // used in filename (no 'v' prefix)
+
+/**
+ * SHA-256 of every pinned asset, from the release's own
+ * `trivy_0.76.1_checksums.txt`. A download is verified against this table and
+ * DELETED on a mismatch: an installer that extracts an unverified archive is a
+ * supply-chain hole, and neither scanner installer had one before this plan.
+ * @type {Record<string, string>}
+ */
+const TRIVY_SHA256 = {
+  'trivy_0.76.1_Linux-64bit.tar.gz': 'c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0',
+  'trivy_0.76.1_Linux-ARM64.tar.gz': 'e174dff2a6dba5e3ae41f8d0537a6324405bd08132497340304c6b20e0f16a1f',
+  'trivy_0.76.1_macOS-64bit.tar.gz': '7aa762eacd582052d053b62dcf972a1ab058abe39a57ccae234ed8894945b6b7',
+  'trivy_0.76.1_macOS-ARM64.tar.gz': '11a9b6cd2752011b54f01ea4bd0dbfa9f0c41dc6538d5a3f9d23955f471bf4e5',
+  'trivy_0.76.1_windows-64bit.zip': '1051f49cb22d5284f43425f72aad9cda63ca12ceb92e7caa06903490c82dc9bf',
+};
 
 const INSTALL_PATH = path.resolve(__dirname, '..', 'node_modules', '.bin', 'trivy');
 const TMP_DIR = os.tmpdir();
@@ -160,6 +184,49 @@ function download(url, destPath) {
   });
 }
 
+
+/**
+ * SHA-256 of a file on disk, as lower-case hex.
+ *
+ * @param {string} filePath absolute path of the downloaded asset
+ * @returns {string} the digest
+ */
+function sha256OfFile(filePath) {
+  const crypto = require('crypto');
+  return crypto.createHash('sha256').update(readFileSync(filePath)).digest('hex');
+}
+
+/**
+ * Verify a downloaded asset against the pinned digest. FAIL CLOSED.
+ *
+ * Plan 88-16-07: neither scanner installer verified anything before this, so a
+ * compromised or truncated release asset was extracted and put on PATH as a
+ * security tool. An asset with no pinned digest is also a refusal, not a pass:
+ * silence would defeat the point the moment the asset table grows a row.
+ *
+ * @param {string} filePath the downloaded archive
+ * @param {string} assetName the asset's release filename, the table's key
+ * @returns {string} the verified digest
+ * @throws {Error} on a mismatch or a missing pin; the file is removed first
+ */
+function verifyChecksum(filePath, assetName) {
+  const expected = TRIVY_SHA256[assetName];
+  const actual = sha256OfFile(filePath);
+  if (!expected) {
+    try { unlinkSync(filePath); } catch (_) { /* best effort */ }
+    throw new Error(
+      `no pinned SHA-256 for trivy asset ${assetName}; refusing to install an unverified binary`
+    );
+  }
+  if (actual !== expected) {
+    try { unlinkSync(filePath); } catch (_) { /* best effort */ }
+    throw new Error(
+      `trivy asset ${assetName} FAILED checksum verification: expected ${expected}, got ${actual}`
+    );
+  }
+  return actual;
+}
+
 async function main() {
   // Skip if already installed. The installed name carries `.exe` on Windows,
   // so the probe asks resolveAssetName where the binary would be.
@@ -188,7 +255,8 @@ async function main() {
   try {
     // Download the tarball
     await download(downloadUrl, tarPath);
-    console.log('[gsd-security] Download complete. Extracting...');
+    verifyChecksum(tarPath, assetName);
+    console.log('[gsd-security] Download complete and checksum verified. Extracting...');
 
     // Ensure node_modules/.bin exists
     const binDir = path.dirname(INSTALL_PATH);
@@ -222,5 +290,12 @@ async function main() {
 if (require.main === module) {
   main();
 } else {
-  module.exports = { resolveAssetName, installPathFor, extractMember };
+  module.exports = {
+    TRIVY_SHA256,
+    sha256OfFile,
+    verifyChecksum,
+    resolveAssetName,
+    installPathFor,
+    extractMember,
+  };
 }

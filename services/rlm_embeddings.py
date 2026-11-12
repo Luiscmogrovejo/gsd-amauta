@@ -95,6 +95,46 @@ def _cache_put(key, embedding):
     _EMBED_CACHE[key] = embedding
 
 
+#: Optional provider override: a callable ``(text, input_type) ->
+#: (embedding, model_name) | None`` consulted BEFORE Voyage and Qodo.
+#:
+#: Phase 88 plan 88-16-08 added this seam. The embedding provider was reachable
+#: only through the network, so a test either made a paid API call or
+#: monkeypatched an HTTP library — and a test that patches HTTP is a test of
+#: the patch, not of the leg under test. One named injection point means the
+#: deterministic stand-in enters exactly where Voyage would, through the same
+#: return contract, so both paths exercise the same code below this line.
+#: Never set in production: nothing in the shipped code paths calls
+#: ``set_provider_override``.
+_PROVIDER_OVERRIDE = None
+
+
+def set_provider_override(provider):
+    """Install (or clear) the embedding-provider override.
+
+    Args:
+        provider: a callable ``(text, input_type)`` returning
+            ``(embedding, model_name)`` or None, or None to clear.
+
+    Returns:
+        The previous override, so a caller can restore it.
+
+    Example:
+        >>> previous = set_provider_override(lambda t, i: ([0.0] * 1024, "stub"))
+        >>> set_provider_override(previous) is not None
+        True
+    """
+    global _PROVIDER_OVERRIDE
+    previous = _PROVIDER_OVERRIDE
+    _PROVIDER_OVERRIDE = provider
+    return previous
+
+
+def get_provider_override():
+    """Return the installed provider override, or None."""
+    return _PROVIDER_OVERRIDE
+
+
 def embed_code(text: str, input_type: str = INPUT_TYPE_DOCUMENT
                ) -> Optional[Tuple[list, str]]:
     """Embed *text* and report WHICH model produced the vector.
@@ -114,6 +154,10 @@ def embed_code(text: str, input_type: str = INPUT_TYPE_DOCUMENT
             f"input_type must be {INPUT_TYPE_DOCUMENT!r} or {INPUT_TYPE_QUERY!r}, "
             f"got {input_type!r}"
         )
+    # The override enters where Voyage would, AFTER the same validation, so the
+    # stand-in and the real provider are held to one contract.
+    if _PROVIDER_OVERRIDE is not None:
+        return _PROVIDER_OVERRIDE(text, input_type)
 
     voyage_key = _cache_key(text, VOYAGE_MODEL, input_type)
     if voyage_key in _EMBED_CACHE:

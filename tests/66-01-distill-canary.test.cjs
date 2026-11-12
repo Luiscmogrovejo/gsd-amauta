@@ -20,6 +20,12 @@ const { spawn, execSync } = require('child_process');
 const GSD_MEMORY = path.resolve(__dirname, '../get-shit-done/bin/gsd-memory.cjs');
 
 function claudeCliAvailable() {
+  // Inside a Claude Code session the CLI refuses to run itself again, so
+  // `claude --version` succeeds while every `claude --print` the canary needs
+  // fails. Probing only the version made the canary a hard failure on the
+  // operator's machine and a vacuous pass everywhere else; both readings were
+  // wrong. CLAUDECODE is the session marker the runtime exports.
+  if (process.env.CLAUDECODE === '1') return false;
   try {
     execSync('claude --version', { stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000 });
     return true;
@@ -107,12 +113,18 @@ function startMockDaemon(entries) {
   });
 }
 
-test('66-01-02: real merge group through cmdDistill --use-llm reaches distill_strategy claude-*', async () => {
-  if (!claudeCliAvailable()) {
-    console.log('SKIP: claude CLI unavailable — canary requires a Claude Code session');
-    return;
-  }
+// Phase 88 plan 88-16-02: the probe used to live inside the test body and
+// `return` with a console note, so on every CI cell this canary reported a PASS
+// without ever invoking the LLM path it exists to guard. It is a counted skip
+// now. Plan 88-17 (requirement ORC-05) routes model calls through the host
+// runtime and puts a fake `claude` on PATH, which removes the skip entirely.
+const CLAUDE_SKIP = claudeCliAvailable()
+  ? false
+  : 'no host runtime that can answer a model call: the claude CLI is absent, or ' +
+    'this run is already inside a Claude Code session, which refuses a nested ' +
+    'claude --print (plan 88-17, ORC-05)';
 
+test('66-01-02: real merge group through cmdDistill --use-llm reaches distill_strategy claude-*', { skip: CLAUDE_SKIP }, async () => {
   const entries = buildEntries();
   const { server, port, stores, deletes } = await startMockDaemon(entries);
 

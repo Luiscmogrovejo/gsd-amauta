@@ -26,6 +26,8 @@ const { pyLiteral } = require('./support/py-embed.cjs');
 // Phase 88 plan 88-15: spawn Python through the shared resolver (GSD_PYTHON,
 // then py -3 / python / python3, each VERIFIED), never a literal name.
 const platform = require('../get-shit-done/bin/lib/platform.cjs');
+// Phase 88 plan 88-16: the one Postgres opt-in. No test invents a DSN.
+const pg = require('./support/pg-fixture.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const MIGRATIONS_DIR = path.join(ROOT, 'migrations');
@@ -56,6 +58,9 @@ function pyFile(scriptContent, options = {}) {
     const result = platform.runPython([tmpFile], {
       encoding: 'utf8',
       cwd: ROOT,
+      // The runner scrubs GSD_POSTGRES_URL/DATABASE_URL from every child; the
+      // disposable test database is reinstated here, and only here.
+      env: pg.postgresDsn() ? pg.pgChildEnv() : process.env,
       timeout: 15000,
       ...options,
     });
@@ -84,7 +89,17 @@ except Exception as e:
   return r.stdout.includes('YES');
 }
 
-const pgWithTableAvailable = isPgWithTableAvailable();
+// Phase 88 plan 88-16-02: these four were a vacuous `[PG SKIP]` else-branch that
+// asserted `true` and reported a PASS without touching a database. They are now
+// one declaration each, skipped with a named reason when there is no disposable
+// Postgres, and RUN when CI provides one. A test that passes without running is
+// a skip that nobody can count.
+const PG_SKIP =
+  pg.pgSkip() ||
+  (isPgWithTableAvailable()
+    ? false
+    : 'a disposable Postgres is configured but it has no step_handoffs table; ' +
+      'run the 017 migration against it first');
 
 // ─── Group 1: Migration file structure (always runs) ─────────────────────────
 
@@ -202,9 +217,7 @@ describe('[SHARD-04] Migration 017 DOWN file structure', () => {
 
 describe('[SHARD-04] PG: step_handoffs table schema verification', () => {
 
-  if (pgWithTableAvailable) {
-
-    it('[PG] step_handoffs table exists in database', () => {
+    it('[PG] step_handoffs table exists in database', { skip: PG_SKIP }, () => {
       const r = pyFile(`
 import psycopg2, os
 ${PY_BOOTSTRAP}
@@ -224,7 +237,7 @@ print('PASS')
       assert.ok(r.stdout.includes('PASS'), `Table existence check failed: ${r.error || r.stderr}`);
     });
 
-    it('[PG] step_handoffs has all expected columns with correct types', () => {
+    it('[PG] step_handoffs has all expected columns with correct types', { skip: PG_SKIP }, () => {
       const r = pyFile(`
 import psycopg2, os
 ${PY_BOOTSTRAP}
@@ -262,7 +275,7 @@ print('PASS')
       assert.ok(r.stdout.includes('PASS'), `Column schema check failed: ${r.error || r.stderr}`);
     });
 
-    it('[PG] idx_handoffs_task and idx_handoffs_latest indexes exist', () => {
+    it('[PG] idx_handoffs_task and idx_handoffs_latest indexes exist', { skip: PG_SKIP }, () => {
       const r = pyFile(`
 import psycopg2, os
 ${PY_BOOTSTRAP}
@@ -283,7 +296,7 @@ print('PASS')
       assert.ok(r.stdout.includes('PASS'), `Index check failed: ${r.error || r.stderr}`);
     });
 
-    it('[PG] INSERT + SELECT roundtrip works with all fields populated', () => {
+    it('[PG] INSERT + SELECT roundtrip works with all fields populated', { skip: PG_SKIP }, () => {
       const r = pyFile(`
 import psycopg2, os, json, uuid
 ${PY_BOOTSTRAP}
@@ -337,20 +350,5 @@ finally:
 `);
       assert.ok(r.stdout.includes('PASS'), `Roundtrip test failed: ${r.error || r.stderr}`);
     });
-
-  } else {
-    it('[PG SKIP] Table exists check (PG or step_handoffs table unavailable)', () => {
-      assert.ok(true, 'PG unavailable or step_handoffs table missing — skipping schema check');
-    });
-    it('[PG SKIP] Column schema check (PG or step_handoffs table unavailable)', () => {
-      assert.ok(true, 'PG unavailable or step_handoffs table missing — skipping column check');
-    });
-    it('[PG SKIP] Index check (PG or step_handoffs table unavailable)', () => {
-      assert.ok(true, 'PG unavailable or step_handoffs table missing — skipping index check');
-    });
-    it('[PG SKIP] INSERT + SELECT roundtrip (PG or step_handoffs table unavailable)', () => {
-      assert.ok(true, 'PG unavailable or step_handoffs table missing — skipping roundtrip');
-    });
-  }
 
 });

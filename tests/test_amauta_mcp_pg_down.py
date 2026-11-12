@@ -13,7 +13,6 @@ Skips gracefully when mcp Python package is not installed.
 
 import json
 import os
-import select
 import subprocess
 import sys
 import time
@@ -52,60 +51,23 @@ FROZEN_TOOL_NAMES = {
 
 # ── JSON-RPC helpers (duplicated from test_amauta_mcp_stdio.py for isolation) ──
 
-def _send_jsonrpc(proc, method, params, request_id):
-    """Write a JSON-RPC 2.0 request line to proc.stdin."""
-    msg = json.dumps({
-        "jsonrpc": "2.0",
-        "id": request_id,
-        "method": method,
-        "params": params,
-    }) + "\n"
-    try:
-        proc.stdin.write(msg.encode("utf-8"))
-        proc.stdin.flush()
-    except BrokenPipeError:
-        pass
+# Phase 88 plan 88-16-02: `select.select` accepts sockets only on Windows, so the
+# previous reader raised OSError on a pipe, returned None, and every test skipped
+# itself with "No ... response within timeout". The shared helper uses a reader
+# thread and a queue, which is portable.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "support"))
+from jsonrpc_stdio import read_jsonrpc as _read_jsonrpc  # noqa: E402
+from jsonrpc_stdio import send_jsonrpc as _send_jsonrpc  # noqa: E402
+from jsonrpc_stdio import stderr_tail as _stderr_tail  # noqa: E402
 
-
-def _read_jsonrpc(proc, request_id, timeout=5.0):
-    """Poll proc.stdout until a response with matching id arrives.
-
-    Returns the parsed dict or None on timeout / error. Skips notification
-    lines (no 'id' key or id=None).
-    """
-    deadline = time.monotonic() + timeout
-    buf = b""
-    while time.monotonic() < deadline:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            break
-        try:
-            rlist, _, _ = select.select([proc.stdout], [], [], min(remaining, 0.2))
-        except (ValueError, OSError):
-            break
-        if not rlist:
-            continue
-        try:
-            chunk = proc.stdout.read1(4096)  # type: ignore[attr-defined]
-        except AttributeError:
-            chunk = proc.stdout.read(1)
-        except OSError:
-            break
-        if not chunk:
-            break
-        buf += chunk
-        while b"\n" in buf:
-            line, buf = buf.split(b"\n", 1)
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                msg = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if msg.get("id") == request_id:
-                return msg
-    return None
+#: JSON-RPC read budget. A loaded Windows runner needs far more than the 5-10 s
+#: these calls used to allow: plan 88-16-02 turned "no response in time" from a
+#: silent skip into a failure, and the first enforcing run showed
+#: `amauta/complexity-score` exceeding 10 s there while every other call passed.
+#: Generous is correct for a budget whose only job is to stop a hang: a server
+#: that answers in 2 s is unaffected, and a server that never answers still
+#: fails, just later.
+_RPC_TIMEOUT = float(os.environ.get("GSD_MCP_RPC_TIMEOUT", "60"))
 
 
 # ── Subprocess fixture ─────────────────────────────────────────────────────────
@@ -188,7 +150,10 @@ class TestPGDownResilience:
     def setup_method(self):
         self.proc = _spawn_server_pg_down()
         if self.proc is None:
-            pytest.skip("MCP stdio server failed to start with PG-down env")
+            pytest.fail(
+                "MCP stdio server failed to start with the PG-down environment. "
+                "This used to skip, which hid a dead server behind a green cell."
+            )
         self._req_id = 0
 
     def teardown_method(self):
@@ -207,7 +172,7 @@ class TestPGDownResilience:
             "capabilities": {},
             "clientInfo": {"name": "test-pg-down", "version": "0.0.1"},
         }, request_id=rid)
-        resp = _read_jsonrpc(self.proc, request_id=rid, timeout=5.0)
+        resp = _read_jsonrpc(self.proc, request_id=rid, timeout=_RPC_TIMEOUT)
         # Send initialized notification (no response expected)
         _send_jsonrpc(self.proc, "notifications/initialized", {}, request_id=None)
         return resp
@@ -216,14 +181,14 @@ class TestPGDownResilience:
         """Server starts with PG down and tools/list returns all 6 frozen names."""
         init_resp = self._do_initialize()
         if init_resp is None:
-            pytest.skip("No initialize response — server may not support this protocol version")
+            pytest.fail("no initialize response within %.0f s; server stderr tail:\n" % _RPC_TIMEOUT + _stderr_tail(self.proc))
 
         # tools/list must succeed even with PG unreachable
         rid = self._next_id()
         _send_jsonrpc(self.proc, "tools/list", {}, request_id=rid)
-        resp = _read_jsonrpc(self.proc, request_id=rid, timeout=5.0)
+        resp = _read_jsonrpc(self.proc, request_id=rid, timeout=_RPC_TIMEOUT)
         if resp is None:
-            pytest.skip("No tools/list response within timeout")
+            pytest.fail("no tools/list response within %.0f s; server stderr tail:\n" % _RPC_TIMEOUT + _stderr_tail(self.proc))
 
         result = resp.get("result", {})
         tools = result.get("tools", [])
@@ -249,9 +214,9 @@ class TestPGDownResilience:
             "name": "amauta/memory-search",
             "arguments": {"query": "anything"},
         }, request_id=rid)
-        resp = _read_jsonrpc(self.proc, request_id=rid, timeout=20.0)
+        resp = _read_jsonrpc(self.proc, request_id=rid, timeout=_RPC_TIMEOUT)
         if resp is None:
-            pytest.skip("No tools/call response within timeout")
+            pytest.fail("no tools/call response within %.0f s; server stderr tail:\n" % _RPC_TIMEOUT + _stderr_tail(self.proc))
         content = resp.get("result", {}).get("content", [])
         assert content, f"No content in tools/call response: {resp}"
         text_block = next((c for c in content if c.get("type") == "text"), None)
@@ -276,9 +241,9 @@ class TestPGDownResilience:
             "name": "amauta/memory-distill",
             "arguments": {},
         }, request_id=rid)
-        resp = _read_jsonrpc(self.proc, request_id=rid, timeout=10.0)
+        resp = _read_jsonrpc(self.proc, request_id=rid, timeout=_RPC_TIMEOUT)
         if resp is None:
-            pytest.skip("No tools/call response within timeout")
+            pytest.fail("no tools/call response within %.0f s; server stderr tail:\n" % _RPC_TIMEOUT + _stderr_tail(self.proc))
 
         # The result may be in resp["result"]["content"] (CallToolResult shape)
         result = resp.get("result", {})
@@ -302,9 +267,9 @@ class TestPGDownResilience:
         _send_jsonrpc(self.proc, "resources/read", {
             "uri": "amauta://findings/TK-0001",
         }, request_id=rid)
-        resp = _read_jsonrpc(self.proc, request_id=rid, timeout=10.0)
+        resp = _read_jsonrpc(self.proc, request_id=rid, timeout=_RPC_TIMEOUT)
         if resp is None:
-            pytest.skip("No resources/read response within timeout")
+            pytest.fail("no resources/read response within %.0f s; server stderr tail:\n" % _RPC_TIMEOUT + _stderr_tail(self.proc))
 
         # Per CONTEXT Area 5: structured error is returned as resource content,
         # NOT as a JSON-RPC error code. The SDK returns it inside the content.
@@ -344,7 +309,7 @@ class TestPGDownResilience:
             "name": "amauta/memory-search",
             "arguments": {"query": "test"},
         }, request_id=rid)
-        _read_jsonrpc(self.proc, request_id=rid, timeout=5.0)
+        _read_jsonrpc(self.proc, request_id=rid, timeout=_RPC_TIMEOUT)
 
         # Activity 2: another tool call (memory-distill → pg_unavailable)
         rid = self._next_id()
@@ -352,7 +317,7 @@ class TestPGDownResilience:
             "name": "amauta/memory-distill",
             "arguments": {},
         }, request_id=rid)
-        _read_jsonrpc(self.proc, request_id=rid, timeout=5.0)
+        _read_jsonrpc(self.proc, request_id=rid, timeout=_RPC_TIMEOUT)
 
         # Wait 2 seconds — then assert still alive
         time.sleep(2)
@@ -360,6 +325,21 @@ class TestPGDownResilience:
             "Server process exited after PG-down tool calls — must remain running"
         )
 
+    @pytest.mark.xfail(
+        sys.platform == "win32",
+        reason=(
+            "the MCP stdio server never answers amauta/complexity-score on "
+            "windows-latest: 60 s with nothing on stdout and only a tool-name "
+            "warning on stderr (measured, run 43178758984). Plan 88-18 recorded "
+            "it as one of eight hidden `No ... response within timeout` skips; "
+            "plan 88-16 made the other seven RUN and this one VISIBLE. The "
+            "server lives in services/amauta-mcp.py, a canary-pinned file whose "
+            "rework is Phase 90's. EXIT CRITERION: remove the marker when the "
+            "Windows cell gets a complexity-score response. NON-strict, so the "
+            "fix does not turn the cell red."
+        ),
+        strict=False,
+    )
     def test_pg_down_complexity_score_still_works(self):
         """amauta/complexity-score works with PG down (pure function; no PG dependency).
 
@@ -380,9 +360,9 @@ class TestPGDownResilience:
                 },
             },
         }, request_id=rid)
-        resp = _read_jsonrpc(self.proc, request_id=rid, timeout=10.0)
+        resp = _read_jsonrpc(self.proc, request_id=rid, timeout=_RPC_TIMEOUT)
         if resp is None:
-            pytest.skip("No complexity-score response within timeout")
+            pytest.fail("no complexity-score response within %.0f s; server stderr tail:\n" % _RPC_TIMEOUT + _stderr_tail(self.proc))
 
         result = resp.get("result", {})
         content = result.get("content", [])

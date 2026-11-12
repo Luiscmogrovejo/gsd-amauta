@@ -35,7 +35,13 @@ import uuid
 
 import pytest
 
+
 # ── Paths ──────────────────────────────────────────────────────────────────────
+
+# Plan 88-16-09: ONE reason for "there is no disposable PostgreSQL". Nine
+# different sentences said the same thing, and plan 88-19's gate reads the
+# reason, so nine spellings are nine rows a human has to recognise as one cause.
+from conftest import PG_SKIP_REASON  # noqa: E402
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _MIGRATION_UP = os.path.join(_REPO_ROOT, "migrations", "027-audit-findings.sql")
@@ -211,7 +217,7 @@ def test_subs04_sweep_source():
 # ══════════════════════════════════════════════════════════════════════════════
 
 
-@pytest.mark.skipif(not _PG_OK, reason="PG not available")
+@pytest.mark.skipif(not _PG_OK, reason=PG_SKIP_REASON)
 def test_live_columns_present():
     """SUBS-01 (live): all 9 audit columns exist on agent_findings after migration 027."""
     _apply_027()
@@ -230,7 +236,7 @@ def test_live_columns_present():
     assert not missing, f"SUBS-01: migration 027 did not add columns: {missing}"
 
 
-@pytest.mark.skipif(not _PG_OK, reason="PG not available")
+@pytest.mark.skipif(not _PG_OK, reason=PG_SKIP_REASON)
 def test_live_task_id_nullable():
     """SUBS-02 (live): task_id is nullable after migration 027."""
     _apply_027()
@@ -252,7 +258,7 @@ def test_live_task_id_nullable():
     )
 
 
-@pytest.mark.skipif(not _PG_OK, reason="PG not available")
+@pytest.mark.skipif(not _PG_OK, reason=PG_SKIP_REASON)
 def test_live_write_null_task_severity_audit():
     """SUBS-03 (live): a finding writes with task_id NULL, severity='error',
     finding_type='audit' and reads back — mirrors the daemon INSERT column list."""
@@ -314,7 +320,7 @@ def test_live_write_null_task_severity_audit():
                 conn.commit()
 
 
-@pytest.mark.skipif(not _PG_OK, reason="PG not available")
+@pytest.mark.skipif(not _PG_OK, reason=PG_SKIP_REASON)
 def test_live_dedup_reject():
     """SUBS-05 (live): with one open row for a dedup_key, the daemon's open/ticketed
     guard SELECT finds it — so a second insert is blocked and only one open row exists."""
@@ -380,7 +386,7 @@ def test_live_dedup_reject():
                 conn.commit()
 
 
-@pytest.mark.skipif(not _PG_OK, reason="PG not available")
+@pytest.mark.skipif(not _PG_OK, reason=PG_SKIP_REASON)
 def test_live_four_reader_non_breakage():
     """SUBS-02 non-breakage (live): each of the four existing readers' exact SELECT runs
     against the now-extended table without error and returns a list — proving the additive

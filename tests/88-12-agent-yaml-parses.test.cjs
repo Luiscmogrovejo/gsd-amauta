@@ -18,15 +18,18 @@ const { spawnSync } = require('child_process');
 const ROOT = path.resolve(__dirname, '..');
 const AGENTS_DIR = path.join(ROOT, 'get-shit-done', 'agents');
 
-/** @returns {string} the python interpreter, same preference order as the fixture daemon */
-function pythonBin() {
-  if (process.platform === 'darwin' && fs.existsSync('/opt/homebrew/bin/python3')) return '/opt/homebrew/bin/python3';
-  return process.env.GSD_PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
-}
+// Phase 88 plan 88-16-06: this file carried a SECOND copy of the fixture
+// daemon's `pythonBin()`, with the same macOS-only Homebrew preference — and
+// that preference is precisely why this test skipped on the macOS cell and
+// nowhere else: `/opt/homebrew/bin/python3` is not the `setup-python`
+// interpreter the workflow installs PyYAML into. One resolver now, the shared
+// one, which honours GSD_PYTHON first and VERIFIES each candidate by running it.
+const platform = require('../get-shit-done/bin/lib/platform.cjs');
 
-const PY = pythonBin();
-const HAS_PYYAML = spawnSync(PY, ['-c', 'import yaml'], { stdio: 'ignore' }).status === 0;
-const SKIP_NO_PYYAML = HAS_PYYAML ? false : 'PyYAML is not installed for python3 in this environment';
+const HAS_PYYAML = platform.spawnPython(['-c', 'import yaml'], { stdio: 'ignore' }).status === 0;
+const SKIP_NO_PYYAML = HAS_PYYAML
+  ? false
+  : 'PyYAML is not importable from the resolved Python interpreter in this environment';
 
 /** @returns {string[]} absolute paths of every agents/<name>/AGENT.yaml */
 function agentYamlFiles() {
@@ -45,7 +48,7 @@ describe('88-12 every AGENT.yaml parses', () => {
   test('no AGENT.yaml fails to parse with PyYAML', { skip: SKIP_NO_PYYAML }, () => {
     const bad = [];
     for (const file of agentYamlFiles()) {
-      const r = spawnSync(PY, ['-c', 'import sys,yaml; yaml.safe_load(open(sys.argv[1]).read())', file], {
+      const r = platform.spawnPython(['-c', 'import sys,yaml; yaml.safe_load(open(sys.argv[1]).read())', file], {
         encoding: 'utf8',
       });
       if (r.status !== 0) {

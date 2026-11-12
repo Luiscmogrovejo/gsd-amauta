@@ -1,5 +1,25 @@
-# Test-only dependencies for the CI pytest job (plan 88-08). Runtime dependencies
-# stay in requirements.txt; nothing here ships. Every version is pinned exactly.
+# Test-only dependencies for CI (plan 88-08; extended by plan 88-16-07). Runtime
+# dependencies stay in requirements.txt; nothing here ships. Every version is
+# pinned EXACTLY — the repository's supply-chain rules forbid `^` and `~`, and a
+# range on a test dependency is how a green suite turns red overnight.
+#
+# BOTH CI jobs install this file. The `pytest` job installs it beside
+# requirements.txt; the Node `test` job installs ONLY this file, because its
+# tests shell out to services/*.py and need the same interpreter to have the
+# packages those modules import. That is why pyyaml, pydantic and
+# psycopg2-binary appear here as well: installing from one file is what keeps
+# the CI environment and a developer's from drifting.
+#
+# Supply-chain figures, measured 2026-11-12 (PyPI JSON + pypistats):
+#   pytest           weekly 100M+      last release well over 7 days old
+#   numpy            weekly 275,310,907   2.4.3 predates 2.5.4 (2026-10-10)
+#   mcp              weekly  79,134,034   checked 2026-11-11 (plan 88-08)
+#   pyyaml           weekly 298,814,955   6.0.3 released 2025-09-25
+#   pydantic         weekly 278,737,500   2.14.2 released 2026-10-29
+#   psycopg2-binary  weekly  54,722,375   2.9.9 mirrors requirements.txt
+#   semgrep          weekly   5,557,833   1.183.0 released 2026-10-29
+# Every one clears "more than 1,000 weekly downloads" and "not published within
+# the last 7 days" by a wide margin.
 pytest==9.0.2
 numpy==2.4.3
 # requirements.txt leaves mcp unbounded above, so a fresh runner resolves mcp 2.x.
@@ -8,3 +28,25 @@ numpy==2.4.3
 # without saying why or fail. Pin the suite to the version the code is developed and
 # verified against. Weekly downloads checked 2026-11-11: 79,134,034.
 mcp==1.27.1
+
+# ── Imported by services/*.py that the NODE tests drive as subprocesses ──────
+# services/module_lifecycle.py `compute_manifest_hash` requires PyYAML; without
+# it nine cases in module-lifecycle-cli/-e2e and one in 88-12-agent-yaml-parses
+# skipped. services/module_schema.py validates with pydantic.
+pyyaml==6.0.3
+pydantic==2.14.2
+# MUST equal the pin in requirements.txt — tests/88-16-requirements-pins.test.cjs
+# fails if the two ever disagree. services/complexity_scorer.py and the
+# migration runner need it, and tests/86-01-dsn-containment.test.cjs skipped
+# three cases purely because it was not importable.
+psycopg2-binary==2.9.9
+
+# semgrep is DELIBERATELY NOT HERE. Measured on run 43177558577:
+#   ERROR: Cannot install -r requirements-dev.txt (line 47) and mcp==1.27.1
+#   because these package versions have conflicting dependencies.
+#   The conflict is caused by: semgrep 1.183.0 depends on mcp==1.29.0
+# The mcp pin is load-bearing (services/amauta-mcp.py targets the 1.x server
+# API), so semgrep is installed with `pipx` instead — its own virtualenv, which
+# is what a CLI tool wants anyway. See the workflow step "Install semgrep where
+# it is supported"; tests/support/fake-scanner.cjs covers the parsing and
+# policy behaviour on every cell regardless.

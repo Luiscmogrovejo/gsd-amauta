@@ -23,6 +23,10 @@ const path = require('path');
 const http = require('http');
 const { spawn } = require('child_process');
 
+// Plan 88-15's shared, VERIFIED Python launcher — one resolver, not a second
+// copy of the candidate order (plan 88-16-06).
+const platform = require('../../get-shit-done/bin/lib/platform.cjs');
+
 const REPO = path.resolve(__dirname, '..', '..');
 
 /**
@@ -70,14 +74,31 @@ const POLL_INTERVAL_MS = 100;
 const STOP_GRACE_MS = Number(process.env.GSD_FIXTURE_STOP_GRACE_MS) || 5000;
 
 /**
- * Choose the Python interpreter.
- * @returns {string} /opt/homebrew/bin/python3 on macOS when present, else GSD_PYTHON, else python (Windows) or python3
+ * Choose the Python interpreter, through the shared resolver.
+ *
+ * Phase 88 plan 88-16-06. The old order preferred `/opt/homebrew/bin/python3`
+ * on darwin whenever it existed. On a macOS CI runner that is NOT the
+ * `setup-python` interpreter the workflow installs PyYAML into, which is the
+ * whole reason `88-12-agent-yaml-parses` skipped on macOS and nowhere else.
+ *
+ * The order is now `GSD_PYTHON` → the interpreter the shared resolver verifies
+ * on PATH → the Homebrew path as a last resort, and the logic lives in ONE
+ * place (`get-shit-done/bin/lib/platform.cjs`, plan 88-15) rather than in a
+ * second copy here. `resolvePython()` VERIFIES each candidate by running it,
+ * so a Microsoft Store stub or a broken nvm-style shim is rejected rather than
+ * returned; on the operator's machine, where `python3` on PATH is the Homebrew
+ * one, the resolved interpreter is unchanged.
+ *
+ * @returns {{command: string, args: string[]}} the verified launcher
  */
-function pythonBin() {
+function pythonLauncher() {
+  const resolved = platform.resolvePython();
+  if (resolved && resolved.command) return resolved;
+  // Last resort, and only when the resolver found nothing at all.
   if (process.platform === 'darwin' && fs.existsSync('/opt/homebrew/bin/python3')) {
-    return '/opt/homebrew/bin/python3';
+    return { command: '/opt/homebrew/bin/python3', args: [] };
   }
-  return process.env.GSD_PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
+  throw new Error('fixture-daemon: no Python interpreter could be resolved');
 }
 
 /**
@@ -105,8 +126,13 @@ function healthOk(port) {
  * @param {object} [opts]
  * @param {string} [opts.dataDir] data directory; a fresh temp dir when omitted
  * @param {boolean} [opts.detached=false] spawn the daemon detached (Windows: outside libuv's kill-on-parent-exit job)
+ * @param {boolean} [opts.postgres=false] run against the disposable PostgreSQL
+ *   instead of SQLite. Opt-in per call (plan 88-16-06); the runner's scrub is
+ *   unchanged, and the DSN is refused before anything starts when its port is
+ *   one of the operator's live services.
  * @returns {Promise<{port: number, dataDir: string, proc: import('child_process').ChildProcess, env: object, keep?: boolean}>}
  * @throws {Error} 'fixture daemon did not become ready' plus the last 2000 chars of stderr
+ * @throws {Error} `EHERMETICDSN` when `opts.postgres` is set and the DSN names a live port
  */
 async function startFixtureDaemon(opts = {}) {
   const dataDir = opts.dataDir || fs.mkdtempSync(path.join(os.tmpdir(), 'gsd-fixture-'));
@@ -125,12 +151,28 @@ async function startFixtureDaemon(opts = {}) {
     GSD_REDIS_ENABLED: 'false',
     GSD_RLM_ENABLED: 'false',
   });
+
+  // Plan 88-16-06: Postgres mode, OPT-IN PER CALL. It is a deliberate, narrow
+  // exception to the SQLite default above and it is NOT a change to the
+  // runner's scrub: `scripts/run-tests.cjs` still deletes GSD_POSTGRES_URL
+  // from every child, and this is the only place that puts one back, for one
+  // process, after `pgChildEnv()` has refused a DSN on a live port.
+  if (opts.postgres) {
+    const pg = require('./pg-fixture.cjs');
+    const dsn = pg.postgresDsn();
+    if (!dsn) throw new Error('startFixtureDaemon({postgres:true}): ' + pg.SKIP_REASON);
+    const pgEnv = pg.pgChildEnv(env); // throws EHERMETICDSN on a live port
+    Object.assign(env, pgEnv);
+    delete env.GSD_FORCE_SQLITE;
+    env.GSD_BACKEND = 'postgresql';
+  }
   // Never inherit a SQLite path that points somewhere else; the daemon pins it
   // under the data dir in test mode.
   delete env.GSD_SQLITE_PATH;
   delete env.GSD_DATA_DIR;
 
-  const proc = spawn(pythonBin(), [path.join(REPO, 'services', 'amauta-daemon.py'), 'run'], {
+  const py = pythonLauncher();
+  const proc = spawn(py.command, [...py.args, path.join(REPO, 'services', 'amauta-daemon.py'), 'run'], {
     stdio: ['ignore', 'pipe', 'pipe'],
     // Default false. Windows: libuv puts every NON-detached child in a job object that is killed
     // when the parent dies, so a daemon can only outlive its parent (the leak that
@@ -225,10 +267,32 @@ async function stopFixtureDaemon(handle) {
     await done;
   }
   appendLedger(handle.dataDir, { event: 'stopped', kind: 'daemon', pid: proc.pid });
-  // An RLM service the daemon started (never in test mode, but recorded if present).
+  // An RLM service the daemon started. Killing the daemon does NOT kill it on
+  // Windows — a terminated parent leaves its children running — and plan 88-16
+  // measured exactly that: `test (windows-latest, node 20)`, run 43189642396,
+  // ended with `SURVIVING PYTHON pid=6044 … services\amauta-daemon.py run` and
+  // `pid=7936 ppid=6044 … services\rlm-service.py run`. The pid comes from this
+  // fixture's OWN data directory, so it is a process this harness started.
   try {
     const rlmPid = parseInt(fs.readFileSync(path.join(handle.dataDir, 'rlm-service.pid'), 'utf8').trim(), 10);
     if (rlmPid > 0) {
+      if (pidAlive(rlmPid)) {
+        try {
+          process.kill(rlmPid, 'SIGTERM');
+        } catch (_e) {
+          /* already gone */
+        }
+        for (let i = 0; i < 20 && pidAlive(rlmPid); i += 1) {
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        if (pidAlive(rlmPid)) {
+          try {
+            process.kill(rlmPid, 'SIGKILL');
+          } catch (_e) {
+            /* exited after SIGTERM */
+          }
+        }
+      }
       appendLedger(handle.dataDir, {
         event: pidAlive(rlmPid) ? 'started' : 'stopped',
         kind: 'rlm',

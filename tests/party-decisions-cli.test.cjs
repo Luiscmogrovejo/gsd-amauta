@@ -41,6 +41,36 @@ const CLI_ENTRY = path.join(ROOT, 'bin', 'cli.cjs');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+// Phase 88 plan 88-16-09: the party CLI reads its DSN from GSD_POSTGRES_URL /
+// DATABASE_URL, which scripts/run-tests.cjs deletes from every child so that no
+// test can inherit the operator's live database. `pgChildEnv()` puts the
+// DISPOSABLE one back for these spawns, and only after refusing a DSN whose
+// port is one of the live services. With no disposable database the probe
+// reports PG down and the PG tests skip with the one standard reason, exactly
+// as before.
+const pg = require('./support/pg-fixture.cjs');
+
+// Plan 88-16-09, isolation BY CONSTRUCTION: `node --test` runs files in
+// parallel processes, so the four party suites were writing party_sessions
+// rows into one database at the same time and
+// `e2e-status-sorted-by-updated-at-desc` read a SIBLING FILE's session at the
+// top of "most recently updated" (measured, run 43181201335: idx=5). Each file
+// gets its own database, created from the disposable server with every
+// migration applied, and drops it when the file ends.
+const _ISOLATED_DSN = pg.createIsolatedDatabase('party_dec_cli');
+
+/** @returns {NodeJS.ProcessEnv} the child environment for a party CLI spawn */
+function partyEnv() {
+  if (!_ISOLATED_DSN) return process.env;
+  const env = pg.pgChildEnv();
+  env.GSD_POSTGRES_URL = _ISOLATED_DSN;
+  env.DATABASE_URL = _ISOLATED_DSN;
+  env.GSD_TEST_POSTGRES_URL = _ISOLATED_DSN;
+  return env;
+}
+
+process.on('exit', () => pg.dropIsolatedDatabase(_ISOLATED_DSN));
+
 /**
  * Run `node gsd-tools.cjs party <subArgs>` and return { stdout, stderr, status }.
  */
@@ -52,6 +82,7 @@ function runParty(subArgs = []) {
       encoding: 'utf8',
       timeout: 30000,
       cwd: ROOT,
+      env: partyEnv(),
     }
   );
 }
@@ -67,6 +98,7 @@ function runCliParty(subArgs = []) {
       encoding: 'utf8',
       timeout: 30000,
       cwd: ROOT,
+      env: partyEnv(),
     }
   );
 }
@@ -114,7 +146,10 @@ function postDecisionViaPython(sessionId, agentName, decisionType, content) {
     encoding: 'utf8',
     timeout: 30000,
     cwd: ROOT,
-    env: { ...process.env, PYTHONPATH: ROOT },
+    // Plan 88-16-09: these FRESH python children drive services/party_session.py,
+    // which builds a PGStore and therefore needs the disposable DSN. The runner
+    // deletes it from every child; partyEnv() reinstates the validated one.
+    env: { ...partyEnv(), PYTHONPATH: ROOT },
   });
 
   if (r.status !== 0) {
@@ -174,7 +209,7 @@ describe('party-decisions-pg-gated', (suite) => {
 
   test('party-status-empty-or-json-shape', (t) => {
     if (!_pgUp) {
-      t.skip('PG unavailable — skipping');
+      t.skip(pg.SKIP_REASON);
       return;
     }
     const r = runParty(['status', '--json']);
@@ -207,7 +242,7 @@ describe('party-decisions-pg-gated', (suite) => {
 
   test('party-status-sorted-by-updated-at-desc', (t) => {
     if (!_pgUp) {
-      t.skip('PG unavailable — skipping');
+      t.skip(pg.SKIP_REASON);
       return;
     }
     // Create session A
@@ -252,7 +287,7 @@ describe('party-decisions-pg-gated', (suite) => {
 
   test('party-inspect-frozen-shape', (t) => {
     if (!_pgUp) {
-      t.skip('PG unavailable — skipping');
+      t.skip(pg.SKIP_REASON);
       return;
     }
     // Create + start a session
@@ -312,7 +347,7 @@ describe('party-decisions-pg-gated', (suite) => {
 
   test('party-inspect-not-found-exit-1', (t) => {
     if (!_pgUp) {
-      t.skip('PG unavailable — skipping');
+      t.skip(pg.SKIP_REASON);
       return;
     }
     const r = runParty(['inspect', '00000000-0000-0000-0000-000000000000', '--json']);
@@ -330,7 +365,7 @@ describe('party-decisions-pg-gated', (suite) => {
 
   test('party-kill-terminates-and-audits', (t) => {
     if (!_pgUp) {
-      t.skip('PG unavailable — skipping');
+      t.skip(pg.SKIP_REASON);
       return;
     }
     // Create + start a fresh session
@@ -397,7 +432,7 @@ describe('party-decisions-pg-gated', (suite) => {
 
   test('party-kill-already-terminated-exit-1', (t) => {
     if (!_pgUp) {
-      t.skip('PG unavailable — skipping');
+      t.skip(pg.SKIP_REASON);
       return;
     }
     // Create + start + kill a session
@@ -430,7 +465,7 @@ describe('party-decisions-pg-gated', (suite) => {
 
   test('party-cli-kill-shortcut-mirrors-tools', (t) => {
     if (!_pgUp) {
-      t.skip('PG unavailable — skipping');
+      t.skip(pg.SKIP_REASON);
       return;
     }
     // Create + start a fresh session

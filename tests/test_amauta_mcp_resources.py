@@ -238,27 +238,49 @@ class TestRenderAgentContract:
         assert _mod._render_agent("") is None
 
     def test_render_agent_prepends_hydration_block(self, tmp_path):
-        """When hydration is given, _render_agent prepends ## Current context block."""
-        # Write a real agent file to a temp dir, then monkeypatch search path
-        agent_dir = tmp_path / "agents"
-        agent_dir.mkdir()
-        agent_file = agent_dir / "my-agent.md"
-        agent_file.write_text("# My Agent\n\nHello from agent.\n", encoding="utf-8")
+        """When hydration is given, _render_agent prepends ## Current context block.
 
-        # Patch os.path.dirname so the first search path lands in tmp_path
-        orig_dirname = os.path.dirname
-        orig_abspath = os.path.abspath
-        def fake_dirname(p):
-            return str(tmp_path / "services")
-        def fake_abspath(p):
-            if "amauta-mcp" in p:
-                return str(tmp_path / "services" / "amauta-mcp.py")
-            return orig_abspath(p)
-        with patch("os.path.dirname", side_effect=fake_dirname):
-            with patch("os.path.abspath", side_effect=fake_abspath):
-                result = _mod._render_agent("my-agent", hydration="LIVE CONTEXT HERE")
-        if result is None:
-            pytest.skip("Filesystem patching did not reach agent file — env-dependent")
+        Phase 88 plan 88-16-02 fixed the setup rather than letting the test skip
+        itself. It used to patch ``os.path.dirname`` and ``os.path.abspath``
+        globally and hope the first search path (``<repo>/agents/<name>.md``)
+        landed inside ``tmp_path``; when it did not — which is what the
+        "Filesystem patching did not reach agent file — env-dependent" skip was
+        reporting on two of the three cells — the test announced success having
+        asserted nothing.
+
+        ``_render_agent``'s SECOND search path is
+        ``os.path.expanduser("~/.claude/agents/<name>.md")``, so patching
+        ``expanduser`` alone is deterministic on every platform: one function,
+        one call, no dependence on how the module's ``__file__`` resolves.
+        """
+        agent_dir = tmp_path / "home" / ".claude" / "agents"
+        agent_dir.mkdir(parents=True)
+        (agent_dir / "my-agent.md").write_text("# My Agent\n\nHello from agent.\n", encoding="utf-8")
+
+        # Search path 1 must genuinely miss, or the assertion below would be
+        # reading the repository's own agent file instead of the fixture.
+        repo_candidate = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "agents", "my-agent.md"
+        )
+        assert not os.path.exists(repo_candidate), (
+            "a real agents/my-agent.md exists in the repository, so this test would "
+            "read it instead of the fixture: rename the fixture agent"
+        )
+
+        real_expanduser = os.path.expanduser
+
+        def fake_expanduser(p):
+            if isinstance(p, str) and p.startswith("~/"):
+                return str(tmp_path / "home" / p[2:])
+            return real_expanduser(p)
+
+        with patch("os.path.expanduser", side_effect=fake_expanduser):
+            result = _mod._render_agent("my-agent", hydration="LIVE CONTEXT HERE")
+
+        assert result is not None, (
+            "_render_agent found neither search path; expanduser was redirected to "
+            f"{tmp_path / 'home'} and the fixture is at {agent_dir / 'my-agent.md'}"
+        )
         assert "## Current context" in result
         assert "LIVE CONTEXT HERE" in result
         assert "Hello from agent." in result

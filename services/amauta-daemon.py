@@ -4968,12 +4968,21 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             handoff_script = str(Path(__file__).resolve().parent / "handoff.cjs")
             input_json = json.dumps(body)
             try:
+                # Plan 88-16-06. The script path used to be INTERPOLATED into a
+                # single-quoted JavaScript string. On Windows it is
+                # `D:\a\gsd-amauta\...\handoff.cjs`, and `\a`, `\g`, `\s`
+                # are JS escape sequences, so `require` received a mangled path,
+                # the child exited non-zero and this route answered 500 — on
+                # every Windows cell, invisibly, because the test that covers it
+                # sat behind a vacuous `[skip] E2E_BASE_URL not set` placeholder
+                # until this plan made it run. The path is an ARGUMENT now;
+                # nothing is interpolated into source.
                 result = subprocess.run(  # invoke handoff.cjs via node subprocess
                     ["node", "-e",
-                     f"const h=require('{handoff_script}');"
-                     f"const opts=JSON.parse(process.argv[1]);"
-                     f"process.stdout.write(JSON.stringify(h.createHandoff(opts)));",
-                     input_json],
+                     "const h=require(process.argv[1]);"
+                     "const opts=JSON.parse(process.argv[2]);"
+                     "process.stdout.write(JSON.stringify(h.createHandoff(opts)));",
+                     handoff_script, input_json],
                     capture_output=True,
                     text=True,
                     encoding="utf-8",

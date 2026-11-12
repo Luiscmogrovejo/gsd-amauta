@@ -69,7 +69,12 @@ _FORBIDDEN_DB_NAMES = frozenset(
     {"gsd_amauta", "gsd", "postgres", "template0", "template1"}
 )
 
-_DEFAULT_SERVER = "postgresql://gsd:gsd@127.0.0.1:5433/ignored"
+# Plan 88-16: there is NO default server. This module used to fall back to
+# 127.0.0.1:5433 — the operator's live PostgreSQL — and psycopg2 dialled it
+# through libpq, which the in-process socket guard cannot see (the incident
+# recorded at the top of 88-18-RECORD.md). The coordinates now come from the
+# disposable database or the module skips.
+_DEFAULT_SERVER = None
 
 REQUIRE_PG = os.environ.get("GSD_MEMSAFE_REQUIRE_PG") == "1"
 
@@ -112,7 +117,15 @@ def _server_parts():
     Returns:
         dict with keys host, port, user, password.
     """
-    raw = os.environ.get("GSD_POSTGRES_URL") or _DEFAULT_SERVER
+    # GSD_TEST_POSTGRES_URL first: tests/conftest.py deletes GSD_POSTGRES_URL
+    # from the test environment, so the opt-in name is the one that survives.
+    raw = (
+        os.environ.get("GSD_TEST_POSTGRES_URL")
+        or os.environ.get("GSD_POSTGRES_URL")
+        or _DEFAULT_SERVER
+    )
+    if not raw:
+        return {"host": None, "port": None, "user": None, "password": None}
     u = urllib.parse.urlsplit(raw)
     return {
         "host": u.hostname or "127.0.0.1",
@@ -352,8 +365,10 @@ def test_cp0_guard_refuses_the_live_store_by_name():
 
 def test_cp0_dbname_is_not_configurable(monkeypatch):
     """No environment value can steer the suite at an existing database."""
+    # The port is irrelevant to what this asserts (the dbname is dropped); the
+    # DATABASE NAME is the thing under test, so it names the live store.
     monkeypatch.setenv(
-        "GSD_POSTGRES_URL", "postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta"
+        "GSD_TEST_POSTGRES_URL", "postgresql://gsd:gsd@127.0.0.1:65432/gsd_amauta"
     )
     parts = _server_parts()
     assert "gsd_amauta" not in parts.values()

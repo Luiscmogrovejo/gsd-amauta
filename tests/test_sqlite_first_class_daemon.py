@@ -86,7 +86,12 @@ def setUpModule():
 
     env = dict(os.environ)
     # Nothing may point the daemon at a real database or require a token.
-    for key in ("GSD_POSTGRES_URL", "AMAUTA_MEMORY_DATABASE_URL",
+    # DATABASE_URL joined the list in plan 88-16-09: conftest hands the
+    # validated disposable DSN to the product's clients under BOTH names, and
+    # services/complexity_scorer.py reads DATABASE_URL first — so this file,
+    # whose whole subject is "the daemon on SQLite degrades without erroring",
+    # found PostgreSQL and stored the row it asserts is not stored.
+    for key in ("GSD_POSTGRES_URL", "DATABASE_URL", "AMAUTA_MEMORY_DATABASE_URL",
                 "AMAUTA_DAEMON_TOKEN", "GSD_OIDC_ISSUER", "GSD_OIDC_CLIENT_ID"):
         env.pop(key, None)
     env.update({

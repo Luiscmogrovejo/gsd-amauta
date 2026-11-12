@@ -58,9 +58,17 @@ const DEFAULT_CONFIG = JSON.stringify({
 
 // Check python3 is on PATH
 const pythonCheck = platform.spawnPython(['--version'], { encoding: 'utf8' });
+// Phase 88 plan 88-16-02: this was `process.exit(0)`, which made the whole file
+// report success with ZERO tests collected whenever no interpreter resolved — a
+// pass that proved nothing and that no skip count could see. It is one counted
+// skip now; CI installs Python on every cell, so it never fires there.
 if (pythonCheck.error || pythonCheck.status !== 0) {
-  console.log('SKIP: python3 not on PATH — skipping complexity-scorer tests');
-  process.exit(0);
+  require('node:test').test(
+    'complexity-scorer: no Python interpreter',
+    { skip: 'no Python interpreter could be resolved (GSD_PYTHON, py -3, python, python3 all failed); these tests drive services/*.py through a subprocess' },
+    () => {}
+  );
+  return; // CommonJS module scope: stops the rest of the file from loading
 }
 
 // Helper: run a python3 script via tmp file (cwd=ROOT)

@@ -28,6 +28,8 @@ const { pyLiteral } = require('./support/py-embed.cjs');
 // Phase 88 plan 88-15: spawn Python through the shared resolver (GSD_PYTHON,
 // then py -3 / python / python3, each VERIFIED), never a literal name.
 const platform = require('../get-shit-done/bin/lib/platform.cjs');
+// Phase 88 plan 88-16: the one Postgres opt-in. No test invents a DSN.
+const pg = require('./support/pg-fixture.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const ORCHESTRATOR_PATH = path.join(ROOT, 'services', 'step-orchestrator.py');
@@ -60,6 +62,9 @@ function pyFile(scriptContent, options = {}) {
     const result = platform.runPython([tmpFile], {
       encoding: 'utf8',
       cwd: ROOT,
+      // The runner scrubs GSD_POSTGRES_URL/DATABASE_URL from every child; the
+      // disposable test database is reinstated here, and only here.
+      env: pg.postgresDsn() ? pg.pgChildEnv() : process.env,
       timeout: 20000,
       ...options,
     });
@@ -88,7 +93,14 @@ except Exception as e:
   return r.stdout.includes('YES');
 }
 
-const pgAvailable = isPgAvailable();
+// Phase 88 plan 88-16-02: the two [PG SKIP] pseudo-tests that asserted true and
+// reported a PASS are gone; each PG test is declared once with a named skip reason.
+const PG_SKIP =
+  pg.pgSkip() ||
+  (isPgAvailable()
+    ? false
+    : 'a disposable Postgres is configured but it has no step_handoffs table; ' +
+      'run the 017 migration against it first');
 
 // ─── Group 1: File existence and structure ────────────────────────────────────
 
@@ -398,8 +410,7 @@ print('PASS')
 
 describe('[SHARD-04] PG-dependent: save_handoff + rollback_step', () => {
 
-  if (pgAvailable) {
-    it('[PG] save_handoff persists and load_or_create_handoff retrieves it', () => {
+    it('[PG] save_handoff persists and load_or_create_handoff retrieves it', { skip: PG_SKIP }, () => {
       const r = pyFile(`
 import psycopg2, os
 ${PY_BOOTSTRAP}
@@ -419,7 +430,7 @@ assert loaded.task_id == 'test-save-retrieve-01', f'task_id wrong: {loaded.task_
 assert loaded.workflow_name == 'plan-phase', f'workflow_name wrong: {loaded.workflow_name}'
 assert loaded.phase_number == 99, f'phase_number wrong: {loaded.phase_number}'
 # Cleanup
-db_url = os.environ.get('DATABASE_URL') or os.environ.get('GSD_POSTGRES_URL') or 'postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta'
+db_url = os.environ['DATABASE_URL'] if os.environ.get('DATABASE_URL') else os.environ['GSD_POSTGRES_URL']
 conn = psycopg2.connect(db_url)
 conn.autocommit = True
 with conn.cursor() as cur:
@@ -430,7 +441,7 @@ print('PASS')
       assert.ok(r.stdout.includes('PASS'), `save/load roundtrip failed: ${r.error || r.stderr}`);
     });
 
-    it('[PG] rollback_step reverts to target with truncated completed_steps', () => {
+    it('[PG] rollback_step reverts to target with truncated completed_steps', { skip: PG_SKIP }, () => {
       const r = pyFile(`
 import psycopg2, os
 ${PY_BOOTSTRAP}
@@ -449,7 +460,7 @@ assert rolled.step_id == 'step-02-research', f'step_id wrong after rollback: {ro
 assert rolled.completed_steps == ['step-01-init'], f'completed_steps wrong: {rolled.completed_steps}'
 assert rolled.next_step == 'step-03-plan', f'next_step wrong after rollback: {rolled.next_step}'
 # Cleanup
-db_url = os.environ.get('DATABASE_URL') or os.environ.get('GSD_POSTGRES_URL') or 'postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta'
+db_url = os.environ['DATABASE_URL'] if os.environ.get('DATABASE_URL') else os.environ['GSD_POSTGRES_URL']
 conn = psycopg2.connect(db_url)
 conn.autocommit = True
 with conn.cursor() as cur:
@@ -459,16 +470,6 @@ print('PASS')
 `);
       assert.ok(r.stdout.includes('PASS'), `rollback_step failed: ${r.error || r.stderr}`);
     });
-  } else {
-    it('[PG SKIP] save_handoff + load roundtrip (PG unavailable — graceful skip)', () => {
-      assert.ok(true, 'PG unavailable — skipping roundtrip test');
-    });
-
-    it('[PG SKIP] rollback_step (PG unavailable — graceful skip)', () => {
-      assert.ok(true, 'PG unavailable — skipping rollback test');
-    });
-  }
-
   it('rollback_step raises ValueError for step not in completed_steps', () => {
     const r = pyFile(`
 ${PY_BOOTSTRAP}

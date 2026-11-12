@@ -7,13 +7,17 @@
  *   SCALE-01, SCALE-02, SCALE-03, SCALE-04
  *
  * Tests the /api/complexity/{score,complete,escalate} daemon endpoints.
- * Tests requiring PG skip gracefully when PG is unavailable.
- * Tests requiring daemon skip gracefully when daemon is unavailable.
+ *
+ * Phase 88 plan 88-16-06: these six live tests used to probe the OPERATOR'S
+ * daemon on 127.0.0.1:18799 and skip when it did not answer — which, under the
+ * hermetic guard, it never could. They start their own fixture daemon on an
+ * ephemeral port instead, so they run on every cell. The PG-backed pair
+ * additionally asks the fixture for POSTGRES MODE, which is opt-in per call
+ * and changes nothing about the runner's SQLite default.
  *
  * Run: node --test tests/scale-adaptive-integration.test.cjs
- * Run live: DAEMON_URL=http://127.0.0.1:18799 node --test tests/scale-adaptive-integration.test.cjs
  */
-const { describe, test } = require('node:test');
+const { describe, test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const { spawnSync } = require('node:child_process');
@@ -22,8 +26,9 @@ const path = require('node:path');
 
 const ROOT = path.resolve(__dirname, '..');
 const DAEMON_FILE = path.join(ROOT, 'services', 'amauta-daemon.py');
-const DAEMON_URL = process.env.DAEMON_URL || 'http://127.0.0.1:18799';
-const COMPLEXITY_BASE = `${DAEMON_URL}/api/complexity`;
+const { startFixtureDaemon, stopFixtureDaemon } = require('./support/fixture-daemon.cjs');
+// The one Postgres opt-in. No test invents a DSN (plan 88-16-03).
+const pg = require('./support/pg-fixture.cjs');
 
 // ── HTTP helper ───────────────────────────────────────────────────────────────
 
@@ -58,66 +63,34 @@ function httpRequest(method, url, body, extraHeaders) {
   });
 }
 
-// ── Synchronous availability checks (at module level) ────────────────────────
+// ── The fixture daemon, started once for this file ───────────────────────────
+//
+// No availability probe and no live URL: the daemon this file talks to is one
+// it starts itself. `before`/`after` are top level, so the whole file shares
+// one process and it is stopped BY PID whatever happens.
 
-function checkSync(url, method, body) {
-  const args = ['--eval', `
-    const http = require('http');
-    const parsed = new URL('${url}');
-    const bodyStr = ${body ? JSON.stringify(JSON.stringify(body)) : 'null'};
-    const options = {
-      hostname: parsed.hostname,
-      port: parseInt(parsed.port) || 80,
-      path: parsed.pathname,
-      method: '${method}',
-      headers: { 'Content-Type': 'application/json', ...(bodyStr ? {'Content-Length': Buffer.byteLength(bodyStr)} : {}) },
-    };
-    const req = http.request(options, res => {
-      let data = '';
-      res.on('data', c => data += c);
-      res.on('end', () => {
-        process.stdout.write(JSON.stringify({ status: res.statusCode, body: data }));
-      });
-    });
-    req.on('error', e => process.stdout.write(JSON.stringify({ error: e.message })));
-    if (bodyStr) req.write(bodyStr);
-    req.end();
-  `];
-  const result = spawnSync('node', args, { encoding: 'utf8', timeout: 5000 });
-  try { return JSON.parse(result.stdout); }
-  catch (_) { return { error: 'parse failed: ' + result.stdout }; }
+let daemon = null;
+
+/** @returns {string} the fixture daemon's /api/complexity base URL */
+function complexityBase() {
+  if (!daemon) throw new Error('the fixture daemon has not started yet');
+  return `http://127.0.0.1:${daemon.port}/api/complexity`;
 }
 
-// Check daemon availability
-const healthResult = checkSync(`${DAEMON_URL}/health`, 'GET', null);
-const daemonAvailable = healthResult.status === 200;
+// The complete/escalate pair writes to task_completions, so it needs the
+// daemon in Postgres mode. Without a disposable database the pair skips with
+// the one standard reason; the score tests need no database at all.
+const SKIP_PG = pg.postgresDsn() ? false : pg.SKIP_REASON;
 
-// Check if /api/complexity/score route exists (Phase 42 feature).
-// Older daemon returns {"error": "Unknown POST route: ..."} — that means Phase 42
-// routes are not available, so we skip live tests.
-let complexityRouteAvailable = false;
-if (daemonAvailable) {
-  const r = checkSync(`${COMPLEXITY_BASE}/score`, 'POST', { task_meta: {} });
-  // Route available if response does NOT contain "Unknown POST route"
-  const bodyStr = (r.body || '').toString();
-  complexityRouteAvailable = r.status !== undefined && !r.error && !bodyStr.includes('Unknown POST route');
-}
+before(async () => {
+  daemon = await startFixtureDaemon({ postgres: Boolean(pg.postgresDsn()) });
+});
 
-// Check PG availability by probing the /api/complexity/complete endpoint
-// (returns 400/500 if schema missing, but not network error if daemon is up)
-function checkPgAvailable() {
-  if (!daemonAvailable) return false;
-  const result = spawnSync('psql', [
-    process.env.DATABASE_URL || process.env.GSD_POSTGRES_URL || 'postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta',
-    '-c', 'SELECT 1',
-  ], { encoding: 'utf8', timeout: 3000 });
-  return result.status === 0;
-}
-const pgAvailable = checkPgAvailable();
+after(async () => {
+  await stopFixtureDaemon(daemon);
+  daemon = null;
+});
 
-const SKIP_DAEMON = !daemonAvailable ? 'Daemon unavailable' : null;
-const SKIP_ROUTE = !complexityRouteAvailable ? 'Phase 42 /api/complexity/ route not available' : null;
-const SKIP_PG = !pgAvailable ? 'PostgreSQL unavailable' : null;
 
 // ── Group 1: Daemon file-level structure (always run — no daemon needed) ──────
 
@@ -178,10 +151,12 @@ describe('[SCALE-01/02/03/04] Daemon file: /api/complexity/ routes are defined',
 
 describe('[SCALE-01/02] Live /api/complexity/score endpoint', () => {
 
-  const SKIP_REASON = SKIP_DAEMON || SKIP_ROUTE;
+  // Nothing to skip: the fixture daemon always answers and always carries the
+  // Phase 42 routes, which is why the old "route not available" probe is gone.
+  const SKIP_REASON = false;
 
   test('POST /api/complexity/score returns expected shape', { skip: SKIP_REASON || false }, async () => {
-    const r = await httpRequest('POST', `${COMPLEXITY_BASE}/score`, {
+    const r = await httpRequest('POST', `${complexityBase()}/score`, {
       task_meta: { files_expected: ['services/foo.py'], estimated_loc: 100 },
     });
     assert.strictEqual(r.status, 200, `Expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
@@ -198,7 +173,7 @@ describe('[SCALE-01/02] Live /api/complexity/score endpoint', () => {
   });
 
   test('POST /api/complexity/score override_source=auto when no overrides', { skip: SKIP_REASON || false }, async () => {
-    const r = await httpRequest('POST', `${COMPLEXITY_BASE}/score`, {
+    const r = await httpRequest('POST', `${complexityBase()}/score`, {
       task_meta: {},
     });
     assert.strictEqual(r.status, 200, `Expected 200, got ${r.status}`);
@@ -210,7 +185,7 @@ describe('[SCALE-01/02] Live /api/complexity/score endpoint', () => {
   });
 
   test('POST /api/complexity/score includes calibrated_score and cold_start', { skip: SKIP_REASON || false }, async () => {
-    const r = await httpRequest('POST', `${COMPLEXITY_BASE}/score`, {
+    const r = await httpRequest('POST', `${complexityBase()}/score`, {
       task_meta: { files_expected: ['services/test.py'] },
     });
     assert.strictEqual(r.status, 200, `Expected 200, got ${r.status}`);
@@ -222,8 +197,8 @@ describe('[SCALE-01/02] Live /api/complexity/score endpoint', () => {
 
   test('POST /api/complexity/score deterministic for fixed task_meta', { skip: SKIP_REASON || false }, async () => {
     const body = { task_meta: { files_expected: ['services/foo.py', 'migrations/001.sql'], estimated_loc: 200 } };
-    const r1 = await httpRequest('POST', `${COMPLEXITY_BASE}/score`, body);
-    const r2 = await httpRequest('POST', `${COMPLEXITY_BASE}/score`, body);
+    const r1 = await httpRequest('POST', `${complexityBase()}/score`, body);
+    const r2 = await httpRequest('POST', `${complexityBase()}/score`, body);
     assert.strictEqual(r1.status, 200, `First call status ${r1.status}`);
     assert.strictEqual(r2.status, 200, `Second call status ${r2.status}`);
     assert.strictEqual(r1.body.score, r2.body.score, `score should be deterministic: ${r1.body.score} vs ${r2.body.score}`);
@@ -235,10 +210,10 @@ describe('[SCALE-01/02] Live /api/complexity/score endpoint', () => {
 
 describe('[SCALE-03/04] Live /api/complexity/complete + escalate endpoints', () => {
 
-  const SKIP_REASON = SKIP_DAEMON || SKIP_ROUTE || SKIP_PG;
+  const SKIP_REASON = SKIP_PG;
 
   test('POST /api/complexity/complete: outcome_label=invalid → stored=false', { skip: SKIP_REASON || false }, async () => {
-    const r = await httpRequest('POST', `${COMPLEXITY_BASE}/complete`, {
+    const r = await httpRequest('POST', `${complexityBase()}/complete`, {
       task_id: 'TEST-INTEGRATION-00',
       phase_number: 0,
       workflow_name: 'execute-phase',
@@ -256,7 +231,7 @@ describe('[SCALE-03/04] Live /api/complexity/complete + escalate endpoints', () 
   });
 
   test('POST /api/complexity/escalate: no_handoff for non-existent task', { skip: SKIP_REASON || false }, async () => {
-    const r = await httpRequest('POST', `${COMPLEXITY_BASE}/escalate`, {
+    const r = await httpRequest('POST', `${complexityBase()}/escalate`, {
       task_id: 'TEST-NONEXISTENT-TASK-99999999',
       phase_number: 1,
       workflow_name: 'execute-phase',

@@ -11,7 +11,13 @@ Skips gracefully when PG is unavailable (psycopg2 not installed or server unreac
 
 import pytest
 
+
 # ── PG availability gate ───────────────────────────────────────────────────────
+
+# Plan 88-16-09: ONE reason for "there is no disposable PostgreSQL". Nine
+# different sentences said the same thing, and plan 88-19's gate reads the
+# reason, so nine spellings are nine rows a human has to recognise as one cause.
+from conftest import PG_SKIP_REASON  # noqa: E402
 
 _PG_OK = False
 
@@ -44,7 +50,7 @@ def _store():
 
 # ── Tests ──────────────────────────────────────────────────────────────────────
 
-@pytest.mark.skipif(not _PG_OK, reason="PG not available")
+@pytest.mark.skipif(not _PG_OK, reason=PG_SKIP_REASON)
 def test_recipient_agent_column_exists():
     """recipient_agent column is VARCHAR(64) on agent_findings after Migration 020 UP."""
     store = _store()
@@ -72,7 +78,7 @@ def test_recipient_agent_column_exists():
     )
 
 
-@pytest.mark.skipif(not _PG_OK, reason="PG not available")
+@pytest.mark.skipif(not _PG_OK, reason=PG_SKIP_REASON)
 def test_severity_column_exists():
     """severity column is VARCHAR(16) on agent_findings after Migration 020 UP."""
     store = _store()
@@ -100,7 +106,7 @@ def test_severity_column_exists():
     )
 
 
-@pytest.mark.skipif(not _PG_OK, reason="PG not available")
+@pytest.mark.skipif(not _PG_OK, reason=PG_SKIP_REASON)
 def test_recipient_agent_index_exists():
     """idx_agent_findings_recipient index exists on agent_findings after Migration 020 UP."""
     store = _store()
@@ -121,7 +127,7 @@ def test_recipient_agent_index_exists():
     )
 
 
-@pytest.mark.skipif(not _PG_OK, reason="PG not available")
+@pytest.mark.skipif(not _PG_OK, reason=PG_SKIP_REASON)
 def test_finding_type_recent_index_exists():
     """idx_agent_findings_finding_type_recent index exists on agent_findings after Migration 020 UP."""
     store = _store()
@@ -142,7 +148,7 @@ def test_finding_type_recent_index_exists():
     )
 
 
-@pytest.mark.skipif(not _PG_OK, reason="PG not available")
+@pytest.mark.skipif(not _PG_OK, reason=PG_SKIP_REASON)
 def test_recipient_agent_is_nullable():
     """recipient_agent column is nullable (NULL = broadcast per Phase 47 HYDRA-01 contract)."""
     store = _store()
@@ -167,7 +173,7 @@ def test_recipient_agent_is_nullable():
     )
 
 
-@pytest.mark.skipif(not _PG_OK, reason="PG not available")
+@pytest.mark.skipif(not _PG_OK, reason=PG_SKIP_REASON)
 def test_baseline_columns_preserved():
     """Phase 38 baseline columns are all still present on agent_findings after Migration 020.
 

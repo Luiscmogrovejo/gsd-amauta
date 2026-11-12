@@ -20,6 +20,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from services.party_session import (
+
     create,
     start,
     post_finding,
@@ -31,6 +32,11 @@ from services.party_session import (
 )
 
 # ── PG availability gate ───────────────────────────────────────────────────────
+
+# Plan 88-16-09: ONE reason for "there is no disposable PostgreSQL". Nine
+# different sentences said the same thing, and plan 88-19's gate reads the
+# reason, so nine spellings are nine rows a human has to recognise as one cause.
+from conftest import PG_SKIP_REASON  # noqa: E402
 
 _PG_OK = False
 
@@ -58,7 +64,7 @@ except (ImportError, Exception):
 def _require_pg():
     """Skip test when PG is not available."""
     if not _PG_OK:
-        pytest.skip("PG not available — skipping dissent-no-rollback test")
+        pytest.skip(PG_SKIP_REASON)
 
 
 # ── Best-effort: apply migration 023 before tests run ─────────────────────────
@@ -71,8 +77,8 @@ def _apply_migration_023_if_needed() -> None:
     try:
         import psycopg2
         db_url = os.environ.get(
-            "DATABASE_URL", "postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta"
-        )
+            "DATABASE_URL"
+        ) or __import__("conftest").postgres_dsn_or_none()
         conn = psycopg2.connect(db_url)
         conn.autocommit = True
         with conn.cursor() as cur:

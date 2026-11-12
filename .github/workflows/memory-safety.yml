@@ -34,7 +34,16 @@ jobs:
           POSTGRES_PASSWORD: gsd
           POSTGRES_DB: postgres
         ports:
-          - 5433:5432
+          # NO host-side number. Plan 88-16-03: the disposable database must
+          # never sit on the operator's live PostgreSQL port, and the hermetic
+          # guard blocks that port by NUMBER, not by context — a unified test
+          # fixture that allowed "the one test port" would have to special-case
+          # it forever. Declaring only the container port makes GitHub pick a
+          # free host port, which is the same discipline the Node runner's own
+          # free-port helper applies, and it cannot collide with anything.
+          # The chosen port is read back as
+          # ${{ job.services.postgres.ports['5432'] }}.
+          - 5432
         options: >-
           --health-cmd "pg_isready -U gsd"
           --health-interval 5s
@@ -73,11 +82,12 @@ jobs:
           # gsd_memsafe_test_<hex> database. The name below is deliberately
           # nonsense to make that visible: if it were ever honoured, every
           # test would fail to connect rather than silently touching a real DB.
-          GSD_POSTGRES_URL: postgresql://gsd:gsd@127.0.0.1:5433/this_name_is_discarded
+          GSD_POSTGRES_URL: postgresql://gsd:gsd@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/this_name_is_discarded
           # The opt-in the Python suite's `postgres_dsn` fixture reads (tests/conftest.py).
           # Deliberately not GSD_POSTGRES_URL, which conftest deletes from the test environment.
-          # (A literal, not ${{ env.GSD_POSTGRES_URL }}: a step's own env is not visible to its siblings in the expression context.)
-          GSD_TEST_POSTGRES_URL: postgresql://gsd:gsd@127.0.0.1:5433/this_name_is_discarded
+          # (Built from the service's own mapped port, not a literal: plan 88-16-03 removed
+          # every hard-coded host port so the operator's live PostgreSQL port can never appear.)
+          GSD_TEST_POSTGRES_URL: postgresql://gsd:gsd@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/this_name_is_discarded
           # An unreachable database must FAIL, never skip. A gate that skips is
           # a gate that is green for the wrong reason.
           GSD_MEMSAFE_REQUIRE_PG: '1'

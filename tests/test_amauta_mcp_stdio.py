@@ -15,7 +15,6 @@ Skips gracefully when:
 
 import json
 import os
-import select
 import signal
 import subprocess
 import sys
@@ -69,60 +68,23 @@ _FROZEN_RESOURCE_URIS_ENCODED = {
 
 # ── JSON-RPC helpers ───────────────────────────────────────────────────────────
 
-def _send_jsonrpc(proc, method, params, request_id):
-    """Write a JSON-RPC 2.0 request line to proc.stdin."""
-    msg = json.dumps({
-        "jsonrpc": "2.0",
-        "id": request_id,
-        "method": method,
-        "params": params,
-    }) + "\n"
-    try:
-        proc.stdin.write(msg.encode("utf-8"))
-        proc.stdin.flush()
-    except BrokenPipeError:
-        pass
+# Phase 88 plan 88-16-02: `select.select` accepts sockets only on Windows, so the
+# previous reader raised OSError on a pipe, returned None, and every test skipped
+# itself with "No ... response within timeout". The shared helper uses a reader
+# thread and a queue, which is portable.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "support"))
+from jsonrpc_stdio import read_jsonrpc as _read_jsonrpc  # noqa: E402
+from jsonrpc_stdio import send_jsonrpc as _send_jsonrpc  # noqa: E402
+from jsonrpc_stdio import stderr_tail as _stderr_tail  # noqa: E402
 
-
-def _read_jsonrpc(proc, request_id, timeout=5.0):
-    """Poll proc.stdout until a response with matching id arrives.
-
-    Returns the parsed dict or None on timeout / error. Skips notification
-    lines (no 'id' key or id=None).
-    """
-    deadline = time.monotonic() + timeout
-    buf = b""
-    while time.monotonic() < deadline:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            break
-        try:
-            rlist, _, _ = select.select([proc.stdout], [], [], min(remaining, 0.2))
-        except (ValueError, OSError):
-            break
-        if not rlist:
-            continue
-        try:
-            chunk = proc.stdout.read1(4096)  # type: ignore[attr-defined]
-        except AttributeError:
-            chunk = proc.stdout.read(1)
-        except OSError:
-            break
-        if not chunk:
-            break
-        buf += chunk
-        while b"\n" in buf:
-            line, buf = buf.split(b"\n", 1)
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                msg = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if msg.get("id") == request_id:
-                return msg
-    return None
+#: JSON-RPC read budget. A loaded Windows runner needs far more than the 5-10 s
+#: these calls used to allow: plan 88-16-02 turned "no response in time" from a
+#: silent skip into a failure, and the first enforcing run showed
+#: `amauta/complexity-score` exceeding 10 s there while every other call passed.
+#: Generous is correct for a budget whose only job is to stop a hang: a server
+#: that answers in 2 s is unaffected, and a server that never answers still
+#: fails, just later.
+_RPC_TIMEOUT = float(os.environ.get("GSD_MCP_RPC_TIMEOUT", "60"))
 
 
 # ── Subprocess fixture ─────────────────────────────────────────────────────────
@@ -175,7 +137,10 @@ class TestStdioIntegration:
     def setup_method(self):
         self.proc = _spawn_server()
         if self.proc is None:
-            pytest.skip("MCP stdio server failed to start (import error or crash on startup)")
+            pytest.fail(
+                "MCP stdio server failed to start (import error or crash on startup). "
+                "This used to skip, which hid a dead server behind a green cell."
+            )
 
     def teardown_method(self):
         _teardown(self.proc)
@@ -188,13 +153,16 @@ class TestStdioIntegration:
             "capabilities": {},
             "clientInfo": {"name": "test-client", "version": "0.0.1"},
         }, request_id=1)
-        return _read_jsonrpc(self.proc, request_id=1, timeout=5.0)
+        return _read_jsonrpc(self.proc, request_id=1, timeout=_RPC_TIMEOUT)
 
     def test_stdio_initialize_handshake(self):
         """Server responds to initialize with a non-error JSON-RPC response."""
         resp = self._do_initialize()
         if resp is None:
-            pytest.skip("No response to initialize within timeout — server may not support this protocol version")
+            pytest.fail(
+                "no response to initialize within %.0f s; server stderr tail:\n" % _RPC_TIMEOUT
+                + _stderr_tail(self.proc)
+            )
         assert "error" not in resp or resp.get("result") is not None, (
             f"Initialize returned error: {resp}"
         )
@@ -207,9 +175,9 @@ class TestStdioIntegration:
         # Send initialized notification
         _send_jsonrpc(self.proc, "notifications/initialized", {}, request_id=None)
         _send_jsonrpc(self.proc, "tools/list", {}, request_id=2)
-        resp = _read_jsonrpc(self.proc, request_id=2, timeout=5.0)
+        resp = _read_jsonrpc(self.proc, request_id=2, timeout=_RPC_TIMEOUT)
         if resp is None:
-            pytest.skip("No tools/list response within timeout")
+            pytest.fail("no tools/list response within %.0f s; server stderr tail:\n" % _RPC_TIMEOUT + _stderr_tail(self.proc))
         result = resp.get("result", {})
         tools = result.get("tools", [])
         tool_names = {t.get("name") for t in tools}
@@ -221,9 +189,9 @@ class TestStdioIntegration:
         self._do_initialize()
         _send_jsonrpc(self.proc, "notifications/initialized", {}, request_id=None)
         _send_jsonrpc(self.proc, "resources/list", {}, request_id=3)
-        resp = _read_jsonrpc(self.proc, request_id=3, timeout=5.0)
+        resp = _read_jsonrpc(self.proc, request_id=3, timeout=_RPC_TIMEOUT)
         if resp is None:
-            pytest.skip("No resources/list response within timeout")
+            pytest.fail("no resources/list response within %.0f s; server stderr tail:\n" % _RPC_TIMEOUT + _stderr_tail(self.proc))
         result = resp.get("result", {})
         resources = result.get("resources", [])
         # URIs may be percent-encoded (pydantic AnyUrl) or raw — accept both

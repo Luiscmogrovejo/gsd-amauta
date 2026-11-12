@@ -15,6 +15,20 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
+# ── Hermetic guard rollout, plan 88-16-03: STEP 2 of 2, ENFORCE ─────────────
+# Step 1 was one full run across nine cells with `GSD_HERMETIC_GUARD_MODE: log`
+# at workflow level (run 43173591322). Its refusal log — printed by both
+# runners at the end of a run — is the network-reach inventory in
+# 88-16-RECORD.md. Measured non-loopback destinations: registry.npmjs.org
+# (npx probing for eslint, closed by npm_config_offline), api.duckduckgo.com
+# (the MCP research tool's best-effort web fetch), huggingface.co and its CDN
+# (sentence-transformers fetching a model), api.voyageai.com (the embedding
+# provider) and 203.0.113.9 (this plan's own TEST-NET-3 mutation case).
+# NOT ONE of them is a test that legitimately must download, so the allow-list
+# stays EMPTY: the only host allowance in the whole suite is the one task
+# 88-16-08 scopes to the Voyage test. The key is therefore gone and the
+# default — enforce — applies.
+
 jobs:
   test:
     name: test (${{ matrix.os }}, node ${{ matrix.node-version }})
@@ -73,9 +87,197 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Pin GSD_PYTHON to the setup-python interpreter
+        shell: bash
+        # Plan 88-16-06/-07. The Node tests resolve Python through
+        # get-shit-done/bin/lib/platform.cjs, whose candidate order on Windows
+        # is `py -3`, then `python`, then `python3` — and `py -3` can be a
+        # DIFFERENT interpreter from the setup-python one the step below
+        # installs PyYAML into. That is the whole cause of the nine PyYAML
+        # skips the Windows Node cells carried (module-lifecycle-cli 3,
+        # module-lifecycle-e2e 6) and of the macOS one in
+        # 88-12-agent-yaml-parses. GSD_PYTHON is the first candidate, so
+        # pinning it makes the interpreter that runs the tests the same one the
+        # packages were installed into, on all three systems.
+        run: |
+          set -euo pipefail
+          PY=$(python -c "import sys; print(sys.executable)")
+          echo "GSD_PYTHON=$PY" >> "$GITHUB_ENV"
+          echo "GSD_PYTHON=$PY"
+
       - name: Install the Python packages the Node tests import
         shell: bash
-        run: python -m pip install --disable-pip-version-check pyyaml pydantic
+        # Plan 88-16-07: from the FILE, not a loose unpinned list. The Node
+        # tests shell out to services/*.py, so the interpreter they resolve
+        # must carry what those modules import — PyYAML (10 skipped rows),
+        # NumPy (2), psycopg2 (3) — and installing from requirements-dev.txt
+        # is what stops the CI environment and a developer's from drifting.
+        # Every version in that file is pinned exactly.
+        run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
+
+      - name: Install the security scanners (gitleaks, trivy)
+        shell: bash
+        # Plan 88-16-07. Through the REPOSITORY'S OWN installers, not a
+        # third-party action: they pin the version, resolve the asset per
+        # platform and — since this plan — verify a pinned SHA-256 and fail
+        # closed, so CI exercises the same code a user runs. The trivy pin had
+        # to move: v0.50.1's tag and every asset under it now 404, so trivy
+        # could not be installed anywhere. Eleven scanner skips depend on this
+        # step; the job FAILS if a binary is not on PATH afterwards, because a
+        # missing scanner that reports "unavailable" reads as a clean scan.
+        run: |
+          set -euo pipefail
+          node scripts/install-gitleaks.cjs
+          node scripts/install-trivy.cjs
+          export PATH="$PWD/node_modules/.bin:$PATH"
+          # GITHUB_PATH is read by the RUNNER, not by bash. On Windows this step
+          # runs in Git Bash, where $PWD is an MSYS path (/d/a/gsd-amauta/...)
+          # that native processes cannot resolve — so the entry was accepted and
+          # then matched nothing, and six scanner tests reported "not installed"
+          # on both Windows cells while this step itself passed (measured, run
+          # 43186745109). Write the native form.
+          BIN_DIR="$PWD/node_modules/.bin"
+          if command -v cygpath >/dev/null 2>&1; then
+            BIN_DIR="$(cygpath -w "$BIN_DIR")"
+          fi
+          echo "$BIN_DIR" >> "$GITHUB_PATH"
+          missing=
+          command -v gitleaks >/dev/null 2>&1 || missing="$missing gitleaks"
+          command -v trivy    >/dev/null 2>&1 || missing="$missing trivy"
+          if [ -n "$missing" ]; then
+            echo "scanners missing from PATH after install:$missing" >&2
+            exit 1
+          fi
+          gitleaks version
+          trivy --version
+
+      - name: Install semgrep where it is supported
+        if: runner.os != 'Windows'
+        shell: bash
+        # `pipx`, not `pip install -r`: semgrep 1.183.0 depends on mcp==1.29.0
+        # and this repository pins mcp==1.27.1 because services/amauta-mcp.py
+        # targets the 1.x server API, so putting the two in one environment is
+        # a ResolutionImpossible (measured, run 43177558577). pipx gives the
+        # CLI its own virtualenv, which is what a CLI wants. The Windows
+        # measurement is the step below, and
+        # tests/88-16-fake-scanner.test.cjs covers the parsing and policy
+        # behaviour on ALL nine cells regardless.
+        run: |
+          set -euo pipefail
+          python -m pipx install "semgrep==1.183.0" || pipx install "semgrep==1.183.0"
+          pipx ensurepath >/dev/null 2>&1 || true
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.local/bin:$PATH"
+          semgrep --version
+
+      - name: Measure semgrep on windows-latest (plan 88-16-07)
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        shell: bash
+        # Research section 8 marks native semgrep on Windows LOW confidence.
+        # This measures it instead of guessing, and cannot fail the cell.
+        run: |
+          echo "=== pipx install semgrep==1.183.0 on windows-latest"
+          python -m pipx install "semgrep==1.183.0" 2>&1 | tail -30 || echo "(install failed)"
+          echo "=== semgrep --version"
+          semgrep --version 2>&1 || echo "(semgrep not runnable on this platform)"
+
+      - name: Pick a free host port for the disposable PostgreSQL
+        shell: bash
+        # The runner's OWN helper, so the port can never be one of the live
+        # service ports (freePort() excludes LIVE_PORTS by construction) and
+        # nothing anywhere is hard-coded.
+        run: |
+          set -euo pipefail
+          PORT=$(node -e "process.stdout.write(String(require('./scripts/run-tests.cjs').freePort()))")
+          echo "PG_TEST_PORT=$PORT" >> "$GITHUB_ENV"
+          echo "disposable PostgreSQL will listen on host port $PORT"
+
+      - name: Probe the runner's PostgreSQL capability (macOS and Windows)
+        if: runner.os != 'Linux'
+        continue-on-error: true
+        shell: bash
+        # Plan 88-16-04 measures before it chooses. The research marks the
+        # pgvector-on-Windows question LOW confidence and `ankane/setup-postgres`
+        # MEDIUM; both are hypotheses, and this step is how they stop being
+        # hypotheses. continue-on-error so a missing tool reports rather than
+        # fails the cell.
+        run: |
+          echo "=== runner: ${{ runner.os }} / ${{ runner.arch }}"
+          echo "--- postgres --version";  postgres --version  2>&1 || echo "(absent)"
+          echo "--- pg_ctl --version";    pg_ctl --version    2>&1 || echo "(absent)"
+          echo "--- initdb --version";    initdb --version    2>&1 || echo "(absent)"
+          echo "--- pg_config --version"; pg_config --version 2>&1 || echo "(absent)"
+          echo "--- pg_config --pkglibdir / --sharedir"
+          pg_config --pkglibdir 2>&1 || true
+          pg_config --sharedir 2>&1 || true
+          echo "--- PGBIN=${PGBIN:-<unset>} PGROOT=${PGROOT:-<unset>} PGDATA=${PGDATA:-<unset>}"
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            echo "--- brew list | grep -i postgres"; brew list 2>/dev/null | grep -i postgres || echo "(none)"
+            echo "--- brew info pgvector";          brew info pgvector 2>&1 | head -5 || echo "(no formula)"
+            echo "--- which psql";                  command -v psql || echo "(absent)"
+          else
+            echo "--- windows service state";       powershell -NoProfile -Command "Get-Service postgresql* | Format-Table -AutoSize" 2>&1 || true
+            echo "--- nmake on PATH";               command -v nmake || echo "(absent)"
+            echo "--- cl on PATH";                  command -v cl || echo "(absent)"
+            echo "--- vswhere";                     "/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products '*' -property installationPath 2>&1 || echo "(absent)"
+            echo "--- conda";                       command -v conda || echo "(absent)"
+            echo "--- wsl";                         command -v wsl || echo "(absent)"
+            echo "--- docker info OSType";          docker info --format '{{.OSType}}' 2>&1 || echo "(absent)"
+          fi
+          echo "=== end capability probe"
+
+      - name: Start the disposable PostgreSQL (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        # GitHub service containers are declared at job level and would break
+        # the macOS and Windows rows of this matrix, so the container is started
+        # as a step instead.
+        #
+        # The image is the one docker/docker-compose.yml already pins BY DIGEST:
+        # migration 011 does `CREATE EXTENSION pg_search`, which only ParadeDB
+        # ships (and which needs shared_preload_libraries, already set in that
+        # image — hence no `command:` override). `pgvector/pgvector:pg16` fails
+        # 011 with `extension "pg_search" is not available`, measured on run
+        # 43173591322. ParadeDB carries pgvector 0.8.1 too, so the vector
+        # columns are covered. macOS and Windows are plan 88-16-04.
+        run: |
+          set -euo pipefail
+          docker run -d --name gsd-test-pg \
+            -e POSTGRES_USER=gsd -e POSTGRES_PASSWORD=gsd -e POSTGRES_DB=gsd_test \
+            -p "127.0.0.1:${PG_TEST_PORT}:5432" \
+            paradedb/paradedb:latest-pg16@sha256:21518b4005ad4111bdd41a6687ef37ca2abc363d7af30e700900ad6b8cb33e1e
+          # Readiness is checked FROM THE HOST, with a real connection, not with
+          # `docker exec pg_isready`. Measured on run 43178016790: the exec
+          # probe answers the entrypoint's TEMPORARY init server, which listens
+          # on the container's unix socket only; the published port is not
+          # serving yet, and the next step died with "server closed the
+          # connection unexpectedly". The condition that matters is the one the
+          # next step needs, so that is the one to wait for.
+          ready=
+          for _ in $(seq 1 90); do
+            if python -c "import psycopg2; psycopg2.connect('postgresql://gsd:gsd@127.0.0.1:${PG_TEST_PORT}/gsd_test', connect_timeout=3).close()" 2>/dev/null; then ready=1; break; fi
+            sleep 2
+          done
+          if [ -z "$ready" ]; then
+            docker logs gsd-test-pg || true
+            echo "the disposable PostgreSQL did not accept a host connection in 180 s" >&2
+            exit 1
+          fi
+          docker exec gsd-test-pg psql -U gsd -d gsd_test -v ON_ERROR_STOP=1 \
+            -c "CREATE EXTENSION IF NOT EXISTS vector"
+          echo "GSD_TEST_POSTGRES_URL=postgresql://gsd:gsd@127.0.0.1:${PG_TEST_PORT}/gsd_test" >> "$GITHUB_ENV"
+
+      - name: Apply the schema to the disposable PostgreSQL
+        if: env.GSD_TEST_POSTGRES_URL != ''
+        shell: bash
+        # The suite's Postgres tests expect the product's own schema. This runs
+        # the repository's migration runner, so CI exercises the same code a
+        # user runs. tests/test_docker_pg_migration.py is unaffected: it creates
+        # and drops its OWN scratch database per test and never touches this one.
+        run: |
+          set -euo pipefail
+          python -c "import sys; sys.path.insert(0, '.'); from services import migrate_runner; print('migrations applied:', migrate_runner.apply_migrations(dsn='${GSD_TEST_POSTGRES_URL}'))"
 
       - name: Run tests with coverage
         # c8 v11 requires Node 20+ (engines: ^20.0.0 || >=22.0.0).
@@ -86,6 +288,31 @@ jobs:
       - name: Run coverage ratchet
         shell: bash
         run: node scripts/coverage-ratchet.cjs
+
+      # Plan 88-18 recorded that the Windows Node job ends with the runner saying
+      # "Terminate orphan process: pid (N) (python)" twice. The ledger-based stray
+      # detector in scripts/run-tests.cjs only sees daemons and RLM services it
+      # recorded, so those two are invisible to it. This names them — command line
+      # and parent — and reaps them, so the evidence exists for plan 88-11 instead
+      # of a pid number with no identity. It never fails the job.
+      - name: Name and reap surviving Python children (Windows)
+        if: always() && runner.os == 'Windows'
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $procs = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -like 'python*' })
+          if ($procs.Count -eq 0) { Write-Host 'no surviving python child'; exit 0 }
+          foreach ($p in $procs) {
+            Write-Host ("SURVIVING PYTHON pid={0} ppid={1} cmd={2}" -f $p.ProcessId, $p.ParentProcessId, $p.CommandLine)
+          }
+          foreach ($p in $procs) { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue }
+          Write-Host ("reaped {0} python process(es)" -f $procs.Count)
+
+      - name: Stop the disposable PostgreSQL (Linux)
+        if: always() && runner.os == 'Linux'
+        shell: bash
+        run: docker rm -f gsd-test-pg || true
 
   pytest:
     name: pytest (${{ matrix.os }}, python ${{ matrix.python-version }})
@@ -136,6 +363,89 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt -r requirements-dev.txt
 
+      - name: Pick a free host port for the disposable PostgreSQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT=$(node -e "process.stdout.write(String(require('./scripts/run-tests.cjs').freePort()))")
+          echo "PG_TEST_PORT=$PORT" >> "$GITHUB_ENV"
+          echo "disposable PostgreSQL will listen on host port $PORT"
+
+      - name: Probe the runner's PostgreSQL capability (macOS and Windows)
+        if: runner.os != 'Linux'
+        continue-on-error: true
+        shell: bash
+        # Plan 88-16-04 measures before it chooses. The research marks the
+        # pgvector-on-Windows question LOW confidence and `ankane/setup-postgres`
+        # MEDIUM; both are hypotheses, and this step is how they stop being
+        # hypotheses. continue-on-error so a missing tool reports rather than
+        # fails the cell.
+        run: |
+          echo "=== runner: ${{ runner.os }} / ${{ runner.arch }}"
+          echo "--- postgres --version";  postgres --version  2>&1 || echo "(absent)"
+          echo "--- pg_ctl --version";    pg_ctl --version    2>&1 || echo "(absent)"
+          echo "--- initdb --version";    initdb --version    2>&1 || echo "(absent)"
+          echo "--- pg_config --version"; pg_config --version 2>&1 || echo "(absent)"
+          echo "--- pg_config --pkglibdir / --sharedir"
+          pg_config --pkglibdir 2>&1 || true
+          pg_config --sharedir 2>&1 || true
+          echo "--- PGBIN=${PGBIN:-<unset>} PGROOT=${PGROOT:-<unset>} PGDATA=${PGDATA:-<unset>}"
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            echo "--- brew list | grep -i postgres"; brew list 2>/dev/null | grep -i postgres || echo "(none)"
+            echo "--- brew info pgvector";          brew info pgvector 2>&1 | head -5 || echo "(no formula)"
+            echo "--- which psql";                  command -v psql || echo "(absent)"
+          else
+            echo "--- windows service state";       powershell -NoProfile -Command "Get-Service postgresql* | Format-Table -AutoSize" 2>&1 || true
+            echo "--- nmake on PATH";               command -v nmake || echo "(absent)"
+            echo "--- cl on PATH";                  command -v cl || echo "(absent)"
+            echo "--- vswhere";                     "/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products '*' -property installationPath 2>&1 || echo "(absent)"
+            echo "--- conda";                       command -v conda || echo "(absent)"
+            echo "--- wsl";                         command -v wsl || echo "(absent)"
+            echo "--- docker info OSType";          docker info --format '{{.OSType}}' 2>&1 || echo "(absent)"
+          fi
+          echo "=== end capability probe"
+
+      - name: Start the disposable PostgreSQL (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --name gsd-test-pg \
+            -e POSTGRES_USER=gsd -e POSTGRES_PASSWORD=gsd -e POSTGRES_DB=gsd_test \
+            -p "127.0.0.1:${PG_TEST_PORT}:5432" \
+            paradedb/paradedb:latest-pg16@sha256:21518b4005ad4111bdd41a6687ef37ca2abc363d7af30e700900ad6b8cb33e1e
+          # Readiness is checked FROM THE HOST, with a real connection, not with
+          # `docker exec pg_isready`. Measured on run 43178016790: the exec
+          # probe answers the entrypoint's TEMPORARY init server, which listens
+          # on the container's unix socket only; the published port is not
+          # serving yet, and the next step died with "server closed the
+          # connection unexpectedly". The condition that matters is the one the
+          # next step needs, so that is the one to wait for.
+          ready=
+          for _ in $(seq 1 90); do
+            if python -c "import psycopg2; psycopg2.connect('postgresql://gsd:gsd@127.0.0.1:${PG_TEST_PORT}/gsd_test', connect_timeout=3).close()" 2>/dev/null; then ready=1; break; fi
+            sleep 2
+          done
+          if [ -z "$ready" ]; then
+            docker logs gsd-test-pg || true
+            echo "the disposable PostgreSQL did not accept a host connection in 180 s" >&2
+            exit 1
+          fi
+          docker exec gsd-test-pg psql -U gsd -d gsd_test -v ON_ERROR_STOP=1 \
+            -c "CREATE EXTENSION IF NOT EXISTS vector"
+          echo "GSD_TEST_POSTGRES_URL=postgresql://gsd:gsd@127.0.0.1:${PG_TEST_PORT}/gsd_test" >> "$GITHUB_ENV"
+
+      - name: Apply the schema to the disposable PostgreSQL
+        if: env.GSD_TEST_POSTGRES_URL != ''
+        shell: bash
+        # The suite's Postgres tests expect the product's own schema. This runs
+        # the repository's migration runner, so CI exercises the same code a
+        # user runs. tests/test_docker_pg_migration.py is unaffected: it creates
+        # and drops its OWN scratch database per test and never touches this one.
+        run: |
+          set -euo pipefail
+          python -c "import sys; sys.path.insert(0, '.'); from services import migrate_runner; print('migrations applied:', migrate_runner.apply_migrations(dsn='${GSD_TEST_POSTGRES_URL}'))"
+
       - name: Run the Python suite
         shell: bash
         # `set -e` is deliberately OFF so the exit code can be captured and
@@ -151,9 +461,41 @@ jobs:
           echo "pytest exit: $rc"
           exit $rc
 
+      - name: Run the embedding-provider test against the real Voyage API
+        shell: bash
+        # Plan 88-16-08, operator decision 2026-11-11 "there is a key, use it".
+        #
+        # Its OWN step, and the wiring is deliberate in three ways:
+        #  * the secret is on THIS step only, so it never reaches the ~1,800
+        #    other test subprocesses in the suite;
+        #  * this step writes NO --junitxml and uploads NO artifact. GitHub's
+        #    secret masking covers logs, not artifact content, and the main
+        #    step's report IS uploaded;
+        #  * the main suite step above therefore has no key at all and always
+        #    exercises the deterministic stand-in, so BOTH paths run on every
+        #    cell of every run.
+        #
+        # On a fork PR the secret expands to the empty string and this step
+        # takes the stand-in path too — green either way, and the record says
+        # which path each cell took. One short input, one call per job.
+        env:
+          VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
+        run: |
+          set -uo pipefail
+          python3 -m pytest tests/test_65_vector_leg.py -p no:cacheprovider -q \
+            -k "embedding_provider or allowance_did_not_leak or stand_in_is_deterministic"
+          rc=$?
+          echo "voyage-path pytest exit: $rc"
+          exit $rc
+
       - name: Upload the pytest report
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: pytest-report-${{ matrix.os }}
           path: pytest-report.xml
+
+      - name: Stop the disposable PostgreSQL (Linux)
+        if: always() && runner.os == 'Linux'
+        shell: bash
+        run: docker rm -f gsd-test-pg || true

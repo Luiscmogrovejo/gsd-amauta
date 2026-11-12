@@ -145,14 +145,22 @@ test('PROOF (a): a PATH with only `python` really resolves and really spawns', (
       assert.deepEqual(got, { command: 'python', args: [] },
         'with no python3 on PATH the resolver must find python');
       const saved = process.env.PATH;
+      // Plan 88-16-07 pins GSD_PYTHON in CI so the Node tests resolve the same
+      // interpreter the packages were installed into. GSD_PYTHON is the FIRST
+      // candidate, so a proof about PATH resolution has to take it out of the
+      // way — `spawnPython` reads process.env, not the injected one.
+      const savedPy = process.env.GSD_PYTHON;
       try {
         process.env.PATH = isolated;
+        delete process.env.GSD_PYTHON;
         platform.resetPythonCache();
         const r = platform.spawnPython(['-m', 'anything'], { encoding: 'utf-8' });
         assert.equal(r.status, 0, r.stderr);
         assert.match(r.stdout, /^FAKE-PY-88-15 -m anything$/, r.stdout);
       } finally {
         process.env.PATH = saved;
+        if (savedPy === undefined) delete process.env.GSD_PYTHON;
+        else process.env.GSD_PYTHON = savedPy;
         platform.resetPythonCache();
       }
     }
@@ -515,14 +523,84 @@ const INSTALLERS = [
     'darwin/arm64': 'gitleaks_8.18.4_darwin_arm64.tar.gz',
     'win32/x64': 'gitleaks_8.18.4_windows_x64.zip',
   }],
+  // Plan 88-16-07 moved the trivy pin from v0.50.1, whose tag and every asset
+  // now 404, to v0.76.1 (published 2026-10-21). The naming convention is
+  // unchanged; only the version in each name moved.
   ['trivy', '../scripts/install-trivy.cjs', {
-    'linux/x64': 'trivy_0.50.1_Linux-64bit.tar.gz',
-    'linux/arm64': 'trivy_0.50.1_Linux-ARM64.tar.gz',
-    'darwin/x64': 'trivy_0.50.1_macOS-64bit.tar.gz',
-    'darwin/arm64': 'trivy_0.50.1_macOS-ARM64.tar.gz',
-    'win32/x64': 'trivy_0.50.1_windows-64bit.zip',
+    'linux/x64': 'trivy_0.76.1_Linux-64bit.tar.gz',
+    'linux/arm64': 'trivy_0.76.1_Linux-ARM64.tar.gz',
+    'darwin/x64': 'trivy_0.76.1_macOS-64bit.tar.gz',
+    'darwin/arm64': 'trivy_0.76.1_macOS-ARM64.tar.gz',
+    'win32/x64': 'trivy_0.76.1_windows-64bit.zip',
   }],
 ];
+
+// Plan 88-16-07: every asset the installers will download carries a pinned
+// SHA-256 and the verification FAILS CLOSED. Neither installer verified
+// anything before, so a compromised or truncated release asset was extracted
+// and put on PATH as a security tool. Nothing here downloads: the digest table
+// is data, and the verifier is driven over a file this test writes.
+for (const [tool, mod, table] of INSTALLERS) {
+  test(`88-16-07: ${tool} pins a SHA-256 for every asset it will download`, () => {
+    const installer = require(mod);
+    const digests = installer.TRIVY_SHA256 || installer.GITLEAKS_SHA256;
+    assert.ok(digests, `${tool} installer exports no digest table`);
+    for (const [plat, arch] of [
+      ['linux', 'x64'], ['linux', 'arm64'],
+      ['darwin', 'x64'], ['darwin', 'arm64'],
+      ['win32', 'x64'], ['win32', 'ia32'],
+    ]) {
+      const got = installer.resolveAssetName(plat, arch);
+      if (!got.supported) continue;
+      assert.match(
+        digests[got.asset] || '',
+        /^[0-9a-f]{64}$/,
+        `${tool} has no pinned SHA-256 for ${got.asset} (${plat}/${arch})`
+      );
+    }
+    assert.ok(Object.keys(table).every((k) => digests[table[k]]), 'every tabled asset is pinned');
+  });
+
+  test(`88-16-07: ${tool} refuses a tampered asset and deletes it`, () => {
+    const fsx = require('node:fs');
+    const osx = require('node:os');
+    const pathx = require('node:path');
+    const installer = require(mod);
+    const digests = installer.TRIVY_SHA256 || installer.GITLEAKS_SHA256;
+    const assetName = Object.keys(digests)[0];
+    const dir = fsx.mkdtempSync(pathx.join(osx.tmpdir(), 'checksum-'));
+    const file = pathx.join(dir, assetName);
+    try {
+      fsx.writeFileSync(file, 'not the real release asset');
+      assert.throws(
+        () => installer.verifyChecksum(file, assetName),
+        /FAILED checksum verification/,
+        'a tampered asset must be refused'
+      );
+      assert.equal(fsx.existsSync(file), false, 'the refused asset must be deleted, not left on disk');
+
+      // An asset with NO pinned digest is a refusal too: silence would defeat
+      // the point the moment the table grows a row.
+      fsx.writeFileSync(file, 'x');
+      assert.throws(
+        () => installer.verifyChecksum(file, 'an-asset-nobody-pinned.tar.gz'),
+        /no pinned SHA-256/,
+        'an unpinned asset must be refused'
+      );
+
+      // ...and the digest of known bytes is what the verifier computes.
+      const known = pathx.join(dir, 'known');
+      fsx.writeFileSync(known, 'abc');
+      assert.equal(
+        installer.sha256OfFile(known),
+        'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
+        'sha256OfFile must be a real SHA-256'
+      );
+    } finally {
+      fsx.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
 
 for (const [tool, mod, table] of INSTALLERS) {
   test(`88-15-08: ${tool} resolves an asset for every supported platform/arch`, () => {
