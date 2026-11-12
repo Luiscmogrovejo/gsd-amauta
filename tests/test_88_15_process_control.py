@@ -193,17 +193,70 @@ def test_golden_port_holders_failure_is_empty(monkeypatch, tmp_path):
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# 3. The liveness probe: os.kill(pid, 0), and the PermissionError edge PER SITE
+# 3. The liveness probe and the PermissionError edge PER SITE.
 #
-#    Measured on f114bf0: amauta-daemon.py:5359 (start_server) and :5814
-#    (check_status), rlm-service.py:1291 (start_server) and :1377
-#    (check_status) all catch (ProcessLookupError, ValueError) only, so a
-#    PermissionError PROPAGATES today.  _kill_port_holder (:669) catches it and
-#    logs rlm_port_kill_permission.  Task 88-15-02 keeps every one of these.
+#    Measured on the base commit: amauta-daemon.py start_server and
+#    check_status, and the two rlm-service.py twins, all catch
+#    (ProcessLookupError, ValueError) only, so a PermissionError PROPAGATES.
+#    _kill_port_holder catches it and logs rlm_port_kill_permission.
+#    Task 88-15-02 keeps every one of these.
+#
+#    The probe is recorded at the services/_platform boundary, which is the
+#    contract the daemon depends on and is the same on every platform. The
+#    POSIX SIGNAL argv underneath it (os.kill(pid, 0), SIGTERM, SIGKILL) is
+#    pinned in the POSIX branch of each test, because Windows has no such
+#    signals at all -- it uses OpenProcess and TerminateProcess, which the
+#    injected-win32 tests in section 7 cover.
 # ══════════════════════════════════════════════════════════════════════════
 
+IS_WINDOWS = sys.platform.startswith("win")
 
-def test_golden_check_status_probes_with_signal_zero(monkeypatch, tmp_path, capsys):
+
+def _alive_recorder(monkeypatch, platform_mod, *, result=True, raises=None, side_effect=None):
+    """Record every pid_alive call at the platform boundary."""
+    rec = _Recorder(result=result, raises=raises, side_effect=side_effect)
+    monkeypatch.setattr(platform_mod, "pid_alive", rec)
+    return rec
+
+
+def _terminate_recorder(monkeypatch, platform_mod, *, result=True, raises=None, side_effect=None):
+    """Record every terminate call at the platform boundary."""
+    rec = _Recorder(result=result, raises=raises, side_effect=side_effect)
+    monkeypatch.setattr(platform_mod, "terminate", rec)
+    return rec
+
+
+def _platform_of(mod):
+    """The _platform module object the service under test imported."""
+    return mod._platform
+
+
+sys.path.insert(0, str(_REPO / "services"))
+import _platform as _PLATFORM  # noqa: E402
+sys.path.pop(0)
+_REAL_TERMINATE = _PLATFORM.terminate
+_REAL_PID_ALIVE = _PLATFORM.pid_alive
+
+
+def test_golden_check_status_probes_without_signalling(monkeypatch, tmp_path, capsys):
+    mod = _daemon(monkeypatch, tmp_path)
+    mod.PID_FILE.parent.mkdir(parents=True, exist_ok=True)
+    mod.PID_FILE.write_text("4242", encoding="utf-8")
+    rec = _alive_recorder(monkeypatch, _platform_of(mod), result=True)
+    assert mod.check_status() is True
+    assert rec.calls == [((4242,), {"strict": True})], rec.calls
+    assert "Daemon running (PID 4242)" in capsys.readouterr().out
+
+
+def test_golden_check_status_posix_probe_is_signal_zero(monkeypatch, tmp_path, capsys):
+    """POSIX argv pin: the probe really is os.kill(pid, 0) and nothing else."""
+    if IS_WINDOWS:
+        # os.kill with any signal but the console-control events calls
+        # TerminateProcess here, which is exactly why the probe must not use
+        # it; the Windows path is pinned by the injected-win32 tests.
+        import _platform as _p  # noqa: F401  (imported for the assertion below)
+        assert sys.modules["_platform"] is not None
+        return
     mod = _daemon(monkeypatch, tmp_path)
     mod.PID_FILE.parent.mkdir(parents=True, exist_ok=True)
     mod.PID_FILE.write_text("4242", encoding="utf-8")
@@ -211,112 +264,121 @@ def test_golden_check_status_probes_with_signal_zero(monkeypatch, tmp_path, caps
     monkeypatch.setattr(os, "kill", rec)
     assert mod.check_status() is True
     assert rec.calls == [((4242, 0), {})]
-    assert "Daemon running (PID 4242)" in capsys.readouterr().out
+    capsys.readouterr()
 
 
-def test_golden_check_status_process_lookup_error_is_stale(monkeypatch, tmp_path, capsys):
+def test_golden_check_status_dead_pid_is_stale(monkeypatch, tmp_path, capsys):
     mod = _daemon(monkeypatch, tmp_path)
     mod.PID_FILE.parent.mkdir(parents=True, exist_ok=True)
     mod.PID_FILE.write_text("4242", encoding="utf-8")
-    monkeypatch.setattr(os, "kill", _Recorder(raises=ProcessLookupError()))
+    _alive_recorder(monkeypatch, _platform_of(mod), result=False)
     assert mod.check_status() is False
     assert not mod.PID_FILE.exists()
     assert "stale PID file" in capsys.readouterr().out
 
 
 def test_golden_check_status_permission_error_propagates(monkeypatch, tmp_path):
-    """PINNED SITE amauta-daemon.py:5814 -- PermissionError is NOT caught today."""
+    """PINNED SITE amauta-daemon.py check_status -- PermissionError is NOT caught."""
     mod = _daemon(monkeypatch, tmp_path)
     mod.PID_FILE.parent.mkdir(parents=True, exist_ok=True)
     mod.PID_FILE.write_text("4242", encoding="utf-8")
-    monkeypatch.setattr(os, "kill", _Recorder(raises=PermissionError()))
+    _alive_recorder(monkeypatch, _platform_of(mod), raises=PermissionError())
     with pytest.raises(PermissionError):
         mod.check_status()
     assert mod.PID_FILE.exists(), "the pid file must survive a PermissionError"
 
 
 def test_golden_start_server_already_running_probe(monkeypatch, tmp_path, capsys):
-    """PINNED SITE amauta-daemon.py:5359 -- the probe returns before any bind."""
+    """PINNED SITE amauta-daemon.py start_server -- the probe returns before any bind."""
     mod = _daemon(monkeypatch, tmp_path)
     mod.PID_FILE.parent.mkdir(parents=True, exist_ok=True)
     mod.PID_FILE.write_text("4242", encoding="utf-8")
-    rec = _Recorder(result=None)
-    monkeypatch.setattr(os, "kill", rec)
+    rec = _alive_recorder(monkeypatch, _platform_of(mod), result=True)
     mod.start_server(foreground=False)
-    assert rec.calls == [((4242, 0), {})]
+    assert rec.calls == [((4242,), {"strict": True})]
     assert "Daemon already running (PID 4242)" in capsys.readouterr().out
 
 
 def test_golden_start_server_permission_error_propagates(monkeypatch, tmp_path):
-    """PINNED SITE amauta-daemon.py:5359 -- PermissionError is NOT caught today."""
     mod = _daemon(monkeypatch, tmp_path)
     mod.PID_FILE.parent.mkdir(parents=True, exist_ok=True)
     mod.PID_FILE.write_text("4242", encoding="utf-8")
-    monkeypatch.setattr(os, "kill", _Recorder(raises=PermissionError()))
+    _alive_recorder(monkeypatch, _platform_of(mod), raises=PermissionError())
     with pytest.raises(PermissionError):
         mod.start_server(foreground=False)
 
 
 def test_golden_rlm_check_status_probe_and_permission_edge(monkeypatch, tmp_path, capsys):
-    """PINNED SITE rlm-service.py:1377 -- probe with 0; PermissionError propagates."""
+    """PINNED SITE rlm-service.py check_status -- probe, and PermissionError propagates."""
     mod = _rlm(monkeypatch, tmp_path)
     mod.PID_FILE.parent.mkdir(parents=True, exist_ok=True)
     mod.PID_FILE.write_text("4242", encoding="utf-8")
-    rec = _Recorder(result=None)
-    monkeypatch.setattr(os, "kill", rec)
+    rec = _alive_recorder(monkeypatch, _platform_of(mod), result=True)
     assert mod.check_status() is True
-    assert rec.calls == [((4242, 0), {})]
+    assert rec.calls == [((4242,), {"strict": True})]
     assert "RLM service running (PID 4242)" in capsys.readouterr().out
 
-    monkeypatch.setattr(os, "kill", _Recorder(raises=PermissionError()))
+    _alive_recorder(monkeypatch, _platform_of(mod), raises=PermissionError())
     with pytest.raises(PermissionError):
         mod.check_status()
 
 
 def test_golden_rlm_start_server_already_running_probe(monkeypatch, tmp_path, capsys):
-    """PINNED SITE rlm-service.py:1291 -- probe with 0 before any bind."""
+    """PINNED SITE rlm-service.py start_server -- probe before any bind."""
     mod = _rlm(monkeypatch, tmp_path)
     mod.PID_FILE.parent.mkdir(parents=True, exist_ok=True)
     mod.PID_FILE.write_text("4242", encoding="utf-8")
-    rec = _Recorder(result=None)
-    monkeypatch.setattr(os, "kill", rec)
+    rec = _alive_recorder(monkeypatch, _platform_of(mod), result=True)
     mod.start_server(foreground=False)
-    assert rec.calls == [((4242, 0), {})]
+    assert rec.calls == [((4242,), {"strict": True})]
     assert "RLM service already running (PID 4242)" in capsys.readouterr().out
 
-    monkeypatch.setattr(os, "kill", _Recorder(raises=PermissionError()))
+    _alive_recorder(monkeypatch, _platform_of(mod), raises=PermissionError())
     with pytest.raises(PermissionError):
         mod.start_server(foreground=False)
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# 4. terminate: SIGTERM, then the SIGKILL escalation with its probe cadence
+# 4. terminate: the polite signal, then the forced escalation and its cadence
 # ══════════════════════════════════════════════════════════════════════════
 
 
-def test_golden_stop_server_sigterm_then_one_probe(monkeypatch, tmp_path, capsys):
+def test_golden_stop_server_terminates_then_probes_once(monkeypatch, tmp_path, capsys):
     mod = _daemon(monkeypatch, tmp_path)
     mod.PID_FILE.parent.mkdir(parents=True, exist_ok=True)
     mod.PID_FILE.write_text("4242", encoding="utf-8")
     monkeypatch.setattr(mod.time, "sleep", lambda _s: None)
-
-    def effect(n, args, _kwargs):
-        if n == 1:
-            return None            # the SIGTERM lands
-        raise ProcessLookupError()  # the first probe says it is gone
-
-    rec = _Recorder(side_effect=effect)
-    monkeypatch.setattr(os, "kill", rec)
+    term = _terminate_recorder(monkeypatch, _platform_of(mod))
+    alive = _alive_recorder(monkeypatch, _platform_of(mod), result=False)
     mod.stop_server()
-    assert rec.calls == [((4242, signal.SIGTERM), {}), ((4242, 0), {})]
+    assert term.calls == [((4242,), {})], term.calls
+    assert alive.calls == [((4242,), {"strict": True})], alive.calls
     out = capsys.readouterr().out
     assert "Sent SIGTERM to PID 4242" in out
     assert "Daemon stopped" in out
     assert not mod.PID_FILE.exists()
 
 
-def test_golden_stop_server_escalates_to_sigkill(monkeypatch, tmp_path, capsys):
-    """The pinned cadence: SIGTERM, 20 probes, SIGKILL, 10 probes, then a warning."""
+def test_golden_stop_server_escalation_cadence(monkeypatch, tmp_path, capsys):
+    """The pinned cadence: polite stop, 20 probes, forced stop, 10 probes, warning."""
+    mod = _daemon(monkeypatch, tmp_path)
+    mod.PID_FILE.parent.mkdir(parents=True, exist_ok=True)
+    mod.PID_FILE.write_text("4242", encoding="utf-8")
+    monkeypatch.setattr(mod.time, "sleep", lambda _s: None)
+    term = _terminate_recorder(monkeypatch, _platform_of(mod))
+    alive = _alive_recorder(monkeypatch, _platform_of(mod), result=True)  # nothing ever dies
+    mod.stop_server()
+    assert [c[1] for c in term.calls] == [{}, {"graceful": False, "force": True}], term.calls
+    assert len(alive.calls) == 30, "20 probes before the escalation and 10 after"
+    out = capsys.readouterr().out
+    assert "did not exit on SIGTERM" in out
+    assert "may still be running" in out
+
+
+def test_golden_stop_server_posix_signal_argv(monkeypatch, tmp_path, capsys):
+    """POSIX argv pin under the boundary: SIGTERM, probe, SIGKILL."""
+    if IS_WINDOWS:
+        return  # Windows has neither SIGTERM nor SIGKILL; see section 7
     mod = _daemon(monkeypatch, tmp_path)
     mod.PID_FILE.parent.mkdir(parents=True, exist_ok=True)
     mod.PID_FILE.write_text("4242", encoding="utf-8")
@@ -329,46 +391,59 @@ def test_golden_stop_server_escalates_to_sigkill(monkeypatch, tmp_path, capsys):
     assert signals[1:21] == [0] * 20
     assert signals[21] == signal.SIGKILL
     assert signals[22:] == [0] * 10
-    out = capsys.readouterr().out
-    assert "did not exit on SIGTERM" in out
-    assert "may still be running" in out
+    capsys.readouterr()
 
 
-def test_golden_rlm_stop_server_sends_sigterm_only(monkeypatch, tmp_path, capsys):
-    """PINNED SITE rlm-service.py:1360 -- one SIGTERM, no escalation, no probe."""
+def test_golden_rlm_stop_server_is_polite_only(monkeypatch, tmp_path, capsys):
+    """PINNED SITE rlm-service.py stop_server -- one polite stop, no escalation."""
     mod = _rlm(monkeypatch, tmp_path)
     mod.PID_FILE.parent.mkdir(parents=True, exist_ok=True)
     mod.PID_FILE.write_text("4242", encoding="utf-8")
-    rec = _Recorder(result=None)
-    monkeypatch.setattr(os, "kill", rec)
+    term = _terminate_recorder(monkeypatch, _platform_of(mod))
     mod.stop_server()
-    assert rec.calls == [((4242, signal.SIGTERM), {})]
+    assert term.calls == [((4242,), {})]
     assert "Sent SIGTERM to PID 4242" in capsys.readouterr().out
     assert not mod.PID_FILE.exists()
+    if not IS_WINDOWS:
+        # POSIX argv pin UNDER the boundary: put the real terminate back first.
+        monkeypatch.setattr(_platform_of(mod), "terminate", _REAL_TERMINATE)
+        mod.PID_FILE.write_text("4242", encoding="utf-8")
+        rec = _Recorder(result=None)
+        monkeypatch.setattr(os, "kill", rec)
+        mod.stop_server()
+        assert rec.calls == [((4242, signal.SIGTERM), {})], rec.calls
+        capsys.readouterr()
 
 
 def test_golden_kill_port_holder_sequence_and_permission_edge(monkeypatch, tmp_path, caplog):
-    """PINNED SITE amauta-daemon.py:666/669/670 -- SIGTERM, probe, SIGKILL; a
-    PermissionError from either is caught and logged as rlm_port_kill_permission."""
+    """PINNED SITE _kill_port_holder -- polite, probe, forced; a PermissionError
+    from any of them is caught and logged as rlm_port_kill_permission."""
     import logging
 
     mod = _daemon(monkeypatch, tmp_path)
     port = _free_port()
     monkeypatch.setattr(mod.time, "sleep", lambda _s: None)
-    monkeypatch.setattr(
-        mod, "_port_holder_pids", lambda _p: [4242]
-    )
-    rec = _Recorder(result=None)
-    monkeypatch.setattr(os, "kill", rec)
+    monkeypatch.setattr(mod, "_port_holder_pids", lambda _p: [4242])
+    term = _terminate_recorder(monkeypatch, _platform_of(mod))
     assert mod._kill_port_holder(port, {4242}) is True
-    assert [c[0][1] for c in rec.calls] == [signal.SIGTERM, 0, signal.SIGKILL]
+    assert term.calls == [((4242,), {"force": True})], term.calls
 
-    # PermissionError on the SIGTERM: logged, never raised, nothing signalled.
     caplog.clear()
-    monkeypatch.setattr(os, "kill", _Recorder(raises=PermissionError()))
+    _terminate_recorder(monkeypatch, _platform_of(mod), raises=PermissionError())
     with caplog.at_level(logging.INFO, logger="amauta.daemon"):
         assert mod._kill_port_holder(port, {4242}) is False
     assert "rlm_port_kill_permission pid=4242" in caplog.text
+
+    if not IS_WINDOWS:
+        # POSIX argv pin UNDER the boundary: put the real terminate back first.
+        monkeypatch.setattr(_platform_of(mod), "terminate", _REAL_TERMINATE)
+        mod2 = _daemon(monkeypatch, tmp_path)
+        monkeypatch.setattr(mod2.time, "sleep", lambda _s: None)
+        monkeypatch.setattr(mod2, "_port_holder_pids", lambda _p: [4242])
+        rec = _Recorder(result=None)
+        monkeypatch.setattr(os, "kill", rec)
+        assert mod2._kill_port_holder(port, {4242}) is True
+        assert [c[0][1] for c in rec.calls] == [signal.SIGTERM, 0, signal.SIGKILL]
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -412,10 +487,10 @@ def test_golden_rlm_child_is_started_detached(monkeypatch, tmp_path):
 #
 #    `daemonize() -> None` could not express what the code does: the PARENT
 #    prints "starting in background" and returns, while the CHILD goes on to
-#    run start_server.  The pin executes the real `if __name__ == "__main__":`
-#    dispatch with os.fork / os.setsid / start_server replaced by recorders --
-#    no process is forked and no server is started.  Task 88-15-02's
-#    `daemonize() -> 'parent' | 'child'` must reproduce it exactly.
+#    run start_server.  The pin executes the real
+#    `if __name__ == "__main__":` dispatch with daemonize and start_server
+#    replaced by recorders -- no process is forked, no server is started and
+#    nothing is spawned.
 # ══════════════════════════════════════════════════════════════════════════
 
 
@@ -432,13 +507,17 @@ def _main_block_source(module_path):
     raise AssertionError("no __main__ block in %s" % module_path)
 
 
-def _run_start_dispatch(mod, module_path, monkeypatch, fork_result):
-    """Execute the real `start` dispatch with fork/setsid/start_server recorded."""
-    setsid = _Recorder(result=None)
+def _run_start_dispatch(mod, module_path, monkeypatch, *, role=None, unsupported=False):
+    """Execute the real `start` dispatch with the platform boundary recorded."""
     started = _Recorder(result=None)
     printed = []
-    monkeypatch.setattr(os, "fork", _Recorder(result=fork_result))
-    monkeypatch.setattr(os, "setsid", setsid)
+    plat = _platform_of(mod)
+    if unsupported:
+        monkeypatch.setattr(plat, "daemonize", _Recorder(raises=plat.DaemonizeUnsupported("no fork")))
+    else:
+        monkeypatch.setattr(plat, "daemonize", _Recorder(result=role))
+    popen = _Recorder(result=SimpleNamespace(pid=4242))
+    monkeypatch.setattr(subprocess, "Popen", popen)
     ns = dict(mod.__dict__)
     ns["start_server"] = started
     ns["print"] = lambda *a, **k: printed.append(" ".join(str(x) for x in a))
@@ -448,38 +527,81 @@ def _run_start_dispatch(mod, module_path, monkeypatch, fork_result):
         path=list(sys.path),
         stdout=sys.stdout,
         stderr=sys.stderr,
+        executable=sys.executable,
+        modules=sys.modules,
     )
     exec(compile(_main_block_source(module_path), str(module_path), "exec"), ns)  # noqa: S102
-    return setsid, started, printed
+    return started, printed, popen
 
 
 def test_golden_daemonize_child_branch_runs_the_server(monkeypatch, tmp_path):
     mod = _daemon(monkeypatch, tmp_path)
-    setsid, started, printed = _run_start_dispatch(mod, _DAEMON, monkeypatch, 0)
-    assert len(setsid.calls) == 1, "the CHILD detaches with setsid"
+    started, printed, popen = _run_start_dispatch(mod, _DAEMON, monkeypatch, role="child")
     assert started.calls == [((), {"foreground": False})], "the CHILD runs start_server"
     assert printed == [], "the CHILD prints nothing"
+    assert popen.calls == [], "the CHILD spawns nothing"
 
 
 def test_golden_daemonize_parent_branch_prints_and_returns(monkeypatch, tmp_path):
     mod = _daemon(monkeypatch, tmp_path)
-    setsid, started, printed = _run_start_dispatch(mod, _DAEMON, monkeypatch, 4242)
-    assert setsid.calls == [], "the PARENT does not detach"
+    started, printed, popen = _run_start_dispatch(mod, _DAEMON, monkeypatch, role="parent")
     assert started.calls == [], "the PARENT does not run start_server"
     assert printed == ["Daemon starting in background..."]
+    assert popen.calls == []
 
 
 def test_golden_rlm_daemonize_child_and_parent(monkeypatch, tmp_path):
     mod = _rlm(monkeypatch, tmp_path)
-    setsid, started, printed = _run_start_dispatch(mod, _RLM, monkeypatch, 0)
-    assert len(setsid.calls) == 1
+    started, printed, _ = _run_start_dispatch(mod, _RLM, monkeypatch, role="child")
     assert started.calls == [((), {"foreground": False})]
     assert printed == []
 
-    setsid, started, printed = _run_start_dispatch(mod, _RLM, monkeypatch, 4242)
-    assert setsid.calls == []
+    started, printed, _ = _run_start_dispatch(mod, _RLM, monkeypatch, role="parent")
     assert started.calls == []
     assert printed == ["RLM service starting in background..."]
+
+
+def test_the_start_verb_respawns_detached_where_there_is_no_fork(monkeypatch, tmp_path):
+    """Windows has no fork, so the start verb must still work: the parent
+    re-spawns this script with CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS and
+    prints the same line. Proven with a recorded Popen -- nothing is started."""
+    for mod, module_path, line in (
+        (_daemon(monkeypatch, tmp_path), _DAEMON, "Daemon starting in background..."),
+        (_rlm(monkeypatch, tmp_path), _RLM, "RLM service starting in background..."),
+    ):
+        started, printed, popen = _run_start_dispatch(mod, module_path, monkeypatch, unsupported=True)
+        assert started.calls == [], "the parent never runs the server in-process"
+        assert printed == [line]
+        assert len(popen.calls) == 1, popen.calls
+        args, kwargs = popen.calls[0]
+        assert list(args[0])[1:] == [os.path.abspath(str(module_path)), "run"], args[0]
+        assert kwargs.get("close_fds") is True
+        detached = _platform_of(mod).detached_popen_kwargs()
+        for key, value in detached.items():
+            assert kwargs.get(key) == value, (key, kwargs)
+
+
+def test_daemonize_itself_forks_on_posix_and_raises_on_windows(monkeypatch):
+    """The helper, directly: POSIX forks and setsids; Windows raises a TYPED error."""
+    sys.path.insert(0, str(_REPO / "services"))
+    try:
+        import _platform as plat
+    finally:
+        sys.path.pop(0)
+    if IS_WINDOWS:
+        with pytest.raises(plat.DaemonizeUnsupported):
+            plat.daemonize()
+        return
+    setsid = _Recorder(result=None)
+    monkeypatch.setattr(os, "setsid", setsid)
+    monkeypatch.setattr(os, "fork", _Recorder(result=0))
+    assert plat.daemonize() == "child"
+    assert len(setsid.calls) == 1
+    setsid2 = _Recorder(result=None)
+    monkeypatch.setattr(os, "setsid", setsid2)
+    monkeypatch.setattr(os, "fork", _Recorder(result=4242))
+    assert plat.daemonize() == "parent"
+    assert setsid2.calls == []
 
 
 # ══════════════════════════════════════════════════════════════════════════
