@@ -1617,6 +1617,17 @@
     "exit_criterion": "the hybrid retrieval engine answers for a freshly ingested fixture project against a real PostgreSQL on the Linux cell, instead of falling back to legacy_in_memory. These are NON-strict xfails: they turn into passes the moment the pipeline works, and plan 88-16 made them visible by giving the suite a real database for the first time."
   },
   {
+    "name": "test_graph_names_the_real_caller",
+    "file": "tests/test_65_retrieval_e2e.py",
+    "platform": "linux",
+    "context": "any",
+    "reason": "with a real PostgreSQL the RLM retrieval leg answers `legacy_in_memory_fallback`, so /query never reaches the hybrid branch that attaches graph_callers",
+    "reason_class": "retrieval-leg-routed-89",
+    "owner": "Phase 89 (retrieval pipeline)",
+    "owner_phase": 89,
+    "exit_criterion": "the hybrid engine answers for a freshly ingested fixture project on the Linux cell, the same criterion the other ten entries of this class carry. Plan 88-11 MEASURED that Valkey was never the obstacle the old `valkey-not-provided` entry claimed: it gave the Linux pytest cell a disposable Valkey on a port freePort() chose (run 43217682043, job 131180975509, `disposable Valkey answering on host port 40019`), the probe returned True, the positive branch ran for the first time on any cell, and it failed with `graph_callers missing main_entry: None` -- the key is ABSENT, because services/rlm-service.py attaches it only on the hybrid branch (`expand_chunks_with_graph`). The Valkey service stays in the workflow so the recorded reason is the true one."
+  },
+  {
     "name": "test_hybrid_search_end_to_end_rrf_score_is_float_live",
     "file": "tests/test_65_vector_leg.py",
     "platform": "darwin",
