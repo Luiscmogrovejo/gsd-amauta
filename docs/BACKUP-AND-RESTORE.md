@@ -159,6 +159,14 @@ python3 services/backup_snapshot.py restore <snapshot-dir> --mode replace --conf
   override.
 * The SQLite and `tasks.json` legs fail loudly rather than `|| true`.
 
+**`--mode merge` on PostgreSQL is a thin thing, and knowingly so.** Without
+`--clean`, `pg_restore` tries to CREATE objects that already exist, so merge
+only succeeds into a database that does not already carry them. `replace` is the
+tested path; a row-level merge is `services/migrate_sqlite_to_pg.py`'s job, not
+this verb's. The flag exists because the two legs that are not PostgreSQL
+(`sqlite`, `tasks`) overwrite files either way and because the plan's surface
+names it.
+
 ## Retention
 
 | Reason | Rule |

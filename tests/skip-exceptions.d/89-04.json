@@ -88,7 +88,29 @@
     "exit_criterion": "a PostgreSQL carrying this repository's schema exists on the cell. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. Removed by task 89-07-04, which closes the whole pg-no-disposable-database class."
   },
   {
+    "name": "test_a_newer_archive_cannot_be_restored_by_an_older_client",
+    "file": "tests/test_89_04_restore_e2e.py",
+    "platform": "darwin",
+    "context": "any",
+    "reason": "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "reason_class": "pg-no-disposable-database",
+    "owner": "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    "owner_phase": 89,
+    "exit_criterion": "a PostgreSQL carrying this repository's schema exists on the cell. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. Removed by task 89-07-04, which closes the whole pg-no-disposable-database class."
+  },
+  {
     "name": "test_a_partial_restore_is_a_failure_not_a_restored_message",
+    "file": "tests/test_89_04_restore_e2e.py",
+    "platform": "darwin",
+    "context": "any",
+    "reason": "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "reason_class": "pg-no-disposable-database",
+    "owner": "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    "owner_phase": 89,
+    "exit_criterion": "a PostgreSQL carrying this repository's schema exists on the cell. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. Removed by task 89-07-04, which closes the whole pg-no-disposable-database class."
+  },
+  {
+    "name": "test_dumping_with_a_newer_client_is_allowed_and_recorded",
     "file": "tests/test_89_04_restore_e2e.py",
     "platform": "darwin",
     "context": "any",
@@ -319,7 +341,29 @@
     "exit_criterion": "a PostgreSQL carrying this repository's schema exists on the cell. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. Removed by task 89-07-04, which closes the whole pg-no-disposable-database class."
   },
   {
+    "name": "test_a_newer_archive_cannot_be_restored_by_an_older_client",
+    "file": "tests/test_89_04_restore_e2e.py",
+    "platform": "win32",
+    "context": "any",
+    "reason": "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "reason_class": "pg-no-disposable-database",
+    "owner": "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    "owner_phase": 89,
+    "exit_criterion": "a PostgreSQL carrying this repository's schema exists on the cell. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. Removed by task 89-07-04, which closes the whole pg-no-disposable-database class."
+  },
+  {
     "name": "test_a_partial_restore_is_a_failure_not_a_restored_message",
+    "file": "tests/test_89_04_restore_e2e.py",
+    "platform": "win32",
+    "context": "any",
+    "reason": "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "reason_class": "pg-no-disposable-database",
+    "owner": "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    "owner_phase": 89,
+    "exit_criterion": "a PostgreSQL carrying this repository's schema exists on the cell. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. Removed by task 89-07-04, which closes the whole pg-no-disposable-database class."
+  },
+  {
+    "name": "test_dumping_with_a_newer_client_is_allowed_and_recorded",
     "file": "tests/test_89_04_restore_e2e.py",
     "platform": "win32",
     "context": "any",
@@ -460,5 +504,60 @@
     "owner": "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
     "owner_phase": 89,
     "exit_criterion": "a PostgreSQL carrying this repository's schema exists on the cell. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. Removed by task 89-07-04, which closes the whole pg-no-disposable-database class."
+  },
+  {
+    "name": "test_a_partial_restore_is_a_failure_not_a_restored_message",
+    "file": "tests/test_89_04_restore_e2e.py",
+    "platform": "linux",
+    "context": "any",
+    "reason": "no pg_restore of the server's own major on this cell, so a successful restore cannot be executed here. Measured on ubuntu-latest run 43319162316: client 18.6, server 16.14, and no major-16 install under any of the six packaging directories services/backup_snapshot.versioned_tool_dirs searches. A 17-or-newer pg_restore emits `SET transaction_timeout = 0`, a GUC added in PostgreSQL 17, which a 16 server rejects.",
+    "reason_class": "pg-client-major-mismatch",
+    "owner": "Phase 89 plan 89-07 (owns .github/workflows/test.yml; the snapshot and refusal arms already run on this cell, only a SUCCESSFUL restore is blocked)",
+    "owner_phase": 89,
+    "exit_criterion": "the Linux cell carries a pg_restore of the disposable server's own major. Plan 89-07 adds one install step to .github/workflows/test.yml before the pytest step \u2014 `sudo apt-get install -y postgresql-client-16` (the PGDG repo the runner already uses carries it) \u2014 or pins a container image whose major matches the runner's client. Task 89-07-04 removes these five entries; see 89-04-RECORD.md ## Handoff for the exact step and the measurement behind it."
+  },
+  {
+    "name": "test_restore_round_trips_every_table_and_the_vectors_are_byte_identical",
+    "file": "tests/test_89_04_restore_e2e.py",
+    "platform": "linux",
+    "context": "any",
+    "reason": "no pg_restore of the server's own major on this cell, so a successful restore cannot be executed here. Measured on ubuntu-latest run 43319162316: client 18.6, server 16.14, and no major-16 install under any of the six packaging directories services/backup_snapshot.versioned_tool_dirs searches. A 17-or-newer pg_restore emits `SET transaction_timeout = 0`, a GUC added in PostgreSQL 17, which a 16 server rejects.",
+    "reason_class": "pg-client-major-mismatch",
+    "owner": "Phase 89 plan 89-07 (owns .github/workflows/test.yml; the snapshot and refusal arms already run on this cell, only a SUCCESSFUL restore is blocked)",
+    "owner_phase": 89,
+    "exit_criterion": "the Linux cell carries a pg_restore of the disposable server's own major. Plan 89-07 adds one install step to .github/workflows/test.yml before the pytest step \u2014 `sudo apt-get install -y postgresql-client-16` (the PGDG repo the runner already uses carries it) \u2014 or pins a container image whose major matches the runner's client. Task 89-07-04 removes these five entries; see 89-04-RECORD.md ## Handoff for the exact step and the measurement behind it."
+  },
+  {
+    "name": "test_restore_takes_a_pre_restore_snapshot_by_default",
+    "file": "tests/test_89_04_restore_e2e.py",
+    "platform": "linux",
+    "context": "any",
+    "reason": "no pg_restore of the server's own major on this cell, so a successful restore cannot be executed here. Measured on ubuntu-latest run 43319162316: client 18.6, server 16.14, and no major-16 install under any of the six packaging directories services/backup_snapshot.versioned_tool_dirs searches. A 17-or-newer pg_restore emits `SET transaction_timeout = 0`, a GUC added in PostgreSQL 17, which a 16 server rejects.",
+    "reason_class": "pg-client-major-mismatch",
+    "owner": "Phase 89 plan 89-07 (owns .github/workflows/test.yml; the snapshot and refusal arms already run on this cell, only a SUCCESSFUL restore is blocked)",
+    "owner_phase": 89,
+    "exit_criterion": "the Linux cell carries a pg_restore of the disposable server's own major. Plan 89-07 adds one install step to .github/workflows/test.yml before the pytest step \u2014 `sudo apt-get install -y postgresql-client-16` (the PGDG repo the runner already uses carries it) \u2014 or pins a container image whose major matches the runner's client. Task 89-07-04 removes these five entries; see 89-04-RECORD.md ## Handoff for the exact step and the measurement behind it."
+  },
+  {
+    "name": "test_skipping_the_pre_restore_snapshot_is_recorded_in_the_audit_log",
+    "file": "tests/test_89_04_restore_e2e.py",
+    "platform": "linux",
+    "context": "any",
+    "reason": "no pg_restore of the server's own major on this cell, so a successful restore cannot be executed here. Measured on ubuntu-latest run 43319162316: client 18.6, server 16.14, and no major-16 install under any of the six packaging directories services/backup_snapshot.versioned_tool_dirs searches. A 17-or-newer pg_restore emits `SET transaction_timeout = 0`, a GUC added in PostgreSQL 17, which a 16 server rejects.",
+    "reason_class": "pg-client-major-mismatch",
+    "owner": "Phase 89 plan 89-07 (owns .github/workflows/test.yml; the snapshot and refusal arms already run on this cell, only a SUCCESSFUL restore is blocked)",
+    "owner_phase": 89,
+    "exit_criterion": "the Linux cell carries a pg_restore of the disposable server's own major. Plan 89-07 adds one install step to .github/workflows/test.yml before the pytest step \u2014 `sudo apt-get install -y postgresql-client-16` (the PGDG repo the runner already uses carries it) \u2014 or pins a container image whose major matches the runner's client. Task 89-07-04 removes these five entries; see 89-04-RECORD.md ## Handoff for the exact step and the measurement behind it."
+  },
+  {
+    "name": "test_the_restore_argv_carries_clean_if_exists_and_exit_on_error",
+    "file": "tests/test_89_04_restore_e2e.py",
+    "platform": "linux",
+    "context": "any",
+    "reason": "no pg_restore of the server's own major on this cell, so a successful restore cannot be executed here. Measured on ubuntu-latest run 43319162316: client 18.6, server 16.14, and no major-16 install under any of the six packaging directories services/backup_snapshot.versioned_tool_dirs searches. A 17-or-newer pg_restore emits `SET transaction_timeout = 0`, a GUC added in PostgreSQL 17, which a 16 server rejects.",
+    "reason_class": "pg-client-major-mismatch",
+    "owner": "Phase 89 plan 89-07 (owns .github/workflows/test.yml; the snapshot and refusal arms already run on this cell, only a SUCCESSFUL restore is blocked)",
+    "owner_phase": 89,
+    "exit_criterion": "the Linux cell carries a pg_restore of the disposable server's own major. Plan 89-07 adds one install step to .github/workflows/test.yml before the pytest step \u2014 `sudo apt-get install -y postgresql-client-16` (the PGDG repo the runner already uses carries it) \u2014 or pins a container image whose major matches the runner's client. Task 89-07-04 removes these five entries; see 89-04-RECORD.md ## Handoff for the exact step and the measurement behind it."
   }
 ]

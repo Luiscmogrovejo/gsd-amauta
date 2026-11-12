@@ -109,7 +109,10 @@ __all__ = [
     "read_manifest",
     "for_step",
     "find_tool",
+    "find_versioned_tool",
+    "versioned_tool_dirs",
     "resolve_pg_tool",
+    "restore_client_available",
     "server_major_version",
     "describe_resolution_order",
     "dsn_fingerprint",
@@ -685,6 +688,23 @@ def resolve_pg_tool(tool, dsn=None, env=None, server_major=None,
                 "client_major": _tool_major(matched),
                 "server_major": server_major, "docker": False}
 
+    if (tool == "pg_dump" and host_tool and client_major is not None
+            and server_major is not None and client_major > server_major):
+        # DUMPING with a newer client is supported by PostgreSQL itself, and the
+        # equal-major rule above has already been given first refusal. The
+        # archive it writes records `dump_client_major` in the manifest, and
+        # `restore` refuses an archive it cannot read — so the asymmetry is
+        # declared rather than discovered later.
+        #
+        # This is the half the plan's ">= the server's" rule got right.
+        # RESTORING with a newer client is what does not work: measured on
+        # ubuntu-latest run 43316131590, pg_restore 18.6 into a 16.14 server
+        # dies on `SET transaction_timeout = 0` (a GUC added in PostgreSQL 17)
+        # which it emits in its fixed preamble for every archive.
+        return {"argv_prefix": [host_tool], "source": "PATH (newer major, dump only)",
+                "client_major": client_major, "server_major": server_major,
+                "docker": False}
+
     if _truthy(env.get("GSD_BACKUP_ALLOW_DOCKER")):
         container = (env.get("GSD_BACKUP_DOCKER_CONTAINER") or "gsd-postgres").strip()
         docker = find_tool("docker", env=env)
@@ -708,10 +728,11 @@ def resolve_pg_tool(tool, dsn=None, env=None, server_major=None,
         "major %s), and no major-%s install under %s; (3) docker exec, which "
         "needs GSD_BACKUP_ALLOW_DOCKER=1 (not set, and no test sets it); "
         "(4) this error. Set %s to a %s of major %s exactly, or set "
-        "GSD_BACKUP_ALLOW_DOCKER=1 to use the container's own client. A client "
-        "of a DIFFERENT major cannot round-trip: a 17-or-newer pg_restore "
-        "emits `SET transaction_timeout = 0`, which a 16 server rejects, and an "
-        "older pg_restore cannot read a newer archive's header." % (
+        "GSD_BACKUP_ALLOW_DOCKER=1 to use the container's own client. "
+        "RESTORING needs an exact match even though DUMPING does not: a "
+        "17-or-newer pg_restore emits `SET transaction_timeout = 0` in its "
+        "fixed preamble, which a pre-17 server rejects, and an older pg_restore "
+        "cannot read a newer archive's header at all." % (
             tool, var, tool, host_tool or "none", client_major, server_major,
             server_major, ", ".join(versioned_tool_dirs(server_major)),
             var, tool, server_major if server_major is not None else "the server's",
@@ -721,6 +742,49 @@ def resolve_pg_tool(tool, dsn=None, env=None, server_major=None,
         searched=versioned_tool_dirs(server_major),
         allow_docker_variable="GSD_BACKUP_ALLOW_DOCKER",
     )
+
+
+def restore_client_available(dsn, env=None, archive_major=None):
+    """Whether a ``pg_restore`` exists that can load into ``dsn``.
+
+    A separate, reportable predicate because the answer is a property of the
+    MACHINE, not of the code, and a caller — including a test — must be able to
+    say so precisely rather than meet an exception.
+
+    Args:
+        dsn: the target database.
+        env: the environment to read.
+        archive_major: the major of the client that wrote the archive, from the
+            manifest's ``pg.dump_client_major``. An older ``pg_restore`` cannot
+            read a newer archive's header, so a match there is required too.
+
+    Returns:
+        tuple: ``(ok, reason)``. ``reason`` is ``"ok"`` or a one-line
+        explanation naming the measured versions.
+    """
+    server = server_major_version(dsn)
+    if server is None:
+        # Fails CLOSED: an unreachable server means the match cannot be checked,
+        # and "cannot check" is not "fine". Without this, resolve_pg_tool's
+        # deliberately permissive server_major=None branch — which exists for
+        # `verify`'s database-free structural read — would answer "yes" for a
+        # database nobody can reach.
+        return (False,
+                "the target server could not be reached, so no client/server "
+                "major match can be established")
+    try:
+        resolved = resolve_pg_tool("pg_restore", dsn=dsn, env=env,
+                                   server_major=server)
+    except BackupError as exc:
+        return (False, exc.payload["message"])
+    client = resolved.get("client_major")
+    if (archive_major is not None and client is not None
+            and client < archive_major):
+        return (False,
+                "the resolved pg_restore is major %s but the archive was "
+                "written by a major-%s pg_dump; an older pg_restore cannot read "
+                "a newer archive's header" % (client, archive_major))
+    return (True, "ok")
 
 
 def default_runner(argv, *, env=None, stdout_path=None, timeout=None):
@@ -1785,6 +1849,14 @@ def restore(snapshot_dir, dsn=None, mode="replace", scope="all", confirm=False,
     restored = []
     if wants_pg:
         log("  pg_restore --clean --if-exists --exit-on-error")
+        archive_major = (manifest.get("pg") or {}).get("dump_client_major")
+        ok_client, why = restore_client_available(dsn, env=env,
+                                                  archive_major=archive_major)
+        if not ok_client:
+            raise BackupError(
+                "restore_client_unavailable",
+                "nothing was restored and the target is untouched: %s" % why,
+                archive_client_major=archive_major, detail=why)
         resolved = resolve_pg_tool("pg_restore", dsn=dsn, env=env)
         argv = list(resolved["argv_prefix"]) + [
             "--no-owner", "--no-privileges", "--exit-on-error",
@@ -1963,7 +2035,15 @@ def build_parser():
     restore_p.add_argument("snapshot")
     _add_target_args(restore_p)
     restore_p.add_argument("--backups-dir", default=None)
-    restore_p.add_argument("--mode", choices=("replace", "merge"), default="replace")
+    restore_p.add_argument("--mode", choices=("replace", "merge"), default="replace",
+                           help="replace (default): pg_restore --clean "
+                                "--if-exists --exit-on-error, so the target's "
+                                "objects are dropped and reloaded; needs "
+                                "--confirm. merge: no --clean, which on "
+                                "PostgreSQL only succeeds into a database that "
+                                "does not already carry the dumped objects — "
+                                "`replace` is the tested path, and a row-level "
+                                "merge is services/migrate_sqlite_to_pg.py's job.")
     restore_p.add_argument("--scope", choices=SCOPES, default="all")
     restore_p.add_argument("--confirm", action="store_true",
                            help="Required for --mode replace on PostgreSQL.")

@@ -66,11 +66,20 @@ const REMOVED_SINCE_SHARDING = [];
 /**
  * The same shape, for entries added since the migration.
  *
- * Plan 89-04 added 42 entries: 21 Postgres-gated tests (13 in
- * `tests/test_89_04_restore_e2e.py`, 8 in `tests/test_89_04_backup_guard.py`)
- * times the two cells with no disposable database, `darwin` and `win32`. They
- * are DERIVED from the shard that owns them rather than copied here as 42
- * literal nine-element arrays, for two reasons: 378 hand-copied strings is a
+ * Plan 89-04 added 51 entries, in two groups that are closed by two different
+ * things:
+ *
+ *   * 46 `pg-no-disposable-database` — 23 Postgres-gated tests (15 in
+ *     `tests/test_89_04_restore_e2e.py`, 8 in
+ *     `tests/test_89_04_backup_guard.py`) times the two cells that carry no
+ *     PostgreSQL at all, `darwin` and `win32`. Removed by task 89-07-04.
+ *   * 5 `pg-client-major-mismatch` on `linux` — the five tests that perform a
+ *     real, SUCCESSFUL `pg_restore`. The Linux cell HAS a database; what it
+ *     lacks is a client of the server's own major (measured: 18.6 against
+ *     16.14). Removed by plan 89-07, which owns the workflow.
+ *
+ * They are DERIVED from the shard that owns them rather than copied here as 51
+ * literal nine-element arrays, for two reasons: 459 hand-copied strings is a
  * transcription hazard with no upside, and the proof below keeps its full
  * strength for every OTHER shard either way — removing this plan's own entries
  * from the union is exactly what a literal list would do.
@@ -83,8 +92,8 @@ const ADDED_BY_89_04 = JSON.parse(
   fs.readFileSync(path.join(DIR, '89-04.json'), 'utf8')
 ).map((e) => FIELDS.map((f) => e[f]));
 
-/** How many entries plan 89-04 declared. 21 tests x 2 cells. */
-const ADDED_EXPECTED = 42;
+/** How many entries plan 89-04 declared: 23 tests x 2 cells, plus 5 on linux. */
+const ADDED_EXPECTED = 51;
 
 const ADDED_SINCE_SHARDING = [...ADDED_BY_89_04];
 
@@ -167,22 +176,40 @@ describe('89-09 the shard migration lost nothing', () => {
     );
   });
 
-  test('the declared additions are exactly plan 89-04\'s 42, all in its own shard', () => {
+  test('the declared additions are exactly plan 89-04\'s 51, all in its own shard', () => {
     assert.strictEqual(ADDED_BY_89_04.length, ADDED_EXPECTED,
       'tests/skip-exceptions.d/89-04.json changed size without updating ADDED_EXPECTED');
     assert.strictEqual(ADDED_SINCE_SHARDING.length, ADDED_EXPECTED);
-    const platforms = new Set(ADDED_BY_89_04.map((t) => t[FIELDS.indexOf('platform')]));
-    assert.deepStrictEqual([...platforms].sort(), ['darwin', 'win32'],
-      'these entries exist only for the two cells with no disposable database');
-    const classes = new Set(ADDED_BY_89_04.map((t) => t[FIELDS.indexOf('reason_class')]));
-    assert.deepStrictEqual([...classes], ['pg-no-disposable-database']);
-    const files = new Set(ADDED_BY_89_04.map((t) => t[FIELDS.indexOf('file')]));
+    const at = (t, f) => t[FIELDS.indexOf(f)];
+    const platforms = new Set(ADDED_BY_89_04.map((t) => at(t, 'platform')));
+    assert.deepStrictEqual([...platforms].sort(), ['darwin', 'linux', 'win32']);
+    const classes = new Set(ADDED_BY_89_04.map((t) => at(t, 'reason_class')));
+    assert.deepStrictEqual([...classes].sort(),
+      ['pg-client-major-mismatch', 'pg-no-disposable-database']);
+    const files = new Set(ADDED_BY_89_04.map((t) => at(t, 'file')));
     assert.deepStrictEqual([...files].sort(),
       ['tests/test_89_04_backup_guard.py', 'tests/test_89_04_restore_e2e.py'],
       'tests/test_89_04_backup_snapshot.py needs no entry: it reaches for no database');
+
+    // The two groups, counted apart, because they are closed by two different
+    // things and a change to either must be visible.
+    const noDb = ADDED_BY_89_04.filter((t) => at(t, 'reason_class') === 'pg-no-disposable-database');
+    const mismatch = ADDED_BY_89_04.filter((t) => at(t, 'reason_class') === 'pg-client-major-mismatch');
+    assert.strictEqual(noDb.length, 46, '23 tests x darwin + win32');
+    assert.strictEqual(mismatch.length, 5, 'the five tests that perform a real restore');
+    assert.deepStrictEqual([...new Set(noDb.map((t) => at(t, 'platform')))].sort(),
+      ['darwin', 'win32']);
+    assert.deepStrictEqual([...new Set(mismatch.map((t) => at(t, 'platform')))], ['linux'],
+      'the Linux cell HAS a database; only its client major is wrong');
+    for (const tuple of mismatch) {
+      assert.match(at(tuple, 'exit_criterion'), /postgresql-client-16/,
+        'the mismatch entries must name the install step that removes them');
+    }
     for (const tuple of ADDED_BY_89_04) {
-      assert.match(tuple[FIELDS.indexOf('exit_criterion')], /89-07-04/,
-        'every entry must name the task that removes it');
+      assert.match(at(tuple, 'exit_criterion'), /89-07/,
+        'every entry must name the plan that removes it');
+      assert.strictEqual(at(tuple, 'owner_phase'), 89);
+      assert.strictEqual(at(tuple, 'context'), 'any');
     }
   });
 

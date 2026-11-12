@@ -50,6 +50,42 @@ from stub_embeddings import deterministic_embedding  # noqa: E402
 TEST_DSN = postgres_dsn_or_none()
 requires_pg = pytest.mark.skipif(TEST_DSN is None, reason=PG_SKIP_REASON)
 
+
+def _restore_client_reason():
+    """Why a SUCCESSFUL ``pg_restore`` cannot run on this cell, or None.
+
+    This is a property of the MACHINE, not of the code, and it is measured
+    rather than assumed. On ``ubuntu-latest`` (run 43319162316) the only client
+    is **18.6** while the disposable ParadeDB server is **16.14**, and no
+    major-16 install exists under any of the six packaging directories the
+    resolver searches. A 17-or-newer ``pg_restore`` emits
+    ``SET transaction_timeout = 0`` in its fixed preamble — a GUC that arrived
+    in PostgreSQL 17 — so it cannot load into a 16 server at all.
+
+    DUMPING is unaffected (PostgreSQL supports a newer client there), so every
+    test that only needs a snapshot, a verification or a REFUSAL runs normally.
+    Only the four tests that perform a real, successful restore are gated.
+
+    Returns:
+        str | None: the skip reason, or None when a restore can run.
+    """
+    if TEST_DSN is None:
+        return PG_SKIP_REASON
+    ok, why = bs.restore_client_available(TEST_DSN)
+    if ok:
+        return None
+    return ("no pg_restore of the server's own major on this cell, so a "
+            "successful restore cannot be executed here. Plan 89-07 owns "
+            ".github/workflows/test.yml and adds the client; see 89-04-RECORD.md "
+            "## Handoff. Measured: %s" % why)
+
+
+#: Computed ONCE at import, so the reason string is identical for every entry.
+RESTORE_CLIENT_REASON = _restore_client_reason()
+requires_restore_client = pytest.mark.skipif(
+    RESTORE_CLIENT_REASON is not None,
+    reason=RESTORE_CLIENT_REASON or "a restore client is available")
+
 #: How many rows each seeded table receives.
 SEED_ROWS = 4
 
@@ -314,6 +350,7 @@ def take_snapshot(dsn, backups_dir, env, reason="pre-rebuild"):
 # ══════════════════════════════════════════════════════════════════
 
 @requires_pg
+@requires_restore_client
 def test_restore_round_trips_every_table_and_the_vectors_are_byte_identical(
         isolated, tmp_path, pinned_home):
     """Drop the database, restore the snapshot, compare row for row.
@@ -572,6 +609,7 @@ def test_replace_mode_requires_confirm(isolated, tmp_path, pinned_home):
 
 
 @requires_pg
+@requires_restore_client
 def test_a_partial_restore_is_a_failure_not_a_restored_message(
         isolated, tmp_path, pinned_home, capsys):
     """The exact defect in ``scripts/restore.sh``, pinned in the new code.
@@ -611,6 +649,7 @@ def test_a_partial_restore_is_a_failure_not_a_restored_message(
 
 
 @requires_pg
+@requires_restore_client
 def test_the_restore_argv_carries_clean_if_exists_and_exit_on_error(
         isolated, tmp_path, pinned_home):
     """``--clean --if-exists --exit-on-error`` is the ON_ERROR_STOP semantics."""
@@ -643,6 +682,7 @@ def test_the_restore_argv_carries_clean_if_exists_and_exit_on_error(
 # ══════════════════════════════════════════════════════════════════
 
 @requires_pg
+@requires_restore_client
 def test_restore_takes_a_pre_restore_snapshot_by_default(
         isolated, tmp_path, pinned_home):
     """A ``reason=pre-restore`` snapshot exists afterwards, and it is verified."""
@@ -662,6 +702,7 @@ def test_restore_takes_a_pre_restore_snapshot_by_default(
 
 
 @requires_pg
+@requires_restore_client
 def test_skipping_the_pre_restore_snapshot_is_recorded_in_the_audit_log(
         isolated, tmp_path, pinned_home):
     """``--no-pre-restore-snapshot`` is explicit AND recorded, never silent."""
@@ -1047,3 +1088,72 @@ def test_the_backup_and_restore_doc_states_decision_d9():
         assert topic in doc, topic
     for reason in bs.REASONS:
         assert reason in doc, reason
+
+
+# ══════════════════════════════════════════════════════════════════
+# The client-major gap, stated as a test rather than left in a comment
+# ══════════════════════════════════════════════════════════════════
+
+def test_the_restore_client_predicate_is_reportable_and_fails_closed():
+    """``restore_client_available`` answers, it does not raise.
+
+    The predicate exists so a caller — a test, the cutover, plan 89-11's
+    installer — can SAY why a restore cannot run on this machine instead of
+    meeting an exception three frames down. It fails closed: an unreachable
+    server, an absent client or an archive newer than the client all answer
+    ``(False, <reason>)``.
+    """
+    ok, why = bs.restore_client_available("postgres" + "ql://u:p@127.0.0.1:65432/db")
+    assert ok is False
+    assert isinstance(why, str) and why
+    if TEST_DSN is not None:
+        ok, why = bs.restore_client_available(TEST_DSN)
+        assert isinstance(ok, bool)
+        assert isinstance(why, str) and why
+        # Whatever this cell's answer is, it must agree with the module-level
+        # reason the skip marks were built from — otherwise half the file would
+        # skip for a reason the other half disagrees with.
+        assert (RESTORE_CLIENT_REASON is None) == ok, (RESTORE_CLIENT_REASON, why)
+
+
+@requires_pg
+def test_a_newer_archive_cannot_be_restored_by_an_older_client(monkeypatch):
+    """An archive written by a newer ``pg_dump`` is refused, not attempted.
+
+    ``pg_dump`` of a newer major IS allowed (PostgreSQL supports it) and the
+    manifest records ``dump_client_major`` for exactly this check, so the
+    asymmetry is declared at the point of use rather than discovered as
+    "unsupported version in file header" halfway through a restore.
+    """
+    monkeypatch.setattr(bs, "resolve_pg_tool",
+                        lambda *_a, **_k: {"argv_prefix": ["pg_restore"],
+                                           "source": "stub", "client_major": 16,
+                                           "server_major": 16, "docker": False})
+    ok, why = bs.restore_client_available(TEST_DSN, archive_major=18)
+    assert ok is False
+    assert "older pg_restore cannot read a newer archive" in why
+    ok, why = bs.restore_client_available(TEST_DSN, archive_major=16)
+    assert (ok, why) == (True, "ok")
+
+
+@requires_pg
+def test_dumping_with_a_newer_client_is_allowed_and_recorded(isolated, tmp_path,
+                                                             pinned_home):
+    """The half that works: a snapshot is taken even when restore cannot run.
+
+    This is what keeps the verification, census and refusal arms real on a cell
+    whose only client is a newer major: the dump leg is exercised against the
+    real database and the manifest records which client wrote it.
+    """
+    dsn = isolated["dsn"]
+    seed(dsn)
+    created = take_snapshot(dsn, tmp_path / "backups", pinned_home)
+    pg = created["manifest"]["pg"]
+    assert created["manifest"]["verify_result"] == "ok"
+    assert pg["dump_client_major"] is not None
+    assert pg["dump_source"] in (
+        "PATH", "PATH (newer major, dump only)", "GSD_PG_DUMP_BIN") or \
+        pg["dump_source"].startswith("versioned install")
+    server_major = bs.server_major_version(dsn)
+    assert pg["dump_client_major"] >= server_major, (
+        "a client OLDER than the server must never be used for a dump")
