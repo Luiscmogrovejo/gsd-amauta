@@ -323,6 +323,24 @@ function main() {
     }
   }
 
+  // Plan 88-11: the SAME alarm, aimed at this checkout's tracked generated
+  // artefacts (agents/, .mcp.json). A test that rewrites one of them with
+  // identical bytes leaves git clean and passes every content assertion, yet
+  // truncates the file for an instant — and a sibling test file reading it in
+  // another process then reads it EMPTY (master 33f33b6, run 43248042858: five
+  // failures in tests/82-01-domain-auditors-w2.test.cjs, all on an empty
+  // agents/gsd-auditor-api-connections.md). mtime is therefore part of the
+  // comparison, which is why this is a separate snapshot from the live store's.
+  const watchTracked = process.env.GSD_SKIP_TRACKED_TREE_CANARY !== '1';
+  let trackedBefore = null;
+  if (watchTracked) {
+    try {
+      trackedBefore = canary.trackedSnapshot(path.join(__dirname, '..'));
+    } catch (err) {
+      console.error('run-tests: tracked-tree canary could not snapshot: ' + err.message);
+    }
+  }
+
   // Plan 88-19: the skip gate needs machine-readable per-test results, and `node --test`
   // writes none today (`stdio: 'inherit'` with the default reporter). TWO reporters run:
   // `spec` to stdout so the terminal output a human reads is unchanged in kind, and
@@ -358,6 +376,21 @@ function main() {
       if (findings.length > 0) {
         console.error(canary.format(findings));
         status = 4; // fails even when the tests themselves passed
+      }
+    }
+    if (trackedBefore) {
+      let trackedFindings = [];
+      try {
+        trackedFindings = canary.trackedDiff(
+          trackedBefore,
+          canary.trackedSnapshot(path.join(__dirname, '..'))
+        );
+      } catch (err) {
+        console.error('run-tests: tracked-tree canary could not compare: ' + err.message);
+      }
+      if (trackedFindings.length > 0) {
+        console.error(canary.formatTracked(trackedFindings));
+        status = 7; // 4/5/6 are taken below and above; a tracked-tree write is its own red
       }
     }
     // Process leaks: a daemon or RLM the run started and nobody stopped. Reported

@@ -184,8 +184,18 @@ for (const a of AUDITORS) {
 // Full-fleet byte-match: the compiled fleet count equals the number of
 // committed gsd-*.md files (30 after all four Wave-1 auditors land). This is
 // the shared byte-match invariant, asserted ONCE here in the final wave.
-test('REGRESSION: full-fleet compile count matches committed agents/gsd-*.md', () => {
-  const r = compile('claude-code', { source: SOURCE_DIR });
+test('REGRESSION: full-fleet compile count matches committed agents/gsd-*.md', (t) => {
+  // outDir is MANDATORY. compile('claude-code') defaults outDir to the RELATIVE
+  // path 'agents/', which resolves against process.cwd() — the repository root
+  // when the runner drives the suite — so omitting it makes this test rewrite
+  // all 35 tracked agents/gsd-*.md in the source tree. The bytes it writes are
+  // identical, so git stays clean and the damage is invisible; what it costs is
+  // that fs.writeFileSync TRUNCATES first, and a sibling test process reading
+  // agents/<name>.md at that instant gets an empty string (plan 88-11 flake,
+  // run 43248042858).
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'audit81-fleet-'));
+  t.after(() => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {} });
+  const r = compile('claude-code', { source: SOURCE_DIR, outDir: tmpDir });
   assert.equal(r.errors.length, 0, `full-fleet compile must produce 0 errors. Got: ${JSON.stringify(r.errors)}`);
   const committed = fs.readdirSync(AGENTS_OUT).filter((f) => /^gsd-.*\.md$/.test(f)).length;
   assert.equal(r.compiled.length, committed, `compiled fleet (${r.compiled.length}) must equal committed gsd-*.md count (${committed})`);
