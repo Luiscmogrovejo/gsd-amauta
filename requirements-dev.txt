@@ -41,7 +41,12 @@ pydantic==2.14.2
 # three cases purely because it was not importable.
 psycopg2-binary==2.9.9
 
-# ── Security scanners the pipeline tests drive ───────────────────────────────
-# semgrep is installed where it is supported; tests/support/fake-scanner.cjs
-# covers the parsing and policy behaviour on every cell regardless.
-semgrep==1.183.0; sys_platform != "win32"
+# semgrep is DELIBERATELY NOT HERE. Measured on run 43177558577:
+#   ERROR: Cannot install -r requirements-dev.txt (line 47) and mcp==1.27.1
+#   because these package versions have conflicting dependencies.
+#   The conflict is caused by: semgrep 1.183.0 depends on mcp==1.29.0
+# The mcp pin is load-bearing (services/amauta-mcp.py targets the 1.x server
+# API), so semgrep is installed with `pipx` instead — its own virtualenv, which
+# is what a CLI tool wants anyway. See the workflow step "Install semgrep where
+# it is supported"; tests/support/fake-scanner.cjs covers the parsing and
+# policy behaviour on every cell regardless.

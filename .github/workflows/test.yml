@@ -144,14 +144,20 @@ jobs:
       - name: Install semgrep where it is supported
         if: runner.os != 'Windows'
         shell: bash
-        # requirements-dev.txt pins semgrep==1.183.0 with a `sys_platform !=
-        # "win32"` marker, so `pip install -r` already installed it on Linux
-        # and macOS. This step only proves it is on PATH; the Windows
+        # `pipx`, not `pip install -r`: semgrep 1.183.0 depends on mcp==1.29.0
+        # and this repository pins mcp==1.27.1 because services/amauta-mcp.py
+        # targets the 1.x server API, so putting the two in one environment is
+        # a ResolutionImpossible (measured, run 43177558577). pipx gives the
+        # CLI its own virtualenv, which is what a CLI wants. The Windows
         # measurement is the step below, and
         # tests/88-16-fake-scanner.test.cjs covers the parsing and policy
         # behaviour on ALL nine cells regardless.
         run: |
           set -euo pipefail
+          python -m pipx install "semgrep==1.183.0" || pipx install "semgrep==1.183.0"
+          pipx ensurepath >/dev/null 2>&1 || true
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.local/bin:$PATH"
           semgrep --version
 
       - name: Measure semgrep on windows-latest (plan 88-16-07)
@@ -161,8 +167,8 @@ jobs:
         # Research section 8 marks native semgrep on Windows LOW confidence.
         # This measures it instead of guessing, and cannot fail the cell.
         run: |
-          echo "=== pip install semgrep==1.183.0 on windows-latest"
-          python -m pip install --disable-pip-version-check "semgrep==1.183.0" 2>&1 | tail -30 || echo "(install failed)"
+          echo "=== pipx install semgrep==1.183.0 on windows-latest"
+          python -m pipx install "semgrep==1.183.0" 2>&1 | tail -30 || echo "(install failed)"
           echo "=== semgrep --version"
           semgrep --version 2>&1 || echo "(semgrep not runnable on this platform)"
 
