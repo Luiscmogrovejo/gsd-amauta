@@ -60,6 +60,23 @@ function compressGrepSingleStream(lines, totalMatches, stdout) {
   return out.length < stdout.length ? out : stdout;
 }
 
+// Phase 88 plan 88-15 (G9): `line.indexOf(':')` finds the DRIVE LETTER first on Windows, so
+// `C:\x\a.txt:3:needle` split into a file called `C` and `grep -rn` reported one file instead
+// of the real ones. firstFieldEnd skips a leading `<letter>:[\\/]` prefix before looking for the
+// separator. A bare `31:content` (single-file `grep -n`, a LINE NUMBER in the first field) has
+// no such prefix and still takes the numeric-first-field path below.
+const DRIVE_PREFIX = /^[A-Za-z]:[\\/]/;
+
+/**
+ * firstFieldEnd(line) — index of the `:` that ends the first field, or -1.
+ * @param {string} line - a grep output line.
+ * @returns {number} the separator index, -1 when the line has no separator.
+ */
+function firstFieldEnd(line) {
+  const from = DRIVE_PREFIX.test(line) ? 2 : 0;
+  return line.indexOf(':', from);
+}
+
 // grep text: lines shaped `path:lineno:content` / `path:content` / `path:count`.
 // Group by the pre-first-colon file; dedup byte-identical full lines with (×N).
 function compressGrep(lines, stdout) {
@@ -72,7 +89,7 @@ function compressGrep(lines, stdout) {
   // Multi-file `path:line:content` (a real path is present) still runs the per-file path.
   let numericFirst = 0;
   for (const line of lines) {
-    const idx = line.indexOf(':');
+    const idx = firstFieldEnd(line);
     if (idx > 0 && /^\d+$/.test(line.slice(0, idx))) numericFirst++;
   }
   if (totalMatches > 0 && numericFirst >= totalMatches * 0.8) {
@@ -84,7 +101,7 @@ function compressGrep(lines, stdout) {
   const dedupeOrder = [];
   const dedupeCounts = new Map(); // fullLine -> n
   for (const line of lines) {
-    const idx = line.indexOf(':');
+    const idx = firstFieldEnd(line);
     const file = idx === -1 ? line : line.slice(0, idx);
     if (!fileMap.has(file)) {
       fileMap.set(file, { count: 0 });

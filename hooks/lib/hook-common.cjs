@@ -353,6 +353,44 @@ function extractBashCommand(input) {
 }
 
 /**
+ * shellQuotePath(p) — a filesystem path, safe to paste into a shell command line.
+ *
+ * Phase 88 plan 88-15 (G9). `hooks/gsd-compress-gate.cjs` used to emit
+ * `'node ' + wrapperPath + ' -- ' + original` with the path BARE. On Windows
+ * that produced `node D:\a\…\gsd-compress.cjs`, whose backslashes bash eats; it
+ * also broke on any POSIX path containing a space, `/Users/Jane Doe/…`
+ * included, so this was never a Windows-only bug.
+ *
+ * The rule is deliberately NARROWER than bin/install.js's buildHookCommand,
+ * which quotes unconditionally: this helper rewrites a hook command string that
+ * every user sees on every tool call, and 88-CONTEXT.md requires the
+ * plain-POSIX form to stay byte-identical. So:
+ *
+ *   - backslashes always become forward slashes (Node accepts them on Windows);
+ *   - a path with no whitespace, no `"`, no `'`, no `$` and no backtick is
+ *     returned BARE, exactly as before;
+ *   - anything else is double-quoted with `"`, `$`, a backtick and `\` escaped,
+ *     because the string is handed to a shell and an unescaped `$` in a path is
+ *     a substitution.
+ *
+ * This helper lives in hooks/lib/ on purpose: hooks are installed with only
+ * ./lib/hook-common.cjs beside them, so requiring anything under bin/ or
+ * get-shit-done/ would throw AT LOAD and break the fail-open guarantee.
+ *
+ * @param {string} p - the path to embed.
+ * @returns {string} the path, bare or quoted.
+ * @example
+ *   shellQuotePath('/Users/o/repo/x.cjs')      // -> /Users/o/repo/x.cjs
+ *   shellQuotePath('/Users/Jane Doe/x.cjs')    // -> "/Users/Jane Doe/x.cjs"
+ *   shellQuotePath('D:\\a\\x.cjs')             // -> "D:/a/x.cjs"
+ */
+function shellQuotePath(p) {
+  const forward = String(p).replace(/\\/g, '/');
+  if (!/[\s"'$`]/.test(forward)) return forward;
+  return '"' + forward.replace(/(["$`\\])/g, '\\$1') + '"';
+}
+
+/**
  * rewriteBashInput(newCommand) — PRIMARY PreToolUse input-rewrite emitter. Emits
  * the doc-verified shape (HOOK-MECHANISM §1). permissionDecision is ALWAYS
  * 'allow' — this primitive can NEVER deny (that is denyPreToolUse's job; rewrite
@@ -440,6 +478,7 @@ module.exports = {
   emitGateTelemetry,
   normalizeToolPath,
   resolveCompressMode,
+  shellQuotePath,
   extractBashCommand,
   rewriteBashInput,
   runRewriteGate,

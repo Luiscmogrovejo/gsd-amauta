@@ -74,7 +74,17 @@ test('RWRT-01: PreToolUse gate rewrites an allowlisted read-only command via upd
       'the original command must be routed through the compressor wrapper',
     );
     // The wrapper path must be absolute so a stripped PATH still resolves it (Pitfall 9).
-    assert.match(s.updatedInput.command, /^node \//, 'wrapper must be invoked by absolute path');
+    // Phase 88 plan 88-15: `/^node \//` expressed that contract in a POSIX-only way --
+    // an absolute Windows path starts `D:/`, so the assertion failed on the Windows cell
+    // for a correct command. The contract itself is unchanged and is now checked with
+    // path.isAbsolute() on the emitted path, quoted or bare.
+    const emittedPath = (s.updatedInput.command.match(/^node (?:"([^"]+)"|(\S+)) /) || []).slice(1)
+      .find((x) => x !== undefined);
+    assert.ok(emittedPath, `could not read the wrapper path out of: ${s.updatedInput.command}`);
+    assert.ok(
+      path.isAbsolute(emittedPath) || /^[A-Za-z]:\//.test(emittedPath),
+      `wrapper must be invoked by absolute path, got ${emittedPath}`,
+    );
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

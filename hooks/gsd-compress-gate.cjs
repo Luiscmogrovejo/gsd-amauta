@@ -43,9 +43,17 @@ function resolveWrapper() {
 // ORIGINAL command string (string concat, NOT re-tokenized — preserves quoting; safe because
 // the classifier already rejected every shell metacharacter). Absolute wrapper path.
 // TOGL-04: opts.raw emits the `--raw` form so the wrapper bypasses compression for this run.
+//
+// Phase 88 plan 88-15 (G9): the wrapper path goes through hookCommon.shellQuotePath, which
+// forward-slashes it always and quotes it ONLY when it contains whitespace, a quote, a `$` or
+// a backtick. A plain POSIX path without spaces therefore emits the SAME BYTES as before
+// (pinned by tests/88-15-hook-command-golden.test.cjs); `D:\a\…` stops being eaten by bash,
+// and `/Users/Jane Doe/…` — a macOS defect all along — stops breaking too.
+// isAlreadyWrapped (the PostToolUse side) is a substring check on the wrapper basename, so
+// adding quotes around the path cannot break it.
 function buildWrappedCommand(original, wrapperPath, opts) {
   const rawFlag = opts && opts.raw ? '--raw ' : '';
-  return 'node ' + wrapperPath + ' ' + rawFlag + '-- ' + original;
+  return 'node ' + hookCommon.shellQuotePath(wrapperPath) + ' ' + rawFlag + '-- ' + original;
 }
 
 function _runGate() {
