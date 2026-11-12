@@ -163,7 +163,7 @@ def _load_doctor():
     return mod
 
 
-def _script(path, text="#!/bin/sh\n# gsd-amauta\n"):
+def _script(path, text="// gsd-amauta stand-in: only its path and mode matter\n"):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
     path.chmod(0o755)
@@ -179,6 +179,7 @@ def two_gsd_amauta(tmp_path, monkeypatch):
     os.symlink(runtime, first / "gsd-amauta")
     second = _script(tmp_path / "brew-bin" / "gsd-amauta")
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     monkeypatch.setenv("PATH", os.pathsep.join([str(first), str(second.parent)]))
     return {"runtime": runtime, "first": first / "gsd-amauta", "second": second}
 
@@ -205,6 +206,7 @@ def test_path_collision_ok_when_single_entry(tmp_path, monkeypatch):
     bin_dir.mkdir()
     os.symlink(mod.REPO_ROOT / "bin" / "cli.cjs", bin_dir / "gsd-amauta")
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     monkeypatch.setenv("PATH", str(bin_dir))
     mod.check_path_collision()
     [(status, cat, _detail, _data)] = mod.rows
@@ -225,6 +227,7 @@ def test_install_stale_default_record_path_follows_the_patched_home(tmp_path, mo
     (tmp_path), so the operator's own install record is never read."""
     mod = _load_doctor()
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     monkeypatch.setattr(pathlib.Path, "home", lambda: tmp_path)
     pkg = tmp_path / "pkg"
     (pkg / "lib").mkdir(parents=True)

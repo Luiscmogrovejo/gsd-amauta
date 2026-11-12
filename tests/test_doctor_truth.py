@@ -156,7 +156,8 @@ def check_row(parsed, category):
     raise AssertionError(f"no '{category}' row in {[c['category'] for c in parsed['checks']]}")
 
 
-def make_fake_bin(dirpath, name, body="#!/bin/sh\necho fake\n"):
+def make_fake_bin(dirpath, name, body="// stand-in: doctor only looks the file up on PATH, it never runs it\n"):
+    """Write a file called ``name`` that is executable by mode, for lookups that never run it."""
     os.makedirs(dirpath, exist_ok=True)
     p = os.path.join(dirpath, name)
     with open(p, "w", encoding="utf-8") as fh:

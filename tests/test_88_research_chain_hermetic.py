@@ -78,6 +78,7 @@ def test_script_resolution_prefers_the_repo_outside_test_mode(tmp_path, monkeypa
     fake_home = tmp_path / "home"
     fake_home.mkdir()
     monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("USERPROFILE", str(fake_home))
     repo = tmp_path / "repo"
     script = repo / "get-shit-done" / "bin" / "gsd-research.cjs"
     script.parent.mkdir(parents=True)
