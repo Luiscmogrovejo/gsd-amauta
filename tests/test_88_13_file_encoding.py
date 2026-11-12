@@ -13,6 +13,7 @@ local service port, both DSNs, a temp data directory); no ``env`` binary; nothin
 import ast
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -122,3 +123,36 @@ def test_roundtrip_under_a_legacy_locale():
         assert r.returncode == 0, r.stderr[-600:]
         out = json.loads((tmp / "out.json").read_text(encoding="utf-8"))
         assert out["items"][0]["title"] == title
+
+
+def test_daemon_decodes_the_cli_output_as_utf8():
+    """amauta.py (and handoff.cjs) write UTF-8. The daemon reads them through ``subprocess.run(text=True)``,
+    which decodes with the locale default; under cp1252 a byte such as 0x90 (inside U+25D0) raised, the
+    daemon returned an empty body, and ``show`` through the daemon printed nothing on Windows.
+    Every text-mode subprocess.run in a daemon function that runs ``AMAUTA_PY`` (or in the handoff call)
+    must name an encoding."""
+    src = (ROOT / "services" / "amauta-daemon.py").read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    parents = {}
+    for node in ast.walk(tree):
+        for child in ast.iter_child_nodes(node):
+            parents[child] = node
+
+    def enclosing_source(n):
+        while n in parents:
+            n = parents[n]
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                return ast.get_source_segment(src, n) or ""
+        return ""
+
+    checked = 0
+    for n in ast.walk(tree):
+        if not (isinstance(n, ast.Call) and getattr(n.func, "attr", "") == "run"
+                and getattr(n.func.value, "id", "") in ("subprocess", "_sp")):
+            continue
+        kw = {k.arg for k in n.keywords}
+        seg = ast.get_source_segment(src, n) or ""
+        if "text" in kw and ("handoff" in seg or "AMAUTA_PY" in enclosing_source(n)):
+            checked += 1
+            assert "encoding" in kw, "subprocess.run at line %d reads CLI output without encoding=" % n.lineno
+    assert checked == 3, "expected the three CLI-output readers, found %d" % checked

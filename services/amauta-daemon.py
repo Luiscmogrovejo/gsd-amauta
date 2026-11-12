@@ -1170,7 +1170,7 @@ def _stale_task_watchdog():
                                 [sys.executable, AMAUTA_PY, "status", task_id, "pending",
                                  "--agent", "watchdog", "--force",
                                  "--note", f"Auto-reverted by watchdog: no RPETD activity in >{STALE_THRESHOLD_HOURS}h"],
-                                capture_output=True, text=True, timeout=30,
+                                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
                                 env={**os.environ, "AMAUTA_DATA_DIR": DATA_DIR}
                             )
                             if result.returncode == 0:
@@ -1867,10 +1867,14 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
         timeout_ms = _cmd_timeout_ms()
         timeout_s = timeout_ms / 1000.0
         try:
+            # amauta.py writes UTF-8 (services/_platform.setup_stdio); decode it as UTF-8 here, not
+            # with the locale default, or a cp1252 daemon raises on bytes such as 0x90 (U+25D0).
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=timeout_s,
                 env=env,
             )
@@ -4958,6 +4962,8 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                      input_json],
                     capture_output=True,
                     text=True,
+                    encoding="utf-8",
+                    errors="replace",
                     timeout=10,
                 )
                 if result.returncode != 0:
