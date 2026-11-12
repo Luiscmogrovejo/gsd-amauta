@@ -77,3 +77,28 @@ test('88-16-07: the Node CI job installs from the file, not from a loose list', 
       "environment and a developer's cannot drift"
   );
 });
+
+test('88-16-10: no step writes a bash-only path into GITHUB_PATH', () => {
+  // GITHUB_PATH is consumed by the runner, not by bash. On Windows the shell is
+  // Git Bash, where $PWD is an MSYS path (/d/a/...) that CreateProcess cannot
+  // resolve: the entry is accepted and silently matches nothing. Measured in run
+  // 43186745109 — the scanner install step passed and six scanner tests still
+  // reported "gitleaks/trivy is not installed" on both Windows cells.
+  const wf = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'test.yml'), 'utf-8');
+  const offenders = wf
+    .split('\n')
+    .map((line, i) => [i + 1, line])
+    .filter(([, line]) => />>\s*"?\$(\{)?GITHUB_PATH/.test(line))
+    .filter(([, line]) => /\$PWD|\$\{?GITHUB_WORKSPACE/.test(line));
+  assert.deepStrictEqual(
+    offenders,
+    [],
+    'these lines append a bash-side path to GITHUB_PATH; convert it with cygpath first:\n' +
+      offenders.map(([n, l]) => `  line ${n}: ${l.trim()}`).join('\n')
+  );
+  assert.ok(
+    wf.includes('cygpath -w'),
+    'the scanner install step must convert its bin directory to the native form before ' +
+      'writing it to GITHUB_PATH'
+  );
+});

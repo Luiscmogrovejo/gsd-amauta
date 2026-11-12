@@ -130,7 +130,17 @@ jobs:
           node scripts/install-gitleaks.cjs
           node scripts/install-trivy.cjs
           export PATH="$PWD/node_modules/.bin:$PATH"
-          echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
+          # GITHUB_PATH is read by the RUNNER, not by bash. On Windows this step
+          # runs in Git Bash, where $PWD is an MSYS path (/d/a/gsd-amauta/...)
+          # that native processes cannot resolve — so the entry was accepted and
+          # then matched nothing, and six scanner tests reported "not installed"
+          # on both Windows cells while this step itself passed (measured, run
+          # 43186745109). Write the native form.
+          BIN_DIR="$PWD/node_modules/.bin"
+          if command -v cygpath >/dev/null 2>&1; then
+            BIN_DIR="$(cygpath -w "$BIN_DIR")"
+          fi
+          echo "$BIN_DIR" >> "$GITHUB_PATH"
           missing=
           command -v gitleaks >/dev/null 2>&1 || missing="$missing gitleaks"
           command -v trivy    >/dev/null 2>&1 || missing="$missing trivy"
@@ -278,6 +288,26 @@ jobs:
       - name: Run coverage ratchet
         shell: bash
         run: node scripts/coverage-ratchet.cjs
+
+      # Plan 88-18 recorded that the Windows Node job ends with the runner saying
+      # "Terminate orphan process: pid (N) (python)" twice. The ledger-based stray
+      # detector in scripts/run-tests.cjs only sees daemons and RLM services it
+      # recorded, so those two are invisible to it. This names them — command line
+      # and parent — and reaps them, so the evidence exists for plan 88-11 instead
+      # of a pid number with no identity. It never fails the job.
+      - name: Name and reap surviving Python children (Windows)
+        if: always() && runner.os == 'Windows'
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $procs = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -like 'python*' })
+          if ($procs.Count -eq 0) { Write-Host 'no surviving python child'; exit 0 }
+          foreach ($p in $procs) {
+            Write-Host ("SURVIVING PYTHON pid={0} ppid={1} cmd={2}" -f $p.ProcessId, $p.ParentProcessId, $p.CommandLine)
+          }
+          foreach ($p in $procs) { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue }
+          Write-Host ("reaped {0} python process(es)" -f $procs.Count)
 
       - name: Stop the disposable PostgreSQL (Linux)
         if: always() && runner.os == 'Linux'
