@@ -1,5 +1,12 @@
 #!/usr/bin/env node
 'use strict';
+
+// THROWAWAY (plan 88-15 task 10, step 3): proves hook-gates-windows can go red.
+if (process.platform === 'win32') {
+  process.stderr.write('RED PROOF: deliberate hook-gates-windows failure\n');
+  process.exit(1);
+}
+
 /**
  * scripts/hook-gates-ci.cjs
  *
