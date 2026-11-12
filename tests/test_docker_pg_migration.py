@@ -1161,11 +1161,16 @@ class TestBaselineDetectionIntegration:
         assert report["tracking_table"] is False
         assert report["pre_migrated_detected"] is True
         assert len(report["detected_by_schema"]) == 26
+        # Phase 89 plan 89-02 appended 031-decimal-phase-number.sql. This list is
+        # "every migration after 026", so every new migration extends it; the
+        # assertion stays exact and ordered on purpose — a set or a length would stop
+        # catching an ordering bug in discover_migrations().
         assert report["pending"] == [
             "027-audit-findings.sql",
             "028-task-project-backfill.sql",
             "029-sqlite-import-compat.sql",
             "030-rlm-chunk-provenance.sql",
+            "031-decimal-phase-number.sql",
         ]
 
     def test_only_the_missing_migrations_are_applied(self, scratch_dsn):
@@ -1173,19 +1178,34 @@ class TestBaselineDetectionIntegration:
         result = migrate_runner.apply_migrations(dsn=scratch_dsn,
                                                  log=lambda *_: None)
         assert len(result["baselined"]) == 26
+        # Phase 89 plan 89-02 appended 031-decimal-phase-number.sql — see the note in
+        # test_status_infers_what_is_applied_without_writing above.
         assert result["applied"] == [
             "027-audit-findings.sql",
             "028-task-project-backfill.sql",
             "029-sqlite-import-compat.sql",
             "030-rlm-chunk-provenance.sql",
+            "031-decimal-phase-number.sql",
         ]
         again = migrate_runner.apply_migrations(dsn=scratch_dsn, log=lambda *_: None)
         assert again["applied"] == []
 
     def test_a_gap_in_the_middle_is_found_not_assumed_away(self, scratch_dsn):
-        """Baseline is per-migration, not 'everything through N'."""
+        """Baseline is per-migration, not 'everything through N'.
+
+        Phase 89 plan 89-02: the bound and the baselined count are DERIVED from
+        ``discover_migrations()`` rather than written as 30 and 28. The subject of this
+        test is the GAP, and hard-coding the highest migration number turned every new
+        migration into a pending TAIL that had to be added to the expected set — which
+        is noise in a test about the middle, and it broke here when 031 landed. The
+        assertions stay exact: the applied set is still the two dropped migrations and
+        nothing else, and the baselined count is still "all of them but those two".
+        """
         import psycopg2
-        self._apply_the_old_way(scratch_dsn, 30)
+        all_migrations = [n for n, _, _ in
+                          migrate_runner.discover_migrations(MIGRATIONS_DIR)]
+        highest = max(int(n.split("-")[0]) for n in all_migrations)
+        self._apply_the_old_way(scratch_dsn, highest)
         conn = psycopg2.connect(scratch_dsn)
         conn.autocommit = True
         with conn.cursor() as cur:
@@ -1197,7 +1217,7 @@ class TestBaselineDetectionIntegration:
                                                  log=lambda *_: None)
         assert set(result["applied"]) == {
             "016-agent-metrics.sql", "022-module-installs.sql"}
-        assert len(result["baselined"]) == 28
+        assert len(result["baselined"]) == len(all_migrations) - 2
 
     def test_existing_embeddings_survive_the_baseline_run(self, scratch_dsn):
         """003 must never be re-entered on a database that already has vectors."""

@@ -139,6 +139,39 @@ echo "$BANNER"
 
 Persist `COMPLEXITY_SCORE`, `CHOSEN_PHASES`, `OVERRIDE_SOURCE`, `FEATURE_VECTOR` for the StepHandoff and the workflow-close write.
 
+## 5. AGENTS.md Discovery (BEHAV-01)
+
+Before spawning any executor, locate the closest AGENTS.md file using this
+"closest file wins" algorithm:
+1. Start at the directory containing the majority of `files_expected` for the current task.
+2. Walk upward toward the project root (the directory containing `.planning/`).
+3. At each directory level, check if an `AGENTS.md` file exists.
+4. If found, stop searching — this is the **active AGENTS.md**.
+5. If the project root is reached without finding one, no AGENTS.md applies.
+
+The active AGENTS.md content is **additive** — it overrides per-directory conventions
+on top of the system-level agent definition in `agents/`. It does NOT replace the
+system-level definition. Agent must NOT create or modify AGENTS.md during execution —
+`AGENTS.md` is user-authored, and an agent that writes it has committed a
+`scope_expansion` divergence (see `get-shit-done/references/divergence-protocol.md`,
+the same rule `execute-plan-core.md` <not_yours> states to the executor).
+
+Prepend the active AGENTS.md content to the executor's task brief under a
+`## Directory Conventions (from AGENTS.md)` header before spawning the executor.
+If no AGENTS.md is found, omit this header entirely.
+
+Report in the execution summary: "AGENTS.md: {path} applied" or "AGENTS.md: none found"
+
+The walk-up is an instruction to you, the orchestrating agent, carried out with your own
+Glob and Read tools — not a shell loop. That is deliberate: a tool-driven walk behaves
+identically on macOS, Linux and Windows, whereas the path-splitting shell idiom this
+would otherwise need runs only under a POSIX shell.
+
+The spawn itself is in `step-03-execute.md` §1, so the result must survive the handoff:
+record `agents_md_path` (the active file's path, or `null`) and `agents_md_report` (the
+exact line reported above) in the StepHandoff `context_snapshot` below. Discovery done
+here and not carried forward would be discovery that never reaches a task brief.
+
 </process>
 
 <step_output>
@@ -170,7 +203,9 @@ At the end of this step, save a StepHandoff via POST /api/steps/execute-phase/{P
     "override_source": "{OVERRIDE_SOURCE}",
     "feature_vector": "{FEATURE_VECTOR}",
     "amauta_ok": "{amauta_ok}",
-    "phase_task_id": "{phase_task_id}"
+    "phase_task_id": "{phase_task_id}",
+    "agents_md_path": "{agents_md_path}",
+    "agents_md_report": "{agents_md_report}"
   },
   "next_step": "step-02-route",
   "escalation_flags": []
