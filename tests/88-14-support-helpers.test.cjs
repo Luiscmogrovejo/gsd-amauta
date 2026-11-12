@@ -35,6 +35,11 @@ function runPy(argv, baseEnv = process.env) {
   }).toString('utf8');
 }
 
+/** Delete an environment variable whatever its case (Windows names are case-insensitive). */
+function deleteEnv(env, name) {
+  for (const k of Object.keys(env)) if (k.toUpperCase() === name) delete env[k];
+}
+
 const WRITE_EXPR = (expr) => `import sys; sys.stdout.buffer.write((${expr}).encode('utf-8'))`;
 
 const AWKWARD_VALUES = [
@@ -156,11 +161,11 @@ describe('[88-14] home-env: homeEnv', () => {
     // product Python uses on Windows, run here against the variables the helper produced.
     const code = 'import ntpath; print(ntpath.expanduser("~"))';
     const base = { ...process.env, ...homeEnv('D:\\a\\gsd-amauta\\home') };
-    delete base.HOME;
+    deleteEnv(base, 'HOME');
     const viaProfile = runPy(['-c', code], base).trim();
     assert.equal(viaProfile, 'D:\\a\\gsd-amauta\\home');
     const fallback = { ...base };
-    delete fallback.USERPROFILE;
+    deleteEnv(fallback, 'USERPROFILE');
     assert.equal(runPy(['-c', code], fallback).trim(), 'D:\\a\\gsd-amauta\\home');
   });
 

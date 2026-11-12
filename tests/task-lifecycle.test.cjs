@@ -27,7 +27,9 @@ const PG_STORE = path.join(ROOT, 'services', 'pg_store.py');
 function pyExec(code) {
   return execFileSync('python3', ['-c', code], {
     cwd: ROOT,
-    env: { ...process.env, GSD_AMAUTA_NO_AUTO_START: '1', PYTHONDONTWRITEBYTECODE: '1' },
+    // PYTHONIOENCODING: the snippets print the product's check marks (U+2713); a Windows pipe
+    // defaults to the ANSI code page (cp1252), which cannot encode them, and this side decodes UTF-8.
+    env: { ...process.env, GSD_AMAUTA_NO_AUTO_START: '1', PYTHONDONTWRITEBYTECODE: '1', PYTHONIOENCODING: 'utf-8' },
     encoding: 'utf-8',
     timeout: 10000,
   }).trim();
