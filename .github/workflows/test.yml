@@ -15,19 +15,19 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
-env:
-  # ── Hermetic guard rollout, plan 88-16-03 ──────────────────────────────────
-  # The guards became DEFAULT-DENY for every non-loopback destination in this
-  # plan. The inventory of what the suite legitimately reaches cannot come from
-  # the same run that first enforces it: an unknown test reaching the network
-  # would turn that run red and the inventory would never be collected. So the
-  # guard lands in log-only mode for one full run across all nine cells, the
-  # refusal log is read (the runner and conftest both print it at the end of a
-  # run), each finding is allow-listed BY HOST, PER TEST, and only then is this
-  # line removed so the default — enforce — takes over.
-  #
-  # ROLLOUT STEP 1 of 2. Removing this key is step 2.
-  GSD_HERMETIC_GUARD_MODE: log
+# ── Hermetic guard rollout, plan 88-16-03: STEP 2 of 2, ENFORCE ─────────────
+# Step 1 was one full run across nine cells with `GSD_HERMETIC_GUARD_MODE: log`
+# at workflow level (run 43173591322). Its refusal log — printed by both
+# runners at the end of a run — is the network-reach inventory in
+# 88-16-RECORD.md. Measured non-loopback destinations: registry.npmjs.org
+# (npx probing for eslint, closed by npm_config_offline), api.duckduckgo.com
+# (the MCP research tool's best-effort web fetch), huggingface.co and its CDN
+# (sentence-transformers fetching a model), api.voyageai.com (the embedding
+# provider) and 203.0.113.9 (this plan's own TEST-NET-3 mutation case).
+# NOT ONE of them is a test that legitimately must download, so the allow-list
+# stays EMPTY: the only host allowance in the whole suite is the one task
+# 88-16-08 scopes to the Voyage test. The key is therefore gone and the
+# default — enforce — applies.
 
 jobs:
   test:
@@ -87,13 +87,84 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Pin GSD_PYTHON to the setup-python interpreter
+        shell: bash
+        # Plan 88-16-06/-07. The Node tests resolve Python through
+        # get-shit-done/bin/lib/platform.cjs, whose candidate order on Windows
+        # is `py -3`, then `python`, then `python3` — and `py -3` can be a
+        # DIFFERENT interpreter from the setup-python one the step below
+        # installs PyYAML into. That is the whole cause of the nine PyYAML
+        # skips the Windows Node cells carried (module-lifecycle-cli 3,
+        # module-lifecycle-e2e 6) and of the macOS one in
+        # 88-12-agent-yaml-parses. GSD_PYTHON is the first candidate, so
+        # pinning it makes the interpreter that runs the tests the same one the
+        # packages were installed into, on all three systems.
+        run: |
+          set -euo pipefail
+          PY=$(python -c "import sys; print(sys.executable)")
+          echo "GSD_PYTHON=$PY" >> "$GITHUB_ENV"
+          echo "GSD_PYTHON=$PY"
+
       - name: Install the Python packages the Node tests import
         shell: bash
-        # psycopg2-binary joins pyyaml/pydantic here (plan 88-16-03): the
-        # schema bootstrap below drives services/migrate_runner.py, and
-        # tests/86-01-dsn-containment.test.cjs skipped three cases purely
-        # because psycopg2 was not importable.
-        run: python -m pip install --disable-pip-version-check pyyaml pydantic psycopg2-binary
+        # Plan 88-16-07: from the FILE, not a loose unpinned list. The Node
+        # tests shell out to services/*.py, so the interpreter they resolve
+        # must carry what those modules import — PyYAML (10 skipped rows),
+        # NumPy (2), psycopg2 (3) — and installing from requirements-dev.txt
+        # is what stops the CI environment and a developer's from drifting.
+        # Every version in that file is pinned exactly.
+        run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
+
+      - name: Install the security scanners (gitleaks, trivy)
+        shell: bash
+        # Plan 88-16-07. Through the REPOSITORY'S OWN installers, not a
+        # third-party action: they pin the version, resolve the asset per
+        # platform and — since this plan — verify a pinned SHA-256 and fail
+        # closed, so CI exercises the same code a user runs. The trivy pin had
+        # to move: v0.50.1's tag and every asset under it now 404, so trivy
+        # could not be installed anywhere. Eleven scanner skips depend on this
+        # step; the job FAILS if a binary is not on PATH afterwards, because a
+        # missing scanner that reports "unavailable" reads as a clean scan.
+        run: |
+          set -euo pipefail
+          node scripts/install-gitleaks.cjs
+          node scripts/install-trivy.cjs
+          export PATH="$PWD/node_modules/.bin:$PATH"
+          echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
+          missing=
+          command -v gitleaks >/dev/null 2>&1 || missing="$missing gitleaks"
+          command -v trivy    >/dev/null 2>&1 || missing="$missing trivy"
+          if [ -n "$missing" ]; then
+            echo "scanners missing from PATH after install:$missing" >&2
+            exit 1
+          fi
+          gitleaks version
+          trivy --version
+
+      - name: Install semgrep where it is supported
+        if: runner.os != 'Windows'
+        shell: bash
+        # requirements-dev.txt pins semgrep==1.183.0 with a `sys_platform !=
+        # "win32"` marker, so `pip install -r` already installed it on Linux
+        # and macOS. This step only proves it is on PATH; the Windows
+        # measurement is the step below, and
+        # tests/88-16-fake-scanner.test.cjs covers the parsing and policy
+        # behaviour on ALL nine cells regardless.
+        run: |
+          set -euo pipefail
+          semgrep --version
+
+      - name: Measure semgrep on windows-latest (plan 88-16-07)
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        shell: bash
+        # Research section 8 marks native semgrep on Windows LOW confidence.
+        # This measures it instead of guessing, and cannot fail the cell.
+        run: |
+          echo "=== pip install semgrep==1.183.0 on windows-latest"
+          python -m pip install --disable-pip-version-check "semgrep==1.183.0" 2>&1 | tail -30 || echo "(install failed)"
+          echo "=== semgrep --version"
+          semgrep --version 2>&1 || echo "(semgrep not runnable on this platform)"
 
       - name: Pick a free host port for the disposable PostgreSQL
         shell: bash
@@ -145,15 +216,21 @@ jobs:
         shell: bash
         # GitHub service containers are declared at job level and would break
         # the macOS and Windows rows of this matrix, so the container is started
-        # as a step instead. Same image memory-safety.yml pins; gsd_memory
-        # declares `embedding vector(1024)`, hence pgvector rather than plain
-        # postgres. macOS and Windows are plan 88-16-04.
+        # as a step instead.
+        #
+        # The image is the one docker/docker-compose.yml already pins BY DIGEST:
+        # migration 011 does `CREATE EXTENSION pg_search`, which only ParadeDB
+        # ships (and which needs shared_preload_libraries, already set in that
+        # image — hence no `command:` override). `pgvector/pgvector:pg16` fails
+        # 011 with `extension "pg_search" is not available`, measured on run
+        # 43173591322. ParadeDB carries pgvector 0.8.1 too, so the vector
+        # columns are covered. macOS and Windows are plan 88-16-04.
         run: |
           set -euo pipefail
           docker run -d --name gsd-test-pg \
             -e POSTGRES_USER=gsd -e POSTGRES_PASSWORD=gsd -e POSTGRES_DB=gsd_test \
             -p "127.0.0.1:${PG_TEST_PORT}:5432" \
-            pgvector/pgvector:pg16
+            paradedb/paradedb:latest-pg16@sha256:21518b4005ad4111bdd41a6687ef37ca2abc363d7af30e700900ad6b8cb33e1e
           ready=
           for _ in $(seq 1 60); do
             if docker exec gsd-test-pg pg_isready -U gsd -q; then ready=1; break; fi
@@ -293,7 +370,7 @@ jobs:
           docker run -d --name gsd-test-pg \
             -e POSTGRES_USER=gsd -e POSTGRES_PASSWORD=gsd -e POSTGRES_DB=gsd_test \
             -p "127.0.0.1:${PG_TEST_PORT}:5432" \
-            pgvector/pgvector:pg16
+            paradedb/paradedb:latest-pg16@sha256:21518b4005ad4111bdd41a6687ef37ca2abc363d7af30e700900ad6b8cb33e1e
           ready=
           for _ in $(seq 1 60); do
             if docker exec gsd-test-pg pg_isready -U gsd -q; then ready=1; break; fi
@@ -332,6 +409,33 @@ jobs:
           python3 -m pytest tests -q -rs -p no:cacheprovider --junitxml=pytest-report.xml
           rc=$?
           echo "pytest exit: $rc"
+          exit $rc
+
+      - name: Run the embedding-provider test against the real Voyage API
+        shell: bash
+        # Plan 88-16-08, operator decision 2026-11-11 "there is a key, use it".
+        #
+        # Its OWN step, and the wiring is deliberate in three ways:
+        #  * the secret is on THIS step only, so it never reaches the ~1,800
+        #    other test subprocesses in the suite;
+        #  * this step writes NO --junitxml and uploads NO artifact. GitHub's
+        #    secret masking covers logs, not artifact content, and the main
+        #    step's report IS uploaded;
+        #  * the main suite step above therefore has no key at all and always
+        #    exercises the deterministic stand-in, so BOTH paths run on every
+        #    cell of every run.
+        #
+        # On a fork PR the secret expands to the empty string and this step
+        # takes the stand-in path too — green either way, and the record says
+        # which path each cell took. One short input, one call per job.
+        env:
+          VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
+        run: |
+          set -uo pipefail
+          python3 -m pytest tests/test_65_vector_leg.py -p no:cacheprovider -q \
+            -k "embedding_provider or allowance_did_not_leak or stand_in_is_deterministic"
+          rc=$?
+          echo "voyage-path pytest exit: $rc"
           exit $rc
 
       - name: Upload the pytest report

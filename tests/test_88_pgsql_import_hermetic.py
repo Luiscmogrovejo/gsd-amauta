@@ -74,6 +74,33 @@ def test_postgres_dsn_returns_the_test_variable_when_set(monkeypatch):
     assert _conftest()._postgres_dsn_or_skip() == "postgresql://t:t@127.0.0.1:55432/t"
 
 
-def test_conftest_scrub_still_removes_the_live_dsn():
-    """The opt-in is a different name on purpose: the live DSN stays out of the environment."""
-    assert "GSD_POSTGRES_URL" not in os.environ
+def test_the_only_dsn_in_the_environment_is_one_conftest_validated():
+    """The scrub's guarantee, as plan 88-16-09 sharpened it.
+
+    Before: ``GSD_POSTGRES_URL`` was deleted outright, so no test could inherit
+    the operator's live DSN. That also meant no test could reach a DISPOSABLE
+    one either — `services/pg_store.py` and the party modules read that name
+    and nothing else — which is why roughly sixty Postgres tests skipped in CI
+    even once CI had a database.
+
+    After: the name is present only when ``GSD_TEST_POSTGRES_URL`` supplied a
+    DSN that `tests/conftest.py` CHECKED against the live service ports at
+    import, refusing outright if it named one. The property is strictly
+    stronger than "the variable is absent": absent OR validated, never
+    inherited.
+    """
+    import conftest as _c
+
+    present = os.environ.get("GSD_POSTGRES_URL")
+    if present is None:
+        assert _c.postgres_dsn_or_none() is None, (
+            "no DSN in the environment, but a disposable one is configured"
+        )
+        return
+    assert present == _c.postgres_dsn_or_none(), (
+        "GSD_POSTGRES_URL is set to something other than the validated disposable DSN"
+    )
+    port = _c._port_of_dsn(present)
+    assert port not in _c._LIVE_PORTS, (
+        "the DSN in the environment names live service port %r" % (port,)
+    )

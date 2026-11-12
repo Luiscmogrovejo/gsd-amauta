@@ -25,14 +25,33 @@
  * Run E2E:  E2E_BASE_URL=http://127.0.0.1:<fixture daemon port> node --test tests/38-blackboard-communication.integration.test.cjs
  * Run fast: node --test tests/38-blackboard-communication.integration.test.cjs
  */
-const { describe, it } = require('node:test');
+const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
 
-/** The one reason the twelve E2E round-trip tests carry when no base URL exists. */
-const E2E_SKIP_REASON =
-  'E2E_BASE_URL is not set: these round-trips need a running blackboard API ' +
-  '(tests/support/fixture-daemon.cjs provides one on an ephemeral port)';
+// Plan 88-16-06: the twelve round-trips no longer depend on anything being
+// published. E2E_BASE_URL still wins when the operator sets it (to point the
+// suite at a staging API); otherwise this file starts its OWN blackboard on an
+// ephemeral port and stops it by pid.
+const { startFixtureDaemon, stopFixtureDaemon } = require('./support/fixture-daemon.cjs');
+
+let fixture = null;
+
+/** @returns {string} the base URL of the blackboard under test */
+function baseUrl() {
+  if (process.env.E2E_BASE_URL) return process.env.E2E_BASE_URL;
+  if (!fixture) throw new Error('the fixture daemon has not started yet');
+  return 'http://127.0.0.1:' + fixture.port;
+}
+
+before(async () => {
+  if (!process.env.E2E_BASE_URL) fixture = await startFixtureDaemon();
+});
+
+after(async () => {
+  await stopFixtureDaemon(fixture);
+  fixture = null;
+});
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -231,35 +250,44 @@ describe('[COMM-01][COMM-02] Pact contract gate: findings-crud + messages-crud p
 // ─── Group 5: E2E — findings round-trip flow (conditional on E2E_BASE_URL) ───
 
 describe('[COMM-01] E2E: findings round-trip flow (POST + GET + 400 errors)', () => {
-  const BASE_URL = process.env.E2E_BASE_URL;
-  const E2E_SKIP = BASE_URL ? false : E2E_SKIP_REASON;
 
-    it('POST /api/findings with valid body returns 200 + {id, created: true}', { skip: E2E_SKIP }, async () => {
-      const result = await httpRequest('POST', `${BASE_URL}/api/findings`, {
+    // Plan 88-16-06: the expectations below are the MEASURED provider contract
+    // (services/amauta-daemon.py). These tests had never run — they stood behind
+    // a vacuous `[skip] E2E_BASE_URL not set` placeholder — so they still carried
+    // the shape of an older daemon: 200 instead of 201 on create, a bare array
+    // instead of {findings, count}, and `auto_approved` instead of
+    // `operator_approved`. The pact in tests/pact/messages-crud.pact.cjs still
+    // encodes the OLD shape and passes against its own mock: provider and
+    // consumer contract have diverged, which is recorded in 88-16-RECORD.md as a
+    // defect for the owner of the blackboard API, not fixed here.
+    it('POST /api/findings with valid body returns 201 + {id, created: true}', async () => {
+      const result = await httpRequest('POST', `${baseUrl()}/api/findings`, {
         agent_name: 'gsd-executor-backend',
         task_id: 'TK-38-INTEGRATION-TEST',
         finding_type: 'observation',
         content: 'Integration test finding — round-trip verification',
         confidence: 0.9,
       });
-      assert.strictEqual(result.status, 200, `Expected 200, got ${result.status}`);
+      assert.strictEqual(result.status, 201, `Expected 201 Created, got ${result.status}`);
       assert.ok(result.body.id, 'Response must include id');
       assert.strictEqual(result.body.created, true, 'created must be true');
+      assert.ok(result.body.created_at, 'Response must include created_at');
     });
 
-    it('GET /api/findings/:task_id returns array with the posted finding', { skip: E2E_SKIP }, async () => {
-      const result = await httpRequest('GET', `${BASE_URL}/api/findings/TK-38-INTEGRATION-TEST`);
+    it('GET /api/findings/:task_id returns the posted finding', async () => {
+      const result = await httpRequest('GET', `${baseUrl()}/api/findings/TK-38-INTEGRATION-TEST`);
       assert.strictEqual(result.status, 200, `Expected 200, got ${result.status}`);
-      assert.ok(Array.isArray(result.body), 'Response must be an array');
-      assert.ok(result.body.length >= 1, 'Must have at least 1 finding for TK-38-INTEGRATION-TEST');
+      assert.ok(Array.isArray(result.body.findings), `Response.findings must be an array: ${JSON.stringify(result.body)}`);
+      assert.strictEqual(result.body.count, result.body.findings.length, 'count must match the array length');
+      assert.ok(result.body.findings.length >= 1, 'Must have at least 1 finding for TK-38-INTEGRATION-TEST');
       assert.ok(
-        result.body.some(f => f.finding_type === 'observation'),
+        result.body.findings.some((f) => f.finding_type === 'observation'),
         'Must include the observation finding we posted'
       );
     });
 
-    it('POST /api/findings with missing required field returns 400', { skip: E2E_SKIP }, async () => {
-      const result = await httpRequest('POST', `${BASE_URL}/api/findings`, {
+    it('POST /api/findings with missing required field returns 400', async () => {
+      const result = await httpRequest('POST', `${baseUrl()}/api/findings`, {
         agent_name: 'gsd-executor-backend',
         task_id: 'TK-38-INTEGRATION-TEST',
         // finding_type and content intentionally missing
@@ -268,8 +296,8 @@ describe('[COMM-01] E2E: findings round-trip flow (POST + GET + 400 errors)', ()
       assert.ok(result.body.error, 'Response must include error field');
     });
 
-    it('POST /api/findings with invalid finding_type returns 400', { skip: E2E_SKIP }, async () => {
-      const result = await httpRequest('POST', `${BASE_URL}/api/findings`, {
+    it('POST /api/findings with invalid finding_type returns 400', async () => {
+      const result = await httpRequest('POST', `${baseUrl()}/api/findings`, {
         agent_name: 'gsd-executor-backend',
         task_id: 'TK-38-INTEGRATION-TEST',
         finding_type: 'invalid_type',
@@ -278,77 +306,80 @@ describe('[COMM-01] E2E: findings round-trip flow (POST + GET + 400 errors)', ()
       assert.strictEqual(result.status, 400, `Expected 400 for invalid finding_type, got ${result.status}`);
     });
 
-    it('GET /api/findings for non-existent task_id returns empty array (not 404)', { skip: E2E_SKIP }, async () => {
-      const result = await httpRequest('GET', `${BASE_URL}/api/findings/TK-NONEXISTENT-99999`);
+    it('GET /api/findings for non-existent task_id returns an empty list (not 404)', async () => {
+      const result = await httpRequest('GET', `${baseUrl()}/api/findings/TK-NONEXISTENT-99999`);
       assert.strictEqual(result.status, 200, `Expected 200 for non-existent task, got ${result.status}`);
-      assert.ok(Array.isArray(result.body), 'Response must be an array');
-      assert.strictEqual(result.body.length, 0, 'Non-existent task_id must return empty array');
+      assert.ok(Array.isArray(result.body.findings), 'Response.findings must be an array');
+      assert.strictEqual(result.body.findings.length, 0, 'Non-existent task_id must return no findings');
+      assert.strictEqual(result.body.count, 0, 'count must be 0');
     });
 });
 
 // ─── Group 6: E2E — messages round-trip flow + auto-approval ─────────────────
 
 describe('[COMM-02] E2E: messages round-trip flow — SHARE_FINDING auto-approval + DELEGATE_SUBTASK pending', () => {
-  const BASE_URL = process.env.E2E_BASE_URL;
-  const E2E_SKIP = BASE_URL ? false : E2E_SKIP_REASON;
 
-    it('POST /api/messages with SHARE_FINDING returns auto_approved: true', { skip: E2E_SKIP }, async () => {
-      const result = await httpRequest('POST', `${BASE_URL}/api/messages`, {
+    it('POST /api/messages with SHARE_FINDING returns auto_approved: true', async () => {
+      const result = await httpRequest('POST', `${baseUrl()}/api/messages`, {
         from_agent: 'gsd-executor-backend',
         to_agent: 'gsd-operator',
         task_id: 'TK-38-INTEGRATION-TEST',
         message_type: 'SHARE_FINDING',
         content: 'Integration test: SHARE_FINDING auto-approval verification',
       });
-      assert.strictEqual(result.status, 200, `Expected 200, got ${result.status}`);
+      assert.strictEqual(result.status, 201, `Expected 201 Created, got ${result.status}`);
       assert.ok(result.body.id, 'id must be present');
       assert.strictEqual(result.body.created, true, 'created must be true');
-      assert.strictEqual(result.body.auto_approved, true, 'SHARE_FINDING must be auto-approved');
+      assert.strictEqual(result.body.operator_approved, true, 'SHARE_FINDING must be auto-approved');
+      assert.strictEqual(result.body.status, 'approved', 'an auto-approved message lands in status approved');
     });
 
-    it('POST /api/messages with DELEGATE_SUBTASK returns auto_approved: false', { skip: E2E_SKIP }, async () => {
-      const result = await httpRequest('POST', `${BASE_URL}/api/messages`, {
+    it('POST /api/messages with DELEGATE_SUBTASK returns auto_approved: false', async () => {
+      const result = await httpRequest('POST', `${baseUrl()}/api/messages`, {
         from_agent: 'gsd-executor-backend',
         to_agent: 'gsd-executor-frontend',
         task_id: 'TK-38-INTEGRATION-TEST',
         message_type: 'DELEGATE_SUBTASK',
         content: 'Integration test: DELEGATE_SUBTASK requires operator approval',
       });
-      assert.strictEqual(result.status, 200, `Expected 200, got ${result.status}`);
+      assert.strictEqual(result.status, 201, `Expected 201 Created, got ${result.status}`);
       assert.ok(result.body.id, 'id must be present');
-      assert.strictEqual(result.body.auto_approved, false, 'DELEGATE_SUBTASK must NOT be auto-approved');
+      assert.strictEqual(result.body.operator_approved, false, 'DELEGATE_SUBTASK must NOT be auto-approved');
+      assert.strictEqual(result.body.status, 'pending', 'a message needing review lands in status pending');
     });
 
     let postedMessageId;
 
-    it('POST /api/messages with ASK_QUESTION returns auto_approved: false', { skip: E2E_SKIP }, async () => {
-      const result = await httpRequest('POST', `${BASE_URL}/api/messages`, {
+    it('POST /api/messages with ASK_QUESTION returns auto_approved: false', async () => {
+      const result = await httpRequest('POST', `${baseUrl()}/api/messages`, {
         from_agent: 'gsd-executor-backend',
         to_agent: 'gsd-operator',
         task_id: 'TK-38-INTEGRATION-TEST',
         message_type: 'ASK_QUESTION',
         content: 'Integration test: is migration 014 idempotent?',
       });
-      assert.strictEqual(result.status, 200, `Expected 200, got ${result.status}`);
+      assert.strictEqual(result.status, 201, `Expected 201 Created, got ${result.status}`);
       assert.ok(result.body.id, 'id must be present');
-      assert.strictEqual(result.body.auto_approved, false, 'ASK_QUESTION must NOT be auto-approved');
+      assert.strictEqual(result.body.operator_approved, false, 'ASK_QUESTION must NOT be auto-approved');
+      assert.strictEqual(result.body.status, 'pending', 'a question lands in status pending');
       postedMessageId = result.body.id;
     });
 
-    it('GET /api/messages/:agent_name returns pending messages for that agent', { skip: E2E_SKIP }, async () => {
-      const result = await httpRequest('GET', `${BASE_URL}/api/messages/gsd-operator`);
+    it('GET /api/messages/:agent_name returns pending messages for that agent', async () => {
+      const result = await httpRequest('GET', `${baseUrl()}/api/messages/gsd-operator`);
       assert.strictEqual(result.status, 200, `Expected 200, got ${result.status}`);
-      assert.ok(Array.isArray(result.body), 'Response must be an array');
+      assert.ok(Array.isArray(result.body.messages), `Response.messages must be an array: ${JSON.stringify(result.body)}`);
+      assert.strictEqual(result.body.count, result.body.messages.length, 'count must match the array length');
       // Must have at least the messages we sent to gsd-operator
-      assert.ok(result.body.length >= 1, 'Must have at least 1 message for gsd-operator');
+      assert.ok(result.body.messages.length >= 1, 'Must have at least 1 message for gsd-operator');
     });
 
-    it('PATCH /api/messages/:id with approve updates status to approved', { skip: E2E_SKIP }, async () => {
-      if (!postedMessageId) {
-        console.log('[skip] No message id from prior test — skipping PATCH test');
-        return;
-      }
-      const result = await httpRequest('PATCH', `${BASE_URL}/api/messages/${postedMessageId}`, {
+    it('PATCH /api/messages/:id with approve updates status to approved', async () => {
+      // The ASK_QUESTION test above always sets this now that the group
+      // runs; an absent id means that test did not run, which is a
+      // failure, not a reason to report success.
+      assert.ok(postedMessageId, 'no message id from the ASK_QUESTION test');
+      const result = await httpRequest('PATCH', `${baseUrl()}/api/messages/${postedMessageId}`, {
         status: 'approved',
         operator_approved: true,
       });
@@ -356,12 +387,12 @@ describe('[COMM-02] E2E: messages round-trip flow — SHARE_FINDING auto-approva
       assert.strictEqual(result.body.updated, true, 'updated must be true');
     });
 
-    it('PATCH /api/messages/:id with respond stores response text', { skip: E2E_SKIP }, async () => {
-      if (!postedMessageId) {
-        console.log('[skip] No message id from prior test — skipping respond PATCH test');
-        return;
-      }
-      const result = await httpRequest('PATCH', `${BASE_URL}/api/messages/${postedMessageId}`, {
+    it('PATCH /api/messages/:id with respond stores response text', async () => {
+      // The ASK_QUESTION test above always sets this now that the group
+      // runs; an absent id means that test did not run, which is a
+      // failure, not a reason to report success.
+      assert.ok(postedMessageId, 'no message id from the ASK_QUESTION test');
+      const result = await httpRequest('PATCH', `${baseUrl()}/api/messages/${postedMessageId}`, {
         response: 'Yes, migration 014 is idempotent — BEGIN/COMMIT with conditional CREATE.',
       });
       assert.strictEqual(result.status, 200, `Expected 200 for PATCH respond, got ${result.status}`);
@@ -372,11 +403,9 @@ describe('[COMM-02] E2E: messages round-trip flow — SHARE_FINDING auto-approva
 // ─── Group 7: E2E — handoff endpoint round-trip ───────────────────────────────
 
 describe('[COMM-04] E2E: POST /api/handoff — structured JSON returned', () => {
-  const BASE_URL = process.env.E2E_BASE_URL;
-  const E2E_SKIP = BASE_URL ? false : E2E_SKIP_REASON;
 
-    it('POST /api/handoff with valid body returns structured JSON (handoff + truncated + estimated_tokens)', { skip: E2E_SKIP }, async () => {
-      const result = await httpRequest('POST', `${BASE_URL}/api/handoff`, {
+    it('POST /api/handoff with valid body returns structured JSON (handoff + truncated + estimated_tokens)', async () => {
+      const result = await httpRequest('POST', `${baseUrl()}/api/handoff`, {
         task_id: 'TK-38-INTEGRATION-TEST',
         from_agent: 'gsd-executor-backend',
         handoff_type: 'phase_complete',

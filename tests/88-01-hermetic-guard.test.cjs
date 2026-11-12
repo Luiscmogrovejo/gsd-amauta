@@ -29,7 +29,17 @@ const { freePort } = require(path.join(ROOT, 'scripts', 'run-tests.cjs'));
  * @returns {import('child_process').SpawnSyncReturns<string>}
  */
 function runGuarded(code, extraEnv = {}) {
-  const env = { ...process.env, NODE_OPTIONS: '--require ' + GUARD, ...extraEnv };
+  const env = {
+    ...process.env,
+    NODE_OPTIONS: '--require ' + GUARD,
+    // Plan 88-16-03: these assertions are ABOUT the refusal, so they state
+    // their own premise instead of inheriting the rollout's log-only mode.
+    // In log-only mode the child really connects; on a CI runner that drops
+    // rather than refuses, every case here sat at the 15 s spawn timeout with
+    // an empty stderr, which is how the first rollout run failed.
+    GSD_HERMETIC_GUARD_MODE: 'enforce',
+    ...extraEnv,
+  };
   return spawnSync(process.execPath, ['-e', code], { env, encoding: 'utf-8', timeout: 15000 });
 }
 
@@ -102,6 +112,7 @@ describe('hermetic guard (Node)', () => {
           env: {
             ...process.env,
             NODE_OPTIONS: '--require ' + GUARD,
+            GSD_HERMETIC_GUARD_MODE: 'enforce',
             GSD_HERMETIC_GUARD_BLOCK_PORTS: String(P),
             GSD_HERMETIC_GUARD_ALLOW_PORTS: String(P),
           },
@@ -126,6 +137,7 @@ describe('hermetic guard (Node)', () => {
             ...process.env,
             NODE_OPTIONS: '--require ' + GUARD,
             GSD_HERMETIC_GUARD: 'off',
+            GSD_HERMETIC_GUARD_MODE: 'enforce',
             GSD_HERMETIC_GUARD_BLOCK_PORTS: String(P),
           },
           stdio: 'ignore',

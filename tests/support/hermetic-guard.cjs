@@ -158,6 +158,30 @@ function armRefusal(env) {
 }
 
 /**
+ * Addresses an ALLOWED host resolved to, so the connection that follows the
+ * lookup is permitted too. A client that resolves a name and then connects BY
+ * ADDRESS would otherwise pass the lookup and be refused one line later —
+ * measured on 2026-11-12 against the Voyage client, which connected to
+ * 34.144.236.5 after resolving api.voyageai.com. Only addresses an allowed
+ * host actually resolved to are remembered, and the allowance still expires
+ * with the host: `decide` re-checks that the mapped host is CURRENTLY allowed.
+ * @type {Map<string, string>}
+ */
+const RESOLVED_FOR_ALLOWED = new Map();
+
+/**
+ * Record that an allowed host resolved to these addresses.
+ * @param {string} host
+ * @param {Array<string>} addresses
+ * @returns {void}
+ */
+function rememberResolution(host, addresses) {
+  for (const address of addresses) {
+    if (address) RESOLVED_FOR_ALLOWED.set(String(address), String(host).trim().toLowerCase());
+  }
+}
+
+/**
  * Decide whether one destination may be reached. Read at CHECK time.
  *
  * @param {{host: *, port: *, isUnix?: boolean, env?: NodeJS.ProcessEnv}} target
@@ -186,6 +210,10 @@ function decide(target) {
   const allowHosts = parseHosts(env.GSD_HERMETIC_GUARD_ALLOW_HOSTS);
   if (allowHosts.includes(host.trim().toLowerCase())) {
     return { allowed: true, reason: 'allow-host', host, port };
+  }
+  const origin = RESOLVED_FOR_ALLOWED.get(host);
+  if (origin !== undefined && allowHosts.includes(origin)) {
+    return { allowed: true, reason: 'allow-host-ip', host, port };
   }
   return {
     allowed: false,
@@ -344,6 +372,20 @@ function install(opts = {}) {
           throw err;
         }
       }
+      // The lookup was permitted; if it was permitted BECAUSE the host is
+      // allow-listed, the connection that follows must be permitted too.
+      const allowed = parseHosts(env.GSD_HERMETIC_GUARD_ALLOW_HOSTS)
+        .includes(String(hostname).trim().toLowerCase());
+      const cb = rest[rest.length - 1];
+      if (allowed && typeof cb === 'function') {
+        const wrapped = function wrappedLookup(err, address, family) {
+          if (!err && address) {
+            rememberResolution(hostname, Array.isArray(address) ? address.map((a) => a.address) : [address]);
+          }
+          return cb(err, address, family);
+        };
+        return originalLookup.call(this, hostname, ...rest.slice(0, -1), wrapped);
+      }
       return originalLookup.call(this, hostname, ...rest);
     };
     guardedLookup._gsdHermetic = true;
@@ -355,6 +397,8 @@ function install(opts = {}) {
 
 module.exports = {
   LIVE_PORTS,
+  RESOLVED_FOR_ALLOWED,
+  rememberResolution,
   armRefusal,
   decide,
   install,

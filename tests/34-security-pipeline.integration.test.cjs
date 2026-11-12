@@ -455,9 +455,11 @@ describe('[SEC-01] Semgrep rule file: parse and rule ID assertions', () => {
       // If results present they should have >= 1 finding (gsd-hardcoded-localhost is JS-compatible)
       // If 0 results, this is still valid since gsd-raw-sql-injection targets Python only
       assert.ok(Array.isArray(output.results), 'semgrep output.results is not an array');
-    } else {
-      console.log('  [skip] semgrep not installed — fixture detection test skipped');
     }
+    // Plan 88-16-02: the `else` here logged "[skip] semgrep not installed" and
+    // was DEAD — the enclosing it() already carries `{ skip: haveTool('semgrep') … }`,
+    // so the branch could never execute. Removed rather than left to read as a
+    // skip nobody counts.
   });
 });
 
@@ -510,8 +512,8 @@ describe('[SEC-02] Gitleaks: config allowlist + fixture detection (conditional)'
         // Log as info rather than failure since --no-git behavior may vary by gitleaks version
         console.log('  [note] gitleaks ran but produced no report file (may indicate 0 findings or version difference)');
       }
-    } else {
-      console.log('  [skip] gitleaks not installed — fixture detection test skipped');
     }
+    // Plan 88-16-02: the `else` here logged "[skip] gitleaks not installed" and
+    // was DEAD — `{ skip: HAVE_GITLEAKS … }` on the it() already decides.
   });
 });

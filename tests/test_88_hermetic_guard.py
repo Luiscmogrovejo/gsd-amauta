@@ -4,6 +4,10 @@ import socket
 
 import pytest
 
+# Plan 88-16-03: these assertions are ABOUT the refusal, so they pin the guard
+# to enforce rather than inheriting the rollout's log-only mode.
+pytestmark = pytest.mark.usefixtures("enforcing_guard")
+
 
 @pytest.mark.parametrize("port", [18799, 18798, 6379, 5433])
 def test_connect_to_live_daemon_port_raises(port):

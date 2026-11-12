@@ -41,6 +41,20 @@ const CLI_ENTRY = path.join(ROOT, 'bin', 'cli.cjs');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+// Phase 88 plan 88-16-09: the party CLI reads its DSN from GSD_POSTGRES_URL /
+// DATABASE_URL, which scripts/run-tests.cjs deletes from every child so that no
+// test can inherit the operator's live database. `pgChildEnv()` puts the
+// DISPOSABLE one back for these spawns, and only after refusing a DSN whose
+// port is one of the live services. With no disposable database the probe
+// reports PG down and the PG tests skip with the one standard reason, exactly
+// as before.
+const pg = require('./support/pg-fixture.cjs');
+
+/** @returns {NodeJS.ProcessEnv} the child environment for a party CLI spawn */
+function partyEnv() {
+  return pg.postgresDsn() ? pg.pgChildEnv() : process.env;
+}
+
 /**
  * Run `node gsd-tools.cjs party <subArgs>` and return { stdout, stderr, status }.
  */
@@ -52,6 +66,7 @@ function runParty(subArgs = []) {
       encoding: 'utf8',
       timeout: 30000,
       cwd: ROOT,
+      env: partyEnv(),
     }
   );
 }
@@ -67,6 +82,7 @@ function runCliParty(subArgs = []) {
       encoding: 'utf8',
       timeout: 30000,
       cwd: ROOT,
+      env: partyEnv(),
     }
   );
 }

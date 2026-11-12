@@ -96,6 +96,9 @@ const NUMPY_SKIP = NUMPY ? false
   : 'numpy is not installed; _logistic_regression degrades to a 0.5 no-op and the assertion would be vacuous';
 
 // Helper: run python3 script via tmp file (cwd=ROOT). The script lives in its own mkdtemp
+// The one Postgres opt-in (plan 88-16-03). No test invents a DSN.
+const pg = require('./support/pg-fixture.cjs');
+
 // directory under os.tmpdir() (a literal /tmp is D:\tmp on Windows and does not exist).
 function pyFile(scriptContent) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'learning-test-'));
@@ -106,6 +109,12 @@ function pyFile(scriptContent) {
       encoding: 'utf8',
       cwd: ROOT,
       timeout: 30000,
+      // Plan 88-16-09: services/complexity_scorer.py reads its DSN from
+      // GSD_POSTGRES_URL / DATABASE_URL, which the runner deletes from every
+      // child. `pgChildEnv()` reinstates the DISPOSABLE one for these spawns,
+      // after refusing a DSN on any live service port. With none configured
+      // the probe answers "NO:" and the four PG cases skip as before.
+      env: pg.postgresDsn() ? pg.pgChildEnv() : process.env,
     });
     return {
       stdout: result.stdout || '',

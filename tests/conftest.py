@@ -119,6 +119,24 @@ if _TEST_PG_DSN:
             _allow.append(str(_TEST_PG_PORT))
         os.environ["GSD_HERMETIC_GUARD_ALLOW_PORTS"] = ",".join(_allow)
 
+    # Plan 88-16-09, and it happens HERE — at conftest import — because pytest
+    # imports every test module during collection, which is before any fixture
+    # runs, and roughly sixty tests construct a `PGStore()` at module import to
+    # decide whether to skip.
+    #
+    # The session scrub deletes GSD_POSTGRES_URL and DATABASE_URL so that no
+    # test can inherit the OPERATOR'S live DSN. When CI has supplied a
+    # disposable one, the product's own clients must be able to reach it:
+    # services/pg_store.py, services/complexity_scorer.py and the party modules
+    # read those two names and nothing else. The guarantee is therefore
+    # SHARPENED rather than dropped — a test may only ever see a DSN this file
+    # has CHECKED against the live ports, and a DSN naming one has already
+    # raised above. With no disposable database (the operator's machine,
+    # always) both names stay deleted and every Postgres test skips with the
+    # one standard reason.
+    os.environ["GSD_POSTGRES_URL"] = _TEST_PG_DSN
+    os.environ["DATABASE_URL"] = _TEST_PG_DSN
+
 # The guard writes one line per refusal here. When the Node runner spawned this
 # interpreter it has already named a file; a bare `pytest` run gets its own.
 if not os.environ.get("GSD_HERMETIC_GUARD_LOG"):
@@ -159,6 +177,11 @@ def _free_port(avoid=()):
 def _gsd_hermetic_env(tmp_path_factory):
     """Scrub the environment and install the socket guard before any test runs."""
     for key in _DELETED_KEYS:
+        # The VALIDATED disposable DSN survives the scrub (plan 88-16-09, set
+        # at conftest import above); the operator's live one never enters the
+        # environment at all. With no disposable database both names go.
+        if _TEST_PG_DSN and key in ("GSD_POSTGRES_URL", "DATABASE_URL"):
+            continue
         os.environ.pop(key, None)
     os.environ.update(
         {
@@ -454,6 +477,26 @@ class product_pg_dsn:  # noqa: N801 - used as a context manager, reads like one
             else:
                 os.environ[key] = value
         return False
+
+
+@pytest.fixture
+def enforcing_guard(monkeypatch):
+    """Pin the guard to ENFORCE for a test that asserts it refuses.
+
+    Plan 88-16-03 rolls default-deny out in LOG-ONLY mode first
+    (``GSD_HERMETIC_GUARD_MODE=log``) so one CI run can inventory what the
+    suite really reaches before enforcement turns a surprise red. A test whose
+    subject IS the refusal must not be at the mercy of that ambient setting:
+    in log-only mode it would watch the guard wave the connection through and
+    then fail — which is exactly what the first rollout run did, on ten Python
+    cases and eight Node ones. Pinning the mode here makes the self-tests state
+    their own premise instead of inheriting one.
+
+    Yields:
+        None.
+    """
+    monkeypatch.setenv("GSD_HERMETIC_GUARD_MODE", "enforce")
+    yield
 
 
 @pytest.fixture

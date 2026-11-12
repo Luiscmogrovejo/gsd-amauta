@@ -203,9 +203,45 @@ def decide(host, port, *, is_unix=False, extra_blocked=(), env=None):
         return False, "live-port"
     if is_loopback_host(host):
         return True, "loopback"
-    if str(host).strip().lower() in _allowed_hosts(env):
+    allowed_hosts = _allowed_hosts(env)
+    if str(host).strip().lower() in allowed_hosts:
         return True, "allow-host"
+    # An address an allowed host resolved to, while that host is still allowed.
+    origin = resolved_host_for(host)
+    if origin is not None and origin in allowed_hosts:
+        return True, "allow-host-ip"
     return False, "non-loopback-ip" if is_ip_literal(host) else "non-loopback-host"
+
+
+#: Addresses an ALLOWED host resolved to, so the connection that follows the
+#: lookup is permitted too. A client such as `voyageai` resolves the name and
+#: then connects BY ADDRESS, so a host allow-list that only matched names would
+#: let the lookup through and refuse the connection one line later — measured
+#: on 2026-11-12 against api.voyageai.com, which connected to 34.144.236.5.
+#: Only addresses an allowed host actually resolved to are remembered, and the
+#: allowance still expires with the host: `decide` re-checks that the mapped
+#: host is CURRENTLY allowed.
+_RESOLVED_FOR_ALLOWED = {}
+
+
+def remember_resolution(host, addresses):
+    """Record that an allowed host resolved to these addresses.
+
+    Args:
+        host: the hostname that was looked up.
+        addresses: an iterable of address strings.
+
+    Returns:
+        None.
+    """
+    for address in addresses:
+        if address:
+            _RESOLVED_FOR_ALLOWED[str(address)] = str(host).strip().lower()
+
+
+def resolved_host_for(address):
+    """The allowed host an address came from, or None."""
+    return _RESOLVED_FOR_ALLOWED.get(str(address))
 
 
 def _mode(env=None):
@@ -343,7 +379,12 @@ def install(blocked=DEFAULT_BLOCKED):
             except (TypeError, ValueError):
                 numeric_port = None
             _enforce(host, numeric_port, False, extra)
-        return original_getaddrinfo(host, port, *args, **kwargs)
+        infos = original_getaddrinfo(host, port, *args, **kwargs)
+        # The lookup was permitted; if it was permitted BECAUSE the host is
+        # allow-listed, the connection that follows must be permitted too.
+        if host and str(host).strip().lower() in _allowed_hosts():
+            remember_resolution(host, [i[4][0] for i in infos if i and len(i) >= 5 and i[4]])
+        return infos
 
     def getfqdn(name=""):
         """A reverse lookup is a network call; a hermetic test must not make one.

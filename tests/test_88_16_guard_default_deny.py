@@ -23,6 +23,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "sup
 
 import hermetic_guard as hg  # noqa: E402
 
+# Plan 88-16-03: these assertions are ABOUT the refusal, so they pin the guard
+# to enforce rather than inheriting the rollout's log-only mode.
+pytestmark = pytest.mark.usefixtures("enforcing_guard")
+
 
 @pytest.fixture
 def log_file(tmp_path):

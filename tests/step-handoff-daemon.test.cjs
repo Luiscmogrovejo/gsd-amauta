@@ -7,19 +7,45 @@
  *   SHARD-04: GET /api/steps/:workflow/:phase + POST /api/steps/:workflow/:phase/handoff
  *
  * Tests the 2 daemon endpoints added in Phase 41 Wave 1.
- * Uses HTTP calls to the running daemon (DAEMON_URL=http://127.0.0.1:18799).
- * Skips all tests if daemon is unavailable OR if the Phase 41 routes are not present
- * (older daemon instance without /api/steps/ support).
+ *
+ * Phase 88 plan 88-16-06: these seven live tests used to probe the OPERATOR'S
+ * daemon and collapse into one vacuous `[SKIP]` placeholder when it did not
+ * answer — which, under the hermetic guard, it never could. They start their
+ * own fixture daemon on an ephemeral port, in POSTGRES MODE because
+ * /api/steps/ writes to step_handoffs, and skip only when there is no
+ * disposable database to point it at.
  *
  * Run: node --test tests/step-handoff-daemon.test.cjs
- * Run live: DAEMON_URL=http://127.0.0.1:18799 node --test tests/step-handoff-daemon.test.cjs
  */
-const { describe, it } = require('node:test');
+const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 
-const DAEMON_URL = process.env.DAEMON_URL || 'http://127.0.0.1:18799';
-const STEPS_BASE = `${DAEMON_URL}/api/steps`;
+const { startFixtureDaemon, stopFixtureDaemon } = require('./support/fixture-daemon.cjs');
+const pg = require('./support/pg-fixture.cjs');
+
+let daemon = null;
+
+/** @returns {string} the fixture daemon's /api/steps base URL */
+function stepsBase() {
+  if (!daemon) throw new Error('the fixture daemon has not started yet');
+  return `http://127.0.0.1:${daemon.port}/api/steps`;
+}
+
+// /api/steps/ persists to step_handoffs, a PostgreSQL table, so this file needs
+// the daemon in Postgres mode. Without a disposable database the seven live
+// tests carry the one standard reason.
+const SKIP_REASON = pg.postgresDsn() ? false : pg.SKIP_REASON;
+
+before(async () => {
+  if (SKIP_REASON) return;
+  daemon = await startFixtureDaemon({ postgres: true });
+});
+
+after(async () => {
+  await stopFixtureDaemon(daemon);
+  daemon = null;
+});
 
 // ─── Helper: HTTP request (node built-in, no external deps) ──────────────────
 
@@ -52,81 +78,6 @@ function httpRequest(method, url, body) {
     req.end();
   });
 }
-
-// ─── Check daemon health and Phase 41 route availability ─────────────────────
-
-async function checkDaemonAvailable() {
-  try {
-    const r = await httpRequest('GET', `${DAEMON_URL}/health`, null);
-    return r.status === 200;
-  } catch (_) {
-    return false;
-  }
-}
-
-async function checkStepsRouteAvailable() {
-  try {
-    // GET on an unlikely phase — if it returns 404 with "Unknown GET route"
-    // the daemon is running an old version without Phase 41 support.
-    const r = await httpRequest('GET', `${STEPS_BASE}/plan-phase/0`, null);
-    // 404 with "Unknown GET route" = old daemon
-    if (r.status === 404 && r.body && r.body.error && r.body.error.includes('Unknown GET route')) {
-      return false;
-    }
-    // 200 or {"step_id": null} = route exists
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
-
-// Run availability checks synchronously at module level (before test suite runs)
-// This follows the spawnSync at describe-block level pattern from Phase 38-39 integration tests.
-const { spawnSync } = require('node:child_process');
-
-function checkSync(url, method, body) {
-  const args = ['--eval', `
-    const http = require('http');
-    const parsed = new URL('${url}');
-    const options = {
-      hostname: parsed.hostname,
-      port: parseInt(parsed.port) || 80,
-      path: parsed.pathname,
-      method: '${method}',
-      headers: { 'Content-Type': 'application/json' },
-    };
-    const req = http.request(options, res => {
-      let data = '';
-      res.on('data', c => data += c);
-      res.on('end', () => {
-        process.stdout.write(JSON.stringify({ status: res.statusCode, body: data }));
-      });
-    });
-    req.on('error', e => process.stdout.write(JSON.stringify({ error: e.message })));
-    req.end();
-  `];
-  const result = spawnSync('node', args, { encoding: 'utf8', timeout: 5000 });
-  try { return JSON.parse(result.stdout); }
-  catch (_) { return { error: 'parse failed: ' + result.stdout }; }
-}
-
-const healthResult = checkSync(`${DAEMON_URL}/health`, 'GET', null);
-const daemonAvailable = healthResult.status === 200;
-
-// Check if Phase 41 steps route is available
-let stepsRouteAvailable = false;
-if (daemonAvailable) {
-  const stepsResult = checkSync(`${STEPS_BASE}/plan-phase/0`, 'GET', null);
-  // If it returns 404 with "Unknown GET route" the daemon doesn't have Phase 41 support
-  const body = stepsResult.body || '';
-  stepsRouteAvailable = !(stepsResult.status === 404 && body.includes('Unknown GET route'));
-}
-
-const SKIP_REASON = !daemonAvailable
-  ? 'Daemon unavailable'
-  : !stepsRouteAvailable
-  ? 'Phase 41 /api/steps/ route not available (daemon predates Phase 41 — restart daemon)'
-  : null;
 
 // ─── Daemon file structure tests (always run — no daemon needed) ──────────────
 
@@ -210,18 +161,18 @@ describe('[SHARD-04] Live GET /api/steps/ endpoint tests', () => {
 
 
     it('GET returns {"step_id": null} when no handoff exists', { skip: SKIP_REASON }, async () => {
-      const r = await httpRequest('GET', `${STEPS_BASE}/plan-phase/999999`, null);
+      const r = await httpRequest('GET', `${stepsBase()}/plan-phase/999999`, null);
       assert.strictEqual(r.status, 200, `Expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
       assert.strictEqual(r.body.step_id, null, `Expected null step_id, got: ${r.body.step_id}`);
     });
 
     it('GET returns 400 for non-integer phase', { skip: SKIP_REASON }, async () => {
-      const r = await httpRequest('GET', `${STEPS_BASE}/plan-phase/abc`, null);
+      const r = await httpRequest('GET', `${stepsBase()}/plan-phase/abc`, null);
       assert.strictEqual(r.status, 400, `Expected 400, got ${r.status}: ${JSON.stringify(r.body)}`);
     });
 
     it('POST creates handoff and returns 201 with id and created_at', { skip: SKIP_REASON }, async () => {
-      const r = await httpRequest('POST', `${STEPS_BASE}/plan-phase/99/handoff`, {
+      const r = await httpRequest('POST', `${stepsBase()}/plan-phase/99/handoff`, {
         workflow_name: 'plan-phase',
         step_id: 'step-01-init',
         task_id: 'daemon-test-post-01',
@@ -238,7 +189,7 @@ describe('[SHARD-04] Live GET /api/steps/ endpoint tests', () => {
 
     it('GET returns latest handoff after POST', { skip: SKIP_REASON }, async () => {
       // POST first handoff
-      await httpRequest('POST', `${STEPS_BASE}/plan-phase/99/handoff`, {
+      await httpRequest('POST', `${stepsBase()}/plan-phase/99/handoff`, {
         step_id: 'step-01-init',
         task_id: 'daemon-test-get-01',
         completed_steps: [],
@@ -246,7 +197,7 @@ describe('[SHARD-04] Live GET /api/steps/ endpoint tests', () => {
         next_step: 'step-02-research',
       });
       // POST second handoff (newer)
-      await httpRequest('POST', `${STEPS_BASE}/plan-phase/99/handoff`, {
+      await httpRequest('POST', `${stepsBase()}/plan-phase/99/handoff`, {
         step_id: 'step-02-research',
         task_id: 'daemon-test-get-01',
         completed_steps: ['step-01-init'],
@@ -254,13 +205,13 @@ describe('[SHARD-04] Live GET /api/steps/ endpoint tests', () => {
         next_step: 'step-03-plan',
       });
       // GET should return the SECOND (latest) handoff
-      const r = await httpRequest('GET', `${STEPS_BASE}/plan-phase/99`, null);
+      const r = await httpRequest('GET', `${stepsBase()}/plan-phase/99`, null);
       assert.strictEqual(r.status, 200, `GET failed: ${JSON.stringify(r.body)}`);
       assert.strictEqual(r.body.step_id, 'step-02-research', `Expected step-02-research, got: ${r.body.step_id}`);
     });
 
     it('GET includes all expected fields when handoff exists', { skip: SKIP_REASON }, async () => {
-      const r = await httpRequest('GET', `${STEPS_BASE}/plan-phase/99`, null);
+      const r = await httpRequest('GET', `${stepsBase()}/plan-phase/99`, null);
       assert.strictEqual(r.status, 200);
       const fields = ['workflow_name', 'step_id', 'task_id', 'phase_number', 'completed_steps', 'context_snapshot'];
       for (const field of fields) {
@@ -272,7 +223,7 @@ describe('[SHARD-04] Live GET /api/steps/ endpoint tests', () => {
       const complexContext = { key1: 'value1', nested: { a: 1, b: [1, 2, 3] } };
       const complexArtifacts = { plan_files: ['f1.md'], summaries: ['s1'] };
       const complexDecisions = [{ decision: 'test', rationale: 'r', agent: 'test-agent' }];
-      await httpRequest('POST', `${STEPS_BASE}/plan-phase/99/handoff`, {
+      await httpRequest('POST', `${stepsBase()}/plan-phase/99/handoff`, {
         step_id: 'step-03-plan',
         task_id: 'daemon-test-jsonb-01',
         completed_steps: ['step-01-init', 'step-02-research'],
@@ -281,29 +232,29 @@ describe('[SHARD-04] Live GET /api/steps/ endpoint tests', () => {
         decisions: complexDecisions,
         next_step: 'step-04-check',
       });
-      const r = await httpRequest('GET', `${STEPS_BASE}/plan-phase/99`, null);
+      const r = await httpRequest('GET', `${stepsBase()}/plan-phase/99`, null);
       assert.strictEqual(r.status, 200);
       // Verify context_snapshot was preserved (it should be returned)
       assert.ok(r.body.context_snapshot !== null, 'context_snapshot should not be null');
     });
 
     it('Multiple workflows are independent (plan-phase vs execute-phase)', { skip: SKIP_REASON }, async () => {
-      await httpRequest('POST', `${STEPS_BASE}/plan-phase/99/handoff`, {
+      await httpRequest('POST', `${stepsBase()}/plan-phase/99/handoff`, {
         step_id: 'step-04-check',
         task_id: 'daemon-test-wf-01',
         completed_steps: ['step-01-init', 'step-02-research', 'step-03-plan'],
         context_snapshot: { workflow: 'plan' },
         next_step: 'step-05-approve',
       });
-      await httpRequest('POST', `${STEPS_BASE}/execute-phase/99/handoff`, {
+      await httpRequest('POST', `${stepsBase()}/execute-phase/99/handoff`, {
         step_id: 'step-02-route',
         task_id: 'daemon-test-wf-01',
         completed_steps: ['step-01-prepare'],
         context_snapshot: { workflow: 'execute' },
         next_step: 'step-03-execute',
       });
-      const planR = await httpRequest('GET', `${STEPS_BASE}/plan-phase/99`, null);
-      const execR = await httpRequest('GET', `${STEPS_BASE}/execute-phase/99`, null);
+      const planR = await httpRequest('GET', `${stepsBase()}/plan-phase/99`, null);
+      const execR = await httpRequest('GET', `${stepsBase()}/execute-phase/99`, null);
       assert.strictEqual(planR.body.step_id, 'step-04-check', `plan-phase step wrong: ${planR.body.step_id}`);
       assert.strictEqual(execR.body.step_id, 'step-02-route', `execute-phase step wrong: ${execR.body.step_id}`);
     });

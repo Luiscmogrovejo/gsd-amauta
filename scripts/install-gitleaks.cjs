@@ -14,13 +14,29 @@
  *   (also hooked via postinstall in package.json if desired)
  */
 
-const { existsSync, mkdirSync, createWriteStream, chmodSync, unlinkSync } = require('fs');
+const { existsSync, mkdirSync, createWriteStream, chmodSync, unlinkSync, readFileSync } = require('fs');
 const { execSync, execFileSync } = require('child_process');
 const https = require('https');
 const path = require('path');
 const os = require('os');
 
 const GITLEAKS_VERSION = 'v8.18.4';
+
+/**
+ * SHA-256 of every pinned asset, from the release's own
+ * `gitleaks_8.18.4_checksums.txt` (plan 88-16-07). A download is verified
+ * against this table and DELETED on a mismatch. The tag still exists — unlike
+ * trivy's old pin — so only the verification is new here.
+ * @type {Record<string, string>}
+ */
+const GITLEAKS_SHA256 = {
+  'gitleaks_8.18.4_linux_x64.tar.gz': 'ba6dbb656933921c775ee5a2d1c13a91046e7952e9d919f9bac4cec61d628e7d',
+  'gitleaks_8.18.4_linux_arm64.tar.gz': 'bf5f7f466ebfade1296c8bd32cf7d3f592c2aa78836aa9980ffbe2cadca7a861',
+  'gitleaks_8.18.4_darwin_x64.tar.gz': '1a69e5666b13cd374889cbcb1939ed1573b63b551251283d5d2329a53cf58e2f',
+  'gitleaks_8.18.4_darwin_arm64.tar.gz': 'a480d8593acd8215b22402cf0f3f88b01dcd3610c63b5391db640f7767e62104',
+  'gitleaks_8.18.4_windows_x64.zip': '9ba442ca7dda19885a2e569f43a127289feeb2b5fb0dfa251dafd277f4a0ba91',
+  'gitleaks_8.18.4_windows_x32.zip': '338edd2932b583c13f4c3421a97b1611349f2a9a1c818e521abd3a3a6379d395',
+};
 
 const INSTALL_PATH = path.resolve(__dirname, '..', 'node_modules', '.bin', 'gitleaks');
 const TMP_DIR = os.tmpdir();
@@ -146,6 +162,49 @@ function download(url, destPath) {
   });
 }
 
+
+/**
+ * SHA-256 of a file on disk, as lower-case hex.
+ *
+ * @param {string} filePath absolute path of the downloaded asset
+ * @returns {string} the digest
+ */
+function sha256OfFile(filePath) {
+  const crypto = require('crypto');
+  return crypto.createHash('sha256').update(readFileSync(filePath)).digest('hex');
+}
+
+/**
+ * Verify a downloaded asset against the pinned digest. FAIL CLOSED.
+ *
+ * Plan 88-16-07: neither scanner installer verified anything before this, so a
+ * compromised or truncated release asset was extracted and put on PATH as a
+ * security tool. An asset with no pinned digest is also a refusal, not a pass:
+ * silence would defeat the point the moment the asset table grows a row.
+ *
+ * @param {string} filePath the downloaded archive
+ * @param {string} assetName the asset's release filename, the table's key
+ * @returns {string} the verified digest
+ * @throws {Error} on a mismatch or a missing pin; the file is removed first
+ */
+function verifyChecksum(filePath, assetName) {
+  const expected = GITLEAKS_SHA256[assetName];
+  const actual = sha256OfFile(filePath);
+  if (!expected) {
+    try { unlinkSync(filePath); } catch (_) { /* best effort */ }
+    throw new Error(
+      `no pinned SHA-256 for gitleaks asset ${assetName}; refusing to install an unverified binary`
+    );
+  }
+  if (actual !== expected) {
+    try { unlinkSync(filePath); } catch (_) { /* best effort */ }
+    throw new Error(
+      `gitleaks asset ${assetName} FAILED checksum verification: expected ${expected}, got ${actual}`
+    );
+  }
+  return actual;
+}
+
 async function main() {
   // Skip if already installed. The installed name carries `.exe` on Windows,
   // so the probe asks resolveAssetName where the binary would be.
@@ -175,7 +234,8 @@ async function main() {
   try {
     // Download the tarball
     await download(downloadUrl, tarPath);
-    console.log('[gsd-security] Download complete. Extracting...');
+    verifyChecksum(tarPath, assetName);
+    console.log('[gsd-security] Download complete and checksum verified. Extracting...');
 
     // Ensure node_modules/.bin exists
     const binDir = path.dirname(INSTALL_PATH);
@@ -209,5 +269,12 @@ async function main() {
 if (require.main === module) {
   main();
 } else {
-  module.exports = { resolveAssetName, installPathFor, extractMember };
+  module.exports = {
+    GITLEAKS_SHA256,
+    sha256OfFile,
+    verifyChecksum,
+    resolveAssetName,
+    installPathFor,
+    extractMember,
+  };
 }

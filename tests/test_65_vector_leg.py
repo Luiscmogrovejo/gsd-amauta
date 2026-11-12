@@ -394,28 +394,154 @@ def test_rrf_score_is_python_float_not_decimal_live():
         conn.close()
 
 
-def _embedding_provider_available() -> bool:
-    """Best-effort check for a configured embedding provider, mirroring
-    rlm_embeddings.py's priority order (Voyage API key, then local Ollama).
-    Used only to skip the true end-to-end hybrid_search() test when neither
-    is reachable -- the deterministic tests above already cover the fix
-    without any external dependency."""
-    if os.environ.get("VOYAGE_API_KEY"):
-        return True
-    try:
-        import urllib.request
-        url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434") + "/api/tags"
-        with urllib.request.urlopen(url, timeout=2):
-            return True
-    except Exception:
-        return False
+# ───────────────────────────────────────────────────────────────────────────
+# Plan 88-16-08: the embedding provider, on both of its REAL paths
+#
+# Operator decision 2026-11-11, "there is a key, use it": the
+# embedding-provider assertion is NOT a paid-credential exception. It makes one
+# small REAL Voyage call when VOYAGE_API_KEY is present and runs a
+# DETERMINISTIC STAND-IN when it is not, and **neither path skips**. A pull
+# request from a fork never receives repository secrets, so the stand-in is the
+# normal path there, not a fallback for failure.
+#
+# It is deliberately separated from PostgreSQL. The end-to-end hybrid test
+# below keeps its `_PG_AVAILABLE` guard — it has to, it writes rows — and there
+# is no PostgreSQL on the operator's machine for this whole phase, so leaving
+# the provider assertion inside it would have made "both paths proven locally"
+# impossible. What a provider owes its caller is a vector of the right
+# dimension, normalised, and derived from the input; none of that needs a
+# database.
+#
+# THE KEY'S VALUE IS NEVER READ. The branch below asks only whether the
+# variable is non-empty — the same `[ -n "${VOYAGE_API_KEY:-}" ]` shape the
+# plan's acceptance uses — and nothing here prints, logs, hashes, measures or
+# stores it.
+# ───────────────────────────────────────────────────────────────────────────
+
+_VOYAGE_KEY_PRESENT = bool((os.environ.get("VOYAGE_API_KEY") or "").strip())
+
+#: The host the real path reaches, and the ONLY host allowed anywhere in the
+#: suite. The guards are default-deny for every non-loopback destination
+#: (plan 88-16-03); the `allow_host` fixture permits this one for one test and
+#: restores the allow-list afterwards.
+VOYAGE_API_HOST = "api.voyageai.com"
 
 
-_EMBEDDING_PROVIDER_AVAILABLE = _embedding_provider_available()
+def _install_stub():
+    """Install the deterministic stand-in through the product's provider seam."""
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "support"))
+    import stub_embeddings
+
+    from services import rlm_embeddings
+
+    return rlm_embeddings, rlm_embeddings.set_provider_override(stub_embeddings.stub_provider)
+
+
+def test_embedding_provider_returns_a_normalised_1024_vector(allow_host):
+    """The provider contract, asserted on whichever path this environment has.
+
+    Shared assertions, identical on both paths:
+      * `embed_code` returns `(vector, model_name)`;
+      * the vector has 1024 components, the dimension
+        `rlm_chunks.embedding_code` declares;
+      * every component is a finite float;
+      * the vector is unit length, so cosine distance is meaningful;
+      * blank input returns None, the "no provider" answer.
+
+    The real path adds one assertion the stand-in cannot satisfy: the model
+    name is Voyage's and the vector is NOT the stand-in's, which is what makes
+    "the call actually reached Voyage" a measurement rather than a hope.
+    """
+    from services import rlm_embeddings
+
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "support"))
+    import stub_embeddings
+
+    text = "def gsd_embedding_probe():\n    return 42\n"
+
+    if _VOYAGE_KEY_PRESENT:
+        allow_host(VOYAGE_API_HOST)  # scoped to THIS test; restored at teardown
+        rlm_embeddings.set_provider_override(None)
+        result = rlm_embeddings.embed_code(text)
+        assert result is not None, (
+            "VOYAGE_API_KEY is set but the provider returned nothing; the real call failed"
+        )
+        vector, model = result
+        assert model == rlm_embeddings.VOYAGE_MODEL, model
+        assert vector != stub_embeddings.deterministic_embedding(text), (
+            "the real path returned the stand-in's vector: the call did not reach Voyage"
+        )
+        path_taken = "real"
+    else:
+        rlm_embeddings_module, previous = _install_stub()
+        try:
+            result = rlm_embeddings_module.embed_code(text)
+            assert result is not None
+            vector, model = result
+            assert model == stub_embeddings.STUB_MODEL, model
+        finally:
+            rlm_embeddings_module.set_provider_override(previous)
+        path_taken = "stand-in"
+
+    assert len(vector) == 1024, f"{path_taken}: expected 1024 dimensions, got {len(vector)}"
+    assert all(isinstance(c, float) and c == c and abs(c) != float("inf") for c in vector), (
+        f"{path_taken}: every component must be a finite float"
+    )
+    norm = sum(c * c for c in vector) ** 0.5
+    assert abs(norm - 1.0) < 1e-3, f"{path_taken}: expected a unit vector, norm was {norm}"
+
+
+def test_the_voyage_host_allowance_did_not_leak_to_the_next_test():
+    """The host allowance is scoped to one test, not to the session.
+
+    This runs AFTER the test above and takes no `allow_host` fixture, so the
+    guard must refuse the same host again. Without this, "allowed for one test"
+    would be an unverified claim — and a session-wide allowance would delete
+    the property plan 88-16-03 added.
+    """
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "support"))
+    import hermetic_guard
+
+    allowed, reason = hermetic_guard.decide(VOYAGE_API_HOST, 443)
+    assert allowed is False, (
+        f"the Voyage host allowance leaked out of the test that needed it ({reason})"
+    )
+    assert reason == "non-loopback-host"
+
+
+def test_the_stand_in_is_deterministic_across_processes():
+    """The same input yields the same vector in a SEPARATE interpreter.
+
+    Python salts `hash()` per process (`PYTHONHASHSEED`), which is how plan
+    88-12 lost a day to a 0.1 % flake. Running the stand-in in a child proves
+    the digest-based derivation does not have that property.
+    """
+    import json
+    import subprocess
+
+    support = os.path.join(os.path.dirname(os.path.abspath(__file__)), "support")
+    sys.path.insert(0, support)
+    import stub_embeddings
+
+    here = stub_embeddings.deterministic_embedding("determinism probe")[:8]
+    code = (
+        "import sys, json; sys.path.insert(0, %r); import stub_embeddings; "
+        "print(json.dumps(stub_embeddings.deterministic_embedding('determinism probe')[:8]))"
+        % support
+    )
+    out = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+        check=True,
+    )
+    there = json.loads(out.stdout)
+    assert here == there, f"the stand-in is not deterministic across processes: {here} vs {there}"
 
 
 @pytest.mark.skipif(not _PG_AVAILABLE, reason="live PostgreSQL unavailable (GSD_POSTGRES_URL)")
-@pytest.mark.skipif(not _EMBEDDING_PROVIDER_AVAILABLE, reason="no embedding provider configured (VOYAGE_API_KEY/Ollama)")
 def test_hybrid_search_end_to_end_rrf_score_is_float_live():
     """
     TK-1736 acceptance oracle: the full public hybrid_search() wrapper

@@ -20,6 +20,10 @@ from pathlib import Path
 
 import pytest
 
+# Plan 88-16-03: these assertions are ABOUT the refusal, so they pin the guard
+# to enforce rather than inheriting the rollout's log-only mode.
+pytestmark = pytest.mark.usefixtures("enforcing_guard")
+
 import fake_exe
 import hermetic_guard
 

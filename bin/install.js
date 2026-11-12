@@ -2565,7 +2565,16 @@ function install(isGlobal, runtime = 'claude') {
           }
         }
       }, null, 2);
-      fs.writeFileSync(path.join(process.cwd(), '.mcp.json'), mcpJsonContent + '\n', 'utf8');
+      // Phase 88 plan 88-16-07 (defect routed by 88-15). This wrote into
+      // `process.cwd()` unconditionally, so a test that drove the installer
+      // from the repository root REWROTE the repository's own TRACKED
+      // `.mcp.json`. It was invisible on POSIX — the value written happened to
+      // equal the value tracked — and showed up only on Windows, where the
+      // resolved launcher is `py`. `GSD_INSTALL_PROJECT_ROOT` lets a test
+      // point it at a temp directory; unset, the behaviour is exactly what it
+      // was.
+      const mcpProjectRoot = process.env.GSD_INSTALL_PROJECT_ROOT || process.cwd();
+      fs.writeFileSync(path.join(mcpProjectRoot, '.mcp.json'), mcpJsonContent + '\n', 'utf8');
       console.log(`  ${green}✓${reset} .mcp.json written (MCP auto-discovery for Claude Code)`);
     }
   }
