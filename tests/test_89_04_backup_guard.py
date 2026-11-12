@@ -19,6 +19,7 @@ import shlex
 import subprocess
 import sys
 import uuid
+import warnings
 
 import pytest
 
@@ -632,6 +633,15 @@ def test_apply_migrations_refuses_when_armed_with_no_snapshot(scratch, home,
                                         backups_dir=str(backups), env=env,
                                         log=lambda *_a: None)
     payload = caught.value.payload
+    report = "\n".join([
+        "=== 89-04 evidence: the guard FIRES on a real database",
+        "GSD_BACKUP_GUARD=on, CI=true, empty backups directory",
+        "apply_migrations raised BackupRequired with:",
+        json.dumps({k: v for k, v in payload.items() if k != "message"}, indent=2),
+        "message: %s" % payload["message"],
+    ])
+    print(report)
+    warnings.warn(UserWarning(report), stacklevel=1)
     assert payload["error"] == "backup_required"
     assert payload["guard_reason"] == "no_snapshot"
     assert payload["max_age_hours"] == 24
@@ -657,6 +667,14 @@ def test_apply_migrations_proceeds_with_allow_stale_backup_and_records_it(
     assert _table_count(scratch["dsn"]) > 10
     assert any("--allow-stale-backup" in line for line in lines), lines
     document = json.loads(record.read_text(encoding="utf-8"))
+    report = "\n".join([
+        "=== 89-04 evidence: --allow-stale-backup is recorded, not silent",
+        "log lines: %s" % json.dumps(lines),
+        "install_record.last_override: %s"
+        % json.dumps(document["last_override"], indent=2),
+    ])
+    print(report)
+    warnings.warn(UserWarning(report), stacklevel=1)
     assert document["last_override"]["flag"] == "allow-stale-backup"
     assert document["last_override"]["step"] == "migrations"
 
@@ -689,6 +707,14 @@ def test_dry_run_and_status_are_never_gated(scratch, home, backups):
     dry = migrate_runner.apply_migrations(
         dsn=scratch["dsn"], dry_run=True, backups_dir=str(backups), env=env,
         log=lambda *_a: None)
+    report = "\n".join([
+        "=== 89-04 evidence: --dry-run and --status are never gated",
+        "guard ARMED (GSD_BACKUP_GUARD=on), backups dir empty",
+        "apply_migrations(dry_run=True) -> pending=%d, applied=%s"
+        % (len(dry["pending"]), dry["applied"]),
+    ])
+    print(report)
+    warnings.warn(UserWarning(report), stacklevel=1)
     assert dry["dry_run"] is True
     assert dry["pending"], "the dry run really classified the pending files"
     assert _table_count(scratch["dsn"]) == baseline

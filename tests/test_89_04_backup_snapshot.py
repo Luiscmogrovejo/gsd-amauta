@@ -1049,7 +1049,13 @@ def test_resolution_step_2_prefers_a_versioned_install_over_the_path_tool(
                         lambda major: [str(versioned)] if str(major) == "16" else [])
     env = pinned_env(home, PATH=isolated_path(str(on_path)))
     resolved = bs.resolve_pg_tool("pg_dump", dsn=None, env=env, server_major=16)
-    assert resolved["argv_prefix"] == [matching]
+    # os.path.normcase, because the resolver goes through shutil.which, which
+    # returns the extension in PATHEXT's own case: the Windows cell answered
+    # `pg_dump.CMD` where write_fake_exe had written `pg_dump.cmd`
+    # (run 43322494936). On POSIX normcase is the identity, so the comparison
+    # is unchanged there.
+    assert [os.path.normcase(p) for p in resolved["argv_prefix"]] == \
+        [os.path.normcase(matching)]
     assert resolved["client_major"] == 16
     assert resolved["source"].startswith("versioned install")
 

@@ -32,6 +32,7 @@ import os
 import pathlib
 import sys
 import uuid
+import warnings
 
 import pytest
 
@@ -88,6 +89,26 @@ requires_restore_client = pytest.mark.skipif(
 
 #: How many rows each seeded table receives.
 SEED_ROWS = 4
+
+
+def _evidence(title, lines):
+    """Emit a block of measured output into the run's warnings summary.
+
+    Several of this plan's acceptance criteria ask for the raw output to be
+    PASTED into the record, and a passing pytest swallows stdout. A
+    ``UserWarning`` lands in the warnings summary of the ``-q`` run CI already
+    prints, which is where a reader of the job log is standing.
+
+    Args:
+        title: a one-line heading.
+        lines: the measured lines.
+
+    Returns:
+        None
+    """
+    report = "\n".join(["=== 89-04 evidence: %s" % title] + list(lines))
+    print(report)
+    warnings.warn(UserWarning(report), stacklevel=2)
 
 #: The two tables whose vectors the must-have is about.
 VECTOR_TABLES = (
@@ -555,6 +576,10 @@ def test_one_corrupted_byte_fails_verify_and_restore_refuses(
     result = bs.verify(str(snapshot), env=pinned_home)
     assert result["ok"] is False
     joined = " ".join(result["failures"])
+    _evidence("one corrupted byte in postgres.dump", [
+        "manifest sha256 : %s" % recorded["sha256"],
+        "on-disk sha256  : %s" % actual,
+    ] + ["verify FAIL: %s" % f for f in result["failures"]])
     assert "SHA-256 mismatch" in joined
     assert recorded["sha256"] in joined, joined
     assert actual in joined, joined
@@ -566,6 +591,11 @@ def test_one_corrupted_byte_fails_verify_and_restore_refuses(
                    backups_dir=str(tmp_path / "backups"), env=pinned_home)
     assert caught.value.payload["error"] == "snapshot_failed_verification"
     after = census(dsn)
+    _evidence("restore REFUSED, and the target is untouched", [
+        "payload : %s" % json.dumps(caught.value.payload)[:600],
+        "rows before: %s" % json.dumps(before["rows"], sort_keys=True),
+        "rows after : %s" % json.dumps(after["rows"], sort_keys=True),
+    ])
     assert after["rows"] == before["rows"], (before["rows"], after["rows"])
     assert after["vectors"] == before["vectors"]
 
@@ -887,6 +917,11 @@ def test_the_dry_run_opens_no_write_transaction(isolated, tmp_path):
     assert report["dry_run"] is True
     assert samples, "no sample was taken, so this test proved nothing"
     sample = samples[0]
+    _evidence("the dry run opens no write transaction", [
+        "query: SELECT pid, backend_xid, backend_xmin, state, "
+        "left(coalesce(query,''),120) FROM pg_stat_activity "
+        "WHERE datname = current_database() AND pid <> pg_backend_pid()",
+    ] + ["  %s" % row for row in sample])
     assert sample, ("pg_stat_activity showed no other backend on this database "
                     "while the dry run was running, so the sample is vacuous")
     writers = [row for row in sample if row["backend_xid"] is not None]
@@ -939,6 +974,9 @@ def test_the_backend_xid_assertion_can_fail(isolated, tmp_path):
 
     assert samples, "the mutating wrapper never fired"
     writers = [row for row in samples[0] if row["backend_xid"] is not None]
+    _evidence("MUTATION: the dry run wrote one row on purpose", [
+        "the same predicate now finds %d writer(s):" % len(writers),
+    ] + ["  %s" % row for row in writers])
     assert writers, ("the mutation did not take: pg_stat_activity showed no "
                      "write transaction even though a row was inserted")
     # THE SAME ASSERTION AS THE TEST ABOVE, now failing.
@@ -997,6 +1035,12 @@ def test_the_dry_run_counts_equal_the_real_run_and_a_second_run_inserts_zero(
         assert (counts["insert"] + counts["identical"] + counts["conflict"]
                 + counts["content_duplicate"]) == counts["source"], (table, counts)
 
+    _evidence("dry run vs real run, per table", [
+        "dry : %s" % json.dumps(dry_counts, sort_keys=True),
+        "real: %s" % json.dumps(real_counts, sort_keys=True),
+        "diff: %s" % ("none — the two mappings are equal"
+                      if dry_counts == real_counts else "DIFFERENT"),
+    ])
     second = run()
     second_counts = _per_table_counts(second)
     assert second_counts, "the second run planned nothing"
@@ -1016,6 +1060,8 @@ def test_the_dry_run_counts_equal_the_real_run_and_a_second_run_inserts_zero(
     assert totals["identical"] == totals["source"], totals
     (tmp_path / "second-total.json").write_text(
         json.dumps(totals, indent=2, sort_keys=True), encoding="utf-8")
+    _evidence("the SECOND real run's TOTAL row",
+              ["%s" % json.dumps(totals, sort_keys=True)])
 
 
 def test_the_json_flag_already_exists_on_the_migrator():
