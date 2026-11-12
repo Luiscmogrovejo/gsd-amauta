@@ -84,6 +84,13 @@ except ImportError:  # pragma: no cover - script-launched from services/
     from pg_dsn import local_docker_dsn, mask_dsn, require_dsn
     from pg_store import PGStore
 
+try:
+    from services import backup_guard
+    from services.backup_snapshot import dsn_fingerprint
+except ImportError:  # pragma: no cover - script-launched from services/
+    import backup_guard
+    from backup_snapshot import dsn_fingerprint
+
 DEFAULT_SQLITE_PATH = os.path.join(
     os.environ.get("GSD_DATA_DIR", os.path.expanduser("~/.amauta/data")),
     "gsd_amauta.db",
@@ -429,9 +436,45 @@ def verify_table(sqlite_conn, store, table, pk="id", batch_size=1000,
 
 def migrate(sqlite_path=DEFAULT_SQLITE_PATH, dsn=None, dry_run=False,
             mode="merge", tables=None, exclude_tables=(), batch_size=500,
-            skip_content_duplicates=False, allow_conflicts=False, log=print):
-    """Plan and (unless dry_run) apply the merge. Returns ``(ok, report)``."""
+            skip_content_duplicates=False, allow_conflicts=False, log=print,
+            backups_dir=None, allow_stale_backup=False, no_backup_check=False,
+            env=None):
+    """Plan and (unless dry_run) apply the merge. Returns ``(ok, report)``.
+
+    Args:
+        sqlite_path: the source SQLite file.
+        dsn: the PostgreSQL target.
+        dry_run: classify every source row and write NOTHING. Never gated by
+            the backup guard, which is what keeps the cutover's census
+            read-only.
+        mode: ``merge`` or ``replace``.
+        tables: only these tables.
+        exclude_tables: skip these tables.
+        batch_size: rows per batch.
+        skip_content_duplicates: do not insert a row whose content exists.
+        allow_conflicts: exit 0 even with id conflicts.
+        log: a line sink.
+        backups_dir: where the backup guard looks for snapshots.
+        allow_stale_backup: accept a snapshot older than 24 hours, recorded.
+        no_backup_check: skip the guard; prints the consequence, recorded.
+        env: the environment the guard reads.
+
+    Returns:
+        tuple: ``(ok, report)``.
+
+    Raises:
+        backup_guard.BackupRequired: in WRITE mode, when the guard is armed and
+            no verified snapshot newer than 24 hours covers this database.
+    """
     dsn = require_dsn(dsn, component="migrate_sqlite_to_pg")
+    if not dry_run:
+        # Plan 89-04: the guard runs BEFORE the SQLite file is opened and
+        # before a PGStore pool exists, so a refusal touches nothing at all.
+        backup_guard.require_recent_backup(
+            step="sqlite-to-pg", backups_dir=backups_dir,
+            dsn_fingerprint=dsn_fingerprint(dsn), env=env,
+            allow_stale_backup=allow_stale_backup,
+            no_backup_check=no_backup_check, dsn=dsn, log=log)
     sqlite_conn = open_sqlite_readonly(sqlite_path)
     store = PGStore(dsn=dsn, min_conn=1, max_conn=4)
     try:
@@ -639,6 +682,17 @@ def main(argv=None):
                              "PostgreSQL row is kept either way; without this "
                              "flag a conflict is a non-zero exit so it gets read.")
     parser.add_argument("--batch-size", type=int, default=500)
+    parser.add_argument("--backups-dir", default=None,
+                        help="Where the backup guard looks for verified "
+                             "snapshots.")
+    parser.add_argument("--allow-stale-backup", action="store_true",
+                        help="Proceed with a verified snapshot OLDER than 24 "
+                             "hours. Explicit, and recorded in the audit log "
+                             "and the install record as last_override.")
+    parser.add_argument("--no-backup-check", action="store_true",
+                        help="Disable the backup guard for this run. Prints "
+                             "the full consequence sentence and records the "
+                             "override. --dry-run is never gated.")
     parser.add_argument("--json", action="store_true",
                         help="Print the report as JSON instead of a table.")
     args = parser.parse_args(argv)
@@ -663,7 +717,17 @@ def main(argv=None):
             skip_content_duplicates=args.skip_content_duplicates,
             allow_conflicts=args.allow_conflicts,
             log=log,
+            backups_dir=args.backups_dir,
+            allow_stale_backup=args.allow_stale_backup,
+            no_backup_check=args.no_backup_check,
         )
+    except backup_guard.BackupRequired as exc:
+        # Plan 89-04: a typed refusal, distinct from the generic exit 2, so the
+        # cutover can branch on the payload.
+        if args.json:
+            print(json.dumps(exc.payload, indent=2, default=str))
+        print(f"ERROR: {exc.payload['message']}", file=sys.stderr)
+        return 1
     except Exception as exc:  # noqa: BLE001 - top-level CLI guard
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2

@@ -1875,6 +1875,15 @@ def build_parser():
     for_p.add_argument("step", choices=sorted(STEP_SNAPSHOTS))
     _add_target_args(for_p)
     for_p.add_argument("--backups-dir", default=None)
+    for_p.add_argument("--scope", choices=SCOPES, default=None,
+                       help="Override the step's own scope. The guard puts this "
+                            "flag into its remedy string when it asked for a "
+                            "narrower scope, so the remedy it prints is runnable "
+                            "exactly as printed.")
+    for_p.add_argument("--include-volume-tar", action="store_true",
+                       help="Also take a COLD tar of the data volume.")
+    for_p.add_argument("--volume-path", default=None,
+                       help="The directory --include-volume-tar archives.")
     for_p.add_argument("--json", action="store_true")
 
     return parser
@@ -1990,10 +1999,16 @@ def main(argv=None):
             return 0
 
         if args.command == "for":
+            overrides = {}
+            if args.scope:
+                overrides["scope"] = args.scope
             result = for_step(args.step, dsn=_resolved_dsn(args),
                               sqlite_path=args.sqlite,
                               backups_dir=args.backups_dir,
-                              data_dir=args.data_dir, log=log)
+                              data_dir=args.data_dir,
+                              include_volume_tar=args.include_volume_tar,
+                              volume_path=args.volume_path, log=log,
+                              **overrides)
             emit({"snapshot": result["snapshot"], "manifest": result["manifest"]})
             if not as_json:
                 print("snapshot for step %s: %s" % (args.step, result["snapshot"]))
