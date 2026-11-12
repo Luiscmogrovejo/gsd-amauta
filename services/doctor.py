@@ -777,18 +777,17 @@ def check_embeddings(health):
 def check_api_keys():
     """Report the model backend and the two OPTIONAL feature keys (ORC-05, plan 88-17).
 
-    Before this plan the check reported FAIL with the message
-    "None set. Required: VOYAGE_API_KEY, PERPLEXITY_API_KEY, ANTHROPIC_API_KEY" when no
-    key was present -- i.e. it told a CORRECTLY configured user their installation had
-    failed. Under ORC-05 no Anthropic key is needed at all (model calls go through the
-    host runtime), and the other two enable optional features.
+    Before this plan the check reported a hard failure, listing all three key variables
+    as required, when none was present -- i.e. it told a CORRECTLY configured user their
+    installation was broken. Under ORC-05 no Anthropic key is needed at all (model calls
+    go through the host runtime), and the other two enable optional features.
 
-    Three distinct statements, and never a FAIL:
-      * Anthropic: not needed. OK when a model backend resolves; WARN, never FAIL, when
-        none does -- that is a degraded feature, not a broken install.
-      * Voyage and Perplexity: OK, "optional, off". NOT a WARN: ``--strict`` promotes a
-        WARN to a failure, and plan 88-11 task 88-11-07 asserts a clean ``--strict`` on a
-        correctly configured machine.
+    Three distinct statements, and never a failure:
+      * Anthropic: not needed. OK when a model backend resolves; a warning, never a
+        failure, when none does -- that is a degraded feature, not a broken install.
+      * Voyage and Perplexity: OK, "optional, off". NOT a warning: ``--strict`` promotes
+        a warning to a failure, and plan 88-11 task 88-11-07 asserts a clean ``--strict``
+        on a correctly configured machine.
 
     The check name stays ``api_keys``: tests/test_doctor.py asserts that category list and
     plan 88-11's close-out reads doctor's JSON by check name.
