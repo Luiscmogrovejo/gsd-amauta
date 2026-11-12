@@ -53,13 +53,22 @@ class _DictCache:
 # ---------------------------------------------------------------------------
 
 def test_legacy_chunker_execs_module_once(tmp_path, monkeypatch):
-    """Two consecutive legacy_chunker calls execute rlm-service.py exactly once."""
+    """Two consecutive legacy_chunker calls execute rlm-service.py exactly once.
+
+    The counter names ``rlm_service`` explicitly. Plan 89-09 task 03 gave
+    services/rlm-service.py a prelude that loads services/_dotenv.py through the
+    same ``spec_from_file_location``, so a counter of EVERY call would count that
+    nested load too and report 2 for a module that was still exec'd once. The
+    assertion is about THIS module, so it counts only this module.
+    """
     _reset_module_cache()
     real_spec_from_file_location = _importlib_util.spec_from_file_location
     call_count = {"n": 0}
 
     def counting_wrapper(*args, **kwargs):
-        call_count["n"] += 1
+        name = args[0] if args else kwargs.get("name", "")
+        if name == "rlm_service":
+            call_count["n"] += 1
         return real_spec_from_file_location(*args, **kwargs)
 
     monkeypatch.setattr(_importlib_util, "spec_from_file_location", counting_wrapper)

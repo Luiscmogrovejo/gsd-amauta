@@ -12,7 +12,7 @@
  * Verifies that Phase 53 POLISH work added ONLY the expected surfaces and did NOT
  * silently mutate any v3.2 prior-phase outputs (Phases 48-52) or v3.1 protected paths.
  *
- * PHASE_53_BASE: 32fbdc31527cb9fc5ca81db3036214054c49ae71
+ * PHASE_53_BASE: cbed3c82dcf1d536a1bb765f6ab5814df6e03521 (re-baselined; the constant below is the authority)
  *   = HEAD captured 2026-05-14 at Phase 53 Wave 1 dispatch.
  *   Commit subject: "plan(53): author 5 PLANs directly after 2 planner stream timeouts"
  *
@@ -117,7 +117,32 @@ const os = require('node:os');
 //   d8a0fdbfa40d339f3c623335742cfe7cd839ebdd  fix(88-15): HOME, which, 2>/dev/null, find|grep|head and a username in a public file
 // Every assertion is kept. This PR must be merged with a merge commit (NEVER squash, never rebase-merge) or this
 // SHA stops resolving on master. The full list is in 88-15-RECORD.md.
-const PHASE_53_BASE = 'd8a0fdbfa40d339f3c623335742cfe7cd839ebdd';  // HEAD captured 2026-05-14 at Phase 53 Wave 1 dispatch
+// RE-BASELINED AGAIN 2026-11-12 (plan 89-09 "pinned-file surgery", operator sign-off: delegated in the task
+// brief). TWO pinned paths changed on purpose since the base above:
+//   services/amauta-mcp.py          89-09-03 its forty-line copy of the .env loader became a six-line prelude
+//                                   that loads services/_dotenv.py by path (ONE definition, four importers);
+//                                   89-09-04 MCPValkey takes its URL from services/cache_url.py, the ONE
+//                                   resolver, and its error text names the canonical variable and the name
+//                                   that actually supplied the value. Its 0.0.0.0 bind and hostname lookup
+//                                   are DELIBERATELY untouched — those are Phase 90's (SEC-06), and mixing a
+//                                   security change into a canary re-baseline is how one hides in the other.
+//   services/agent_hydrator.py      89-09-04 _fetch_valkey takes its URL from the same resolver; it read one
+//                                   legacy name only, so a cache exported under the canonical name never
+//                                   reached it.
+// MEASURED, NOT ASSUMED: `git diff --name-only d8a0fdb..HEAD` lists 239 files, and the intersection with the
+// pinned list read out of the four canary files is exactly services/agent_hydrator.py (this canary pins services/amauta-mcp.py by CONTENT, not by diff: its
+// POLISH-03/POLISH-04 tool names and _MCP_ERROR_CODES are present and green).
+// agents/ did not move (`git diff --name-only <base>...HEAD -- agents/` is empty) and
+// tests/agents-compile-claude-target-byte-match.test.cjs is green. The four byte-pinned BLOCKS are unchanged,
+// re-measured with this file's own extractBlock: gsd-tools `case 'module':` 6735 bytes / 139 lines,
+// `case 'party':` 2130 / 43, cli `if (command === 'module')` 877 / 17, `if (command === 'party')` 364 / 9.
+// The base is now the last commit of this series that touches a pinned path:
+//   cbed3c82dcf1d536a1bb765f6ab5814df6e03521  refactor(89-09): one cache resolver per language, every consumer calls it [89-09-04]
+// Every assertion is kept (13/13). The other three bases move in this same PR, each to this commit.
+// This PR must be merged with a merge commit (NEVER squash, never rebase-merge) or this SHA stops resolving
+// on master. The full list is in
+// .planning/phases/89-postgres-primary-orchestration-cleanup/89-09-RECORD.md.
+const PHASE_53_BASE = 'cbed3c82dcf1d536a1bb765f6ab5814df6e03521';  // re-baselined 2026-11-12 by plan 89-09; see the block above
 
 const ROOT = path.resolve(__dirname, '..');
 

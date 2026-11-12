@@ -21,13 +21,31 @@ const { pathToFileURL } = require('url');
 const canary = require('../tests/support/live-store-canary.cjs');
 const skipGate = require('./skip-gate.cjs');
 
-/** Variables that would point a test at a live database or cache. */
+/**
+ * Variables that would point a test at a live database or cache.
+ *
+ * All FIVE legacy cache names are here (plan 89-09 task 06): the resolver in
+ * `get-shit-done/bin/lib/cache-url.cjs` reads GSD_REDIS_URL, AMAUTA_REDIS_URL,
+ * VALKEY_URL, REDIS_URL and REDIS_HOST+REDIS_PORT in that order, so leaving any
+ * of them through would let an ambient value outrank the disposable cache this
+ * runner configures. `tests/conftest.py`'s `_DELETED_KEYS` carries the same five.
+ *
+ * `GSD_REDIS_URL`, the CANONICAL name, is deliberately NOT scrubbed: it is the
+ * one this runner SETS, a few lines below, to an ephemeral free port. Scrubbing
+ * it and then setting it would be the same thing written twice, and the value a
+ * child inherits must be the runner's, never the operator's — which is what
+ * `tests/88-01-runner-env.test.cjs:51` asserts by refusing a `:6379/` or
+ * `:5433/` in it.
+ */
 const DELETED_KEYS = [
   'GSD_POSTGRES_URL',
   'DATABASE_URL',
   'AMAUTA_MEMORY_DATABASE_URL',
   'VALKEY_URL',
   'REDIS_URL',
+  'AMAUTA_REDIS_URL',
+  'REDIS_HOST',
+  'REDIS_PORT',
   'GSD_PG_PORT',
 ];
 
@@ -408,7 +426,8 @@ function main() {
       killStrays(strays);
     }
     // Plan 88-19: the skip gate. A test that skipped without an entry in
-    // tests/skip-exceptions.json fails the run with status 6 (4 is the live-store
+    // tests/skip-exceptions.d/ (sharded one file per owner by plan 89-09) fails
+    // the run with status 6 (4 is the live-store
     // canary's and 5 the stray-process check's, both unchanged above), and on a FULL
     // run an entry that excused nothing fails it too, so the file cannot rot.
     //

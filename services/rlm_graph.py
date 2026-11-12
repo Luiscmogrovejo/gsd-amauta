@@ -21,6 +21,12 @@ from typing import Optional
 
 log = logging.getLogger("amauta.rlm_graph")
 
+# ── The ONE cache-URL resolver (plan 89-09 task 04) ──────────────────────────
+try:
+    from services import cache_url as _cache_url
+except ImportError:  # pragma: no cover - script-launched from services/
+    import cache_url as _cache_url
+
 GRAPH_KEY_PREFIX = "rlm:graph:"
 GRAPH_HUBFILES_KEY = "rlm:graph:__hub_files__"
 GRAPH_TTL = 3600  # 1 hour — rebuilt incrementally
@@ -282,12 +288,16 @@ def rebuild_graph(pg_conn, cache_client) -> dict:
 
 
 def _get_cache_client():
-    """Return a redis-py client connected to Valkey, or None if unavailable."""
+    """Return a redis-py client connected to Valkey, or None if unavailable.
+
+    The address comes from services/cache_url.py, the ONE resolver (plan 89-09
+    task 04). This site used to read the host/port pair directly, so a cache
+    exported under the canonical URL name never reached it.
+    """
     try:
         import redis
-        client = redis.Redis(
-            host=os.environ.get("REDIS_HOST", "127.0.0.1"),
-            port=int(os.environ.get("REDIS_PORT", "6379")),
+        client = redis.Redis.from_url(
+            _cache_url.redis_url(),
             decode_responses=True,
             socket_timeout=1,
         )

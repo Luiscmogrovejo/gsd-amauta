@@ -42,12 +42,25 @@ import hermetic_guard  # noqa: E402
 # ---------------------------------------------------------------------------
 os.environ["GSD_TEST_MODE"] = "1"
 
+#: Variables that would point a test at a live database or cache.
+#:
+#: All FIVE legacy cache names are here (plan 89-09 task 06), matching
+#: scripts/run-tests.cjs's DELETED_KEYS exactly: services/cache_url.py reads
+#: GSD_REDIS_URL, AMAUTA_REDIS_URL, VALKEY_URL, REDIS_URL and
+#: REDIS_HOST+REDIS_PORT in that order, so leaving any of them through would let
+#: an ambient value outrank the disposable cache this file configures.
+#:
+#: GSD_REDIS_URL, the CANONICAL name, is deliberately NOT scrubbed: it is the one
+#: the session fixture SETS, to an ephemeral free port.
 _DELETED_KEYS = (
     "GSD_POSTGRES_URL",
     "DATABASE_URL",
     "AMAUTA_MEMORY_DATABASE_URL",
     "VALKEY_URL",
     "REDIS_URL",
+    "AMAUTA_REDIS_URL",
+    "REDIS_HOST",
+    "REDIS_PORT",
     "GSD_PG_PORT",
 )
 _LIVE_PORTS = {18799, 18798, 6379, 5433}
@@ -671,17 +684,24 @@ def _start_rlm(data_dir, dsn=None, ready_timeout=60.0):
     else:
         env.pop("GSD_POSTGRES_URL", None)
 
-    # Plan 88-11: the graph leg. services/rlm_graph.py:_get_cache_client reads
-    # REDIS_HOST/REDIS_PORT, so the disposable Valkey is handed to THIS CHILD and
-    # to nothing else — the rest of the suite keeps the product default and
-    # therefore keeps degrading by design (RETR-05). The names are scrubbed when
-    # CI gave us no Valkey, so an inherited value can never reach the service.
+    # Plan 88-11: the graph leg. The disposable Valkey is handed to THIS CHILD
+    # and to nothing else — the rest of the suite keeps the product default and
+    # therefore keeps degrading by design (RETR-05).
+    #
+    # Plan 89-09 task 06: handed over CANONICALLY, as GSD_REDIS_URL. It used to be
+    # REDIS_HOST/REDIS_PORT, because services/rlm_graph.py and
+    # services/rlm_reranker.py read exactly those two names and nothing else. They
+    # now go through services/cache_url.py, whose chain puts GSD_REDIS_URL FIRST —
+    # and the session fixture above already exports GSD_REDIS_URL pointing at a
+    # free port with nothing behind it, so a REDIS_HOST/REDIS_PORT handover would
+    # be outranked and silently ignored. The three legacy names are removed from
+    # the child either way, so an inherited value can never reach the service.
     _valkey = valkey_host_port()
+    env.pop("REDIS_HOST", None)
+    env.pop("REDIS_PORT", None)
+    env.pop("VALKEY_URL", None)
     if _valkey:
-        env["REDIS_HOST"], env["REDIS_PORT"] = _valkey[0], str(_valkey[1])
-    else:
-        env.pop("REDIS_HOST", None)
-        env.pop("REDIS_PORT", None)
+        env["GSD_REDIS_URL"] = "redis://%s:%d/0" % (_valkey[0], _valkey[1])
 
     out_path = Path(data_dir) / "fixture-rlm.out"
     err_path = Path(data_dir) / "fixture-rlm.err"
@@ -823,7 +843,7 @@ def fixture_rlm(tmp_path):
 # ─────────────────────────────────────────────────────────────────────────────
 # Plan 88-19: the skip gate, Python half (FND-04).
 #
-# The SAME tests/skip-exceptions.json and the SAME rules as scripts/skip-gate.cjs,
+# The SAME tests/skip-exceptions.d/ shards and the SAME rules as scripts/skip-gate.cjs,
 # implemented in tests/support/skip_gate.py. The two cannot drift silently:
 # tests/88-19-skip-gate.test.cjs feeds both `--evaluate` interfaces the same fixture
 # file and the same synthetic observations and compares the verdicts field by field.
@@ -1014,7 +1034,14 @@ def _run_skip_gate(session):
     explicit = _gate_is_partial(session.config)
     observed = list(_SKIP_GATE_OBSERVED.values())
 
-    entries, problems = skip_gate.load_exceptions(str(_REPO / "tests" / "skip-exceptions.json"))
+    # Plan 89-09 task 02: the ledger is sharded, one file per owning plan under
+    # tests/skip-exceptions.d/, and `load_union` reads the union of those shards
+    # plus the legacy single file when it exists. `skip_gate.load_exceptions` is
+    # a LIBRARY entry point that opens exactly the one path it is given, so this
+    # call site — not the library — is what decides which files the Python gate
+    # sees. Pointing it at the deleted monolith would make every Python cell
+    # exit 6 (SKIP_EXCEPTIONS_UNREADABLE) for this PR and every PR after it.
+    entries, problems = skip_gate.load_union(str(_REPO))
     if problems:
         print("\n--- skip gate (python, %s) ---" % platform)
         for problem in problems:

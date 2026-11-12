@@ -23,7 +23,11 @@ The rules, restated (the authoritative prose is the header of
    rule 1. A partial run (a file, a node id, ``-k``, ``-m``, ``--deselect``,
    ``--lf``) checks unlisted skips but not staleness.
 5. Fail closed: an unreadable, non-array, duplicate-keyed or schema-violating file
-   is a red run.
+   is a red run. Since plan 89-09 the ledger is SHARDED — one file per owning plan
+   under ``tests/skip-exceptions.d/`` — and :func:`load_union` reads the union of
+   those shards plus ``tests/skip-exceptions.json`` when that legacy file still
+   exists. The same ``(file, name, platform)`` key in two shards is its own
+   finding, ``SKIP_EXCEPTIONS_DUPLICATE_ACROSS_SHARDS``.
 6. A skipped suite cannot be excused (Node only; pytest has no equivalent event).
 7. A ``todo`` test cannot be excused (Node only).
 
@@ -66,10 +70,22 @@ CODES = {
     "MALFORMED": "SKIP_EXCEPTIONS_MALFORMED",
     "NO_EVIDENCE": "SKIP_GATE_NO_EVIDENCE",
     "XFAIL_COUNT": "SKIP_XFAIL_COUNT_CHANGED",
+    # Plan 89-09: the same (file, name, platform) key in TWO shards. Its own
+    # code because it is the silent-loss failure sharding exists to prevent.
+    "DUPLICATE_ACROSS_SHARDS": "SKIP_EXCEPTIONS_DUPLICATE_ACROSS_SHARDS",
 }
 
-#: Repo-relative path of the exceptions file, as it is named in every message.
-EXCEPTIONS_REL = "tests/skip-exceptions.json"
+#: Repo-relative name of the ledger, as it is named in every message. It is the
+#: DIRECTORY since plan 89-09 sharded it one file per owning plan.
+EXCEPTIONS_REL = "tests/skip-exceptions.d/"
+
+#: Repo-relative path of the shard directory.
+EXCEPTIONS_DIR_REL = "tests/skip-exceptions.d"
+
+#: The pre-89-09 single file. Still an accepted input when it exists, because
+#: tests/fixtures/planning-drift/skip-ledger-{agrees,disagrees}/ carry one and
+#: rewriting those fixture trees would mix a fixture change into a loader change.
+EXCEPTIONS_LEGACY_REL = "tests/skip-exceptions.json"
 
 #: The reason_class whose entries are the STRICT xfails plan 88-19-03 counts apart
 #: from skips. Named here, once, so the expected number is derived and never typed.
@@ -125,11 +141,124 @@ def runner_of(file_value):
     return "unowned"
 
 
-def load_exceptions(path):
-    """Read and validate the exceptions file. Fails closed (rule 5).
+def _read_entry_file(path, label):
+    """Read ONE JSON array of entries off disk, without validating the entries.
 
     Args:
-        path: absolute path of ``tests/skip-exceptions.json``.
+        path: absolute path of the file.
+        label: how the file is named in a message.
+
+    Returns:
+        tuple: ``(doc, problems)``; ``doc`` is None when the file is unusable.
+    """
+    try:
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+    except OSError as exc:
+        return None, [{
+            "code": CODES["UNREADABLE"],
+            "detail": (
+                "%s could not be read (%s). The gate fails closed: a run without "
+                "the exceptions file is red, never green." % (label, exc)
+            ),
+        }]
+    try:
+        doc = json.loads(text)
+    except ValueError as exc:
+        return None, [{
+            "code": CODES["UNREADABLE"],
+            "detail": "%s is not valid JSON: %s" % (label, exc),
+        }]
+    if not isinstance(doc, list):
+        return None, [{
+            "code": CODES["MALFORMED"],
+            "detail": (
+                "%s must be a FLAT JSON array of entries, one per test per platform; "
+                "got %s" % (label, type(doc).__name__)
+            ),
+        }]
+    return doc, []
+
+
+def validate_entries(sources):
+    """Validate entries read from one or more sources, as ONE flat ledger.
+
+    Args:
+        sources: list of ``(label, doc)`` pairs in load order.
+
+    Returns:
+        tuple: ``(entries, problems)``. ``problems`` is a list of
+        ``{"code", "detail"}``; when it is non-empty ``entries`` is empty.
+    """
+    problems = []
+    seen = {}
+    all_entries = []
+    multi = len(sources) > 1
+    for label, doc in sources:
+        for index, entry in enumerate(doc):
+            where = "entry #%d%s (%s :: %s)" % (
+                index + 1,
+                " of %s" % label if multi else "",
+                (entry or {}).get("file", "no file") if isinstance(entry, dict) else "no file",
+                (entry or {}).get("name", "no name") if isinstance(entry, dict) else "no name",
+            )
+            if not isinstance(entry, dict):
+                problems.append({"code": CODES["MALFORMED"], "detail": "%s is not an object" % where})
+                continue
+            bad = [k for k in SCHEMA_ORDER if not SCHEMA[k](entry.get(k))]
+            if bad:
+                problems.append({
+                    "code": CODES["MALFORMED"],
+                    "detail": "%s has invalid or missing field(s): %s" % (where, ", ".join(bad)),
+                })
+                continue
+            if runner_of(entry["file"]) == "unowned":
+                problems.append({
+                    "code": CODES["MALFORMED"],
+                    "detail": (
+                        "%s names a file no runner owns; the Node gate owns *.cjs and the "
+                        'Python gate owns *.py and "(collection)"' % where
+                    ),
+                })
+                continue
+            key = "%s|%s|%s" % (entry["file"], entry["name"], entry["platform"])
+            prior = seen.get(key)
+            if prior is not None and prior[1] != label:
+                problems.append({
+                    "code": CODES["DUPLICATE_ACROSS_SHARDS"],
+                    "detail": (
+                        "%s duplicates the key (file, name, platform) of entry #%d of %s. "
+                        "One shard per owner: the same key in two shards means two plans own "
+                        "one entry, and the one that deletes it leaves the skip still excused "
+                        "by the other — the silent loss sharding exists to prevent."
+                        % (where, prior[0] + 1, prior[1])
+                    ),
+                })
+                continue
+            if prior is not None:
+                problems.append({
+                    "code": CODES["MALFORMED"],
+                    "detail": (
+                        "%s duplicates the key (file, name, platform) of entry #%d; the file "
+                        "is flat and every key is unique" % (where, prior[0] + 1)
+                    ),
+                })
+                continue
+            seen[key] = (index, label)
+            all_entries.append(entry)
+    return ([] if problems else all_entries), problems
+
+
+def load_exceptions(path):
+    """Read and validate ONE exceptions file. Fails closed (rule 5).
+
+    The signature is unchanged by plan 89-09 on purpose (decision (i) of task
+    89-09-02's item 1b): this is the single-file entry point ``--evaluate``'s
+    ``exceptionsFile`` input and the two ``planning-drift`` fixture trees need.
+    The repository's own ledger is read with :func:`load_union`.
+
+    Args:
+        path: absolute path of one flat JSON array of entries.
 
     Returns:
         tuple: ``(entries, problems)``. ``problems`` is a list of
@@ -139,72 +268,78 @@ def load_exceptions(path):
         Nothing: every failure is returned as a problem, because a gate that raises
         is a gate that can be mistaken for a pass.
     """
-    try:
-        with open(path, encoding="utf-8") as handle:
-            text = handle.read()
-    except OSError as exc:
-        return [], [{
-            "code": CODES["UNREADABLE"],
-            "detail": (
-                "%s could not be read (%s). The gate fails closed: a run without "
-                "the exceptions file is red, never green." % (EXCEPTIONS_REL, exc)
-            ),
-        }]
-    try:
-        doc = json.loads(text)
-    except ValueError as exc:
-        return [], [{
-            "code": CODES["UNREADABLE"],
-            "detail": "%s is not valid JSON: %s" % (EXCEPTIONS_REL, exc),
-        }]
-    if not isinstance(doc, list):
-        return [], [{
-            "code": CODES["MALFORMED"],
-            "detail": (
-                "%s must be a FLAT JSON array of entries, one per test per platform; "
-                "got %s" % (EXCEPTIONS_REL, type(doc).__name__)
-            ),
-        }]
+    doc, problems = _read_entry_file(path, EXCEPTIONS_REL)
+    if doc is None:
+        return [], problems
+    return validate_entries([(EXCEPTIONS_REL, doc)])
 
+
+def exception_sources(repo_root):
+    """Every file the ledger is read from, in load order.
+
+    The ``*.json`` shards of ``tests/skip-exceptions.d/`` sorted by name, then
+    the legacy single file when it still exists.
+
+    Args:
+        repo_root: repository root, or a repository-shaped fixture tree.
+
+    Returns:
+        list: ``(label, path)`` pairs; possibly empty.
+    """
+    sources = []
+    directory = os.path.join(repo_root, "tests", "skip-exceptions.d")
+    try:
+        names = sorted(n for n in os.listdir(directory) if n.endswith(".json"))
+    except OSError:
+        names = []  # an absent directory is not a finding here
+    for name in names:
+        sources.append(("%s/%s" % (EXCEPTIONS_DIR_REL, name), os.path.join(directory, name)))
+    legacy = os.path.join(repo_root, "tests", "skip-exceptions.json")
+    if os.path.isfile(legacy):
+        sources.append((EXCEPTIONS_LEGACY_REL, legacy))
+    return sources
+
+
+def load_union(repo_root):
+    """Read and validate the UNION of every ledger source under ``repo_root``.
+
+    This is the entry point ``tests/conftest.py`` uses. No source at all is a
+    FINDING, because a checkout with no ledger must never read as "no skips"
+    (rule 5) — unlike ``get-shit-done/bin/lib/planning-drift.cjs``, which runs
+    over fixture trees that have neither and keeps its own absent-is-silent rule.
+
+    Args:
+        repo_root: repository root.
+
+    Returns:
+        tuple: ``(entries, problems)``.
+
+    Example:
+        >>> entries, problems = load_union("/repo")        # doctest: +SKIP
+        >>> len(entries), problems                         # doctest: +SKIP
+        (467, [])
+    """
+    sources = exception_sources(repo_root)
+    if not sources:
+        return [], [{
+            "code": CODES["UNREADABLE"],
+            "detail": (
+                "%s holds no shard and %s does not exist, so nothing could excuse a "
+                "skip. The gate fails closed: a run without the ledger is red, never "
+                "green." % (EXCEPTIONS_REL, EXCEPTIONS_LEGACY_REL)
+            ),
+        }]
     problems = []
-    seen = {}
-    for index, entry in enumerate(doc):
-        where = "entry #%d (%s :: %s)" % (
-            index + 1,
-            (entry or {}).get("file", "no file") if isinstance(entry, dict) else "no file",
-            (entry or {}).get("name", "no name") if isinstance(entry, dict) else "no name",
-        )
-        if not isinstance(entry, dict):
-            problems.append({"code": CODES["MALFORMED"], "detail": "%s is not an object" % where})
+    docs = []
+    for label, path in sources:
+        doc, file_problems = _read_entry_file(path, label)
+        if doc is None:
+            problems.extend(file_problems)
             continue
-        bad = [k for k in SCHEMA_ORDER if not SCHEMA[k](entry.get(k))]
-        if bad:
-            problems.append({
-                "code": CODES["MALFORMED"],
-                "detail": "%s has invalid or missing field(s): %s" % (where, ", ".join(bad)),
-            })
-            continue
-        if runner_of(entry["file"]) == "unowned":
-            problems.append({
-                "code": CODES["MALFORMED"],
-                "detail": (
-                    "%s names a file no runner owns; the Node gate owns *.cjs and the "
-                    'Python gate owns *.py and "(collection)"' % where
-                ),
-            })
-            continue
-        key = "%s|%s|%s" % (entry["file"], entry["name"], entry["platform"])
-        if key in seen:
-            problems.append({
-                "code": CODES["MALFORMED"],
-                "detail": (
-                    "%s duplicates the key (file, name, platform) of entry #%d; the file "
-                    "is flat and every key is unique" % (where, seen[key] + 1)
-                ),
-            })
-            continue
-        seen[key] = index
-    return ([] if problems else doc), problems
+        docs.append((label, doc))
+    if problems:
+        return [], problems
+    return validate_entries(docs)
 
 
 def is_applicable(entry, runner, platform, ci):

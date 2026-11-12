@@ -45,6 +45,11 @@ except ImportError:  # pragma: no cover - script-launched from services/
         dsn_parts, dsn_with_database, local_docker_dsn, mask_dsn, pg_port, redis_port, resolve_dsn,
     )
 
+try:
+    from services import cache_url
+except ImportError:  # pragma: no cover - script-launched from services/
+    import cache_url
+
 # ── Capability floor ────────────────────────────────────────────────────────
 # Derived from the migrations, not guessed:
 #   002-embedding-index.sql  -> HNSW index        (pgvector >= 0.5.0)
@@ -558,10 +563,16 @@ def _mask_url(url):
 
 
 def _redis_url():
-    configured = (os.environ.get("GSD_REDIS_URL") or "").strip()
-    if configured:
-        return configured
-    return f"redis://127.0.0.1:{redis_port()}/0"
+    """The cache URL, from services/cache_url.py — the ONE resolver (plan 89-09).
+
+    The resolver's own default is built from ``redis_port()`` exactly as this
+    function used to build it, so detection still probes the port
+    docker/docker-compose.yml publishes on.
+
+    Returns:
+        str: a ``redis://`` URL.
+    """
+    return cache_url.redis_url()
 
 
 def _detect_redis():

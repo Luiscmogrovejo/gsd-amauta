@@ -19,13 +19,18 @@
  *   node scripts/tool-integrity.cjs --help    # print usage
  *
  * Environment:
- *   AMAUTA_REDIS_URL  Valkey/Redis connection URL (default: redis://127.0.0.1:6379)
+ *   GSD_REDIS_URL     Valkey/Redis connection URL (default:
+ *                     redis://127.0.0.1:<GSD_REDIS_PORT or 6379>/0). The legacy
+ *                     names AMAUTA_REDIS_URL, VALKEY_URL, REDIS_URL and
+ *                     REDIS_HOST+REDIS_PORT are still read, in that order, and
+ *                     warn once per process — get-shit-done/bin/lib/cache-url.cjs
  */
 
 const { createHash } = require('crypto');
 const { readFileSync, existsSync } = require('fs');
 const net = require('net');
 const path = require('path');
+const { cacheUrl } = require('../get-shit-done/bin/lib/cache-url.cjs');
 
 // ─── Tool file list (LIFE-05) ─────────────────────────────────────────────────
 
@@ -46,7 +51,9 @@ const TOOL_FILES = [
 
 // ─── Valkey connection ────────────────────────────────────────────────────────
 
-const REDIS_URL = process.env.AMAUTA_REDIS_URL || 'redis://127.0.0.1:6379';
+// plan 89-09 task 04: the ONE resolver. This site read one legacy name only,
+// so a cache exported under the canonical name never reached it.
+const CACHE_URL = cacheUrl();
 const KEY_PREFIX = 'tool_integrity:';
 
 /**
@@ -171,7 +178,7 @@ function hashFile(filePath) {
  * Called at daemon startup to establish a trusted baseline.
  */
 async function storeHashes() {
-  const { host, port } = parseRedisUrl(REDIS_URL);
+  const { host, port } = parseRedisUrl(CACHE_URL);
   const timestamp = new Date().toISOString();
   let stored = 0;
   let missing = 0;
@@ -203,7 +210,7 @@ async function storeHashes() {
  * Called at task claim time. Exits 1 on any mismatch (integrity violation).
  */
 async function checkHashes() {
-  const { host, port } = parseRedisUrl(REDIS_URL);
+  const { host, port } = parseRedisUrl(CACHE_URL);
   const violations = [];
   let checked = 0;
   let missing_files = 0;
@@ -287,7 +294,8 @@ if (!mode || mode === '--help' || mode === '-h') {
     '  --check   Re-hash all tool files and compare against stored baseline',
     '',
     'Environment:',
-    '  AMAUTA_REDIS_URL  Valkey connection URL (default: redis://127.0.0.1:6379)',
+    '  GSD_REDIS_URL     Valkey connection URL (default: redis://127.0.0.1:6379/0);',
+    '                    the legacy names are still read and warn once',
     '',
     'On TOOL_INTEGRITY_VIOLATION: exits 1, logs JSON to stderr, requires manual',
     'operator intervention (restart daemon to re-establish baseline).',

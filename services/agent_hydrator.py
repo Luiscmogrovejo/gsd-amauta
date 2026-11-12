@@ -47,6 +47,11 @@ except Exception:
     redis = None  # type: ignore
     _HAS_REDIS = False
 
+try:
+    from services import cache_url as _cache_url  # type: ignore
+except ImportError:  # pragma: no cover - script-launched from services/
+    import cache_url as _cache_url  # type: ignore
+
 # ── Frozen module-level constants (Phase 47 HYDRA-01 locks) ───────────────────
 
 SCHEMA_VERSION = "1.0"
@@ -264,10 +269,9 @@ async def _fetch_valkey(agent_name: str) -> dict:
 
     def _sync_fetch() -> dict:
         try:
-            url = (
-                os.environ.get("REDIS_URL")
-                or "redis://localhost:6379/0"
-            )
+            # plan 89-09 task 04: ONE resolver decides, and can say WHICH
+            # name supplied the value. This site read one legacy name only.
+            url = _cache_url.redis_url()
             client = redis.Redis.from_url(url, socket_timeout=0.3)
             key = VALKEY_KEY_TEMPLATE.format(name=agent_name)
             raw = client.get(key)

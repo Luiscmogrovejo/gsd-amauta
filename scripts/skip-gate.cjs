@@ -1,8 +1,27 @@
 #!/usr/bin/env node
 /**
  * The skip gate (plan 88-19, FND-04): a test that skips without an entry in
- * `tests/skip-exceptions.json` fails the run, and an entry that excuses nothing
- * fails the run too, so the file cannot rot.
+ * `tests/skip-exceptions.d/` fails the run, and an entry that excuses nothing
+ * fails the run too, so the ledger cannot rot.
+ *
+ * ── WHERE THE ENTRIES LIVE (plan 89-09 task 02) ─────────────────────────────────
+ * The ledger was ONE flat array in `tests/skip-exceptions.json`. A JSON array is
+ * textually merge-hostile: a bad merge silently loses an entry and the gate then
+ * reports a *skip*, not a *loss*. Phase 89 had eight plans that each needed to add
+ * or remove entries, so the ledger is now SHARDED — one file per owning plan under
+ * `tests/skip-exceptions.d/`, and every reader loads the UNION of
+ * `tests/skip-exceptions.d/<*>.json` plus `tests/skip-exceptions.json` when that
+ * legacy file still exists.
+ *
+ * The legacy single file is kept as an accepted input for exactly one reason:
+ * `tests/fixtures/planning-drift/skip-ledger-{agrees,disagrees}/tests/skip-exceptions.json`
+ * carry one, and rewriting those fixture trees would mix a fixture change into a
+ * loader change. An ABSENT directory and an ABSENT file together still produce no
+ * finding here (`loadUnion` returns no entries and no problems), because
+ * `get-shit-done/bin/lib/planning-drift.cjs` runs over repository-shaped fixture
+ * trees that have neither and its "absent: no finding, by design" rule must survive
+ * verbatim. The RUNNER's fail-closed behaviour is unchanged: `runNodeGate` turns an
+ * empty union into `SKIP_EXCEPTIONS_UNREADABLE` (see `loadUnionForGate`).
  *
  * ── THE RULES, WRITTEN ONCE ─────────────────────────────────────────────────────
  * `tests/support/skip_gate.py` is the Python half of this gate. The two MUST agree,
@@ -87,6 +106,14 @@ const CODES = {
   UNREADABLE: 'SKIP_EXCEPTIONS_UNREADABLE',
   /** the exceptions file parsed but violates the schema (rule 5) */
   MALFORMED: 'SKIP_EXCEPTIONS_MALFORMED',
+  /**
+   * the same `(file, name, platform)` key appears in TWO shards (plan 89-09).
+   * Its own code because it is the silent-loss failure sharding exists to
+   * prevent: two owners editing the same entry in two files, where a flat array
+   * would have forced a textual conflict. A duplicate INSIDE one file keeps
+   * reporting as MALFORMED, unchanged.
+   */
+  DUPLICATE_ACROSS_SHARDS: 'SKIP_EXCEPTIONS_DUPLICATE_ACROSS_SHARDS',
   /** the reporter wrote no observation file: no evidence is not "no skips" (rule 5) */
   NO_EVIDENCE: 'SKIP_GATE_NO_EVIDENCE',
 };
@@ -104,8 +131,17 @@ const SCHEMA = {
   exit_criterion: (v) => typeof v === 'string' && v.trim().length > 0,
 };
 
-/** Repo-relative path of the exceptions file. */
-const EXCEPTIONS_REL = 'tests/skip-exceptions.json';
+/**
+ * Repo-relative name of the ledger, as it is named in every message. It is the
+ * DIRECTORY since plan 89-09; `EXCEPTIONS_LEGACY_REL` is still an accepted input.
+ */
+const EXCEPTIONS_REL = 'tests/skip-exceptions.d/';
+
+/** Repo-relative path of the shard directory. */
+const EXCEPTIONS_DIR_REL = 'tests/skip-exceptions.d';
+
+/** The pre-89-09 single file. Still read when present (see the header). */
+const EXCEPTIONS_LEGACY_REL = 'tests/skip-exceptions.json';
 
 /**
  * Which runner owns an entry, from its `file` field (rule 2).
@@ -141,24 +177,22 @@ function relativeTestFile(file, repoRoot) {
 }
 
 /**
- * Read and validate `tests/skip-exceptions.json`. Fails closed (rule 5).
+ * Read ONE JSON array of entries off disk, without validating the entries.
  *
- * @param {string} file absolute path of the exceptions file
- * @returns {{entries: object[], problems: {code: string, detail: string}[]}}
- *   `problems` is non-empty when the file is unusable; `entries` is then empty.
- * @example
- *   const { entries, problems } = loadExceptions('/repo/tests/skip-exceptions.json');
+ * @param {string} file absolute path
+ * @param {string} label how the file is named in a message
+ * @returns {{doc: object[]|null, problems: {code: string, detail: string}[]}}
  */
-function loadExceptions(file) {
+function readEntryFile(file, label) {
   let text;
   try {
     text = fs.readFileSync(file, 'utf-8');
   } catch (err) {
     return {
-      entries: [],
+      doc: null,
       problems: [{
         code: CODES.UNREADABLE,
-        detail: `${EXCEPTIONS_REL} could not be read (${err.message}). The gate fails closed: a run without the exceptions file is red, never green.`,
+        detail: `${label} could not be read (${err.message}). The gate fails closed: a run without the exceptions file is red, never green.`,
       }],
     };
   }
@@ -166,21 +200,34 @@ function loadExceptions(file) {
   try {
     doc = JSON.parse(text);
   } catch (err) {
-    return {
-      entries: [],
-      problems: [{ code: CODES.UNREADABLE, detail: `${EXCEPTIONS_REL} is not valid JSON: ${err.message}` }],
-    };
+    return { doc: null, problems: [{ code: CODES.UNREADABLE, detail: `${label} is not valid JSON: ${err.message}` }] };
   }
   if (!Array.isArray(doc)) {
     return {
-      entries: [],
-      problems: [{ code: CODES.MALFORMED, detail: `${EXCEPTIONS_REL} must be a FLAT JSON array of entries, one per test per platform; got ${typeof doc}` }],
+      doc: null,
+      problems: [{ code: CODES.MALFORMED, detail: `${label} must be a FLAT JSON array of entries, one per test per platform; got ${typeof doc}` }],
     };
   }
+  return { doc, problems: [] };
+}
+
+/**
+ * Validate entries read from one or more sources, as ONE flat ledger.
+ *
+ * @param {{label: string, doc: object[]}[]} sources in load order
+ * @returns {{entries: object[], problems: {code: string, detail: string}[]}}
+ *   `problems` is non-empty when the ledger is unusable; `entries` is then empty.
+ * @example
+ *   validateEntries([{label: 'tests/skip-exceptions.d/89-01.json', doc: [...]}])
+ */
+function validateEntries(sources) {
   const problems = [];
   const seen = new Map();
-  doc.forEach((entry, i) => {
-    const where = `entry #${i + 1} (${entry && entry.file ? entry.file : 'no file'} :: ${entry && entry.name ? entry.name : 'no name'})`;
+  const all = [];
+  const multi = sources.length > 1;
+  for (const source of sources) {
+    source.doc.forEach((entry, i) => {
+    const where = `entry #${i + 1}${multi ? ` of ${source.label}` : ''} (${entry && entry.file ? entry.file : 'no file'} :: ${entry && entry.name ? entry.name : 'no name'})`;
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
       problems.push({ code: CODES.MALFORMED, detail: `${where} is not an object` });
       return;
@@ -198,13 +245,117 @@ function loadExceptions(file) {
       return;
     }
     const k = `${entry.file}|${entry.name}|${entry.platform}`;
-    if (seen.has(k)) {
-      problems.push({ code: CODES.MALFORMED, detail: `${where} duplicates the key (file, name, platform) of entry #${seen.get(k) + 1}; the file is flat and every key is unique` });
+    const prior = seen.get(k);
+    if (prior && prior.label !== source.label) {
+      problems.push({
+        code: CODES.DUPLICATE_ACROSS_SHARDS,
+        detail: `${where} duplicates the key (file, name, platform) of entry #${prior.index + 1} of ${prior.label}. One shard per owner: the same key in two shards means two plans own one entry, and the one that deletes it leaves the skip still excused by the other — the silent loss sharding exists to prevent.`,
+      });
       return;
     }
-    seen.set(k, i);
-  });
-  return { entries: problems.length ? [] : doc, problems };
+    if (prior) {
+      problems.push({ code: CODES.MALFORMED, detail: `${where} duplicates the key (file, name, platform) of entry #${prior.index + 1}; the file is flat and every key is unique` });
+      return;
+    }
+    seen.set(k, { index: i, label: source.label });
+    all.push(entry);
+    });
+  }
+  return { entries: problems.length ? [] : all, problems };
+}
+
+/**
+ * Read and validate ONE exceptions file. Fails closed (rule 5).
+ *
+ * The signature is unchanged by plan 89-09 on purpose: `--evaluate`'s
+ * `exceptionsFile` input names a single file, and the two `planning-drift`
+ * fixture trees carry a single file each.
+ *
+ * @param {string} file absolute path of the exceptions file
+ * @returns {{entries: object[], problems: {code: string, detail: string}[]}}
+ * @example
+ *   const { entries, problems } = loadExceptions('/repo/tests/skip-exceptions.json');
+ */
+function loadExceptions(file) {
+  const read = readEntryFile(file, EXCEPTIONS_REL);
+  if (read.doc === null) return { entries: [], problems: read.problems };
+  return validateEntries([{ label: EXCEPTIONS_REL, doc: read.doc }]);
+}
+
+/**
+ * Every file the ledger is read from, in load order: the `*.json` shards of
+ * `tests/skip-exceptions.d/` sorted by name, then the legacy single file when it
+ * still exists.
+ *
+ * @param {string} repoRoot repository root, or a repository-shaped fixture tree
+ * @returns {{label: string, path: string}[]} possibly empty
+ * @example
+ *   exceptionSources('/repo')[0].label  // 'tests/skip-exceptions.d/89-01.json'
+ */
+function exceptionSources(repoRoot) {
+  const sources = [];
+  const dir = path.join(repoRoot, 'tests', 'skip-exceptions.d');
+  let names = [];
+  try {
+    names = fs.readdirSync(dir).filter((n) => n.endsWith('.json')).sort();
+  } catch {
+    names = []; // an absent directory is not a finding here; see the header
+  }
+  for (const name of names) {
+    sources.push({ label: `${EXCEPTIONS_DIR_REL}/${name}`, path: path.join(dir, name) });
+  }
+  const legacy = path.join(repoRoot, 'tests', 'skip-exceptions.json');
+  if (fs.existsSync(legacy)) sources.push({ label: EXCEPTIONS_LEGACY_REL, path: legacy });
+  return sources;
+}
+
+/**
+ * Read and validate the UNION of every ledger source under `repoRoot`.
+ *
+ * An absent directory AND an absent legacy file produce no entries and NO
+ * problem: `get-shit-done/bin/lib/planning-drift.cjs` runs this over fixture
+ * trees that have neither, and its "absent: no finding, by design" rule must
+ * survive verbatim. The RUNNER's fail-closed path is `loadUnionForGate`.
+ *
+ * @param {string} repoRoot repository root
+ * @returns {{entries: object[], problems: object[], sources: string[]}}
+ * @example
+ *   const { entries, sources } = loadUnion('/repo');  // 467 entries, 4 sources
+ */
+function loadUnion(repoRoot) {
+  const sources = exceptionSources(repoRoot);
+  const problems = [];
+  const docs = [];
+  for (const source of sources) {
+    const read = readEntryFile(source.path, source.label);
+    if (read.doc === null) { problems.push(...read.problems); continue; }
+    docs.push({ label: source.label, doc: read.doc });
+  }
+  const labels = sources.map((s) => s.label);
+  if (problems.length) return { entries: [], problems, sources: labels };
+  return { ...validateEntries(docs), sources: labels };
+}
+
+/**
+ * `loadUnion` for the RUNNER: no source at all is a FINDING here, because a
+ * checkout with no ledger must never read as "no skips" (rule 5).
+ *
+ * @param {string} repoRoot repository root
+ * @returns {{entries: object[], problems: object[], sources: string[]}}
+ */
+function loadUnionForGate(repoRoot) {
+  const result = loadUnion(repoRoot);
+  if (!result.sources.length) {
+    return {
+      entries: [],
+      sources: [],
+      problems: [{
+        code: CODES.UNREADABLE,
+        detail: `${EXCEPTIONS_REL} holds no shard and ${EXCEPTIONS_LEGACY_REL} does not exist, so nothing could excuse a skip. The gate fails closed: a run without the ledger is red, never green.`,
+      }],
+    };
+  }
+  return result;
 }
 
 /**
@@ -429,7 +580,7 @@ function readObservations(file, repoRoot) {
  * @param {boolean} opts.explicit whether this was a partial run
  * @param {NodeJS.ProcessEnv} [opts.env=process.env] environment to read `CI` from
  * @param {string} [opts.platform=process.platform]
- * @param {string} [opts.exceptionsFile] override, for tests
+ * @param {string} [opts.exceptionsFile] override naming ONE file, for tests
  * @returns {{exit_code: number, findings: object[], counts: object, text: string}}
  */
 function runNodeGate(opts) {
@@ -440,8 +591,12 @@ function runNodeGate(opts) {
     ci: Boolean(env.CI && String(env.CI).trim() !== '' && String(env.CI).toLowerCase() !== 'false'),
     explicit: Boolean(opts.explicit),
   };
-  const exceptionsFile = opts.exceptionsFile || path.join(opts.repoRoot, 'tests', 'skip-exceptions.json');
-  const { entries, problems: fileProblems } = loadExceptions(exceptionsFile);
+  // Plan 89-09: the UNION of tests/skip-exceptions.d/*.json plus the legacy
+  // single file when it exists. `exceptionsFile` still names ONE file, because
+  // the gate's own tests drive it that way.
+  const { entries, problems: fileProblems } = opts.exceptionsFile
+    ? loadExceptions(opts.exceptionsFile)
+    : loadUnionForGate(opts.repoRoot);
   const { observed, problems: obsProblems } = readObservations(opts.reportFile, opts.repoRoot);
   const hard = [...fileProblems, ...obsProblems].map((p) => ({
     code: p.code, file: EXCEPTIONS_REL, name: '', platform: ctx.platform, detail: p.detail,
@@ -535,10 +690,17 @@ module.exports = {
   CODES,
   EXIT_SKIP_GATE,
   EXCEPTIONS_REL,
+  EXCEPTIONS_DIR_REL,
+  EXCEPTIONS_LEGACY_REL,
   SCHEMA,
   runnerOf,
   relativeTestFile,
+  readEntryFile,
+  validateEntries,
   loadExceptions,
+  exceptionSources,
+  loadUnion,
+  loadUnionForGate,
   isApplicable,
   evaluate,
   format,

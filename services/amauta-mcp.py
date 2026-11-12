@@ -11,82 +11,36 @@ Usage:
     python3 services/amauta-mcp.py --sse    # SSE transport (port 18800)
 """
 
+import importlib.util
 import os
 
-# ── Load .env file (project root or /srv/amauta) ──────────────────────────────
+# ── Load .env file (project root or /srv/amauta) ──────────────────
 #
-# Two names carry every per-file difference: the directory the repository-root
-# .env is resolved from, and the extra variables that switch this loader off.
-# EVERYTHING BELOW THEM IS BYTE-IDENTICAL in amauta.py,
-# services/amauta-daemon.py, services/rlm-service.py and services/amauta-mcp.py.
-# It is copied rather than imported because three of the four call it before
-# their own imports are resolved, and an import at that point would add a
-# failure mode to four entry points to save twenty lines.
-# tests/test_88_11_dotenv_loader.py fails if the four copies drift.
+# ONE loader, in services/_dotenv.py (plan 89-09 task 03). It used to be FOUR
+# byte-identical copies of forty lines, in amauta.py, services/amauta-daemon.py,
+# services/rlm-service.py and services/amauta-mcp.py, kept in step by
+# tests/test_88_11_dotenv_loader.py. Two of the four are byte-pinned by the
+# canaries, so a one-line change to the loader cost up to four re-baselines; the
+# drift that test DETECTED is now impossible by construction and costs none.
+#
+# The module is loaded FROM ITS PATH, not imported by name: three of the four
+# entry points run the loader before their own imports are resolved, amauta.py is
+# at the repository root while the module is in services/, and a path load needs
+# no sys.path manipulation and behaves identically from either directory.
+#
+# Two names still carry every per-file difference: the directory the
+# repository-root .env is resolved from, and the extra variables that switch the
+# loader off. EVERYTHING BELOW THEM IS BYTE-IDENTICAL in the four entry points,
+# and tests/test_88_11_dotenv_loader.py fails if the preludes drift.
 _DOTENV_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 _DOTENV_EXTRA_SKIP = ()
 
-
-def _dotenv_suppressed():
-    """True when this process must not read an ambient .env file.
-
-    Plan 88-11 task 04: this loader runs at import time in four entry points,
-    so a test that imported any of them used to re-inject the operator's live
-    DSN, live ports and API keys into an environment tests/conftest.py had
-    just scrubbed. Inside a test session the answer is always True.
-
-    Returns:
-        bool: True when any name in ``_DOTENV_EXTRA_SKIP`` is set, when
-        ``GSD_TEST_MODE`` is 1/true/yes/on, or when pytest is running
-        (``PYTEST_CURRENT_TEST``, which tests/test_88_rlm_port_safety.py needs
-        because it deletes ``GSD_TEST_MODE`` before importing the daemon).
-        False in every other case, including ``GSD_TEST_MODE=0``.
-    """
-    for _name in _DOTENV_EXTRA_SKIP:
-        if os.environ.get(_name):
-            return True
-    if os.environ.get("GSD_TEST_MODE", "").strip().lower() in ("1", "true", "yes", "on"):
-        return True
-    return bool(os.environ.get("PYTEST_CURRENT_TEST"))
-
-
-def _load_dotenv():
-    """Load a .env file into os.environ (simple parser, no dependency).
-
-    A variable that is already set always wins; comments, blank lines and
-    lines without ``=`` are skipped; one layer of quotes comes off; the first
-    candidate that exists is the only one read. Outside test mode the
-    candidates are ``<root>/.env`` then ``/srv/amauta/.env``, exactly as the
-    installed daemon has always read them. Under :func:`_dotenv_suppressed`
-    nothing is read at all, unless ``GSD_DOTENV_PATH`` names one file — the
-    single opt-in, which exists so the loader's own tests can drive the parser
-    without an ambient file.
-    """
-    if _dotenv_suppressed():
-        explicit = os.environ.get("GSD_DOTENV_PATH", "")
-        if not explicit:
-            return
-        candidates = [explicit]
-    else:
-        candidates = [os.path.join(_DOTENV_ROOT, ".env"), "/srv/amauta/.env"]
-    for candidate in candidates:
-        if os.path.isfile(candidate):
-            with open(candidate, encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line or line.startswith("#"):
-                        continue
-                    if "=" not in line:
-                        continue
-                    key, _, val = line.partition("=")
-                    key = key.strip()
-                    val = val.strip().strip("'\"")
-                    if key and key not in os.environ:  # Don't override existing env
-                        os.environ[key] = val
-            break
-
-
-_load_dotenv()
+_dotenv_spec = importlib.util.spec_from_file_location(
+    "gsd_dotenv", os.path.join(_DOTENV_ROOT, "services", "_dotenv.py")
+)
+_dotenv = importlib.util.module_from_spec(_dotenv_spec)
+_dotenv_spec.loader.exec_module(_dotenv)
+_dotenv.load_dotenv(_DOTENV_ROOT, _DOTENV_EXTRA_SKIP)
 
 import sys
 import json
@@ -271,6 +225,12 @@ class MCPDatabase:
 
 # ── MCPValkey: optional Redis/Valkey client (redis.from_url pattern) ──────────
 
+# The ONE cache-URL resolver (plan 89-09 task 04)
+try:
+    from services import cache_url
+except ImportError:  # pragma: no cover - script-launched from services/
+    import cache_url
+
 try:
     import redis as _redis_lib
     _HAS_REDIS = True
@@ -282,7 +242,9 @@ except ImportError:
 class MCPValkey:
     """Optional Valkey/Redis client.
 
-    Connection URL: VALKEY_URL env first, then REDIS_URL, else None (no client).
+    Connection URL: services/cache_url.py, the ONE resolver (plan 89-09 task 04).
+    When NOTHING is configured there is still no client and no socket: the local
+    6379 is the operator's own server, so an unconfigured MCP must not dial it.
     Valkey is OPTIONAL — when unavailable, tools skip the cache path gracefully.
     All methods swallow exceptions; get() returns None on failure; setex() returns False.
     """
@@ -292,9 +254,13 @@ class MCPValkey:
         self._init_error = None
         self._ping_ok = False
 
-        url = os.environ.get("VALKEY_URL") or os.environ.get("REDIS_URL")
-        if not url:
-            self._init_error = "VALKEY_URL / REDIS_URL not set"
+        url = cache_url.redis_url()
+        source = cache_url.redis_url_source()
+        if source == cache_url.DEFAULT_SOURCE:
+            self._init_error = (
+                "no cache URL configured: export %s (the legacy names %s are still "
+                "read, in that order)" % (cache_url.CANONICAL, ", ".join(cache_url.LEGACY_NAMES))
+            )
             return
 
         if not _HAS_REDIS:
@@ -306,7 +272,10 @@ class MCPValkey:
             self._client.ping()
             self._ping_ok = True
         except Exception as e:
-            self._init_error = f"Valkey ping failed: {e}"
+            self._init_error = (
+                f"Valkey ping failed: {e} (cache URL from {source}, canonical name "
+                f"{cache_url.CANONICAL}: {cache_url.masked_redis_url()})"
+            )
             self._ping_ok = False
 
     def available(self) -> bool:

@@ -118,7 +118,31 @@ const path = require('node:path');
 // phase-53-canary's partial checks on it — the seven Phase 44 step names plus --upgrade and --uninstall —
 // are present and green). This PR must be merged with a merge commit (NEVER squash, never rebase-merge) or
 // this SHA stops resolving on master. The full list is in 88-11-INSTALLER-RECORD.md.
-const PHASE_50_BASE = '37ee48f2fa59a87fd663d9844b6dc5a35752fc3b';
+// RE-BASELINED AGAIN 2026-11-12 (plan 89-09 "pinned-file surgery", operator sign-off: delegated in the task
+// brief). TWO pinned paths changed on purpose since the base above:
+//   services/amauta-mcp.py          89-09-03 its forty-line copy of the .env loader became a six-line prelude
+//                                   that loads services/_dotenv.py by path (ONE definition, four importers);
+//                                   89-09-04 MCPValkey takes its URL from services/cache_url.py, the ONE
+//                                   resolver, and its error text names the canonical variable and the name
+//                                   that actually supplied the value. Its 0.0.0.0 bind and hostname lookup
+//                                   are DELIBERATELY untouched — those are Phase 90's (SEC-06), and mixing a
+//                                   security change into a canary re-baseline is how one hides in the other.
+//   services/agent_hydrator.py      89-09-04 _fetch_valkey takes its URL from the same resolver; it read one
+//                                   legacy name only, so a cache exported under the canonical name never
+//                                   reached it.
+// MEASURED, NOT ASSUMED: `git diff --name-only 37ee48f..HEAD` lists 47 files, and the intersection with the
+// pinned list read out of the four canary files is exactly services/agent_hydrator.py and services/amauta-mcp.py.
+// agents/ did not move (`git diff --name-only <base>...HEAD -- agents/` is empty) and
+// tests/agents-compile-claude-target-byte-match.test.cjs is green. The four byte-pinned BLOCKS are unchanged,
+// re-measured with this file's own extractBlock: gsd-tools `case 'module':` 6735 bytes / 139 lines,
+// `case 'party':` 2130 / 43, cli `if (command === 'module')` 877 / 17, `if (command === 'party')` 364 / 9.
+// The base is now the last commit of this series that touches a pinned path:
+//   cbed3c82dcf1d536a1bb765f6ab5814df6e03521  refactor(89-09): one cache resolver per language, every consumer calls it [89-09-04]
+// Every assertion is kept (6/6). PHASE_52_BASE is deliberately NOT moved: it is FROZEN, and none of 89-09's files is pinned against it.
+// This PR must be merged with a merge commit (NEVER squash, never rebase-merge) or this SHA stops resolving
+// on master. The full list is in
+// .planning/phases/89-postgres-primary-orchestration-cleanup/89-09-RECORD.md.
+const PHASE_50_BASE = 'cbed3c82dcf1d536a1bb765f6ab5814df6e03521';
 
 const ROOT = path.resolve(__dirname, '..');
 

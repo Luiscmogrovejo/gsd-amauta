@@ -102,9 +102,10 @@ def _valkey_reachable():
     it dialled nothing at all. The address now comes from
     ``GSD_TEST_VALKEY_URL`` through ``conftest.valkey_host_port()``, which
     returns None rather than a default, and the same URL is what
-    ``conftest._start_rlm`` hands the RLM service as ``REDIS_HOST``/
-    ``REDIS_PORT`` — so the probe and the service under test agree by
-    construction instead of by coincidence.
+    ``conftest._start_rlm`` hands the RLM service as ``GSD_REDIS_URL`` (plan
+    89-09 task 06 moved that handover from the host/port pair to the canonical
+    name, which is what the resolver reads first) — so the probe and the service
+    under test agree by construction instead of by coincidence.
 
     Returns:
         bool: True when a disposable Valkey is configured AND answering.
