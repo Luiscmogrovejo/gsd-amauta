@@ -23,6 +23,7 @@ const assert = require('node:assert/strict');
 const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
+const { pyLiteral } = require('./support/py-embed.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const AMAUTA_PY = path.join(ROOT, 'amauta.py');
@@ -182,7 +183,7 @@ describe('cmd_reconcile (TASK-05)', () => {
   it('cmd_reconcile function is defined in amauta.py (AST check)', () => {
     const out = pyExec(`
 import ast
-with open('${AMAUTA_PY}') as f:
+with open(${pyLiteral(AMAUTA_PY)}, encoding='utf-8') as f:
     tree = ast.parse(f.read())
 funcs = [n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
 print('OK' if 'cmd_reconcile' in funcs else 'MISSING')

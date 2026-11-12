@@ -21,6 +21,7 @@ const { execFileSync, execSync } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
+const { pyLiteral } = require('./support/py-embed.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const AMAUTA_PY = path.join(ROOT, 'amauta.py');
@@ -204,7 +205,7 @@ describe('TOCTOU Fix -- _file_lock reentrant (TASK-02)', () => {
     const out = pyExec(`
 import sys; sys.path.insert(0, '.')
 import importlib.util
-spec = importlib.util.spec_from_file_location('amauta', '${AMAUTA_PY}')
+spec = importlib.util.spec_from_file_location('amauta', ${pyLiteral(AMAUTA_PY)})
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 
@@ -229,7 +230,7 @@ print('OK')
     const out = pyExec(`
 import sys, ast; sys.path.insert(0, '.')
 
-with open('${AMAUTA_PY}') as f:
+with open(${pyLiteral(AMAUTA_PY)}, encoding='utf-8') as f:
     source = f.read()
 tree = ast.parse(source)
 
@@ -278,7 +279,7 @@ else:
     const out = pyExec(`
 import sys, ast; sys.path.insert(0, '.')
 
-with open('${AMAUTA_PY}') as f:
+with open(${pyLiteral(AMAUTA_PY)}, encoding='utf-8') as f:
     source = f.read()
 tree = ast.parse(source)
 
@@ -323,7 +324,7 @@ else:
     const out = pyExec(`
 import sys, ast; sys.path.insert(0, '.')
 
-with open('${AMAUTA_PY}') as f:
+with open(${pyLiteral(AMAUTA_PY)}, encoding='utf-8') as f:
     source = f.read()
 tree = ast.parse(source)
 
@@ -352,7 +353,7 @@ describe('Archive Constants and Helpers', () => {
     const out = pyExec(`
 import sys; sys.path.insert(0, '.')
 import importlib.util
-spec = importlib.util.spec_from_file_location('amauta', '${AMAUTA_PY}')
+spec = importlib.util.spec_from_file_location('amauta', ${pyLiteral(AMAUTA_PY)})
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 af = str(mod.ARCHIVE_FILE)
@@ -365,7 +366,7 @@ print('OK' if af.endswith('tasks-archive.json') else f'WRONG: {af}')
     const out = pyExec(`
 import sys; sys.path.insert(0, '.')
 import importlib.util
-spec = importlib.util.spec_from_file_location('amauta', '${AMAUTA_PY}')
+spec = importlib.util.spec_from_file_location('amauta', ${pyLiteral(AMAUTA_PY)})
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 has_load = hasattr(mod, '_load_archive')
@@ -379,7 +380,7 @@ print('OK' if has_load and has_save else f'MISSING: load={has_load} save={has_sa
     const out = pyExec(`
 import sys, os; sys.path.insert(0, '.')
 import importlib.util
-spec = importlib.util.spec_from_file_location('amauta', '${AMAUTA_PY}')
+spec = importlib.util.spec_from_file_location('amauta', ${pyLiteral(AMAUTA_PY)})
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 data = mod._load_archive()
@@ -393,7 +394,7 @@ print('OK' if ok else f'WRONG: {data}')
     const out = pyExec(`
 import sys; sys.path.insert(0, '.')
 import importlib.util
-spec = importlib.util.spec_from_file_location('amauta', '${AMAUTA_PY}')
+spec = importlib.util.spec_from_file_location('amauta', ${pyLiteral(AMAUTA_PY)})
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 parser = mod.build_parser()

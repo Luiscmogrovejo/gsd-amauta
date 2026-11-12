@@ -28,13 +28,14 @@ const { test, describe } = require('node:test');
 const assert = require('node:assert');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const { pyLiteral } = require('./support/py-embed.cjs');
 
 const ROOT = path.join(__dirname, '..');
 
 function pyEval(code) {
   try {
     const result = execFileSync('python3', ['-c', `
-import sys, json; sys.path.insert(0, '${ROOT}')
+import sys, json; sys.path.insert(0, ${pyLiteral(ROOT)})
 ${code}
 `], { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 8000 });
     return result.trim();
@@ -780,7 +781,7 @@ print(_infer_lane({"assigned_to": "gsd-planner"}))
 
   test('unknown agent defaults to code', () => {
     const r = pyEval(`
-import sys; sys.stderr = open('/dev/null', 'w')
+import sys, os; sys.stderr = open(os.devnull, 'w')
 from amauta import _infer_lane
 print(_infer_lane({"assigned_to": "gsd-unknown-agent"}))
 `);
