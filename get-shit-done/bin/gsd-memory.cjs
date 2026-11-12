@@ -61,6 +61,8 @@ const path = require('path');
 const fs = require('fs');
 // Phase 88 plan 88-15: one Python launcher resolver, one `which`, one home dir.
 const platform = require('./lib/platform.cjs');
+// ORC-05 (plan 88-17): every model call the harness initiates goes through here.
+const runtimeLlm = require('./lib/runtime-llm.cjs');
 // Model ids resolve through the single source of truth (lib/model-registry.json)
 // — MODL-01 currency + MODL-06 centralization. Honors the fable→opus fallback.
 const { resolveModelId, resolveModelAlias } = require('./lib/model-registry.cjs');
@@ -2426,119 +2428,70 @@ function llmSummarize(entries, model) {
 }
 
 /**
- * Claude CLI summarization — uses `claude --print` available in Claude Code sessions.
- * No API key needed — uses the active Claude Code authentication.
- * Falls back to Anthropic HTTP API if ANTHROPIC_API_KEY is set and CLI unavailable.
+ * Distillation summary from the HOST RUNTIME model (ORC-05, plan 88-17).
+ *
+ * The backend decision lives in get-shit-done/bin/lib/runtime-llm.cjs: the host
+ * runtime CLI (`claude -p`) first, and a direct Messages API call only when the
+ * operator sets GSD_LLM_BACKEND=api explicitly. Before plan 88-17 this function
+ * spawned the CLI through a SHELL STRING and then fell back to the direct API
+ * whenever an API key happened to be present, so a key could be spent without
+ * anyone opting in. No key is needed now, and none is read here.
+ *
+ * WHERE THE RATE-LIMIT BACKOFF WENT: into the shared helper, so every caller gets
+ * it instead of only this one. Its pattern and its two delays are unchanged
+ * (/too many requests|rate.?limit|429/i, 2000 ms then 8000 ms, three attempts at
+ * most) and are re-exported below, so the behaviour stays observable and testable
+ * from here. Live evidence for keeping it: `gsd-memory learn` hit "Too many
+ * requests" during a previous milestone.
+ *
+ * The provider chain after this function (Haiku > Ollama > concatenation) is
+ * untouched: a null return still means "try the next provider".
+ *
  * @param {Array} entries - Memory entries to summarize
  * @param {string} model - Claude model shortname: 'sonnet' or 'haiku'
- * @returns {string|null}
+ * @param {{env?: object, retryDelaysMs?: number[], sleep?: function}} [opts] -
+ *   injection points so a test can observe the retries without waiting seconds
+ * @returns {string|null} the summary, or null so the caller tries the next provider
+ * @example
+ *   const text = claudeSummarize(group, 'sonnet');  // null when no backend is available
  */
-// Rate-limit backoff (live evidence: `gsd-memory learn` hit "Too many
-// requests" during this milestone). Only rate-limit-shaped errors get a
-// synchronous retry; every other error falls through immediately to the
-// existing provider chain (Haiku > Ollama > concatenation) unchanged.
-const CLAUDE_RATE_LIMIT_PATTERN = /too many requests|rate.?limit|429/i;
-const CLAUDE_RATE_LIMIT_BACKOFF_MS = [2000, 8000]; // max 2 retries, exponential
+const CLAUDE_RATE_LIMIT_PATTERN = runtimeLlm.RATE_LIMIT_PATTERN;
+const CLAUDE_RATE_LIMIT_BACKOFF_MS = runtimeLlm.DEFAULT_RETRY_DELAYS_MS; // max 2 retries, exponential
 
-function _sleepSync(ms) {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
-
-function claudeSummarize(entries, model) {
-  const { execSync } = require('child_process');
+function claudeSummarize(entries, model, opts = {}) {
   const combinedText = entries.map((e, i) =>
     `[Entry ${i + 1} | source: ${e.source || 'unknown'}]:\n${(e.text || '').slice(0, 800)}`
   ).join('\n\n');
 
   const prompt = `You are a knowledge distillation assistant. Summarize these ${entries.length} related memory entries into ONE coherent entry that preserves all key facts, decisions, and lessons learned. Output ONLY the summary, no preamble.\n\n${combinedText}`;
 
-  // Try claude CLI first (available in Claude Code sessions, no API key needed).
-  // Retry loop: max 2 retries (3 total attempts), only on rate-limit-shaped errors.
-  for (let attempt = 0; attempt <= CLAUDE_RATE_LIMIT_BACKOFF_MS.length; attempt++) {
-    try {
-      const result = execSync(
-        `claude --print --model ${resolveModelAlias(model)}`,
-        { input: prompt, timeout: 60000, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
-      );
-      const summary = (result || '').trim();
-      if (summary.length >= 20) return summary.slice(0, 4000);
-      process.stderr.write(`[distill] Claude CLI (${model}) returned short output (${summary.length} chars)\n`);
-      break; // short output is not a rate-limit condition — fall through to API fallback
-    } catch (cliErr) {
-      const cliMsg = cliErr.message || '';
-      if (CLAUDE_RATE_LIMIT_PATTERN.test(cliMsg) && attempt < CLAUDE_RATE_LIMIT_BACKOFF_MS.length) {
-        const backoffMs = CLAUDE_RATE_LIMIT_BACKOFF_MS[attempt];
-        process.stderr.write(
-          `[distill] Claude CLI (${model}) rate-limited — retrying in ${backoffMs}ms ` +
-          `(attempt ${attempt + 1}/${CLAUDE_RATE_LIMIT_BACKOFF_MS.length})\n`
-        );
-        _sleepSync(backoffMs);
-        continue;
-      }
-      process.stderr.write(`[distill] Claude CLI (${model}) unavailable: ${cliMsg.split('\n')[0]}\n`);
-      break;
-    }
+  const delays = opts.retryDelaysMs || CLAUDE_RATE_LIMIT_BACKOFF_MS;
+  const res = runtimeLlm.callModel(
+    // The direct API needs a concrete model id; the CLI accepts either. Resolving
+    // through the registry keeps it the single source of truth both ways.
+    { prompt, model: resolveModelId(model) || resolveModelAlias(model), maxTokens: 500 },
+    {
+      env: opts.env || process.env,
+      timeoutMs: 60000,
+      retryDelaysMs: delays,
+      sleep: opts.sleep,
+      onRetry: (r) => process.stderr.write(
+        `[distill] Claude CLI (${model}) rate-limited — retrying in ${r.delayMs}ms ` +
+        `(attempt ${r.attempt}/${delays.length})\n`
+      ),
+    },
+  );
+
+  if (!res.ok) {
+    process.stderr.write(`[distill] Claude (${model}) unavailable: ${res.reason}: ${res.detail}\n`);
+    return null;
   }
-
-  // Fall back to Anthropic HTTP API if key is available.
-  //
-  // SECRET HYGIENE: the key used to be interpolated into a shell command line,
-  // so `ps` / process accounting on a shared or logged machine saw the whole
-  // API key. curl reads the key (and the request body) from a 0600 config file
-  // in a private temp dir instead — nothing secret ever reaches argv — and the
-  // file is removed in a finally block.
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (apiKey) {
-    const osmod = require('os');
-    const { execFileSync } = require('child_process');
-    let tmpDir = null;
-    try {
-      const modelId = resolveModelId(model);
-      const body = JSON.stringify({
-        model: modelId, max_tokens: 500,
-        messages: [{ role: 'user', content: prompt }],
-      });
-      tmpDir = fs.mkdtempSync(path.join(osmod.tmpdir(), 'gsd-distill-'));
-      fs.chmodSync(tmpDir, 0o700);
-      const bodyPath = path.join(tmpDir, 'body.json');
-      const cfgPath = path.join(tmpDir, 'curl.cfg');
-      fs.writeFileSync(bodyPath, body, { mode: 0o600 });
-      fs.writeFileSync(cfgPath, [
-        'silent',
-        'max-time = 30',
-        'request = "POST"',
-        'url = "https://api.anthropic.com/v1/messages"',
-        `header = "x-api-key: ${apiKey}"`,
-        'header = "anthropic-version: 2023-06-01"',
-        'header = "content-type: application/json"',
-        `data = "@${bodyPath}"`,
-        '',
-      ].join('\n'), { mode: 0o600 });
-
-      // Phase 88 plan 88-15: a BARE `curl` is resolved by the OS loader, so on
-      // Windows the System32 copy always wins and nothing can be put in front
-      // of it. GSD_CURL overrides it (a path, or a JSON array when the
-      // launcher needs leading arguments); the key still travels in the config
-      // file, never on the command line.
-      const curlTool = platform.resolveTool('GSD_CURL', 'curl');
-      const apiResult = execFileSync(curlTool.command, [...curlTool.args, '--config', cfgPath], {
-        timeout: 35000, encoding: 'utf8',
-      });
-      const parsed = JSON.parse(apiResult);
-      if (parsed.content && parsed.content[0] && parsed.content[0].text) {
-        const summary = parsed.content[0].text.trim();
-        if (summary.length >= 20) return summary.slice(0, 4000);
-      }
-    } catch (apiErr) {
-      process.stderr.write(`[distill] Claude API (${model}) fallback failed: ${apiErr.message.split('\n')[0]}\n`);
-    } finally {
-      if (tmpDir) {
-        try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_e) { /* best effort */ }
-      }
-    }
+  const summary = (res.text || '').trim();
+  if (summary.length < 20) {
+    process.stderr.write(`[distill] Claude (${model}) returned short output (${summary.length} chars)\n`);
+    return null;
   }
-
-  return null;
+  return summary.slice(0, 4000);
 }
 
 // MEM-L3: distill eligibility pagination — a single limit=1000 fetch capped

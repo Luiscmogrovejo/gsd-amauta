@@ -36,7 +36,7 @@ safety-critical. The worker lists locations for those and says
 | `GSD_SHUNT_EXEMPT_AGENTS` | comma-separated agent types | worker agents only |
 | `GSD_SHUNT_EXEMPT_RE` | path regex that is never blocked | `*PLAN.md` |
 | `GSD_SHUNT_MODEL` | worker model alias or id | `haiku` |
-| `GSD_SHUNT_BACKEND` | `api` (needs `ANTHROPIC_API_KEY`) or `cli` (headless `claude`) | `api` if the key is set, else `cli` |
+| `GSD_SHUNT_BACKEND` | explicit opt-in: `cli` (headless host runtime) or `api` (direct Messages API) | `cli` — the host runtime; `api` only when asked for |
 
 `GSD_SHUNT` is separate from `GSD_HOOKS_ENFORCE` on purpose: the enforcement
 gates ship warn-first, and a shunt that only warns saves nothing.

@@ -56,8 +56,12 @@ def hermetic_env(extra=None):
         fake, "gh", "print('You are not logged into any GitHub hosts.')\nraise SystemExit(1)\n"
     )
     env["PATH"] = fake_exe.isolated_path(fake)
+    # Phase 88 plan 88-17 (ORC-05): the three dummy keys used to be set here only to
+    # dodge check_api_keys's FAIL-with-none-set branch. That branch is gone -- a machine
+    # with no keys is a CORRECTLY configured machine -- so the workaround is removed and
+    # the keys are deleted instead, which is also the state a CI runner is really in.
     for key in ("VOYAGE_API_KEY", "PERPLEXITY_API_KEY", "ANTHROPIC_API_KEY"):
-        env[key] = "dummy-not-a-real-key"
+        env.pop(key, None)
     if extra:
         env.update(extra)
     return env

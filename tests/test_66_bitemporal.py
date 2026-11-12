@@ -7,9 +7,12 @@ lock file this plan's wiring extends). All PG-gated rows in this file live
 under project_id "__test66b__" (see TEST_PROJECT below), cleaned before AND
 after every test by the autouse hygiene fixture. Classifier decisions are
 injected by monkeypatching services.pg_store's imported `classify_memory_op`
-name with a controllable stub (injection, not the live LLM) -- the only
-test that exercises the real Anthropic HTTP call is the key-gated live-LLM
-smoke test at the bottom of this file.
+name with a controllable stub (injection, not a real model) -- the only test
+that exercises the un-injected call path is the live-runtime smoke test at
+the bottom of this file. Plan 88-17 (ORC-05): that one used to make a real,
+paid Anthropic HTTP call and skipped without a key; it now goes through the
+host runtime CLI against a portable fake, needs no key, and runs on every
+cell. NO test in this file reaches api.anthropic.com.
 
 Live discovery (documented for future maintainers): the plan's own example
 contradiction pair -- "the daemon runs on port 18799" / "the daemon now
@@ -418,19 +421,54 @@ def test_skip_dedup_skips_classifier(monkeypatch):
 
 
 # ═══════════════════════════════════════════════════════
-# Live-LLM smoke (key-gated, tolerant assertion -- no CI dependency on a
-# live Anthropic key; skipped entirely when ANTHROPIC_API_KEY is unset)
+# Live-runtime smoke (plan 88-17, ORC-05): the un-injected classifier path,
+# end to end, against the HOST RUNTIME -- no API key, no network, every cell
 # ═══════════════════════════════════════════════════════
+#
+# Until plan 88-17 this was gated on ANTHROPIC_API_KEY and made a REAL, paid
+# Anthropic HTTP call. It therefore skipped on every CI cell (88-16 carried it as
+# a `host-runtime-llm` skip-exceptions entry) and billed anyone who ran the suite
+# with a key in their environment. ORC-05 moves the call onto the host runtime CLI
+# (services/runtime_llm.py), which honours a `claude` on PATH -- so the test now
+# runs everywhere against a portable fake one.
+#
+# WHAT IS REAL AND WHAT IS FAKED (stated so the coverage claim is honest):
+#   real   -- classify_memory_op's candidate rendering and prompt construction,
+#             services/runtime_llm.py's backend resolution via shutil.which, the
+#             argv it builds, the real subprocess spawn (on Windows through the
+#             cmd.exe branch, because write_fake_exe writes a `claude.cmd` --
+#             exactly the shape the npm-installed `claude` has), the CLI JSON
+#             envelope parse, and classify_memory_op's parse of the result.
+#   faked  -- only the model's judgment: the fake answers with one valid op.
+# The assertion is unchanged and stays tolerant (the 4-enum), so it cannot start
+# depending on the fake's particular answer.
 
-@pytest.mark.skipif(
-    not os.environ.get("ANTHROPIC_API_KEY"),
-    reason="ANTHROPIC_API_KEY not set -- live LLM classifier smoke skipped",
-)
-def test_live_llm_classifier_smoke():
-    """An obvious restatement pair, classified by the REAL Anthropic HTTP
-    call (no llm_call injection): tolerant assertion only -- op must be one
-    of the 4-enum and classify_memory_op must not raise. LLM output is
-    inherently non-deterministic, so this does NOT assert a specific op."""
+
+def test_live_llm_classifier_smoke(monkeypatch, tmp_path):
+    """An obvious restatement pair, classified through the un-injected path
+    (no llm_call argument): tolerant assertion only -- op must be one of the
+    4-enum and classify_memory_op must not raise. Model output is inherently
+    non-deterministic, so this does NOT assert a specific op."""
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "support"))
+    import fake_exe
+
+    bindir = tmp_path / "bin"
+    fake_exe.write_fake_exe(bindir, "claude", "\n".join([
+        "import json, sys",
+        "sys.stdin.read()",
+        "sys.stdout.write(json.dumps({'is_error': False,",
+        "    'result': '{\"op\": \"NOOP\", \"target_id\": 1}', 'usage': {}}))",
+    ]))
+
+    # No key of any kind, and no opt-in: the only way this can answer at all is
+    # the host runtime CLI the fake provides.
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("GSD_LLM_BACKEND", raising=False)
+    monkeypatch.delenv("GSD_LLM_CLI_BIN", raising=False)
+    monkeypatch.delenv("GSD_SHUNT_CLAUDE_BIN", raising=False)
+    monkeypatch.delenv("GSD_MEMORY_CLASSIFIER", raising=False)
+    monkeypatch.setenv("PATH", fake_exe.isolated_path(bindir))
+
     from services.memory_classifier import classify_memory_op
 
     candidates = [{"id": 1, "text": "the team meeting is scheduled for 3pm on Tuesday"}]
@@ -438,6 +476,10 @@ def test_live_llm_classifier_smoke():
         "the team meeting is scheduled for 3pm Tuesday, same as before", candidates,
     )
     assert result["op"] in ("ADD", "UPDATE", "DELETE", "NOOP"), result
+    # A degraded answer must NOT be what produced that op -- every degradation also
+    # returns a 4-enum op, so without this the test would pass just as well with an
+    # empty PATH and prove nothing about the runtime path.
+    assert result["reason"] == "classifier-decision", result
 
 
 # ═══════════════════════════════════════════════════════

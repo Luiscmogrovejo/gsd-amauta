@@ -9,6 +9,7 @@ Importable both as ``from _platform import setup_stdio`` (when ``services/`` is 
 """
 import io
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -24,6 +25,8 @@ __all__ = [
     "port_holders",
     "detached_popen_kwargs",
     "file_lock",
+    "home_dir",
+    "which",
 ]
 
 # ── Windows plumbing, configurable per ENG-04 (never a hard-coded literal) ────
@@ -784,3 +787,36 @@ def home_dir() -> str:
     if home and home != "~":
         return home
     return os.path.abspath(os.sep)
+
+
+def which(name, *, env=None):
+    """Locate an executable on PATH, correctly on every platform.
+
+    The Python mirror of ``get-shit-done/bin/lib/platform.cjs``'s ``which()``. It exists
+    here, rather than as a ``shutil.which`` call inlined at each call site, so that there
+    is exactly one place that knows how an executable is found -- ``shutil.which`` applies
+    ``PATHEXT`` on Windows (so an npm ``<name>.cmd`` shim IS found), which a bare
+    ``os.path.exists`` loop would not.
+
+    Args:
+        name: the tool name as it would be typed, for example ``"claude"``.
+        env: the environment whose ``PATH`` and ``PATHEXT`` are searched; ``None`` means
+            the current process environment.
+
+    Returns:
+        str | None: the resolved absolute path, or ``None`` when the tool is not found.
+
+    Raises:
+        Nothing. A malformed name or an unreadable PATH entry yields ``None``.
+
+    Example:
+        >>> which("definitely-not-a-real-tool-xyz") is None
+        True
+    """
+    if not name or not isinstance(name, str):
+        return None
+    environ = os.environ if env is None else env
+    try:
+        return shutil.which(name, path=environ.get("PATH"))
+    except Exception:
+        return None
