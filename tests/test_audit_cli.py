@@ -16,7 +16,9 @@ Run with:
 """
 import json
 import os
+import shutil
 import sys
+import tempfile
 import unittest
 from io import StringIO
 from unittest.mock import MagicMock, patch
@@ -63,8 +65,11 @@ class TestAuditParserRegistration(unittest.TestCase):
         self.assertEqual(args.limit, 500)
 
     def test_audit_export_output_file(self):
-        args = _build_args(["audit", "export", "--output", "/tmp/audit.json"])
-        self.assertEqual(args.output, "/tmp/audit.json")
+        out_dir = tempfile.mkdtemp(prefix="audit-cli-")
+        self.addCleanup(shutil.rmtree, out_dir, True)
+        out_file = os.path.join(out_dir, "audit.json")
+        args = _build_args(["audit", "export", "--output", out_file])
+        self.assertEqual(args.output, out_file)
 
     def test_audit_show_positional(self):
         args = _build_args(["audit", "show", "TK-0001"])

@@ -12,7 +12,9 @@ Run: python3 -m pytest tests/test_rlm_wiring.py -v
 import io
 import json
 import os
+import shutil
 import sys
+import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
@@ -64,15 +66,17 @@ class TestRlmQueryHttpTransport(unittest.TestCase):
             {"filepath": "src/main.py", "start_line": 1, "end_line": 10, "label": "main"}
         ])
 
+        doc_dir = tempfile.mkdtemp(prefix="rlm-wiring-")
+        self.addCleanup(shutil.rmtree, doc_dir, True)
         with patch("os.path.isdir", return_value=True), \
              patch("os.path.isfile", return_value=False):
-            result = amauta._rlm_query("test query", doc_path="/tmp/test_dir")
+            result = amauta._rlm_query("test query", doc_path=doc_dir)
 
         req = mock_urlopen.call_args[0][0]
         self.assertTrue(req.full_url.endswith("/query"))
         body = json.loads(req.data)
         self.assertIn("directory", body)
-        self.assertEqual(body["directory"], "/tmp/test_dir")
+        self.assertEqual(body["directory"], doc_dir)
 
     @patch("urllib.request.urlopen")
     def test_rlm_query_posts_to_search_endpoint_for_file(self, mock_urlopen):
@@ -81,15 +85,18 @@ class TestRlmQueryHttpTransport(unittest.TestCase):
             {"filepath": "docs/API.md", "start_line": 5, "end_line": 25, "label": "endpoints"}
         ])
 
+        doc_dir = tempfile.mkdtemp(prefix="rlm-wiring-")
+        self.addCleanup(shutil.rmtree, doc_dir, True)
+        doc_file = os.path.join(doc_dir, "testfile.py")
         with patch("os.path.isdir", return_value=False), \
              patch("os.path.isfile", return_value=True):
-            result = amauta._rlm_query("test query", doc_path="/tmp/testfile.py")
+            result = amauta._rlm_query("test query", doc_path=doc_file)
 
         req = mock_urlopen.call_args[0][0]
         self.assertTrue(req.full_url.endswith("/search"))
         body = json.loads(req.data)
         self.assertIn("paths", body)
-        self.assertIn("/tmp/testfile.py", body["paths"])
+        self.assertIn(doc_file, body["paths"])
 
     @patch("urllib.request.urlopen")
     def test_rlm_query_returns_empty_on_connection_error(self, mock_urlopen):
