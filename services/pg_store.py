@@ -29,6 +29,16 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from decimal import Decimal
 
+# Phase 88 plan 88-15: one home-directory resolution. A bare HOME lookup
+# is empty on Windows cmd and PowerShell, which turns the tag-rules path below
+# into a RELATIVE one. Per the Phase 60 sys.path learning the directory is
+# added explicitly so the module resolves however this file was loaded.
+import sys as _platform_boot_sys
+_SERVICES_DIR = os.path.dirname(os.path.abspath(__file__))
+if _SERVICES_DIR not in _platform_boot_sys.path:
+    _platform_boot_sys.path.append(_SERVICES_DIR)
+from _platform import home_dir  # noqa: E402
+
 try:
     import psycopg2
     import psycopg2.extras
@@ -514,7 +524,7 @@ def load_tag_rules():
     candidates = [
         os.path.join(here, "..", "get-shit-done", "config", "tag-rules.json"),
         os.path.join(
-            os.environ.get("HOME", ""),
+            home_dir(),
             ".claude",
             "get-shit-done",
             "config",

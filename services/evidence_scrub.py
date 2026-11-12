@@ -38,6 +38,16 @@ import os
 import re
 import sys
 
+# Phase 88 plan 88-15: one home-directory resolution. A bare HOME lookup
+# is empty on Windows cmd and PowerShell, which turns every config path below
+# into a RELATIVE one. Per the Phase 60 sys.path learning the directory is
+# added explicitly so the module resolves however this file was loaded.
+_SERVICES_DIR = os.path.dirname(os.path.abspath(__file__))
+if _SERVICES_DIR not in sys.path:
+    sys.path.append(_SERVICES_DIR)
+from _platform import home_dir  # noqa: E402
+
+
 _PATTERNS_ENV_OVERRIDE = "GSD_EVIDENCE_SCRUB_PATTERNS_PATH"
 SCRUB_VERSION = "1.0"
 
@@ -54,7 +64,7 @@ def _candidate_paths():
     here = os.path.dirname(os.path.abspath(__file__))
     return [
         os.path.join(here, "..", "get-shit-done", "config", "evidence-scrub-patterns.json"),
-        os.path.join(os.environ.get("HOME", ""), ".claude", "get-shit-done", "config", "evidence-scrub-patterns.json"),
+        os.path.join(home_dir(), ".claude", "get-shit-done", "config", "evidence-scrub-patterns.json"),
     ]
 
 

@@ -574,7 +574,10 @@ function lintAfterEdit(filePath, options = {}) {
     if (detected.linter === 'eslint') {
       // eslint --format json for structured output
       try {
-        rawOutput = execSync(`${detected.cmd} --format json "${filePath}" 2>/dev/null || true`,
+        // Phase 88 plan 88-15: `2>/dev/null` and `|| true` were redundant —
+        // stdio[2] is already 'ignore' and the catch below yields the same
+        // empty result — and both break the command on Windows cmd.
+        rawOutput = execSync(`${detected.cmd} --format json "${filePath}"`,
           { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
         const parsed = JSON.parse(rawOutput);
         findings = (parsed[0]?.messages || []).map(m => ({
@@ -600,7 +603,9 @@ function lintAfterEdit(filePath, options = {}) {
 
     } else if (detected.linter === 'ruff') {
       try {
-        rawOutput = execSync(`${detected.cmd} --output-format json "${filePath}" 2>/dev/null`,
+        // Phase 88 plan 88-15: stdio[2] is already 'ignore', so the redirect
+        // added nothing on POSIX and broke the command on Windows cmd.
+        rawOutput = execSync(`${detected.cmd} --output-format json "${filePath}"`,
           { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
         const parsed = JSON.parse(rawOutput || '[]');
         findings = parsed.map(r => ({
@@ -2755,7 +2760,7 @@ function loadCapabilityCatalog(forceReload = false) {
     ? [envOverride]
     : [
         path.resolve(__dirname, '..', 'config', 'capability-catalog.json'),
-        path.join(process.env.HOME || '', '.claude', 'get-shit-done', 'config', 'capability-catalog.json'),
+        path.join(platform.homeDir(), '.claude', 'get-shit-done', 'config', 'capability-catalog.json'),
       ];
 
   for (const p of candidates) {

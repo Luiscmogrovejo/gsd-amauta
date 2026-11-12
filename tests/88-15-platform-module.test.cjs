@@ -340,3 +340,152 @@ test('the duplicate resolver is named in platform.cjs with its owning plan', () 
   assert.match(src, /fixture-daemon/, 'the remaining duplicate must be named');
   assert.match(src, /88-16/, 'with the plan that owns its removal');
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Task 88-15-06: the config paths that silently resolved to nowhere.
+//
+// `process.env.HOME || ''` made path.join('', '.claude', …) RELATIVE to the
+// current directory on Windows cmd and PowerShell, so the evidence-scrub
+// patterns, the tag rules and the capability catalog were simply not found —
+// and the scrubber reported success with no patterns at all.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const HOME_KEYS = ['HOME', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH'];
+
+function withHome(dir, fn) {
+  const saved = {};
+  for (const k of HOME_KEYS) saved[k] = process.env[k];
+  const parsed = path.parse(dir);
+  process.env.HOME = dir;
+  process.env.USERPROFILE = dir;
+  process.env.HOMEDRIVE = parsed.root.replace(/[\\/]$/, '');
+  process.env.HOMEPATH = dir.slice(parsed.root.replace(/[\\/]$/, '').length);
+  try {
+    return fn();
+  } finally {
+    for (const k of HOME_KEYS) {
+      if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k];
+    }
+  }
+}
+
+test('88-15-06 PROOF: the evidence-scrub patterns load from a REDIRECTED home', () => {
+  // The repo-local candidate normally wins, so the home branch is exercised in
+  // a tree that has the CLI but not its sibling config/ directory — exactly
+  // the shape of an installed copy whose config lives under ~/.claude.
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), '88-15-06-'));
+  try {
+    const binDir = path.join(base, 'tree', 'get-shit-done', 'bin');
+    fs.mkdirSync(binDir, { recursive: true });
+    const repoBin = path.join(__dirname, '..', 'get-shit-done', 'bin');
+    fs.copyFileSync(path.join(repoBin, 'gsd-amauta.cjs'), path.join(binDir, 'gsd-amauta.cjs'));
+    fs.cpSync(path.join(repoBin, 'lib'), path.join(binDir, 'lib'), { recursive: true });
+    assert.ok(!fs.existsSync(path.join(base, 'tree', 'get-shit-done', 'config')),
+      'the isolated tree must NOT have a repo-local config/');
+
+    const home = path.join(base, 'home');
+    const cfgDir = path.join(home, '.claude', 'get-shit-done', 'config');
+    fs.mkdirSync(cfgDir, { recursive: true });
+    fs.writeFileSync(path.join(cfgDir, 'evidence-scrub-patterns.json'), JSON.stringify({
+      patterns: [{ name: 'sentinel', regex: 'SENTINEL-88-15-[0-9]+', replacement: '[REDACTED]' }],
+    }), 'utf8');
+
+    const loaded = withHome(home, () => {
+      delete require.cache[require.resolve(path.join(binDir, 'gsd-amauta.cjs'))];
+      const mod = require(path.join(binDir, 'gsd-amauta.cjs'));
+      return mod.loadEvidenceScrubPatterns(true);
+    });
+    assert.ok(Array.isArray(loaded) && loaded.length > 0,
+      'a redirected home must yield a NON-EMPTY pattern set; an empty one is the defect');
+    assert.ok(loaded.some((p) => p.name === 'sentinel'), JSON.stringify(loaded));
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('88-15-06: no product file joins an EMPTY home into a config path', () => {
+  const offenders = [];
+  for (const file of productFiles()) {
+    const rel = path.relative(path.join(__dirname, '..'), file).split(path.sep).join('/');
+    if (rel === 'get-shit-done/bin/lib/platform.cjs') continue;
+    const text = fs.readFileSync(file, 'utf8');
+    text.split('\n').forEach((line, i) => {
+      if (/process\.env\.HOME/.test(line)) offenders.push(`${rel}:${i + 1}: ${line.trim()}`);
+    });
+  }
+  assert.deepEqual(offenders, [], `use platform.homeDir():\n${offenders.join('\n')}`);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Task 88-15-07: the shell-isms — `which`, `2>/dev/null`, `find | grep | head`,
+// a /tmp fallback and the operator's username in a tracked public file.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('88-15-07: scanner detection works through security-scan.cjs own entry point', () => {
+  const scan = require('../scripts/security-scan.cjs');
+  assert.equal(scan.toolAvailable('node'), true, 'an existing tool must be detected');
+  assert.equal(scan.toolAvailable('gsd-no-such-tool-88-15'), false, 'a missing tool must not be');
+  // The defect: `which <name> 2>/dev/null || command -v <name>` in a SHELL
+  // STRING reads as absent on Windows, so every scanner looked missing and the
+  // pipeline reported a clean scan.
+  const src = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'security-scan.cjs'), 'utf8');
+  assert.ok(!/execSync\(`which /.test(src), 'no `which` shell string may survive');
+});
+
+test('88-15-07: hasCode detection is a Node walk, true at depth 3 and false with no code', () => {
+  const init = require('../get-shit-done/bin/lib/init.cjs');
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), '88-15-07-walk-'));
+  try {
+    const deep = path.join(base, 'withcode', 'a', 'b');
+    fs.mkdirSync(deep, { recursive: true });
+    fs.writeFileSync(path.join(deep, 'mod.py'), 'x = 1\n');
+    assert.ok(init.findCodeFiles(path.join(base, 'withcode')).length > 0,
+      'a .py at depth 3 must be found');
+
+    const empty = path.join(base, 'nocode', 'docs');
+    fs.mkdirSync(empty, { recursive: true });
+    fs.writeFileSync(path.join(empty, 'README.md'), '# docs\n');
+    assert.equal(init.findCodeFiles(path.join(base, 'nocode')).length, 0,
+      'a tree with no source file must report none');
+
+    // node_modules and .git are skipped, and depth is bounded at 3
+    const nm = path.join(base, 'skipped', 'node_modules', 'pkg');
+    fs.mkdirSync(nm, { recursive: true });
+    fs.writeFileSync(path.join(nm, 'index.js'), 'x\n');
+    const tooDeep = path.join(base, 'skipped', 'a', 'b', 'c', 'd');
+    fs.mkdirSync(tooDeep, { recursive: true });
+    fs.writeFileSync(path.join(tooDeep, 'deep.js'), 'x\n');
+    assert.equal(init.findCodeFiles(path.join(base, 'skipped')).length, 0,
+      'node_modules is skipped and depth 4 is out of range');
+
+    assert.equal(init.findCodeFiles(path.join(base, 'does-not-exist')).length, 0,
+      'an unreadable directory is not a reason to throw');
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('88-15-07: the find|grep|head pipeline is gone from the product', () => {
+  const offenders = [];
+  for (const file of productFiles()) {
+    const rel = path.relative(path.join(__dirname, '..'), file).split(path.sep).join('/');
+    const text = fs.readFileSync(file, 'utf8');
+    text.split('\n').forEach((line, i) => {
+      if (/maxdepth/.test(line)) offenders.push(`${rel}:${i + 1}`);
+      if (/(execSync|exec|spawnSync|spawn)\([^)]*2>\/dev\/null/.test(line)) offenders.push(`${rel}:${i + 1}`);
+    });
+  }
+  assert.deepEqual(offenders, [], offenders.join('\n'));
+});
+
+test('88-15-07: verify-v26 resolves its memory dir with no /tmp and no username', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'verify-v26.cjs'), 'utf8');
+  assert.ok(!/luismogrovejo/.test(src), 'no operator username in a tracked public file');
+  assert.ok(!/'\/tmp'/.test(src), 'no /tmp fallback');
+  assert.ok(/platform\.homeDir\(\)/.test(src), 'the home comes from the shared helper');
+  assert.ok(/claudeProjectSlug/.test(src), 'the slug is derived in one named place');
+  // The slug rule itself, exercised the way the file uses it.
+  const slug = (root) => path.resolve(root).replace(/[\\/:]+/g, '-');
+  assert.equal(slug('/a/b/c'), '-a-b-c');
+  assert.ok(path.isAbsolute(path.join(platform.homeDir(), '.claude', 'projects', slug('/a/b/c'))));
+});

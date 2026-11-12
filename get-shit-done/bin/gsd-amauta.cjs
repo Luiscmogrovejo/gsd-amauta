@@ -181,7 +181,7 @@ function _resolvePluginRoot() {
     if (fs.existsSync(path.join(c, 'amauta.py'))) return c;
   }
   // Final fallback chain — common dev/install locations
-  const home = process.env.HOME || require('os').homedir();
+  const home = platform.homeDir();
   const fallbacks = [
     path.join(home, 'Code', 'gsd-amauta'),
     path.join(home, 'gsd-amauta'),
@@ -239,7 +239,7 @@ function resolveReferencePath(relPath) {
 const DAEMON_SCRIPT = (function() {
   const local = path.join(PLUGIN_ROOT, 'services', 'amauta-daemon.py');
   if (fs.existsSync(local)) return local;
-  const home = process.env.HOME || require('os').homedir();
+  const home = platform.homeDir();
   for (const c of [
     path.join(home, 'Code', 'gsd-amauta', 'services', 'amauta-daemon.py'),
     path.join(home, 'gsd-amauta', 'services', 'amauta-daemon.py'),
@@ -2344,7 +2344,7 @@ function loadEvidenceScrubPatterns(forceReload = false) {
     ? [envOverride]
     : [
         path.resolve(__dirname, '..', 'config', 'evidence-scrub-patterns.json'),
-        path.join(process.env.HOME || '', '.claude', 'get-shit-done', 'config', 'evidence-scrub-patterns.json'),
+        path.join(platform.homeDir(), '.claude', 'get-shit-done', 'config', 'evidence-scrub-patterns.json'),
       ];
 
   for (const p of candidates) {
@@ -2690,7 +2690,7 @@ function _resolveCapabilityCatalogWritePath() {
   if (envOverride) return envOverride;
   const repoLocal = path.resolve(__dirname, '..', 'config', 'capability-catalog.json');
   if (fs.existsSync(repoLocal)) return repoLocal;
-  return path.join(process.env.HOME || '', '.claude', 'get-shit-done', 'config', 'capability-catalog.json');
+  return path.join(platform.homeDir(), '.claude', 'get-shit-done', 'config', 'capability-catalog.json');
 }
 
 async function cmdCapabilityAdd(flags, jsonMode) {

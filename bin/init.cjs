@@ -494,7 +494,7 @@ async function stepDetectIdes() {
     }
   }
 
-  const homeDir = process.env.HOME || os.homedir();
+  const homeDir = platform.homeDir();
   const cwdDir = process.cwd();
 
   const detections = [];

@@ -717,3 +717,29 @@ class _FileLock:
         if fcntl is None:
             return
         fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+def home_dir() -> str:
+    """The user's home directory, correct on every platform.
+
+    ``os.environ.get("HOME", "")`` is not a fallback, it is a silent failure:
+    on Windows cmd and PowerShell HOME is unset, so
+    ``os.path.join("", ".claude", …)`` yields a RELATIVE path and the file is
+    simply not found -- which is how the evidence-scrub patterns, the tag rules
+    and the capability catalog went missing while the scrubber still reported
+    success.
+
+    ``os.path.expanduser("~")`` reads ``HOME`` first on POSIX (so a test that
+    redirects HOME is still honoured) and ``USERPROFILE``, then
+    ``HOMEDRIVE``+``HOMEPATH``, on Windows. It is never the empty string.
+
+    Returns:
+        str: an absolute home directory path.
+
+    Example:
+        os.path.join(home_dir(), ".claude", "get-shit-done", "config")
+    """
+    home = os.path.expanduser("~")
+    if home and home != "~":
+        return home
+    return os.path.abspath(os.sep)

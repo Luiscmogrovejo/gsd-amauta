@@ -4,6 +4,8 @@
 
 const fs = require('fs');
 const path = require('path');
+// Phase 88 plan 88-15: one Python launcher resolver, one `which`, one home dir.
+const platform = require('./platform.cjs');
 const { safeReadFile, normalizePhaseName, execGit, findPhaseInternal, getMilestoneInfo, output, error } = require('./core.cjs');
 const { extractFrontmatter, parseMustHavesBlock } = require('./frontmatter.cjs');
 const { writeStateMd } = require('./state.cjs');
@@ -226,7 +228,7 @@ function cmdVerifyReferences(cwd, filePath, raw) {
   for (const ref of atRefs) {
     const cleanRef = ref.slice(1); // remove @
     const resolved = cleanRef.startsWith('~/')
-      ? path.join(process.env.HOME || '', cleanRef.slice(2))
+      ? path.join(platform.homeDir(), cleanRef.slice(2))
       : path.join(cwd, cleanRef);
     if (fs.existsSync(resolved)) {
       found.push(cleanRef);
