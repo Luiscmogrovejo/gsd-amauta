@@ -18,23 +18,32 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
+const { applyHomeEnv } = require('./support/home-env.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 // Export gate in bin/init.cjs prevents main() from running on require()
 const { stepDetectIdes, buildStepResult, renderStepTable } = require(path.join(ROOT, 'bin', 'init.cjs'));
 
-// Track original cwd and HOME to restore after each test
+// Track original cwd to restore after each test. The home variables are changed through
+// applyHomeEnv (HOME, USERPROFILE, HOMEDRIVE and HOMEPATH together: on Windows os.homedir()
+// reads USERPROFILE, so setting HOME alone would leave stepDetectIdes looking at the real
+// profile); every change is undone by restoreEnv().
 const _origCwd = process.cwd();
-const _origHome = process.env.HOME;
+const _homeRestores = [];
 
-// Cleanup helper: restore cwd and HOME
+/**
+ * Redirect the process's home to `dir` until restoreEnv() runs.
+ * @param {string} dir absolute path of the temporary home
+ * @returns {void}
+ */
+function useHome(dir) {
+  _homeRestores.push(applyHomeEnv(dir));
+}
+
+// Cleanup helper: restore cwd and the home variables
 function restoreEnv() {
   try { process.chdir(_origCwd); } catch (_) {}
-  if (_origHome !== undefined) {
-    process.env.HOME = _origHome;
-  } else {
-    delete process.env.HOME;
-  }
+  while (_homeRestores.length > 0) _homeRestores.pop()();
 }
 
 // ── Test 1: buildStepResult returns the frozen 5-field schema ────────────────
@@ -82,7 +91,7 @@ test('stepDetectIdes detects all 3 IDEs when dirs+skill_subdir present', async (
 
   try {
     process.chdir(tmpDir);
-    process.env.HOME = emptyHome;
+    useHome(emptyHome);
 
     const result = await stepDetectIdes();
     assert.strictEqual(result.status, 'pass',
@@ -117,7 +126,7 @@ test('stepDetectIdes empty-directory false-positive guard', async () => {
 
   try {
     process.chdir(tmpDir);
-    process.env.HOME = emptyHome;
+    useHome(emptyHome);
 
     const result = await stepDetectIdes();
     const cursorRow = result.details.detections.find((d) => d.ide_id === 'cursor');
@@ -146,7 +155,7 @@ test('stepDetectIdes accepts stray *.md as valid signal', async () => {
 
   try {
     process.chdir(tmpDir);
-    process.env.HOME = emptyHome;
+    useHome(emptyHome);
 
     const result = await stepDetectIdes();
     const claudeRow = result.details.detections.find((d) => d.ide_id === 'claude-code');
@@ -168,7 +177,7 @@ test('stepDetectIdes returns warn when no IDE directories present', async () => 
 
   try {
     process.chdir(tmpDir);
-    process.env.HOME = emptyHome;
+    useHome(emptyHome);
 
     const result = await stepDetectIdes();
     assert.strictEqual(result.status, 'warn',
@@ -200,7 +209,7 @@ test('stepDetectIdes detections rows have the frozen columns', async () => {
 
   try {
     process.chdir(tmpDir);
-    process.env.HOME = emptyHome;
+    useHome(emptyHome);
 
     const result = await stepDetectIdes();
     assert.ok(result.details && Array.isArray(result.details.detections),

@@ -104,6 +104,7 @@ function healthOk(port) {
  *
  * @param {object} [opts]
  * @param {string} [opts.dataDir] data directory; a fresh temp dir when omitted
+ * @param {boolean} [opts.detached=false] spawn the daemon detached (Windows: outside libuv's kill-on-parent-exit job)
  * @returns {Promise<{port: number, dataDir: string, proc: import('child_process').ChildProcess, env: object, keep?: boolean}>}
  * @throws {Error} 'fixture daemon did not become ready' plus the last 2000 chars of stderr
  */
@@ -131,7 +132,10 @@ async function startFixtureDaemon(opts = {}) {
 
   const proc = spawn(pythonBin(), [path.join(REPO, 'services', 'amauta-daemon.py'), 'run'], {
     stdio: ['ignore', 'pipe', 'pipe'],
-    detached: false,
+    // Default false. Windows: libuv puts every NON-detached child in a job object that is killed
+    // when the parent dies, so a daemon can only outlive its parent (the leak that
+    // tests/fixtures/stray-process/leaky-daemon.cjs stages on purpose) when it is detached.
+    detached: Boolean(opts.detached),
     env,
   });
 

@@ -23,6 +23,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const fs = require('node:fs');
+const os = require('node:os');
 const { execFileSync, execSync } = require('node:child_process');
 
 const ROOT = path.resolve(__dirname, '..');
@@ -121,9 +122,16 @@ test('gsd-tools agents validate <valid-dir> exits 0', () => {
 // ─── Test 4: validate missing-dir exits non-zero ─────────────────────────────
 
 test('gsd-tools agents validate <missing-dir> exits non-zero', () => {
-  const missingDir = '/tmp/nonexistent-agent-dir-52-04-xxx';
-  const { status } = run([GSD_TOOLS, 'agents', 'validate', missingDir]);
-  assert.notEqual(status, 0, `Expected non-zero exit for missing agent dir, got 0`);
+  // A directory that is guaranteed absent: a child that is never created inside a fresh mkdtemp
+  // dir under os.tmpdir() (a literal /tmp is D:\tmp on Windows).
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'agents-cli-missing-'));
+  try {
+    const missingDir = path.join(parent, 'nonexistent-agent-dir-52-04-xxx');
+    const { status } = run([GSD_TOOLS, 'agents', 'validate', missingDir]);
+    assert.notEqual(status, 0, `Expected non-zero exit for missing agent dir, got 0`);
+  } finally {
+    fs.rmSync(parent, { recursive: true, force: true });
+  }
 });
 
 // ─── Test 5: compile --target=claude-code --dry-run compiled.length === on-disk agent count ───

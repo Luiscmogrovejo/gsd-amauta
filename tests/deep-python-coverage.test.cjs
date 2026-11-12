@@ -28,6 +28,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const { pyLiteral } = require('./support/py-embed.cjs');
 
 const PY = path.join(__dirname, '..', 'amauta.py');
 const ROOT = path.join(__dirname, '..');
@@ -53,7 +54,7 @@ function py(args, dataDir, extraEnv = {}) {
 function pyInline(code, extraEnv = {}) {
   try {
     const result = execFileSync('python3', ['-c', `
-import sys, json; sys.path.insert(0, '${ROOT}')
+import sys, json; sys.path.insert(0, ${pyLiteral(ROOT)})
 ${code}
 `], { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 8000, env: { ...process.env, ...extraEnv } });
     return result.trim();

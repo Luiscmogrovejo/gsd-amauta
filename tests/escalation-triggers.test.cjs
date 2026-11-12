@@ -15,17 +15,21 @@ const { describe, test } = require('node:test');
 const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
+const { pyLiteral } = require('./support/py-embed.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const SCORER_PATH = path.join(ROOT, 'services', 'complexity_scorer.py');
 
 // Python bootstrap: load complexity_scorer via importlib
+// ROOT sits inside a larger Python expression (os.path.join), so it goes through pyLiteral;
+// a raw '${ROOT}' mangles D:\a\... on Windows (\a is BEL).
 const PY_BOOTSTRAP = `
 import importlib.util, sys, os, json
 _spec = importlib.util.spec_from_file_location(
     'complexity_scorer',
-    os.path.join('${ROOT}', 'services', 'complexity_scorer.py')
+    os.path.join(${pyLiteral(ROOT)}, 'services', 'complexity_scorer.py')
 )
 _mod = importlib.util.module_from_spec(_spec)
 sys.modules['complexity_scorer'] = _mod
@@ -58,9 +62,10 @@ if (pythonCheck.error || pythonCheck.status !== 0) {
 
 // Helper: run a python3 script via tmp file (cwd=ROOT)
 function pyFile(scriptContent) {
-  const tmpFile = `/tmp/esc-test-${Date.now()}-${Math.random().toString(36).slice(2)}.py`;
-  fs.writeFileSync(tmpFile, scriptContent);
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'esc-test-'));
+  const tmpFile = path.join(tmpDir, 'script.py');
   try {
+    fs.writeFileSync(tmpFile, scriptContent);
     const result = spawnSync('python3', [tmpFile], {
       encoding: 'utf8',
       cwd: ROOT,
@@ -72,7 +77,7 @@ function pyFile(scriptContent) {
       error: result.error ? result.error.message : (result.status !== 0 ? `exit ${result.status}` : null),
     };
   } finally {
-    try { fs.unlinkSync(tmpFile); } catch (_) { /* ignore */ }
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) { /* ignore */ }
   }
 }
 

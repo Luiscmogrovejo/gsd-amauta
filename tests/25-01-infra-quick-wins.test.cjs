@@ -23,6 +23,7 @@ const assert = require('node:assert/strict');
 const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
+const { pyLiteral } = require('./support/py-embed.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const DAEMON_PY = path.join(ROOT, 'services', 'amauta-daemon.py');
@@ -46,7 +47,7 @@ describe('_validate_api_keys (T3)', () => {
     const keyTrimmed = key.slice(0, 46);
     const out = pyExec(`
 import os, sys
-sys.path.insert(0, '${ROOT}/services')
+sys.path.insert(0, ${pyLiteral(path.join(ROOT, 'services'))})
 os.environ['VOYAGE_API_KEY'] = '${keyTrimmed}'
 os.environ['PERPLEXITY_API_KEY'] = ''
 os.environ.pop('PERPLEXITY_MODEL', None)
@@ -54,7 +55,7 @@ os.environ.pop('PERPLEXITY_MODEL', None)
 # Extract _validate_api_keys from daemon source without executing module-level code
 import ast, types, importlib.util
 
-src = open('${DAEMON_PY}').read()
+src = open(${pyLiteral(DAEMON_PY)}, encoding='utf-8').read()
 tree = ast.parse(src)
 
 # Find and compile just the _validate_api_keys function
@@ -62,7 +63,7 @@ for node in ast.walk(tree):
     if isinstance(node, ast.FunctionDef) and node.name == '_validate_api_keys':
         mod = ast.Module(body=[node], type_ignores=[])
         ast.fix_missing_locations(mod)
-        code = compile(mod, '${DAEMON_PY}', 'exec')
+        code = compile(mod, ${pyLiteral(DAEMON_PY)}, 'exec')
         g = {'os': os}
         exec(code, g)
         result = g['_validate_api_keys']()
@@ -79,13 +80,13 @@ os.environ['VOYAGE_API_KEY'] = ''
 os.environ['PERPLEXITY_API_KEY'] = ''
 os.environ.pop('PERPLEXITY_MODEL', None)
 
-src = open('${DAEMON_PY}').read()
+src = open(${pyLiteral(DAEMON_PY)}, encoding='utf-8').read()
 tree = ast.parse(src)
 for node in ast.walk(tree):
     if isinstance(node, ast.FunctionDef) and node.name == '_validate_api_keys':
         mod = ast.Module(body=[node], type_ignores=[])
         ast.fix_missing_locations(mod)
-        code = compile(mod, '${DAEMON_PY}', 'exec')
+        code = compile(mod, ${pyLiteral(DAEMON_PY)}, 'exec')
         g = {'os': os}
         exec(code, g)
         result = g['_validate_api_keys']()
@@ -102,13 +103,13 @@ os.environ['VOYAGE_API_KEY'] = ''
 os.environ['PERPLEXITY_API_KEY'] = ''
 os.environ['PERPLEXITY_MODEL'] = 'sonar-pro'
 
-src = open('${DAEMON_PY}').read()
+src = open(${pyLiteral(DAEMON_PY)}, encoding='utf-8').read()
 tree = ast.parse(src)
 for node in ast.walk(tree):
     if isinstance(node, ast.FunctionDef) and node.name == '_validate_api_keys':
         mod = ast.Module(body=[node], type_ignores=[])
         ast.fix_missing_locations(mod)
-        code = compile(mod, '${DAEMON_PY}', 'exec')
+        code = compile(mod, ${pyLiteral(DAEMON_PY)}, 'exec')
         g = {'os': os}
         exec(code, g)
         result = g['_validate_api_keys']()
@@ -126,13 +127,13 @@ describe('_port_is_free (T1)', () => {
     const out = pyExec(`
 import ast, os, socket
 
-src = open('${DAEMON_PY}').read()
+src = open(${pyLiteral(DAEMON_PY)}, encoding='utf-8').read()
 tree = ast.parse(src)
 for node in ast.walk(tree):
     if isinstance(node, ast.FunctionDef) and node.name == '_port_is_free':
         mod = ast.Module(body=[node], type_ignores=[])
         ast.fix_missing_locations(mod)
-        code = compile(mod, '${DAEMON_PY}', 'exec')
+        code = compile(mod, ${pyLiteral(DAEMON_PY)}, 'exec')
         g = {'os': os}
         import socket as _socket
         g['_socket'] = _socket
@@ -153,13 +154,13 @@ for node in ast.walk(tree):
     const out = pyExec(`
 import ast, os, socket
 
-src = open('${DAEMON_PY}').read()
+src = open(${pyLiteral(DAEMON_PY)}, encoding='utf-8').read()
 tree = ast.parse(src)
 for node in ast.walk(tree):
     if isinstance(node, ast.FunctionDef) and node.name == '_port_is_free':
         mod = ast.Module(body=[node], type_ignores=[])
         ast.fix_missing_locations(mod)
-        code = compile(mod, '${DAEMON_PY}', 'exec')
+        code = compile(mod, ${pyLiteral(DAEMON_PY)}, 'exec')
         g = {'os': os}
         exec(code, g)
         # Bind a port, then check it is occupied

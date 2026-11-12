@@ -14,7 +14,9 @@ const path = require('path');
 const { startFixtureDaemon } = require(path.join(__dirname, '..', '..', 'support', 'fixture-daemon.cjs'));
 
 (async () => {
-  const h = await startFixtureDaemon();
+  // Windows: a non-detached child dies with its parent (libuv job object), so the leak could not
+  // happen; detach the daemon there so it survives the SIGKILL below, as it does on POSIX.
+  const h = await startFixtureDaemon({ detached: process.platform === 'win32' });
   const line = 'LEAKED_PID=' + h.proc.pid + ' LEAKED_PORT=' + h.port + '\n';
   // Synchronous writes: the next statement kills this process.
   fs.writeSync(1, line);

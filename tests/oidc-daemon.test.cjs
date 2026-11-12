@@ -16,6 +16,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const { pyLiteral } = require('./support/py-embed.cjs');
 
 const ROOT = path.join(__dirname, '..');
 const SERVICES = path.join(ROOT, 'services');
@@ -24,9 +25,12 @@ const DAEMON_FILE = path.join(SERVICES, 'amauta-daemon.py');
 
 function pyEval(code, env = {}) {
   try {
+    // SERVICES is a platform path inside Python source, so it goes through pyLiteral
+    // (a raw '${SERVICES}' mangles D:\a\... on Windows, which is the ModuleNotFoundError
+    // for oidc_auth that this file used to show there).
     const result = execFileSync('python3', ['-c', `
 import sys, json, os
-sys.path.insert(0, '${SERVICES}')
+sys.path.insert(0, ${pyLiteral(SERVICES)})
 ${code}
 `], {
       encoding: 'utf-8',
