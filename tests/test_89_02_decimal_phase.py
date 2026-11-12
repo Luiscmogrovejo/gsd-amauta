@@ -44,7 +44,11 @@ _SERVICES = _REPO / "services"
 if str(_SERVICES) not in sys.path:
     sys.path.insert(0, str(_SERVICES))
 
-from conftest import PG_SKIP_REASON, postgres_dsn_or_none  # noqa: E402
+from conftest import (  # noqa: E402
+    PG_SKIP_REASON,
+    postgres_dsn_or_none,
+    product_pg_dsn,
+)
 
 from sqlite_store import SQLiteStore, normalize_phase_number  # noqa: E402
 
@@ -960,12 +964,26 @@ class TestHandoffRoundTripOnBothBackends:
 class TestPostgresWireTypeMeasuredOnTheServer:
     """`pg_typeof` of the bound parameter — the server's own answer, not an inference."""
 
-    def test_the_bound_parameter_arrives_as_numeric(self, scratch_dsn, record_property):
-        """One node id, every value in the parameter set — the gate's ledger is finite.
+    def test_the_bound_parameter_arrives_as_numeric_or_integer_never_a_float(
+        self, scratch_dsn, record_property
+    ):
+        """What the SERVER says the parameter is. MEASURED, and it corrected the test.
 
-        Parameterising this would add one listed skip entry per value on each of the
-        two cells that have no disposable database, for a measurement that is a loop
-        either way. The values are all asserted; a failure names the one that broke.
+        The first CI run on the disposable database answered `integer` for phase `'72'`,
+        not `numeric` — and the server is right. `normalize_phase_number("72")` is the
+        int `72`, so `Decimal(str(72))` is `Decimal("72")`, and psycopg2 emits the
+        literal `72`, which PostgreSQL's parser types as `integer`. That is exactly as
+        safe: `numeric = integer` promotes the integer to `numeric` EXACTLY and keeps
+        the index usable. What must never appear is `double precision`, which would make
+        `= 72.1` a binary-float comparison.
+
+        So the assertion is: non-integral phases arrive as `numeric`, integral ones as
+        `integer`, and nothing arrives as a float type.
+
+        One node id, every value in the parameter set: parameterising this would add one
+        listed skip entry per value on each of the two cells with no disposable
+        database, for a measurement that is a loop either way. Every value is asserted
+        and a failure names the one that broke.
         """
         measured = {}
         conn = _connect(scratch_dsn)
@@ -978,10 +996,36 @@ class TestPostgresWireTypeMeasuredOnTheServer:
             conn.close()
         _measure(record_property, "pg_typeof", measured)
         for raw, wire_type in measured.items():
-            assert wire_type == "numeric", (
-                f"phase {raw!r} arrived as {wire_type!r}; a double precision parameter "
-                "makes = 72.1 a binary-float comparison against a NUMERIC column"
+            expected = ("integer" if float(raw).is_integer() else "numeric")
+            assert wire_type == expected, (
+                f"phase {raw!r} arrived as {wire_type!r}, expected {expected!r}"
             )
+            assert wire_type not in ("double precision", "real"), (
+                f"phase {raw!r} arrived as {wire_type!r}; a binary-float parameter "
+                "makes = 72.1 an inexact comparison against a NUMERIC column"
+            )
+
+    def test_an_integer_literal_compares_exactly_against_the_numeric_column(
+        self, migrated_dsn
+    ):
+        """The consequence of the measurement above, asserted rather than argued.
+
+        A whole phase arrives as an `integer` literal. `numeric = integer` must find the
+        row written as `72.000`, and must NOT find `72.100`.
+        """
+        _pg_handoff_insert(migrated_dsn, "execute-phase", Decimal("72"), "TK-INT", {})
+        _pg_handoff_insert(migrated_dsn, "execute-phase", Decimal("72.1"), "TK-DEC", {})
+        conn = _connect(migrated_dsn)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT task_id FROM step_handoffs WHERE phase_number = %s"
+                    " ORDER BY task_id", (72,),
+                )
+                hits = [row[0] for row in cur.fetchall()]
+        finally:
+            conn.close()
+        assert hits == ["TK-INT"], hits
 
     def test_the_stored_value_equals_the_bound_value_exactly(self, migrated_dsn,
                                                              record_property):
@@ -1028,44 +1072,55 @@ class TestPostgresWireTypeMeasuredOnTheServer:
         finally:
             conn.close()
         _measure(record_property, "explain", plan_text)
-        assert "idx_handoffs_latest" in plan_text, plan_text
+        assert "Seq Scan" not in plan_text, (
+            "the predicate fell back to a sequential scan even with enable_seqscan off; "
+            f"a numeric parameter should be index-usable. plan: {plan_text}"
+        )
+        # Which of the two step_handoffs indexes the planner reaches for is its own
+        # choice (both lead with workflow_name); the assertion is that it CAN reach one.
+        assert "idx_handoffs" in plan_text, plan_text
 
 
 @requires_pg
 class TestStepOrchestratorOnPostgres:
-    """The orchestrator's own PostgreSQL-only product code, with a decimal phase."""
+    """The orchestrator's own PostgreSQL-only product code, with a decimal phase.
+
+    `conftest.product_pg_dsn` is the sanctioned way to point the PRODUCT's PostgreSQL
+    clients at a disposable database: the session scrub deletes `GSD_POSTGRES_URL` and
+    `DATABASE_URL` so no test can inherit the operator's live DSN, and this puts one back
+    deliberately, for one block, after the DSN has been checked against the live ports.
+    It takes an explicit DSN, which is how the SCRATCH database (not the configured one)
+    gets used.
+    """
 
     def test_save_then_load_round_trips_a_decimal_phase(self, migrated_dsn,
-                                                        orchestrator_mod, monkeypatch):
-        monkeypatch.setenv("GSD_POSTGRES_URL", migrated_dsn)
-        monkeypatch.setenv("DATABASE_URL", migrated_dsn)
+                                                        orchestrator_mod):
+        with product_pg_dsn(migrated_dsn):
+            handoff = orchestrator_mod.StepHandoff(
+                workflow_name="execute-phase", step_id="step-01-prepare",
+                task_id="TK-ORCH-721", phase_number="72.1",
+                context_snapshot={"phase": "72.1"}, next_step="step-02-route",
+            )
+            orchestrator_mod.save_handoff(handoff)
 
-        handoff = orchestrator_mod.StepHandoff(
-            workflow_name="execute-phase", step_id="step-01-prepare",
-            task_id="TK-ORCH-721", phase_number="72.1",
-            context_snapshot={"phase": "72.1"}, next_step="step-02-route",
-        )
-        orchestrator_mod.save_handoff(handoff)
+            loaded = orchestrator_mod.load_or_create_handoff(
+                "execute-phase", "72.1", "TK-ORCH-721")
 
-        loaded = orchestrator_mod.load_or_create_handoff("execute-phase", "72.1",
-                                                         "TK-ORCH-721")
         assert loaded.id == handoff.id, "the decimal-phase handoff did not load back"
         assert loaded.phase_number == Decimal("72.1")
         assert loaded.step_id == "step-01-prepare"
 
     def test_a_lookup_for_72_does_not_find_the_72_1_handoff(self, migrated_dsn,
-                                                            orchestrator_mod,
-                                                            monkeypatch):
-        monkeypatch.setenv("GSD_POSTGRES_URL", migrated_dsn)
-        monkeypatch.setenv("DATABASE_URL", migrated_dsn)
+                                                            orchestrator_mod):
+        with product_pg_dsn(migrated_dsn):
+            orchestrator_mod.save_handoff(orchestrator_mod.StepHandoff(
+                workflow_name="execute-phase", step_id="step-03-execute",
+                task_id="TK-ORCH-NC", phase_number="72.1",
+                context_snapshot={}, next_step="step-04-verify",
+            ))
+            fresh = orchestrator_mod.load_or_create_handoff(
+                "execute-phase", 72, "TK-ORCH-NC")
 
-        orchestrator_mod.save_handoff(orchestrator_mod.StepHandoff(
-            workflow_name="execute-phase", step_id="step-03-execute",
-            task_id="TK-ORCH-NC", phase_number="72.1",
-            context_snapshot={}, next_step="step-04-verify",
-        ))
-        fresh = orchestrator_mod.load_or_create_handoff("execute-phase", 72,
-                                                        "TK-ORCH-NC")
         # No row for phase 72, so a FRESH handoff is created at the first step.
         assert fresh.step_id == "step-01-prepare", (
             f"a lookup for phase 72 loaded phase 72.1's handoff ({fresh.step_id})"
@@ -1077,18 +1132,18 @@ class TestStepOrchestratorOnPostgres:
 class TestComplexityScorerOnPostgres:
     """`store_completion` writes task_completions.phase_number — NUMERIC(10,3) now."""
 
-    def test_a_decimal_phase_completion_is_stored_exactly(self, migrated_dsn,
-                                                          monkeypatch):
-        monkeypatch.setenv("GSD_POSTGRES_URL", migrated_dsn)
-        monkeypatch.setenv("DATABASE_URL", migrated_dsn)
+    def test_a_decimal_phase_completion_is_stored_exactly(self, migrated_dsn):
         import complexity_scorer as cs
 
-        row_id = cs.store_completion(
-            task_id="TK-CS-721", phase_number="72.1", workflow_name="execute-phase",
-            features={"files": 3}, raw_score=42, calibrated_score=None,
-            chosen_phases=["R", "E"], phases_run=["R", "E"],
-            outcome_label="validator_pass", escalation_history=[], embedding=None,
-        )
+        with product_pg_dsn(migrated_dsn):
+            row_id = cs.store_completion(
+                task_id="TK-CS-721", phase_number="72.1",
+                workflow_name="execute-phase", features={"files": 3},
+                raw_score=42, calibrated_score=None,
+                chosen_phases=["R", "E"], phases_run=["R", "E"],
+                outcome_label="validator_pass", escalation_history=[],
+                embedding=None,
+            )
         assert row_id, "store_completion returned no id on the disposable database"
 
         conn = _connect(migrated_dsn)
@@ -1344,10 +1399,12 @@ class TestMigrationSentinelFor031OnPostgres:
 
         conn = psycopg2.connect(migrated_dsn, connect_timeout=10)
         try:
-            applied = migrate_runner.detect_applied_by_schema(conn)
+            # (applied, unknown) — services/migrate_runner.py:206-232.
+            applied, unknown = migrate_runner.detect_applied_by_schema(conn)
         finally:
             conn.close()
         assert "031-decimal-phase-number.sql" in applied, applied
+        assert "031-decimal-phase-number.sql" not in unknown, unknown
 
     def test_the_sentinel_does_not_fire_before_031_ran(self, migrated_dsn):
         """Taking the column back to INTEGER must make 031 pending again."""
@@ -1358,7 +1415,7 @@ class TestMigrationSentinelFor031OnPostgres:
         _exec_file(migrated_dsn, MIGRATION_DOWN)
         conn = psycopg2.connect(migrated_dsn, connect_timeout=10)
         try:
-            applied = migrate_runner.detect_applied_by_schema(conn)
+            applied, _unknown = migrate_runner.detect_applied_by_schema(conn)
         finally:
             conn.close()
         assert "031-decimal-phase-number.sql" not in applied, (

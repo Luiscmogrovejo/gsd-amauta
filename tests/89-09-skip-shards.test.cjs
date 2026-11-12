@@ -205,6 +205,17 @@ const ADDED_SINCE_SHARDING = [
     "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
   ],
   [
+    "test_an_integer_literal_compares_exactly_against_the_numeric_column",
+    "tests/test_89_02_decimal_phase.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
     "test_both_columns_are_numeric_10_3",
     "tests/test_89_02_decimal_phase.py",
     "darwin",
@@ -293,7 +304,7 @@ const ADDED_SINCE_SHARDING = [
     "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
   ],
   [
-    "test_the_bound_parameter_arrives_as_numeric",
+    "test_the_bound_parameter_arrives_as_numeric_or_integer_never_a_float",
     "tests/test_89_02_decimal_phase.py",
     "darwin",
     "any",
@@ -502,6 +513,17 @@ const ADDED_SINCE_SHARDING = [
     "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
   ],
   [
+    "test_an_integer_literal_compares_exactly_against_the_numeric_column",
+    "tests/test_89_02_decimal_phase.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
     "test_both_columns_are_numeric_10_3",
     "tests/test_89_02_decimal_phase.py",
     "win32",
@@ -590,7 +612,7 @@ const ADDED_SINCE_SHARDING = [
     "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
   ],
   [
-    "test_the_bound_parameter_arrives_as_numeric",
+    "test_the_bound_parameter_arrives_as_numeric_or_integer_never_a_float",
     "tests/test_89_02_decimal_phase.py",
     "win32",
     "any",
