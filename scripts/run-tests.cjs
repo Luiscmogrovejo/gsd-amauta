@@ -17,7 +17,9 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const { pathToFileURL } = require('url');
 const canary = require('../tests/support/live-store-canary.cjs');
+const skipGate = require('./skip-gate.cjs');
 
 /** Variables that would point a test at a live database or cache. */
 const DELETED_KEYS = [
@@ -321,9 +323,28 @@ function main() {
     }
   }
 
+  // Plan 88-19: the skip gate needs machine-readable per-test results, and `node --test`
+  // writes none today (`stdio: 'inherit'` with the default reporter). TWO reporters run:
+  // `spec` to stdout so the terminal output a human reads is unchanged in kind, and
+  // scripts/skip-reporter.mjs to a file the gate parses. Measured in 88-19-01 on Node
+  // 20.19.0, 22.22.3 and 25.8.1: TAP carries NO file attribution on a multi-file run, so
+  // the reporter event stream — which does carry `data.file` — is the only source that can
+  // produce the gate's `(file, name, platform)` key. The reporter is passed as a file://
+  // URL because a Windows absolute path is not a valid module specifier.
+  const skipReportFile = path.join(path.dirname(env.AMAUTA_DATA_DIR), 'skips.jsonl');
+  const reporterUrl = pathToFileURL(path.join(__dirname, 'skip-reporter.mjs')).href;
+  const childArgs = [
+    '--test',
+    '--test-reporter=spec',
+    '--test-reporter-destination=stdout',
+    '--test-reporter=' + reporterUrl,
+    '--test-reporter-destination=' + skipReportFile,
+    ...files,
+  ];
+
   let status = 0;
   try {
-    execFileSync(process.execPath, ['--test', ...files], { stdio: 'inherit', env });
+    execFileSync(process.execPath, childArgs, { stdio: 'inherit', env });
   } catch (err) {
     status = err.status || 1;
   } finally {
@@ -353,6 +374,43 @@ function main() {
       status = 5; // 4 is the live-store canary's; a leaked process fails the run too
       killStrays(strays);
     }
+    // Plan 88-19: the skip gate. A test that skipped without an entry in
+    // tests/skip-exceptions.json fails the run with status 6 (4 is the live-store
+    // canary's and 5 the stray-process check's, both unchanged above), and on a FULL
+    // run an entry that excused nothing fails it too, so the file cannot rot.
+    //
+    // Two scopes beyond the gate's own rules are applied here, both deliberate:
+    //   - `explicit` (file arguments were given) means a PARTIAL run: SKIP_UNLISTED is
+    //     still checked, staleness is not, because a run of one file leaves almost every
+    //     entry unmatched by construction.
+    //   - a run whose child exited non-zero is an INCOMPLETE run for the same reason, so
+    //     staleness is not checked there either. Unlisted skips still are.
+    // A gate finding never masks a real test failure: status 6 is set only when the run
+    // was otherwise green, and when it was not, the findings are printed with the status
+    // the run already carries named beside them.
+    try {
+      const gate = skipGate.runNodeGate({
+        reportFile: skipReportFile,
+        repoRoot: path.join(__dirname, '..'),
+        explicit: explicit || status !== 0,
+        env: process.env,
+      });
+      console.error(gate.text);
+      if (gate.exit_code !== 0) {
+        if (status === 0) {
+          status = 6; // the skip gate's own status; 4 and 5 keep their meanings
+        } else {
+          console.error(
+            'skip gate: ' + gate.findings.length + ' finding(s) above, but the run already ' +
+              'failed with status ' + status + ', which is kept so the first failure is not hidden.'
+          );
+        }
+      }
+    } catch (err) {
+      console.error('run-tests: the skip gate could not run: ' + err.message);
+      if (status === 0) status = 6; // fail closed: a gate that cannot run is not a pass
+    }
+
     // Plan 88-16-03: print whatever the guard refused. In log-only mode this IS
     // the network-reach inventory; in enforcing mode it is the diagnosis for a
     // test that died on EHERMETIC. The file is inside the temp root that is

@@ -5135,5 +5135,115 @@
     "owner": "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
     "owner_phase": 89,
     "exit_criterion": "a PostgreSQL carrying this repository's schema exists on the cell. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. Closed when Phase 89 either provides pg_search on those runners or removes the dependency."
+  },
+  {
+    "name": "[SEC-01] semgrep fixture detection: if semgrep available, detects 34-vulnerable.js (conditional)",
+    "file": "tests/34-security-pipeline.integration.test.cjs",
+    "platform": "all",
+    "context": "local",
+    "reason": "semgrep is not installed in this environment",
+    "reason_class": "scanner-not-installed-locally",
+    "owner": "plan 88-19 (the skip gate); CI installs all three scanners, a developer machine does not",
+    "owner_phase": 88,
+    "exit_criterion": "semgrep is on PATH of the machine running the suite. CI installs it on the cells that support it (.github/workflows/test.yml), where these entries never apply because context \"local\" is refused under CI. Delete the entry when the harness provisions semgrep for a developer machine too, or when the test gains a hermetic fake-scanner variant that runs everywhere (tests/support/fake-scanner.cjs is the mechanism)."
+  },
+  {
+    "name": "[SEC-02] script does not throw unhandled exceptions",
+    "file": "tests/34-security-pipeline.integration.test.cjs",
+    "platform": "all",
+    "context": "local",
+    "reason": "gitleaks is not installed and this test must not download a binary from the network",
+    "reason_class": "scanner-not-installed-locally",
+    "owner": "plan 88-19 (the skip gate); CI installs all three scanners, a developer machine does not",
+    "owner_phase": 88,
+    "exit_criterion": "gitleaks is on PATH of the machine running the suite. CI installs it from a pinned, checksummed release on all three systems (.github/workflows/test.yml), where these entries never apply because context \"local\" is refused under CI. Delete the entry when the harness provisions gitleaks for a developer machine too."
+  },
+  {
+    "name": "[SEC-02] script exits 0 (skips if already installed or gracefully degrades)",
+    "file": "tests/34-security-pipeline.integration.test.cjs",
+    "platform": "all",
+    "context": "local",
+    "reason": "gitleaks is not installed and this test must not download a binary from the network",
+    "reason_class": "scanner-not-installed-locally",
+    "owner": "plan 88-19 (the skip gate); CI installs all three scanners, a developer machine does not",
+    "owner_phase": 88,
+    "exit_criterion": "gitleaks is on PATH of the machine running the suite. CI installs it from a pinned, checksummed release on all three systems (.github/workflows/test.yml), where these entries never apply because context \"local\" is refused under CI. Delete the entry when the harness provisions gitleaks for a developer machine too."
+  },
+  {
+    "name": "[SEC-06] script does not throw unhandled exceptions",
+    "file": "tests/34-security-pipeline.integration.test.cjs",
+    "platform": "all",
+    "context": "local",
+    "reason": "trivy is not installed and this test must not download a binary from the network",
+    "reason_class": "scanner-not-installed-locally",
+    "owner": "plan 88-19 (the skip gate); CI installs all three scanners, a developer machine does not",
+    "owner_phase": 88,
+    "exit_criterion": "trivy is on PATH of the machine running the suite. CI installs it from a pinned, checksummed release on all three systems (.github/workflows/test.yml), where these entries never apply because context \"local\" is refused under CI. Delete the entry when the harness provisions trivy for a developer machine too."
+  },
+  {
+    "name": "[SEC-06] script exits 0",
+    "file": "tests/34-security-pipeline.integration.test.cjs",
+    "platform": "all",
+    "context": "local",
+    "reason": "trivy is not installed and this test must not download a binary from the network",
+    "reason_class": "scanner-not-installed-locally",
+    "owner": "plan 88-19 (the skip gate); CI installs all three scanners, a developer machine does not",
+    "owner_phase": 88,
+    "exit_criterion": "trivy is on PATH of the machine running the suite. CI installs it from a pinned, checksummed release on all three systems (.github/workflows/test.yml), where these entries never apply because context \"local\" is refused under CI. Delete the entry when the harness provisions trivy for a developer machine too."
+  },
+  {
+    "name": "runner returns exit 0 on canonical skills (clean baseline)",
+    "file": "tests/skill-semgrep-enforcement.test.cjs",
+    "platform": "all",
+    "context": "local",
+    "reason": "semgrep not installed \u2014 asserting exit 2 is the expected warn behavior",
+    "reason_class": "scanner-not-installed-locally",
+    "owner": "plan 88-19 (the skip gate); CI installs all three scanners, a developer machine does not",
+    "owner_phase": 88,
+    "exit_criterion": "semgrep is on PATH of the machine running the suite. CI installs it on the cells that support it (.github/workflows/test.yml), where these entries never apply because context \"local\" is refused under CI. Delete the entry when the harness provisions semgrep for a developer machine too, or when the test gains a hermetic fake-scanner variant that runs everywhere (tests/support/fake-scanner.cjs is the mechanism)."
+  },
+  {
+    "name": "runner returns exit 0 on clean read-only skill",
+    "file": "tests/skill-semgrep-enforcement.test.cjs",
+    "platform": "all",
+    "context": "local",
+    "reason": "semgrep not installed \u2014 skipping clean read-only validation test",
+    "reason_class": "scanner-not-installed-locally",
+    "owner": "plan 88-19 (the skip gate); CI installs all three scanners, a developer machine does not",
+    "owner_phase": 88,
+    "exit_criterion": "semgrep is on PATH of the machine running the suite. CI installs it on the cells that support it (.github/workflows/test.yml), where these entries never apply because context \"local\" is refused under CI. Delete the entry when the harness provisions semgrep for a developer machine too, or when the test gains a hermetic fake-scanner variant that runs everywhere (tests/support/fake-scanner.cjs is the mechanism)."
+  },
+  {
+    "name": "runner returns exit 1 on missing allowed-tools field",
+    "file": "tests/skill-semgrep-enforcement.test.cjs",
+    "platform": "all",
+    "context": "local",
+    "reason": "semgrep not installed \u2014 skipping missing-field detection test",
+    "reason_class": "scanner-not-installed-locally",
+    "owner": "plan 88-19 (the skip gate); CI installs all three scanners, a developer machine does not",
+    "owner_phase": 88,
+    "exit_criterion": "semgrep is on PATH of the machine running the suite. CI installs it on the cells that support it (.github/workflows/test.yml), where these entries never apply because context \"local\" is refused under CI. Delete the entry when the harness provisions semgrep for a developer machine too, or when the test gains a hermetic fake-scanner variant that runs everywhere (tests/support/fake-scanner.cjs is the mechanism)."
+  },
+  {
+    "name": "runner returns exit 1 on read-only + bash rm -rf",
+    "file": "tests/skill-semgrep-enforcement.test.cjs",
+    "platform": "all",
+    "context": "local",
+    "reason": "semgrep not installed \u2014 skipping bash mutation verb detection test",
+    "reason_class": "scanner-not-installed-locally",
+    "owner": "plan 88-19 (the skip gate); CI installs all three scanners, a developer machine does not",
+    "owner_phase": 88,
+    "exit_criterion": "semgrep is on PATH of the machine running the suite. CI installs it on the cells that support it (.github/workflows/test.yml), where these entries never apply because context \"local\" is refused under CI. Delete the entry when the harness provisions semgrep for a developer machine too, or when the test gains a hermetic fake-scanner variant that runs everywhere (tests/support/fake-scanner.cjs is the mechanism)."
+  },
+  {
+    "name": "runner returns exit 1 on read-only + Edit violation",
+    "file": "tests/skill-semgrep-enforcement.test.cjs",
+    "platform": "all",
+    "context": "local",
+    "reason": "semgrep not installed \u2014 skipping violation detection test",
+    "reason_class": "scanner-not-installed-locally",
+    "owner": "plan 88-19 (the skip gate); CI installs all three scanners, a developer machine does not",
+    "owner_phase": 88,
+    "exit_criterion": "semgrep is on PATH of the machine running the suite. CI installs it on the cells that support it (.github/workflows/test.yml), where these entries never apply because context \"local\" is refused under CI. Delete the entry when the harness provisions semgrep for a developer machine too, or when the test gains a hermetic fake-scanner variant that runs everywhere (tests/support/fake-scanner.cjs is the mechanism)."
   }
 ]
