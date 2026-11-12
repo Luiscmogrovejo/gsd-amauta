@@ -163,6 +163,15 @@ MIGRATION_SENTINELS = {
         ("column", "rlm_chunks", "file_mtime"),
         ("column", "rlm_chunks", "file_size"),
     ],
+    # Phase 89 plan 89-02 (FND-11). A "column" sentinel cannot see this migration:
+    # both columns already existed as INTEGER, so only the TYPE says whether 031 ran.
+    # The two strings are `format_type(atttypid, atttypmod)`, which is what
+    # `_sentinel_satisfied`'s "coltype" branch compares against; they are asserted
+    # from the catalogue in tests/test_89_02_decimal_phase.py rather than guessed.
+    "031-decimal-phase-number.sql": [
+        ("coltype", "step_handoffs", "phase_number", "numeric(10,3)"),
+        ("coltype", "task_completions", "phase_number", "numeric(10,3)"),
+    ],
 }
 
 

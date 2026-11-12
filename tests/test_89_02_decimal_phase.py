@@ -960,21 +960,28 @@ class TestHandoffRoundTripOnBothBackends:
 class TestPostgresWireTypeMeasuredOnTheServer:
     """`pg_typeof` of the bound parameter — the server's own answer, not an inference."""
 
-    @pytest.mark.parametrize("raw", PHASE_CASES)
-    def test_the_bound_parameter_arrives_as_numeric(self, scratch_dsn, raw,
-                                                    record_property):
+    def test_the_bound_parameter_arrives_as_numeric(self, scratch_dsn, record_property):
+        """One node id, every value in the parameter set — the gate's ledger is finite.
+
+        Parameterising this would add one listed skip entry per value on each of the
+        two cells that have no disposable database, for a measurement that is a loop
+        either way. The values are all asserted; a failure names the one that broke.
+        """
+        measured = {}
         conn = _connect(scratch_dsn)
         try:
             with conn.cursor() as cur:
-                cur.execute("SELECT pg_typeof(%s)", (_pg_param(raw),))
-                wire_type = cur.fetchone()[0]
+                for raw in PHASE_CASES:
+                    cur.execute("SELECT pg_typeof(%s)", (_pg_param(raw),))
+                    measured[raw] = cur.fetchone()[0]
         finally:
             conn.close()
-        _measure(record_property, f"pg_typeof({raw})", wire_type)
-        assert wire_type == "numeric", (
-            f"phase {raw!r} arrived as {wire_type!r}; a double precision parameter "
-            "makes = 72.1 a binary-float comparison against a NUMERIC column"
-        )
+        _measure(record_property, "pg_typeof", measured)
+        for raw, wire_type in measured.items():
+            assert wire_type == "numeric", (
+                f"phase {raw!r} arrived as {wire_type!r}; a double precision parameter "
+                "makes = 72.1 a binary-float comparison against a NUMERIC column"
+            )
 
     def test_the_stored_value_equals_the_bound_value_exactly(self, migrated_dsn,
                                                              record_property):
@@ -1264,4 +1271,97 @@ class TestComplexityEndpointsAreTypedNotFiveHundred:
         assert body.get("reason") == "no_handoff", (
             f"escalate for 72.1 found something; it must not read phase 72's "
             f"handoff: {body}"
+        )
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# The MIGRATION_SENTINELS entry 031 needs after all.
+#
+# The plan said a new migration needs none ("sentinels exist for files that
+# predate schema_migrations tracking"). MEASURED: that is not the convention the
+# repository enforces — tests/test_docker_pg_migration.py:1113-1118
+# `TestSentinelsUnit::test_every_migration_has_a_sentinel` fails for ANY
+# migration without an entry, and the full local pytest run reddened on exactly
+# that assertion. The intent (do not collide with the plans that own
+# services/migrate_runner.py in later waves) is kept by adding ONE additive dict
+# entry at the END of the dict — far from 89-05's 024 key and 89-06's 025 key.
+#
+# A "column" sentinel would be useless here: both columns already existed as
+# INTEGER, so only the TYPE distinguishes "031 ran" from "031 did not". These
+# tests prove the two `format_type` strings in the entry are the strings the
+# catalogue actually produces.
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+class TestMigrationSentinelFor031:
+    """The entry exists, is well-formed, and names the right kind."""
+
+    def test_031_has_a_sentinel_entry(self):
+        from services import migrate_runner
+
+        assert "031-decimal-phase-number.sql" in migrate_runner.MIGRATION_SENTINELS
+
+    def test_the_sentinel_is_a_coltype_on_both_columns(self):
+        from services import migrate_runner
+
+        entry = migrate_runner.MIGRATION_SENTINELS["031-decimal-phase-number.sql"]
+        assert entry == [
+            ("coltype", "step_handoffs", "phase_number", "numeric(10,3)"),
+            ("coltype", "task_completions", "phase_number", "numeric(10,3)"),
+        ], entry
+
+
+@requires_pg
+class TestMigrationSentinelFor031OnPostgres:
+    """`format_type` is measured, so the sentinel string cannot be a guess."""
+
+    def test_the_format_type_strings_match_the_catalogue(self, migrated_dsn,
+                                                         record_property):
+        conn = _connect(migrated_dsn)
+        try:
+            with conn.cursor() as cur:
+                measured = {}
+                for table in ("step_handoffs", "task_completions"):
+                    cur.execute(
+                        "SELECT format_type(a.atttypid, a.atttypmod)"
+                        " FROM pg_attribute a"
+                        " WHERE a.attrelid = to_regclass(%s) AND a.attname = %s"
+                        "   AND a.attnum > 0 AND NOT a.attisdropped",
+                        (table, "phase_number"),
+                    )
+                    measured[table] = cur.fetchone()[0]
+        finally:
+            conn.close()
+        _measure(record_property, "format_type", measured)
+        assert measured == {"step_handoffs": "numeric(10,3)",
+                            "task_completions": "numeric(10,3)"}, measured
+
+    def test_the_sentinel_recognises_031_as_applied(self, migrated_dsn):
+        """What the entry is FOR: an untracked database must not re-run 031."""
+        import psycopg2
+
+        from services import migrate_runner
+
+        conn = psycopg2.connect(migrated_dsn, connect_timeout=10)
+        try:
+            applied = migrate_runner.detect_applied_by_schema(conn)
+        finally:
+            conn.close()
+        assert "031-decimal-phase-number.sql" in applied, applied
+
+    def test_the_sentinel_does_not_fire_before_031_ran(self, migrated_dsn):
+        """Taking the column back to INTEGER must make 031 pending again."""
+        import psycopg2
+
+        from services import migrate_runner
+
+        _exec_file(migrated_dsn, MIGRATION_DOWN)
+        conn = psycopg2.connect(migrated_dsn, connect_timeout=10)
+        try:
+            applied = migrate_runner.detect_applied_by_schema(conn)
+        finally:
+            conn.close()
+        assert "031-decimal-phase-number.sql" not in applied, (
+            "the sentinel reports 031 applied on an INTEGER column — it would be "
+            "baselined away and never run"
         )
