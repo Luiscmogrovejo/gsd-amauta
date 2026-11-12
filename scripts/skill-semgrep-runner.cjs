@@ -20,9 +20,21 @@
  *   node scripts/skill-semgrep-runner.cjs [targetDir] [--config=<path>] [--json]
  */
 
-const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
+
+// Plan 88-11. semgrep is spawned through the shared platform helper, never with a
+// bare `spawnSync('semgrep', …)` and never with `shell: true`. Two reasons, both
+// measured: on Windows a bare name is resolved by the OS loader, so a `.cmd` on
+// PATH (an npm shim, or the hermetic fake in tests/support/fake-scanner.cjs) is
+// either not found or refused by the CVE-2024-27980 hardening; and a resolved
+// absolute path is what lets an operator or a test put a different copy in front
+// of the system one. `spawnTool` resolves with PATHEXT and spawns a `.cmd` through
+// `cmd.exe /d /s /c` with an allowlisted command line.
+const platform = require('../get-shit-done/bin/lib/platform.cjs');
+
+/** Override variable for the semgrep binary; ENG-04, a knob rather than a literal. */
+const SEMGREP_ENV_VAR = 'GSD_SEMGREP';
 
 // ─── Default paths ────────────────────────────────────────────────────────────
 
@@ -37,7 +49,8 @@ const DEFAULT_VERBS_PATH = 'get-shit-done/references/mutation_verbs.txt';
  * @returns {boolean}
  */
 function checkSemgrepInstalled() {
-  const result = spawnSync('semgrep', ['--version'], {
+  const result = platform.spawnTool('semgrep', ['--version'], {
+    envVar: SEMGREP_ENV_VAR,
     encoding: 'utf8',
     timeout: 10000,
   });
@@ -113,7 +126,8 @@ function runEnforcement(targetDir, configPath) {
     resolvedTarget,
   ];
 
-  const result = spawnSync('semgrep', argv, {
+  const result = platform.spawnTool('semgrep', argv, {
+    envVar: SEMGREP_ENV_VAR,
     encoding: 'utf8',
     timeout: 60000,
     maxBuffer: 10 * 1024 * 1024, // 10MB

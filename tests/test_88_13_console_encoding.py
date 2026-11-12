@@ -118,23 +118,69 @@ def test_posix_stdout_bytes_unchanged(name, pre, cmd):
         assert hashlib.sha256(out).hexdigest() == GOLDEN_SHA256[name]
 
 
-@pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="launchd/POSIX no-locale case; on Windows a piped stdout is cp1252 and setup_stdio correctly returns True",
-)
-def test_setup_stdio_is_a_noop_with_no_locale_variables():
-    """The LaunchAgent plist sets no locale variables; the rule must be a no-op there."""
-    code = "import sys; sys.path.insert(0, 'services'); import _platform; print(_platform.setup_stdio())"
+def _no_locale_env():
+    """A child environment with no LANG, no LC_*, and no PYTHON* variable.
+
+    POSIX needs only PATH. Windows needs SystemRoot (CPython's startup and the
+    socket/ssl initialisation read it), COMSPEC and PATHEXT; without SystemRoot
+    the interpreter does not start at all, which would make the assertion below
+    report a Windows encoding finding that is really a missing variable.
+
+    Returns:
+        dict: the environment for ``subprocess.run(..., env=...)``.
+    """
+    env = {"PATH": os.environ["PATH"]}
+    if sys.platform == "win32":
+        for name in ("SystemRoot", "SYSTEMROOT", "COMSPEC", "PATHEXT", "TEMP", "TMP"):
+            if name in os.environ:
+                env[name] = os.environ[name]
+    return env
+
+
+def test_setup_stdio_with_no_locale_variables_matches_the_platform():
+    """The rule on every system, measured in a child with no locale variables.
+
+    POSIX (the LaunchAgent plist sets no locale variables either): a piped
+    stdout is already UTF-8, so ``setup_stdio`` must be a no-op and return
+    False -- POSIX output must not change by one byte.
+
+    Windows: the same piped stdout is the ANSI code page (cp1252 on the
+    runners), which is the very condition plan 88-13 exists for, so
+    ``setup_stdio`` must reconfigure it and return True.
+
+    Plan 88-11 removed the ``skipif(win32)`` this carried: the case has a
+    Windows counterpart, it is just the opposite answer, so the test now runs
+    on all three systems instead of being excused on one.
+    """
+    code = (
+        "import sys; sys.path.insert(0, 'services'); import _platform; "
+        "before = sys.stdout.encoding; "
+        "changed = _platform.setup_stdio(); "
+        "print(before, changed, sys.stdout.encoding)"
+    )
     r = subprocess.run(
         [sys.executable, "-c", code],
         cwd=ROOT,
-        env={"PATH": os.environ["PATH"]},  # no LANG, no LC_*, no PYTHON* variables
+        env=_no_locale_env(),
         capture_output=True,
         text=True,
         encoding="utf-8",
     )
     assert r.returncode == 0, r.stderr
-    assert r.stdout.strip() == "False"
+    before, changed, after = r.stdout.split()
+
+    if sys.platform == "win32":
+        assert before.lower().replace("-", "") == "cp1252", (
+            "a piped stdout on Windows is expected to be the ANSI code page; got %r" % before
+        )
+        assert changed == "True", r.stdout
+        assert after.lower().replace("-", "").replace("_", "") == "utf8", r.stdout
+    else:
+        assert before.lower().replace("-", "").replace("_", "") == "utf8", (
+            "a piped stdout on POSIX is already UTF-8; got %r" % before
+        )
+        assert changed == "False", r.stdout
+        assert after == before, "POSIX stdio must not be touched: %r -> %r" % (before, after)
 
 
 def _wrapper(encoding):

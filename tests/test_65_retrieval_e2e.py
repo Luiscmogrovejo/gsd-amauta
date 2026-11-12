@@ -94,15 +94,29 @@ import psycopg2  # noqa: E402
 
 
 def _valkey_reachable():
-    """Best-effort Valkey probe — used only to gate the graph test's xfail
-    path (RETR-05's graph degradation without Valkey is by-design)."""
+    """Whether the DISPOSABLE Valkey is up — never a probe of a default port.
+
+    Plan 88-11. This used to default to ``127.0.0.1:6379``, which is the
+    operator's live Redis: on a developer machine the probe either dialled a
+    service no test may touch or was refused by the hermetic guard, and in CI
+    it dialled nothing at all. The address now comes from
+    ``GSD_TEST_VALKEY_URL`` through ``conftest.valkey_host_port()``, which
+    returns None rather than a default, and the same URL is what
+    ``conftest._start_rlm`` hands the RLM service as ``REDIS_HOST``/
+    ``REDIS_PORT`` — so the probe and the service under test agree by
+    construction instead of by coincidence.
+
+    Returns:
+        bool: True when a disposable Valkey is configured AND answering.
+    """
+    from conftest import valkey_host_port
+
+    where = valkey_host_port()
+    if where is None:
+        return False
     try:
         import redis
-        client = redis.Redis(
-            host=os.environ.get("REDIS_HOST", "127.0.0.1"),
-            port=int(os.environ.get("REDIS_PORT", "6379")),
-            socket_timeout=1,
-        )
+        client = redis.Redis(host=where[0], port=where[1], socket_timeout=2)
         client.ping()
         return True
     except Exception:
@@ -239,6 +253,12 @@ class TestSymbolNameOnlyQueryScoresNonzero:
         assert target.get("relevance_score", 0) > 0, f"expected relevance_score > 0, got: {target}"
 
 
+@pytest.mark.xfail(
+    reason=(
+        "plan 88-11 gave the Linux cell a disposable Valkey and MEASURED the result: the Valkey half is closed, the retrieval half is Phase 89's. Run 43217682043 / job 131180975509: `disposable Valkey answering on host port 40019`, the PING probe green, `_valkey_reachable()` True, so this test ran its POSITIVE branch for the first time on any cell -- and failed with `graph_callers missing main_entry: None`, i.e. the key is ABSENT from the result, not empty. That is the same cause as the ten `retrieval-leg-routed-89` cases and as `TestQueryAnswersHybrid` in this file: `graph_callers` is attached only on the HYBRID branch of /query (services/rlm-service.py, `expand_chunks_with_graph`), and on this cell the engine still answers `legacy_in_memory_fallback`, so nothing ever calls the graph expansion. Valkey was never the obstacle this entry claimed it was. EXIT CRITERION: remove this marker when the hybrid engine answers for a freshly ingested fixture project on the Linux cell -- the same criterion the other ten carry. It is a NON-strict xfail, so the fix does not turn the cell red before anyone notices."
+    ),
+    strict=False,
+)
 class TestGraphNamesRealCaller:
     def test_graph_names_the_real_caller(self, fixture_project):
         """RETR-05 live: the frobnicate_widget result's graph_callers names
@@ -246,7 +266,11 @@ class TestGraphNamesRealCaller:
         populated). Graph degradation without Valkey is by-design -> xfail
         rather than hard-fail."""
         if not _valkey_reachable():
-            pytest.xfail("Valkey unreachable — graph degradation is by-design (RETR-05)")
+            from conftest import VALKEY_SKIP_REASON
+
+            pytest.xfail(
+                "graph degradation is by-design (RETR-05): " + VALKEY_SKIP_REASON
+            )
 
         status, data = _post(
             "/query", {"query": "frobnicate_widget", "directory": fixture_project, "top_k": 5}

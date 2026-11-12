@@ -320,18 +320,20 @@ jobs:
     timeout-minutes: 25
     # Operator decision 2026-11-11 ("All needs to pass even windows ... this is
     # a universal tool"): the Python suite must run and pass on Linux, macOS
-    # and Windows. Plan 88-15 flips the macOS and Windows rows to required,
-    # both green at that point. The ubuntu row is deliberately LEFT at
-    # required: false here: plan 88-11 task 88-11-01 step 0 flips it and first
-    # proves it can go red, and that sequencing is the point -- a required flag
-    # on a job that cannot fail is decoration. The literal check name
+    # and Windows. Plan 88-15 flipped the macOS and Windows rows to required,
+    # both green at that point. The ubuntu row was deliberately left for plan
+    # 88-11 task 88-11-01 step 0, which is this flip. The job-level expression
+    # stays an expression: a bare `continue-on-error: false` here would be a
+    # second place to edit, and reintroducing one would override the two rows
+    # 88-15 already made required. The literal check name
     # `pytest (ubuntu-latest, python 3.12)` is what the ruleset names.
     continue-on-error: ${{ !matrix.required }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest,  python-version: '3.12', required: false }
+          # Blocking since Phase 88 task 88-11-01: the Python suite is green (88-08 dispositioned the suite, 88-10 the doctor tests, 88-16 removed the skips).
+          - { os: ubuntu-latest,  python-version: '3.12', required: true }
           - { os: macos-latest,   python-version: '3.12', required: true }
           - { os: windows-latest, python-version: '3.12', required: true }
     steps:
@@ -435,6 +437,47 @@ jobs:
             -c "CREATE EXTENSION IF NOT EXISTS vector"
           echo "GSD_TEST_POSTGRES_URL=postgresql://gsd:gsd@127.0.0.1:${PG_TEST_PORT}/gsd_test" >> "$GITHUB_ENV"
 
+      - name: Start the disposable Valkey (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        # Plan 88-11 (B2). The RLM graph leg (services/rlm_graph.py) stores its
+        # caller/callee adjacency in Valkey, and with no server the graph
+        # degrades by design (RETR-05) -- which is a real behaviour, but it
+        # meant `test_graph_names_the_real_caller` had never once asserted the
+        # POSITIVE case on any cell.
+        #
+        # The host port is chosen by the runner's OWN freePort(), which excludes
+        # the live service ports by construction, so it can never be 6379 --
+        # the operator's live Redis, which the hermetic guard blocks and which
+        # no test may dial. The address travels in GSD_TEST_VALKEY_URL and
+        # NOTHING defaults to it: tests/conftest.py validates it against the
+        # live ports, hands it to the fixture RLM as REDIS_HOST/REDIS_PORT, and
+        # returns None (a named skip) when it is unset. The image is pinned by
+        # digest, like the PostgreSQL one above.
+        run: |
+          set -euo pipefail
+          VK_PORT=$(node -e "process.stdout.write(String(require('./scripts/run-tests.cjs').freePort()))")
+          if [ "$VK_PORT" = "6379" ]; then
+            echo "freePort() returned the live Redis port; refusing to continue" >&2
+            exit 1
+          fi
+          docker run -d --name gsd-test-valkey \
+            -p "127.0.0.1:${VK_PORT}:6379" \
+            valkey/valkey:8.1-alpine@sha256:2602ace2be6569bc2bbb06f873776516ab9089821525be34f4305c67eb9db02a \
+            valkey-server --save '' --appendonly no
+          ready=
+          for _ in $(seq 1 30); do
+            if python -c "import socket,sys; s=socket.create_connection(('127.0.0.1', ${VK_PORT}), 2); s.sendall(b'PING\r\n'); sys.exit(0 if b'PONG' in s.recv(64) else 1)" 2>/dev/null; then ready=1; break; fi
+            sleep 2
+          done
+          if [ -z "$ready" ]; then
+            docker logs gsd-test-valkey || true
+            echo "the disposable Valkey did not answer PING on 127.0.0.1:${VK_PORT} in 60 s" >&2
+            exit 1
+          fi
+          echo "GSD_TEST_VALKEY_URL=redis://127.0.0.1:${VK_PORT}/0" >> "$GITHUB_ENV"
+          echo "disposable Valkey answering on host port ${VK_PORT}"
+
       - name: Apply the schema to the disposable PostgreSQL
         if: env.GSD_TEST_POSTGRES_URL != ''
         shell: bash
@@ -499,3 +542,8 @@ jobs:
         if: always() && runner.os == 'Linux'
         shell: bash
         run: docker rm -f gsd-test-pg || true
+
+      - name: Stop the disposable Valkey (Linux)
+        if: always() && runner.os == 'Linux'
+        shell: bash
+        run: docker rm -f gsd-test-valkey || true
