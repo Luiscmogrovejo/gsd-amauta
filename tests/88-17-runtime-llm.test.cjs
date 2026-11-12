@@ -330,16 +330,20 @@ describe('88-17 runtime-llm: ANTHROPIC_API_KEY set with no opt-in never selects 
 
     const r = spawnSync(process.execPath, [driver], { encoding: 'utf8', env });
     assert.equal(r.status, 0, `driver failed: ${r.stderr}`);
-    const res = JSON.parse(r.stdout);
-    assert.equal(res.ok, false);
-    assert.equal(res.reason, 'no_backend');
 
+    // The two alarms are asserted FIRST, so this test's load-bearing claim is "nothing
+    // was dialled", not the return value (a return-value assertion alone would pass even
+    // if a call had been attempted and failed).
     assert.ok(!fs.existsSync(curlLog),
       `nothing may be sent to api.anthropic.com: ${fs.existsSync(curlLog) ? fs.readFileSync(curlLog, 'utf8') : ''}`);
     const guard = fs.existsSync(guardLog) ? fs.readFileSync(guardLog, 'utf8') : '';
     assert.equal(guard.trim(), '',
       `the hermetic guard logged a blocked connection, so something dialled out:\n${guard}`);
     assert.ok(!guard.includes('api.anthropic.com'), 'the API host must never be contacted');
+
+    const res = JSON.parse(r.stdout);
+    assert.equal(res.ok, false);
+    assert.equal(res.reason, 'no_backend');
   });
 
   test('resolveBackend prefers the CLI when both a fake CLI and a key are present', () => {
