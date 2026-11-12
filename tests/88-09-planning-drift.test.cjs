@@ -95,14 +95,58 @@ function readContract() {
 }
 
 const CONTRACT = readContract();
-const TREES = ['agree', 'disagree', 'exceptions', 'archived-milestone', 'unreadable-goal'];
+const TREES = [
+  'agree', 'disagree', 'exceptions', 'archived-milestone', 'unreadable-goal',
+  // plan 88-19: the skip ledger
+  'skip-ledger-agrees', 'skip-ledger-disagrees',
+];
+
+/** The five trees that existed before plan 88-19, and the finding COUNT each produced. */
+const PRE_88_19_TREES = {
+  agree: 0,
+  disagree: 7,
+  exceptions: 7,
+  'archived-milestone': 0,
+  'unreadable-goal': 2,
+};
+
+/**
+ * Write a `tests/skip-exceptions.json` into a copied tree.
+ * @param {string} dir tree root
+ * @param {object[]} entries
+ * @returns {void}
+ */
+function writeSkipExceptions(dir, entries) {
+  fs.mkdirSync(path.join(dir, 'tests'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'tests', 'skip-exceptions.json'), JSON.stringify(entries, null, 2));
+}
+
+/**
+ * One well-formed skip-exceptions entry, with overrides.
+ * @param {object} [over]
+ * @returns {object}
+ */
+function skipEntry(over = {}) {
+  return {
+    name: 'test_one',
+    file: 'tests/test_fixture.py',
+    platform: 'all',
+    context: 'any',
+    reason: 'the fixture feature does not exist yet',
+    reason_class: 'fixture-pending',
+    owner: 'Phase 13 (the fixture feature)',
+    owner_phase: 13,
+    exit_criterion: 'the fixture feature exists',
+    ...over,
+  };
+}
 
 test.after(() => {
   for (const d of TMP_DIRS) fs.rmSync(d, { recursive: true, force: true });
 });
 
 describe('88-09 per-tree contract (README is the single source)', () => {
-  test('README declares all five trees', () => {
+  test('README declares every tree', () => {
     assert.deepStrictEqual(Object.keys(CONTRACT).sort(), [...TREES].sort());
   });
 
@@ -415,6 +459,31 @@ describe('88-09 mutation checks: every finding id fires, nothing is dead code', 
         { target: 'nothing-here.md', phase: '10-alpha', finding: 'DRIFT_PLAN_WITHOUT_SUMMARY', reason: 'r', recorded_in: 'x', date: '2026-11-11' },
       ] })),
     },
+    {
+      // plan 88-19: an entry deferred to a phase the ROADMAP already marks Complete.
+      // A matching ledger row is added too, so this mutation fires ONLY its own id.
+      id: 'DRIFT_SKIP_OWNER_PHASE_COMPLETE',
+      mutate: (d) => {
+        writeSkipExceptions(d, [skipEntry({ owner_phase: 10, owner: 'Phase 10 (already complete)' })]);
+        edit(d, 'ROADMAP.md', '\n## Progress\n', [
+          '',
+          '## Carried Test Obligations (the skip ledger)',
+          '',
+          '| Class id | Tests | Why they do not run yet | Owning phase |',
+          '|---|---|---|---|',
+          '| `fixture-pending` | One test | The feature it needs | Phase 10 |',
+          '',
+          '## Progress',
+          '',
+        ].join('\n'));
+      },
+    },
+    {
+      // plan 88-19: entries with no ledger row at all (the tree has no ledger section).
+      // owner_phase 13 is not a phase this tree marks complete, so only this id fires.
+      id: 'DRIFT_SKIP_LEDGER_MISMATCH',
+      mutate: (d) => writeSkipExceptions(d, [skipEntry()]),
+    },
   ];
 
   test('the unmutated agree tree emits nothing', () => {
@@ -445,9 +514,107 @@ describe('88-09 mutation checks: every finding id fires, nothing is dead code', 
     assert.deepStrictEqual(MUTATIONS.map((m) => m.id).sort(), emitted);
   });
 
+  test('each new 88-19 mutation fires ONLY its own id', () => {
+    for (const id of ['DRIFT_SKIP_OWNER_PHASE_COMPLETE', 'DRIFT_SKIP_LEDGER_MISMATCH']) {
+      const dir = copyTree('agree');
+      MUTATIONS.find((m) => m.id === id).mutate(dir);
+      assert.deepStrictEqual(ids(dir), [id], `${id} cascaded`);
+    }
+  });
+
   test('no committed fixture was modified in place', () => {
     const r = spawnSync('git', ['status', '--porcelain', '--', 'tests/fixtures/planning-drift'], { cwd: ROOT, encoding: 'utf-8' });
     if (r.status !== 0) return; // not a git checkout (npm tarball): nothing to compare
     assert.strictEqual(r.stdout.trim(), '');
+  });
+});
+
+describe('88-19 the skip ledger: two findings, three directions, one resolution rule', () => {
+  const AGREES = path.join(FIXTURES, 'skip-ledger-agrees');
+  const DISAGREES = path.join(FIXTURES, 'skip-ledger-disagrees');
+
+  test('the agreeing tree is silent, including its — row', () => {
+    const r = planningDrift(AGREES);
+    assert.deepStrictEqual(r.findings, []);
+    assert.strictEqual(r.exit_code, 0);
+    const roadmap = fs.readFileSync(path.join(AGREES, 'ROADMAP.md'), 'utf8');
+    assert.match(roadmap, /\| — \|/, 'the tree must carry a deliberately unmatched ledger row');
+    const entries = JSON.parse(fs.readFileSync(path.join(AGREES, 'tests', 'skip-exceptions.json'), 'utf8'));
+    assert.strictEqual(entries.length, 2);
+  });
+
+  test('the disagreeing tree reports all three DIRECTIONS, each distinctly', () => {
+    const r = planningDrift(DISAGREES);
+    const mismatches = r.findings.filter((f) => f.id === 'DRIFT_SKIP_LEDGER_MISMATCH').map((f) => f.message);
+    assert.strictEqual(mismatches.length, 3, mismatches.join('\n'));
+    const directions = mismatches.map((m) => m.match(/direction: ([A-Z ]+) /)[1]);
+    assert.deepStrictEqual([...directions].sort(), [
+      'DIFFERING PHASE', 'ENTRY WITH NO LEDGER ROW', 'LEDGER ROW WITH NO ENTRY',
+    ]);
+    assert.ok(mismatches.some((m) => /fixture-orphan/.test(m) && /ENTRY WITH NO LEDGER ROW/.test(m)));
+    assert.ok(mismatches.some((m) => /fixture-ghost/.test(m) && /LEDGER ROW WITH NO ENTRY/.test(m)));
+    assert.ok(mismatches.some((m) => /owner_phase 11/.test(m) && /Phase 13/.test(m)));
+  });
+
+  test('an entry owned by a COMPLETE phase is reported with the phase and its status', () => {
+    const f = planningDrift(DISAGREES).findings.find((x) => x.id === 'DRIFT_SKIP_OWNER_PHASE_COMPLETE');
+    assert.ok(f, 'the finding must fire');
+    assert.match(f.message, /owner_phase 11/);
+    assert.match(f.message, /marks phase 11 "Complete"/);
+    assert.match(f.message, /test_two/, 'the entry itself is named');
+  });
+
+  test('an ABSENT exceptions file produces no finding: the five older trees are unchanged', () => {
+    for (const [name, before] of Object.entries(PRE_88_19_TREES)) {
+      const dir = path.join(FIXTURES, name);
+      assert.strictEqual(fs.existsSync(path.join(dir, 'tests', 'skip-exceptions.json')), false, name);
+      assert.strictEqual(planningDrift(dir).findings.length, before, `${name} changed count`);
+    }
+  });
+
+  test('the resolution rule: a root named .planning reads the SIBLING tests/ directory', () => {
+    const holder = fs.mkdtempSync(path.join(os.tmpdir(), 'pd-resolve-'));
+    TMP_DIRS.push(holder);
+    fs.cpSync(path.join(FIXTURES, 'agree'), path.join(holder, '.planning'), { recursive: true });
+    // the file beside .planning, i.e. <repo>/tests/skip-exceptions.json, is the one read
+    writeSkipExceptions(holder, [skipEntry()]);
+    assert.deepStrictEqual(ids(path.join(holder, '.planning')), ['DRIFT_SKIP_LEDGER_MISMATCH']);
+    // and the same file INSIDE .planning is not
+    fs.rmSync(path.join(holder, 'tests'), { recursive: true, force: true });
+    writeSkipExceptions(path.join(holder, '.planning'), [skipEntry()]);
+    assert.deepStrictEqual(ids(path.join(holder, '.planning')), []);
+  });
+
+  test('a malformed exceptions file is reported, not ignored', () => {
+    const dir = copyTree('agree');
+    fs.mkdirSync(path.join(dir, 'tests'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'tests', 'skip-exceptions.json'), '[{,}]');
+    const f = planningDrift(dir).findings.find((x) => x.id === 'DRIFT_SKIP_LEDGER_MISMATCH');
+    assert.ok(f && /not valid JSON/.test(f.message), 'a broken file must not read as "nothing deferred"');
+  });
+
+  test('a three-column ledger (no Class id) reports every class as having no row', () => {
+    // This is the state of the real ROADMAP until the orchestrator applies 88-19's rows,
+    // and reporting it is the point of the finding, not a defect.
+    const dir = copyTree('skip-ledger-agrees');
+    edit(dir, 'ROADMAP.md', '| Class id | Tests | Why they do not run yet | Owning phase |\n|---|---|---|---|',
+      '| Tests | Why they do not run yet | Owning phase |\n|---|---|---|');
+    const found = planningDrift(dir).findings.filter((x) => x.id === 'DRIFT_SKIP_LEDGER_MISMATCH');
+    assert.strictEqual(found.length, 1);
+    assert.match(found[0].message, /ENTRY WITH NO LEDGER ROW/);
+  });
+
+  test('reason_class is the ledger JOIN key, and the gate still never matches on it', () => {
+    // The one place the label is load-bearing is this reporting join. The gate's own
+    // key is (file, name, platform): scripts/skip-gate.cjs mentions reason_class only
+    // in report text, which tests/88-19-skip-gate.test.cjs asserts.
+    const dir = copyTree('skip-ledger-agrees');
+    const file = path.join(dir, 'tests', 'skip-exceptions.json');
+    const entries = JSON.parse(fs.readFileSync(file, 'utf8'));
+    entries[0].reason_class = 'renamed-class';
+    fs.writeFileSync(file, JSON.stringify(entries, null, 2));
+    const found = planningDrift(dir).findings.filter((x) => x.id === 'DRIFT_SKIP_LEDGER_MISMATCH');
+    assert.strictEqual(found.length, 1);
+    assert.match(found[0].message, /renamed-class/);
   });
 });
