@@ -142,7 +142,7 @@ const os = require('node:os');
 // This PR must be merged with a merge commit (NEVER squash, never rebase-merge) or this SHA stops resolving
 // on master. The full list is in
 // .planning/phases/89-postgres-primary-orchestration-cleanup/89-09-RECORD.md.
-const PHASE_53_BASE = 'cbed3c82dcf1d536a1bb765f6ab5814df6e03521';  // re-baselined 2026-11-12 by plan 89-09; see the block above  // HEAD captured 2026-05-14 at Phase 53 Wave 1 dispatch
+const PHASE_53_BASE = 'cbed3c82dcf1d536a1bb765f6ab5814df6e03521';  // re-baselined 2026-11-12 by plan 89-09; see the block above
 
 const ROOT = path.resolve(__dirname, '..');
 
