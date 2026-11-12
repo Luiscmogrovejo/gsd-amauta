@@ -45,6 +45,13 @@ test('88-16-07: the .mcp.json writer honours GSD_INSTALL_PROJECT_ROOT', () => {
     'test mode must have a last-resort temp directory, so a child with neither ' +
       'AMAUTA_DATA_DIR nor CLAUDE_CONFIG_DIR still cannot write into the repository'
   );
+  assert.match(
+    src,
+    /path\.resolve\(mcpProjectRoot\) === pkgRoot/,
+    'the installer must never write .mcp.json into its OWN package root, whatever ' +
+      'the environment says: that is the rule that ends the class of defect rather ' +
+      'than one instance of it'
+  );
   assert.doesNotMatch(
     src,
     /writeFileSync\(path\.join\(process\.cwd\(\), '\.mcp\.json'\)/,

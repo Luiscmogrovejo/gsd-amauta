@@ -2580,13 +2580,30 @@ function install(isGlobal, runtime = 'claude') {
       // visible on Windows and on any CI runner, where the resolved launcher
       // differs). An explicit GSD_INSTALL_PROJECT_ROOT still wins, and outside
       // test mode the behaviour is exactly what it was.
-      const mcpProjectRoot =
+      let mcpProjectRoot =
         process.env.GSD_INSTALL_PROJECT_ROOT ||
         (process.env.GSD_TEST_MODE === '1'
           ? (process.env.AMAUTA_DATA_DIR ||
              process.env.CLAUDE_CONFIG_DIR ||
              fs.mkdtempSync(path.join(os.tmpdir(), 'gsd-mcp-json-')))
           : process.cwd());
+      // ...and an absolute rule on top of the chain: the installer configures a
+      // TARGET PROJECT, and its own source tree is not one. `.mcp.json` is a
+      // tracked file in this package, so writing it here can only ever produce
+      // a spurious working-tree change — which is exactly what plan 88-15
+      // caught on Windows, where the resolved launcher is `py -3` and the
+      // committed value is `python3`. Plan 88-16-07 found and fixed one writer
+      // (tests/88-00-install-files-only.test.cjs) and a second, Windows-only
+      // one survived; the rule below ends the class rather than the instance.
+      const pkgRoot = path.resolve(__dirname, '..');
+      if (path.resolve(mcpProjectRoot) === pkgRoot) {
+        mcpProjectRoot =
+          process.env.AMAUTA_DATA_DIR ||
+          fs.mkdtempSync(path.join(os.tmpdir(), 'gsd-mcp-json-'));
+        console.log(
+          `  ${dim}.mcp.json target was this package's own root; wrote it to ${mcpProjectRoot}${reset}`
+        );
+      }
       fs.writeFileSync(path.join(mcpProjectRoot, '.mcp.json'), mcpJsonContent + '\n', 'utf8');
       console.log(`  ${green}✓${reset} .mcp.json written (MCP auto-discovery for Claude Code)`);
     }

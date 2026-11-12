@@ -493,7 +493,10 @@ describe('[SEC-02] Gitleaks: config allowlist + fixture detection (conditional)'
     }
 
     if (gitleaksBin) {
-      const reportPath = path.join(require('os').tmpdir(), '34-gitleaks-fixture-test.json');
+      // A unique path per run: a fixed name in the shared temp directory is a
+      // collision waiting for two test files to want it at once.
+      const reportDir = require('fs').mkdtempSync(path.join(require('os').tmpdir(), 'gitleaks-fixture-'));
+      const reportPath = path.join(reportDir, 'report.json');
       // Use --no-git to scan directory without git context (bypasses repo-level allowlist)
       const scan = spawnSync(gitleaksBin, [
         'detect',
@@ -504,18 +507,28 @@ describe('[SEC-02] Gitleaks: config allowlist + fixture detection (conditional)'
         '--no-banner',
       ], { cwd: PROJECT_ROOT, encoding: 'utf-8', timeout: 30000 });
 
-      // gitleaks exits 1 when secrets found — that's expected here
-      if (existsSync(reportPath)) {
-        const report = JSON.parse(readFileSync(reportPath, 'utf-8'));
+      // gitleaks exits 1 when secrets found — that's expected here.
+      //
+      // Plan 88-16-07: the "no report file" branch below used to log a note and
+      // pass, so a gitleaks that found nothing — or crashed — read as success.
+      // Now an absent or empty report is a FAILURE carrying gitleaks' own exit
+      // status and output, because "the scanner detects the seeded secret" is
+      // the whole assertion and there is no weaker true version of it.
+      const raw = existsSync(reportPath) ? readFileSync(reportPath, 'utf-8').trim() : '';
+      const diag =
+        `status=${scan.status} signal=${scan.signal}\n` +
+        `stdout: ${(scan.stdout || '').slice(-1500)}\n` +
+        `stderr: ${(scan.stderr || '').slice(-1500)}`;
+      try {
+        assert.ok(raw, `gitleaks wrote no report for tests/fixtures.\n${diag}`);
+        const report = JSON.parse(raw);
         assert.ok(
           Array.isArray(report) && report.length >= 1,
-          `Expected >= 1 gitleaks finding in test fixtures. Got: ${JSON.stringify(report)}`
+          `Expected >= 1 gitleaks finding in test fixtures. Got: ${raw.slice(0, 500)}\n${diag}`
         );
         console.log(`  [info] gitleaks found ${report.length} findings in test fixtures (expected)`);
-      } else {
-        // No report file written when 0 findings — if gitleaks exited 0 with no report, fixtures weren't detected
-        // Log as info rather than failure since --no-git behavior may vary by gitleaks version
-        console.log('  [note] gitleaks ran but produced no report file (may indicate 0 findings or version difference)');
+      } finally {
+        require('fs').rmSync(reportDir, { recursive: true, force: true });
       }
     }
     // Plan 88-16-02: the `else` here logged "[skip] gitleaks not installed" and
