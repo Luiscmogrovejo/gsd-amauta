@@ -267,7 +267,16 @@ assert 'next_step' in columns, f"Missing column: next_step"
 assert 'escalation_flags' in columns, f"Missing column: escalation_flags"
 assert 'created_at' in columns, f"Missing column: created_at"
 # Type checks
-assert columns['phase_number'] == 'integer', f"phase_number type wrong: {columns['phase_number']}"
+# Phase 89 plan 89-02 (FND-11): this asserted 'integer' until migration 031 retyped
+# step_handoffs.phase_number to NUMERIC(10,3) so a decimal phase (72.1, from
+# /amauta:insert-phase) can be stored and looked up on PostgreSQL at all. Converted,
+# not deleted: the column still has a declared numeric type and this is where that is
+# pinned. Two traps in three lines: this block is a PYTHON script, so a double-slash
+# comment here is a Python syntax error (the Node runner reported it as "leading zeros
+# in decimal integer literals"); and the block lives inside a JS TEMPLATE LITERAL, so a
+# backtick here ends the literal and breaks the whole file. Neither character appears
+# in this comment.
+assert columns['phase_number'] == 'numeric', f"phase_number type wrong: {columns['phase_number']}"
 assert columns['context_snapshot'] == 'jsonb', f"context_snapshot type wrong: {columns['context_snapshot']}"
 assert columns['artifacts'] == 'jsonb', f"artifacts type wrong: {columns['artifacts']}"
 print('PASS')

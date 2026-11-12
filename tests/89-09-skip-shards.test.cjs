@@ -186,6 +186,10 @@ const REMOVED_SINCE_SHARDING = [
 ];
 
 /** The same shape, for entries added since the migration. */
+// Plan 89-01 (RET-02) added 16 entries (tests/skip-exceptions.d/89-01.json) and plan 89-02
+// (FND-11) added 56 (tests/skip-exceptions.d/89-02.json): PostgreSQL arms on the two cells
+// that have no disposable database (darwin, win32). Task 89-07-04 removes them and moves
+// each tuple to REMOVED_SINCE_SHARDING.
 const ADDED_SINCE_SHARDING = [
   [
     "test_cell1_alias_qualified_filter_with_embedding_returns_rows",
@@ -196,7 +200,7 @@ const ADDED_SINCE_SHARDING = [
     "pg-no-disposable-database",
     "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
     89,
-    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database.",
+    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
   ],
   [
     "test_cell1_alias_qualified_filter_with_embedding_returns_rows",
@@ -207,7 +211,7 @@ const ADDED_SINCE_SHARDING = [
     "pg-no-disposable-database",
     "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
     89,
-    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database.",
+    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
   ],
   [
     "test_cell2_alias_qualified_filter_without_embedding_returns_rows",
@@ -218,7 +222,7 @@ const ADDED_SINCE_SHARDING = [
     "pg-no-disposable-database",
     "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
     89,
-    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database.",
+    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
   ],
   [
     "test_cell2_alias_qualified_filter_without_embedding_returns_rows",
@@ -229,7 +233,7 @@ const ADDED_SINCE_SHARDING = [
     "pg-no-disposable-database",
     "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
     89,
-    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database.",
+    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
   ],
   [
     "test_cell3_unqualified_filter_with_embedding_returns_rows",
@@ -240,7 +244,7 @@ const ADDED_SINCE_SHARDING = [
     "pg-no-disposable-database",
     "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
     89,
-    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database.",
+    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
   ],
   [
     "test_cell3_unqualified_filter_with_embedding_returns_rows",
@@ -251,7 +255,7 @@ const ADDED_SINCE_SHARDING = [
     "pg-no-disposable-database",
     "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
     89,
-    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database.",
+    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
   ],
   [
     "test_cell4_unqualified_filter_without_embedding_returns_rows",
@@ -262,7 +266,7 @@ const ADDED_SINCE_SHARDING = [
     "pg-no-disposable-database",
     "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
     89,
-    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database.",
+    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
   ],
   [
     "test_cell4_unqualified_filter_without_embedding_returns_rows",
@@ -273,7 +277,7 @@ const ADDED_SINCE_SHARDING = [
     "pg-no-disposable-database",
     "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
     89,
-    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database.",
+    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
   ],
   [
     "test_sql_programming_error_raises_typed_and_never_returns_empty",
@@ -284,7 +288,7 @@ const ADDED_SINCE_SHARDING = [
     "pg-no-disposable-database",
     "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
     89,
-    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database.",
+    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
   ],
   [
     "test_sql_programming_error_raises_typed_and_never_returns_empty",
@@ -295,7 +299,7 @@ const ADDED_SINCE_SHARDING = [
     "pg-no-disposable-database",
     "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
     89,
-    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database.",
+    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
   ],
   [
     "test_the_pre_fix_unaliased_shape_answers_sqlstate_42p01",
@@ -306,7 +310,7 @@ const ADDED_SINCE_SHARDING = [
     "pg-no-disposable-database",
     "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
     89,
-    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database.",
+    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
   ],
   [
     "test_the_pre_fix_unaliased_shape_answers_sqlstate_42p01",
@@ -317,7 +321,7 @@ const ADDED_SINCE_SHARDING = [
     "pg-no-disposable-database",
     "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
     89,
-    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database.",
+    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
   ],
   [
     "test_relevance_mrr_at_k_on_the_deterministic_provider",
@@ -328,7 +332,7 @@ const ADDED_SINCE_SHARDING = [
     "pg-no-disposable-database",
     "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
     89,
-    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database.",
+    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
   ],
   [
     "test_relevance_mrr_at_k_on_the_deterministic_provider",
@@ -339,7 +343,7 @@ const ADDED_SINCE_SHARDING = [
     "pg-no-disposable-database",
     "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
     89,
-    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database.",
+    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
   ],
   [
     "test_relevance_mrr_with_the_real_embedding_provider",
@@ -350,7 +354,7 @@ const ADDED_SINCE_SHARDING = [
     "pg-no-disposable-database",
     "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
     89,
-    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database.",
+    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
   ],
   [
     "test_relevance_mrr_with_the_real_embedding_provider",
@@ -361,7 +365,623 @@ const ADDED_SINCE_SHARDING = [
     "pg-no-disposable-database",
     "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
     89,
-    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database.",
+    "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
+  ],
+  [
+    "test_72_and_72_0_do_read_each_other_back[postgres]",
+    "tests/test_89_02_decimal_phase.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_7_25_is_its_own_phase[postgres]",
+    "tests/test_89_02_decimal_phase.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_a_72_1_handoff_is_not_read_back_by_a_lookup_for_72[postgres]",
+    "tests/test_89_02_decimal_phase.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_a_72_handoff_is_not_read_back_by_a_lookup_for_72_1[postgres]",
+    "tests/test_89_02_decimal_phase.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_a_decimal_phase_completion_is_stored_exactly",
+    "tests/test_89_02_decimal_phase.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_a_handoff_writes_and_reads_back[7.25-postgres]",
+    "tests/test_89_02_decimal_phase.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_a_handoff_writes_and_reads_back[72-postgres]",
+    "tests/test_89_02_decimal_phase.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_a_handoff_writes_and_reads_back[72.0-postgres]",
+    "tests/test_89_02_decimal_phase.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_a_handoff_writes_and_reads_back[72.1-postgres]",
+    "tests/test_89_02_decimal_phase.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_a_lookup_for_72_does_not_find_the_72_1_handoff",
+    "tests/test_89_02_decimal_phase.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_a_non_number_is_refused_before_any_write[postgres]",
+    "tests/test_89_02_decimal_phase.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_an_index_scan_is_available_for_the_predicate",
+    "tests/test_89_02_decimal_phase.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_an_integer_literal_compares_exactly_against_the_numeric_column",
+    "tests/test_89_02_decimal_phase.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_both_columns_are_numeric_10_3",
+    "tests/test_89_02_decimal_phase.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_both_indexes_survive_the_rewrite",
+    "tests/test_89_02_decimal_phase.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_down_also_refuses_for_a_decimal_task_completion",
+    "tests/test_89_02_decimal_phase.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_down_refuses_while_a_decimal_phase_exists_and_changes_nothing",
+    "tests/test_89_02_decimal_phase.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_down_returns_the_type_to_integer_when_every_phase_is_integral",
+    "tests/test_89_02_decimal_phase.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_reapplying_is_a_no_op_reported_through_schema_migrations",
+    "tests/test_89_02_decimal_phase.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_save_then_load_round_trips_a_decimal_phase",
+    "tests/test_89_02_decimal_phase.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_the_applied_duration_and_row_counts_are_measured_with_rows_present",
+    "tests/test_89_02_decimal_phase.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_the_bound_parameter_arrives_as_numeric_or_integer_never_a_float",
+    "tests/test_89_02_decimal_phase.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_the_column_comment_states_the_reason",
+    "tests/test_89_02_decimal_phase.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_the_format_type_strings_match_the_catalogue",
+    "tests/test_89_02_decimal_phase.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_the_sentinel_does_not_fire_before_031_ran",
+    "tests/test_89_02_decimal_phase.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_the_sentinel_recognises_031_as_applied",
+    "tests/test_89_02_decimal_phase.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_the_stored_value_equals_the_bound_value_exactly",
+    "tests/test_89_02_decimal_phase.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_up_after_down_restores_numeric",
+    "tests/test_89_02_decimal_phase.py",
+    "darwin",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_72_and_72_0_do_read_each_other_back[postgres]",
+    "tests/test_89_02_decimal_phase.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_7_25_is_its_own_phase[postgres]",
+    "tests/test_89_02_decimal_phase.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_a_72_1_handoff_is_not_read_back_by_a_lookup_for_72[postgres]",
+    "tests/test_89_02_decimal_phase.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_a_72_handoff_is_not_read_back_by_a_lookup_for_72_1[postgres]",
+    "tests/test_89_02_decimal_phase.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_a_decimal_phase_completion_is_stored_exactly",
+    "tests/test_89_02_decimal_phase.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_a_handoff_writes_and_reads_back[7.25-postgres]",
+    "tests/test_89_02_decimal_phase.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_a_handoff_writes_and_reads_back[72-postgres]",
+    "tests/test_89_02_decimal_phase.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_a_handoff_writes_and_reads_back[72.0-postgres]",
+    "tests/test_89_02_decimal_phase.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_a_handoff_writes_and_reads_back[72.1-postgres]",
+    "tests/test_89_02_decimal_phase.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_a_lookup_for_72_does_not_find_the_72_1_handoff",
+    "tests/test_89_02_decimal_phase.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_a_non_number_is_refused_before_any_write[postgres]",
+    "tests/test_89_02_decimal_phase.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_an_index_scan_is_available_for_the_predicate",
+    "tests/test_89_02_decimal_phase.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_an_integer_literal_compares_exactly_against_the_numeric_column",
+    "tests/test_89_02_decimal_phase.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_both_columns_are_numeric_10_3",
+    "tests/test_89_02_decimal_phase.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_both_indexes_survive_the_rewrite",
+    "tests/test_89_02_decimal_phase.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_down_also_refuses_for_a_decimal_task_completion",
+    "tests/test_89_02_decimal_phase.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_down_refuses_while_a_decimal_phase_exists_and_changes_nothing",
+    "tests/test_89_02_decimal_phase.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_down_returns_the_type_to_integer_when_every_phase_is_integral",
+    "tests/test_89_02_decimal_phase.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_reapplying_is_a_no_op_reported_through_schema_migrations",
+    "tests/test_89_02_decimal_phase.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_save_then_load_round_trips_a_decimal_phase",
+    "tests/test_89_02_decimal_phase.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_the_applied_duration_and_row_counts_are_measured_with_rows_present",
+    "tests/test_89_02_decimal_phase.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_the_bound_parameter_arrives_as_numeric_or_integer_never_a_float",
+    "tests/test_89_02_decimal_phase.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_the_column_comment_states_the_reason",
+    "tests/test_89_02_decimal_phase.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_the_format_type_strings_match_the_catalogue",
+    "tests/test_89_02_decimal_phase.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_the_sentinel_does_not_fire_before_031_ran",
+    "tests/test_89_02_decimal_phase.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_the_sentinel_recognises_031_as_applied",
+    "tests/test_89_02_decimal_phase.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_the_stored_value_equals_the_bound_value_exactly",
+    "tests/test_89_02_decimal_phase.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
+  ],
+  [
+    "test_up_after_down_restores_numeric",
+    "tests/test_89_02_decimal_phase.py",
+    "win32",
+    "any",
+    "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "pg-no-disposable-database",
+    "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
+    89,
+    "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
   ],
 ];
 
