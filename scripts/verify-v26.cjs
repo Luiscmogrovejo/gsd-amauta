@@ -115,13 +115,35 @@ const TOOLING_BUGS_SEED = [
 
 // ─── Pre-flight ───────────────────────────────────────────────────────────────
 
+/**
+ * Is a model backend available for the behavioural suite? (ORC-05, plan 88-17.)
+ *
+ * This function used to declare the Anthropic API-key variable in a `required` array,
+ * i.e. it called the key REQUIRED. Under ORC-05 it is not required at all: the harness
+ * asks its host runtime
+ * for a model, and a direct API call happens only behind an explicit
+ * `GSD_LLM_BACKEND=api` opt-in. The check therefore reports the model BACKEND, resolved
+ * through the one shared resolver so there is a single source of truth.
+ *
+ * The return shape is unchanged for its callers — `main()` reads `.available` and
+ * `.missing`, `buildReport()` reads both, `generateMarkdown()` renders them, and
+ * `tests/17-audit-script-hardening.test.cjs` builds its own literal of the same shape —
+ * with `required` now empty and a `backend` field added.
+ *
+ * @returns {{required: string[], missing: string[], available: boolean,
+ *            backend: 'cli'|'api'|'none', backend_reason: string}}
+ * @example
+ *   preflightEnvCheck().available   // true when `claude` is on PATH, with no API key
+ */
 function preflightEnvCheck() {
-  const required = ['ANTHROPIC_API_KEY'];
-  const missing = required.filter((k) => !process.env[k] || process.env[k].length === 0);
+  const { backend, reason } = require('../get-shit-done/bin/lib/runtime-llm.cjs').resolveBackend();
+  const available = backend !== 'none';
   return {
-    required,
-    missing,
-    available: missing.length === 0,
+    required: [],
+    missing: available ? [] : ['a model backend (host runtime CLI, or GSD_LLM_BACKEND=api)'],
+    available,
+    backend,
+    backend_reason: reason,
   };
 }
 

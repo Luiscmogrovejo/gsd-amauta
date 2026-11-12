@@ -25,6 +25,11 @@ const { writeFakeExe, prependPath } = require('./support/fake-exe.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const MEMORY = path.join(ROOT, 'get-shit-done', 'bin', 'gsd-memory.cjs');
+// Phase 88 plan 88-17 (ORC-05): the opt-in direct-API transport that used to live
+// inside gsd-memory.cjs's claudeSummarize now lives in the one shared helper, so the
+// source assertions below are re-pointed at the file that owns the code. Nothing is
+// dropped: the same four properties are asserted, plus that gsd-memory delegates here.
+const RUNTIME_LLM = path.join(ROOT, 'get-shit-done', 'bin', 'lib', 'runtime-llm.cjs');
 
 function withStub(handler, fn) {
   return new Promise((resolve, reject) => {
@@ -109,6 +114,10 @@ test('distill fallback: the Anthropic API key never appears on a command line', 
   // Node bodies: one program behind a shebang (POSIX) or a .cmd shim (Windows). On Windows the
   // product spawns the bare names `claude` and `curl`, which a .cmd cannot shadow: this test is
   // handed to plan 88-15 (platform-aware resolution), not skipped.
+  // Phase 88 plan 88-17 (ORC-05): reaching the direct API now needs an EXPLICIT opt-in
+  // (GSD_LLM_BACKEND=api, set in the child env below). A key in the environment no longer
+  // selects it, which is the whole point of the requirement -- so this test states the
+  // opt-in and then asserts the same secret-hygiene properties it always did.
   writeFakeExe(binDir, 'claude', { node: 'process.exit(1);' });
 
   // `curl` records its argv + the mode of any --config file, then answers.
@@ -164,6 +173,7 @@ test('distill fallback: the Anthropic API key never appears on a command line', 
       // The interpreter plus the script, as a JSON array: no shell, nothing
       // interpreted, and the same on POSIX and Windows.
       GSD_CURL: JSON.stringify([process.execPath, curlJs]),
+      GSD_LLM_BACKEND: 'api',
       ANTHROPIC_API_KEY: SENTINEL,
     },
   });
@@ -194,16 +204,21 @@ test('distill fallback: the Anthropic API key never appears on a command line', 
 });
 
 test('distill fallback: no shell interpolation of the key in the source', () => {
-  const src = fs.readFileSync(MEMORY, 'utf-8');
+  const memSrc = fs.readFileSync(MEMORY, 'utf-8');
+  assert.ok(memSrc.includes("require('./lib/runtime-llm.cjs')"),
+    'gsd-memory must delegate the model call to the shared ORC-05 helper');
+  assert.ok(memSrc.includes('runtimeLlm.callModel('),
+    'claudeSummarize must go through the shared helper, not its own transport');
+  const src = fs.readFileSync(RUNTIME_LLM, 'utf-8');
   assert.ok(!/-H ["']x-api-key: \$\{apiKey\}/.test(src),
     'the key must not be interpolated into a command string');
   // Phase 88 plan 88-15: the bare `curl` name is resolved through the platform
   // helper (GSD_CURL, then `where`/`which`), because a bare-name execFile spawn
   // is resolved by the OS loader and the System32 copy always wins on Windows.
   // The contract is unchanged and stronger: a config FILE, never the argv.
-  assert.ok(src.includes("platform.resolveTool('GSD_CURL', 'curl')"),
+  assert.ok(src.includes("platform.resolveTool('GSD_CURL', 'curl'"),
     'the fallback must resolve curl through the platform helper');
-  assert.ok(/execFileSync\(curlTool\.command, \[\.\.\.curlTool\.args, '--config', cfgPath\]/.test(src),
+  assert.ok(/execFileSync\(tool\.command, \[\.\.\.tool\.args, '--config', cfgPath\]/.test(src),
     'the fallback must invoke curl with a config file');
   assert.ok(!/execFileSync\(\s*'curl'/.test(src),
     'no bare-name curl spawn may survive');

@@ -7,7 +7,7 @@
  * has the real `claude` on PATH, so every case that must not call out runs with `PATH`
  * set to an EMPTY temp directory, with `GSD_LLM_CLI_BIN` and `GSD_SHUNT_CLAUDE_BIN`
  * unset, and asserts that resolution returned nothing (or that the resolved binary is the
- * fake). `ANTHROPIC_API_KEY` is only ever set to the obvious dummy
+ * fake). The Anthropic key variable is only ever set to the obvious dummy
  * `sk-ant-test-not-a-real-key`, explicitly in the child environment, never inherited.
  * The API branch is proven through an injected transport or a fake `curl` -- never by
  * making the request.
@@ -275,7 +275,7 @@ describe('88-17 runtime-llm: the host runtime CLI is the first backend', () => {
 
 // ─── 2. Presence is not consent ──────────────────────────────────────────────
 
-describe('88-17 runtime-llm: ANTHROPIC_API_KEY set with no opt-in never selects the API', () => {
+describe('88-17 runtime-llm: an API key present with no opt-in never selects the API', () => {
   test('invocation A (transport spy): no backend, and the spy recorded zero requests', () => {
     const env = noBackendEnv();
     env.ANTHROPIC_API_KEY = 'sk-ant-test-not-a-real-key';
@@ -461,5 +461,180 @@ describe('88-17 runtime-llm: the API branch is opt-in only', () => {
       assert.match(log, /CFGMODE: 600\b/);
       assert.match(log, /DIRMODE: 700\b/);
     }
+  });
+});
+
+// ─── 5. The three Node callers (task 88-17-04) ──────────────────────────────
+
+const SHUNT = path.resolve(__dirname, '..', 'get-shit-done', 'bin', 'gsd-shunt.cjs');
+const MEMORY_CJS = path.resolve(__dirname, '..', 'get-shit-done', 'bin', 'gsd-memory.cjs');
+const VERIFY = path.resolve(__dirname, '..', 'scripts', 'verify-v26.cjs');
+
+/**
+ * A fake `curl` that records any attempt and answers with a canned Messages response.
+ * Used as the ALARM in the no-opt-in cases (a subprocess an in-process guard cannot see)
+ * and as the TRANSPORT in the opt-in case.
+ * @param {string} dir
+ * @param {string} logPath
+ * @returns {string} a GSD_CURL JSON-array value
+ */
+function fakeCurlOverride(dir, logPath) {
+  const file = path.join(dir, 'fake-curl.cjs');
+  fs.writeFileSync(file, [
+    "const fs = require('fs');",
+    `const log = ${JSON.stringify(logPath)};`,
+    'const args = process.argv.slice(2);',
+    "fs.appendFileSync(log, 'ARGV: ' + args.join(' ') + '\\n');",
+    "const i = args.indexOf('--config');",
+    'if (i >= 0) {',
+    "  fs.appendFileSync(log, 'CFG:\\n' + fs.readFileSync(args[i + 1], 'utf8'));",
+    '}',
+    'process.stdout.write(JSON.stringify({ content: [{ type: "text", text: "API-BRANCH-ANSWER" }] }));',
+    '',
+  ].join('\n'));
+  return JSON.stringify([process.execPath, file]);
+}
+
+describe('88-17 callers: gsd-shunt no longer lets a key select the API', () => {
+  test('a key present and no opt-in reports backend=cli and dials nothing', () => {
+    const dir = tmp('gsd-88-17-shunt-cli-');
+    const corpus = path.join(dir, 'corpus.txt');
+    fs.writeFileSync(corpus, 'const x = 1;\n');
+    const cliLog = path.join(dir, 'cli-calls.jsonl');
+    const curlLog = path.join(dir, 'curl-attempts.log');
+    const guardLog = path.join(dir, 'guard.log');
+
+    const env = noBackendEnv();
+    env.ANTHROPIC_API_KEY = 'sk-ant-test-not-a-real-key';
+    env.GSD_SHUNT_CLAUDE_BIN = fakeCliOverride(dir, cliLog);
+    env.GSD_SHUNT_LOG = path.join(dir, 'shunt-log.jsonl');
+    env.GSD_CURL = fakeCurlOverride(dir, curlLog);
+    env.GSD_HERMETIC_GUARD_BLOCK_PORTS = '443';
+    env.GSD_HERMETIC_GUARD_LOG = guardLog;
+    env.NODE_OPTIONS = `--require ${GUARD}`;
+    delete env.GSD_SHUNT_BACKEND;
+
+    const r = spawnSync(process.execPath, [SHUNT, 'bulk-read', '--question', 'what?', '--paths', corpus],
+      { encoding: 'utf8', env });
+
+    assert.ok(!fs.existsSync(curlLog),
+      `api.anthropic.com must not be reached: ${fs.existsSync(curlLog) ? fs.readFileSync(curlLog, 'utf8') : ''}`);
+    const guard = fs.existsSync(guardLog) ? fs.readFileSync(guardLog, 'utf8') : '';
+    assert.equal(guard.trim(), '', `the guard logged a blocked dial-out:\n${guard}`);
+
+    assert.equal(r.status, 0, `shunt failed: ${r.stderr}`);
+    assert.match(r.stderr, /\[gsd-shunt bulk-read\] worker=haiku backend=cli input_chars=\d+/,
+      `report() must still print worker=/backend=/input_chars=: ${r.stderr}`);
+    assert.match(r.stdout, new RegExp(FAKE_TEXT));
+  });
+
+  test('GSD_SHUNT_BACKEND=api still selects the API branch, proven on the request', () => {
+    const dir = tmp('gsd-88-17-shunt-api-');
+    const corpus = path.join(dir, 'corpus.txt');
+    fs.writeFileSync(corpus, 'const x = 1;\n');
+    const curlLog = path.join(dir, 'curl.log');
+
+    const env = noBackendEnv();
+    env.GSD_SHUNT_BACKEND = 'api';
+    env.ANTHROPIC_API_KEY = 'sk-ant-test-not-a-real-key';
+    env.GSD_SHUNT_LOG = path.join(dir, 'shunt-log.jsonl');
+    env.GSD_CURL = fakeCurlOverride(dir, curlLog);
+
+    const r = spawnSync(process.execPath, [SHUNT, 'bulk-read', '--question', 'what?', '--paths', corpus],
+      { encoding: 'utf8', env });
+    assert.equal(r.status, 0, `shunt failed: ${r.stderr}`);
+    assert.match(r.stderr, /backend=api/);
+    assert.match(r.stdout, /API-BRANCH-ANSWER/);
+
+    const log = fs.readFileSync(curlLog, 'utf8');
+    assert.match(log, /url = "https:\/\/api\.anthropic\.com\/v1\/messages"/,
+      'the opt-in branch addresses the Messages API');
+    assert.match(log, /anthropic-version: 2023-06-01/);
+    assert.ok(!log.split('\n').filter((l) => l.startsWith('ARGV:')).join('').includes('sk-ant-test-not-a-real-key'),
+      `the key must never be on curl's command line:\n${log}`);
+  });
+
+  test('the recursion guard and the report shape are unchanged', () => {
+    const src = fs.readFileSync(SHUNT, 'utf8');
+    assert.ok(src.includes("process.env.GSD_SHUNT_WORKER === '1'"), 'the recursion guard survives');
+    assert.ok(src.includes('`worker=${res.model}`'), 'report() still prints worker=');
+    assert.ok(src.includes('`backend=${res.backend}`'), 'report() still prints backend=');
+    assert.ok(src.includes('`input_chars=${inputChars}`'), 'report() still prints input_chars=');
+  });
+});
+
+describe('88-17 callers: gsd-memory keeps its rate-limit backoff', () => {
+  test('claudeSummarize retries a rate-limited CLI and then succeeds', () => {
+    const dir = tmp('gsd-88-17-distill-');
+    const log = path.join(dir, 'calls.jsonl');
+    const state = path.join(dir, 'state.txt');
+    const env = noBackendEnv();
+    env.GSD_LLM_CLI_BIN = fakeCliOverride(dir, log, {
+      stateFile: state,
+      failFirstWith: 'Error: 429 Too Many Requests',
+      text: 'A distilled summary long enough to pass the twenty character floor.',
+    });
+
+    const mem = require(MEMORY_CJS);
+    const slept = [];
+    const out = mem._test_claudeSummarize(
+      [{ source: 'agent', text: 'first memory' }, { source: 'agent', text: 'second memory' }],
+      'sonnet',
+      { env, retryDelaysMs: [5, 7], sleep: (ms) => slept.push(ms) },
+    );
+
+    assert.match(out || '', /distilled summary/);
+    assert.deepEqual(slept, [5], 'exactly one backoff delay fired');
+    assert.equal(fs.readFileSync(log, 'utf8').trim().split('\n').length, 2, 'two attempts were made');
+  });
+
+  test('claudeSummarize returns null (next provider) when there is no backend', () => {
+    const env = noBackendEnv();
+    env.ANTHROPIC_API_KEY = 'sk-ant-test-not-a-real-key';
+    const mem = require(MEMORY_CJS);
+    const out = mem._test_claudeSummarize([{ source: 'agent', text: 'x' }], 'haiku', { env });
+    assert.equal(out, null, 'a null return means "try the next provider", unchanged');
+  });
+
+  test('the CLI backend writes no file at all, so no key can reach disk', () => {
+    const dir = tmp('gsd-88-17-nodisk-');
+    const log = path.join(dir, 'calls.jsonl');
+    const env = noBackendEnv();
+    env.GSD_LLM_CLI_BIN = fakeCliOverride(dir, log);
+    env.ANTHROPIC_API_KEY = 'sk-ant-test-not-a-real-key';
+    const before = fs.readdirSync(os.tmpdir()).filter((n) => n.startsWith('gsd-llm-'));
+    const res = runtimeLlm.callModel({ prompt: 'p', model: 'haiku' }, { env });
+    assert.equal(res.ok, true);
+    const after = fs.readdirSync(os.tmpdir()).filter((n) => n.startsWith('gsd-llm-'));
+    assert.deepEqual(after, before, 'the CLI backend must create no temp directory');
+  });
+});
+
+describe('88-17 callers: verify-v26 reports a backend, not a required key', () => {
+  test('with a fake CLI it reports available; with neither it does not name a key', () => {
+    const dir = tmp('gsd-88-17-verify-');
+    const driver = path.join(dir, 'driver.cjs');
+    fs.writeFileSync(driver, [
+      `const v = require(${JSON.stringify(VERIFY)});`,
+      'process.stdout.write(JSON.stringify(v.preflightEnvCheck()));',
+      '',
+    ].join('\n'));
+
+    const withCli = noBackendEnv();
+    withCli.GSD_LLM_CLI_BIN = fakeCliOverride(dir, path.join(dir, 'calls.jsonl'));
+    const a = JSON.parse(spawnSync(process.execPath, [driver], { encoding: 'utf8', env: withCli }).stdout);
+    assert.equal(a.available, true, JSON.stringify(a));
+    assert.equal(a.backend, 'cli');
+    assert.deepEqual(a.required, [], 'nothing is required any more');
+    assert.deepEqual(a.missing, []);
+
+    const bare = noBackendEnv();
+    bare.ANTHROPIC_API_KEY = 'sk-ant-test-not-a-real-key';
+    const b = JSON.parse(spawnSync(process.execPath, [driver], { encoding: 'utf8', env: bare }).stdout);
+    assert.equal(b.available, false, JSON.stringify(b));
+    assert.equal(b.backend, 'none');
+    assert.deepEqual(b.required, []);
+    assert.ok(!JSON.stringify(b).includes('ANTHROPIC'),
+      `the preflight must not name an API key as required: ${JSON.stringify(b)}`);
   });
 });

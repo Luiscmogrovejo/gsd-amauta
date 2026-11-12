@@ -60,8 +60,8 @@ def _fake_cli_body(log_path, text=FAKE_TEXT, state_file=None, fail_first_with=No
 def _no_backend_env(**extra):
     """An environment with no runtime CLI reachable, no opt-in and no inherited key."""
     env = dict(os.environ)
-    # delete: never inherit the operator's real ANTHROPIC_API_KEY into a child.
-    for key in ("ANTHROPIC_API_KEY", "GSD_LLM_BACKEND", "GSD_LLM_CLI_BIN", "GSD_SHUNT_CLAUDE_BIN"):
+    # We delete these so no real key or override is ever inherited into a child.
+    for key in ("ANTHROPIC_API_KEY", "GSD_LLM_BACKEND", "GSD_LLM_CLI_BIN", "GSD_SHUNT_CLAUDE_BIN"):  # delete these
         env.pop(key, None)
     env["PATH"] = tempfile.mkdtemp(prefix="gsd-88-17-emptypath-")
     env.update(extra)
@@ -382,7 +382,7 @@ def test_classifier_uses_a_fake_runtime_cli_when_one_is_available(monkeypatch, t
     monkeypatch.setenv("PATH", tempfile.mkdtemp(prefix="gsd-88-17-clf-cli-"))
     monkeypatch.setenv("GSD_LLM_CLI_BIN", json.dumps([sys.executable, str(script)]))
     monkeypatch.delenv("GSD_LLM_BACKEND", raising=False)
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)  # delete: no key is needed at all
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)  # delete it: no key is needed at all
     monkeypatch.delenv("GSD_MEMORY_CLASSIFIER", raising=False)
 
     result = memory_classifier.classify_memory_op(NEW_TEXT, CANDIDATES)

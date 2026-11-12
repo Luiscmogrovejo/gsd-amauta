@@ -8,24 +8,51 @@
 // mock daemon on an ephemeral port serves a REAL merge group and captures the
 // store/delete bodies gsd-memory.cjs's real `distill --use-llm` code path emits.
 //
-// SKIPs cleanly (exit 0) when the `claude` CLI is unavailable — never a false
-// red in CI.
+// Phase 88 plan 88-17 (ORC-05): this canary used to return early when no real `claude`
+// was on PATH — a hidden skip in CI, and a real paid model call on a machine that has
+// one. gsd-memory.cjs's distillation now goes through the shared runtime-llm helper, so
+// the canary runs everywhere against a fake host-runtime CLI pinned with
+// GSD_LLM_CLI_BIN, with no key and no network.
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const http = require('http');
-const { spawn, execSync } = require('child_process');
+const { spawn } = require('child_process');
 
 const GSD_MEMORY = path.resolve(__dirname, '../get-shit-done/bin/gsd-memory.cjs');
 
-function claudeCliAvailable() {
-  try {
-    execSync('claude --version', { stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000 });
-    return true;
-  } catch {
-    return false;
-  }
+/**
+ * Write the fake host-runtime CLI this canary now runs against, and return the
+ * `GSD_LLM_CLI_BIN` value that launches it (plan 88-17, ORC-05).
+ *
+ * Until plan 88-17 this file probed for a REAL `claude` on PATH and returned early when
+ * there was none. That was wrong in both directions: in CI, where no `claude` exists, it
+ * was a hidden skip reported as a pass; on the operator's machine, where one does, the
+ * canary made a real, paid model call from a unit test. gsd-memory.cjs's distillation now
+ * goes through get-shit-done/bin/lib/runtime-llm.cjs, which honours `GSD_LLM_CLI_BIN`, so
+ * the canary runs everywhere, deterministically, and calls nothing.
+ *
+ * The fake is a plain `.cjs` launched as `process.execPath <fake>.cjs` -- the one launch
+ * form that works on every platform (a `.cmd` shim cannot be spawned without a shell).
+ *
+ * @param {string} dir directory to write the fake into
+ * @returns {string} a JSON array suitable for GSD_LLM_CLI_BIN
+ */
+function writeFakeRuntimeCli(dir) {
+  const file = path.join(dir, 'fake-claude.cjs');
+  const summary =
+    'Always verify migration numbers dynamically before authoring a new database file, '
+    + 'script, draft, patch or diff.';
+  fs.writeFileSync(file, [
+    "const fs = require('fs');",
+    "try { fs.readFileSync(0, 'utf8'); } catch { /* the prompt arrives on stdin */ }",
+    `process.stdout.write(JSON.stringify({ is_error: false, result: ${JSON.stringify(summary)}, usage: {} }));`,
+    '',
+  ].join('\n'));
+  return JSON.stringify([process.execPath, file]);
 }
 
 // Five near-identical entries sharing a 9-word core (only the tail word
@@ -108,10 +135,8 @@ function startMockDaemon(entries) {
 }
 
 test('66-01-02: real merge group through cmdDistill --use-llm reaches distill_strategy claude-*', async () => {
-  if (!claudeCliAvailable()) {
-    console.log('SKIP: claude CLI unavailable — canary requires a Claude Code session');
-    return;
-  }
+  const fakeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsd-66-01-'));
+  const fakeCli = writeFakeRuntimeCli(fakeDir);
 
   const entries = buildEntries();
   const { server, port, stores, deletes } = await startMockDaemon(entries);
@@ -129,6 +154,9 @@ test('66-01-02: real merge group through cmdDistill --use-llm reaches distill_st
             ...process.env,
             GSD_AMAUTA_HOST: '127.0.0.1',
             GSD_AMAUTA_PORT: String(port),
+            // ORC-05: the host-runtime CLI is a fake, so this canary makes no model
+            // call on any machine and needs no API key of any kind.
+            GSD_LLM_CLI_BIN: fakeCli,
           },
         }
       );

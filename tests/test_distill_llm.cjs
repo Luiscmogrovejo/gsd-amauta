@@ -38,6 +38,11 @@ const path = require('node:path');
 const ROOT = path.resolve(__dirname, '..');
 const MEMORY_CJS = path.join(ROOT, 'get-shit-done', 'bin', 'gsd-memory.cjs');
 const SOURCE = fs.readFileSync(MEMORY_CJS, 'utf8');
+// Phase 88 plan 88-17 (ORC-05): the model call claudeSummarize makes now goes through
+// the one shared helper, so the structural assertions about the CLI invocation and the
+// opt-in API transport are re-pointed at the file that owns that code. None is dropped.
+const RUNTIME_LLM_CJS = path.join(ROOT, 'get-shit-done', 'bin', 'lib', 'runtime-llm.cjs');
+const RUNTIME_LLM_SOURCE = fs.readFileSync(RUNTIME_LLM_CJS, 'utf8');
 
 // ── Helper: load helpers with a controllable execSync ────────────────────────
 
@@ -338,29 +343,44 @@ describe('llmSummarize runtime (02-03)', () => {
 describe('Claude API provider chain code structure', () => {
   test('claudeSummarize function is defined', () => {
     assert.ok(
-      SOURCE.includes('function claudeSummarize(entries, model)'),
-      'Should define claudeSummarize(entries, model)'
+      SOURCE.includes('function claudeSummarize(entries, model'),
+      'Should define claudeSummarize(entries, model, ...)'
     );
   });
 
-  test('claudeSummarize uses claude CLI with --print flag', () => {
+  test('claudeSummarize uses the host runtime CLI in headless mode', () => {
+    // 88-17: the invocation moved into the shared helper, which spawns the CLI with the
+    // argv gsd-shunt.cjs already used (`-p`, `--output-format json`, prompt on stdin)
+    // instead of `claude --print` through a shell string.
     assert.ok(
-      SOURCE.includes('claude --print --model') ,
-      'claudeSummarize should use claude CLI with --print flag'
+      SOURCE.includes('runtimeLlm.callModel('),
+      'claudeSummarize should make its model call through the shared ORC-05 helper'
+    );
+    assert.ok(
+      RUNTIME_LLM_SOURCE.includes("const args = ['-p'];"),
+      'the shared helper should run the host runtime CLI in headless print mode'
+    );
+    assert.ok(
+      RUNTIME_LLM_SOURCE.includes("'--output-format', 'json'"),
+      'the shared helper should request the JSON envelope'
     );
   });
 
-  test('claudeSummarize has HTTP API fallback for ANTHROPIC_API_KEY', () => {
+  test('claudeSummarize has an opt-in HTTP API fallback in the shared helper', () => {
     assert.ok(
-      SOURCE.includes('api.anthropic.com/v1/messages'),
-      'claudeSummarize should fall back to Anthropic HTTP API when CLI unavailable'
+      RUNTIME_LLM_SOURCE.includes('api.anthropic.com/v1/messages'),
+      'the shared helper should carry the Anthropic HTTP endpoint for the opt-in branch'
+    );
+    assert.ok(
+      RUNTIME_LLM_SOURCE.includes("GSD_LLM_BACKEND"),
+      'that branch must be reachable only through the explicit opt-in (ORC-05)'
     );
   });
 
   test('claudeSummarize has timeout for CLI call', () => {
     assert.ok(
-      SOURCE.includes('timeout: 60000'),
-      'claudeSummarize should use a 60s timeout for CLI call'
+      SOURCE.includes('timeoutMs: 60000'),
+      'claudeSummarize should use a 60s timeout for the model call'
     );
   });
 

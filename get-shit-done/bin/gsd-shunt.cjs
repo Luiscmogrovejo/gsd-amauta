@@ -20,8 +20,11 @@
  * subagent (most GSD agents have no Task tool), and the model is pinned
  * here, not left to a profile lookup.
  *
- * Backends, in order: ANTHROPIC_API_KEY (direct Messages API), else the
- * `claude` CLI in headless mode. Model: GSD_SHUNT_MODEL, default `haiku`.
+ * Backends (ORC-05, plan 88-17 — decided once in lib/runtime-llm.cjs): the host
+ * runtime CLI in headless mode first, and a direct Messages API call only when
+ * GSD_SHUNT_BACKEND=api (or GSD_LLM_BACKEND=api) is set explicitly. The presence
+ * of an API key in the environment never selects the API.
+ * Model: GSD_SHUNT_MODEL, default `haiku`.
  * Not for debugging, design decisions or security review — the worker
  * reports locations for those and the caller decides.
  */
@@ -29,8 +32,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const https = require('https');
-const { spawnSync } = require('child_process');
+const runtimeLlm = require('./lib/runtime-llm.cjs');
 
 const MAX_INPUT_CHARS = intEnv('GSD_SHUNT_MAX_INPUT_CHARS', 600000); // ~150k tokens
 const TIMEOUT_MS = intEnv('GSD_SHUNT_TIMEOUT_MS', 180000);
@@ -142,100 +144,50 @@ function resolveApiModel(model) {
   }
 }
 
-function callApi(system, prompt, model, maxTokens) {
-  return new Promise((resolve, reject) => {
-    const body = JSON.stringify({
-      model: resolveApiModel(model),
-      max_tokens: maxTokens,
-      temperature: 0.2,
-      system,
-      messages: [{ role: 'user', content: prompt }],
-    });
-    const req = https.request({
-      hostname: 'api.anthropic.com',
-      path: '/v1/messages',
-      method: 'POST',
-      timeout: TIMEOUT_MS,
-      headers: {
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-        'content-length': Buffer.byteLength(body),
-      },
-    }, (res) => {
-      let data = '';
-      res.setEncoding('utf8');
-      res.on('data', (c) => { data += c; });
-      res.on('end', () => {
-        try {
-          const j = JSON.parse(data);
-          if (res.statusCode !== 200) {
-            return reject(new Error(`API ${res.statusCode}: ${(j.error && j.error.message) || data.slice(0, 200)}`));
-          }
-          const text = (j.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
-          resolve({
-            text,
-            backend: 'api',
-            truncated: j.stop_reason === 'max_tokens',
-            input_tokens: (j.usage && j.usage.input_tokens) || null,
-            output_tokens: (j.usage && j.usage.output_tokens) || null,
-            cost_usd: null,
-          });
-        } catch (e) {
-          reject(new Error(`API response not parseable: ${e.message}`));
-        }
-      });
-    });
-    req.on('timeout', () => req.destroy(new Error(`API timed out after ${TIMEOUT_MS} ms`)));
-    req.on('error', reject);
-    req.end(body);
-  });
-}
-
-function callCli(system, prompt, model) {
-  const bin = process.env.GSD_SHUNT_CLAUDE_BIN || 'claude';
-  const args = [
-    '-p',
-    '--model', model,
-    '--system-prompt', system,
-    '--tools', '',
-    '--strict-mcp-config',
-    '--no-session-persistence',
-    '--output-format', 'json',
-  ];
-  const r = spawnSync(bin, args, {
-    input: prompt,
-    encoding: 'utf8',
-    timeout: TIMEOUT_MS,
-    maxBuffer: 64 * 1024 * 1024,
-    // The worker must never be shunted itself, and must not recurse.
-    env: Object.assign({}, process.env, { GSD_SHUNT: 'off', GSD_SHUNT_WORKER: '1' }),
-  });
-  if (r.error) throw new Error(`could not run ${bin}: ${r.error.message}`);
-  if (r.status !== 0) {
-    throw new Error(`${bin} exited ${r.status}: ${(r.stderr || r.stdout || '').trim().slice(0, 300)}`);
-  }
-  let j;
-  try { j = JSON.parse(r.stdout); } catch { throw new Error(`${bin} output not JSON: ${r.stdout.slice(0, 200)}`); }
-  if (j.is_error) throw new Error(`${bin} reported an error: ${String(j.result).slice(0, 300)}`);
-  const u = j.usage || {};
-  return {
-    text: String(j.result || ''),
-    backend: 'cli',
-    truncated: j.stop_reason === 'max_tokens',
-    input_tokens: (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0) || null,
-    output_tokens: u.output_tokens || null,
-    cost_usd: typeof j.total_cost_usd === 'number' ? j.total_cost_usd : null,
-  };
-}
-
+/**
+ * Ask the host runtime for a model answer (ORC-05, plan 88-17).
+ *
+ * Every backend decision lives in get-shit-done/bin/lib/runtime-llm.cjs. This function
+ * only maps the shunt's own per-tool override onto the shared one and keeps the result
+ * shape report() and logEvent() already read.
+ *
+ * Before plan 88-17 the backend was `GSD_SHUNT_BACKEND`, or else a ternary on whether
+ * the Anthropic API-key variable was set — so the MERE PRESENCE of a key selected the
+ * direct Messages API ahead of the runtime CLI the user is already paying for.
+ * Presence is not consent: the API is now reached only through an explicit opt-in.
+ *
+ * GSD_SHUNT_BACKEND keeps working and maps straight onto GSD_LLM_BACKEND's values
+ * (`api` / `cli`); it is an explicit per-tool opt-in, which ORC-05 allows.
+ *
+ * @param {string} system the worker's system prompt (a module constant).
+ * @param {string} prompt the corpus and question; UNTRUSTED, so it travels on stdin.
+ * @param {number} maxTokens output cap for the opt-in API branch.
+ * @returns {Promise<{text: string, backend: string, model: string, truncated: boolean,
+ *                    input_tokens: ?number, output_tokens: ?number, cost_usd: ?number}>}
+ * @throws {Error} when the chosen backend is unavailable or fails; main() turns that into
+ *   an exit-1 with the message, exactly as before.
+ */
 async function callWorker(system, prompt, maxTokens) {
   if (process.env.GSD_SHUNT_WORKER === '1') die('refusing to run inside a shunt worker (recursion guard)', 2);
   const model = process.env.GSD_SHUNT_MODEL || 'haiku';
-  const backend = process.env.GSD_SHUNT_BACKEND || (process.env.ANTHROPIC_API_KEY ? 'api' : 'cli');
-  const res = backend === 'api'
-    ? await callApi(system, prompt, model, maxTokens)
-    : callCli(system, prompt, model);
+
+  const env = Object.assign({}, process.env, {
+    GSD_LLM_BACKEND: process.env.GSD_SHUNT_BACKEND || process.env.GSD_LLM_BACKEND || '',
+  });
+  const resolved = runtimeLlm.resolveBackend(env);
+  if (resolved.backend === 'none') die(`could not run a model: ${resolved.reason}`, 1);
+
+  const res = runtimeLlm.callModel({
+    system,
+    prompt,
+    maxTokens,
+    // `haiku` is a CONFIGURED alias (a deliberate small-model choice for this worker),
+    // not a hard-coded stand-in for the runtime default, so it is always sent. The
+    // direct API needs a concrete id; the CLI accepts the alias.
+    model: resolved.backend === 'api' ? resolveApiModel(model) : model,
+  }, { env, timeoutMs: TIMEOUT_MS });
+
+  if (!res.ok) throw new Error(res.detail || res.reason);
   res.model = model;
   return res;
 }

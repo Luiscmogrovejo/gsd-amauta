@@ -447,7 +447,10 @@ def _call_api(prompt, system, model, max_tokens, timeout_s, env, transport):
         msg = (parsed.get("error") or {}).get("message", "")
         return LlmResult(ok=False, backend="api", reason="api_failed",
                          detail=("API %s: %s" % (status, msg)).strip(), model=model, attempts=1)
-    out = "".join(b.get("text", "") for b in parsed.get("content", []) if b.get("type") == "text")
+    # A block with no ``type`` is accepted too, matching the shape the pre-88-17
+    # callers read; dropping it would silently turn a working response into "".
+    out = "".join(b.get("text", "") for b in parsed.get("content", [])
+                  if b.get("type") in (None, "text"))
     return LlmResult(ok=True, text=out, backend="api", model=model, attempts=1,
                      usage=dict(parsed.get("usage") or {}))
 

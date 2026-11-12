@@ -432,7 +432,13 @@ function callApi(spec, cfg) {
   const u = j.usage || {};
   return {
     ok: true,
-    text: (j.content || []).filter((b) => b.type === 'text').map((b) => b.text).join(''),
+    // A block with no `type` is accepted too: that is the shape the pre-88-17
+    // gsd-memory.cjs fallback read (`parsed.content[0].text`), and dropping it would
+    // silently turn a working response into an empty string.
+    text: (j.content || [])
+      .filter((b) => b && (b.type === undefined || b.type === 'text'))
+      .map((b) => b.text || '')
+      .join(''),
     truncated: j.stop_reason === 'max_tokens',
     input_tokens: u.input_tokens || null,
     output_tokens: u.output_tokens || null,
