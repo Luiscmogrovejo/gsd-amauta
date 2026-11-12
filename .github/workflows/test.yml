@@ -26,10 +26,12 @@ jobs:
       # Source of the matrix decision: .planning/phases/88-foundation-hermetic-ci/88-CONTEXT.md
       # (locked 2026-11-11). Node 18 is gone: package.json engines.node is
       # >=20 and Node 18 is end of life. ubuntu and macos on Node 20 and 22 are
-      # required cells. Windows (Node 22) is non-blocking: its result is
-      # reported, and it becomes required only if it is green without
-      # Windows-only rewrites. fail-fast is off so one red cell cannot cancel
-      # (and hide) the others.
+      # required cells. Windows is a supported platform (operator decision
+      # 2026-11-11: "All needs to pass even windows ... this is a universal
+      # tool"), so both Windows cells are on their way to required: they stay
+      # `required: false` only while plans 88-13 to 88-14 drive their failing
+      # set to zero, and plan 88-15 flips them to required. fail-fast is off
+      # so one red cell cannot cancel (and hide) the others.
       fail-fast: false
       matrix:
         include:
@@ -38,6 +40,7 @@ jobs:
           - { os: macos-latest, node-version: 20, required: true }
           - { os: macos-latest, node-version: 22, required: true }
           - { os: windows-latest, node-version: 22, required: false }
+          - { os: windows-latest, node-version: 20, required: false }
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -79,14 +82,24 @@ jobs:
         run: node scripts/coverage-ratchet.cjs
 
   pytest:
-    name: pytest (ubuntu-latest, python 3.12)
-    runs-on: ubuntu-latest
+    name: pytest (${{ matrix.os }}, python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 25
-    # Non-blocking for now: the Python baseline is unmeasured (88-CONTEXT.md).
-    # Plan 88-08 dispositions the failures; the flip to
-    # `continue-on-error: false` belongs to plan 88-11, because the suite is
-    # only fully green after 88-10 lands the doctor tests.
-    continue-on-error: true
+    # Every row is non-required for now. Operator decision 2026-11-11 ("All
+    # needs to pass even windows ... this is a universal tool"): the Python
+    # suite must run and pass on Linux, macOS and Windows. The macOS and
+    # Windows rows start here to get a measured baseline (88-PYTEST-BASELINE.md
+    # is the ubuntu one); plan 88-15 flips the macOS and Windows rows to
+    # required and plan 88-11 flips the ubuntu row, which keeps the literal
+    # check name `pytest (ubuntu-latest, python 3.12)` that the ruleset names.
+    continue-on-error: ${{ !matrix.required }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,  python-version: '3.12', required: false }
+          - { os: macos-latest,   python-version: '3.12', required: false }
+          - { os: windows-latest, python-version: '3.12', required: false }
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -99,7 +112,7 @@ jobs:
 
       - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5
         with:
-          python-version: '3.12'
+          python-version: ${{ matrix.python-version }}
 
       - name: Install Node dependencies
         run: npm ci
@@ -107,9 +120,10 @@ jobs:
           GSD_INSTALL_FILES_ONLY: '1'
 
       - name: Install Python dependencies
+        shell: bash
         run: |
-          python3 -m pip install --upgrade pip
-          python3 -m pip install -r requirements.txt -r requirements-dev.txt
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-dev.txt
 
       - name: Run the Python suite
         shell: bash
@@ -117,10 +131,11 @@ jobs:
         # echoed, but the step MUST still fail when pytest fails: capture $?
         # into a variable immediately (any command in between overwrites it)
         # and exit with it. A step that ends on `echo` always exits 0, which
-        # is how a non-blocking job silently becomes a permanently green one.
+        # is how a continue-on-error job silently becomes a permanently green one.
+        # `-rs` puts every skip reason in the log (plan 88-16 needs them).
         run: |
           set -uo pipefail
-          python3 -m pytest tests -q -p no:cacheprovider --junitxml=pytest-report.xml
+          python3 -m pytest tests -q -rs -p no:cacheprovider --junitxml=pytest-report.xml
           rc=$?
           echo "pytest exit: $rc"
           exit $rc
@@ -129,5 +144,5 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: pytest-report
+          name: pytest-report-${{ matrix.os }}
           path: pytest-report.xml
