@@ -234,13 +234,21 @@ never sees fire is a guard nobody has tested.
   "max_age_hours": 24, "guard_reason": "no_snapshot",
   "newest": null, "newest_age_hours": null,
   "remedy": "<python> services/backup_snapshot.py for migrations --backups-dir …",
+  "remedy_argv": ["<python>", ".../services/backup_snapshot.py", "for", "migrations", "--backups-dir", "…"],
   "override_flags": ["--allow-stale-backup", "--no-backup-check"],
   "kill_switch": "GSD_BACKUP_GUARD=off" }
 ```
 
-The `remedy` is a command that **exists** and is runnable **exactly as
-printed** — the test extracts it, splits it and runs it unchanged, then asserts
-the guard passes. A remedy nobody has run is a guess.
+The remedy is a command that **exists** and is runnable **exactly as printed** —
+the test runs `remedy_argv` unchanged and then asserts the guard passes. A
+remedy nobody has run is a guess.
+
+It is carried in **two shapes on purpose**. `remedy` is one line, quoted the way
+this platform's shell expects (`shlex.join` on POSIX,
+`subprocess.list2cmdline` on Windows), for a human to paste. `remedy_argv` is
+the same command as a list, for a machine — because re-parsing the string is
+platform-specific and `shlex.split` runs in POSIX mode, where a Windows path's
+backslashes are escape characters. Plan 89-11's installer spawns the list.
 
 ### Overrides are explicit and recorded
 

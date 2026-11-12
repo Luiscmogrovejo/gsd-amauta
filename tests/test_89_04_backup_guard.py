@@ -318,18 +318,26 @@ def test_the_remedy_command_runs_and_makes_the_guard_pass(home, backups):
                                     backups_dir=str(backups), env=env,
                                     log=lambda *_a: None)
     remedy = caught.value.payload["remedy"]
+    argv = caught.value.payload["remedy_argv"]
     assert "--backups-dir" in remedy
     assert str(backups) in remedy
     assert "--scope tasks" in remedy, (
         "the remedy must carry the scope the guard asked for, or it is not "
         "runnable as printed")
+    assert argv[-4:] == ["--backups-dir", str(backups), "--scope", "tasks"], argv
 
-    # RUN IT UNCHANGED. No flag is added here: a remedy that needs the reader
-    # to complete it is not a remedy.
-    run = subprocess.run(shlex.split(remedy), capture_output=True, text=True,
+    # RUN IT UNCHANGED, from the ARGV the payload carries. Not from the rendered
+    # string: `shlex.split` runs in POSIX mode, so on the Windows cell it ate
+    # the backslashes of every path and the spawn failed with WinError 2
+    # (run 43319162316). A machine reads `remedy_argv`; a human reads `remedy`.
+    run = subprocess.run(argv, capture_output=True, text=True,
                          encoding="utf-8", errors="replace", env=env,
                          cwd=str(REPO_ROOT), timeout=300)
     assert run.returncode == 0, run.stdout + run.stderr
+    # And the rendered string is the same command, re-parsed with the parser
+    # this platform's shell would use.
+    if sys.platform != "win32":
+        assert shlex.split(remedy) == argv
 
     after = guard.require_recent_backup(step="migrations", scope="tasks",
                                         backups_dir=str(backups), env=env,
@@ -344,8 +352,30 @@ def test_the_remedy_names_a_step_that_exists():
     """Every step the guard can name is a key of ``STEP_SNAPSHOTS``."""
     for step in sorted(bs.STEP_SNAPSHOTS):
         assert step in guard.remedy_command(step=step)
+        assert guard.remedy_argv(step=step)[-1] == step
     assert "migrations" in bs.STEP_SNAPSHOTS
     assert "sqlite-to-pg" in bs.STEP_SNAPSHOTS
+
+
+def test_the_remedy_is_carried_as_both_a_string_and_an_argv(tmp_path):
+    """One remedy, two shapes, and the list is the authoritative one.
+
+    The rendered string exists for a human to paste and is quoted the way THIS
+    platform's shell expects; the list exists so no caller re-parses it. A
+    directory with a space in it is the case that separates them.
+    """
+    spaced = tmp_path / "back ups"
+    spaced.mkdir()
+    argv = guard.remedy_argv(step="migrations", backups_dir=str(spaced),
+                             scope="tasks")
+    line = guard.remedy_command(step="migrations", backups_dir=str(spaced),
+                                scope="tasks")
+    assert argv[2] == "for" and argv[3] == "migrations"
+    assert str(spaced) in argv
+    assert "back ups" in line
+    assert '"' in line or "'" in line, "a path with a space must be quoted"
+    if sys.platform != "win32":
+        assert shlex.split(line) == argv
 
 
 def test_the_remedy_never_carries_a_password(home, backups):

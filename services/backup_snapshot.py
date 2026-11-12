@@ -523,10 +523,13 @@ def find_versioned_tool(name, major):
     for directory in versioned_tool_dirs(major):
         if not os.path.isdir(directory):
             continue
-        for suffix in ("", ".exe"):
-            candidate = os.path.join(directory, name + suffix)
-            if os.path.isfile(candidate):
-                return candidate
+        # Through the platform helper, with a PATH of exactly this directory:
+        # `shutil.which` applies PATHEXT, so a Windows `.exe`, `.cmd` or `.bat`
+        # is found. A bare `os.path.isfile(dir/name)` loop over ("", ".exe")
+        # missed a `.CMD` on the Windows cell (run 43319162316).
+        found = _platform.which(name, env={"PATH": directory})
+        if found:
+            return found
     return None
 
 

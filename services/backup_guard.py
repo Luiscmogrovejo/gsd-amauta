@@ -58,6 +58,7 @@ from __future__ import annotations
 import datetime
 import json
 import os
+import shlex
 import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -79,6 +80,7 @@ __all__ = [
     "guard_armed",
     "recent_verified_backup",
     "require_recent_backup",
+    "remedy_argv",
     "remedy_command",
     "record_override",
     "NO_BACKUP_CHECK_CONSEQUENCE",
@@ -272,14 +274,19 @@ def age_hours(row, now=None):
     return round((now - created).total_seconds() / 3600.0, 2)
 
 
-def remedy_command(step="migrations", backups_dir=None, scope=None, dsn=None):
-    """The exact command that fixes a refusal.  It must EXIST and it must work.
+def remedy_argv(step="migrations", backups_dir=None, scope=None, dsn=None):
+    """The exact ARGV that fixes a refusal, as a list.
 
-    ``backup_snapshot.py for <step>`` is the convenience task 89-04-02 ships, and
-    ``tests/test_89_04_backup_guard.py`` extracts this string, SPLITS it, RUNS it
-    unchanged and asserts the guard then passes — because a remedy nobody has run
-    is a guess.  That is why ``--backups-dir`` and ``--scope`` are carried: a
-    remedy that needs the reader to add flags is not a remedy.
+    A list, not a string, because a string has to be re-parsed and the parsing
+    is platform-specific: ``shlex.split`` runs in POSIX mode, where a Windows
+    path's backslashes are escape characters, so splitting the rendered command
+    on the Windows cell produced
+    ``C:hostedtoolcachewindowsPython3.12.10x64python3.exe`` and
+    ``FileNotFoundError`` (run 43319162316). A caller that wants to RUN the
+    remedy uses this; :func:`remedy_command` renders the same list for a human.
+
+    ``--backups-dir`` and ``--scope`` are carried because a remedy that needs
+    the reader to add flags is not a remedy.
 
     Args:
         step: a key of ``backup_snapshot.STEP_SNAPSHOTS``.
@@ -287,13 +294,13 @@ def remedy_command(step="migrations", backups_dir=None, scope=None, dsn=None):
         scope: appended as ``--scope`` when it differs from the step's own.
         dsn: appended as ``--dsn`` when given.  Pass it only where the caller
             already knows the DSN is safe to print; the guard never adds it
-            itself, so no password can reach a log line through this string.
+            itself, so no password can reach a log line through this list.
 
     Returns:
-        str: a runnable command line.
+        list[str]
     """
     script = os.path.join(_REPO_ROOT, "services", "backup_snapshot.py")
-    parts = [sys.executable, script, "for", step]
+    parts = [sys.executable, script, "for", str(step)]
     if backups_dir:
         parts += ["--backups-dir", str(backups_dir)]
     step_scope = (snapshots.STEP_SNAPSHOTS.get(step) or (None, None))[1]
@@ -301,22 +308,32 @@ def remedy_command(step="migrations", backups_dir=None, scope=None, dsn=None):
         parts += ["--scope", str(scope)]
     if dsn:
         parts += ["--dsn", str(dsn)]
-    return " ".join(_quote(p) for p in parts)
+    return parts
 
 
-def _quote(part):
-    """Quote one command-line part so the whole string can be split again.
+def remedy_command(step="migrations", backups_dir=None, scope=None, dsn=None):
+    """The same remedy, rendered as one line for a human to paste.
+
+    Rendered with the quoting the LOCAL shell uses: ``subprocess.list2cmdline``
+    on Windows, ``shlex.join`` elsewhere. ``tests/test_89_04_backup_guard.py``
+    runs :func:`remedy_argv` unchanged and asserts the guard then passes —
+    because a remedy nobody has run is a guess.
 
     Args:
-        part: the part.
+        step: a key of ``backup_snapshot.STEP_SNAPSHOTS``.
+        backups_dir: appended as ``--backups-dir`` when given.
+        scope: appended as ``--scope`` when it differs from the step's own.
+        dsn: appended as ``--dsn`` when given.
 
     Returns:
-        str
+        str: a command line, correctly quoted for this platform's shell.
     """
-    text = str(part)
-    if not text or any(ch.isspace() for ch in text):
-        return '"%s"' % text.replace('"', '\\"')
-    return text
+    parts = remedy_argv(step=step, backups_dir=backups_dir, scope=scope, dsn=dsn)
+    if sys.platform == "win32":
+        import subprocess
+
+        return subprocess.list2cmdline(parts)
+    return shlex.join(parts)
 
 
 def require_recent_backup(step="migrations", max_age_hours=MAX_AGE_HOURS,
@@ -390,6 +407,11 @@ def require_recent_backup(step="migrations", max_age_hours=MAX_AGE_HOURS,
         "newest_age_hours": age_hours(newest, now),
         "remedy": remedy_command(step=step, backups_dir=backups_dir,
                                  scope=scope),
+        # The same remedy as a LIST, so a caller never has to re-parse the
+        # string. Splitting it is platform-specific and `shlex.split` mangles a
+        # Windows path; plan 89-11's installer spawns this directly.
+        "remedy_argv": remedy_argv(step=step, backups_dir=backups_dir,
+                                   scope=scope),
         "override_flags": ["--allow-stale-backup", "--no-backup-check"],
         "kill_switch": "%s=off" % GUARD_ENV,
     }
