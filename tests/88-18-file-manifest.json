@@ -81,7 +81,8 @@
     "88-18-07": [],
     "88-18-08": [
       "tests/88-18-file-manifest.json",
-      "tests/88-18-python-portability.test.cjs"
+      "tests/88-18-python-portability.test.cjs",
+      "tests/posix-literal-exceptions.json"
     ]
   }
 }
