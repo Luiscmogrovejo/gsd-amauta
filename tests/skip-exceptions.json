@@ -176,39 +176,6 @@
     "exit_criterion": "plan 88-17 routes model calls through the host runtime and puts a fake `claude` on PATH, after which this runs on every cell."
   },
   {
-    "name": "66-01-02: real merge group through cmdDistill --use-llm reaches distill_strategy claude-*",
-    "file": "tests/66-01-distill-canary.test.cjs",
-    "platform": "darwin",
-    "context": "any",
-    "reason": "no host runtime that can answer a model call: the claude CLI is absent, or this run is already inside a Claude Code session, which refuses a nested claude --print (plan 88-17, ORC-05)",
-    "reason_class": "host-runtime-llm",
-    "owner": "plan 88-17 (ORC-05: model calls go through the host runtime)",
-    "owner_phase": 88,
-    "exit_criterion": "plan 88-17 routes model calls through the host runtime and puts a fake `claude` on PATH, after which this runs on every cell."
-  },
-  {
-    "name": "66-01-02: real merge group through cmdDistill --use-llm reaches distill_strategy claude-*",
-    "file": "tests/66-01-distill-canary.test.cjs",
-    "platform": "linux",
-    "context": "any",
-    "reason": "no host runtime that can answer a model call: the claude CLI is absent, or this run is already inside a Claude Code session, which refuses a nested claude --print (plan 88-17, ORC-05)",
-    "reason_class": "host-runtime-llm",
-    "owner": "plan 88-17 (ORC-05: model calls go through the host runtime)",
-    "owner_phase": 88,
-    "exit_criterion": "plan 88-17 routes model calls through the host runtime and puts a fake `claude` on PATH, after which this runs on every cell."
-  },
-  {
-    "name": "66-01-02: real merge group through cmdDistill --use-llm reaches distill_strategy claude-*",
-    "file": "tests/66-01-distill-canary.test.cjs",
-    "platform": "win32",
-    "context": "any",
-    "reason": "no host runtime that can answer a model call: the claude CLI is absent, or this run is already inside a Claude Code session, which refuses a nested claude --print (plan 88-17, ORC-05)",
-    "reason_class": "host-runtime-llm",
-    "owner": "plan 88-17 (ORC-05: model calls go through the host runtime)",
-    "owner_phase": 88,
-    "exit_criterion": "plan 88-17 routes model calls through the host runtime and puts a fake `claude` on PATH, after which this runs on every cell."
-  },
-  {
     "name": "88-16-07: only ERROR-severity semgrep findings count",
     "file": "tests/88-16-fake-scanner.test.cjs",
     "platform": "win32",
@@ -1901,39 +1868,6 @@
     "owner": "Phase 89 (PostgreSQL merge: a disposable database on every cell)",
     "owner_phase": 89,
     "exit_criterion": "a PostgreSQL carrying this repository's schema exists on the cell. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. Closed when Phase 89 either provides pg_search on those runners or removes the dependency."
-  },
-  {
-    "name": "test_live_llm_classifier_smoke",
-    "file": "tests/test_66_bitemporal.py",
-    "platform": "darwin",
-    "context": "any",
-    "reason": "ANTHROPIC_API_KEY not set -- live LLM classifier smoke skipped",
-    "reason_class": "host-runtime-llm",
-    "owner": "plan 88-17 (ORC-05: model calls go through the host runtime)",
-    "owner_phase": 88,
-    "exit_criterion": "plan 88-17 routes model calls through the host runtime and puts a fake `claude` on PATH, after which this runs on every cell."
-  },
-  {
-    "name": "test_live_llm_classifier_smoke",
-    "file": "tests/test_66_bitemporal.py",
-    "platform": "linux",
-    "context": "any",
-    "reason": "ANTHROPIC_API_KEY not set -- live LLM classifier smoke skipped",
-    "reason_class": "host-runtime-llm",
-    "owner": "plan 88-17 (ORC-05: model calls go through the host runtime)",
-    "owner_phase": 88,
-    "exit_criterion": "plan 88-17 routes model calls through the host runtime and puts a fake `claude` on PATH, after which this runs on every cell."
-  },
-  {
-    "name": "test_live_llm_classifier_smoke",
-    "file": "tests/test_66_bitemporal.py",
-    "platform": "win32",
-    "context": "any",
-    "reason": "ANTHROPIC_API_KEY not set -- live LLM classifier smoke skipped",
-    "reason_class": "host-runtime-llm",
-    "owner": "plan 88-17 (ORC-05: model calls go through the host runtime)",
-    "owner_phase": 88,
-    "exit_criterion": "plan 88-17 routes model calls through the host runtime and puts a fake `claude` on PATH, after which this runs on every cell."
   },
   {
     "name": "test_noop_skips_insert",
