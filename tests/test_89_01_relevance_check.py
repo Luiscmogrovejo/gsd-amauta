@@ -77,11 +77,18 @@ CANDIDATE_K = 40
 
 #: The MEASURED floor for the deterministic arm, with its margin.
 #:
-#: Measured on the ubuntu-latest CI cell of this plan's own pull request
-#: (see 89-01-RECORD.md "## Measured MRR@k and the floor" for the run id and the
-#: quoted log line). The floor sits a stated margin BELOW the measured value: it
-#: is a regression tripwire, not a restatement of the measurement. A floor
+#: Measured **0.9167** over the six queries on the ubuntu-latest cell of this
+#: plan's own pull request — run 43316057553, job 131524416908: five expected
+#: documents at rank 1 and `mem-89rel-21` at rank 2. The floor is **0.80**, a
+#: margin of **0.1167** below the measurement, which tolerates one further
+#: rank-1-to-rank-2 demotion (0.9167 -> 0.8333) and trips on a second (0.75).
+#: It is a regression tripwire, not a restatement of the measurement; a floor
 #: chosen before the measurement would have been a guess.
+#:
+#: `queries.json` carries each case's `measured_rank` alongside a `rank_at_most`
+#: set to measured-plus-one. `rank_at_most` used to equal TOP_K, which made the
+#: per-query check pure membership — an ordering assertion that could not fail
+#: while the document stayed in the list at all.
 DETERMINISTIC_MRR_FLOOR = 0.80
 
 #: The real-provider arm runs over a sample, so its floor is deliberately looser:
