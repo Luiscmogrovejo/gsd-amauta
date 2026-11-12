@@ -19,6 +19,20 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
+/**
+ * Read a source file with CRLF normalised away. A Windows checkout (core.autocrlf=true) or a
+ * Windows editor writes \r\n; every parser below splits on '\n' and would keep a trailing \r
+ * on each captured value, which breaks the frontmatter delimiter and every field name.
+ * Same approach as get-shit-done/bin/lib/planning-drift.cjs readText().
+ *
+ * @param {string} file - path of a user-editable .yaml/.yml/.md source
+ * @returns {string} the file contents with every \r\n replaced by \n
+ * @throws {Error} when the file cannot be read (same as fs.readFileSync)
+ */
+function readSource(file) {
+  return fs.readFileSync(file, 'utf-8').replace(/\r\n/g, '\n');
+}
+
 // ─── Target name-map tables ───────────────────────────────────────────────────
 
 const TARGET_MAPS = {
@@ -131,7 +145,7 @@ function loadPlatformCodes(refPath) {
 
   let raw;
   try {
-    raw = fs.readFileSync(yamlPath, 'utf8');
+    raw = readSource(yamlPath);
   } catch (_e) {
     return {};
   }
@@ -210,7 +224,7 @@ for (const [ideId, codes] of Object.entries(_platformCodes)) {
  */
 function parseFrontmatter(text) {
   const result = {};
-  const lines = text.split('\n');
+  const lines = text.split(/\r?\n/); // caller-supplied string: tolerate CRLF here too
   let i = 0;
   while (i < lines.length) {
     const line = lines[i];
@@ -426,7 +440,7 @@ function listSkills(source) {
     const skillPath = path.join(srcDir, entry.name, 'SKILL.md');
     if (!fs.existsSync(skillPath)) continue;
     try {
-      const content = fs.readFileSync(skillPath, 'utf8');
+      const content = readSource(skillPath);
       const split = splitSkillMd(content);
       if (!split) continue;
       const data = parseFrontmatter(split.frontmatterText);
@@ -484,7 +498,7 @@ function validate(skillDir) {
   }
   let content;
   try {
-    content = fs.readFileSync(skillPath, 'utf8');
+    content = readSource(skillPath);
   } catch (e) {
     return { ok: false, errors: [`Failed to read ${skillPath}: ${e.message}`] };
   }
@@ -543,7 +557,7 @@ function compile(target, opts) {
   const graph = {};
   for (const s of skills) {
     try {
-      const content = fs.readFileSync(s.path, 'utf8');
+      const content = readSource(s.path);
       const split = splitSkillMd(content);
       const data = split ? parseFrontmatter(split.frontmatterText) : {};
       graph[s.name] = data['depends_on'] || [];
@@ -566,7 +580,7 @@ function compile(target, opts) {
     const skillPath = skillMeta.path;
     let content;
     try {
-      content = fs.readFileSync(skillPath, 'utf8');
+      content = readSource(skillPath);
     } catch (e) {
       const msg = `Failed to read ${skillPath}: ${e.message}`;
       process.stderr.write(`WARN [manifest_skip] ${skillMeta.name}: ${msg}\n`);
