@@ -334,3 +334,86 @@ def test_api_opt_in_without_a_key_is_a_misconfiguration_not_a_throw():
     assert res.reason == "no_backend"
     assert "GSD_LLM_BACKEND=api but" in res.detail
     assert seen == []
+
+
+# ── 5. The memory classifier (task 88-17-03) ─────────────────────────────────
+#
+# Same rule as above: no case may reach a real model. The classifier resolves its
+# backend from the PROCESS environment, so these cases pin it with monkeypatch or run in
+# a child whose PATH is an empty temp directory.
+
+import memory_classifier  # noqa: E402
+
+CANDIDATES = [{"id": 7, "text": "the team meeting is scheduled for 3pm on Tuesday"}]
+NEW_TEXT = "the team meeting is scheduled for 3pm Tuesday, same as before"
+
+
+def _pin_no_backend(monkeypatch):
+    """Point the process at no runtime CLI, no opt-in, and only a dummy key."""
+    monkeypatch.setenv("PATH", tempfile.mkdtemp(prefix="gsd-88-17-clf-emptypath-"))
+    monkeypatch.setenv("ANTHROPIC_API_KEY", DUMMY)  # sk-ant-test-not-a-real-key
+    monkeypatch.delenv("GSD_LLM_BACKEND", raising=False)
+    monkeypatch.delenv("GSD_LLM_CLI_BIN", raising=False)
+    monkeypatch.delenv("GSD_SHUNT_CLAUDE_BIN", raising=False)
+    monkeypatch.delenv("GSD_MEMORY_CLASSIFIER", raising=False)
+
+
+def test_classifier_no_backend_does_not_raise_and_takes_the_deterministic_path(monkeypatch, capsys):
+    _pin_no_backend(monkeypatch)
+    monkeypatch.setattr(memory_classifier, "_NO_BACKEND_WARNED", False, raising=False)
+    assert runtime_llm.resolve_cli(dict(os.environ)) is None, "no CLI may be resolvable here"
+
+    result = memory_classifier.classify_memory_op(NEW_TEXT, CANDIDATES)
+
+    assert result == {"op": "ADD", "target_id": None, "reason": "no-model-backend"}, result
+    err = capsys.readouterr().err
+    assert "no model backend" in err
+    # The old behaviour routed through the catch-all boundary with an error string.
+    assert "classifier-error" not in err
+
+
+def test_classifier_uses_a_fake_runtime_cli_when_one_is_available(monkeypatch, tmp_path):
+    """The case that has NEVER worked: classification without a paid API key."""
+    log = tmp_path / "calls.jsonl"
+    body = _fake_cli_body(log, text='{"op": "NOOP", "target_id": 7}')
+    script = tmp_path / "fake-claude.py"
+    script.write_text(body, encoding="utf-8")
+
+    monkeypatch.setenv("PATH", tempfile.mkdtemp(prefix="gsd-88-17-clf-cli-"))
+    monkeypatch.setenv("GSD_LLM_CLI_BIN", json.dumps([sys.executable, str(script)]))
+    monkeypatch.delenv("GSD_LLM_BACKEND", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)  # delete: no key is needed at all
+    monkeypatch.delenv("GSD_MEMORY_CLASSIFIER", raising=False)
+
+    result = memory_classifier.classify_memory_op(NEW_TEXT, CANDIDATES)
+
+    assert result == {"op": "NOOP", "target_id": 7, "reason": "classifier-decision"}, result
+    rec = json.loads(log.read_text(encoding="utf-8").strip().splitlines()[0])
+    assert "--model" in rec["argv"], rec["argv"]
+    assert NEW_TEXT in rec["stdin"], "the prompt reaches the CLI on stdin"
+
+
+def test_classifier_diagnostic_is_once_per_process_not_once_per_call(tmp_path):
+    """Ten classifications in one child process must print the notice exactly once."""
+    driver = tmp_path / "driver.py"
+    driver.write_text(
+        "import json, sys\n"
+        "sys.path.insert(0, %r)\n" % str(SERVICES) +
+        "from memory_classifier import classify_memory_op\n"
+        "cands = [{'id': 7, 'text': 'a'}]\n"
+        "out = [classify_memory_op('b', cands) for _ in range(10)]\n"
+        "sys.stdout.write(json.dumps(out))\n",
+        encoding="utf-8",
+    )
+    env = _no_backend_env()
+    env["ANTHROPIC_API_KEY"] = DUMMY  # sk-ant-test-not-a-real-key, child-only
+
+    proc = subprocess.run([sys.executable, str(driver)], capture_output=True, text=True,
+                          timeout=60, env=env, encoding="utf-8")
+    assert proc.returncode == 0, proc.stderr
+    decisions = json.loads(proc.stdout)
+    assert len(decisions) == 10
+    assert all(d == {"op": "ADD", "target_id": None, "reason": "no-model-backend"} for d in decisions)
+    assert proc.stderr.count("no model backend") == 1, (
+        "the diagnostic must be once per process, not once per call:\n" + proc.stderr
+    )
