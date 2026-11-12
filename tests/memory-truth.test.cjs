@@ -112,7 +112,7 @@ test('distill fallback: the Anthropic API key never appears on a command line', 
   // `curl` records its argv + the mode of any --config file, then answers.
   // Written as a node script, not sh: the old `stat -f '%Lp' || stat -c '%a'` probe is BSD-first, and on GNU
   // stat (ubuntu CI) `-f` means "filesystem status" and exits 0 printing a multi-line report, so the `||`
-  // fallback never ran and the log held `CFGMODE:   File: "/tmp/..."` instead of the mode (88-CI-BASELINE,
+  // fallback never ran and the log held `CFGMODE:   File: "<tmpdir>/..."` instead of the mode (88-CI-BASELINE,
   // ubuntu/20 + ubuntu/22). The code under test was right; the probe was not portable. fs.statSync is.
   const fakeCurl = path.join(binDir, 'curl');
   fs.writeFileSync(fakeCurl, [

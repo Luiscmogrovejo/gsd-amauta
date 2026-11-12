@@ -32,7 +32,7 @@ const AWKWARD_VALUES = [
   'D:\\a\\b\\gsd',
   'D:\\a\\gsd-amauta\\gsd-amauta\\services',
   'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\x y\\U0001F600\\g',
-  "/tmp/it's a \"quoted\" dir/with space",
+  "srv/it's a \"quoted\" dir/with space",
   'tab\there\nnewline',
   'unicode \u00e9\u4e2d\ud83d\ude00',
 ];

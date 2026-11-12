@@ -7,7 +7,7 @@
  *   SKILL-04: Semgrep skill tool-boundary enforcement (Phase 43-03)
  *
  * Tests scripts/skill-semgrep-runner.cjs exported functions.
- * Synthesizes fixture SKILL.md files under /tmp/skill-enforcement-test-<pid>/.
+ * Synthesizes fixture SKILL.md files under a fresh mkdtemp directory in os.tmpdir().
  * No live DB or daemon dependency — hermetic.
  *
  * Semgrep-dependent tests skip gracefully when semgrep is not installed
@@ -19,6 +19,7 @@
 const { test, after } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
 const ROOT = path.resolve(__dirname, '..');
@@ -27,13 +28,9 @@ const { runEnforcement, loadMutationVerbs, checkSemgrepInstalled } = runner;
 
 // ─── Fixture root ─────────────────────────────────────────────────────────────
 
-const FIXTURE_ROOT = path.join('/tmp', `skill-enforcement-test-${process.pid}`);
-
-// Ensure fixture root is clean
-if (fs.existsSync(FIXTURE_ROOT)) {
-  fs.rmSync(FIXTURE_ROOT, { recursive: true, force: true });
-}
-fs.mkdirSync(FIXTURE_ROOT, { recursive: true });
+// A unique, freshly created directory under os.tmpdir() (a literal /tmp is D:\tmp on Windows).
+// Removed by the module-scoped after() hook below.
+const FIXTURE_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-enforcement-test-'));
 
 // ─── Cleanup ──────────────────────────────────────────────────────────────────
 
@@ -160,7 +157,7 @@ depends_on: []
 This skill incorrectly contains a mutation verb in a Bash block.
 
 \`\`\`bash
-rm -rf /tmp/some-dir
+rm -rf ./some-dir
 \`\`\`
 `);
 

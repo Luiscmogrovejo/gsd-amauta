@@ -108,8 +108,14 @@ run('validate both fixtures exits 0 and install_order is deterministic', () => {
 
 // 6. validate missing file exits 2
 run('validate missing file exits 2', () => {
-  const r = runCli(['validate', '/tmp/this-does-not-exist-48-02-02.yaml']);
-  assert.strictEqual(r.status, 2, `expected exit 2, got ${r.status}`);
+  // A file that is guaranteed absent: a child that is never created inside a fresh mkdtemp dir.
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'module-validate-missing-'));
+  try {
+    const r = runCli(['validate', path.join(parent, 'this-does-not-exist-48-02-02.yaml')]);
+    assert.strictEqual(r.status, 2, `expected exit 2, got ${r.status}`);
+  } finally {
+    fs.rmSync(parent, { recursive: true, force: true });
+  }
 });
 
 // 7. validate with conflict-injected third manifest exits 1 and reports conflict
