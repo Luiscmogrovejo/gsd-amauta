@@ -137,6 +137,61 @@ if _TEST_PG_DSN:
     os.environ["GSD_POSTGRES_URL"] = _TEST_PG_DSN
     os.environ["DATABASE_URL"] = _TEST_PG_DSN
 
+
+# ── The disposable Valkey (plan 88-11) ──────────────────────────────────────
+#
+# ONE name, `GSD_TEST_VALKEY_URL`, exactly parallel to GSD_TEST_POSTGRES_URL:
+# set by CI, never set on the operator's machine. Nothing here, and nothing in
+# any test, may fall back to 6379 — that is the operator's live Redis, and the
+# hermetic guard blocks it, so a default would turn a missing service into a
+# guard refusal rather than a named skip.
+#
+#: The single reason a Valkey-dependent test carries when none is configured.
+VALKEY_SKIP_REASON = (
+    "no disposable Valkey: set GSD_TEST_VALKEY_URL to run this test "
+    "(CI provides one on a port it chose; 6379 is the operator's live Redis "
+    "and is never a test port)"
+)
+
+_TEST_VALKEY_URL = (os.environ.get("GSD_TEST_VALKEY_URL") or "").strip()
+if _TEST_VALKEY_URL:
+    assert_test_dsn_is_not_live(_TEST_VALKEY_URL, where="conftest(GSD_TEST_VALKEY_URL)")
+    _TEST_VALKEY_PORT = _port_of_dsn(_TEST_VALKEY_URL)
+    if _TEST_VALKEY_PORT is not None:
+        _allow_v = [
+            p.strip()
+            for p in os.environ.get("GSD_HERMETIC_GUARD_ALLOW_PORTS", "").split(",")
+            if p.strip()
+        ]
+        if str(_TEST_VALKEY_PORT) not in _allow_v:
+            _allow_v.append(str(_TEST_VALKEY_PORT))
+        os.environ["GSD_HERMETIC_GUARD_ALLOW_PORTS"] = ",".join(_allow_v)
+
+
+def valkey_host_port():
+    """The disposable Valkey's (host, port), or None when CI gave us none.
+
+    Returns:
+        tuple[str, int] | None: never 6379, and never a default — the absence of
+        ``GSD_TEST_VALKEY_URL`` is answered with None so the caller can name a
+        skip instead of dialling a port nobody promised.
+
+    Example:
+        >>> valkey_host_port() is None  # on a machine with no disposable Valkey
+        True
+    """
+    url = (os.environ.get("GSD_TEST_VALKEY_URL") or "").strip()
+    if not url:
+        return None
+    import urllib.parse
+
+    parsed = urllib.parse.urlparse(url)
+    port = _port_of_dsn(url)
+    if port is None or port in _LIVE_PORTS:
+        return None
+    return (parsed.hostname or "127.0.0.1", port)
+
+
 # The guard writes one line per refusal here. When the Node runner spawned this
 # interpreter it has already named a file; a bare `pytest` run gets its own.
 if not os.environ.get("GSD_HERMETIC_GUARD_LOG"):
@@ -598,6 +653,18 @@ def _start_rlm(data_dir, dsn=None, ready_timeout=60.0):
         env["GSD_POSTGRES_URL"] = assert_test_dsn_is_not_live(dsn, where="_start_rlm")
     else:
         env.pop("GSD_POSTGRES_URL", None)
+
+    # Plan 88-11: the graph leg. services/rlm_graph.py:_get_cache_client reads
+    # REDIS_HOST/REDIS_PORT, so the disposable Valkey is handed to THIS CHILD and
+    # to nothing else — the rest of the suite keeps the product default and
+    # therefore keeps degrading by design (RETR-05). The names are scrubbed when
+    # CI gave us no Valkey, so an inherited value can never reach the service.
+    _valkey = valkey_host_port()
+    if _valkey:
+        env["REDIS_HOST"], env["REDIS_PORT"] = _valkey[0], str(_valkey[1])
+    else:
+        env.pop("REDIS_HOST", None)
+        env.pop("REDIS_PORT", None)
 
     out_path = Path(data_dir) / "fixture-rlm.out"
     err_path = Path(data_dir) / "fixture-rlm.err"

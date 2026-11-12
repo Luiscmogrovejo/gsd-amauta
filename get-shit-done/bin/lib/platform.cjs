@@ -312,6 +312,185 @@ function resolveTool(envVar, name, opts = {}) {
   return { command: which(name, opts) || name, args: [] };
 }
 
+// ─── spawnTool: spawning a resolved tool that may be a .cmd/.bat shim ────────
+//
+// Phase 88 plan 88-11, generalising what plan 88-17 built for the host runtime
+// CLI and paid a CI round to get right.
+//
+// Since the CVE-2024-27980 fix (Node 20.12.2+), `child_process.spawn` REFUSES a
+// `.cmd` or `.bat` target unless a shell is used — and on Windows an npm-installed
+// CLI *is* a `.cmd` shim (`claude.cmd`, and every fake this harness writes through
+// tests/support/fake-exe.cjs). `shell: true` is not the answer: it reopens exactly
+// what the CVE closed, because the whole command line is then re-parsed by cmd.exe
+// with the caller's strings in it.
+//
+// The answer is to spawn `cmd.exe /d /s /c` ourselves with a command line built
+// from ALLOWLISTED tokens, quoted where quoting is provably safe and REFUSED
+// otherwise. Three rules, each load-bearing:
+//
+//   1. `/s` tells cmd.exe to strip the FIRST and LAST quote of the string after
+//      `/c` and run the rest verbatim. A bare line therefore loses the opening
+//      quote of the target path and the closing quote of a trailing `""`
+//      argument. Plan 88-17 measured that on the Windows cell. The documented
+//      idiom is to wrap the WHOLE line in one more pair of quotes.
+//   2. A token is emitted bare only when it matches CMD_SAFE_TOKEN: no `"`, no
+//      `%` (percent expansion happens inside quotes too), no `& | < > ^ ( )`,
+//      no whitespace, no newline.
+//   3. A token that is not bare-safe is QUOTED only when it contains none of
+//      `"`, `%`, CR or LF — inside double quotes cmd.exe stops treating the
+//      metacharacters as metacharacters, but a quote breaks out and a percent
+//      still expands. Anything else THROWS, because escaping for cmd.exe is the
+//      mistake CVE-2024-27980 was about.
+//
+// `windowsVerbatimArguments: true` is mandatory: without it Node re-quotes the
+// line and the `/s` arithmetic no longer holds.
+
+/** Characters a token may contain to be emitted BARE on a cmd.exe command line. */
+const CMD_SAFE_TOKEN = /^[A-Za-z0-9_.:=+,@/\\-]*$/;
+
+/** Characters that can never be made safe on a cmd.exe command line, quoted or not. */
+const CMD_UNQUOTABLE = /["%\r\n]/;
+
+/**
+ * Whether a resolved target is a Windows batch shim that cannot be spawned directly.
+ *
+ * @param {string} command - the resolved executable path.
+ * @param {string} [platform] - platform override for tests.
+ * @returns {boolean}
+ * @example
+ *   isCmdShim('C:\\npm\\claude.cmd', 'win32');  // true
+ *   isCmdShim('/usr/bin/semgrep', 'linux');     // false
+ */
+function isCmdShim(command, platform) {
+  return _isWindows(platform) && /\.(cmd|bat)$/i.test(String(command || ''));
+}
+
+/**
+ * Quote an executable path for a `cmd.exe /d /s /c` command line.
+ *
+ * cmd.exe parses the program token itself and does NOT honour `\"`, so the path
+ * is wrapped in plain quotes and anything unquotable is refused.
+ *
+ * @param {string} p - the resolved path (from `where` or an operator override).
+ * @returns {string} the path wrapped in double quotes.
+ * @throws {Error} when the path contains `"`, `%`, CR or LF.
+ * @example
+ *   quoteCmdPath('C:\\Program Files\\x\\t.cmd');  // '"C:\\Program Files\\x\\t.cmd"'
+ */
+function quoteCmdPath(p) {
+  if (CMD_UNQUOTABLE.test(String(p))) {
+    throw new Error(
+      `platform.spawnTool: refusing to build a cmd.exe command line for a path containing " or %: ${p}`,
+    );
+  }
+  return `"${p}"`;
+}
+
+/**
+ * Quote one ARGUMENT for a `cmd.exe /d /s /c` command line, or refuse it.
+ *
+ * Backslashes immediately before the closing quote are doubled, which is the
+ * documented CRT rule: `"C:\dir\"` would otherwise reach the child's argv
+ * parser as `C:\dir"`.
+ *
+ * @param {string} value - the argument.
+ * @returns {string} the token to place on the line (bare or quoted).
+ * @throws {Error} when the value cannot be placed safely.
+ * @example
+ *   quoteCmdArg('--json');            // '--json'
+ *   quoteCmdArg('C:\\a b\\c');        // '"C:\\a b\\c"'
+ */
+function quoteCmdArg(value) {
+  const s = String(value);
+  if (s === '') return '""';
+  if (CMD_SAFE_TOKEN.test(s)) return s;
+  if (CMD_UNQUOTABLE.test(s)) {
+    throw new Error(
+      'platform.spawnTool: refusing to place a value on a cmd.exe command line that is not '
+      + 'allowlist-safe; free text must travel on stdin (CVE-2024-27980)',
+    );
+  }
+  const trailing = /(\\*)$/.exec(s)[1];
+  return `"${s.slice(0, s.length - trailing.length)}${trailing}${trailing}"`;
+}
+
+/**
+ * Build the inner `cmd.exe /d /s /c` command line for a `.cmd`/`.bat` target.
+ *
+ * The caller wraps the RESULT in one more pair of quotes before handing it to
+ * cmd.exe (rule 1 above); `spawnTool` does that.
+ *
+ * @param {string} target - the resolved `.cmd`/`.bat` path.
+ * @param {string[]} args - argument tokens.
+ * @returns {string} the inner command line.
+ * @throws {Error} when the target or an argument cannot be placed safely.
+ * @example
+ *   buildCmdLine('C:\\n\\claude.cmd', ['-p', '--tools', '', '--output-format', 'json']);
+ *   // -> '"C:\\n\\claude.cmd" -p --tools "" --output-format json'
+ */
+function buildCmdLine(target, args) {
+  const parts = [quoteCmdPath(target)];
+  for (const a of args || []) parts.push(quoteCmdArg(a));
+  return parts.join(' ');
+}
+
+/**
+ * Spawn an external tool synchronously, correctly on every platform.
+ *
+ * Resolves a bare name through {@link resolveTool} (so a `.cmd` shim on PATH is
+ * found, and an operator override is honoured), then spawns it directly, or
+ * through `cmd.exe /d /s /c` when the resolved target is a Windows batch shim.
+ * **`shell: true` is never used.**
+ *
+ * @param {string|{command: string, args?: string[]}} tool - a bare tool name to
+ *   resolve, or an already-resolved `{command, args}` pair.
+ * @param {string[]} [args] - arguments after the tool.
+ * @param {object} [opts]
+ * @param {string} [opts.envVar] - an override variable name for the bare-name
+ *   form, e.g. `'GSD_SEMGREP'`; omitted means PATH lookup only.
+ * @param {string} [opts.platform] - platform override for tests.
+ * @param {object} [opts.env] - environment for the lookup AND the child.
+ * @param {function} [opts.spawn] - injected `spawnSync` for tests.
+ * @param {object} [opts.diag] - filled in BEFORE the spawn with `spawnForm`,
+ *   `target` and `commandLine`, so a failure can report which form was used.
+ * @param {...*} [opts.*] - every other key is passed through to `spawnSync`.
+ * @returns {object} the `spawnSync` result.
+ * @throws {Error} when an argument cannot be placed safely on a cmd.exe line.
+ * @example
+ *   const r = platform.spawnTool('semgrep', ['--version'], { encoding: 'utf8' });
+ *   if (r.status === 0) { ... }
+ */
+function spawnTool(tool, args = [], opts = {}) {
+  const {
+    envVar, platform: platformOverride, spawn: spawnImpl, diag, ...spawnOpts
+  } = opts;
+  const env = spawnOpts.env || process.env;
+  const resolved = typeof tool === 'string'
+    ? resolveTool(envVar || '', tool, { env, platform: platformOverride })
+    : { command: tool.command, args: tool.args || [] };
+  const argv = [...(resolved.args || []), ...args];
+  const spawnFn = spawnImpl || spawnSync;
+  const d = diag || {};
+
+  if (!isCmdShim(resolved.command, platformOverride)) {
+    d.spawnForm = 'direct';
+    d.target = resolved.command;
+    d.commandLine = null;
+    return spawnFn(resolved.command, argv, spawnOpts);
+  }
+
+  const comspec = env.ComSpec || env.COMSPEC || 'cmd.exe';
+  const commandLine = buildCmdLine(resolved.command, argv);
+  d.spawnForm = 'cmd.exe /d /s /c';
+  d.target = resolved.command;
+  d.commandLine = commandLine;
+  return spawnFn(
+    comspec,
+    ['/d', '/s', '/c', `"${commandLine}"`],
+    Object.assign({}, spawnOpts, { windowsVerbatimArguments: true }),
+  );
+}
+
 module.exports = {
   resolvePython,
   resolveTool,
@@ -322,5 +501,11 @@ module.exports = {
   launchPython,
   which,
   homeDir,
+  spawnTool,
+  isCmdShim,
+  buildCmdLine,
+  quoteCmdArg,
+  quoteCmdPath,
+  CMD_SAFE_TOKEN,
   VERSION_PROBE,
 };

@@ -241,11 +241,36 @@ async function startFixtureDaemon(opts = {}) {
 }
 
 /**
+ * Wait until `pid` stops answering signal 0, or the budget runs out.
+ *
+ * @param {number} pid the pid to watch
+ * @param {number} ms how long to wait in total
+ * @returns {Promise<boolean>} true when the process is gone
+ */
+async function waitForExit(pid, ms) {
+  const deadline = Date.now() + ms;
+  while (pidAlive(pid) && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+  }
+  return !pidAlive(pid);
+}
+
+/**
  * Stop a fixture daemon: SIGTERM, up to 5 s for exit, then SIGKILL; then remove
  * the data directory unless `handle.keep` is true. Only the process this module
  * spawned is signalled; no name-pattern kill is ever used.
  *
- * @param {{proc: import('child_process').ChildProcess, dataDir: string, keep?: boolean}} handle
+ * **The ledger record follows the measurement, not the intent** (plan 88-16's
+ * finding, routed to 88-11). It used to write `stopped` unconditionally, so a
+ * daemon that survived SIGTERM and SIGKILL was recorded as stopped and became
+ * invisible to the stray detector in `live-store-canary.strayProcesses` — which
+ * is how run 43189642396 ended with a live `amauta-daemon.py` that no ledger
+ * line accounted for. The pid is probed after the kill pass; only a pid that
+ * really stopped answering is recorded `stopped`, and one that did not is
+ * recorded `started` with the port and data directory the detector needs to
+ * identify it.
+ *
+ * @param {{proc: import('child_process').ChildProcess, dataDir: string, port?: number, keep?: boolean}} handle
  * @returns {Promise<void>}
  */
 async function stopFixtureDaemon(handle) {
@@ -255,18 +280,37 @@ async function stopFixtureDaemon(handle) {
     if (proc.exitCode !== null || proc.signalCode !== null) return resolve();
     proc.once('exit', () => resolve());
   });
+  const withTimeout = () => {
+    let timer;
+    const timedOut = new Promise((resolve) => {
+      timer = setTimeout(() => resolve('timeout'), STOP_GRACE_MS);
+    });
+    return Promise.race([done, timedOut]).finally(() => clearTimeout(timer));
+  };
   proc.kill('SIGTERM');
-  let timer;
-  const timedOut = new Promise((resolve) => {
-    timer = setTimeout(() => resolve('timeout'), STOP_GRACE_MS);
-  });
-  const r = await Promise.race([done, timedOut]);
-  clearTimeout(timer);
-  if (r === 'timeout') {
+  if (await withTimeout() === 'timeout') {
     proc.kill('SIGKILL');
-    await done;
+    // Bounded: an `await done` here hangs forever when the child never exits,
+    // which is precisely the case this code exists to report.
+    await withTimeout();
   }
-  appendLedger(handle.dataDir, { event: 'stopped', kind: 'daemon', pid: proc.pid });
+  // Verify by pid rather than by the child handle: the 'exit' event can only
+  // speak for a direct child this process is still parenting.
+  const gone = await waitForExit(proc.pid, STOP_GRACE_MS);
+  appendLedger(handle.dataDir, {
+    event: gone ? 'stopped' : 'started',
+    kind: 'daemon',
+    pid: proc.pid,
+    port: handle.port || null,
+    dataDir: handle.dataDir,
+    at: Date.now(),
+  });
+  if (!gone) {
+    console.error(
+      'fixture-daemon: pid ' + proc.pid + ' is still alive after SIGTERM and SIGKILL; '
+      + 'recorded as RUNNING so the stray detector can see it',
+    );
+  }
   // An RLM service the daemon started. Killing the daemon does NOT kill it on
   // Windows — a terminated parent leaves its children running — and plan 88-16
   // measured exactly that: `test (windows-latest, node 20)`, run 43189642396,
@@ -305,7 +349,9 @@ async function stopFixtureDaemon(handle) {
   } catch (_e) {
     /* no RLM pid file: nothing to record */
   }
-  if (!handle.keep) fs.rmSync(handle.dataDir, { recursive: true, force: true });
+  // Never delete the data directory of a process that is still running: the
+  // stray detector identifies a pid by the data directory on its command line.
+  if (!handle.keep && gone) fs.rmSync(handle.dataDir, { recursive: true, force: true });
 }
 
 module.exports = { startFixtureDaemon, stopFixtureDaemon };

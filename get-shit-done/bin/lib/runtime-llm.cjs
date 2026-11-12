@@ -66,12 +66,16 @@ const API_VERSION = '2023-06-01';
 const DEFAULT_API_MAX_TOKENS = 2000;
 
 /**
- * Characters a token may contain before it is allowed onto a `cmd.exe` command line.
+ * Characters a token may contain before it is allowed BARE onto a `cmd.exe` command line.
  * Deliberately closed: no `"` (quote breakout), no `%` (delayed/percent expansion), no
- * `& | < > ^ ( )` (cmd metacharacters), no whitespace, no newline. A resolved executable
- * path may contain spaces, so paths are handled by quoteCmdPath(), not by this class.
+ * `& | < > ^ ( )` (cmd metacharacters), no whitespace, no newline.
+ *
+ * Plan 88-11 moved the rule — and the whole `cmd.exe /d /s /c` spawn form this module
+ * paid a CI round to get right — into the shared platform helper as `spawnTool`, so the
+ * scanner pipeline can use it too. Re-exported here because it is this module's
+ * published surface.
  */
-const CMD_SAFE_TOKEN = /^[A-Za-z0-9_.:=+,@/\\-]*$/;
+const CMD_SAFE_TOKEN = platform.CMD_SAFE_TOKEN;
 
 /** A model alias or concrete model id. Closed class: safe for a cmd.exe command line. */
 const MODEL_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
@@ -171,50 +175,23 @@ function resolveBackend(env = process.env, opts = {}) {
 }
 
 /**
- * Quote an executable path for a `cmd.exe /d /s /c` command line.
- *
- * @param {string} p the resolved path; it is produced by `where`/an operator override, not
- *   by untrusted input.
- * @returns {string} the path wrapped in double quotes.
- * @throws {Error} when the path contains a character that cannot be quoted safely.
- */
-function quoteCmdPath(p) {
-  if (/["%\r\n]/.test(p)) {
-    throw new Error(`runtime-llm: refusing to build a cmd.exe command line for a path containing " or %: ${p}`);
-  }
-  return `"${p}"`;
-}
-
-/**
  * Build the `cmd.exe /d /s /c` command line for a `.cmd`/`.bat` runtime CLI.
  *
- * Every element is either the quoted target path or a token that matches CMD_SAFE_TOKEN
- * (or the empty string, emitted as `""`). Nothing else is ever concatenated: free text --
- * the prompt and the system prompt -- travels on stdin instead. A token that fails the
- * allowlist throws rather than being escaped, because escaping for cmd.exe is exactly the
- * mistake CVE-2024-27980 was about.
+ * Plan 88-11 moved the implementation into `platform.buildCmdLine`; this is the
+ * module's published name for it and its behaviour is unchanged for every input this
+ * module produces. Free text -- the prompt and the system prompt -- still never reaches
+ * the line: it travels on stdin (see buildCliArgs / buildStdin).
  *
  * @param {string} target the resolved `.cmd`/`.bat` path.
- * @param {string[]} args argument tokens, all of which must be allowlist-safe.
- * @returns {string} the command line handed to cmd.exe with windowsVerbatimArguments.
- * @throws {Error} when an argument is not allowlist-safe.
+ * @param {string[]} args argument tokens.
+ * @returns {string} the inner command line; spawnTool wraps it in the `/s` quote pair.
+ * @throws {Error} when an argument cannot be placed safely.
  * @example
  *   buildCmdLine('C:\\n\\claude.cmd', ['-p', '--output-format', 'json']);
  *   // -> '"C:\\n\\claude.cmd" -p --output-format json'
  */
 function buildCmdLine(target, args) {
-  const parts = [quoteCmdPath(target)];
-  for (const a of args) {
-    if (a === '') { parts.push('""'); continue; }
-    if (!CMD_SAFE_TOKEN.test(a)) {
-      throw new Error(
-        'runtime-llm: refusing to place a value on a cmd.exe command line that is not ' +
-        'allowlist-safe; free text must travel on stdin (CVE-2024-27980)',
-      );
-    }
-    parts.push(a);
-  }
-  return parts.join(' ');
+  return platform.buildCmdLine(target, args);
 }
 
 /**
@@ -292,8 +269,9 @@ function parseCliJson(stdout, bin) {
  * @throws {Error} on a spawn error, a non-zero exit, or unparseable output.
  */
 function cliAttempt(spec, cli, cfg, diag = {}) {
-  const isWin = cfg.platform === 'win32';
-  const isShim = isWin && /\.(cmd|bat)$/i.test(cli.command);
+  // The shim decision must happen BEFORE the argv is built: on the cmd.exe path the
+  // system prompt may not go on the command line and moves to stdin instead.
+  const isShim = platform.isCmdShim(cli.command, cfg.platform);
   const model = spec.model == null ? null : String(spec.model);
   if (model !== null && !MODEL_TOKEN.test(model)) {
     throw new Error(`runtime-llm: refusing a model alias that is not a plain token: ${JSON.stringify(model)}`);
@@ -311,31 +289,18 @@ function cliAttempt(spec, cli, cfg, diag = {}) {
     windowsHide: true,
   };
 
-  let r;
-  let commandLine = null;
-  let spawnForm;
-  if (isShim) {
-    const comspec = cfg.env.ComSpec || cfg.env.COMSPEC || 'cmd.exe';
-    commandLine = buildCmdLine(cli.command, [...cli.args, ...cliArgs]);
-    spawnForm = 'cmd.exe /d /s /c';
-    diag.spawnForm = spawnForm;
-    diag.systemDelivery = 'stdin';
-    diag.commandLine = commandLine;
-    // `/s` tells cmd.exe to strip the FIRST and LAST quote of the string after `/c` and
-    // run the rest verbatim. Handing it the bare line would therefore strip the opening
-    // quote of the target path and the closing quote of `--tools ""`, mangling both; the
-    // documented idiom is to wrap the WHOLE line in one more pair of quotes so the pair
-    // cmd.exe removes is the outer one. Nothing user-controlled is in the line (see
-    // buildCmdLine), so the extra quotes cannot be escaped out of.
-    r = cfg.spawn(comspec, ['/d', '/s', '/c', `"${commandLine}"`],
-      Object.assign({}, spawnOpts, { windowsVerbatimArguments: true }));
-  } else {
-    spawnForm = 'direct';
-    diag.spawnForm = spawnForm;
-    diag.systemDelivery = 'argv';
-    diag.commandLine = null;
-    r = cfg.spawn(cli.command, [...cli.args, ...cliArgs], spawnOpts);
-  }
+  // One spawn form for the whole harness (plan 88-11): `platform.spawnTool` owns the
+  // `cmd.exe /d /s /c` branch, the `/s` outer-quote rule and the token allowlist. It is
+  // handed the ALREADY RESOLVED cli, so this module keeps its own resolution order
+  // (GSD_LLM_CLI_BIN, GSD_SHUNT_CLAUDE_BIN, then PATH).
+  diag.systemDelivery = isShim ? 'stdin' : 'argv';
+  const r = platform.spawnTool(cli, cliArgs, Object.assign({}, spawnOpts, {
+    platform: cfg.platform,
+    spawn: cfg.spawn,
+    diag,
+  }));
+  const spawnForm = diag.spawnForm;
+  const commandLine = diag.commandLine;
 
   if (r.error) throw new Error(`could not run ${cli.command}: ${r.error.message}`);
   if (r.status !== 0) {

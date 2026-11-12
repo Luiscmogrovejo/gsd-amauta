@@ -36,6 +36,10 @@ Environment
 -----------
     GSD_HERMETIC_GUARD=off                install() is a no-op
     GSD_HERMETIC_GUARD_MODE=log           record refusals, do not raise
+    GSD_HERMETIC_GUARD_BLOCK_PORTS=a,b    extra blocked ports, on top of the
+                                          live ones (lets a test arm the guard
+                                          on a port it wants to prove is never
+                                          dialled -- 443, for example)
     GSD_HERMETIC_GUARD_ALLOW_PORTS=a,b    loopback ports exempted from an extra
                                           block; never a live port
     GSD_HERMETIC_GUARD_ALLOW_HOSTS=h1,h2  non-loopback hosts this test may reach
@@ -128,15 +132,38 @@ def is_ip_literal(host):
     return ":" in h and bool(re.match(r"^[0-9a-fA-F:.]+$", h))
 
 
-def _allowed_ports(env=None):
-    """Parse GSD_HERMETIC_GUARD_ALLOW_PORTS into a set of ints. Read at check time."""
-    env = os.environ if env is None else env
+def _parse_ports(raw):
+    """Parse a comma-separated port list into a set of ints; ignore anything else."""
     out = set()
-    for part in env.get("GSD_HERMETIC_GUARD_ALLOW_PORTS", "").split(","):
+    for part in str(raw or "").split(","):
         part = part.strip()
         if part.isdigit():
             out.add(int(part))
     return out
+
+
+def _allowed_ports(env=None):
+    """Parse GSD_HERMETIC_GUARD_ALLOW_PORTS into a set of ints. Read at check time."""
+    env = os.environ if env is None else env
+    return _parse_ports(env.get("GSD_HERMETIC_GUARD_ALLOW_PORTS", ""))
+
+
+def _blocked_ports(env=None):
+    """Parse GSD_HERMETIC_GUARD_BLOCK_PORTS into a set of ints. Read at check time.
+
+    Plan 88-17 defect 2: the Node guard (``tests/support/hermetic-guard.cjs``)
+    has had this variable since 88-16, the Python one had not, so a Python test
+    that wanted to prove "nothing dialled 443" had to install its own socket
+    recorder. The two guards now read the same four variables.
+
+    Args:
+        env: mapping to read (defaults to ``os.environ``).
+
+    Returns:
+        set[int]: ports blocked in addition to :data:`LIVE_PORTS`.
+    """
+    env = os.environ if env is None else env
+    return _parse_ports(env.get("GSD_HERMETIC_GUARD_BLOCK_PORTS", ""))
 
 
 def _allowed_hosts(env=None):
@@ -184,7 +211,9 @@ def decide(host, port, *, is_unix=False, extra_blocked=(), env=None):
         host: the destination host (None/'' means loopback).
         port: the destination port, or None.
         is_unix: True for an AF_UNIX address.
-        extra_blocked: ports blocked in addition to the live ones.
+        extra_blocked: ports blocked in addition to the live ones, passed by the
+            caller. ``GSD_HERMETIC_GUARD_BLOCK_PORTS`` adds to the same set and
+            is read here, at check time, so a per-test fixture works.
         env: mapping to read (defaults to ``os.environ``).
 
     Returns:
@@ -194,7 +223,7 @@ def decide(host, port, *, is_unix=False, extra_blocked=(), env=None):
     if is_unix:
         return True, "af-unix"
 
-    blocked = set(LIVE_PORTS) | set(extra_blocked)
+    blocked = set(LIVE_PORTS) | set(extra_blocked) | _blocked_ports(env)
     for p in _allowed_ports(env):
         if p not in LIVE_PORTS:
             blocked.discard(p)
