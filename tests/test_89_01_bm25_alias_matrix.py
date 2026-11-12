@@ -272,3 +272,197 @@ def test_cell4_unqualified_filter_without_embedding_returns_rows(
         rows, swallowed, "cell 4 (unqualified, no embedding)"
     )
 
+
+#: The shape ``_generic_bm25_only`` had BEFORE plan 89-01 aliased its table.
+#: Kept here deliberately: it is the mutation of the fix, held as a test rather
+#: than as a scratch copy, so "cell 2 fails with 42P01 when the alias is
+#: reverted" is a measurement this suite repeats on every run instead of a claim
+#: made once in a pull-request body.
+_UNALIASED_BM25_SQL = """
+    SELECT
+        id, file_path, symbol_name,
+        NULL::float AS rrf_score,
+        1 AS rank_bm25,
+        NULL::int AS rank_vector
+    FROM rlm_chunks
+    WHERE rlm_chunks @@@ %s
+    {filter_sql}
+    ORDER BY paradedb.score(id) DESC
+    LIMIT %s
+"""
+
+
+def test_the_pre_fix_unaliased_shape_answers_sqlstate_42p01(pg_conn, seeded):
+    """The reverted alias, measured: sqlstate 42P01 naming the table ``c``.
+
+    This is the other half of cell 2's mutation pair. It executes the statement
+    shape the degradation branch used to build, spliced with the very fragment
+    ``hybrid_search`` emits, and pins the exact failure: an UndefinedTable with
+    pgcode 42P01 and ``table "c"`` in its message.
+
+    It is also the reason the class split in ``_programming_error_sqlstate`` can
+    be trusted: it proves the defect this plan fixed lands in psycopg2's
+    ProgrammingError hierarchy and in sqlstate class 42, which is exactly what
+    that split keys on.
+    """
+    import psycopg2
+
+    sql = _UNALIASED_BM25_SQL.format(filter_sql=ALIAS_QUALIFIED_FILTER)
+    params = [_bm25_query()] + list(_filter_params(seeded)) + [5]
+    try:
+        with pytest.raises(psycopg2.ProgrammingError) as caught:
+            with pg_conn.cursor() as cur:
+                cur.execute(sql, params)
+    finally:
+        # The failed statement left the transaction aborted; the fixture's own
+        # DELETE runs on this connection next.
+        pg_conn.rollback()
+
+    err = caught.value
+    print(
+        "\nthe pre-89-01 unaliased shape answers: pgcode=%s class=%s message=%r"
+        % (err.pgcode, type(err).__name__, str(err))
+    )
+    assert err.pgcode == "42P01", (
+        "expected sqlstate 42P01 (undefined_table), got %r: %s"
+        % (err.pgcode, err)
+    )
+    assert isinstance(err, psycopg2.errors.UndefinedTable), type(err).__name__
+    assert 'table "c"' in str(err), (
+        "the error must name the missing alias: %s" % (err,)
+    )
+
+
+# ── The error contract (plan 89-01 task 03) ──────────────────────────────────
+
+
+def test_sql_programming_error_raises_typed_and_never_returns_empty(
+    pg_conn, seeded, monkeypatch
+):
+    """A statement PostgreSQL cannot plan RAISES; it never answers ``[]``.
+
+    The malformation is introduced through the public seam — a ``filter_sql``
+    naming a column that does not exist, which is the same class of fault as the
+    alias defect (42703 UndefinedColumn next to 42P01 UndefinedTable) — so the
+    test drives the real code path rather than a patched one.
+
+    Before this task the same call returned ``[]`` and logged a warning, which
+    is exactly how the alias defect read as "no matches" for two phases.
+    """
+    from services import rlm_search
+
+    monkeypatch.setenv("GSD_TEST_MODE", "1")
+    rlm_search.reset_engine_error_counts()
+
+    with pytest.raises(rlm_search.EngineProgrammingError) as caught:
+        rlm_search.hybrid_search_generic(
+            TOKEN, pg_conn,
+            table="rlm_chunks", id_column="id", select_columns=SELECT_COLUMNS,
+            vector_column="embedding_code", query_embedding=None,
+            bm25_query=_bm25_query(),
+            filter_sql="AND c.no_such_column_8901 = %s",
+            filter_params=(seeded,),
+            top_k=5,
+        )
+
+    err = caught.value
+    assert err.sqlstate.startswith("42"), (
+        "a programming error must carry a 42xxx sqlstate, got %r" % (err.sqlstate,)
+    )
+    assert err.statement == "bm25_only", (
+        "the typed error must name the failing statement, got %r" % (err.statement,)
+    )
+    assert err.table == "rlm_chunks"
+
+    body = err.as_engine_error()
+    assert body["error"] == "engine_sql_programming_error"
+    assert body["sqlstate"] == err.sqlstate
+    assert body["error_class"] == err.error_class
+    # The typed body must never carry SQL text, a bound value or a DSN.
+    rendered = repr(body)
+    for forbidden in ("SELECT", "postgres://", "postgresql://", "password"):
+        assert forbidden not in rendered, (
+            "the typed body leaked %r: %s" % (forbidden, rendered)
+        )
+
+    assert rlm_search.engine_error_counts().get(err.sqlstate) == 1, (
+        "the programming error must be counted so it is visible without logs: %r"
+        % (rlm_search.engine_error_counts(),)
+    )
+
+    # The connection is left usable: the leg rolled back before raising, so the
+    # transaction is not stranded in the aborted state.
+    with pg_conn.cursor() as cur:
+        cur.execute("SELECT 1")
+        assert cur.fetchone()[0] == 1, (
+            "the leg must ROLLBACK before raising, or every later statement on "
+            "this connection fails with 'current transaction is aborted'"
+        )
+
+
+def test_operational_error_still_degrades_to_an_empty_result(monkeypatch):
+    """An OPERATIONAL error keeps the degraded empty result — unchanged.
+
+    This task narrowed the catch by error class; it must not have converted the
+    product's resilience path into a hard failure. A connection that drops, a
+    lock that times out or a disk that fills still yields ``[]``, which leaves
+    ``/query``'s ``if hybrid_results:`` guard untaken and therefore leaves
+    ``used_engine`` at the value it already had — the pre-existing behaviour.
+    """
+    import psycopg2
+
+    from services import rlm_search
+
+    monkeypatch.setenv("GSD_TEST_MODE", "1")
+    rlm_search.reset_engine_error_counts()
+
+    # The classification boundary, pinned directly: an operational error is NOT
+    # reclassified as a programming error by the new split.
+    assert rlm_search._programming_error_sqlstate(
+        psycopg2.OperationalError("simulated connection reset")
+    ) is None
+
+    class _OperationalCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def execute(self, sql, params=None):
+            raise psycopg2.OperationalError("simulated connection reset")
+
+        def fetchall(self):  # pragma: no cover - never reached
+            return []
+
+    class _OperationalConn:
+        def __init__(self):
+            self.rollback_calls = 0
+
+        def cursor(self):
+            return _OperationalCursor()
+
+        def rollback(self):
+            self.rollback_calls += 1
+
+    conn = _OperationalConn()
+    rows = rlm_search.hybrid_search_generic(
+        TOKEN, conn,
+        table="rlm_chunks", id_column="id", select_columns=SELECT_COLUMNS,
+        vector_column="embedding_code", query_embedding=None,
+        bm25_query=_bm25_query(),
+        filter_sql=ALIAS_QUALIFIED_FILTER,
+        filter_params=_filter_params(PREFIX),
+        top_k=5,
+    )
+
+    assert rows == [], (
+        "an operational error must still degrade to an empty result, got %r" % (rows,)
+    )
+    assert conn.rollback_calls >= 1, (
+        "the degradation path must still roll the aborted transaction back"
+    )
+    assert rlm_search.engine_error_counts() == {}, (
+        "an operational error must NOT be counted as a programming error: %r"
+        % (rlm_search.engine_error_counts(),)
+    )
