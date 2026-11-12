@@ -168,8 +168,14 @@ describe('88-17 runtime-llm: the host runtime CLI is the first backend', () => {
 
     const resolved = runtimeLlm.resolveBackend(env);
     assert.equal(resolved.backend, 'cli');
-    assert.ok(resolved.cli.command.startsWith(bin),
+    // Compared through realpath and case-folded: on Windows `os.tmpdir()` can hand back
+    // the 8.3 short form (C:\Users\RUNNE~1\...) while `where` prints the long one, so a
+    // plain startsWith on the raw strings is a false red that says nothing about the
+    // product (measured on the windows-latest runner, run 43171508229).
+    const norm = (p) => fs.realpathSync(p).toLowerCase();
+    assert.equal(norm(path.dirname(resolved.cli.command)), norm(bin),
       `the resolved binary must be the fake, got ${resolved.cli.command}`);
+    assert.match(path.basename(resolved.cli.command), /^claude(\.cmd)?$/i);
 
     const res = runtimeLlm.callModel(
       { prompt: 'PATH-PROMPT-MARKER', system: 'SYSTEM-MARKER', model: 'haiku' },
@@ -223,7 +229,11 @@ describe('88-17 runtime-llm: the host runtime CLI is the first backend', () => {
     assert.deepEqual(calls[0].args.slice(0, 3), ['/d', '/s', '/c']);
     assert.equal(calls[0].opts.windowsVerbatimArguments, true);
     const line = calls[0].args[3];
-    assert.match(line, /^"C:\\Users\\x\\AppData\\npm\\claude\.cmd" -p --model haiku /);
+    // `/s` strips the first and last quote of this string, so the whole line is wrapped
+    // in one extra pair: what cmd.exe parses is the inner, correctly quoted command.
+    assert.match(line, /^""C:\\Users\\x\\AppData\\npm\\claude\.cmd" -p --model haiku /);
+    assert.ok(line.endsWith('json"'), `the wrapping quote must close the line: ${line}`);
+    assert.equal(res.commandLine, line.slice(1, -1), 'the reported line is the inner one');
     assert.ok(!line.includes('CMD-PROMPT-MARKER'), `prompt on the command line: ${line}`);
     assert.ok(!line.includes('CMD-SYSTEM-MARKER'), `system prompt on the command line: ${line}`);
     assert.ok(!line.includes('&'), `a cmd metacharacter reached the command line: ${line}`);

@@ -286,10 +286,12 @@ function parseCliJson(stdout, bin) {
  * @param {{system: ?string, prompt: string, model: ?string}} spec the call.
  * @param {{command: string, args: string[], source: string}} cli the resolved CLI.
  * @param {object} cfg resolved options (env, platform, timeoutMs, spawn).
+ * @param {object} [diag] filled in BEFORE the spawn with `spawnForm`, `systemDelivery`
+ *   and `commandLine`, so a failure result can report which form was used.
  * @returns {{ok: true, text: string, truncated: boolean, input_tokens: ?number, output_tokens: ?number, cost_usd: ?number, spawnForm: string, systemDelivery: string, commandLine: ?string}}
  * @throws {Error} on a spawn error, a non-zero exit, or unparseable output.
  */
-function cliAttempt(spec, cli, cfg) {
+function cliAttempt(spec, cli, cfg, diag = {}) {
   const isWin = cfg.platform === 'win32';
   const isShim = isWin && /\.(cmd|bat)$/i.test(cli.command);
   const model = spec.model == null ? null : String(spec.model);
@@ -316,10 +318,22 @@ function cliAttempt(spec, cli, cfg) {
     const comspec = cfg.env.ComSpec || cfg.env.COMSPEC || 'cmd.exe';
     commandLine = buildCmdLine(cli.command, [...cli.args, ...cliArgs]);
     spawnForm = 'cmd.exe /d /s /c';
-    r = cfg.spawn(comspec, ['/d', '/s', '/c', commandLine],
+    diag.spawnForm = spawnForm;
+    diag.systemDelivery = 'stdin';
+    diag.commandLine = commandLine;
+    // `/s` tells cmd.exe to strip the FIRST and LAST quote of the string after `/c` and
+    // run the rest verbatim. Handing it the bare line would therefore strip the opening
+    // quote of the target path and the closing quote of `--tools ""`, mangling both; the
+    // documented idiom is to wrap the WHOLE line in one more pair of quotes so the pair
+    // cmd.exe removes is the outer one. Nothing user-controlled is in the line (see
+    // buildCmdLine), so the extra quotes cannot be escaped out of.
+    r = cfg.spawn(comspec, ['/d', '/s', '/c', `"${commandLine}"`],
       Object.assign({}, spawnOpts, { windowsVerbatimArguments: true }));
   } else {
     spawnForm = 'direct';
+    diag.spawnForm = spawnForm;
+    diag.systemDelivery = 'argv';
+    diag.commandLine = null;
     r = cfg.spawn(cli.command, [...cli.args, ...cliArgs], spawnOpts);
   }
 
@@ -506,10 +520,11 @@ function callModel(spec, opts = {}) {
   // CLI backend, with the rate-limit backoff that used to live in gsd-memory.cjs.
   let attempts = 0;
   let lastDetail = '';
+  const diag = {};
   for (let attempt = 0; attempt <= cfg.retryDelaysMs.length; attempt++) {
     attempts += 1;
     try {
-      const out = cliAttempt(call, resolved.cli, cfg);
+      const out = cliAttempt(call, resolved.cli, cfg, diag);
       return Object.assign(out, { backend: 'cli', model: call.model, attempts });
     } catch (e) {
       const msg = String((e && e.message) || e);
@@ -523,7 +538,19 @@ function callModel(spec, opts = {}) {
       break;
     }
   }
-  return { ok: false, reason: 'cli_failed', detail: lastDetail, backend: 'cli', attempts };
+  // The diagnostics are carried on the FAILURE result too: without them a red Windows
+  // cell cannot tell "the cmd.exe branch ran and the shim failed" from "the branch was
+  // never taken", which is the first question anyone asks.
+  return {
+    ok: false,
+    reason: 'cli_failed',
+    detail: lastDetail,
+    backend: 'cli',
+    attempts,
+    spawnForm: diag.spawnForm || null,
+    systemDelivery: diag.systemDelivery || null,
+    commandLine: diag.commandLine || null,
+  };
 }
 
 module.exports = {

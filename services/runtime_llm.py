@@ -312,7 +312,8 @@ def _parse_cli_json(stdout, binname):
     return str(parsed.get("result") or ""), dict(parsed.get("usage") or {})
 
 
-def _cli_attempt(argv_prefix, prompt, system, model, timeout_s, env, platform_name, runner):
+def _cli_attempt(argv_prefix, prompt, system, model, timeout_s, env, platform_name, runner,
+                 diag=None):
     """Make one CLI attempt. Never retries; :func:`call_model` owns the backoff loop.
 
     Args:
@@ -324,6 +325,8 @@ def _cli_attempt(argv_prefix, prompt, system, model, timeout_s, env, platform_na
         env: the child environment.
         platform_name: ``sys.platform`` or an injected value.
         runner: ``subprocess.run``-compatible callable (injectable for tests).
+        diag: optional dict filled in BEFORE the spawn with ``system_delivery`` and
+            ``command_line``, so a failure result can report which spawn form was used.
 
     Returns:
         tuple[str, dict, str, str | None]: text, usage, system delivery, command line.
@@ -344,13 +347,25 @@ def _cli_attempt(argv_prefix, prompt, system, model, timeout_s, env, platform_na
     child_env["GSD_SHUNT"] = "off"
     child_env["GSD_SHUNT_WORKER"] = "1"
 
+    diag = {} if diag is None else diag
     command_line = None
     if is_shim:
         command_line = _build_cmd_line(list(argv_prefix) + cli_args)
         comspec = child_env.get("ComSpec") or child_env.get("COMSPEC") or "cmd.exe"
-        cmd = "%s /d /s /c %s" % (_quote_cmd_path(comspec), command_line)
+        # ``/s`` tells cmd.exe to strip the FIRST and LAST quote of the string after
+        # ``/c`` and run the rest verbatim. Handing it the bare line would strip the
+        # opening quote of the target path and the closing quote of ``--tools ""``,
+        # mangling both; the documented idiom is to wrap the WHOLE line in one more pair
+        # of quotes so the pair cmd.exe removes is the outer one. Nothing
+        # user-controlled is in the line (see _build_cmd_line), so the extra quotes
+        # cannot be escaped out of.
+        cmd = '%s /d /s /c "%s"' % (_quote_cmd_path(comspec), command_line)
+        diag["system_delivery"] = "stdin"
+        diag["command_line"] = command_line
     else:
         cmd = list(argv_prefix) + cli_args
+        diag["system_delivery"] = "argv"
+        diag["command_line"] = None
 
     try:
         proc = runner(
@@ -517,12 +532,14 @@ def call_model(
 
     attempts = 0
     detail = ""
+    diag = {}
     delays = list(retry_delays_s or ())
     for attempt in range(len(delays) + 1):
         attempts += 1
         try:
             text, usage, delivery, command_line = _cli_attempt(
                 argv_prefix, prompt, system, model, timeout_s, environ, platform_name, runner,
+                diag=diag,
             )
             return LlmResult(ok=True, text=text, backend="cli", model=model, attempts=attempts,
                              system_delivery=delivery, command_line=command_line, usage=usage)
@@ -536,5 +553,10 @@ def call_model(
                 sleep(delays[attempt])
                 continue
             break
+    # The diagnostics are carried on the FAILURE result too: without them a red Windows
+    # cell cannot tell "the cmd.exe branch ran and the shim failed" from "the branch was
+    # never taken", which is the first question anyone asks.
     return LlmResult(ok=False, backend="cli", reason="cli_failed", detail=detail,
-                     model=model, attempts=attempts)
+                     model=model, attempts=attempts,
+                     system_delivery=diag.get("system_delivery") or "",
+                     command_line=diag.get("command_line"))
