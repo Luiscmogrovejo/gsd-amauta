@@ -226,6 +226,11 @@ def report(env=None):
         dict: ``{"cache_url_source", "cache_url_masked", "cache_url_canonical"}``.
         The URL is masked, always: a cache DSN can carry a password.
 
+    This does NOT emit the deprecation warning, deliberately: reporting a fact is
+    not consuming it, and the row it produces already names the supplying variable
+    and the canonical one, which is the better signal in that context. The warning
+    belongs to :func:`redis_url`, which is what a consumer calls.
+
     Example:
         >>> report({"VALKEY_URL": "redis://u:p@h:1/0"})["cache_url_source"]
         'VALKEY_URL'

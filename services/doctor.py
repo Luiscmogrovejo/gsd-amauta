@@ -34,11 +34,13 @@ import sys
 import urllib.request
 import urllib.error
 
-# The ONE cache-URL resolver (plan 89-09 task 04)
+# The ONE cache-URL resolver (plan 89-09 task 04) and the reporting extension
+# point every later plan's row arrives through (task 05)
 try:
-    from services import cache_url
+    from services import cache_url, report_hooks
 except ImportError:  # pragma: no cover - script-launched from services/
     import cache_url
+    import report_hooks
 
 # ── Config ────────────────────────────────────────────────────────────────────
 PORT = int(os.environ.get("GSD_AMAUTA_PORT", "18799"))
@@ -1021,6 +1023,16 @@ def main(argv):
     check_agents()
     check_skills()
     check_mobile()
+
+    # ── Extension point (plan 89-09 task 05) ─────────────────────────────────
+    # Four Phase 89 plans would otherwise have edited this file, each only to
+    # add one row. Rows arrive in doctor's own (status, category, detail, data)
+    # vocabulary, so the renderer below is untouched, and a provider that raises
+    # becomes one WARN row naming it instead of an exception. First consumer:
+    # this plan's own cache-source row. Contract for 89-06, 89-08 and 89-10:
+    # services/report_hooks.py's docstring.
+    for _status, _category, _detail, _data in report_hooks.extra_doctor_rows():
+        row(_status, _category, _detail, _data)
 
     fail_count = sum(1 for s, _, _, _ in rows if s.strip() == "FAIL")
     warn_count = sum(1 for s, _, _, _ in rows if s.strip() == "WARN")
