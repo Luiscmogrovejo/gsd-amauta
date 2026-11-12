@@ -108,11 +108,43 @@ describe('[SHARD-04] Daemon file: /api/steps/ routes are defined', () => {
     );
   });
 
-  it('daemon GET /api/steps/ validates phase_number is integer', () => {
+  it('daemon GET /api/steps/ validates phase_number is a number', () => {
     const content = fs.readFileSync(DAEMON_FILE, 'utf-8');
+    // Phase 89 plan 89-02 (FND-11). This asserted `content.includes('phase must be
+    // integer')` — a string that has not been the daemon's error message since Phase
+    // 88; the only occurrence left was inside `_parse_phase_arg`'s docstring, which
+    // was recounting the historical message it replaced. The assertion was therefore
+    // pinned to a COMMENT and passed no matter what the code did. It now pins the
+    // error the code actually answers, and asserts that the refusal 031 removed is
+    // gone.
     assert.ok(
-      content.includes('phase must be integer'),
-      'daemon missing integer validation for phase in GET /api/steps/'
+      content.includes('"error": "phase must be a number (e.g. 72 or 72.1)"'),
+      'daemon missing the typed 400 for a non-numeric phase in /api/steps/'
+    );
+    assert.ok(
+      // The bare prefix, not the full old error name: this assertion must be able
+      // to live in a tree where `grep -rc <the old name> services/ tests/` is zero,
+      // and `decimal_phase` is also the STRICTER test.
+      !content.includes('decimal_phase'),
+      'the daemon still carries a decimal-phase refusal; '
+        + 'migration 031 made step_handoffs.phase_number NUMERIC(10,3)'
+    );
+  });
+
+  it('daemon binds phase_number as a numeric, not as a binary float', () => {
+    const content = fs.readFileSync(DAEMON_FILE, 'utf-8');
+    // A float parameter against a NUMERIC column makes PostgreSQL cast the column to
+    // double precision, which reintroduces exactly the inexact `= 72.1` comparison
+    // NUMERIC(10,3) was chosen to avoid. Every PG bind of a phase goes through
+    // `_pg_phase`, which returns a decimal.Decimal.
+    assert.ok(content.includes('def _pg_phase('), 'daemon missing the _pg_phase adapter');
+    assert.ok(
+      content.includes('_pg_phase(phase_number)'),
+      'the /api/steps/ handoff INSERT does not bind phase_number through _pg_phase'
+    );
+    assert.ok(
+      content.includes('_pg_phase(_phase_num)'),
+      'the /api/complexity/escalate handoff INSERT does not bind through _pg_phase'
     );
   });
 

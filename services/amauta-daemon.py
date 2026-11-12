@@ -53,6 +53,7 @@ import time
 import uuid
 import threading
 from collections import defaultdict
+from decimal import Decimal
 from pathlib import Path
 import socketserver
 from socketserver import ThreadingMixIn
@@ -139,15 +140,23 @@ except ImportError:
 _sqlite_store = None
 _HAS_SQLITE_MODULE = False
 try:
-    from sqlite_store import SQLiteStore, normalize_phase_number as _sqlite_normalize_phase
+    from sqlite_store import SQLiteStore, normalize_phase_number as _normalize_phase
     _HAS_SQLITE_MODULE = True
 except ImportError:
     SQLiteStore = None  # type: ignore
 
-    def _sqlite_normalize_phase(raw):  # type: ignore[misc]
+    def _normalize_phase(raw):  # type: ignore[misc]
         """Fallback when sqlite_store is absent — same int/float contract."""
         val = float(raw)
         return int(val) if val.is_integer() else val
+
+# Phase 89 FND-11: the alias above used to carry a backend in its name, because SQLite
+# was the only backend that could hold a decimal phase — step_handoffs.phase_number and
+# task_completions.phase_number were INTEGER on PostgreSQL. Migration 031 retyped both
+# to NUMERIC(10,3), so the normaliser now decides what "72", "72.0" and "72.1" mean on
+# BOTH backends, and a name that claims otherwise would send the next reader looking for
+# a PostgreSQL-specific one that does not exist. The function itself is unchanged and
+# still lives in services/sqlite_store.py:135-150 (its home, not its scope).
 
 # Backup manager (Phase 8: Data Durability)
 _backup_manager = None
@@ -1640,26 +1649,103 @@ def _parse_phase_arg(raw, store):
     73), and the step-handoff routes used to `int(parts[1])` them straight
     into a 400 "phase must be integer", which halted execute-phase on any
     inserted phase. SQLite stores phase_number as TEXT and carries them.
-    PostgreSQL cannot: step_handoffs.phase_number is INTEGER (migration 017)
-    and changing that column is a schema migration this change does not own,
-    so a decimal phase on PG gets an explicit 400 that says why, instead of an
-    integer-truncated row silently filed under the wrong phase.
+
+    PostgreSQL carries them too since Phase 89's migration 031 retyped
+    step_handoffs.phase_number and task_completions.phase_number from INTEGER
+    to NUMERIC(10,3) (FND-11). Until then this function answered a deliberate
+    typed 400 on that backend for any decimal phase, because truncating 72.1 to
+    72 would have filed a handoff under the wrong phase and the column change
+    was a schema migration that change did not own. The refusal is gone with
+    its cause; `store` is still taken because callers pass it and the backend
+    may matter again.
+
+    What survives is the 400 for a value that is not a number at all: that one
+    is a client error on BOTH backends and has the same body shape on each.
     """
     try:
-        value = _sqlite_normalize_phase(raw)
+        value = _normalize_phase(raw)
     except (TypeError, ValueError):
         return None, ({"error": "phase must be a number (e.g. 72 or 72.1)"}, 400)
-    if isinstance(value, float) and not _is_sqlite(store):
-        return None, ({
-            "error": "decimal_phase_unsupported_on_postgres",
-            "detail": (
-                "step_handoffs.phase_number is INTEGER on PostgreSQL (migration "
-                "017), so decimal phase %s cannot be stored or looked up. Use the "
-                "whole phase number, or run the daemon on the SQLite backend, "
-                "which stores phase identifiers as text." % raw
-            ),
-        }, 400)
     return value, None
+
+
+def _pg_phase(value):
+    """A phase identifier as a PostgreSQL ``numeric`` query parameter.
+
+    `step_handoffs.phase_number` and `task_completions.phase_number` are
+    `NUMERIC(10,3)` since migration 031 (Phase 89, FND-11).
+
+    MEASURED, not assumed (psycopg2 2.9.11, `psycopg2.extensions.adapt(x).getquoted()`
+    — the same adapter a bound parameter goes through, and psycopg2 interpolates
+    client-side rather than using server-side binds):
+
+        Decimal("72.1") -> b'72.1'                 float 72.1          -> b'72.1'
+        Decimal("72")   -> b'72'                   float 0.1 + 0.2     -> b'0.30000000000000004'
+
+    So both types reach the server as an UNQUOTED decimal literal, which PostgreSQL's
+    parser types as `numeric` — never `double precision`. That is the first half of
+    what makes `phase_number = %s` exact and index-usable on `idx_handoffs_latest`.
+
+    The second half is why the parameter is a `Decimal` and not a `float`: a float gets
+    to that literal through `repr()`, which is binary-float dependent. Any value that
+    arrived by arithmetic rather than by parsing emits up to seventeen significant
+    digits (`0.30000000000000004` above). `NUMERIC(10,3)` ROUNDS that on INSERT, to
+    `0.300`, while a SELECT predicate built the same way still carries all seventeen —
+    so the write and the read disagree and the handoff is unfindable. `Decimal(str(v))`
+    carries exactly the digits the caller wrote, so what is stored is what is looked up.
+
+    `int` is already an integer literal and promotes to `numeric` exactly, but it is
+    converted too so every call site has ONE wire type rather than two.
+
+    Args:
+        value: an int, float, Decimal or numeric string — normally the output of
+            `_normalize_phase`.
+
+    Returns:
+        decimal.Decimal: the same number, or None when `value` is None.
+
+    Raises:
+        decimal.InvalidOperation: when `value` is not a number. Callers normalise
+            first, so this is an internal-error path, not a client one.
+
+    Example:
+        cur.execute("... WHERE phase_number = %s", (_pg_phase(72.1),))
+    """
+    if value is None:
+        return None
+    if isinstance(value, Decimal):
+        return value
+    return Decimal(str(value))
+
+
+def _phase_out(value):
+    """A `phase_number` read back from a row, in the shape BOTH backends return.
+
+    psycopg2 maps `NUMERIC` to `decimal.Decimal`, so after migration 031 the
+    PostgreSQL read path returns `Decimal("72")` where the SQLite path returns `72`.
+    `_json_default` would serialise that as `72.0` and the same route would answer a
+    different JSON type depending on the backend — the kind of divergence a client
+    discovers in production. Running the read through the same normaliser as the write
+    makes "72.1 reads back on PostgreSQL exactly as it does on SQLite" literally true:
+    `int` when integral, `float` otherwise, on both.
+
+    Args:
+        value: the raw column value (Decimal on PostgreSQL, TEXT on SQLite).
+
+    Returns:
+        int, float, or None — or `value` unchanged when it is not a number at all,
+        which keeps a surprising row readable instead of turning a GET into a 500.
+
+    Example:
+        >>> _phase_out(Decimal("72.100"))
+        72.1
+    """
+    if value is None:
+        return None
+    try:
+        return _normalize_phase(value)
+    except (TypeError, ValueError):
+        return value
 
 
 def _requires_postgres_payload(feature, detail=None):
@@ -3019,7 +3105,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                         " FROM step_handoffs"
                         " WHERE workflow_name = %s AND phase_number = %s"
                         " ORDER BY created_at DESC LIMIT 1",
-                        (workflow_name, phase_number),
+                        (workflow_name, _pg_phase(phase_number)),
                     )
                     row = cur.fetchone()
                 if row:
@@ -3029,7 +3115,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                         "workflow_name": row[1],
                         "step_id": row[2],
                         "task_id": row[3],
-                        "phase_number": row[4],
+                        "phase_number": _phase_out(row[4]),
                         "completed_steps": row[5] or [],
                         "context_snapshot": row[6] or {},
                         "artifacts": row[7] or {},
@@ -4279,7 +4365,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                             workflow_name,
                             body_data.get("step_id", ""),
                             body_data.get("task_id", ""),
-                            phase_number,
+                            _pg_phase(phase_number),
                             body_data.get("completed_steps", []),
                             _json.dumps(body_data.get("context_snapshot", {})),
                             _json.dumps(body_data.get("artifacts", {})),
@@ -4462,7 +4548,21 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     "manifest_overshoot", "escalation_fired",
                 }
                 _task_id    = body.get("task_id") or ""
-                _phase_num  = int(body.get("phase_number") or 0)
+                # Phase 89 FND-11: the request's phase_number used to be narrowed with
+                # a bare int() here. int("72.1") RAISES (only int(72.1) truncates), so
+                # a decimal phase came out of this line as an uncaught ValueError and
+                # the endpoint answered 500 rather than a typed client error.
+                # task_completions.phase_number is NUMERIC(10,3) since migration 031,
+                # so the value is normalised instead of narrowed, and a non-number is
+                # the same typed 400 the step-handoff routes answer.
+                try:
+                    _phase_num = _normalize_phase(body.get("phase_number") or 0)
+                except (TypeError, ValueError):
+                    self._send_json({
+                        "error": "phase must be a number (e.g. 72 or 72.1)",
+                        "field": "phase_number",
+                    }, 400)
+                    return
                 _wf_name    = body.get("workflow_name") or "execute-phase"
                 _fv         = body.get("feature_vector") or {}
                 _raw_score  = int(body.get("raw_score") or 0)
@@ -4534,7 +4634,19 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
 
                 # ── 1. Parse request body ─────────────────────────────────────────
                 _task_id   = body.get("task_id") or ""
-                _phase_num = int(body.get("phase_number") or 0)
+                # Phase 89 FND-11: see /api/complexity/complete above — the same bare
+                # int() narrowing lived here, raised on "72.1" and so answered 500. One
+                # normaliser for both backends now that migration 031 made
+                # step_handoffs.phase_number NUMERIC(10,3); the SQLite branch below used
+                # to re-normalise behind that narrowing and no longer has to.
+                try:
+                    _phase_num = _normalize_phase(body.get("phase_number") or 0)
+                except (TypeError, ValueError):
+                    self._send_json({
+                        "error": "phase must be a number (e.g. 72 or 72.1)",
+                        "field": "phase_number",
+                    }, 400)
+                    return
                 _wf_name   = body.get("workflow_name") or "execute-phase"
                 _exec_rpt  = body.get("executor_report")   # may be None
                 _val_rpt   = body.get("validator_report")  # may be None
@@ -4559,15 +4671,12 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
 
                 _handoff_dict = None
                 if _is_sqlite(store):
-                    # On SQLite phase_number is TEXT, so a decimal phase
-                    # (72.1) is looked up as itself rather than truncated by
-                    # the int() above — which would read phase 72's handoff.
-                    try:
-                        _phase_num = _sqlite_normalize_phase(
-                            body.get("phase_number") or 0
-                        )
-                    except (TypeError, ValueError):
-                        pass
+                    # Phase 89 FND-11: this branch used to re-normalise phase_number
+                    # here, because the int() at the top of the handler had already
+                    # destroyed a decimal phase and a SQLite lookup for 72 would have
+                    # read phase 72's handoff instead of 72.1's. The parse at the top
+                    # is the normaliser now, on both backends, so there is one value
+                    # and nothing to repair.
                     try:
                         _handoff_dict = store.step_handoff_latest(_wf_name, _phase_num)
                     except Exception as _qe:
@@ -4582,7 +4691,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                                 " FROM step_handoffs"
                                 " WHERE workflow_name = %s AND phase_number = %s"
                                 " ORDER BY created_at DESC LIMIT 1",
-                                (_wf_name, _phase_num),
+                                (_wf_name, _pg_phase(_phase_num)),
                             )
                             _row = cur.fetchone()
                         if _row:
@@ -4591,7 +4700,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                                 "workflow_name": _row[1],
                                 "step_id": _row[2],
                                 "task_id": _row[3],
-                                "phase_number": _row[4],
+                                "phase_number": _phase_out(_row[4]),
                                 "completed_steps": _row[5] or [],
                                 "context_snapshot": _row[6] or {},
                                 "artifacts": _row[7] or {},
@@ -4661,7 +4770,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                                     _wf_name,
                                     _handoff_dict.get("step_id", ""),
                                     _task_id or _handoff_dict.get("task_id", ""),
-                                    _phase_num,
+                                    _pg_phase(_phase_num),
                                     _handoff_dict.get("completed_steps", []),
                                     json.dumps(_new_context),
                                     json.dumps(_handoff_dict.get("artifacts", {})),

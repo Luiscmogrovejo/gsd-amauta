@@ -18,7 +18,8 @@ import json
 import logging
 import os
 from datetime import datetime, timezone
-from typing import Optional
+from decimal import Decimal, InvalidOperation
+from typing import Optional, Union
 from uuid import uuid4
 
 try:
@@ -140,7 +141,17 @@ if _HAS_PYDANTIC:
                                    description="One of: plan-phase, execute-phase, discuss-phase")
         step_id: str = Field(..., description="Current step identifier (e.g., step-01-init)")
         task_id: str = Field(..., description="Links to RPETD task (e.g., TK-0041)")
-        phase_number: int = Field(..., ge=1, description="Phase number being executed")
+        # Phase 89 FND-11: this was an `int` with a minimum of one, which refused every
+        # decimal phase /amauta:insert-phase creates (72.1 between 72 and 73; this
+        # milestone carries 77.1, 94.1 and 99.1). step_handoffs.phase_number is
+        # NUMERIC(10,3) since migration 031, so the field is a Decimal and the bound is
+        # strictly-greater-than-zero: a minimum of one would have excluded a legitimate
+        # 0.5 while calling itself a minimum. Decimal, not float: the value is written
+        # straight into a `numeric` column, and a float parameter makes `= 72.1` a
+        # binary-float comparison.
+        phase_number: Decimal = Field(..., gt=0,
+                                      description="Phase number being executed; "
+                                                  "decimal phases (72.1) allowed")
         completed_steps: list = Field(default_factory=list,
                                       description="step_ids that have completed")
         context_snapshot: dict = Field(...,
@@ -170,7 +181,10 @@ else:
         workflow_name: str = ""
         step_id: str = ""
         task_id: str = ""
-        phase_number: int = 0
+        # Matches the Pydantic field above: a Decimal, so a decimal phase survives on
+        # the no-pydantic path too (Phase 89 FND-11). The default stays falsy so
+        # validate_handoff's "phase_number is required" check is unchanged.
+        phase_number: Decimal = Decimal(0)
         completed_steps: list = _dc.field(default_factory=list)
         context_snapshot: dict = _dc.field(default_factory=dict)
         artifacts: dict = _dc.field(default_factory=dict)
@@ -238,7 +252,48 @@ def _get_conn():
 # Public functions
 # ═══════════════════════════════════════════════════════
 
-def load_or_create_handoff(workflow: str, phase: int, task_id: str) -> StepHandoff:
+def pg_phase(value) -> Optional[Decimal]:
+    """A phase identifier as a PostgreSQL ``numeric`` query parameter.
+
+    `step_handoffs.phase_number` is `NUMERIC(10,3)` since migration 031 (Phase 89,
+    FND-11).
+
+    psycopg2 interpolates client-side, and `psycopg2.extensions.adapt(x).getquoted()`
+    measures what actually reaches the server: both `Decimal("72.1")` and `float` 72.1
+    become the unquoted literal `72.1`, which PostgreSQL's parser types as `numeric`.
+    The reason to bind a `Decimal` anyway is the DIGITS: a float reaches that literal
+    through `repr()`, so a value produced by arithmetic emits up to seventeen
+    significant digits (`0.1 + 0.2` -> `0.30000000000000004`). `NUMERIC(10,3)` rounds
+    that on INSERT while a predicate built the same way still carries all seventeen, so
+    the row becomes unfindable. `Decimal(str(v))` carries exactly the digits the caller
+    wrote, which keeps `= 72.1` exact and keeps `idx_handoffs_latest` usable.
+
+    Args:
+        value: int, float, Decimal or numeric string.
+
+    Returns:
+        decimal.Decimal, or None when `value` is None.
+
+    Raises:
+        ValueError: when `value` is not a number.
+
+    Example:
+        >>> pg_phase(72.1)
+        Decimal('72.1')
+    """
+    if value is None:
+        return None
+    if isinstance(value, Decimal):
+        return value
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError) as exc:
+        raise ValueError(f"phase must be a number, got {value!r}") from exc
+
+
+def load_or_create_handoff(workflow: str,
+                           phase: Union[int, float, Decimal, str],
+                           task_id: str) -> StepHandoff:
     """Load the latest StepHandoff from PG, or create a fresh one.
 
     Query strategy: SELECT latest row WHERE workflow_name + phase_number + task_id.
@@ -247,7 +302,7 @@ def load_or_create_handoff(workflow: str, phase: int, task_id: str) -> StepHando
 
     Args:
         workflow:   Workflow name (e.g., "plan-phase")
-        phase:      Phase number (e.g., 41)
+        phase:      Phase number (e.g., 41, or a decimal phase such as 72.1)
         task_id:    RPETD task identifier (e.g., "TK-0041")
 
     Returns:
@@ -265,7 +320,7 @@ def load_or_create_handoff(workflow: str, phase: int, task_id: str) -> StepHando
                 " FROM step_handoffs"
                 " WHERE workflow_name = %s AND phase_number = %s AND task_id = %s"
                 " ORDER BY created_at DESC LIMIT 1",
-                (workflow, phase, task_id),
+                (workflow, pg_phase(phase), task_id),
             )
             row = cur.fetchone()
         conn.close()
@@ -298,7 +353,11 @@ def load_or_create_handoff(workflow: str, phase: int, task_id: str) -> StepHando
         workflow_name=workflow,
         step_id=first_step,
         task_id=task_id,
-        phase_number=phase,
+        # Decimal on BOTH construction paths: pydantic would coerce, the dataclass
+        # fallback would not, and a str or float phase_number reaching save_handoff's
+        # bind from the fallback path is the kind of asymmetry that only shows up
+        # where pydantic is missing (Phase 89 FND-11).
+        phase_number=pg_phase(phase),
         completed_steps=[],
         context_snapshot={},
         next_step=second_step,
@@ -332,7 +391,7 @@ def save_handoff(handoff: StepHandoff) -> None:
                     handoff.workflow_name,
                     handoff.step_id,
                     handoff.task_id,
-                    handoff.phase_number,
+                    pg_phase(handoff.phase_number),
                     handoff.completed_steps,
                     json.dumps(handoff.context_snapshot),
                     json.dumps(handoff.artifacts),
