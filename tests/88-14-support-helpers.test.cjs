@@ -5,6 +5,8 @@
  *   - py-embed.cjs   (G2)  paths reach embedded Python through argv or a correct literal
  *   - home-env.cjs   (G7)  HOME, USERPROFILE, HOMEDRIVE and HOMEPATH are set together
  *   - fake-exe.cjs   (G8)  a fake executable is a .cmd shim on Windows; PATH uses path.delimiter
+ *   - live-store-canary.cjs (G10)  identify() builds the PowerShell argv on win32 and the ps/lsof
+ *                          argv byte-for-byte as before elsewhere; a bad pid is refused
  *
  * Windows itself cannot be run on the machines this suite is developed on, so these tests
  * exercise the CONTENT that breaks there (a backslash path, a path with a space, a path that
@@ -311,6 +313,156 @@ describe('[88-14] fake-exe: writeFakeExe', () => {
       });
       assert.equal(r.status, 0, r.stderr);
       assert.equal(r.stdout.trim(), 'SENTINEL-88-14 --version', 'the fake ran, not the real python3');
+    });
+  });
+});
+
+describe('[88-14] live-store-canary: process identity with an injected platform', () => {
+  const MODULE = require.resolve('./support/live-store-canary.cjs');
+  const childProcess = require('node:child_process');
+
+  /**
+   * Load a FRESH copy of the canary whose execFileSync is a recorder, so the exact argv it would
+   * run is observable on any machine. `answers` maps a program name to what the fake returns
+   * (a string) or throws (an Error).
+   */
+  function withRecorder(answers, fn) {
+    const calls = [];
+    const original = childProcess.execFileSync;
+    childProcess.execFileSync = (file, args, opts) => {
+      calls.push({ file, args, opts });
+      let a = answers[file];
+      if (typeof a === 'function') a = a(args);
+      if (a instanceof Error) throw a;
+      return a === undefined ? '' : a;
+    };
+    delete require.cache[MODULE];
+    let fresh;
+    try {
+      fresh = require(MODULE);
+    } finally {
+      childProcess.execFileSync = original; // the fresh module already holds the recorder
+    }
+    try {
+      return fn(fresh, calls);
+    } finally {
+      delete require.cache[MODULE]; // never leave a recorder-bound copy for other tests
+    }
+  }
+
+  it('POSIX argv is byte-for-byte the pre-change one: ps -o command= -p <pid>', () => {
+    withRecorder({ ps: 'python3 services/amauta-daemon.py\n' }, (canary, calls) => {
+      assert.equal(canary.commandOf(4242, 'darwin'), 'python3 services/amauta-daemon.py');
+      assert.deepEqual(calls, [{
+        file: 'ps',
+        args: ['-o', 'command=', '-p', '4242'],
+        opts: { encoding: 'utf8', timeout: 5000 },
+      }]);
+    });
+  });
+
+  it('POSIX argv is byte-for-byte the pre-change one: lsof -nP -a -p <pid> -iTCP -sTCP:LISTEN -Fn', () => {
+    withRecorder({ lsof: 'p4242\nn127.0.0.1:18801\n' }, (canary, calls) => {
+      assert.deepEqual(canary.listeningPorts(4242, 'linux'), [18801]);
+      assert.deepEqual(calls, [{
+        file: 'lsof',
+        args: ['-nP', '-a', '-p', '4242', '-iTCP', '-sTCP:LISTEN', '-Fn'],
+        opts: { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] },
+      }]);
+    });
+  });
+
+  it('win32 builds a PowerShell argv (Get-CimInstance), through execFileSync and never a shell', () => {
+    withRecorder({ 'powershell.exe': 'python3 C:\\a\\services\\amauta-daemon.py\r\n' }, (canary, calls) => {
+      assert.equal(canary.commandOf(4242, 'win32'), 'python3 C:\\a\\services\\amauta-daemon.py');
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].file, 'powershell.exe');
+      assert.deepEqual(calls[0].args.slice(0, 3), ['-NoProfile', '-NonInteractive', '-Command']);
+      assert.equal(calls[0].args.length, 4);
+      assert.match(calls[0].args[3], /Get-CimInstance Win32_Process -Filter 'ProcessId=4242'/);
+      assert.match(calls[0].args[3], /\.CommandLine$/);
+      assert.equal(calls[0].opts.shell, undefined, 'no shell');
+      assert.doesNotMatch(calls[0].args.join(' '), /ps -o|wmic/i);
+    });
+  });
+
+  it('win32 lists listening ports through Get-NetTCPConnection', () => {
+    withRecorder({ 'powershell.exe': '18801\r\n18802\r\n' }, (canary, calls) => {
+      assert.deepEqual(canary.listeningPorts(4242, 'win32'), [18801, 18802]);
+      assert.match(calls[0].args[3], /Get-NetTCPConnection -OwningProcess 4242 -State Listen/);
+      assert.equal(calls[0].opts.shell, undefined, 'no shell');
+    });
+  });
+
+  it('a pid that is not a positive integer is REJECTED before anything is interpolated or run', () => {
+    withRecorder({ 'powershell.exe': 'x' }, (canary, calls) => {
+      const bad = ['4242; Remove-Item -Recurse C:\\', '12', 1.5, -3, 0, NaN, Infinity, null, undefined, {}, [4242]];
+      for (const pid of bad) {
+        assert.throws(() => canary.commandOf(pid, 'win32'), TypeError, 'commandOf ' + String(pid));
+        assert.throws(() => canary.listeningPorts(pid, 'win32'), TypeError, 'listeningPorts ' + String(pid));
+      }
+      assert.deepEqual(calls, [], 'nothing was executed for any rejected pid');
+    });
+  });
+
+  /** A PowerShell answer: the command line for a Get-CimInstance call, the ports for Get-NetTCPConnection. */
+  const powershell = (cmdLine, ports) => (args) => (/Get-NetTCPConnection/.test(args[3]) ? ports : cmdLine);
+  const DAEMON_CMD = 'python3 C:\\a\\gsd-amauta\\services\\amauta-daemon.py\r\n';
+
+  it('identify(win32): the daemon command line + a matching ledger port is identified', () => {
+    withRecorder({ 'powershell.exe': powershell(DAEMON_CMD, '18801\r\n') }, (canary, calls) => {
+      const r = canary.identify({ pid: 4242, kind: 'daemon', port: 18801, dataDir: 'C:\\no\\match' }, 'win32');
+      assert.deepEqual(r, { identified: true, reason: 'identified' });
+      assert.ok(calls.every((c) => c.file === 'powershell.exe'), 'only PowerShell is ever run');
+    });
+  });
+
+  it('identify(win32): the daemon command line but NO matching dataDir or port is NOT identified', () => {
+    withRecorder({ 'powershell.exe': powershell(DAEMON_CMD, '19999\r\n') }, (canary) => {
+      const r = canary.identify({ pid: 4242, kind: 'daemon', port: 18801, dataDir: 'C:\\no\\match' }, 'win32');
+      assert.deepEqual(r, { identified: false, reason: 'ledger mismatch' });
+    });
+  });
+
+  it('identify(win32): the dataDir named on the command line identifies without a port', () => {
+    const cmd = 'python3 C:\\a\\services\\amauta-daemon.py --data C:\\t\\gsd-data\r\n';
+    withRecorder({ 'powershell.exe': powershell(cmd, '') }, (canary) => {
+      const r = canary.identify({ pid: 4242, kind: 'daemon', port: null, dataDir: 'C:\\t\\gsd-data' }, 'win32');
+      assert.equal(r.identified, true);
+    });
+  });
+
+  it('identify(win32): another process (a sleeper) is NOT identified, whatever its ports', () => {
+    withRecorder({ 'powershell.exe': powershell('node.exe -e setTimeout(()=>{},60000)\r\n', '18801\r\n') }, (canary) => {
+      const r = canary.identify({ pid: 4242, kind: 'daemon', port: 18801, dataDir: null }, 'win32');
+      assert.deepEqual(r, { identified: false, reason: 'not an amauta daemon/rlm process' });
+    });
+  });
+
+  it('identify(win32): PowerShell unavailable -> unidentified; there is no fallback to a name pattern', () => {
+    withRecorder({ 'powershell.exe': Object.assign(new Error('spawn powershell.exe ENOENT'), { code: 'ENOENT' }) }, (canary, calls) => {
+      const r = canary.identify({ pid: 4242, kind: 'daemon', port: 18801, dataDir: null }, 'win32');
+      assert.deepEqual(r, { identified: false, reason: 'not an amauta daemon/rlm process' });
+      assert.ok(calls.length >= 1 && calls.every((c) => c.file === 'powershell.exe'),
+        'no tasklist/wmic/pgrep-style fallback is attempted');
+    });
+  });
+
+  it('identify(darwin) still asks ps and lsof, never PowerShell', () => {
+    withRecorder({ ps: 'python3 services/amauta-daemon.py\n', lsof: 'p4242\nn127.0.0.1:18801\n' }, (canary, calls) => {
+      const r = canary.identify({ pid: 4242, kind: 'daemon', port: 18801, dataDir: null }, 'darwin');
+      assert.equal(r.identified, true);
+      assert.deepEqual(calls.map((c) => c.file), ['ps', 'lsof']);
+    });
+  });
+
+  it('a protected pid (this process) is never identified, on either platform', () => {
+    withRecorder({}, (canary, calls) => {
+      for (const platform of ['win32', 'darwin']) {
+        const r = canary.identify({ pid: process.pid, kind: 'daemon', port: 18801, dataDir: null }, platform);
+        assert.deepEqual(r, { identified: false, reason: 'protected pid' });
+      }
+      assert.deepEqual(calls, [], 'a protected pid is refused before any process is queried');
     });
   });
 });

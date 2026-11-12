@@ -192,7 +192,9 @@ describe('Archive Command (TASK-01)', () => {
 
     // Verify show still finds it via archive fallback
     const out = amautaCmd(['show', 'TK-0001', '--json'], { dataDir: dir });
-    const item = JSON.parse(out.replace(/^.*?\n/, '').trim() || out);
+    // [^\n]*\n, not .*?\n: Python writes \r\n on Windows and `.` does not match \r, so the old
+    // pattern never stripped the "(found in archive)" first line there and JSON.parse saw it.
+    const item = JSON.parse(out.replace(/^[^\n]*\n/, '').trim() || out);
     // The output may have the "(found in archive)" prefix line
     assert.ok(out.includes('TK-0001'), `Should find TK-0001 in archive output: ${out}`);
   });

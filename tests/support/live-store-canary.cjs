@@ -230,12 +230,63 @@ function livenessOf(pid) {
   }
 }
 
+/** PowerShell executable (Windows branch only); override with GSD_POWERSHELL_EXE. */
+const POWERSHELL_EXE = process.env.GSD_POWERSHELL_EXE || 'powershell.exe';
+/** Budget for one PowerShell call (a cold start takes seconds on a CI runner). */
+const POWERSHELL_TIMEOUT_MS = Number(process.env.GSD_POWERSHELL_TIMEOUT_MS) || 20000;
+
 /**
- * `ps -o command= -p <pid>` through execFileSync (never a shell).
- * @param {number} pid
- * @returns {string} the command line, or '' when unavailable
+ * Refuse a pid that is not a positive integer. On the Windows branch the pid is placed inside a
+ * PowerShell `-Command` string and it reaches this module from a file on disk (the process
+ * ledger), so it is untrusted input: it is checked BEFORE the command string is built.
+ *
+ * @param {unknown} pid
+ * @returns {number} the pid, as a validated positive integer
+ * @throws {TypeError} the pid is not a positive integer
  */
-function commandOf(pid) {
+function assertPid(pid) {
+  if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0) {
+    throw new TypeError('live-store-canary: pid must be a positive integer, got ' + JSON.stringify(pid));
+  }
+  return pid;
+}
+
+/**
+ * Run one PowerShell command (never a shell string: execFileSync with an argv).
+ * Windows branch only. Returns null when PowerShell is unavailable or the call fails, so the
+ * caller treats the process as UNIDENTIFIED; there is deliberately no fallback to matching a
+ * process name (88-12: processes are identified by command line and ledger, never by pattern).
+ *
+ * @param {string} script PowerShell source (already built from validated values)
+ * @returns {string|null} trimmed stdout, or null when unavailable
+ */
+function runPowerShell(script) {
+  try {
+    return execFileSync(POWERSHELL_EXE, ['-NoProfile', '-NonInteractive', '-Command', script], {
+      encoding: 'utf8',
+      timeout: POWERSHELL_TIMEOUT_MS,
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch (_e) {
+    return null;
+  }
+}
+
+/**
+ * The command line of a process. POSIX: `ps -o command= -p <pid>`. Windows: the `CommandLine`
+ * of `Get-CimInstance Win32_Process` for that pid. Always through execFileSync (never a shell).
+ *
+ * @param {number} pid
+ * @param {string} [platform=process.platform] injectable so both branches can be tested anywhere
+ * @returns {string} the command line, or '' when unavailable
+ * @throws {TypeError} (Windows branch) the pid is not a positive integer
+ */
+function commandOf(pid, platform = process.platform) {
+  if (platform === 'win32') {
+    const id = assertPid(pid);
+    return runPowerShell('(Get-CimInstance Win32_Process -Filter \'ProcessId=' + id + '\').CommandLine') || '';
+  }
   try {
     return execFileSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8', timeout: 5000 }).trim();
   } catch (_e) {
@@ -244,11 +295,24 @@ function commandOf(pid) {
 }
 
 /**
- * TCP ports the pid is listening on (empty when lsof is missing or finds none).
+ * TCP ports the pid is listening on (empty when lsof / PowerShell is missing or finds none).
+ * POSIX: `lsof`. Windows: `Get-NetTCPConnection -OwningProcess <pid> -State Listen`.
+ *
  * @param {number} pid
+ * @param {string} [platform=process.platform] injectable so both branches can be tested anywhere
  * @returns {number[]}
+ * @throws {TypeError} (Windows branch) the pid is not a positive integer
  */
-function listeningPorts(pid) {
+function listeningPorts(pid, platform = process.platform) {
+  if (platform === 'win32') {
+    const id = assertPid(pid);
+    const out = runPowerShell(
+      'Get-NetTCPConnection -OwningProcess ' + id + ' -State Listen -ErrorAction SilentlyContinue' +
+        ' | ForEach-Object { $_.LocalPort }'
+    );
+    if (!out) return [];
+    return out.split(/\r?\n/).map((l) => l.trim()).filter((l) => /^\d+$/.test(l)).map(Number);
+  }
   try {
     const out = execFileSync('lsof', ['-nP', '-a', '-p', String(pid), '-iTCP', '-sTCP:LISTEN', '-Fn'], {
       encoding: 'utf8',
@@ -268,14 +332,19 @@ function listeningPorts(pid) {
  * the ledger's port (a recycled pid will match neither).
  *
  * @param {{pid: number, kind?: string, port?: number|null, dataDir?: string}} entry
+ * @param {string} [platform=process.platform] injectable: 'win32' identifies through PowerShell
+ *   (Get-CimInstance / Get-NetTCPConnection), anything else through `ps` and `lsof`. The contract
+ *   is the same on both: `identified` is true only when the command line really names this
+ *   harness's daemon or RLM AND the ledger's dataDir or port matches.
  * @returns {{identified: boolean, reason: string}}
+ * @throws {TypeError} (Windows branch) the pid is not a positive integer
  */
-function identify(entry) {
+function identify(entry, platform = process.platform) {
   if (isProtectedPid(entry.pid)) return { identified: false, reason: 'protected pid' };
-  const cmd = commandOf(entry.pid);
+  const cmd = commandOf(entry.pid, platform);
   if (!DAEMON_RE.test(cmd)) return { identified: false, reason: 'not an amauta daemon/rlm process' };
   const byDir = entry.dataDir && cmd.includes(entry.dataDir);
-  const byPort = entry.port && listeningPorts(entry.pid).includes(Number(entry.port));
+  const byPort = entry.port && listeningPorts(entry.pid, platform).includes(Number(entry.port));
   if (!byDir && !byPort) return { identified: false, reason: 'ledger mismatch' };
   return { identified: true, reason: 'identified' };
 }
@@ -348,6 +417,8 @@ module.exports = {
   strayProcesses,
   formatStrays,
   identify,
+  commandOf,
+  listeningPorts,
   isProtectedPid,
   _setLiveCheckoutForTest,
   _setTargetsForTest,
