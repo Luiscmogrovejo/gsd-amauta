@@ -93,7 +93,16 @@ const os = require('node:os');
 // override). The base is now the last commit of that series that touches a pinned path:
 //   f79f1eed08188b05a54e628364550858379fe586  fix(88-12): module install honours GSD_MODULE_TARGET_ROOT so the e2e never writes into the repository
 // Every assertion is kept. The full list of pinned files and commits is in 88-12-RECORD.md.
-const PHASE_53_BASE = 'f79f1eed08188b05a54e628364550858379fe586';  // HEAD captured 2026-05-14 at Phase 53 Wave 1 dispatch
+// RE-BASELINED AGAIN 2026-11-12 (plan 88-13, operator sign-off: delegated 2026-11-11). Eight pinned files changed on
+// purpose since the base above: scripts/agent-compiler.cjs, scripts/agent-md-to-yaml.cjs and scripts/skill-compiler.cjs
+// (CRLF-tolerant reads, 8a68adc), and services/amauta-mcp.py, services/agent_hydrate_cli.py,
+// services/module_validator_cli.py, services/module_lifecycle_cli.py and services/party_session_cli.py (UTF-8 stdio at the
+// entry point, 089b879; amauta-mcp.py also got encoding="utf-8" on its open(), 9cd9dd4). The compilers' output did not
+// change by one byte: agents/ is unmodified. The base is now the last commit of that series that touches a pinned path:
+//   9cd9dd46507b240b37f57588cbe7d568be21abcd  fix(88-13): every product open(), read_text and write_text names encoding="utf-8"
+// Every assertion is kept. This PR must be merged with a merge commit (never squash, never rebase-merge) or this SHA
+// stops resolving on master. The full list of pinned files and commits is in 88-13-RECORD.md.
+const PHASE_53_BASE = '9cd9dd46507b240b37f57588cbe7d568be21abcd';  // HEAD captured 2026-05-14 at Phase 53 Wave 1 dispatch
 
 const ROOT = path.resolve(__dirname, '..');
 
