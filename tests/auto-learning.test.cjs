@@ -17,6 +17,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const { pyLiteral } = require('./support/py-embed.cjs');
 
 const AMAUTA_PY = path.join(__dirname, '..', 'amauta.py');
 
@@ -49,7 +50,7 @@ describe('_extract_failed_gate() — gate extraction from notes', () => {
 
   function extractGate(notes) {
     const result = execFileSync('python3', ['-c', `
-import sys; sys.path.insert(0, '${path.join(__dirname, '..')}')
+import sys; sys.path.insert(0, ${pyLiteral(path.join(__dirname, '..'))})
 from amauta import _extract_failed_gate
 print(_extract_failed_gate(${JSON.stringify(notes)}))
 `], { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 5000 });
@@ -122,7 +123,7 @@ describe('_calc_duration_minutes() — duration calculation', () => {
 
   function calcDuration(claimedAt) {
     const result = execFileSync('python3', ['-c', `
-import sys; sys.path.insert(0, '${path.join(__dirname, '..')}')
+import sys; sys.path.insert(0, ${pyLiteral(path.join(__dirname, '..'))})
 from amauta import _calc_duration_minutes
 print(_calc_duration_minutes(${JSON.stringify(claimedAt)}))
 `], { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 5000 });
@@ -135,7 +136,7 @@ print(_calc_duration_minutes(${JSON.stringify(claimedAt)}))
 
   test('returns None for null claimed_at', () => {
     const result = execFileSync('python3', ['-c', `
-import sys; sys.path.insert(0, '${path.join(__dirname, '..')}')
+import sys; sys.path.insert(0, ${pyLiteral(path.join(__dirname, '..'))})
 from amauta import _calc_duration_minutes
 print(_calc_duration_minutes({"claimed_at": None}))
 `], { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 5000 });

@@ -17,24 +17,30 @@ const net = require('net');
 const os = require('os');
 const path = require('path');
 const { spawnSync, execFileSync } = require('child_process');
+const { homeEnv } = require('./support/home-env.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const BIN_INIT = path.join(ROOT, 'bin', 'init.cjs');
 const { shouldStartDaemon } = require(BIN_INIT);
 
-const HOME = '/home/operator';
+// The decision table is a pure function: it never touches these paths, so they only have to be
+// absolute, distinct and valid for the platform running the test (a hard-coded POSIX path is
+// not an absolute path on Windows). Nothing is created on disk.
+const HOME = path.join(path.dirname(os.homedir()), 'gsd-gate-operator-no-such-home');
+const THROWAWAY = path.join(os.tmpdir(), 'gsd-gate-throwaway');
+const ELSEWHERE = path.join(os.tmpdir(), 'gsd-gate-elsewhere');
 
 describe('88-12 shouldStartDaemon decision table', () => {
   const cases = [
     ['--skip-daemon', { env: {}, homedir: HOME, passwdHome: HOME, flags: { skipDaemon: true } }, false, 'skip_daemon_flag'],
     ['--skip-daemon beats --start-daemon', { env: {}, homedir: HOME, passwdHome: HOME, flags: { skipDaemon: true, startDaemon: true } }, false, 'skip_daemon_flag'],
-    ['--start-daemon in test mode', { env: { GSD_TEST_MODE: '1' }, homedir: '/tmp/x', passwdHome: HOME, flags: { startDaemon: true } }, true, 'forced_by_flag'],
+    ['--start-daemon in test mode', { env: { GSD_TEST_MODE: '1' }, homedir: THROWAWAY, passwdHome: HOME, flags: { startDaemon: true } }, true, 'forced_by_flag'],
     ['test mode', { env: { GSD_TEST_MODE: '1' }, homedir: HOME, passwdHome: HOME, flags: {} }, false, 'test_mode'],
-    ['foreign HOME', { env: {}, homedir: '/tmp/throwaway', passwdHome: HOME, flags: {} }, false, 'foreign_home'],
-    ['foreign CLAUDE_CONFIG_DIR', { env: { CLAUDE_CONFIG_DIR: '/tmp/elsewhere/.claude' }, homedir: HOME, passwdHome: HOME, flags: {} }, false, 'foreign_config_dir'],
-    ['a sibling dir that merely shares a prefix', { env: { CLAUDE_CONFIG_DIR: HOME + '-other/.claude' }, homedir: HOME, passwdHome: HOME, flags: {} }, false, 'foreign_config_dir'],
+    ['foreign HOME', { env: {}, homedir: THROWAWAY, passwdHome: HOME, flags: {} }, false, 'foreign_home'],
+    ['foreign CLAUDE_CONFIG_DIR', { env: { CLAUDE_CONFIG_DIR: path.join(ELSEWHERE, '.claude') }, homedir: HOME, passwdHome: HOME, flags: {} }, false, 'foreign_config_dir'],
+    ['a sibling dir that merely shares a prefix', { env: { CLAUDE_CONFIG_DIR: path.join(HOME + '-other', '.claude') }, homedir: HOME, passwdHome: HOME, flags: {} }, false, 'foreign_config_dir'],
     ['the operator, no config dir', { env: {}, homedir: HOME, passwdHome: HOME, flags: {} }, true, 'operator_home'],
-    ['the operator, config dir under HOME', { env: { CLAUDE_CONFIG_DIR: HOME + '/.claude' }, homedir: HOME, passwdHome: HOME, flags: {} }, true, 'operator_home'],
+    ['the operator, config dir under HOME', { env: { CLAUDE_CONFIG_DIR: path.join(HOME, '.claude') }, homedir: HOME, passwdHome: HOME, flags: {} }, true, 'operator_home'],
     ['GSD_TEST_MODE=behavioral is not test mode', { env: { GSD_TEST_MODE: 'behavioral' }, homedir: HOME, passwdHome: HOME, flags: {} }, true, 'operator_home'],
   ];
   for (const [name, ctx, start, reason] of cases) {
@@ -108,8 +114,10 @@ function listening(port) {
 function runInit(extraArgs, envOverrides, port, home) {
   const env = { ...process.env, ...envOverrides };
   delete env.NODE_TEST_CONTEXT;
-  Object.assign(env, {
-    HOME: home,
+  // homeEnv sets HOME, USERPROFILE, HOMEDRIVE and HOMEPATH: on Windows os.homedir() follows
+  // USERPROFILE, so HOME alone left the gate seeing the real profile (and reporting
+  // foreign_config_dir instead of foreign_home). os.userInfo().homedir ignores all of them.
+  Object.assign(env, homeEnv(home), {
     CLAUDE_CONFIG_DIR: path.join(home, '.claude'),
     AMAUTA_DATA_DIR: path.join(home, 'data'),
     GSD_AMAUTA_PORT: String(port),

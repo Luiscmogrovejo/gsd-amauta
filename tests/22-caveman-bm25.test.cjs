@@ -21,7 +21,8 @@ const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { execSync } = require('node:child_process');
+const { execFileSync } = require('node:child_process');
+const { pyArgs } = require('./support/py-embed.cjs');
 
 // ---------------------------------------------------------------------------
 // Corpus files
@@ -335,14 +336,22 @@ function getOriginalDescription(relPath) {
 
 /**
  * Compressed description: output of generate_caveman_description(path).
- * Calls Python via child_process.execSync — inline caveman output.
+ * Calls Python via child_process.execFileSync — inline caveman output.
  */
 function getCavemanDescription(relPath) {
   try {
     const absPath = path.join(PROJECT_ROOT, relPath);
-    const safeAbsPath = absPath.replace(/'/g, "\\'");
-    const cmd = `python3 -c "import sys; sys.path.insert(0, '${PROJECT_ROOT}'); from services.caveman_descriptions import generate_caveman_description; print(generate_caveman_description('${safeAbsPath}'))"`;
-    return execSync(cmd, { encoding: 'utf8', timeout: 15000 }).trim();
+    // Both paths travel in argv (sys.argv[1], sys.argv[2]), not in the Python source or a shell
+    // string: a raw '${PROJECT_ROOT}' becomes D:<BEL>... on Windows and cmd.exe quoting differs.
+    const code = 'import sys; sys.path.insert(0, sys.argv[1]); '
+      + 'from services.caveman_descriptions import generate_caveman_description; '
+      + 'print(generate_caveman_description(sys.argv[2]))';
+    return execFileSync('python3', pyArgs(code, [PROJECT_ROOT, absPath]), {
+      encoding: 'utf8',
+      timeout: 15000,
+      // Windows pipes default to the ANSI code page; the product text is UTF-8.
+      env: { ...process.env, PYTHONUTF8: '1' },
+    }).trim();
   } catch (e) {
     return '';
   }

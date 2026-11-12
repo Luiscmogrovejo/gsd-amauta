@@ -28,6 +28,7 @@ const BIN_INIT = path.join(ROOT, 'bin', 'init.cjs');
 
 // Import migrateLegacyCommands for direct test in test 6
 const { migrateLegacyCommands } = require(BIN_INIT);
+const { homeEnv } = require('./support/home-env.cjs');
 
 // Track tmpDirs for cleanup
 const tmpDirs = [];
@@ -62,7 +63,7 @@ function runInit(extraArgs, cwdOverride) {
     [BIN_INIT, ...extraArgs, '--json', '--skip-daemon', '--skip-install', '--backend', 'sqlite'],
     {
       cwd,
-      env: { ...process.env, HOME: cwd, AMAUTA_DATA_DIR: cwd },
+      env: { ...process.env, ...homeEnv(cwd), AMAUTA_DATA_DIR: cwd },
       encoding: 'utf-8',
       timeout: 30000,
     }
@@ -138,7 +139,7 @@ test('--opencode + --tools together emits stderr alias note', () => {
       [BIN_INIT, '--opencode', '--tools', 'claude-code', '--json', '--skip-daemon', '--skip-install', '--backend', 'sqlite'],
       {
         cwd,
-        env: { ...process.env, HOME: cwd, AMAUTA_DATA_DIR: cwd },
+        env: { ...process.env, ...homeEnv(cwd), AMAUTA_DATA_DIR: cwd },
         encoding: 'utf-8',
         timeout: 30000,
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -197,7 +198,7 @@ test('--help exits 0 and documents all 3 new flags', () => {
     [BIN_INIT, '--help'],
     {
       cwd,
-      env: { ...process.env, HOME: cwd },
+      env: { ...process.env, ...homeEnv(cwd) },
       encoding: 'utf-8',
       timeout: 10000,
     }

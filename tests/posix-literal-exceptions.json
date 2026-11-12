@@ -1,0 +1,373 @@
+[
+  {
+    "rule": "POSIX_HOME_ONLY",
+    "file": "tests/88-01-runner-env.test.cjs",
+    "count": 1,
+    "reason": "HOME: /Users/x is UNIT INPUT to buildHermeticEnv, asserting what the runner does with it, not a spawn environment; converting it with homeEnv would change what the test is about (task 88-14-04 verdict). Permanent.",
+    "owner_plan": "none"
+  },
+  {
+    "rule": "POSIX_HOME_ONLY",
+    "file": "tests/test_88_research_chain_hermetic.py",
+    "count": 2,
+    "reason": "Python test file: sets HOME without USERPROFILE in a Python test (Windows expanduser reads USERPROFILE). Plan 88-18 owns tests/*.py portability and deletes this entry.",
+    "owner_plan": "88-18"
+  },
+  {
+    "rule": "POSIX_HOME_ONLY",
+    "file": "tests/test_88_tool_absence.py",
+    "count": 1,
+    "reason": "Python test file: sets HOME without USERPROFILE in a Python test (Windows expanduser reads USERPROFILE). Plan 88-18 owns tests/*.py portability and deletes this entry.",
+    "owner_plan": "88-18"
+  },
+  {
+    "rule": "POSIX_HOME_ONLY",
+    "file": "tests/test_doctor.py",
+    "count": 4,
+    "reason": "Python test file: sets HOME without USERPROFILE in a Python test (Windows expanduser reads USERPROFILE). Plan 88-18 owns tests/*.py portability and deletes this entry.",
+    "owner_plan": "88-18"
+  },
+  {
+    "rule": "POSIX_HOME_ONLY",
+    "file": "tests/test_doctor_truth.py",
+    "count": 1,
+    "reason": "Python test file: sets HOME without USERPROFILE in a Python test (Windows expanduser reads USERPROFILE). Plan 88-18 owns tests/*.py portability and deletes this entry.",
+    "owner_plan": "88-18"
+  },
+  {
+    "rule": "POSIX_PS",
+    "file": "tests/88-12-init-daemon-gate.test.cjs",
+    "count": 1,
+    "reason": "stopListeners() is a belt-and-braces cleanup that asks lsof which pid listens on a port the test chose; where lsof is absent (Windows) it returns without signalling anything, by design, and the gate under test never starts a daemon there. Permanent unless the port->pid lookup moves into a shared helper.",
+    "owner_plan": "none"
+  },
+  {
+    "rule": "POSIX_PS",
+    "file": "tests/88-14-support-helpers.test.cjs",
+    "count": 2,
+    "reason": "Asserts that the POSIX argv of live-store-canary (ps -o command= -p, lsof -nP ...) is byte-for-byte the pre-change one; the strings are the expected values. Permanent.",
+    "owner_plan": "none"
+  },
+  {
+    "rule": "POSIX_PS",
+    "file": "tests/support/live-store-canary.cjs",
+    "count": 2,
+    "reason": "The deliberately preserved POSIX branch of identify(): execFileSync ps and lsof, pinned byte-for-byte by task 88-14-06 (the Windows branch uses Get-CimInstance and Get-NetTCPConnection beside it). Permanent.",
+    "owner_plan": "none"
+  },
+  {
+    "rule": "POSIX_PY3_LITERAL",
+    "file": "tests/14-plan-to-tasks.test.cjs",
+    "count": 2,
+    "reason": "Spawns the literal name python3, which does not resolve on Windows. Plan 88-15 task 88-15-05 adds get-shit-done/bin/lib/platform.cjs (pythonBin / GSD_PYTHON); this test then uses it and the entry is deleted.",
+    "owner_plan": "88-15"
+  },
+  {
+    "rule": "POSIX_PY3_LITERAL",
+    "file": "tests/17-01-archive-toctou.test.cjs",
+    "count": 2,
+    "reason": "Spawns the literal name python3, which does not resolve on Windows. Plan 88-15 task 88-15-05 adds get-shit-done/bin/lib/platform.cjs (pythonBin / GSD_PYTHON); this test then uses it and the entry is deleted.",
+    "owner_plan": "88-15"
+  },
+  {
+    "rule": "POSIX_PY3_LITERAL",
+    "file": "tests/17-02-daemon-threads.test.cjs",
+    "count": 1,
+    "reason": "Spawns the literal name python3, which does not resolve on Windows. Plan 88-15 task 88-15-05 adds get-shit-done/bin/lib/platform.cjs (pythonBin / GSD_PYTHON); this test then uses it and the entry is deleted.",
+    "owner_plan": "88-15"
+  },
+  {
+    "rule": "POSIX_PY3_LITERAL",
+    "file": "tests/17-03-field-sync.test.cjs",
+    "count": 1,
+    "reason": "Spawns the literal name python3, which does not resolve on Windows. Plan 88-15 task 88-15-05 adds get-shit-done/bin/lib/platform.cjs (pythonBin / GSD_PYTHON); this test then uses it and the entry is deleted.",
+    "owner_plan": "88-15"
+  },
+  {
+    "rule": "POSIX_PY3_LITERAL",
+    "file": "tests/19-01-token-efficiency.test.cjs",
+    "count": 6,
+    "reason": "Spawns the literal name python3, which does not resolve on Windows. Plan 88-15 task 88-15-05 adds get-shit-done/bin/lib/platform.cjs (pythonBin / GSD_PYTHON); this test then uses it and the entry is deleted.",
+    "owner_plan": "88-15"
+  },
+  {
+    "rule": "POSIX_PY3_LITERAL",
+    "file": "tests/22-caveman-bm25.test.cjs",
+    "count": 1,
+    "reason": "Spawns the literal name python3, which does not resolve on Windows. Plan 88-15 task 88-15-05 adds get-shit-done/bin/lib/platform.cjs (pythonBin / GSD_PYTHON); this test then uses it and the entry is deleted.",
+    "owner_plan": "88-15"
+  },
+  {
+    "rule": "POSIX_PY3_LITERAL",
+    "file": "tests/23-cache-metrics.test.cjs",
+    "count": 1,
+    "reason": "Spawns the literal name python3, which does not resolve on Windows. Plan 88-15 task 88-15-05 adds get-shit-done/bin/lib/platform.cjs (pythonBin / GSD_PYTHON); this test then uses it and the entry is deleted.",
+    "owner_plan": "88-15"
+  },
+  {
+    "rule": "POSIX_PY3_LITERAL",
+    "file": "tests/25-01-infra-quick-wins.test.cjs",
+    "count": 1,
+    "reason": "Spawns the literal name python3, which does not resolve on Windows. Plan 88-15 task 88-15-05 adds get-shit-done/bin/lib/platform.cjs (pythonBin / GSD_PYTHON); this test then uses it and the entry is deleted.",
+    "owner_plan": "88-15"
+  },
+  {
+    "rule": "POSIX_PY3_LITERAL",
+    "file": "tests/77-01-savings-analytics.test.cjs",
+    "count": 1,
+    "reason": "Spawns the literal name python3, which does not resolve on Windows. Plan 88-15 task 88-15-05 adds get-shit-done/bin/lib/platform.cjs (pythonBin / GSD_PYTHON); this test then uses it and the entry is deleted.",
+    "owner_plan": "88-15"
+  },
+  {
+    "rule": "POSIX_PY3_LITERAL",
+    "file": "tests/84-01-project-scoping.test.cjs",
+    "count": 2,
+    "reason": "Spawns the literal name python3, which does not resolve on Windows. Plan 88-15 task 88-15-05 adds get-shit-done/bin/lib/platform.cjs (pythonBin / GSD_PYTHON); this test then uses it and the entry is deleted.",
+    "owner_plan": "88-15"
+  },
+  {
+    "rule": "POSIX_PY3_LITERAL",
+    "file": "tests/88-14-support-helpers.test.cjs",
+    "count": 1,
+    "reason": "Spawns the literal name python3, which does not resolve on Windows. Plan 88-15 task 88-15-05 adds get-shit-done/bin/lib/platform.cjs (pythonBin / GSD_PYTHON); this test then uses it and the entry is deleted.",
+    "owner_plan": "88-15"
+  },
+  {
+    "rule": "POSIX_PY3_LITERAL",
+    "file": "tests/auto-learning.test.cjs",
+    "count": 4,
+    "reason": "Spawns the literal name python3, which does not resolve on Windows. Plan 88-15 task 88-15-05 adds get-shit-done/bin/lib/platform.cjs (pythonBin / GSD_PYTHON); this test then uses it and the entry is deleted.",
+    "owner_plan": "88-15"
+  },
+  {
+    "rule": "POSIX_PY3_LITERAL",
+    "file": "tests/complex-integration.test.cjs",
+    "count": 2,
+    "reason": "Spawns the literal name python3, which does not resolve on Windows. Plan 88-15 task 88-15-05 adds get-shit-done/bin/lib/platform.cjs (pythonBin / GSD_PYTHON); this test then uses it and the entry is deleted.",
+    "owner_plan": "88-15"
+  },
+  {
+    "rule": "POSIX_PY3_LITERAL",
+    "file": "tests/complexity-scorer.test.cjs",
+    "count": 2,
+    "reason": "Spawns the literal name python3, which does not resolve on Windows. Plan 88-15 task 88-15-05 adds get-shit-done/bin/lib/platform.cjs (pythonBin / GSD_PYTHON); this test then uses it and the entry is deleted.",
+    "owner_plan": "88-15"
+  },
+  {
+    "rule": "POSIX_PY3_LITERAL",
+    "file": "tests/comprehensive-e2e.test.cjs",
+    "count": 1,
+    "reason": "Spawns the literal name python3, which does not resolve on Windows. Plan 88-15 task 88-15-05 adds get-shit-done/bin/lib/platform.cjs (pythonBin / GSD_PYTHON); this test then uses it and the entry is deleted.",
+    "owner_plan": "88-15"
+  },
+  {
+    "rule": "POSIX_PY3_LITERAL",
+    "file": "tests/deep-python-coverage.test.cjs",
+    "count": 2,
+    "reason": "Spawns the literal name python3, which does not resolve on Windows. Plan 88-15 task 88-15-05 adds get-shit-done/bin/lib/platform.cjs (pythonBin / GSD_PYTHON); this test then uses it and the entry is deleted.",
+    "owner_plan": "88-15"
+  },
+  {
+    "rule": "POSIX_PY3_LITERAL",
+    "file": "tests/e2e-advanced.test.cjs",
+    "count": 1,
+    "reason": "Spawns the literal name python3, which does not resolve on Windows. Plan 88-15 task 88-15-05 adds get-shit-done/bin/lib/platform.cjs (pythonBin / GSD_PYTHON); this test then uses it and the entry is deleted.",
+    "owner_plan": "88-15"
+  },
+  {
+    "rule": "POSIX_PY3_LITERAL",
+    "file": "tests/escalation-triggers.test.cjs",
+    "count": 2,
+    "reason": "Spawns the literal name python3, which does not resolve on Windows. Plan 88-15 task 88-15-05 adds get-shit-done/bin/lib/platform.cjs (pythonBin / GSD_PYTHON); this test then uses it and the entry is deleted.",
+    "owner_plan": "88-15"
+  },
+  {
+    "rule": "POSIX_PY3_LITERAL",
+    "file": "tests/migration-017.test.cjs",
+    "count": 1,
+    "reason": "Spawns the literal name python3, which does not resolve on Windows. Plan 88-15 task 88-15-05 adds get-shit-done/bin/lib/platform.cjs (pythonBin / GSD_PYTHON); this test then uses it and the entry is deleted.",
+    "owner_plan": "88-15"
+  },
+  {
+    "rule": "POSIX_PY3_LITERAL",
+    "file": "tests/module-lifecycle-cli.test.cjs",
+    "count": 1,
+    "reason": "Spawns the literal name python3, which does not resolve on Windows. Plan 88-15 task 88-15-05 adds get-shit-done/bin/lib/platform.cjs (pythonBin / GSD_PYTHON); this test then uses it and the entry is deleted.",
+    "owner_plan": "88-15"
+  },
+  {
+    "rule": "POSIX_PY3_LITERAL",
+    "file": "tests/module-lifecycle-e2e.test.cjs",
+    "count": 1,
+    "reason": "Spawns the literal name python3, which does not resolve on Windows. Plan 88-15 task 88-15-05 adds get-shit-done/bin/lib/platform.cjs (pythonBin / GSD_PYTHON); this test then uses it and the entry is deleted.",
+    "owner_plan": "88-15"
+  },
+  {
+    "rule": "POSIX_PY3_LITERAL",
+    "file": "tests/oidc-daemon.test.cjs",
+    "count": 1,
+    "reason": "Spawns the literal name python3, which does not resolve on Windows. Plan 88-15 task 88-15-05 adds get-shit-done/bin/lib/platform.cjs (pythonBin / GSD_PYTHON); this test then uses it and the entry is deleted.",
+    "owner_plan": "88-15"
+  },
+  {
+    "rule": "POSIX_PY3_LITERAL",
+    "file": "tests/party-decisions-canary.test.cjs",
+    "count": 1,
+    "reason": "Spawns the literal name python3, which does not resolve on Windows. Plan 88-15 task 88-15-05 adds get-shit-done/bin/lib/platform.cjs (pythonBin / GSD_PYTHON); this test then uses it and the entry is deleted.",
+    "owner_plan": "88-15"
+  },
+  {
+    "rule": "POSIX_PY3_LITERAL",
+    "file": "tests/party-decisions-cli.test.cjs",
+    "count": 1,
+    "reason": "Spawns the literal name python3, which does not resolve on Windows. Plan 88-15 task 88-15-05 adds get-shit-done/bin/lib/platform.cjs (pythonBin / GSD_PYTHON); this test then uses it and the entry is deleted.",
+    "owner_plan": "88-15"
+  },
+  {
+    "rule": "POSIX_PY3_LITERAL",
+    "file": "tests/party-decisions-e2e.test.cjs",
+    "count": 1,
+    "reason": "Spawns the literal name python3, which does not resolve on Windows. Plan 88-15 task 88-15-05 adds get-shit-done/bin/lib/platform.cjs (pythonBin / GSD_PYTHON); this test then uses it and the entry is deleted.",
+    "owner_plan": "88-15"
+  },
+  {
+    "rule": "POSIX_PY3_LITERAL",
+    "file": "tests/party-e2e.test.cjs",
+    "count": 1,
+    "reason": "Spawns the literal name python3, which does not resolve on Windows. Plan 88-15 task 88-15-05 adds get-shit-done/bin/lib/platform.cjs (pythonBin / GSD_PYTHON); this test then uses it and the entry is deleted.",
+    "owner_plan": "88-15"
+  },
+  {
+    "rule": "POSIX_PY3_LITERAL",
+    "file": "tests/pipeline-offline.test.cjs",
+    "count": 1,
+    "reason": "Spawns the literal name python3, which does not resolve on Windows. Plan 88-15 task 88-15-05 adds get-shit-done/bin/lib/platform.cjs (pythonBin / GSD_PYTHON); this test then uses it and the entry is deleted.",
+    "owner_plan": "88-15"
+  },
+  {
+    "rule": "POSIX_PY3_LITERAL",
+    "file": "tests/python-units.test.cjs",
+    "count": 1,
+    "reason": "Spawns the literal name python3, which does not resolve on Windows. Plan 88-15 task 88-15-05 adds get-shit-done/bin/lib/platform.cjs (pythonBin / GSD_PYTHON); this test then uses it and the entry is deleted.",
+    "owner_plan": "88-15"
+  },
+  {
+    "rule": "POSIX_PY3_LITERAL",
+    "file": "tests/sharded-workflow-integration.test.cjs",
+    "count": 1,
+    "reason": "Spawns the literal name python3, which does not resolve on Windows. Plan 88-15 task 88-15-05 adds get-shit-done/bin/lib/platform.cjs (pythonBin / GSD_PYTHON); this test then uses it and the entry is deleted.",
+    "owner_plan": "88-15"
+  },
+  {
+    "rule": "POSIX_PY3_LITERAL",
+    "file": "tests/step-orchestrator.test.cjs",
+    "count": 1,
+    "reason": "Spawns the literal name python3, which does not resolve on Windows. Plan 88-15 task 88-15-05 adds get-shit-done/bin/lib/platform.cjs (pythonBin / GSD_PYTHON); this test then uses it and the entry is deleted.",
+    "owner_plan": "88-15"
+  },
+  {
+    "rule": "POSIX_PY3_LITERAL",
+    "file": "tests/task-completions-learning.test.cjs",
+    "count": 3,
+    "reason": "Spawns the literal name python3, which does not resolve on Windows. Plan 88-15 task 88-15-05 adds get-shit-done/bin/lib/platform.cjs (pythonBin / GSD_PYTHON); this test then uses it and the entry is deleted.",
+    "owner_plan": "88-15"
+  },
+  {
+    "rule": "POSIX_PY3_LITERAL",
+    "file": "tests/task-lifecycle.test.cjs",
+    "count": 1,
+    "reason": "Spawns the literal name python3, which does not resolve on Windows. Plan 88-15 task 88-15-05 adds get-shit-done/bin/lib/platform.cjs (pythonBin / GSD_PYTHON); this test then uses it and the entry is deleted.",
+    "owner_plan": "88-15"
+  },
+  {
+    "rule": "POSIX_PY3_LITERAL",
+    "file": "tests/test-init-flow.test.cjs",
+    "count": 2,
+    "reason": "Spawns the literal name python3, which does not resolve on Windows. Plan 88-15 task 88-15-05 adds get-shit-done/bin/lib/platform.cjs (pythonBin / GSD_PYTHON); this test then uses it and the entry is deleted.",
+    "owner_plan": "88-15"
+  },
+  {
+    "rule": "POSIX_PY3_LITERAL",
+    "file": "tests/tk-2313-criteria-json-array.test.cjs",
+    "count": 2,
+    "reason": "Spawns the literal name python3, which does not resolve on Windows. Plan 88-15 task 88-15-05 adds get-shit-done/bin/lib/platform.cjs (pythonBin / GSD_PYTHON); this test then uses it and the entry is deleted.",
+    "owner_plan": "88-15"
+  },
+  {
+    "rule": "POSIX_SHEBANG_FAKE",
+    "file": "tests/88-14-support-helpers.test.cjs",
+    "count": 2,
+    "reason": "Asserts the exact bytes writeFakeExe produces (#! line plus chmod 0o755) and that no chmod happens for win32; the strings are the expected values. Permanent.",
+    "owner_plan": "none"
+  },
+  {
+    "rule": "POSIX_SHEBANG_FAKE",
+    "file": "tests/support/fake-exe.cjs",
+    "count": 2,
+    "reason": "This is the helper itself: it writes the #! file and chmods it 0o755 on POSIX only, and a .cmd shim on Windows. Permanent.",
+    "owner_plan": "none"
+  },
+  {
+    "rule": "POSIX_SHEBANG_FAKE",
+    "file": "tests/test_88_tool_absence.py",
+    "count": 1,
+    "reason": "Python test file: writes a #! fake executable with a chmod in a Python test (a .cmd shim is needed on Windows). Plan 88-18 owns tests/*.py portability and deletes this entry.",
+    "owner_plan": "88-18"
+  },
+  {
+    "rule": "POSIX_SHEBANG_FAKE",
+    "file": "tests/test_doctor.py",
+    "count": 2,
+    "reason": "Python test file: writes a #! fake executable with a chmod in a Python test (a .cmd shim is needed on Windows). Plan 88-18 owns tests/*.py portability and deletes this entry.",
+    "owner_plan": "88-18"
+  },
+  {
+    "rule": "POSIX_SHEBANG_FAKE",
+    "file": "tests/test_doctor_truth.py",
+    "count": 1,
+    "reason": "Python test file: writes a #! fake executable with a chmod in a Python test (a .cmd shim is needed on Windows). Plan 88-18 owns tests/*.py portability and deletes this entry.",
+    "owner_plan": "88-18"
+  },
+  {
+    "rule": "POSIX_TMP",
+    "file": "tests/test_audit_cli.py",
+    "count": 2,
+    "reason": "Python test file: a literal /tmp path in a Python test (use pytest tmp_path). Plan 88-18 owns tests/*.py portability and deletes this entry.",
+    "owner_plan": "88-18"
+  },
+  {
+    "rule": "POSIX_TMP",
+    "file": "tests/test_rlm_wiring.py",
+    "count": 4,
+    "reason": "Python test file: a literal /tmp path in a Python test (use pytest tmp_path). Plan 88-18 owns tests/*.py portability and deletes this entry.",
+    "owner_plan": "88-18"
+  },
+  {
+    "rule": "POSIX_TMP",
+    "file": "tests/test_semantic_cache_integration.py",
+    "count": 4,
+    "reason": "Python test file: a literal /tmp path in a Python test (use pytest tmp_path). Plan 88-18 owns tests/*.py portability and deletes this entry.",
+    "owner_plan": "88-18"
+  },
+  {
+    "rule": "POSIX_WHICH",
+    "file": "tests/34-security-pipeline.integration.test.cjs",
+    "count": 2,
+    "reason": "Spawns or asserts the POSIX `which`. Needs the PATHEXT-aware which of get-shit-done/bin/lib/platform.cjs (plan 88-15), after which this entry is deleted.",
+    "owner_plan": "88-15"
+  },
+  {
+    "rule": "POSIX_WHICH",
+    "file": "tests/test_distill_llm.cjs",
+    "count": 2,
+    "reason": "Spawns or asserts the POSIX `which`. Needs the PATHEXT-aware which of get-shit-done/bin/lib/platform.cjs (plan 88-15), after which this entry is deleted.",
+    "owner_plan": "88-15"
+  },
+  {
+    "rule": "POSIX_WHICH",
+    "file": "tests/workflow-hydration-hook.test.cjs",
+    "count": 1,
+    "reason": "Spawns or asserts the POSIX `which`. Needs the PATHEXT-aware which of get-shit-done/bin/lib/platform.cjs (plan 88-15), after which this entry is deleted.",
+    "owner_plan": "88-15"
+  }
+]

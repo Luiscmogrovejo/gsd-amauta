@@ -130,7 +130,7 @@ function runStep(args, tmpRoot) {
   const env = {
     ...process.env,
     GSD_INSTALL_RECORD_BACKEND: 'sqlite',
-    HOME: tmpRoot,
+    ...homeEnv(tmpRoot),
     GSD_DATA_DIR: path.join(tmpRoot, '.amauta', 'data'),
     GSD_MODULE_TARGET_ROOT: targetRootOf(tmpRoot),
   };
@@ -165,6 +165,7 @@ function readInstallRecord(tmpRoot) {
 // "compute_manifest_hash requires PyYAML"). The GitHub macOS runner has python3 + pydantic but no PyYAML, so those
 // cases cannot pass there.
 const { test } = require('node:test');
+const { homeEnv } = require('./support/home-env.cjs');
 const pyHas = (mod) => spawnSync('python3', ['-c', `import ${mod}`], { stdio: 'ignore' }).status === 0;
 const HAVE_PYYAML = pyHas('yaml');
 const SKIP_NO_PYYAML = HAVE_PYYAML

@@ -22,6 +22,7 @@ const { execFileSync } = require('child_process');
 const path = require('node:path');
 const os = require('node:os');
 const fs = require('node:fs');
+const { homeEnv } = require('./support/home-env.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const BIN_INIT = path.join(ROOT, 'bin', 'init.cjs');
@@ -47,7 +48,7 @@ function runSmoke(extraArgs) {
   try {
     stdout = execFileSync(process.execPath, args, {
       cwd: tmpDir,
-      env: { ...process.env, HOME: tmpDir, AMAUTA_DATA_DIR: tmpDir },
+      env: { ...process.env, ...homeEnv(tmpDir), AMAUTA_DATA_DIR: tmpDir },
       encoding: 'utf-8',
       timeout: 30000,
     });

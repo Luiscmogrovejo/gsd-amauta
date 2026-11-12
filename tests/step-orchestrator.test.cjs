@@ -21,17 +21,21 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const { execSync } = require('node:child_process');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
+const { pyLiteral } = require('./support/py-embed.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const ORCHESTRATOR_PATH = path.join(ROOT, 'services', 'step-orchestrator.py');
 
-// Python bootstrap: load module via importlib (handles hyphen in filename)
+// Python bootstrap: load module via importlib (handles hyphen in filename).
+// ROOT sits inside a larger Python expression (os.path.join), so it goes through pyLiteral;
+// a raw '${ROOT}' mangles D:\a\... on Windows (\a is BEL).
 const PY_BOOTSTRAP = `
 import importlib.util, sys, os
 _spec = importlib.util.spec_from_file_location(
     'step_orchestrator',
-    os.path.join('${ROOT}', 'services', 'step-orchestrator.py')
+    os.path.join(${pyLiteral(ROOT)}, 'services', 'step-orchestrator.py')
 )
 _mod = importlib.util.module_from_spec(_spec)
 sys.modules['step_orchestrator'] = _mod
@@ -42,11 +46,13 @@ from step_orchestrator import (
 )
 `;
 
-// Helper: run a python3 script via tmp file (cwd=ROOT)
+// Helper: run a python3 script via tmp file (cwd=ROOT). The script lives in its own
+// mkdtemp directory under os.tmpdir() (never a literal /tmp, which is D:\tmp on Windows).
 function pyFile(scriptContent, options = {}) {
-  const tmpFile = `/tmp/orch-test-${Date.now()}-${Math.random().toString(36).slice(2)}.py`;
-  fs.writeFileSync(tmpFile, scriptContent);
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orch-test-'));
+  const tmpFile = path.join(tmpDir, 'script.py');
   try {
+    fs.writeFileSync(tmpFile, scriptContent);
     const result = execSync(`python3 "${tmpFile}"`, {
       encoding: 'utf8',
       cwd: ROOT,
@@ -57,7 +63,7 @@ function pyFile(scriptContent, options = {}) {
   } catch (err) {
     return { stdout: err.stdout || '', stderr: err.stderr || '', error: err.message };
   } finally {
-    try { fs.unlinkSync(tmpFile); } catch (_) { /* ignore */ }
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) { /* ignore */ }
   }
 }
 

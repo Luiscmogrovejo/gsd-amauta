@@ -18,6 +18,7 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const { execFileSync } = require('node:child_process');
 const path = require('node:path');
+const { pyLiteral } = require('./support/py-embed.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const AMAUTA_PY = path.join(ROOT, 'amauta.py');
@@ -26,7 +27,9 @@ const PG_STORE = path.join(ROOT, 'services', 'pg_store.py');
 function pyExec(code) {
   return execFileSync('python3', ['-c', code], {
     cwd: ROOT,
-    env: { ...process.env, GSD_AMAUTA_NO_AUTO_START: '1', PYTHONDONTWRITEBYTECODE: '1' },
+    // PYTHONIOENCODING: the snippets print the product's check marks (U+2713); a Windows pipe
+    // defaults to the ANSI code page (cp1252), which cannot encode them, and this side decodes UTF-8.
+    env: { ...process.env, GSD_AMAUTA_NO_AUTO_START: '1', PYTHONDONTWRITEBYTECODE: '1', PYTHONIOENCODING: 'utf-8' },
     encoding: 'utf-8',
     timeout: 10000,
   }).trim();
@@ -37,7 +40,7 @@ describe('State Machine (TASK-02)', () => {
     const out = pyExec(`
 import sys; sys.path.insert(0, '.')
 import importlib.util
-spec = importlib.util.spec_from_file_location('amauta', '${AMAUTA_PY}')
+spec = importlib.util.spec_from_file_location('amauta', ${pyLiteral(AMAUTA_PY)})
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 missing = [s for s in mod.STATUSES if s not in mod.ALLOWED_TRANSITIONS]
@@ -50,7 +53,7 @@ print('OK' if not missing else f'MISSING: {missing}')
     const out = pyExec(`
 import sys; sys.path.insert(0, '.')
 import importlib.util
-spec = importlib.util.spec_from_file_location('amauta', '${AMAUTA_PY}')
+spec = importlib.util.spec_from_file_location('amauta', ${pyLiteral(AMAUTA_PY)})
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 print('done' not in mod.ALLOWED_TRANSITIONS.get('pending', set()))
@@ -62,7 +65,7 @@ print('done' not in mod.ALLOWED_TRANSITIONS.get('pending', set()))
     const out = pyExec(`
 import sys; sys.path.insert(0, '.')
 import importlib.util
-spec = importlib.util.spec_from_file_location('amauta', '${AMAUTA_PY}')
+spec = importlib.util.spec_from_file_location('amauta', ${pyLiteral(AMAUTA_PY)})
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 for s in ['pending', 'in-progress', 'validation']:
@@ -76,7 +79,7 @@ print('OK')
     const out = pyExec(`
 import sys; sys.path.insert(0, '.')
 import importlib.util
-spec = importlib.util.spec_from_file_location('amauta', '${AMAUTA_PY}')
+spec = importlib.util.spec_from_file_location('amauta', ${pyLiteral(AMAUTA_PY)})
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 empty = [s for s, t in mod.ALLOWED_TRANSITIONS.items() if not t]
@@ -91,7 +94,7 @@ describe('Dependency Enforcement (TASK-03)', () => {
     const out = pyExec(`
 import sys; sys.path.insert(0, '.')
 import importlib.util
-spec = importlib.util.spec_from_file_location('amauta', '${AMAUTA_PY}')
+spec = importlib.util.spec_from_file_location('amauta', ${pyLiteral(AMAUTA_PY)})
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 items = [
@@ -108,7 +111,7 @@ print(mod._deps_met(items[2], items))
     const out = pyExec(`
 import sys; sys.path.insert(0, '.')
 import importlib.util
-spec = importlib.util.spec_from_file_location('amauta', '${AMAUTA_PY}')
+spec = importlib.util.spec_from_file_location('amauta', ${pyLiteral(AMAUTA_PY)})
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 items = [
@@ -125,7 +128,7 @@ print(mod._deps_met(items[2], items))
     const out = pyExec(`
 import sys; sys.path.insert(0, '.')
 import importlib.util
-spec = importlib.util.spec_from_file_location('amauta', '${AMAUTA_PY}')
+spec = importlib.util.spec_from_file_location('amauta', ${pyLiteral(AMAUTA_PY)})
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 item = {"id": "TK-0001", "dependencies": [], "status": "in-progress"}
@@ -139,7 +142,7 @@ describe('PG Retry Queue (TASK-01)', () => {
   it('pg_store.py defines enqueue_retry and flush_retry_queue', () => {
     const out = pyExec(`
 import ast
-with open('${PG_STORE}') as f:
+with open(${pyLiteral(PG_STORE)}, encoding='utf-8') as f:
     tree = ast.parse(f.read())
 names = [n.name for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
 has_enqueue = 'enqueue_retry' in names
@@ -152,7 +155,7 @@ print('OK' if has_enqueue and has_flush else f'MISSING enqueue={has_enqueue} flu
   it('sqlite_store.py has enqueue_retry and flush_retry_queue stubs', () => {
     const out = pyExec(`
 import ast
-with open('services/sqlite_store.py') as f:
+with open('services/sqlite_store.py', encoding='utf-8') as f:
     tree = ast.parse(f.read())
 names = [n.name for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
 has_enqueue = 'enqueue_retry' in names
@@ -168,7 +171,7 @@ describe('Rich Board (TASK-04)', () => {
     const out = pyExec(`
 import sys; sys.path.insert(0, '.')
 import importlib.util
-spec = importlib.util.spec_from_file_location('amauta', '${AMAUTA_PY}')
+spec = importlib.util.spec_from_file_location('amauta', ${pyLiteral(AMAUTA_PY)})
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 item = {"rpetd_phases": {"R": "researched", "P": "planned", "E": "", "T": "", "D": ""}}
@@ -190,7 +193,7 @@ print(clean)
     const out = pyExec(`
 import sys; sys.path.insert(0, '.')
 import importlib.util, re
-spec = importlib.util.spec_from_file_location('amauta', '${AMAUTA_PY}')
+spec = importlib.util.spec_from_file_location('amauta', ${pyLiteral(AMAUTA_PY)})
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 item = {"rpetd_phases": {"R": "done", "P": "done", "E": "done", "T": "done", "D": "done"}}
@@ -206,7 +209,7 @@ print(checks)
     const out = pyExec(`
 import sys; sys.path.insert(0, '.')
 import importlib.util
-spec = importlib.util.spec_from_file_location('amauta', '${AMAUTA_PY}')
+spec = importlib.util.spec_from_file_location('amauta', ${pyLiteral(AMAUTA_PY)})
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 item = {"id": "TK-0001", "dependencies": []}
@@ -219,7 +222,7 @@ print(repr(mod._dep_badge(item, [item])))
     const out = pyExec(`
 import sys; sys.path.insert(0, '.')
 import importlib.util, re
-spec = importlib.util.spec_from_file_location('amauta', '${AMAUTA_PY}')
+spec = importlib.util.spec_from_file_location('amauta', ${pyLiteral(AMAUTA_PY)})
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 items = [

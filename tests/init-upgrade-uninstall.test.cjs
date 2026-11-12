@@ -25,6 +25,7 @@ const { execFileSync } = require('child_process');
 const path = require('node:path');
 const os = require('node:os');
 const fs = require('node:fs');
+const { homeEnv } = require('./support/home-env.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const BIN_INIT = path.join(ROOT, 'bin', 'init.cjs');
@@ -95,7 +96,7 @@ function runInit(args, opts) {
   try {
     stdout = execFileSync(process.execPath, [BIN_INIT, ...args], {
       cwd,
-      env: { ...process.env, HOME: home, AMAUTA_DATA_DIR: path.join(tmpDir, 'data') },
+      env: { ...process.env, ...homeEnv(home), AMAUTA_DATA_DIR: path.join(tmpDir, 'data') },
       encoding: 'utf-8',
       timeout: 30000,
     });

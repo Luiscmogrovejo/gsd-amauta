@@ -21,6 +21,7 @@ const assert = require('node:assert/strict');
 const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
+const { pyLiteral } = require('./support/py-embed.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const DAEMON_PY = path.join(ROOT, 'services', 'amauta-daemon.py');
@@ -39,7 +40,7 @@ describe('Stale Task Watchdog (TASK-03)', () => {
   it('_stale_task_watchdog function is defined in daemon (AST check)', () => {
     const out = pyExec(`
 import ast
-with open('${DAEMON_PY}') as f:
+with open(${pyLiteral(DAEMON_PY)}, encoding='utf-8') as f:
     tree = ast.parse(f.read())
 funcs = [n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
 print('OK' if '_stale_task_watchdog' in funcs else 'MISSING')
@@ -162,7 +163,7 @@ describe('Retry Queue Flusher (TASK-04)', () => {
   it('_retry_queue_flusher function is defined in daemon (AST check)', () => {
     const out = pyExec(`
 import ast
-with open('${DAEMON_PY}') as f:
+with open(${pyLiteral(DAEMON_PY)}, encoding='utf-8') as f:
     tree = ast.parse(f.read())
 funcs = [n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
 print('OK' if '_retry_queue_flusher' in funcs else 'MISSING')
@@ -222,7 +223,7 @@ print('OK' if '_retry_queue_flusher' in funcs else 'MISSING')
   it('_Metrics class supports set_gauge method', () => {
     const out = pyExec(`
 import ast
-with open('${DAEMON_PY}') as f:
+with open(${pyLiteral(DAEMON_PY)}, encoding='utf-8') as f:
     tree = ast.parse(f.read())
 # Find _Metrics class and check for set_gauge method
 for node in ast.walk(tree):

@@ -18,6 +18,7 @@ const fs = require('fs');
 const http = require('http');
 const os = require('os');
 const path = require('path');
+const { writeFakeExe, prependPath } = require('./support/fake-exe.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const { startFixtureDaemon, stopFixtureDaemon } = require(path.join(ROOT, 'tests', 'support', 'fixture-daemon.cjs'));
@@ -66,11 +67,11 @@ describe('fixture daemon', () => {
     // A fake docker first on PATH: if the daemon probes the container runtime it leaves a marker.
     const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fake-docker-'));
     const marker = path.join(binDir, 'docker-called.txt');
-    fs.writeFileSync(path.join(binDir, 'docker'), '#!/bin/sh\necho DOCKER_WAS_CALLED > "' + marker + '"\nexit 1\n', {
-      mode: 0o755,
+    writeFakeExe(binDir, 'docker', {
+      node: `require('fs').writeFileSync(${JSON.stringify(marker)}, 'DOCKER_WAS_CALLED\\n'); process.exit(1);`,
     });
     const savedPath = process.env.PATH;
-    process.env.PATH = binDir + path.delimiter + savedPath;
+    process.env.PATH = prependPath([binDir], savedPath);
 
     let handle;
     try {

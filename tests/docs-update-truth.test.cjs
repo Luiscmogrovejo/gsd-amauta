@@ -27,6 +27,7 @@ const { spawnSync } = require('node:child_process');
 const ROOT = path.resolve(__dirname, '..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 const PKG_VERSION = require(path.join(ROOT, 'package.json')).version;
+const { homeEnv } = require('./support/home-env.cjs');
 
 // ─── update.md ───────────────────────────────────────────────────────────────
 
@@ -54,7 +55,7 @@ test('update.md still refuses the npm path', () => {
 function runHook(home, configDir) {
   return spawnSync(process.execPath, [path.join(ROOT, 'hooks', 'gsd-check-update.js')], {
     encoding: 'utf-8',
-    env: { ...process.env, HOME: home, CLAUDE_CONFIG_DIR: configDir },
+    env: { ...process.env, ...homeEnv(home), CLAUDE_CONFIG_DIR: configDir },
     timeout: 20000,
   });
 }

@@ -18,6 +18,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawnSync } = require('child_process');
+const { writeFakeExe, prependPath } = require('./support/fake-exe.cjs');
 
 const cliPath = path.resolve(__dirname, '../get-shit-done/bin/gsd-amauta.cjs');
 const { scrubEvidence, loadEvidenceScrubPatterns } = require(cliPath);
@@ -153,15 +154,19 @@ test('fail-open: corrupt patterns file degrades to unchanged passthrough, never 
 
 function makeFakePython3Dir() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fake-python3-'));
-  const scriptPath = path.join(dir, 'python3');
-  fs.writeFileSync(scriptPath, '#!/bin/sh\necho "FAKE_PYTHON3_ARGV:$@"\n');
-  fs.chmodSync(scriptPath, 0o755);
+  // Node body: the same program behind a shebang on POSIX and a .cmd shim on Windows.
+  // (On Windows the product still spawns the bare name `python3`, which a .cmd cannot shadow:
+  // these three rows are handed to plan 88-15, which makes the spawn resolve through the
+  // platform helper and GSD_PYTHON.)
+  writeFakeExe(dir, 'python3', {
+    node: "process.stdout.write('FAKE_PYTHON3_ARGV:' + process.argv.slice(2).join(' ') + '\\n');",
+  });
   return dir;
 }
 
 function directFallbackEnv(fakePythonDir) {
   return {
-    PATH: `${fakePythonDir}:${process.env.PATH}`,
+    PATH: prependPath([fakePythonDir]),
     GSD_AMAUTA_PORT: '18999', // unused port -- forces isDaemonRunning() to fail fast
     GSD_AMAUTA_NO_AUTO_START: '1',
   };
