@@ -43,6 +43,10 @@ jobs:
           - { os: windows-latest, node-version: 20, required: false }
 
     steps:
+      - name: Check out with LF line endings (88-13, research G4)
+        shell: bash
+        run: git config --global core.autocrlf false
+
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           # Full history: the party/phase canary tests run `git show <sha>`
@@ -101,6 +105,10 @@ jobs:
           - { os: macos-latest,   python-version: '3.12', required: false }
           - { os: windows-latest, python-version: '3.12', required: false }
     steps:
+      - name: Check out with LF line endings (88-13, research G4)
+        shell: bash
+        run: git config --global core.autocrlf false
+
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0

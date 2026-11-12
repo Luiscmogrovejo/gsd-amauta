@@ -1,0 +1,21 @@
+# Phase 88 plan 88-13 (88-13-14-RESEARCH.md G4): Git for Windows checks out with
+# core.autocrlf=true by default, which rewrites every tracked text file to CRLF.
+# The canary and byte-lock tests compare a `git show <sha>` blob (always LF) against the
+# working tree, and the agent/skill compilers split on '\n'. Pin the working tree to LF.
+# NO `git add --renormalize` was run: every tracked blob is byte-identical to before.
+* text=auto eol=lf
+
+# Binary: never translated, never diffed as text.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.gz binary
+
+# Blobs git has already classified as binary or as CRLF-stored. Marking them keeps
+# `* text=auto eol=lf` from changing their bytes on the next `git add`.
+tests/tk-2339-verdict-writer.test.cjs -text
+docs/USER-GUIDE.md -text
