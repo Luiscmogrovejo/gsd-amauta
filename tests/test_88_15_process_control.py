@@ -480,3 +480,278 @@ def test_golden_rlm_daemonize_child_and_parent(monkeypatch, tmp_path):
     assert setsid.calls == []
     assert started.calls == []
     assert printed == ["RLM service starting in background..."]
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 7. Task 88-15-02: the helpers themselves.
+#
+#    The defect this plan exists for: Python's docs say that on Windows
+#    os.kill with any signal but CTRL_C_EVENT / CTRL_BREAK_EVENT calls
+#    TerminateProcess, so `os.kill(pid, 0)` -- used as an "is it alive?" probe
+#    at seven sites -- KILLED the process it was checking.  Every test below
+#    either owns the process it signals or signals nothing at all.
+# ══════════════════════════════════════════════════════════════════════════
+
+sys.path.insert(0, str(_REPO / "services"))
+import _platform  # noqa: E402
+sys.path.pop(0)
+
+
+_SLEEPER = (
+    "import sys, time\n"
+    "sys.stdout.write('ready\\n'); sys.stdout.flush()\n"
+    "time.sleep(300)\n"
+)
+
+
+def _spawn_sleeper():
+    """A child process THIS TEST owns; it prints 'ready' and then sleeps."""
+    child = subprocess.Popen(
+        [sys.executable, "-c", _SLEEPER],
+        stdout=subprocess.PIPE, text=True, encoding="utf-8",
+    )
+    line = child.stdout.readline()
+    assert line.strip() == "ready", "sleeper child did not start: %r" % line
+    return child
+
+
+def _reap(child):
+    if child is None:
+        return
+    try:
+        if child.poll() is None:
+            child.kill()
+        child.wait(timeout=30)
+    finally:
+        if child.stdout:
+            child.stdout.close()
+
+
+def test_pid_alive_probes_a_hundred_times_without_killing_the_child():
+    """THE defect test: a liveness probe must never terminate its target.
+
+    On Windows, os.kill(pid, 0) calls TerminateProcess, so the pre-88-15 probe
+    killed the daemon it was checking.  100 probes, and the child is still
+    running with no exit status.
+    """
+    child = _spawn_sleeper()
+    try:
+        for _ in range(100):
+            assert _platform.pid_alive(child.pid) is True
+        assert child.poll() is None, (
+            "the probe terminated the process it only meant to observe "
+            "(exit status %r after 100 calls)" % child.returncode
+        )
+        assert _platform.pid_alive(child.pid, strict=True) is True
+    finally:
+        _reap(child)
+
+
+def test_pid_alive_is_false_for_a_reaped_child():
+    child = _spawn_sleeper()
+    pid = child.pid
+    _reap(child)
+    assert _platform.pid_alive(pid) is False
+
+
+def test_pid_alive_rejects_an_invalid_pid():
+    for bad in ("4242", 4242.0, True, None, [4242]):
+        with pytest.raises(TypeError):
+            _platform.pid_alive(bad)
+    for bad in (0, -1):
+        with pytest.raises(ValueError):
+            _platform.pid_alive(bad)
+
+
+def test_terminate_polite_then_forced_on_a_child_this_test_owns():
+    child = _spawn_sleeper()
+    try:
+        assert _platform.terminate(child.pid) is True            # SIGTERM only
+        assert child.wait(timeout=30) in (-signal.SIGTERM, -signal.SIGKILL, signal.SIGTERM)
+    finally:
+        _reap(child)
+
+    child = _spawn_sleeper()
+    try:
+        assert _platform.terminate(child.pid, force=True, grace_s=0.05, settle_s=0.05) is True
+        assert child.wait(timeout=30) in (-signal.SIGTERM, -signal.SIGKILL)
+        assert _platform.pid_alive(child.pid) is False or child.poll() is not None
+    finally:
+        _reap(child)
+
+
+def test_terminate_refuses_a_no_op_combination():
+    with pytest.raises(ValueError):
+        _platform.terminate(4242, graceful=False, force=False)
+
+
+class _FakeKernel32:
+    """Records the Win32 calls the Windows branch makes."""
+
+    def __init__(self, handle=0x1234, wait=0x00000102, last_error=0, terminate_ok=True):
+        self.calls = []
+        self._handle = handle
+        self._wait = wait
+        self.last_error = last_error
+        self._terminate_ok = terminate_ok
+
+    def OpenProcess(self, access, inherit, pid):
+        self.calls.append(("OpenProcess", access, inherit, pid))
+        return self._handle
+
+    def WaitForSingleObject(self, handle, ms):
+        self.calls.append(("WaitForSingleObject", handle, ms))
+        return self._wait
+
+    def TerminateProcess(self, handle, code):
+        self.calls.append(("TerminateProcess", handle, code))
+        return 1 if self._terminate_ok else 0
+
+    def CloseHandle(self, handle):
+        self.calls.append(("CloseHandle", handle))
+        return 1
+
+
+def _no_kill(monkeypatch):
+    """Arm a recorder that FAILS the test if os.kill is called at all."""
+    seen = []
+
+    def boom(*args, **kwargs):
+        seen.append(args)
+        raise AssertionError("os.kill must never be called on Windows: %r" % (args,))
+
+    monkeypatch.setattr(os, "kill", boom)
+    return seen
+
+
+def test_injected_win32_pid_alive_uses_openprocess_and_never_os_kill(monkeypatch):
+    seen = _no_kill(monkeypatch)
+    fake = _FakeKernel32(handle=0x1234, wait=0x00000102)  # WAIT_TIMEOUT -> alive
+    monkeypatch.setattr(_platform, "_load_kernel32", lambda: (fake, lambda: 0))
+    assert _platform.pid_alive(4242, platform="win32") is True
+    assert fake.calls[0][0] == "OpenProcess"
+    assert fake.calls[0][3] == 4242
+    assert ("WaitForSingleObject", 0x1234, 0) in fake.calls
+    assert ("CloseHandle", 0x1234) in fake.calls
+    assert seen == []
+
+    fake_dead = _FakeKernel32(handle=0x1234, wait=0)  # WAIT_OBJECT_0 -> exited
+    monkeypatch.setattr(_platform, "_load_kernel32", lambda: (fake_dead, lambda: 0))
+    assert _platform.pid_alive(4242, platform="win32") is False
+
+    gone = _FakeKernel32(handle=0)
+    monkeypatch.setattr(_platform, "_load_kernel32", lambda: (gone, lambda: 87))
+    assert _platform.pid_alive(4242, platform="win32") is False
+
+    denied = _FakeKernel32(handle=0)
+    monkeypatch.setattr(_platform, "_load_kernel32", lambda: (denied, lambda: 5))
+    assert _platform.pid_alive(4242, platform="win32") is True
+    with pytest.raises(PermissionError):
+        _platform.pid_alive(4242, strict=True, platform="win32")
+    assert seen == []
+
+
+def test_injected_win32_terminate_uses_terminateprocess_and_never_os_kill(monkeypatch):
+    seen = _no_kill(monkeypatch)
+    fake = _FakeKernel32()
+    monkeypatch.setattr(_platform, "_load_kernel32", lambda: (fake, lambda: 0))
+    assert _platform.terminate(4242, platform="win32") is True
+    assert ("TerminateProcess", 0x1234, 1) in fake.calls
+    assert ("CloseHandle", 0x1234) in fake.calls
+
+    gone = _FakeKernel32(handle=0)
+    monkeypatch.setattr(_platform, "_load_kernel32", lambda: (gone, lambda: 87))
+    with pytest.raises(ProcessLookupError):
+        _platform.terminate(4242, platform="win32")
+
+    denied = _FakeKernel32(handle=0)
+    monkeypatch.setattr(_platform, "_load_kernel32", lambda: (denied, lambda: 5))
+    with pytest.raises(PermissionError):
+        _platform.terminate(4242, force=True, platform="win32")
+    assert seen == []
+
+
+def test_injected_win32_process_command_uses_powershell_execfile_argv(monkeypatch):
+    seen = _no_kill(monkeypatch)
+    rec = _Recorder(result=SimpleNamespace(returncode=0, stdout="python.exe rlm-service.py run\r\n"))
+    monkeypatch.setattr(subprocess, "run", rec)
+    out = _platform.process_command(4242, platform="win32")
+    assert out == "python.exe rlm-service.py run"
+    argv = rec.calls[0][0][0]
+    assert isinstance(argv, list), "never a shell string"
+    assert argv[1:4] == ["-NoProfile", "-NonInteractive", "-Command"]
+    assert "Win32_Process" in argv[4] and "ProcessId=4242" in argv[4]
+    assert rec.calls[0][1]["capture_output"] is True
+    assert seen == []
+
+
+def test_injected_win32_port_holders_uses_get_nettcpconnection(monkeypatch):
+    seen = _no_kill(monkeypatch)
+    rec = _Recorder(result=SimpleNamespace(returncode=0, stdout="111\r\n222\r\n"))
+    monkeypatch.setattr(subprocess, "run", rec)
+    port = _free_port()
+    assert _platform.port_holders(port, platform="win32") == [111, 222]
+    argv = rec.calls[0][0][0]
+    assert isinstance(argv, list)
+    assert "Get-NetTCPConnection" in argv[4]
+    assert "-LocalPort %d" % port in argv[4]
+    assert "OwningProcess" in argv[4]
+    assert seen == []
+
+
+def test_a_pid_or_port_is_validated_before_it_reaches_a_command_line(monkeypatch):
+    """Security: nothing user-controlled is interpolated into a -Command string."""
+    rec = _Recorder(result=SimpleNamespace(returncode=0, stdout=""))
+    monkeypatch.setattr(subprocess, "run", rec)
+    for bad in ("4242; Remove-Item -Recurse C:\\", "12", 1.5, -3, 0, None, [4242], True):
+        with pytest.raises((TypeError, ValueError)):
+            _platform.process_command(bad, platform="win32")
+        with pytest.raises((TypeError, ValueError)):
+            _platform.port_holders(bad, platform="win32")
+    assert rec.calls == [], "a rejected value must never reach PowerShell"
+
+
+def test_injected_win32_powershell_failure_returns_none_and_empty(monkeypatch):
+    """PowerShell absent or failing: process_command None (foreign), holders []."""
+    monkeypatch.setattr(subprocess, "run", _Recorder(raises=FileNotFoundError("no powershell")))
+    errors = []
+    assert _platform.process_command(4242, on_error=errors.append, platform="win32") is None
+    assert _platform.port_holders(4242, on_error=errors.append, platform="win32") == []
+    assert len(errors) == 2
+
+
+def test_injected_win32_daemonize_raises_a_typed_error_not_attributeerror():
+    with pytest.raises(_platform.DaemonizeUnsupported):
+        _platform.daemonize(platform="win32")
+
+
+def test_detached_popen_kwargs_per_platform():
+    assert _platform.detached_popen_kwargs(platform="darwin") == {"start_new_session": True}
+    assert _platform.detached_popen_kwargs(platform="linux") == {"start_new_session": True}
+    win = _platform.detached_popen_kwargs(platform="win32")
+    assert set(win) == {"creationflags"}
+    assert win["creationflags"] == 0x00000200 | 0x00000008
+
+
+def test_injected_darwin_argv_is_the_golden_posix_argv(monkeypatch):
+    """Injected platform='darwin' reproduces the pinned POSIX argv byte-for-byte."""
+    rec = _Recorder(result=SimpleNamespace(returncode=0, stdout="x"))
+    monkeypatch.setattr(subprocess, "run", rec)
+    _platform.process_command(4242, platform="darwin")
+    assert list(rec.calls[0][0][0]) == PINNED_PS_ARGV
+    assert rec.calls[0][1] == PINNED_PS_KWARGS
+
+    rec2 = _Recorder(result=SimpleNamespace(returncode=0, stdout="7\n"))
+    monkeypatch.setattr(subprocess, "run", rec2)
+    port = _free_port()
+    assert _platform.port_holders(port, platform="darwin") == [7]
+    assert list(rec2.calls[0][0][0]) == ["lsof", "-t", "-iTCP:%d" % port, "-sTCP:LISTEN"]
+    assert rec2.calls[0][1] == PINNED_LSOF_KWARGS
+
+
+def test_process_command_none_widens_foreign_in_the_daemon(monkeypatch, tmp_path):
+    """Plan 88-12's contract: an unidentifiable pid is FOREIGN, never our own."""
+    mod = _daemon(monkeypatch, tmp_path)
+    monkeypatch.setattr(_platform, "process_command", lambda *a, **k: None)
+    assert mod._pid_command_line(4242) == ""
+    assert mod._pid_is_rlm_service(4242) is False

@@ -55,6 +55,7 @@ import sys
 import time
 from collections import OrderedDict
 from pathlib import Path
+import socketserver
 from socketserver import ThreadingMixIn
 import logging
 
@@ -62,6 +63,13 @@ import logging
 _PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
+
+# Platform differences (Phase 88, plan 88-15). REQUIRED, not optional: on
+# Windows a null-signal probe would TERMINATE the process it only means to observe.
+_SERVICES_DIR = str(Path(__file__).resolve().parent)
+if _SERVICES_DIR not in sys.path:
+    sys.path.append(_SERVICES_DIR)
+import _platform  # noqa: E402
 
 # ── Structured Logging ─────────────────────────────────────────────────────────
 _log_level = os.environ.get("AMAUTA_LOG_LEVEL", "INFO").upper()
@@ -847,6 +855,24 @@ class ThreadedHTTPServer(ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
+    def server_bind(self):
+        """Bind the listening socket without ``HTTPServer``'s reverse-DNS lookup.
+
+        The same defect plan 88-18 fixed in ``amauta-daemon.py``:
+        ``http.server.HTTPServer.server_bind`` calls ``socket.getfqdn(host)``
+        only to fill ``server_name``, which nothing here reads. On a host whose
+        resolver is slow (a GitHub macOS runner, a laptop on a VPN) that call
+        blocks for tens of seconds before the service can answer /health, so
+        every readiness poll times out. Binding itself is unchanged.
+
+        Raises:
+            OSError: when the address cannot be bound, exactly as before.
+        """
+        socketserver.TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name = host
+        self.server_port = port
+
 
 class RLMHandler(http.server.BaseHTTPRequestHandler):
 
@@ -1288,7 +1314,10 @@ def start_server(foreground=False):
         if PID_FILE.exists():
             try:
                 pid = int(PID_FILE.read_text(encoding="utf-8").strip())
-                os.kill(pid, 0)
+                # strict=True preserves the pre-88-15 behaviour exactly: a
+                # PermissionError is not swallowed here. The probe never signals.
+                if not _platform.pid_alive(pid, strict=True):
+                    raise ProcessLookupError(pid)
                 print(f"RLM service already running (PID {pid})")
                 return
             except (ProcessLookupError, ValueError):
@@ -1357,7 +1386,7 @@ def stop_server():
         return
     try:
         pid = int(PID_FILE.read_text(encoding="utf-8").strip())
-        os.kill(pid, signal.SIGTERM)
+        _platform.terminate(pid)
         print(f"Sent SIGTERM to PID {pid}")
         PID_FILE.unlink(missing_ok=True)
     except ProcessLookupError:
@@ -1374,7 +1403,8 @@ def check_status():
         return False
     try:
         pid = int(PID_FILE.read_text(encoding="utf-8").strip())
-        os.kill(pid, 0)
+        if not _platform.pid_alive(pid, strict=True):
+            raise ProcessLookupError(pid)
         print(f"RLM service running (PID {pid}) on {HOST}:{PORT}")
         return True
     except (ProcessLookupError, ValueError):
@@ -1399,11 +1429,27 @@ if __name__ == "__main__":
 
     cmd = sys.argv[1]
     if cmd == "start":
-        if os.fork() == 0:
-            os.setsid()
-            start_server(foreground=False)
-        else:
+        # POSIX: the same fork + setsid as before -- the CHILD runs the server,
+        # the PARENT prints and returns. Windows has no fork, so daemonize()
+        # raises and the parent re-spawns this script detached.
+        try:
+            _role = _platform.daemonize()
+        except _platform.DaemonizeUnsupported:
+            import subprocess as _subprocess
+            _subprocess.Popen(
+                [sys.executable, os.path.abspath(__file__), "run"],
+                stdin=_subprocess.DEVNULL,
+                stdout=_subprocess.DEVNULL,
+                stderr=_subprocess.DEVNULL,
+                close_fds=True,
+                **_platform.detached_popen_kwargs(),
+            )
             print("RLM service starting in background...")
+        else:
+            if _role == "child":
+                start_server(foreground=False)
+            else:
+                print("RLM service starting in background...")
     elif cmd == "run":
         start_server(foreground=True)
     elif cmd == "stop":
