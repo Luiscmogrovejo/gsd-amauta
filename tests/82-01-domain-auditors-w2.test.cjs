@@ -223,8 +223,15 @@ for (const a of AUDITORS) {
 // committed gsd-*.md files (35 after all five Wave-2 auditors land). This is
 // the shared byte-match invariant, asserted ONCE here in the final wave, and
 // dynamically enumerated (no hardcoded count that would drift).
-test('REGRESSION: full-fleet compile count matches committed agents/gsd-*.md (35 after Wave-2 lands)', () => {
-  const r = compile('claude-code', { source: SOURCE_DIR });
+test('REGRESSION: full-fleet compile count matches committed agents/gsd-*.md (35 after Wave-2 lands)', (t) => {
+  // outDir is MANDATORY — see the note on the same assertion in
+  // tests/81-01-domain-auditors-w1.test.cjs. Without it the compiler's default
+  // outDir 'agents/' resolves against process.cwd() and this test truncates and
+  // rewrites the 35 tracked agents/gsd-*.md that the module-load reads above
+  // (and the ones a sibling test file reads) depend on.
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'audit82-fleet-'));
+  t.after(() => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {} });
+  const r = compile('claude-code', { source: SOURCE_DIR, outDir: tmpDir });
   assert.equal(r.errors.length, 0, `full-fleet compile must produce 0 errors. Got: ${JSON.stringify(r.errors)}`);
   const committed = fs.readdirSync(AGENTS_OUT).filter((f) => /^gsd-.*\.md$/.test(f)).length;
   assert.equal(r.compiled.length, committed, `compiled fleet (${r.compiled.length}) must equal committed gsd-*.md count (${committed})`);

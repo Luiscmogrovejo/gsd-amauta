@@ -28,6 +28,17 @@
  * Directory listings hash NAMES only (mtimes and sizes are recorded for diagnosis).
  * The live daemon appends to its own logs all day, so hashing mtimes would raise a
  * false finding on every run; a created or deleted file is the signal.
+ *
+ * SECOND ALARM — the TRACKED-TREE canary (plan 88-11, the 2026-11-12 flake).
+ * trackedSnapshot()/trackedDiff()/formatTracked() watch the repository's own
+ * tracked GENERATED artefacts (agents/, .mcp.json) in the checkout the run
+ * happens in. It is the same before/after shape as above and the runner wires
+ * it the same way, but its comparison is deliberately STRICTER: an mtime bump
+ * alone is a finding. The defect it exists to catch rewrote all 35 tracked
+ * agents/gsd-*.md with byte-identical content, which `git status` and any
+ * content comparison (including the 88-16 `.mcp.json` assertion) report as
+ * clean — while a sibling test process reading one of those files during the
+ * writeFileSync truncation got an empty string and failed.
  */
 
 const crypto = require('crypto');
@@ -183,6 +194,128 @@ function format(findings) {
   return (
     "LIVE STORE CANARY: the test run modified the operator's live store\n" +
     findings.map((f) => '  ' + f.path + ': ' + f.reason).join('\n')
+  );
+}
+
+// ───────────────────────── tracked-tree canary (plan 88-11) ─────────────────
+//
+// Tracked paths that are GENERATED, never hand-edited mid-run, and therefore
+// must be byte-for-byte AND mtime-for-mtime untouched by a test run. Scoped
+// deliberately: a sweep over every tracked file would flag the working changes
+// of the branch under development and teach the next reader to ignore the
+// alarm. Add a path here when a test is found writing into it.
+const TRACKED_WATCH = ['agents', '.mcp.json'];
+
+/**
+ * The tracked files under TRACKED_WATCH, relative to `root`.
+ *
+ * `git ls-files` is the source of truth. When git is unavailable (a `git archive`
+ * copy, a sandbox without the binary) it falls back to the agents/*.md listing,
+ * so the alarm degrades to a narrower watch rather than to silence.
+ *
+ * @param {string} root repository root
+ * @returns {string[]} repo-relative paths, sorted
+ * @example
+ *   trackedWatchFiles('/repo').includes('agents/gsd-planner.md') // true
+ */
+function trackedWatchFiles(root) {
+  try {
+    const out = execFileSync('git', ['-C', root, 'ls-files', '-z', '--', ...TRACKED_WATCH], {
+      encoding: 'utf8',
+      maxBuffer: 1 << 26,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    const files = out.split('\0').filter(Boolean);
+    if (files.length > 0) return files.sort();
+  } catch (_e) {
+    /* no git, or not a work tree: fall through */
+  }
+  try {
+    return fs
+      .readdirSync(path.join(root, 'agents'))
+      .filter((n) => /\.md$/.test(n))
+      .map((n) => 'agents/' + n)
+      .sort();
+  } catch (_e) {
+    return [];
+  }
+}
+
+/**
+ * Snapshot the tracked generated artefacts of a checkout.
+ *
+ * @param {string} [root] repository root (default: this repository)
+ * @returns {{root: string, files: Object<string, {sha256: string, size: number, mtimeMs: number}>}}
+ * @example
+ *   const before = trackedSnapshot('/repo'); // ... run tests ...
+ *   trackedDiff(before, trackedSnapshot('/repo')) // []
+ */
+function trackedSnapshot(root) {
+  const base = root || OWN_REPO;
+  const files = {};
+  for (const rel of trackedWatchFiles(base)) {
+    let st;
+    try {
+      st = fs.statSync(path.join(base, rel));
+    } catch (_e) {
+      continue; // absent before the run is not this alarm's business
+    }
+    if (!st.isFile()) continue;
+    files[rel] = {
+      sha256: crypto.createHash('sha256').update(fs.readFileSync(path.join(base, rel))).digest('hex'),
+      size: st.size,
+      mtimeMs: st.mtimeMs,
+    };
+  }
+  return { root: base, files };
+}
+
+/**
+ * Compare two tracked-tree snapshots. Unlike diff() above, an mtime-only change
+ * IS a finding: a byte-identical rewrite is exactly the defect — it truncates the
+ * file for an instant and a concurrent reader in another test process reads it
+ * empty.
+ *
+ * @param {{files: object}} before
+ * @param {{files: object}} after
+ * @returns {{path: string, reason: string}[]}
+ * @example
+ *   trackedDiff({files:{a:{sha256:'x',size:1,mtimeMs:1}}},
+ *               {files:{a:{sha256:'x',size:1,mtimeMs:2}}})
+ *   // [{ path: 'a', reason: 'rewritten with identical bytes (mtime moved)' }]
+ */
+function trackedDiff(before, after) {
+  const findings = [];
+  const bf = (before && before.files) || {};
+  const af = (after && after.files) || {};
+  for (const k of [...new Set([...Object.keys(bf), ...Object.keys(af)])].sort()) {
+    const b = bf[k];
+    const a = af[k];
+    if (b && !a) findings.push({ path: k, reason: 'deleted' });
+    else if (!b && a) findings.push({ path: k, reason: 'created' });
+    else if (b && a) {
+      if (b.sha256 !== a.sha256) findings.push({ path: k, reason: 'content changed' });
+      else if (b.size !== a.size) findings.push({ path: k, reason: 'size changed' });
+      else if (b.mtimeMs !== a.mtimeMs) {
+        findings.push({ path: k, reason: 'rewritten with identical bytes (mtime moved)' });
+      }
+    }
+  }
+  return findings;
+}
+
+/**
+ * Render tracked-tree findings for stderr, naming every file.
+ * @param {{path: string, reason: string}[]} findings
+ * @returns {string}
+ */
+function formatTracked(findings) {
+  return (
+    'TRACKED TREE CANARY: the test run wrote into the repository\'s tracked tree\n' +
+    findings.map((f) => '  ' + f.path + ': ' + f.reason).join('\n') +
+    '\n  A test must write to a temp directory. The usual cause is an agent-compiler\n' +
+    '  compile() call with no outDir: the default is the RELATIVE path \'agents/\',\n' +
+    '  which resolves against process.cwd() — the repository root.'
   );
 }
 
@@ -414,6 +547,11 @@ module.exports = {
   snapshot,
   diff,
   format,
+  trackedSnapshot,
+  trackedDiff,
+  formatTracked,
+  trackedWatchFiles,
+  TRACKED_WATCH,
   strayProcesses,
   formatStrays,
   identify,
