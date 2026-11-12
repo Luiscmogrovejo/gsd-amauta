@@ -16,9 +16,42 @@ removes that constraint entirely.
 
 1. **One shard per owning plan**, named `<plan>.json` — `89-01.json`, `89-05.json`,
    `89-07.json` — or `carried.json` for entries no Phase 89 plan owns.
-2. **A plan edits only its own shard.** The exception is a plan that *closes* an entry
-   another plan created: that is allowed, and the closing plan must name the entry and
-   the shard it came out of in its own record.
+2. **A plan edits only its own shard and its own delta file.** The exception is a plan
+   that *closes* an entry another plan created: that is allowed, and the closing plan
+   must name the entry and the shard it came out of in its own record.
+
+   Every entry added or removed since the shard migration is declared in
+   `tests/skip-exceptions.d/delta/<plan>.json` — one file per owning plan:
+
+   ```json
+   {
+     "plan": "89-05",
+     "shard": "tests/skip-exceptions.d/89-05.json",
+     "note": "why these entries exist and what closes them",
+     "added":   [ ["name", "file", "platform", "context", "reason", "reason_class", "owner", owner_phase, "exit_criterion"] ],
+     "removed": [ ... ]
+   }
+   ```
+
+   `added` and `removed` hold **full nine-field tuples** in `FIELDS` order.
+   `tests/89-09-skip-shards.test.cjs` loads the union of these files and proves that
+   the pre-shard 467-entry set, plus every `added`, minus every `removed`, is still
+   exactly the live union — so an entry cannot change without a declaration. It also
+   proves that a plan's `added` is **exactly** what its own shard holds and that its
+   `removed` is in no shard.
+
+   `delta/` is **not** a shard directory: all four readers enumerate
+   `tests/skip-exceptions.d/` non-recursively and keep only `*.json` names, and
+   `delta` has no such suffix. Nothing in it is ever read as a skip exception.
+
+   A malformed delta file — not a JSON object, a missing or non-array `added`/
+   `removed`, a row that is not a nine-element tuple, the same tuple twice in one file
+   or across two, a `plan` that disagrees with the file name, an empty or absent
+   directory — **fails closed**: the loader reports it by name and the test is red.
+
+   Plan 89-05 introduced this layout (addendum A). Before it, both lists were shared
+   arrays inside `tests/89-09-skip-shards.test.cjs`, which made that one file conflict
+   in three of wave 2's four parallel PRs.
 3. **The union is what is read.** Every reader loads the union of
    `tests/skip-exceptions.d/*.json` (sorted by name) plus `tests/skip-exceptions.json`
    when that legacy file still exists:
