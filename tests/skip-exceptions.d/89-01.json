@@ -88,28 +88,6 @@
     "exit_criterion": "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
   },
   {
-    "name": "test_operational_error_still_degrades_to_an_empty_result",
-    "file": "tests/test_89_01_bm25_alias_matrix.py",
-    "platform": "darwin",
-    "context": "any",
-    "reason": "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
-    "reason_class": "pg-no-disposable-database",
-    "owner": "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
-    "owner_phase": 89,
-    "exit_criterion": "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
-  },
-  {
-    "name": "test_operational_error_still_degrades_to_an_empty_result",
-    "file": "tests/test_89_01_bm25_alias_matrix.py",
-    "platform": "win32",
-    "context": "any",
-    "reason": "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
-    "reason_class": "pg-no-disposable-database",
-    "owner": "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
-    "owner_phase": 89,
-    "exit_criterion": "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
-  },
-  {
     "name": "test_sql_programming_error_raises_typed_and_never_returns_empty",
     "file": "tests/test_89_01_bm25_alias_matrix.py",
     "platform": "darwin",

@@ -50,7 +50,14 @@ from conftest import PG_SKIP_REASON, postgres_dsn_or_none  # noqa: E402
 #: which the in-process socket guard cannot see.
 _PG_DSN = postgres_dsn_or_none()
 
-pytestmark = pytest.mark.skipif(_PG_DSN is None, reason=PG_SKIP_REASON)
+#: Applied per TEST, not module-wide. The four cells, the sqlstate pin and the
+#: real-statement error test genuinely need a database and skip cleanly without
+#: one (the macOS and Windows cells until plan 89-07 lands, and the operator's
+#: machine always). The two CONTRACT tests at the bottom drive stub connections
+#: and need no database at all, so they run on every cell — a module-level
+#: `pytestmark` would have skipped them for a dependency they do not have, and
+#: would have cost two more skip-ledger entries for no coverage.
+needs_postgres = pytest.mark.skipif(_PG_DSN is None, reason=PG_SKIP_REASON)
 
 #: Every fixture row lives under this prefix, and nothing else may.
 PREFIX = "__test8901_alias__"
@@ -197,6 +204,7 @@ def _assert_seeded_row_found(rows, swallowed, cell):
     )
 
 
+@needs_postgres
 def test_cell1_alias_qualified_filter_with_embedding_returns_rows(
     pg_conn, seeded, caplog
 ):
@@ -216,6 +224,7 @@ def test_cell1_alias_qualified_filter_with_embedding_returns_rows(
     )
 
 
+@needs_postgres
 def test_cell2_alias_qualified_filter_without_embedding_returns_rows(
     pg_conn, seeded, caplog
 ):
@@ -241,6 +250,7 @@ def test_cell2_alias_qualified_filter_without_embedding_returns_rows(
     )
 
 
+@needs_postgres
 def test_cell3_unqualified_filter_with_embedding_returns_rows(
     pg_conn, seeded, caplog
 ):
@@ -258,6 +268,7 @@ def test_cell3_unqualified_filter_with_embedding_returns_rows(
     )
 
 
+@needs_postgres
 def test_cell4_unqualified_filter_without_embedding_returns_rows(
     pg_conn, seeded, caplog
 ):
@@ -292,6 +303,7 @@ _UNALIASED_BM25_SQL = """
 """
 
 
+@needs_postgres
 def test_the_pre_fix_unaliased_shape_answers_sqlstate_42p01(
     pg_conn, seeded, capsys
 ):
@@ -342,6 +354,7 @@ def test_the_pre_fix_unaliased_shape_answers_sqlstate_42p01(
 # ── The error contract (plan 89-01 task 03) ──────────────────────────────────
 
 
+@needs_postgres
 def test_sql_programming_error_raises_typed_and_never_returns_empty(
     pg_conn, seeded, monkeypatch
 ):
@@ -471,4 +484,142 @@ def test_operational_error_still_degrades_to_an_empty_result(monkeypatch):
     assert rlm_search.engine_error_counts() == {}, (
         "an operational error must NOT be counted as a programming error: %r"
         % (rlm_search.engine_error_counts(),)
+    )
+
+
+def _undefined_column_42703():
+    """A real ``psycopg2.errors.UndefinedColumn`` that reports sqlstate 42703.
+
+    ``pgcode`` is a read-only C descriptor that libpq fills from the server, so a
+    hand-built error reports ``None`` and cannot be assigned. A subclass shadows
+    the descriptor with a plain class attribute, which is the only way to stand
+    one of these up without a database — and the class is still a genuine
+    ``ProgrammingError``, so the production code's ``isinstance`` check and this
+    stand-in agree by construction rather than by resemblance.
+
+    Returns:
+        psycopg2.errors.UndefinedColumn: with ``pgcode == "42703"``.
+    """
+    import psycopg2
+
+    class _UndefinedColumn42703(psycopg2.errors.UndefinedColumn):
+        pgcode = "42703"
+
+    return _UndefinedColumn42703(
+        'column c.no_such_column_8901 does not exist'
+    )
+
+
+class _HybridFailsThenBm25Succeeds:
+    """A connection whose FIRST statement is unplannable and whose second works.
+
+    That is exactly the shape ``hybrid_search_generic`` degrades through: the
+    fused hybrid SQL raises, and the BM25-only branch it falls back to answers.
+    Needs no database — the point is which BRANCH runs, not what PostgreSQL
+    thinks of the SQL.
+    """
+
+    #: What the BM25-only fallback "finds", in the column order the caller asked
+    #: for plus the three fusion aliases.
+    FALLBACK_ROW = tuple(
+        [1, "%s%sworker.py" % (PREFIX, os.sep), "alias_cell_worker", "function",
+         1, 9, "body", "description", [], []] + [None, 1, None]
+    )
+
+    def __init__(self):
+        self.executed = 0
+        self.rollback_calls = 0
+
+    def cursor(self):
+        return self._Cursor(self)
+
+    def rollback(self):
+        self.rollback_calls += 1
+
+    class _Cursor:
+        def __init__(self, conn):
+            self._conn = conn
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def execute(self, sql, params=None):
+            self._conn.executed += 1
+            if self._conn.executed == 1:
+                raise _undefined_column_42703()
+
+        def fetchall(self):
+            if self._conn.executed <= 1:  # pragma: no cover - never reached
+                return []
+            return [_HybridFailsThenBm25Succeeds.FALLBACK_ROW]
+
+
+def test_test_mode_decides_whether_the_hybrid_leg_raises_or_degrades(monkeypatch):
+    """The mutation pair for ``GSD_TEST_MODE``, at the seam that reads it.
+
+    ``hybrid_search_generic`` HAS a lower rung, so a programming error in its
+    fused SQL keeps the documented degradation in production — and must NOT
+    keep it under test, or a CI cell could go green over SQL the engine cannot
+    plan simply because the BM25-only branch happened to answer. Both arms are
+    asserted here, against the same connection shape:
+
+      * ``GSD_TEST_MODE=1``  -> raises ``EngineProgrammingError`` naming the
+        ``hybrid_rrf`` statement and sqlstate 42703. It does NOT return rows.
+      * ``GSD_TEST_MODE`` off -> returns the fallback's ROWS, and the per-sqlstate
+        counter has moved, so the condition is visible without reading logs.
+
+    The counter moving on BOTH arms is the point: degrading is not the same as
+    not noticing.
+    """
+    from services import rlm_search
+
+    def _call(conn):
+        return rlm_search.hybrid_search_generic(
+            TOKEN, conn,
+            table="rlm_chunks", id_column="id", select_columns=SELECT_COLUMNS,
+            vector_column="embedding_code", query_embedding=[0.1] * 1024,
+            bm25_query=_bm25_query(),
+            filter_sql=ALIAS_QUALIFIED_FILTER,
+            filter_params=_filter_params(PREFIX),
+            top_k=5,
+        )
+
+    # ── Arm 1: test mode ON — the error is fatal ──────────────────────────────
+    monkeypatch.setenv("GSD_TEST_MODE", "1")
+    rlm_search.reset_engine_error_counts()
+    conn = _HybridFailsThenBm25Succeeds()
+    with pytest.raises(rlm_search.EngineProgrammingError) as caught:
+        _call(conn)
+    assert caught.value.statement == "hybrid_rrf", caught.value.statement
+    assert caught.value.sqlstate == "42703", caught.value.sqlstate
+    assert conn.executed == 1, (
+        "under test mode the fused statement must NOT be followed by the "
+        "fallback: the error is the answer, got %d executions" % conn.executed
+    )
+    assert conn.rollback_calls >= 1, (
+        "the aborted transaction must be rolled back even when raising"
+    )
+    assert rlm_search.engine_error_counts().get("42703") == 1, (
+        rlm_search.engine_error_counts()
+    )
+
+    # ── Arm 2: test mode OFF — the documented degradation survives ────────────
+    monkeypatch.setenv("GSD_TEST_MODE", "0")
+    rlm_search.reset_engine_error_counts()
+    conn = _HybridFailsThenBm25Succeeds()
+    rows = _call(conn)
+    assert rows, (
+        "with GSD_TEST_MODE off the fused statement's programming error must "
+        "still degrade to the BM25-only branch, which answers"
+    )
+    assert rows[0]["symbol_name"] == "alias_cell_worker", rows[0]
+    assert conn.executed == 2, (
+        "the fallback statement must have run, got %d executions" % conn.executed
+    )
+    assert rlm_search.engine_error_counts().get("42703") == 1, (
+        "degrading is not the same as not noticing: the counter must move on "
+        "this arm too, got %r" % (rlm_search.engine_error_counts(),)
     )
