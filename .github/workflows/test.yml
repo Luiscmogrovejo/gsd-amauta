@@ -521,11 +521,24 @@ jobs:
         # On a fork PR the secret expands to the empty string and this step
         # takes the stand-in path too — green either way, and the record says
         # which path each cell took. One short input, one call per job.
+        #
+        # Plan 89-01 added tests/test_89_01_relevance_check.py to this step.
+        # RET-02's relevance check has to produce a number for plan 89-08's
+        # blue/green gate, and a number measured on hash-derived stand-in
+        # vectors measures the PIPELINE, not the vectors — so its real-provider
+        # arm has to run where the key is, and this is the only step that has
+        # one. The existing `-k` already selects it: the arm is named
+        # `…_with_the_real_embedding_provider`, so `embedding_provider` matches
+        # it and every other test in that file stays deselected. The arm runs
+        # over a SAMPLE (two queries, six documents) to keep this step short,
+        # and it needs a database, so on the macOS and Windows cells it skips
+        # before any call is made.
         env:
           VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
         run: |
           set -uo pipefail
-          python3 -m pytest tests/test_65_vector_leg.py -p no:cacheprovider -q \
+          python3 -m pytest tests/test_65_vector_leg.py tests/test_89_01_relevance_check.py \
+            -p no:cacheprovider -q \
             -k "embedding_provider or allowance_did_not_leak or stand_in_is_deterministic"
           rc=$?
           echo "voyage-path pytest exit: $rc"
