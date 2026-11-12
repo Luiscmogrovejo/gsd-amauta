@@ -19,6 +19,45 @@ corpus changes. Non-regression assertions (hybrid does not degrade vs BM25-only)
 are the correct check here.
 
 Intended to be run as part of phase validation, not CI baseline.
+
+─── Plan 89-01 / RET-02: what changed here, and why ──────────────────────────
+
+This test's assertions had NEVER ONCE run. They are guarded on
+`engine == "hybrid_rrf_reranked"`, and until plan 89-01 the retrieval leg always
+answered `in_memory_bm25` / `legacy_in_memory_fallback`, so the guard took its
+log-only branch every time. Plan 88-16 gave the suite a real PostgreSQL and
+plan 89-01 fixed the engine; the assertion then ran for the first time and
+exposed two defects in the MEASUREMENT, neither of them in the pipeline:
+
+1. The comparison was engine-specific. `_compute_mrr` matched the legacy
+   chunker's label format (`"def score_chunks"`, `"class PGStore (part 1)"`) and
+   the fixture's repository-relative paths against the hybrid engine's bare
+   `symbol_name` and ABSOLUTE `file_path` — a comparison that cannot match.
+   Fixed by normalising the identity on both sides (`_normalize_label`,
+   `_paths_match`). Same identity, spelled once; nothing loosened.
+
+2. **The 0.80 floor was unreachable by construction.** The test queries two
+   directories, `services/` and `get-shit-done/bin/`, but SEVEN of the twenty
+   answer keys name only files under `tests/` — outside the corpus the query
+   can see. Measured: 7 unanswerable (Q04, Q06, Q09, Q14, Q16, Q17, Q18), so
+   MRR over all twenty has a hard CEILING of 13/20 = 0.65 and can never reach
+   0.80 however well the engine ranks. (Q13 adds a second proof of staleness: it
+   expects `services/rlm-service.py | class MtimeIndex`, and `MtimeIndex` no
+   longer exists anywhere under `services/` — the persistent mtime index was
+   retired, as `_handle_query`'s own comment says.)
+
+   So the floor is now asserted on the ANSWERABLE subset — mechanically
+   defined, never hand-picked: a query is answerable when at least one of its
+   `expected_top3` entries sits under a queried path. Both numbers are
+   reported. The subset size is itself asserted, so a future fixture edit
+   cannot hollow the denominator out, and three assertions this test never had
+   are added: the engine MUST be the hybrid one, every query must answer, and
+   no query may error.
+
+The fixture's provenance — an answer key captured from the engine it measures,
+with `baseline_mrr` 1.0 by construction and a third of its keys unreachable — is
+recorded in 89-01-RECORD.md under "Found and routed" and belongs to a later
+plan. Plan 89-01 fixed only what its own behaviour change falsified.
 """
 import json
 import os
@@ -55,9 +94,52 @@ def _load_golden():
         return json.load(f)
 
 
+#: The directories every golden query searches. The answerable subset below is
+#: derived from these, so the two can never drift apart silently.
+QUERY_PATHS = ["services/", "get-shit-done/bin/"]
+
+#: MEASURED floor for MRR@10 over the ANSWERABLE subset, with its margin.
+#:
+#: Measured 0.8077 on the ubuntu-latest cell of this plan's own pull request
+#: (run 43316057553, job 131524416908: 10 queries at rank 1, Q08 at rank 2, Q07
+#: and Q13 missed, over 13 answerable queries). The floor sits 0.058 below that
+#: — about one rank-1-to-rank-2 demotion of tolerance — so it is a regression
+#: tripwire rather than a restatement of the measurement.
+#:
+#: It replaces `baseline_mrr * 0.80` applied to all twenty queries, which was
+#: UNREACHABLE: seven answer keys name only files under `tests/`, outside
+#: QUERY_PATHS, capping the all-twenty MRR at 0.65. See the module docstring.
+ANSWERABLE_MRR_FLOOR = 0.75
+
+#: How many of the twenty must be answerable for the measurement to mean
+#: anything. Measured 13; a drop below this is a fixture regression, not a
+#: ranking one, and it fails loudly instead of quietly shrinking the
+#: denominator.
+ANSWERABLE_MINIMUM = 12
+
+
+def _under_queried_path(filepath: str) -> bool:
+    """Whether a fixture answer key lies inside a directory this test searches.
+
+    Args:
+        filepath: a repository-relative path from ``expected_top3``.
+
+    Returns:
+        bool
+
+    Example:
+        >>> _under_queried_path("services/pg_store.py")
+        True
+        >>> _under_queried_path("tests/test_e2e_lifecycle.py")
+        False
+    """
+    normalised = str(filepath or "").replace("\\", "/").lstrip("./")
+    return any(normalised.startswith(p) for p in QUERY_PATHS)
+
+
 def _query_rlm(query: str, paths: list = None, top_k: int = 10,
                timeout: int = 30) -> dict:
-    paths = paths or ["services/", "get-shit-done/bin/"]
+    paths = paths or list(QUERY_PATHS)
     payload = json.dumps({"query": query, "paths": paths, "top_k": top_k}).encode()
     req = urllib.request.Request(
         f"{RLM_URL}/search",
@@ -208,16 +290,21 @@ def test_rlm_mrr_validation():
     per_query = []
     engine_used = "unknown"
     engines_seen = set()
+    errored = []
+    empty = []
 
     for q in queries:
         resp = _query_rlm(q["query"], top_k=10)
         if resp.get("error"):
             mrr_contributions.append(0.0)
             per_query.append((q["id"], None, 0.0, resp["error"], []))
+            errored.append((q["id"], resp["error"]))
             continue
         engine_used = resp.get("engine", "unknown")
         engines_seen.add(engine_used)
         results = resp.get("results", [])
+        if not results:
+            empty.append(q["id"])
         contrib, rank = _compute_mrr(results, q["expected_top3"])
         mrr_contributions.append(contrib)
         per_query.append((
@@ -242,31 +329,73 @@ def test_rlm_mrr_validation():
     actual_mrr = sum(mrr_contributions) / max(1, len(mrr_contributions))
     mrr_delta = (actual_mrr - baseline_mrr) / max(0.001, baseline_mrr)
 
+    # Plan 89-01: the answerable subset, derived from the fixture and the queried
+    # paths — never a hand-picked list. A query whose every expected answer lives
+    # outside the directories this test searches cannot be answered by ANY
+    # engine, so including it in the denominator measures the fixture, not the
+    # retrieval.
+    answerable_ids = {
+        q["id"] for q in queries
+        if any(
+            _under_queried_path(e["filepath"]) for e in q["expected_top3"]
+        )
+    }
+    unanswerable_ids = [q["id"] for q in queries if q["id"] not in answerable_ids]
+    answerable_rows = [r for r in per_query if r[0] in answerable_ids]
+    answerable_mrr = (
+        sum(r[2] for r in answerable_rows) / max(1, len(answerable_rows))
+    )
+    ceiling = len(answerable_ids) / max(1, len(queries))
+
     print(f"\nMRR Results:")
     print(f"  Engine: {engine_used}")
     print(f"  Baseline MRR: {baseline_mrr:.4f}")
-    print(f"  Actual MRR:   {actual_mrr:.4f}")
+    print(f"  Actual MRR (all {len(queries)}):   {actual_mrr:.4f}")
     print(f"  Delta:        {mrr_delta:+.1%}")
     print(f"  Queries run:  {len(mrr_contributions)}")
+    print(f"  Queried paths: {QUERY_PATHS!r}")
+    print(f"  Unanswerable (expected answers all outside those paths): "
+          f"{len(unanswerable_ids)} {unanswerable_ids!r}")
+    print(f"  CEILING on the all-{len(queries)} MRR: {ceiling:.4f} — an "
+          f"unanswerable query contributes zero to EVERY engine")
+    print(f"  MRR over the {len(answerable_rows)} answerable: {answerable_mrr:.4f}")
     print(f"\nNOTE: baseline_mrr=1.0 because Wave 1 expected_top3 was derived from the")
     print(f"engine's own output (rank always=1). Absolute improvement targets")
     print(f"(>=15%/>=10%) require MRR > 1.0 which is mathematically impossible.")
     print(f"Non-regression assertions are used instead.")
 
-    if engine_used == "hybrid_rrf_reranked":
-        # Full pipeline: use non-regression assertions (not absolute improvement targets)
-        # hybrid_mrr >= bm25_only_mrr * 0.95 (RRF does not regress vs BM25-only)
-        # We compare against actual_mrr directly since we do not run a second pass
-        # Use 0.80 floor as the non-regression lower bound for the integrated pipeline
-        non_regression_floor = baseline_mrr * 0.80
-        print(f"\n  ASSERTION: hybrid+reranked MRR {actual_mrr:.4f} >= non-regression floor {non_regression_floor:.4f} (80% of baseline)")
-        assert actual_mrr >= non_regression_floor, (
-            f"Reranked MRR {actual_mrr:.4f} fell below non-regression floor "
-            f"{non_regression_floor:.4f} (80% of baseline {baseline_mrr:.4f}). "
-            f"Pipeline may be producing wrong results."
-        )
-        print(f"  PASS: MRR does not regress below 80% of baseline")
-    else:
-        # Degraded mode (in-memory BM25 or PG unavailable): log and skip assertion
-        print(f"  SKIP assertion: engine is {engine_used!r} (not full pipeline)")
-        print(f"  Log-only: actual MRR {actual_mrr:.4f} vs baseline {baseline_mrr:.4f} ({mrr_delta:+.1%})")
+    # ── Assertions ────────────────────────────────────────────────────────────
+    # Plan 89-01 added the first three. The old test asserted ONE thing, and
+    # only on a branch it never reached.
+
+    assert not errored, (
+        "every golden query must be answered; these errored: %r" % (errored,)
+    )
+    assert not empty, (
+        "every golden query must return results against an ingested corpus; "
+        "these came back empty: %r" % (empty,)
+    )
+    # The engine itself. This is what plan 89-01 fixed, and until it did, the
+    # whole assertion block below was dead code on every cell.
+    assert engine_used == "hybrid_rrf_reranked", (
+        "the hybrid engine must answer; got %r (engines seen: %r). A "
+        "legacy_in_memory_fallback here means the retrieval leg regressed."
+        % (engine_used, sorted(engines_seen))
+    )
+    # The denominator correction cannot hollow the measurement out.
+    assert len(answerable_rows) >= ANSWERABLE_MINIMUM, (
+        "only %d of %d golden queries are answerable from %r, below the "
+        "recorded minimum of %d. Either the fixture's answer key drifted "
+        "further out of the queried corpus, or the queried paths changed."
+        % (len(answerable_rows), len(queries), QUERY_PATHS, ANSWERABLE_MINIMUM)
+    )
+
+    print(f"\n  ASSERTION: hybrid+reranked MRR over the answerable subset "
+          f"{answerable_mrr:.4f} >= measured floor {ANSWERABLE_MRR_FLOOR:.4f}")
+    assert answerable_mrr >= ANSWERABLE_MRR_FLOOR, (
+        f"Reranked MRR over the {len(answerable_rows)} answerable queries "
+        f"{answerable_mrr:.4f} fell below the measured floor "
+        f"{ANSWERABLE_MRR_FLOOR:.4f}. The per-query table above names the "
+        f"query and the rank it got. Pipeline may be producing wrong results."
+    )
+    print(f"  PASS: MRR over the answerable subset holds its measured floor")
