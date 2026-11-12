@@ -1,0 +1,24 @@
+[
+  {
+    "name": "test_one",
+    "file": "tests/test_fixture.py",
+    "platform": "all",
+    "context": "any",
+    "reason": "the fixture feature does not exist yet",
+    "reason_class": "fixture-pending",
+    "owner": "Phase 13 (the fixture feature)",
+    "owner_phase": 13,
+    "exit_criterion": "the fixture feature exists and the test runs on all three systems"
+  },
+  {
+    "name": "test_two",
+    "file": "tests/test_fixture.py",
+    "platform": "all",
+    "context": "any",
+    "reason": "the fixture feature does not exist yet",
+    "reason_class": "fixture-pending",
+    "owner": "Phase 13 (the fixture feature)",
+    "owner_phase": 13,
+    "exit_criterion": "the fixture feature exists and the test runs on all three systems"
+  }
+]
