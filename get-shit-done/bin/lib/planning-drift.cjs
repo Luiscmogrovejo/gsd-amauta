@@ -23,7 +23,7 @@
  *   DRIFT_EXCEPTION_UNMATCHED         an exception naming nothing on disk
  *   DRIFT_SKIP_OWNER_PHASE_COMPLETE   a skip-exceptions entry owned by a phase the
  *                                     ROADMAP already marks complete
- *   DRIFT_SKIP_LEDGER_MISMATCH        tests/skip-exceptions.json and the ROADMAP's
+ *   DRIFT_SKIP_LEDGER_MISMATCH        tests/skip-exceptions.d/ and the ROADMAP's
  *                                     Carried Test Obligations ledger disagree
  */
 
@@ -438,30 +438,73 @@ function planningDrift(rootDir, opts = {}) {
 //   DRIFT_SKIP_OWNER_PHASE_COMPLETE  an entry whose owner_phase the ROADMAP marks
 //                                    complete — a test deferred to a phase that then
 //                                    finished without closing it.
-//   DRIFT_SKIP_LEDGER_MISMATCH       the exceptions file and the ROADMAP's "Carried
+//   DRIFT_SKIP_LEDGER_MISMATCH       the skip ledger and the ROADMAP's "Carried
 //                                    Test Obligations" ledger disagree, in one of
 //                                    three directions, each reported distinctly.
+//
+// Plan 89-09 sharded the ledger: the entries are the UNION of
+// tests/skip-exceptions.d/*.json plus tests/skip-exceptions.json when that legacy
+// file still exists. Both are accepted inputs, and an absent directory together
+// with an absent file is still silent — see skipExceptionsSources.
 
 /** Fields of a skip-exceptions entry this verb needs. The GATE owns the full schema. */
 const SKIP_ENTRY_FIELDS = ['reason_class', 'owner_phase'];
 
 /**
- * Where the skip-exceptions file lives, relative to a planning root. ONE rule, one
- * expression: the file is `tests/skip-exceptions.json` under the directory that
- * CONTAINS the planning records — the parent of a root named `.planning` (the
- * operator's real repository) and the root itself for a fixture tree, which is a
- * self-contained, repository-shaped directory carrying its own `tests/`.
- *
- * An ABSENT file produces no finding at all. That is not leniency: the five
- * pre-existing fixture trees and any other repository that runs this verb have no
- * such file, and a "missing file" finding would turn all thirteen existing findings
- * into noise everywhere.
+ * The REPOSITORY the skip ledger belongs to, relative to a planning root. ONE
+ * rule, one expression: the directory that CONTAINS the planning records — the
+ * parent of a root named `.planning` (the operator's real repository) and the root
+ * itself for a fixture tree, which is a self-contained, repository-shaped
+ * directory carrying its own `tests/`.
  *
  * @param {string} root absolute planning root
- * @returns {string} absolute path of the exceptions file
+ * @returns {string} absolute path of the repository root
+ */
+function skipLedgerRoot(root) {
+  return path.basename(root) === '.planning' ? path.dirname(root) : root;
+}
+
+/**
+ * Where the legacy single skip-exceptions file lives. Still read when present:
+ * `tests/fixtures/planning-drift/skip-ledger-{agrees,disagrees}/` carry one, and
+ * rewriting those fixture trees would mix a fixture change into a loader change.
+ *
+ * @param {string} root absolute planning root
+ * @returns {string} absolute path of the legacy exceptions file
  */
 function skipExceptionsPath(root) {
-  return path.join(path.basename(root) === '.planning' ? path.dirname(root) : root, 'tests', 'skip-exceptions.json');
+  return path.join(skipLedgerRoot(root), 'tests', 'skip-exceptions.json');
+}
+
+/**
+ * Every file the skip ledger is read from, in load order: the `*.json` shards of
+ * `tests/skip-exceptions.d/` sorted by name (plan 89-09), then the legacy single
+ * file when it exists.
+ *
+ * An ABSENT directory and an ABSENT file together produce no finding at all. That
+ * is not leniency: the five pre-existing fixture trees and any other repository
+ * that runs this verb have neither, and a "missing ledger" finding would turn all
+ * thirteen existing findings into noise everywhere.
+ *
+ * @param {string} root absolute planning root
+ * @returns {{label: string, path: string}[]} possibly empty
+ */
+function skipExceptionsSources(root) {
+  const repo = skipLedgerRoot(root);
+  const dir = path.join(repo, 'tests', 'skip-exceptions.d');
+  const sources = [];
+  let names = [];
+  try {
+    names = fs.readdirSync(dir).filter((n) => n.endsWith('.json')).sort();
+  } catch {
+    names = [];
+  }
+  for (const name of names) {
+    sources.push({ label: `tests/skip-exceptions.d/${name}`, path: path.join(dir, name) });
+  }
+  const legacy = skipExceptionsPath(root);
+  if (readText(legacy) !== null) sources.push({ label: 'tests/skip-exceptions.json', path: legacy });
+  return sources;
 }
 
 /**
@@ -530,7 +573,9 @@ function completePhases(progressRows, checkboxes) {
 }
 
 /**
- * Compare `tests/skip-exceptions.json` with the ROADMAP ledger (plan 88-19).
+ * Compare the skip ledger — the union of `tests/skip-exceptions.d/*.json` plus the
+ * legacy `tests/skip-exceptions.json` — with the ROADMAP ledger (plan 88-19,
+ * sharded by plan 89-09).
  *
  * @param {string} root planning root
  * @param {object[]} raw the findings array to append to
@@ -540,22 +585,32 @@ function completePhases(progressRows, checkboxes) {
  * @returns {void}
  */
 function checkSkipLedger(root, raw, roadmapText, progressRows, checkboxes) {
-  const rel = 'tests/skip-exceptions.json';
-  const text = readText(skipExceptionsPath(root));
-  if (text === null) return; // absent: no finding, by design
+  const rel = 'tests/skip-exceptions.d/';
+  const sources = skipExceptionsSources(root);
+  if (!sources.length) return; // absent directory AND absent file: no finding, by design
 
-  let entries = null;
-  try {
-    entries = JSON.parse(text);
-  } catch (e) {
-    raw.push(finding('DRIFT_SKIP_LEDGER_MISMATCH', 'error', [rel],
-      `${rel} is not valid JSON (${e.message}), so the ledger cannot be compared with it`, rel));
-    return;
-  }
-  if (!Array.isArray(entries)) {
-    raw.push(finding('DRIFT_SKIP_LEDGER_MISMATCH', 'error', [rel],
-      `${rel} must be a flat array of entries; the ledger cannot be compared with a ${typeof entries}`, rel));
-    return;
+  const entries = [];
+  for (const source of sources) {
+    const text = readText(source.path);
+    if (text === null) {
+      raw.push(finding('DRIFT_SKIP_LEDGER_MISMATCH', 'error', [source.label],
+        `${source.label} could not be read, so the ledger cannot be compared with it`, source.label));
+      return;
+    }
+    let doc = null;
+    try {
+      doc = JSON.parse(text);
+    } catch (e) {
+      raw.push(finding('DRIFT_SKIP_LEDGER_MISMATCH', 'error', [source.label],
+        `${source.label} is not valid JSON (${e.message}), so the ledger cannot be compared with it`, source.label));
+      return;
+    }
+    if (!Array.isArray(doc)) {
+      raw.push(finding('DRIFT_SKIP_LEDGER_MISMATCH', 'error', [source.label],
+        `${source.label} must be a flat array of entries; the ledger cannot be compared with a ${typeof doc}`, source.label));
+      return;
+    }
+    entries.push(...doc);
   }
   const malformed = entries.filter((e) => !e || typeof e !== 'object'
     || typeof e.reason_class !== 'string' || !Number.isInteger(e.owner_phase));

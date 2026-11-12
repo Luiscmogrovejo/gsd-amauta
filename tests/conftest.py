@@ -823,7 +823,7 @@ def fixture_rlm(tmp_path):
 # ─────────────────────────────────────────────────────────────────────────────
 # Plan 88-19: the skip gate, Python half (FND-04).
 #
-# The SAME tests/skip-exceptions.json and the SAME rules as scripts/skip-gate.cjs,
+# The SAME tests/skip-exceptions.d/ shards and the SAME rules as scripts/skip-gate.cjs,
 # implemented in tests/support/skip_gate.py. The two cannot drift silently:
 # tests/88-19-skip-gate.test.cjs feeds both `--evaluate` interfaces the same fixture
 # file and the same synthetic observations and compares the verdicts field by field.
@@ -1014,7 +1014,14 @@ def _run_skip_gate(session):
     explicit = _gate_is_partial(session.config)
     observed = list(_SKIP_GATE_OBSERVED.values())
 
-    entries, problems = skip_gate.load_exceptions(str(_REPO / "tests" / "skip-exceptions.json"))
+    # Plan 89-09 task 02: the ledger is sharded, one file per owning plan under
+    # tests/skip-exceptions.d/, and `load_union` reads the union of those shards
+    # plus the legacy single file when it exists. `skip_gate.load_exceptions` is
+    # a LIBRARY entry point that opens exactly the one path it is given, so this
+    # call site — not the library — is what decides which files the Python gate
+    # sees. Pointing it at the deleted monolith would make every Python cell
+    # exit 6 (SKIP_EXCEPTIONS_UNREADABLE) for this PR and every PR after it.
+    entries, problems = skip_gate.load_union(str(_REPO))
     if problems:
         print("\n--- skip gate (python, %s) ---" % platform)
         for problem in problems:

@@ -1,6 +1,6 @@
 /**
  * A `node --test` reporter that records every SKIPPED or TODO test as one JSON
- * line, for `scripts/skip-gate.cjs` to match against `tests/skip-exceptions.json`
+ * line, for `scripts/skip-gate.cjs` to match against `tests/skip-exceptions.d/`
  * (plan 88-19, FND-04).
  *
  * WHY A CUSTOM REPORTER AND NOT TAP — measured in task 88-19-01 on Node v20.19.0,

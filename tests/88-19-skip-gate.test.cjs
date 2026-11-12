@@ -1,7 +1,7 @@
 /**
  * Phase 88 plan 88-19: the skip gate (FND-04).
  *
- * A test that skips without an entry in tests/skip-exceptions.json fails the run with
+ * A test that skips without an entry in tests/skip-exceptions.d/ fails the run with
  * status 6; an entry that excuses nothing on a FULL run fails it too. This file proves
  * every rule of `scripts/skip-gate.cjs`, proves the Python half in
  * `tests/support/skip_gate.py` agrees with it rather than asserting that it does, and
@@ -29,7 +29,25 @@ const GATE = path.join(ROOT, 'scripts', 'skip-gate.cjs');
 const PY_GATE = path.join(ROOT, 'tests', 'support', 'skip_gate.py');
 const RUNNER = path.join(ROOT, 'scripts', 'run-tests.cjs');
 const REPORTER = path.join(ROOT, 'scripts', 'skip-reporter.mjs');
-const EXCEPTIONS = path.join(ROOT, 'tests', 'skip-exceptions.json');
+// Plan 89-09: the ledger is a DIRECTORY of shards, one per owning plan. The block
+// at the bottom of this file reads the UNION through the gate's own loader instead
+// of `fs.readFileSync` on a single path.
+const EXCEPTIONS_DIR = path.join(ROOT, 'tests', 'skip-exceptions.d');
+
+/**
+ * The real union, flattened into ONE temp file, for the two parity cases that
+ * drive `--evaluate`'s single-file `exceptionsFile` input. Built lazily so the
+ * temp directory is created once, when the CASES table is defined.
+ * @returns {string} absolute path of the temp file
+ */
+let _realLedgerFile = null;
+function realLedgerFile() {
+  if (_realLedgerFile === null) {
+    _realLedgerFile = path.join(tmp('ledger'), 'skip-exceptions-union.json');
+    fs.writeFileSync(_realLedgerFile, JSON.stringify(gate.loadUnion(ROOT).entries, null, 2));
+  }
+  return _realLedgerFile;
+}
 const gate = require(GATE);
 const { resolvePython, pythonEnv } = require(path.join(ROOT, 'get-shit-done', 'bin', 'lib', 'platform.cjs'));
 
@@ -366,14 +384,24 @@ describe('88-19 the gate fails closed', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-describe('88-19 tests/skip-exceptions.json itself', () => {
-  const all = JSON.parse(fs.readFileSync(EXCEPTIONS, 'utf8'));
+describe('88-19 tests/skip-exceptions.d/ itself', () => {
+  // The union, read the way every reader reads it. Plan 89-09 replaced the single
+  // file this block used to open by path; `all` is now the union of the shards and
+  // every subtest below iterates it, so uniqueness is asserted ACROSS the shards —
+  // the same property SKIP_EXCEPTIONS_DUPLICATE_ACROSS_SHARDS enforces at load.
+  const union = gate.loadUnion(ROOT);
+  const all = union.entries;
 
   test('it loads clean through the gate: flat, unique, schema-valid', () => {
-    const { entries, problems } = gate.loadExceptions(EXCEPTIONS);
-    assert.deepStrictEqual(problems, []);
-    assert.strictEqual(entries.length, all.length);
+    assert.deepStrictEqual(union.problems, []);
+    assert.ok(union.sources.length >= 1, `the shard directory must hold at least one shard; sources: ${union.sources.join(', ')}`);
+    assert.ok(all.length > 0, 'the union must not be empty');
     assert.strictEqual(new Set(all.map((e) => `${e.file}|${e.name}|${e.platform}`)).size, all.length);
+    // every shard is readable on its own, named individually on failure
+    for (const name of fs.readdirSync(EXCEPTIONS_DIR).filter((n) => n.endsWith('.json'))) {
+      const one = gate.loadExceptions(path.join(EXCEPTIONS_DIR, name));
+      assert.deepStrictEqual(one.problems, [], `${name} does not load clean`);
+    }
   });
 
   test('every entry carries an integer owner_phase and an exit criterion', () => {
@@ -390,7 +418,10 @@ describe('88-19 tests/skip-exceptions.json itself', () => {
 
   test('every context "local" entry is a scanner entry, and none is also a CI excuse', () => {
     const local = all.filter((e) => e.context === 'local');
-    assert.ok(local.length > 0, 'the ten scanner entries exist');
+    // Measured in plan 89-09 task 01: all ten `context: "local"` entries are
+    // `scanner-not-installed-locally` and all ten land in `carried.json`, so the
+    // count is known and asserted exactly rather than as "more than none".
+    assert.strictEqual(local.length, 10, 'the ten scanner entries exist, in carried.json');
     for (const e of local) {
       assert.strictEqual(e.reason_class, 'scanner-not-installed-locally', `${e.file} :: ${e.name}`);
       const twin = all.find((o) => o !== e && o.file === e.file && o.name === e.name);
@@ -430,11 +461,16 @@ describe('88-19 the two implementations cannot drift', () => {
       entries: [entry()], observed: [{ kind: 'suite-skip', file: 'tests/fake.test.cjs', name: 'a skipped test', reason: 'x' }] },
     { label: 'todo', runner: 'node', platform: 'darwin', ci: false, explicit: true,
       entries: [entry()], observed: [{ kind: 'todo', file: 'tests/fake.test.cjs', name: 'a skipped test', reason: 'x' }] },
+    // These two drive `--evaluate`'s `exceptionsFile` input, which is deliberately
+    // still a SINGLE file on both sides (plan 89-09 row 3): the parity interface
+    // takes one path, and the ledger's own sharding lives in `loadUnion` /
+    // `load_union`, above it. The content is the real union, written to a temp
+    // file at module load, so these cases keep testing the real ledger.
     { label: 'the real exceptions file, one real skip', runner: 'node', platform: 'darwin', ci: true, explicit: true,
-      exceptionsFile: EXCEPTIONS,
+      exceptionsFile: realLedgerFile(),
       observed: [{ kind: 'skip', file: 'tests/board.e2e.test.cjs', name: 'create and complete task journey', reason: 'r' }] },
     { label: 'the real exceptions file, one unlisted skip', runner: 'python', platform: 'linux', ci: true, explicit: true,
-      exceptionsFile: EXCEPTIONS,
+      exceptionsFile: realLedgerFile(),
       observed: [{ kind: 'skip', file: 'tests/test_nope.py', name: 'test_nope', reason: 'r' }] },
   ];
 

@@ -576,7 +576,8 @@ describe('88-19 the skip ledger: two findings, three directions, one resolution 
     const holder = fs.mkdtempSync(path.join(os.tmpdir(), 'pd-resolve-'));
     TMP_DIRS.push(holder);
     fs.cpSync(path.join(FIXTURES, 'agree'), path.join(holder, '.planning'), { recursive: true });
-    // the file beside .planning, i.e. <repo>/tests/skip-exceptions.json, is the one read
+    // the ledger beside .planning, i.e. <repo>/tests/, is the one read — the legacy
+    // single file here, and <repo>/tests/skip-exceptions.d/ since plan 89-09
     writeSkipExceptions(holder, [skipEntry()]);
     assert.deepStrictEqual(ids(path.join(holder, '.planning')), ['DRIFT_SKIP_LEDGER_MISMATCH']);
     // and the same file INSIDE .planning is not

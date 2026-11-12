@@ -408,7 +408,8 @@ function main() {
       killStrays(strays);
     }
     // Plan 88-19: the skip gate. A test that skipped without an entry in
-    // tests/skip-exceptions.json fails the run with status 6 (4 is the live-store
+    // tests/skip-exceptions.d/ (sharded one file per owner by plan 89-09) fails
+    // the run with status 6 (4 is the live-store
     // canary's and 5 the stray-process check's, both unchanged above), and on a FULL
     // run an entry that excused nothing fails it too, so the file cannot rot.
     //
