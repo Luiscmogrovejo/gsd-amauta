@@ -102,7 +102,7 @@ def setUpModule():
     })
 
     _stdout_path = os.path.join(_tmp, "daemon-stdout.log")
-    with open(_stdout_path, "w") as out:
+    with open(_stdout_path, "w", encoding="utf-8") as out:
         _proc = subprocess.Popen(
             [_PYTHON, _DAEMON, "run"],
             cwd=_ROOT, env=env, stdout=out, stderr=subprocess.STDOUT,
@@ -112,7 +112,7 @@ def setUpModule():
     while time.time() < deadline:
         if _proc.poll() is not None:
             _skip_reason = (
-                "daemon exited during startup:\n" + open(_stdout_path).read()[-2000:]
+                "daemon exited during startup:\n" + open(_stdout_path, encoding="utf-8").read()[-2000:]
             )
             return
         try:
@@ -122,7 +122,7 @@ def setUpModule():
             time.sleep(0.15)
     _skip_reason = (
         "daemon did not answer /health within %.0fs:\n%s"
-        % (_STARTUP_TIMEOUT_S, open(_stdout_path).read()[-2000:])
+        % (_STARTUP_TIMEOUT_S, open(_stdout_path, encoding="utf-8").read()[-2000:])
     )
 
 
@@ -140,7 +140,7 @@ def tearDownModule():
         # next run. PID_FILE lives beside the script, not in the temp dir.
         pid_file = os.path.join(_ROOT, "services", "amauta-daemon.pid")
         try:
-            if os.path.exists(pid_file) and int(open(pid_file).read().strip()) == _proc.pid:
+            if os.path.exists(pid_file) and int(open(pid_file, encoding="utf-8").read().strip()) == _proc.pid:
                 os.unlink(pid_file)
         except Exception:
             pass
@@ -499,7 +499,7 @@ class TestDaemonLogFile(_DaemonCase):
         self.assertTrue(os.path.exists(log_path),
                         "the daemon must leave a log behind — both spawners discard stderr")
         self.assertGreater(os.path.getsize(log_path), 0)
-        self.assertIn("daemon_started", open(log_path).read())
+        self.assertIn("daemon_started", open(log_path, encoding="utf-8").read())
 
 
 def _load_daemon_module():

@@ -194,12 +194,12 @@ class TestFullCacheCycle:
 class TestFileChangeInvalidation:
     """SEMANTIC-02: File change triggers cache invalidation."""
 
-    def test_file_change_invalidates_then_miss(self):
+    def test_file_change_invalidates_then_miss(self, tmp_path):
         """SEMANTIC-02: Store with source_file_hashes, invalidate with new hash, lookup misses."""
         store = MockPGStore()
         manager = SemanticCacheManager(threshold=0.90)
 
-        file_path = "/tmp/test.py"
+        file_path = str(tmp_path / "test.py")
         initial_hash = "hash1"
         new_hash = "hash2"
 
@@ -223,7 +223,7 @@ class TestFileChangeInvalidation:
         result_after = manager.lookup("file_invalidation_query", store)
         assert result_after is None, "Expected miss after invalidation"
 
-    def test_stats_reflect_invalidation(self):
+    def test_stats_reflect_invalidation(self, tmp_path):
         """SEMANTIC-02: After invalidation, stats shows reduced valid entry count."""
         store = MockPGStore()
         manager = SemanticCacheManager(threshold=0.90)
@@ -233,14 +233,14 @@ class TestFileChangeInvalidation:
             "file_invalidation_query",
             "Response A",
             50,
-            {"/tmp/file_a.py": "hash_a_v1"},
+            {str(tmp_path / "file_a.py"): "hash_a_v1"},
             store,
         )
         manager.store(
             "unrelated_invalidation_query",
             "Response B",
             50,
-            {"/tmp/file_b.py": "hash_b_v1"},
+            {str(tmp_path / "file_b.py"): "hash_b_v1"},
             store,
         )
 
@@ -248,7 +248,7 @@ class TestFileChangeInvalidation:
         assert db_stats_before["valid_entries"] == 2
 
         # Invalidate only file_a
-        manager.invalidate_for_file("/tmp/file_a.py", "hash_a_v2", store)
+        manager.invalidate_for_file(str(tmp_path / "file_a.py"), "hash_a_v2", store)
 
         db_stats_after = store.semantic_cache_stats()
         assert db_stats_after["valid_entries"] == 1, (
@@ -312,7 +312,7 @@ class TestRoute02CompactionLlmCall:
                 }
             }
             config_path = os.path.join(planning_dir, 'config.json')
-            with open(config_path, 'w') as f:
+            with open(config_path, 'w', encoding="utf-8") as f:
                 json.dump(config, f)
 
             # Monkey-patch the config path resolution inside the function

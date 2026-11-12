@@ -53,6 +53,7 @@ class TestTailCLIStructure(unittest.TestCase):
             capture_output=True,
             text=True,
             timeout=10,
+            encoding="utf-8",
         )
         self.assertEqual(result.returncode, 0,
                          f"node --check failed: {result.stderr}")
@@ -103,6 +104,7 @@ class TestTailCLIHelpOutput(unittest.TestCase):
             capture_output=True,
             text=True,
             timeout=10,
+            encoding="utf-8",
         )
         self.assertEqual(result.returncode, 2,
                          f"Expected exit 2 for 'a2a' with no action, got {result.returncode}")
@@ -116,6 +118,7 @@ class TestTailCLIHelpOutput(unittest.TestCase):
             capture_output=True,
             text=True,
             timeout=10,
+            encoding="utf-8",
         )
         self.assertEqual(result.returncode, 2,
                          f"Expected exit 2 for unknown a2a action 'bogus', got {result.returncode}")

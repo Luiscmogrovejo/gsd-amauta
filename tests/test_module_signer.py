@@ -30,7 +30,8 @@ class TestSignerConstants(unittest.TestCase):
         self.assertEqual(SIG_HEX_LEN, 128)
 
     def test_trust_store_in_home(self):
-        self.assertTrue(str(TRUST_STORE_DIR).endswith(".gsd-amauta/trusted-keys"))
+        # Compare path components: str(Path) uses backslashes on Windows, so a "/"-suffix test cannot hold there.
+        self.assertEqual(Path(TRUST_STORE_DIR).parts[-2:], (".gsd-amauta", "trusted-keys"))
 
 
 class TestRoundTrip(unittest.TestCase):
@@ -75,7 +76,7 @@ class TestTrustStore(unittest.TestCase):
             store = Path(td) / "trusted-keys"
             store.mkdir()
             _, pub = generate_keypair()
-            (store / "test-key.pub").write_text(pub)
+            (store / "test-key.pub").write_text(pub, encoding="utf-8")
             with mock.patch("services.module_signer.TRUST_STORE_DIR", store):
                 loaded = load_trusted_key("test-key")
                 self.assertEqual(loaded, pub)

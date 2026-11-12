@@ -81,6 +81,9 @@ function buildHermeticEnv(baseEnv) {
     GSD_AMAUTA_NO_AUTO_START: '1',
     GSD_INSTALL_FILES_ONLY: '1',
     AMAUTA_AUTO_BACKUP: 'off',
+    // 88-18: a Python child whose socket guard fails to arm must exit non-zero
+    // instead of running unguarded (tests/support/pythonpath/sitecustomize.py).
+    GSD_HERMETIC_GUARD_REQUIRED: '1',
   });
 
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gsd-tests-'));

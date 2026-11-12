@@ -1,8 +1,8 @@
 """Plan 88-13 (G1): UTF-8 stdio for the Python entry points, with POSIX output pinned first.
 
 ``amauta.py`` prints glyphs such as U+25CB. On Windows a piped stdout uses the ANSI code page
-(cp1252), so ``print`` raised ``UnicodeEncodeError`` and every ``execFileSync('python3', [amauta.py])``
-from Node failed. ``services/_platform.py:setup_stdio`` makes the streams UTF-8 only when they are
+(cp1252), so ``print`` raised ``UnicodeEncodeError`` and every ``execFileSync`` of ``amauta.py`` with
+the python3 launcher from Node failed. ``services/_platform.py:setup_stdio`` makes the streams UTF-8 only when they are
 not already, so POSIX output must not change by one byte: ``test_posix_stdout_bytes_unchanged``
 pins it.
 
@@ -131,6 +131,7 @@ def test_setup_stdio_is_a_noop_with_no_locale_variables():
         env={"PATH": os.environ["PATH"]},  # no LANG, no LC_*, no PYTHON* variables
         capture_output=True,
         text=True,
+        encoding="utf-8",
     )
     assert r.returncode == 0, r.stderr
     assert r.stdout.strip() == "False"
@@ -261,6 +262,7 @@ def test_platform_is_importable_from_each_entry_point_directory(rel):
         env={"PATH": os.environ["PATH"], **({"SYSTEMROOT": os.environ["SYSTEMROOT"]} if "SYSTEMROOT" in os.environ else {})},
         capture_output=True,
         text=True,
+        encoding="utf-8",
     )
     assert r.returncode == 0, r.stderr
     assert Path(r.stdout.strip()).resolve() == (ROOT / "services" / "_platform.py").resolve()

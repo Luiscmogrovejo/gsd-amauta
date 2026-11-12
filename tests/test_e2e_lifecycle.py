@@ -92,7 +92,7 @@ def _e2e_tempdir():
     tasks_file.write_text(json.dumps({
         "items": [],
         "metadata": {"created": amauta._now(), "version": "2.0", "updated": amauta._now()},
-    }))
+    }), encoding="utf-8")
 
     try:
         with patch("amauta.DATA_DIR", tmppath), \
@@ -108,7 +108,7 @@ def _e2e_tempdir():
 
 def _load_tasks(tmppath):
     """Load tasks.json from temp dir."""
-    return json.loads((tmppath / "tasks.json").read_text())
+    return json.loads((tmppath / "tasks.json").read_text(encoding="utf-8"))
 
 
 def _find_task(tmppath, task_id):
@@ -195,7 +195,7 @@ class TestFullLifecycleCreateToArchive(unittest.TestCase):
             remaining = _load_tasks(tmppath)
             self.assertEqual(len(remaining["items"]), 0, "Active tasks should be empty after archive")
 
-            archive_data = json.loads((tmppath / "tasks-archive.json").read_text())
+            archive_data = json.loads((tmppath / "tasks-archive.json").read_text(encoding="utf-8"))
             archived_ids = {i["id"] for i in archive_data["items"]}
             self.assertIn(task_id, archived_ids, "Task should be in archive")
 
@@ -390,7 +390,7 @@ class TestArchivedTaskInArchiveFile(unittest.TestCase):
             # Verify archive file
             archive_path = tmppath / "tasks-archive.json"
             self.assertTrue(archive_path.exists())
-            archive_data = json.loads(archive_path.read_text())
+            archive_data = json.loads(archive_path.read_text(encoding="utf-8"))
             archived_ids = {i["id"] for i in archive_data["items"]}
             self.assertIn(task_id, archived_ids)
 
@@ -431,7 +431,7 @@ class TestArchivedTaskHasCompleteRpetd(unittest.TestCase):
             archive_args = _make_archive_args(days=0)
             amauta.cmd_archive(archive_args)
 
-            archive_data = json.loads((tmppath / "tasks-archive.json").read_text())
+            archive_data = json.loads((tmppath / "tasks-archive.json").read_text(encoding="utf-8"))
             archived_task = next(i for i in archive_data["items"] if i["id"] == task_id)
             rpetd = archived_task.get("rpetd_phases", {})
             for phase_key in ["R", "P", "E", "T", "D"]:

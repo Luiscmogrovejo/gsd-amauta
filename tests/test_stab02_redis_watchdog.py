@@ -30,7 +30,7 @@ class TestRedisWatchdogStructure(unittest.TestCase):
     """Structural tests: verify the implementation is present and correct."""
 
     def setUp(self):
-        self.src = open("services/amauta-daemon.py").read()
+        self.src = open("services/amauta-daemon.py", encoding="utf-8").read()
         self.tree = ast.parse(self.src)
 
     def test_redis_watchdog_defined(self):

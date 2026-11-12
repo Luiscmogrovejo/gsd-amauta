@@ -16,7 +16,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 def test_circuit_breaker_schema_parses():
     """circuit-breaker.schema.json is parseable and has required properties."""
     schema_path = os.path.join(ROOT, "schemas", "circuit-breaker.schema.json")
-    with open(schema_path) as f:
+    with open(schema_path, encoding="utf-8") as f:
         schema = json.load(f)
     assert schema["type"] == "object"
     assert "state" in schema["required"]
@@ -31,7 +31,7 @@ def test_circuit_breaker_schema_parses():
 def test_divergence_memory_schema_parses():
     """divergence-memory.schema.json is parseable with all required fields."""
     schema_path = os.path.join(ROOT, "schemas", "divergence-memory.schema.json")
-    with open(schema_path) as f:
+    with open(schema_path, encoding="utf-8") as f:
         schema = json.load(f)
     assert schema["type"] == "array"
     required = schema["items"]["required"]
@@ -44,7 +44,7 @@ def test_divergence_memory_schema_parses():
 def test_divergence_memory_schema_enum_all_four_types():
     """divergence-memory.schema.json enum includes all 4 divergence types."""
     schema_path = os.path.join(ROOT, "schemas", "divergence-memory.schema.json")
-    with open(schema_path) as f:
+    with open(schema_path, encoding="utf-8") as f:
         schema = json.load(f)
     dt_enum = schema["items"]["properties"]["divergence_type"]["enum"]
     for dt in ["manifest_violation", "plan_amauta_drift",
@@ -58,7 +58,7 @@ def test_divergence_memory_schema_enum_all_four_types():
 def test_amauta_daemon_has_circuit_breaker_endpoints():
     """services/amauta-daemon.py contains circuit-breaker POST and GET endpoints."""
     daemon_path = os.path.join(ROOT, "services", "amauta-daemon.py")
-    with open(daemon_path) as f:
+    with open(daemon_path, encoding="utf-8") as f:
         content = f.read()
     assert "/api/circuit-breaker/record" in content, "Missing POST /api/circuit-breaker/record"
     assert "/api/circuit-breaker/" in content, "Missing GET /api/circuit-breaker/ route"
@@ -73,7 +73,7 @@ def test_amauta_daemon_has_circuit_breaker_endpoints():
 def test_divergence_protocol_version_1_2_0():
     """divergence-protocol.md version is 1.2.0 (Reflexion Memory Hook)."""
     proto_path = os.path.join(ROOT, "get-shit-done", "references", "divergence-protocol.md")
-    with open(proto_path) as f:
+    with open(proto_path, encoding="utf-8") as f:
         content = f.read()
     assert 'version: "1.2.0"' in content, "version header not updated to 1.2.0"
     assert "Protocol version: 1.2.0" in content, "Protocol version footer not updated to 1.2.0"
@@ -90,7 +90,7 @@ def test_execute_phase_has_agents_md_discovery():
     # discovery block at all (routed in 88-08-SUMMARY.md), so this keeps pinning the one
     # place that still ships it instead of passing vacuously.
     ep_path = os.path.join(ROOT, "get-shit-done", "workflows", "execute-phase-legacy.md")
-    with open(ep_path) as f:
+    with open(ep_path, encoding="utf-8") as f:
         content = f.read()
     assert "AGENTS.md Discovery" in content
     assert re.search(r"closest file wins|walk upward", content, re.IGNORECASE)
@@ -103,7 +103,7 @@ def test_execute_phase_has_agents_md_discovery():
 def test_lint_report_schema_parses_and_has_correct_fields():
     """schemas/lint-report.schema.json is parseable and has all required properties."""
     schema_path = os.path.join(ROOT, "schemas", "lint-report.schema.json")
-    with open(schema_path) as f:
+    with open(schema_path, encoding="utf-8") as f:
         schema = json.load(f)
     assert schema["type"] == "object"
     assert "linter" in schema["required"]
@@ -125,7 +125,7 @@ def test_lint_report_schema_parses_and_has_correct_fields():
 def test_feature_list_schema_parses_and_has_status_enum():
     """schemas/feature-list.schema.json is parseable and has status enum."""
     schema_path = os.path.join(ROOT, "schemas", "feature-list.schema.json")
-    with open(schema_path) as f:
+    with open(schema_path, encoding="utf-8") as f:
         schema = json.load(f)
     assert schema["type"] == "object"
     required = schema["required"]
@@ -143,7 +143,7 @@ def test_27_01_feature_list_has_minimum_features():
     """27-01-feature_list.json exists with >= 3 features and valid statuses."""
     fl_path = os.path.join(ROOT, ".planning", "phases", "27-the-retrieval-rewrite", "27-01-feature_list.json")
     assert os.path.exists(fl_path), "27-01-feature_list.json does not exist"
-    with open(fl_path) as f:
+    with open(fl_path, encoding="utf-8") as f:
         fl = json.load(f)
     assert fl["plan_id"] == "27-01"
     assert len(fl["features"]) >= 3, f"Expected >= 3 features, got {len(fl['features'])}"
@@ -160,7 +160,7 @@ def test_execute_phase_has_all_six_behav_markers():
     # Same as test_execute_phase_has_agents_md_discovery: the markers moved with the
     # pre-shard text to execute-phase-legacy.md when execute-phase.md became a redirect (c145580).
     ep_path = os.path.join(ROOT, "get-shit-done", "workflows", "execute-phase-legacy.md")
-    with open(ep_path) as f:
+    with open(ep_path, encoding="utf-8") as f:
         content = f.read()
     # BEHAV-01
     assert "AGENTS.md Discovery" in content
@@ -172,7 +172,7 @@ def test_execute_phase_has_all_six_behav_markers():
     # delegate still reads divergence memory; neither half alone proves the marker.
     assert "gsd-tools.cjs\" bearings" in content
     tools_path = os.path.join(ROOT, "get-shit-done", "bin", "gsd-tools.cjs")
-    with open(tools_path) as f:
+    with open(tools_path, encoding="utf-8") as f:
         tools_src = f.read()
     assert re.search(r"Reflexion|reflexion|divergence-memory", content + tools_src, re.IGNORECASE)
     assert "divergence-memory" in tools_src
@@ -187,7 +187,7 @@ def test_execute_phase_has_all_six_behav_markers():
 def test_amauta_daemon_has_circuit_breaker_endpoints_extended():
     """services/amauta-daemon.py contains circuit-breaker POST and GET endpoints (extended check)."""
     daemon_path = os.path.join(ROOT, "services", "amauta-daemon.py")
-    with open(daemon_path) as f:
+    with open(daemon_path, encoding="utf-8") as f:
         content = f.read()
     assert "/api/circuit-breaker/record" in content
     assert "/api/circuit-breaker/" in content

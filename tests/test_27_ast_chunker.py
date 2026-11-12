@@ -98,7 +98,7 @@ def test_rlm01_chunk_count_within_range_of_symbol_count():
     filepath = os.path.abspath('services/rlm-service.py')
     if not os.path.exists(filepath):
         pytest.skip('rlm-service.py not found')
-    with open(filepath, 'r') as f:
+    with open(filepath, 'r', encoding="utf-8") as f:
         content = f.read()
     # Count ALL defs including methods (indented) — accurate comparison for AST
     symbol_count = len(re.findall(r'^\s*(def |class |async def )', content, re.MULTILINE))
@@ -189,7 +189,7 @@ def test_rlm01_requirements_txt_has_wave3_deps():
     """requirements.txt includes networkx, voyageai, sentence-transformers."""
     req_path = os.path.abspath('requirements.txt')
     assert os.path.exists(req_path), 'requirements.txt must exist'
-    with open(req_path, 'r') as f:
+    with open(req_path, 'r', encoding="utf-8") as f:
         content = f.read()
     assert 'networkx' in content, 'networkx required for dependency graph (Wave 3)'
     assert 'voyageai' in content, 'voyageai required for Voyage Code 3 embeddings (Wave 2)'

@@ -93,7 +93,7 @@ def tmp_catalog(tmp_path, monkeypatch):
     def _write(entries):
         path = tmp_path / "catalog.json"
         data = {"catalog_version": "1.0", "entries": entries}
-        path.write_text(json.dumps(data))
+        path.write_text(json.dumps(data), encoding="utf-8")
         monkeypatch.setenv("GSD_CAPABILITY_CATALOG_PATH", str(path))
         return load_capability_catalog(force_reload=True)
     yield _write
@@ -214,7 +214,7 @@ def test_pg_down_buffers_jsonl(tmp_data_dir):
     assert result == {"logged": False, "buffered": True}
     path = buffer_path()
     assert os.path.isfile(path)
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         record = json.loads(f.readline())
     assert "ts" in record
     assert record["agent_id"] == "gsd-executor-backend"
@@ -223,7 +223,7 @@ def test_pg_down_buffers_jsonl(tmp_data_dir):
 
 def test_buffer_write_failure_fails_open(tmp_path, monkeypatch):
     file_as_dir = tmp_path / "not-a-dir"
-    file_as_dir.write_text("i am a file, not a directory")
+    file_as_dir.write_text("i am a file, not a directory", encoding="utf-8")
     monkeypatch.setenv("AMAUTA_DATA_DIR", str(file_as_dir))
     result = log_access(None, "gsd-executor-backend", "x", "the-target", "read-only", "allowed")
     assert result["logged"] is False
@@ -321,7 +321,8 @@ def test_buffer_dir_identical_across_runtimes(tmp_path, monkeypatch):
     # Node-side DATA_DIR (proof: tasks.json actually lives there).
     monkeypatch.delenv("AMAUTA_DATA_DIR", raising=False)
     repo = subprocess.check_output(["git", "rev-parse", "--show-toplevel"]).decode().strip()
-    assert os.path.normpath(os.path.abspath(_data_dir())) == os.path.join(repo, "data")
+    # `git rev-parse --show-toplevel` prints forward slashes on Windows; compare normalised paths.
+    assert os.path.normpath(os.path.abspath(_data_dir())) == os.path.normpath(os.path.join(repo, "data"))
     # The old proof was `os.path.isfile(<repo>/data/tasks.json)`: it needed the operator's
     # live, gitignored data file and so failed in any clean checkout or CI runner (LIVE
     # bucket, 88-08-03). The seam it proved is that the Node side defaults DATA_DIR to
@@ -338,5 +339,6 @@ def test_buffer_dir_identical_across_runtimes(tmp_path, monkeypatch):
         ["node", "-e", "console.log(process.env.AMAUTA_DATA_DIR || 'UNSET')"],
         env={**os.environ},
         capture_output=True, text=True,
+        encoding="utf-8",
     )
     assert proc.stdout.strip() == str(tmp_path)

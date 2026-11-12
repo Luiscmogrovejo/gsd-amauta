@@ -58,7 +58,7 @@ _DAEMON_PATH = os.path.join(_ROOT, "services", "amauta-daemon.py")
 
 
 def _load_fixtures():
-    with open(_FIXTURES_PATH) as f:
+    with open(_FIXTURES_PATH, encoding="utf-8") as f:
         return json.load(f)["fixtures"]
 
 
@@ -166,7 +166,7 @@ def test_fail_open_on_missing_patterns_file(tmp_path):
 
 def test_fail_open_on_corrupt_patterns_file(tmp_path):
     corrupt_path = tmp_path / "corrupt-evidence-scrub-patterns.json"
-    corrupt_path.write_text("{not valid json")
+    corrupt_path.write_text("{not valid json", encoding="utf-8")
     os.environ["GSD_EVIDENCE_SCRUB_PATTERNS_PATH"] = str(corrupt_path)
     evidence_scrub._PATTERNS_CACHE = None
     text = "storePassword=hunter2"

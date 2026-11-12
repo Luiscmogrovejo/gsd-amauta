@@ -339,7 +339,7 @@ class TestSearchCodeTool(unittest.TestCase):
     def test_no_unfiltered_select_regression(self):
         """Structural lock on RETR-03: the dead code_embeddings probe must never
         return, and hybrid_search delegation must remain present."""
-        with open(_MODULE_PATH) as f:
+        with open(_MODULE_PATH, encoding="utf-8") as f:
             source = f.read()
         self.assertNotIn("code_embeddings", source,
                           "code_embeddings must not reappear in amauta-mcp.py")
@@ -369,6 +369,7 @@ class TestSearchCodeTool(unittest.TestCase):
             capture_output=True,
             text=True,
             timeout=30,
+            encoding="utf-8",
         )
         self.assertEqual(
             proc.stdout.strip(), "True",

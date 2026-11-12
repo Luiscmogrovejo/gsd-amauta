@@ -154,7 +154,7 @@ class TestASTSourceInspection(unittest.TestCase):
     """AST-level source checks — no imports executed, pure text inspection."""
 
     def setUp(self):
-        with open(CLIENT_PY) as f:
+        with open(CLIENT_PY, encoding="utf-8") as f:
             self.source = f.read()
         self.tree = ast.parse(self.source)
 

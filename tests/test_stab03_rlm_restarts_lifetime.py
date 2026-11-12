@@ -12,7 +12,7 @@ class TestRlmRestartsLifetime(unittest.TestCase):
 
     def test_global_declared(self):
         """_rlm_restarts_lifetime global is declared as integer 0."""
-        src = open("services/amauta-daemon.py").read()
+        src = open("services/amauta-daemon.py", encoding="utf-8").read()
         tree = ast.parse(src)
         # Find module-level assignment _rlm_restarts_lifetime = 0
         found = False
@@ -27,7 +27,7 @@ class TestRlmRestartsLifetime(unittest.TestCase):
 
     def test_lifetime_incremented_alongside_restart_count(self):
         """In _rlm_watchdog, _rlm_restarts_lifetime += 1 follows _rlm_restart_count += 1."""
-        src = open("services/amauta-daemon.py").read()
+        src = open("services/amauta-daemon.py", encoding="utf-8").read()
         # Simple grep-level check: both increments present in source
         self.assertIn("_rlm_restarts_lifetime += 1", src,
                       "_rlm_restarts_lifetime += 1 not found in source")
@@ -36,7 +36,7 @@ class TestRlmRestartsLifetime(unittest.TestCase):
 
     def test_lifetime_not_reset_in_start_rlm(self):
         """_start_rlm does NOT assign or reset _rlm_restarts_lifetime."""
-        src = open("services/amauta-daemon.py").read()
+        src = open("services/amauta-daemon.py", encoding="utf-8").read()
         tree = ast.parse(src)
         # Find _start_rlm function body
         for node in ast.walk(tree):
@@ -52,7 +52,7 @@ class TestRlmRestartsLifetime(unittest.TestCase):
 
     def test_health_endpoint_contains_lifetime_key(self):
         """The /health endpoint response dict includes 'rlm_restarts_lifetime' key."""
-        src = open("services/amauta-daemon.py").read()
+        src = open("services/amauta-daemon.py", encoding="utf-8").read()
         # The key must appear in the health response dict
         self.assertIn('"rlm_restarts_lifetime"', src,
                       '"rlm_restarts_lifetime" key not found in health response')
@@ -62,7 +62,7 @@ class TestRlmRestartsLifetime(unittest.TestCase):
 
     def test_lifetime_key_after_restarts_key_in_health(self):
         """rlm_restarts_lifetime appears on the line after rlm_restarts in /health dict."""
-        src = open("services/amauta-daemon.py").read()
+        src = open("services/amauta-daemon.py", encoding="utf-8").read()
         lines = src.split("\n")
         restart_line = None
         for i, line in enumerate(lines):

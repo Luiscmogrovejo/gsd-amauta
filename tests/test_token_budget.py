@@ -41,12 +41,12 @@ def _write_config(tmp_path, monkeypatch, token_budget=None, raw=None,
     case); raw=<str> writes literal bytes (malformed-JSON case)."""
     cfg_path = tmp_path / "config.json"
     if raw is not None:
-        cfg_path.write_text(raw)
+        cfg_path.write_text(raw, encoding="utf-8")
     else:
         cfg = {"telemetry": {"enabled": telemetry_enabled, "salt": "s"}}
         if token_budget is not None:
             cfg["token_budget"] = token_budget
-        cfg_path.write_text(json.dumps(cfg))
+        cfg_path.write_text(json.dumps(cfg), encoding="utf-8")
     monkeypatch.setenv("GSD_TELEMETRY_CONFIG_PATH", str(cfg_path))
     monkeypatch.setenv("AMAUTA_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("GSD_TELEMETRY", "on")

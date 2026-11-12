@@ -243,7 +243,7 @@ class TestRenderAgentContract:
         agent_dir = tmp_path / "agents"
         agent_dir.mkdir()
         agent_file = agent_dir / "my-agent.md"
-        agent_file.write_text("# My Agent\n\nHello from agent.\n")
+        agent_file.write_text("# My Agent\n\nHello from agent.\n", encoding="utf-8")
 
         # Patch os.path.dirname so the first search path lands in tmp_path
         orig_dirname = os.path.dirname

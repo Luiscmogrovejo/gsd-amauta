@@ -64,7 +64,7 @@ fun frobKt(): Int = 7
 
 def test_kotlin_extraction(tmp_path):
     f = tmp_path / "sample.kt"
-    f.write_text(KOTLIN_SRC)
+    f.write_text(KOTLIN_SRC, encoding="utf-8")
     chunks = chunk_file_ast(str(f))
     for c in chunks:
         _assert_schema(c)
@@ -94,7 +94,7 @@ func frobSwift() -> Int {
 
 def test_swift_extraction(tmp_path):
     f = tmp_path / "sample.swift"
-    f.write_text(SWIFT_SRC)
+    f.write_text(SWIFT_SRC, encoding="utf-8")
     chunks = chunk_file_ast(str(f))
     for c in chunks:
         _assert_schema(c)
@@ -133,7 +133,7 @@ def test_go_extraction(tmp_path):
     own chunk named just the method identifier, not Type.method.
     """
     f = tmp_path / "sample.go"
-    f.write_text(GO_SRC)
+    f.write_text(GO_SRC, encoding="utf-8")
     chunks = chunk_file_ast(str(f))
     for c in chunks:
         _assert_schema(c)
@@ -167,7 +167,7 @@ impl Frobber {
 
 def test_rust_extraction(tmp_path):
     f = tmp_path / "sample.rs"
-    f.write_text(RUST_SRC)
+    f.write_text(RUST_SRC, encoding="utf-8")
     chunks = chunk_file_ast(str(f))
     for c in chunks:
         _assert_schema(c)
@@ -207,7 +207,7 @@ def test_java_extraction(tmp_path):
     top-level class-like type (an interface) alongside the class+method.
     """
     f = tmp_path / "sample.java"
-    f.write_text(JAVA_SRC)
+    f.write_text(JAVA_SRC, encoding="utf-8")
     chunks = chunk_file_ast(str(f))
     for c in chunks:
         _assert_schema(c)
@@ -268,7 +268,7 @@ def frob_py():
 
 def test_python_regression(tmp_path):
     f = tmp_path / "sample.py"
-    f.write_text(PY_SRC)
+    f.write_text(PY_SRC, encoding="utf-8")
     chunks = chunk_file_ast(str(f))
     for c in chunks:
         _assert_schema(c)
@@ -291,7 +291,7 @@ JS_SRC = """function frobJs() {
 
 def test_javascript_regression(tmp_path):
     f = tmp_path / "sample.js"
-    f.write_text(JS_SRC)
+    f.write_text(JS_SRC, encoding="utf-8")
     chunks = chunk_file_ast(str(f))
     for c in chunks:
         _assert_schema(c)

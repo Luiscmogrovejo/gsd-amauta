@@ -128,6 +128,7 @@ class TestRegistryCLI(unittest.TestCase):
             [sys.executable, A2A_REGISTRY_CLI, *args],
             capture_output=True, text=True,
             cwd=_REPO_ROOT,
+            encoding="utf-8",
         )
         return result
 

@@ -117,7 +117,7 @@ class TestBackupCreate(BackupTestBase):
         output = os.path.join(self.backup_dir, "test-schema.json.gz")
         self.mgr.create(output)
 
-        with gzip.open(output, "rt") as f:
+        with gzip.open(output, "rt", encoding="utf-8") as f:
             data = json.load(f)
 
         self.assertEqual(data["schema_version"], SCHEMA_VERSION)
@@ -132,7 +132,7 @@ class TestBackupCreate(BackupTestBase):
         self.assertEqual(counts["gsd_task_validations"], 1)
 
         # Verify internal counts match actual row counts
-        with gzip.open(path, "rt") as f:
+        with gzip.open(path, "rt", encoding="utf-8") as f:
             data = json.load(f)
         for table, expected in data["counts"].items():
             self.assertEqual(len(data["tables"][table]), expected,
@@ -156,7 +156,7 @@ class TestBackupVerify(BackupTestBase):
         self.mgr.create(output)
 
         # Read, tamper, and rewrite
-        with gzip.open(output, "rt") as f:
+        with gzip.open(output, "rt", encoding="utf-8") as f:
             data = json.load(f)
 
         # Tamper: add a fake memory row
@@ -177,7 +177,7 @@ class TestBackupVerify(BackupTestBase):
         output = os.path.join(self.backup_dir, "count-tamper.json.gz")
         self.mgr.create(output)
 
-        with gzip.open(output, "rt") as f:
+        with gzip.open(output, "rt", encoding="utf-8") as f:
             data = json.load(f)
 
         # Tamper: inflate the count without adding rows
@@ -253,7 +253,7 @@ class TestBackupRestore(BackupTestBase):
         self.mgr.create(output)
 
         # Tamper the version
-        with gzip.open(output, "rt") as f:
+        with gzip.open(output, "rt", encoding="utf-8") as f:
             data = json.load(f)
         data["schema_version"] = "99.0.0"
         # Recalculate checksum
@@ -271,7 +271,7 @@ class TestBackupRestore(BackupTestBase):
         output = os.path.join(self.backup_dir, "corrupt.json.gz")
         self.mgr.create(output)
 
-        with gzip.open(output, "rt") as f:
+        with gzip.open(output, "rt", encoding="utf-8") as f:
             data = json.load(f)
         data["tables"]["gsd_memory"].append({"id": "corrupt", "text": "bad"})
         # Do NOT update checksum
@@ -327,7 +327,7 @@ class TestAutoBackup(BackupTestBase):
             for i in range(10):
                 fake_date = f"2026031{i}"
                 fake_path = os.path.join(self.backup_dir, f"gsd-auto-{fake_date}.json.gz")
-                with gzip.open(fake_path, "wt") as f:
+                with gzip.open(fake_path, "wt", encoding="utf-8") as f:
                     json.dump({"fake": True}, f)
 
             # Now run auto_backup which creates today's file + prunes

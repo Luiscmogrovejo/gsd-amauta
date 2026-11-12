@@ -28,7 +28,8 @@ E2E_TASK_ID = "__test__-cap-e2e"  # 16 chars — fits VARCHAR(20); __test__-scop
 
 def _repo_root():
     return subprocess.check_output(
-        ["git", "rev-parse", "--show-toplevel"], text=True
+        ["git", "rev-parse", "--show-toplevel"], text=True,
+        encoding="utf-8"
     ).strip()
 
 
@@ -99,7 +100,7 @@ def test_access_produces_queryable_audit_row(fixture_daemon):
     elif resp.get("buffered"):
         bpath = _buffer_path(fixture_daemon)
         assert os.path.isfile(bpath), f"expected buffer file at {bpath}"
-        with open(bpath, "r") as f:
+        with open(bpath, "r", encoding="utf-8") as f:
             content = f.read()
         assert E2E_TASK_ID in content, "expected E2E task id in degraded JSONL buffer"
         pytest.skip("PG down — verified JSONL degraded path instead")

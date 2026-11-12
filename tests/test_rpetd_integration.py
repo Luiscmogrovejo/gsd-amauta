@@ -109,7 +109,7 @@ class TestFullPipelineRoundTrip:
         """Daemon source contains context endpoint handlers."""
         import os
         daemon_path = os.path.join(os.path.dirname(__file__), '..', 'services', 'amauta-daemon.py')
-        with open(daemon_path, 'r') as f:
+        with open(daemon_path, 'r', encoding="utf-8") as f:
             source = f.read()
         assert '/api/context/compact' in source, "Daemon must have /api/context/compact endpoint"
         assert '/api/context/' in source, "Daemon must have /api/context/ GET endpoint"
@@ -119,7 +119,7 @@ class TestFullPipelineRoundTrip:
         """gsd-amauta.cjs contains the compactRpetdContext wiring."""
         import os
         cjs_path = os.path.join(os.path.dirname(__file__), '..', 'get-shit-done', 'bin', 'gsd-amauta.cjs')
-        with open(cjs_path, 'r') as f:
+        with open(cjs_path, 'r', encoding="utf-8") as f:
             source = f.read()
         assert 'compactRpetdContext' in source, "gsd-amauta.cjs must have compactRpetdContext"
         assert '/api/context/compact' in source, "gsd-amauta.cjs must reference the compact endpoint"
@@ -130,7 +130,7 @@ class TestFullPipelineRoundTrip:
         import os
         # Verify the original cmdRpetd still has autoLearnFromRpetd
         cjs_path = os.path.join(os.path.dirname(__file__), '..', 'get-shit-done', 'bin', 'gsd-amauta.cjs')
-        with open(cjs_path, 'r') as f:
+        with open(cjs_path, 'r', encoding="utf-8") as f:
             source = f.read()
         assert 'autoLearnFromRpetd' in source, "autoLearnFromRpetd must still exist (backward compat)"
         # The VALID_PHASES set must still be present

@@ -284,7 +284,7 @@ class TestTableNameMigration(unittest.TestCase):
     def test_no_amauta_memory_inserts_in_source(self):
         """amauta.py has zero 'INSERT INTO amauta_memory' statements."""
         amauta_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "amauta.py")
-        with open(amauta_path, "r") as f:
+        with open(amauta_path, "r", encoding="utf-8") as f:
             source = f.read()
         # Count non-comment INSERT INTO amauta_memory lines
         insert_count = len(re.findall(r"INSERT INTO amauta_memory", source))
@@ -293,7 +293,7 @@ class TestTableNameMigration(unittest.TestCase):
     def test_gsd_memory_inserts_present(self):
         """amauta.py has at least 2 'INSERT INTO gsd_memory' statements."""
         amauta_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "amauta.py")
-        with open(amauta_path, "r") as f:
+        with open(amauta_path, "r", encoding="utf-8") as f:
             source = f.read()
         insert_count = len(re.findall(r"INSERT INTO gsd_memory", source))
         self.assertGreaterEqual(insert_count, 2, f"Found {insert_count} 'INSERT INTO gsd_memory' — should be >= 2")
@@ -301,7 +301,7 @@ class TestTableNameMigration(unittest.TestCase):
     def test_zero_amauta_memory_sql_references(self):
         """amauta.py has zero SQL references to amauta_memory (FROM/INTO/SELECT)."""
         amauta_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "amauta.py")
-        with open(amauta_path, "r") as f:
+        with open(amauta_path, "r", encoding="utf-8") as f:
             source = f.read()
         # Match any SQL-like reference (FROM amauta_memory, INTO amauta_memory, etc.)
         sql_refs = len(re.findall(r"(?:FROM|INTO|TABLE)\s+amauta_memory", source))

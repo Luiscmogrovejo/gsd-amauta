@@ -78,7 +78,7 @@ def _fresh_env(monkeypatch, tmp_path, enabled=True, extra_config=None):
     if extra_config:
         config["telemetry"].update(extra_config)
     config_path = tmp_path / "config.json"
-    config_path.write_text(json.dumps(config))
+    config_path.write_text(json.dumps(config), encoding="utf-8")
 
     monkeypatch.setenv("GSD_TELEMETRY_CONFIG_PATH", str(config_path))
     monkeypatch.setenv("AMAUTA_DATA_DIR", str(data_dir))
@@ -103,7 +103,7 @@ def test_envelope_keys_locked(tmp_path, monkeypatch):
     result = emit_event("phase_start", {"phase": "62"})
     assert result == {"emitted": True}
 
-    with open(buffer_path(), "r") as f:
+    with open(buffer_path(), "r", encoding="utf-8") as f:
         line = f.readlines()[-1]
     event = json.loads(line)
     assert sorted(event.keys()) == [
@@ -131,7 +131,7 @@ def test_cap_oldest_dropped(tmp_path, monkeypatch):
         r = emit_event("phase_start", {"seq": seq})
         assert r == {"emitted": True}
 
-    with open(buffer_path(), "r") as f:
+    with open(buffer_path(), "r", encoding="utf-8") as f:
         lines = [l for l in f.read().split("\n") if l.strip()]
     assert len(lines) == 10
     first = json.loads(lines[0])
@@ -147,7 +147,7 @@ def test_project_hash_salted(tmp_path, monkeypatch):
 
     result = emit_event("phase_start", {})
     assert result == {"emitted": True}
-    with open(buffer_path(), "r") as f:
+    with open(buffer_path(), "r", encoding="utf-8") as f:
         raw = f.read()
     repo_basename = os.path.basename(os.path.normpath(_ROOT))
     assert repo_basename not in raw
@@ -184,6 +184,7 @@ def test_buffer_dir_identical_across_runtimes(tmp_path, monkeypatch):
         ["node", "-e", f"console.log(require({json.dumps(_NODE_TELEMETRY_CJS)}).bufferPath())"],
         env={**os.environ},
         capture_output=True, text=True,
+        encoding="utf-8",
     )
     assert proc.returncode == 0, proc.stderr
     node_path = os.path.realpath(proc.stdout.strip())
@@ -207,10 +208,11 @@ def test_envelope_parity_with_node(tmp_path, monkeypatch):
         ],
         env=node_env,
         capture_output=True, text=True,
+        encoding="utf-8",
     )
     assert proc.returncode == 0, proc.stderr
 
-    with open(buffer_path(), "r") as f:
+    with open(buffer_path(), "r", encoding="utf-8") as f:
         lines = [l for l in f.read().split("\n") if l.strip()]
     assert len(lines) == 2
     py_event = json.loads(lines[0])
@@ -224,7 +226,7 @@ def test_party_create_wiring_source():
     """Source-level check: the emit call sits inside create() with a
     bare-except guard, additive around the existing return."""
     party_path = os.path.join(_ROOT, "services", "party_session.py")
-    with open(party_path, "r") as f:
+    with open(party_path, "r", encoding="utf-8") as f:
         src = f.read()
 
     create_match = re.search(r"def create\(.*?\n(?:.*\n)*?\n\ndef start\(", src)
@@ -256,7 +258,7 @@ def test_party_create_wiring_behavioral(tmp_path, monkeypatch):
         session_id = result["session_id"]
         conn.commit()
 
-        with open(buffer_path(), "r") as f:
+        with open(buffer_path(), "r", encoding="utf-8") as f:
             lines = [l for l in f.read().split("\n") if l.strip()]
         assert lines, "expected at least one buffered telemetry event"
         last_event = json.loads(lines[-1])
@@ -276,10 +278,10 @@ def test_party_create_wiring_behavioral(tmp_path, monkeypatch):
 def test_emit_never_raises(tmp_path, monkeypatch):
     # Point AMAUTA_DATA_DIR at a FILE (not a directory) so makedirs/append fails.
     bad_dir = tmp_path / "not-a-directory"
-    bad_dir.write_text("i am a file, not a dir")
+    bad_dir.write_text("i am a file, not a dir", encoding="utf-8")
 
     config_path = tmp_path / "config.json"
-    config_path.write_text(json.dumps({"telemetry": {"enabled": True}}))
+    config_path.write_text(json.dumps({"telemetry": {"enabled": True}}), encoding="utf-8")
 
     monkeypatch.setenv("GSD_TELEMETRY_CONFIG_PATH", str(config_path))
     monkeypatch.setenv("AMAUTA_DATA_DIR", str(bad_dir))

@@ -78,10 +78,11 @@ def test_script_resolution_prefers_the_repo_outside_test_mode(tmp_path, monkeypa
     fake_home = tmp_path / "home"
     fake_home.mkdir()
     monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("USERPROFILE", str(fake_home))
     repo = tmp_path / "repo"
     script = repo / "get-shit-done" / "bin" / "gsd-research.cjs"
     script.parent.mkdir(parents=True)
-    script.write_text("// stub\n")
+    script.write_text("// stub\n", encoding="utf-8")
     monkeypatch.setattr(amauta, "__file__", str(repo / "amauta.py"))
     resolved = amauta._research_script_path()
     assert resolved == str(script)
@@ -94,6 +95,11 @@ def test_script_resolution_falls_back_to_the_installed_copy(tmp_path, monkeypatc
     fake_home = tmp_path / "home"
     fake_home.mkdir()
     monkeypatch.setenv("HOME", str(fake_home))
+    # os.path.expanduser reads HOME on POSIX but USERPROFILE on Windows (it ignores HOME there),
+    # so pin both or this test resolves the runner's real home directory on Windows.
+    monkeypatch.setenv("USERPROFILE", str(fake_home))
     monkeypatch.setattr(amauta, "__file__", str(tmp_path / "empty-repo" / "amauta.py"))
     resolved = amauta._research_script_path()
-    assert resolved == str(fake_home / ".claude" / "get-shit-done" / "bin" / "gsd-research.cjs")
+    expected = fake_home / ".claude" / "get-shit-done" / "bin" / "gsd-research.cjs"
+    # The product joins with "/" after the home directory; compare as paths, not as strings.
+    assert os.path.normpath(resolved) == os.path.normpath(str(expected))

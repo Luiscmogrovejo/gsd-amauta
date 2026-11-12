@@ -33,7 +33,7 @@ os.environ["GSD_AMAUTA_NO_AUTO_START"] = "1"
 os.environ["PYTEST_CURRENT_TEST"] = "1"
 
 DAEMON_PATH = Path(__file__).parent.parent / "services" / "amauta-daemon.py"
-DAEMON_SOURCE = DAEMON_PATH.read_text()
+DAEMON_SOURCE = DAEMON_PATH.read_text(encoding="utf-8")
 
 
 def _extract_function(source: str, name: str):

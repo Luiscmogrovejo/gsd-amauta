@@ -61,7 +61,7 @@ class TestFileSha256(unittest.TestCase):
 
     def _make_file(self, name, content="hello"):
         fpath = os.path.join(self._tmpdir, name)
-        with open(fpath, "w") as f:
+        with open(fpath, "w", encoding="utf-8") as f:
             f.write(content)
         return fpath
 
@@ -94,7 +94,7 @@ class TestIsStale(unittest.TestCase):
 
     def _make_file(self, name, content="hello"):
         fpath = os.path.join(self._tmpdir, name)
-        with open(fpath, "w") as f:
+        with open(fpath, "w", encoding="utf-8") as f:
             f.write(content)
         return fpath
 
@@ -120,7 +120,7 @@ class TestIsStale(unittest.TestCase):
         pg_before = _FakePgConn(stored_sha=original_sha)
         self.assertFalse(is_stale(fpath, pg_before))
 
-        with open(fpath, "w") as f:
+        with open(fpath, "w", encoding="utf-8") as f:
             f.write("modified content")
 
         pg_after = _FakePgConn(stored_sha=original_sha)  # PG still has the OLD sha
@@ -140,7 +140,7 @@ class TestMtimeIndexFullyRetired(unittest.TestCase):
         rlm_path = os.path.join(
             os.path.dirname(os.path.abspath(__file__)), "..", "services", "rlm-service.py"
         )
-        with open(rlm_path, "r") as f:
+        with open(rlm_path, "r", encoding="utf-8") as f:
             src = f.read()
         self.assertNotIn("MtimeIndex", src)
         self.assertNotIn("MTIME_INDEX", src)

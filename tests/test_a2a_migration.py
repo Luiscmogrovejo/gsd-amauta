@@ -20,9 +20,9 @@ class TestA2AMigrationStructure(unittest.TestCase):
     """Structural tests: verify migration 024 contains the correct schema."""
 
     def setUp(self):
-        with open(MIGRATION_UP) as f:
+        with open(MIGRATION_UP, encoding="utf-8") as f:
             self.up_sql = f.read()
-        with open(MIGRATION_DOWN) as f:
+        with open(MIGRATION_DOWN, encoding="utf-8") as f:
             self.down_sql = f.read()
 
     def test_up_is_wrapped_in_transaction(self):

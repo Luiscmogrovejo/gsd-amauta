@@ -86,7 +86,7 @@ def _apply_migration_023_if_needed() -> None:
                 migration_path = os.path.join(
                     os.path.dirname(__file__), "..", "migrations", "023-party-decisions.sql"
                 )
-                with open(migration_path, "r") as fh:
+                with open(migration_path, "r", encoding="utf-8") as fh:
                     sql = fh.read()
                 cur.execute(sql)
         conn.close()

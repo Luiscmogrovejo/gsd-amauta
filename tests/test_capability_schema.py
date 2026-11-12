@@ -188,7 +188,7 @@ def test_malformed_json_falls_through_to_empty(monkeypatch, tmp_path):
     """env override to a tmp_path file containing 'not-json{' -> empty-catalog
     fallback, no raise."""
     bad_file = tmp_path / "malformed-catalog.json"
-    bad_file.write_text("not-json{")
+    bad_file.write_text("not-json{", encoding="utf-8")
     monkeypatch.setenv("GSD_CAPABILITY_CATALOG_PATH", str(bad_file))
 
     data = load_capability_catalog(force_reload=True)
@@ -199,7 +199,7 @@ def test_version_mismatch_warns_but_loads(monkeypatch, tmp_path, capsys):
     """tmp_path catalog with catalog_version '9.9' and valid empty entries
     loads (returns the data); stderr contains '9.9'."""
     mismatched_file = tmp_path / "mismatched-catalog.json"
-    mismatched_file.write_text(json.dumps({"catalog_version": "9.9", "entries": []}))
+    mismatched_file.write_text(json.dumps({"catalog_version": "9.9", "entries": []}), encoding="utf-8")
     monkeypatch.setenv("GSD_CAPABILITY_CATALOG_PATH", str(mismatched_file))
 
     # Reset the module-level warn-once flag so this test observes the warning

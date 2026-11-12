@@ -12,12 +12,13 @@ carries the two things that bucket owes:
    results. A missing tool that reads as success is a silent-green failure mode.
 """
 import os
-import stat
 import sys
 from pathlib import Path
 from unittest import mock
 
 import pytest
+
+import fake_exe
 
 os.environ.setdefault("GSD_AMAUTA_NO_AUTO_START", "1")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -38,10 +39,10 @@ def test_have_tool_is_false_for_a_binary_that_does_not_exist():
 
 
 def test_have_tool_finds_an_executable_on_path(tmp_path, monkeypatch):
-    stub = tmp_path / "fake-tool-88-08"
-    stub.write_text("#!/bin/sh\nexit 0\n")
-    stub.chmod(stub.stat().st_mode | stat.S_IXUSR)
-    monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ.get("PATH", ""))
+    # fake_exe writes an executable launcher: a mode-0o755 shell script on POSIX, a .cmd shim on
+    # Windows (where shutil.which applies PATHEXT but an extensionless shebang file is not executable).
+    fake_exe.write_fake_exe(tmp_path, "fake-tool-88-08", "")
+    monkeypatch.setenv("PATH", fake_exe.prepend_path([tmp_path]))
     assert _conftest().have_tool("fake-tool-88-08") is True
 
 
@@ -58,11 +59,13 @@ def test_research_chain_reports_unavailable_when_node_is_missing():
 def test_research_chain_reports_unavailable_when_the_script_is_missing(tmp_path, monkeypatch):
     """node present but gsd-research.cjs absent (repo copy and ~/.claude copy): still []."""
     monkeypatch.setenv("HOME", str(tmp_path))
+    # expanduser reads USERPROFILE, not HOME, on Windows: pin both so the real home is never consulted.
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     # Plan 88-12: the repository copy is preferred when it exists, so point the module at an
     # empty tree to make "script missing" true again, and opt out of the test-mode early return.
     monkeypatch.setattr(amauta, "__file__", str(tmp_path / "amauta.py"))
     with mock.patch("amauta._research_chain_blocked", return_value=False), \
-            mock.patch("shutil.which", return_value="/usr/bin/true"):
+            mock.patch("shutil.which", return_value=sys.executable):
         with mock.patch("subprocess.run") as run:
             result = amauta._research_chain_query("any topic")
     assert result == [], "research chain unavailable must be an empty result, got %r" % (result,)

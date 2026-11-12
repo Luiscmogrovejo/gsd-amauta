@@ -49,6 +49,7 @@ import uuid
 import threading
 from collections import defaultdict
 from pathlib import Path
+import socketserver
 from socketserver import ThreadingMixIn
 from urllib.parse import parse_qs, urlparse
 import logging
@@ -236,6 +237,10 @@ def _attach_log_file(path=None, max_bytes=None, backups=None):
             resolved,
             maxBytes=max_bytes if max_bytes is not None else LOG_FILE_MAX_BYTES,
             backupCount=backups if backups is not None else LOG_FILE_BACKUPS,
+            # The file is read back as UTF-8 (tests, `tail`, editors). Without this the handler
+            # writes the locale code page, which is cp1252 on Windows: a U+2014 dash became the
+            # single byte 0x97 and the log was not valid UTF-8 (found by 88-18 on the Windows cell).
+            encoding="utf-8",
         )
         handler.setFormatter(logging.Formatter(
             "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
@@ -1770,6 +1775,22 @@ class ThreadedHTTPServer(ThreadingMixIn, http.server.HTTPServer):
     """Handle requests in separate threads."""
     daemon_threads = True
     allow_reuse_address = True
+
+    def server_bind(self):
+        """Bind the listening socket without ``HTTPServer``'s reverse-DNS lookup.
+
+        ``http.server.HTTPServer.server_bind`` calls ``socket.getfqdn(host)`` only to fill
+        ``server_name``, which nothing here reads. On a host whose resolver is slow (a GitHub
+        macOS runner, a laptop on a VPN) that call blocks for tens of seconds before the daemon
+        announces its port, so every readiness poll times out. Binding is unchanged.
+
+        Raises:
+            OSError: when the address cannot be bound, exactly as before.
+        """
+        socketserver.TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name = host
+        self.server_port = port
 
 
 class AmautaHandler(http.server.BaseHTTPRequestHandler):

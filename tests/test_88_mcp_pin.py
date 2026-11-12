@@ -18,7 +18,7 @@ _ONE_X_MARKERS = (
 
 def _mcp_line(path):
     """Return the ``mcp`` requirement line of a requirements file (comment stripped)."""
-    for raw in path.read_text().splitlines():
+    for raw in path.read_text(encoding="utf-8").splitlines():
         line = raw.split("#", 1)[0].strip()
         if re.match(r"^mcp\s*([<>=!~\[]|$)", line):
             return line
@@ -50,7 +50,7 @@ def _contains(requirement_line, version):
 
 def test_requirements_cap_matches_the_api_the_server_uses():
     line = _mcp_line(_REPO / "requirements.txt")
-    source = (_REPO / "services" / "amauta-mcp.py").read_text()
+    source = (_REPO / "services" / "amauta-mcp.py").read_text(encoding="utf-8")
     if any(marker in source for marker in _ONE_X_MARKERS):
         assert not _contains(line, "2.0.0"), (
             "the cap was removed while services/amauta-mcp.py still imports the 1.x server API "

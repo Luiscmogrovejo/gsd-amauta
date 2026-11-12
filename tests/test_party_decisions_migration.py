@@ -56,7 +56,7 @@ def _apply_migration(sql_path: str) -> None:
     db_url = os.environ.get(
         "DATABASE_URL", "postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta"
     )
-    with open(sql_path, "r") as fh:
+    with open(sql_path, "r", encoding="utf-8") as fh:
         sql = fh.read()
     conn = psycopg2.connect(db_url)
     conn.autocommit = True

@@ -25,13 +25,13 @@ class TestFactDensity:
     def test_fixture_exists_and_has_10_entries(self):
         """Fixture file exists with exactly 10 annotated samples."""
         assert os.path.isfile(FIXTURE_PATH), f"Fixture not found: {FIXTURE_PATH}"
-        with open(FIXTURE_PATH) as f:
+        with open(FIXTURE_PATH, encoding="utf-8") as f:
             data = json.load(f)
         assert len(data) == 10, f"Expected 10 entries, got {len(data)}"
 
     @pytest.fixture
     def fixture_data(self):
-        with open(FIXTURE_PATH) as f:
+        with open(FIXTURE_PATH, encoding="utf-8") as f:
             return json.load(f)
 
     def test_all_entries_have_required_keys(self, fixture_data):
@@ -88,7 +88,7 @@ class TestCavemanDescriptionWiring:
         """generate_caveman_description matches the description_fn signature."""
         import tempfile
         from services.caveman_descriptions import generate_caveman_description
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".py", mode="w") as f:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".py", mode="w", encoding="utf-8") as f:
             f.write("import os\nimport sys\n\ndef main():\n    pass\n")
             f.flush()
             path = f.name
@@ -110,7 +110,7 @@ class TestCavemanDescriptionWiring:
 
         PIPE_REGEX = re.compile(r'^.+\|.+deps:.+\|.+touches:.+\|.+tests:.+\|.+$')
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".py", mode="w") as f:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".py", mode="w", encoding="utf-8") as f:
             f.write(
                 "import hashlib\nimport os\n\n"
                 "def compute_hash(path):\n"
@@ -142,7 +142,7 @@ class TestCavemanDescriptionWiring:
 
         PIPE_REGEX = re.compile(r'^.+\|.+deps:.+\|.+touches:.+\|.+tests:.+\|.+$')
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".py", mode="w") as f:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".py", mode="w", encoding="utf-8") as f:
             f.write("import json\n\ndef parse(data):\n    return json.loads(data)\n")
             f.flush()
             path = f.name

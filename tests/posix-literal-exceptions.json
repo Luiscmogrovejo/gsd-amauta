@@ -7,34 +7,6 @@
     "owner_plan": "none"
   },
   {
-    "rule": "POSIX_HOME_ONLY",
-    "file": "tests/test_88_research_chain_hermetic.py",
-    "count": 2,
-    "reason": "Python test file: sets HOME without USERPROFILE in a Python test (Windows expanduser reads USERPROFILE). Plan 88-18 owns tests/*.py portability and deletes this entry.",
-    "owner_plan": "88-18"
-  },
-  {
-    "rule": "POSIX_HOME_ONLY",
-    "file": "tests/test_88_tool_absence.py",
-    "count": 1,
-    "reason": "Python test file: sets HOME without USERPROFILE in a Python test (Windows expanduser reads USERPROFILE). Plan 88-18 owns tests/*.py portability and deletes this entry.",
-    "owner_plan": "88-18"
-  },
-  {
-    "rule": "POSIX_HOME_ONLY",
-    "file": "tests/test_doctor.py",
-    "count": 4,
-    "reason": "Python test file: sets HOME without USERPROFILE in a Python test (Windows expanduser reads USERPROFILE). Plan 88-18 owns tests/*.py portability and deletes this entry.",
-    "owner_plan": "88-18"
-  },
-  {
-    "rule": "POSIX_HOME_ONLY",
-    "file": "tests/test_doctor_truth.py",
-    "count": 1,
-    "reason": "Python test file: sets HOME without USERPROFILE in a Python test (Windows expanduser reads USERPROFILE). Plan 88-18 owns tests/*.py portability and deletes this entry.",
-    "owner_plan": "88-18"
-  },
-  {
     "rule": "POSIX_PS",
     "file": "tests/88-12-init-daemon-gate.test.cjs",
     "count": 1,
@@ -309,45 +281,10 @@
   },
   {
     "rule": "POSIX_SHEBANG_FAKE",
-    "file": "tests/test_88_tool_absence.py",
+    "file": "tests/support/fake_exe.py",
     "count": 1,
-    "reason": "Python test file: writes a #! fake executable with a chmod in a Python test (a .cmd shim is needed on Windows). Plan 88-18 owns tests/*.py portability and deletes this entry.",
-    "owner_plan": "88-18"
-  },
-  {
-    "rule": "POSIX_SHEBANG_FAKE",
-    "file": "tests/test_doctor.py",
-    "count": 2,
-    "reason": "Python test file: writes a #! fake executable with a chmod in a Python test (a .cmd shim is needed on Windows). Plan 88-18 owns tests/*.py portability and deletes this entry.",
-    "owner_plan": "88-18"
-  },
-  {
-    "rule": "POSIX_SHEBANG_FAKE",
-    "file": "tests/test_doctor_truth.py",
-    "count": 1,
-    "reason": "Python test file: writes a #! fake executable with a chmod in a Python test (a .cmd shim is needed on Windows). Plan 88-18 owns tests/*.py portability and deletes this entry.",
-    "owner_plan": "88-18"
-  },
-  {
-    "rule": "POSIX_TMP",
-    "file": "tests/test_audit_cli.py",
-    "count": 2,
-    "reason": "Python test file: a literal /tmp path in a Python test (use pytest tmp_path). Plan 88-18 owns tests/*.py portability and deletes this entry.",
-    "owner_plan": "88-18"
-  },
-  {
-    "rule": "POSIX_TMP",
-    "file": "tests/test_rlm_wiring.py",
-    "count": 4,
-    "reason": "Python test file: a literal /tmp path in a Python test (use pytest tmp_path). Plan 88-18 owns tests/*.py portability and deletes this entry.",
-    "owner_plan": "88-18"
-  },
-  {
-    "rule": "POSIX_TMP",
-    "file": "tests/test_semantic_cache_integration.py",
-    "count": 4,
-    "reason": "Python test file: a literal /tmp path in a Python test (use pytest tmp_path). Plan 88-18 owns tests/*.py portability and deletes this entry.",
-    "owner_plan": "88-18"
+    "reason": "This is the helper itself (the Python mirror of tests/support/fake-exe.cjs): it writes the #! launcher and chmods it on POSIX only, and a .cmd shim on Windows. Permanent.",
+    "owner_plan": "none"
   },
   {
     "rule": "POSIX_WHICH",

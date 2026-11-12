@@ -33,7 +33,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Do NOT import daemon directly -- it starts servers at module level.
 # Instead, read source and test logic via string/AST analysis.
 DAEMON_PATH = Path(__file__).parent.parent / "services" / "amauta-daemon.py"
-DAEMON_SOURCE = DAEMON_PATH.read_text()
+DAEMON_SOURCE = DAEMON_PATH.read_text(encoding="utf-8")
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

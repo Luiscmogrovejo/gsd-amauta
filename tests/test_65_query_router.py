@@ -82,7 +82,7 @@ class TestQueryRouterLegacyFallback:
         monkeypatch.setattr(rlm_mod, "_get_pg_conn", lambda: None)
 
         target = tmp_path / "zz.py"
-        target.write_text("def zz_target_fn():\n    return 7\n")
+        target.write_text("def zz_target_fn():\n    return 7\n", encoding="utf-8")
 
         status, data = post(
             server, "/query", {"query": "zz_target_fn", "directory": str(tmp_path)}
@@ -186,7 +186,7 @@ class TestQueryRouterHybridBranch:
         )
 
         target = tmp_path / "yy.py"
-        target.write_text("def yy_target_fn():\n    return 1\n")
+        target.write_text("def yy_target_fn():\n    return 1\n", encoding="utf-8")
 
         status, data = post(
             server, "/query", {"query": "yy_target_fn", "directory": str(tmp_path)}
@@ -220,7 +220,7 @@ class TestQueryRouterHybridBranch:
         monkeypatch.setattr(rlm_search, "hybrid_search", boom)
 
         target = tmp_path / "xx.py"
-        target.write_text("def xx_target_fn():\n    return 2\n")
+        target.write_text("def xx_target_fn():\n    return 2\n", encoding="utf-8")
 
         status, data = post(
             server, "/query", {"query": "xx_target_fn", "directory": str(tmp_path)}
@@ -303,7 +303,7 @@ class TestSearchEndpointNormalization:
         )
 
         target = tmp_path / "target.py"
-        target.write_text("def bar_fn(): pass\n")
+        target.write_text("def bar_fn(): pass\n", encoding="utf-8")
 
         status, data = post(server, "/search", {"query": "bar_fn", "paths": [str(target)]})
 

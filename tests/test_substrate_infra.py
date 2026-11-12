@@ -59,7 +59,7 @@ def test_infra04_javascript_parse_produces_ast():
 def test_infra01_docker_compose_uses_valkey():
     """docker-compose.yml references valkey/valkey:8-alpine (not redis:7)."""
     import pathlib
-    compose = pathlib.Path('docker/docker-compose.yml').read_text()
+    compose = pathlib.Path('docker/docker-compose.yml').read_text(encoding="utf-8")
     assert 'valkey/valkey:8-alpine' in compose, "Must use valkey/valkey:8-alpine"
     assert 'redis:7' not in compose, "Must not reference redis:7"
     assert 'BSD 3-Clause' in compose, "Must have BSD 3-Clause license comment"

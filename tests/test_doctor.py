@@ -33,6 +33,10 @@ import unittest
 
 import pytest
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent / "support"))
+
+import fake_exe  # noqa: E402  (tests/support: portable fake executables)
+
 PYTHON = sys.executable
 
 # Ports deliberately outside the live daemon (18799) / RLM (18798) range.
@@ -43,15 +47,15 @@ def hermetic_env(extra=None):
     env = dict(os.environ)
     env.update(HERMETIC_PORTS)
     env["HOME"] = tempfile.mkdtemp(prefix="doctor-home-")
+    env["USERPROFILE"] = env["HOME"]  # Path.home() reads USERPROFILE on Windows and ignores HOME
     env.pop("CLAUDE_CONFIG_DIR", None)
     # Neither the operator's PATH (their own `amauta`, their real `gh`) nor their
     # API keys may decide the outcome: a fake `gh` leads a minimal PATH.
     fake = tempfile.mkdtemp(prefix="doctor-fakegh-")
-    gh = os.path.join(fake, "gh")
-    with open(gh, "w") as fh:
-        fh.write("#!/bin/sh\necho 'You are not logged into any GitHub hosts.'\nexit 1\n")
-    os.chmod(gh, 0o755)
-    env["PATH"] = f"{fake}:/usr/bin:/bin"
+    fake_exe.write_fake_exe(
+        fake, "gh", "print('You are not logged into any GitHub hosts.')\nraise SystemExit(1)\n"
+    )
+    env["PATH"] = fake_exe.isolated_path(fake)
     for key in ("VOYAGE_API_KEY", "PERPLEXITY_API_KEY", "ANTHROPIC_API_KEY"):
         env[key] = "dummy-not-a-real-key"
     if extra:
@@ -67,6 +71,7 @@ def run_doctor(env=None, args=()):
         text=True,
         timeout=20,
         env=env if env is not None else hermetic_env(),
+        encoding="utf-8",
     )
     return result.returncode, result.stdout, result.stderr
 
@@ -74,7 +79,7 @@ def run_doctor(env=None, args=()):
 class TestDoctorStructure(unittest.TestCase):
 
     def setUp(self):
-        self.src = open("services/doctor.py").read()
+        self.src = open("services/doctor.py", encoding="utf-8").read()
         self.tree = ast.parse(self.src)
 
     def test_exit_code_reflects_severity(self):
@@ -119,7 +124,7 @@ class TestDoctorStructure(unittest.TestCase):
 
     def test_cli_cjs_has_doctor_branch(self):
         """bin/cli.cjs contains doctor command branch."""
-        cli_src = open("bin/cli.cjs").read()
+        cli_src = open("bin/cli.cjs", encoding="utf-8").read()
         self.assertIn(
             "command === 'doctor'",
             cli_src,
@@ -128,7 +133,7 @@ class TestDoctorStructure(unittest.TestCase):
 
     def test_cli_cjs_references_doctor_py(self):
         """bin/cli.cjs references services/doctor.py."""
-        cli_src = open("bin/cli.cjs").read()
+        cli_src = open("bin/cli.cjs", encoding="utf-8").read()
         self.assertIn(
             "services/doctor.py",
             cli_src,
@@ -158,9 +163,9 @@ def _load_doctor():
     return mod
 
 
-def _script(path, text="#!/bin/sh\n# gsd-amauta\n"):
+def _script(path, text="// gsd-amauta stand-in: only its path and mode matter\n"):
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text)
+    path.write_text(text, encoding="utf-8")
     path.chmod(0o755)
     return path
 
@@ -174,11 +179,11 @@ def two_gsd_amauta(tmp_path, monkeypatch):
     os.symlink(runtime, first / "gsd-amauta")
     second = _script(tmp_path / "brew-bin" / "gsd-amauta")
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     monkeypatch.setenv("PATH", os.pathsep.join([str(first), str(second.parent)]))
     return {"runtime": runtime, "first": first / "gsd-amauta", "second": second}
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="needs POSIX symlinks and #! scripts")
 def test_path_collision_reports_both_targets(two_gsd_amauta):
     mod = _load_doctor()
     mod.check_path_collision()
@@ -194,7 +199,6 @@ def test_path_collision_reports_both_targets(two_gsd_amauta):
     assert str(two_gsd_amauta["runtime"].resolve()) in detail
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="needs POSIX symlinks and #! scripts")
 def test_path_collision_ok_when_single_entry(tmp_path, monkeypatch):
     """One `gsd-amauta` that resolves into this package is OK."""
     mod = _load_doctor()
@@ -202,13 +206,13 @@ def test_path_collision_ok_when_single_entry(tmp_path, monkeypatch):
     bin_dir.mkdir()
     os.symlink(mod.REPO_ROOT / "bin" / "cli.cjs", bin_dir / "gsd-amauta")
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     monkeypatch.setenv("PATH", str(bin_dir))
     mod.check_path_collision()
     [(status, cat, _detail, _data)] = mod.rows
     assert (status, cat) == (mod.OK, "path_collision")
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="needs POSIX symlinks and #! scripts")
 def test_symlink_into_runtime_config_dir_is_not_classified_self(two_gsd_amauta):
     """Policy (88-RESEARCH section 5): a binary resolving into the runtime config
     directory is another copy, not 'self'. Treating it as self would silence the
@@ -223,18 +227,19 @@ def test_install_stale_default_record_path_follows_the_patched_home(tmp_path, mo
     (tmp_path), so the operator's own install record is never read."""
     mod = _load_doctor()
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     monkeypatch.setattr(pathlib.Path, "home", lambda: tmp_path)
     pkg = tmp_path / "pkg"
     (pkg / "lib").mkdir(parents=True)
-    (pkg / "package.json").write_text('{"files": ["lib"]}')
-    (pkg / "lib" / "a.txt").write_text("a")
+    (pkg / "package.json").write_text('{"files": ["lib"]}', encoding="utf-8")
+    (pkg / "lib" / "a.txt").write_text("a", encoding="utf-8")
     mod.check_install_stale(package_root=pkg)
     assert mod.rows[-1][0] == mod.WARN and "no install record" in mod.rows[-1][2]
     record = tmp_path / ".amauta" / "data" / "install_record.json"
     record.parent.mkdir(parents=True)
     fmap = mod.shipped_file_map(pkg)
     record.write_text(__import__("json").dumps(
-        {"shipped_hash": mod.shipped_hash_from_map(fmap), "shipped_files": fmap}))
+        {"shipped_hash": mod.shipped_hash_from_map(fmap), "shipped_files": fmap}), encoding="utf-8")
     mod.check_install_stale(package_root=pkg)
     assert mod.rows[-1][0] == mod.OK
 
