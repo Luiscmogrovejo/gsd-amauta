@@ -168,3 +168,116 @@ def test_setup_stdio_survives_capsys(capsys):
     assert setup_stdio() in (True, False)  # replaced sys.stdout / sys.stderr must not raise
     print("still prints")
     assert "still prints" in capsys.readouterr().out
+
+
+# --------------------------------------------------------------------------------------------
+# Task 88-13-06: every Python entry point calls setup_stdio() first thing in its __main__ block.
+# --------------------------------------------------------------------------------------------
+import ast  # noqa: E402
+
+
+def _entry_points():
+    """Every file with a module-level ``if __name__ == "__main__":`` block (amauta.py, services/, scripts/)."""
+    found = []
+    listed = [p.relative_to(ROOT).as_posix() for sub in ("services", "scripts") for p in sorted((ROOT / sub).glob("*.py"))]
+    for rel in ["amauta.py"] + listed:
+        if rel.endswith("_platform.py"):
+            continue
+        tree = ast.parse((ROOT / rel).read_text(encoding="utf-8"))
+        node = _main_block(tree)
+        if node is not None:
+            found.append((rel, node))
+    return found
+
+
+def _main_block(tree):
+    for node in tree.body:
+        if (
+            isinstance(node, ast.If)
+            and isinstance(node.test, ast.Compare)
+            and isinstance(node.test.left, ast.Name)
+            and node.test.left.id == "__name__"
+            and len(node.test.comparators) == 1
+            and isinstance(node.test.comparators[0], ast.Constant)
+            and node.test.comparators[0].value == "__main__"
+        ):
+            return node
+    return None
+
+
+def _is_setup_call(stmt):
+    return (
+        isinstance(stmt, ast.Expr)
+        and isinstance(stmt.value, ast.Call)
+        and getattr(stmt.value.func, "id", "") == "setup_stdio"
+    )
+
+
+def test_every_entry_point_sets_up_stdio():
+    entries = _entry_points()
+    assert len(entries) == 17, "expected 17 entry points, found %d: %s" % (len(entries), [e[0] for e in entries])
+    for rel, node in entries:
+        idx = [i for i, st in enumerate(node.body) if _is_setup_call(st)]
+        assert idx, "%s: no setup_stdio() call directly in the __main__ block" % rel
+        for st in node.body[: idx[0]]:  # nothing before it may print or touch sys.stdout
+            for n in ast.walk(st):
+                is_print = isinstance(n, ast.Call) and getattr(n.func, "id", "") == "print"
+                is_stdout = isinstance(n, ast.Attribute) and n.attr in ("stdout", "stderr")
+                assert not (is_print or is_stdout), "%s: output used before setup_stdio()" % rel
+    # No entry point calls it at import time (module level), only inside __main__.
+    for rel, _ in entries:
+        tree = ast.parse((ROOT / rel).read_text(encoding="utf-8"))
+        assert not [n for n in tree.body if _is_setup_call(n)], "%s calls setup_stdio() at import time" % rel
+
+
+def _path_expression(rel, node):
+    """The expression the entry point appends to sys.path, taken from its own source."""
+    for st in node.body:
+        if (
+            isinstance(st, ast.Expr)
+            and isinstance(st.value, ast.Call)
+            and isinstance(st.value.func, ast.Attribute)
+            and st.value.func.attr == "append"
+            and isinstance(st.value.func.value, ast.Attribute)
+            and st.value.func.value.attr == "path"
+        ):
+            return ast.Expression(st.value.args[0])
+    raise AssertionError("%s: no sys.path.append(...) in the __main__ block" % rel)
+
+
+@pytest.mark.parametrize("rel", [e[0] for e in _entry_points()])
+def test_platform_is_importable_from_each_entry_point_directory(rel):
+    """The sys.path preparation each file really does must resolve _platform to services/_platform.py,
+    not fall into the ImportError stub (which would turn this whole task into a no-op)."""
+    node = dict(_entry_points())[rel]
+    expr = ast.fix_missing_locations(_path_expression(rel, node))
+    services_dir = eval(compile(expr, rel, "eval"), {"_os": os, "__file__": str(ROOT / rel)})
+    code = (
+        "import sys; sys.path.append(%r); import _platform; print(_platform.__file__)" % services_dir
+    )
+    r = subprocess.run(
+        [sys.executable, "-I", "-c", code],
+        cwd=str((ROOT / rel).parent),
+        env={"PATH": os.environ["PATH"], **({"SYSTEMROOT": os.environ["SYSTEMROOT"]} if "SYSTEMROOT" in os.environ else {})},
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode == 0, r.stderr
+    assert Path(r.stdout.strip()).resolve() == (ROOT / "services" / "_platform.py").resolve()
+
+
+@pytest.mark.parametrize("name,pre,cmd", GOLDEN, ids=[g[0] for g in GOLDEN])
+def test_cp1252_stdout_does_not_crash(name, pre, cmd):
+    """Proof (a) for G1: force a cp1252 stdout, the Windows piped-console condition, on any platform."""
+    with tempfile.TemporaryDirectory() as tmp:
+        env = pinned_env(tmp, {"PYTHONIOENCODING": "cp1252", "PYTHONUTF8": "0"})
+        seed(env)
+        for p in pre:
+            r = run_cli(p, env)
+            assert r.returncode == 0, r.stderr.decode("utf-8", "replace")
+        r = run_cli(cmd, env)
+        err = r.stderr.decode("utf-8", "replace")
+        assert "UnicodeEncodeError" not in err, err
+        assert r.returncode == 0, "%s exited %d: %s" % (name, r.returncode, err)
+        # BLOCKED / INVALID TRANSITION messages are non-ASCII too, hence the exit-0 clause above.
+        assert any(b > 127 for b in r.stdout), "%s printed no non-ASCII byte" % name
