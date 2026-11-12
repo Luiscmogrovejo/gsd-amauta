@@ -28,6 +28,7 @@ const fs = require('node:fs');
 const ROOT = path.resolve(__dirname, '..');
 const BIN_INIT = path.join(ROOT, 'bin', 'init.cjs');
 const PKG_VERSION = require(path.join(ROOT, 'package.json')).version;
+const { homeEnv } = require('./support/home-env.cjs');
 
 function tmp(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -39,7 +40,7 @@ function runInit(args, opts) {
   const cwd = opts.cwd || home;
   const env = {
     ...process.env,
-    HOME: home,
+    ...homeEnv(home),
     AMAUTA_DATA_DIR: path.join(home, 'data'),
     GSD_AMAUTA_PORT: '18991',   // dead port: never touch a running daemon
     CLAUDE_CONFIG_DIR: opts.configDir || path.join(home, '.claude'),
@@ -240,7 +241,7 @@ test('init detects a foreign binary named `amauta` ahead of ours on PATH', () =>
         cwd: home,
         env: {
           ...process.env,
-          HOME: home,
+          ...homeEnv(home),
           PATH: `${binDir}:/usr/bin:/bin`,
           GSD_AMAUTA_PORT: '18991',
           CLAUDE_CONFIG_DIR: path.join(home, '.claude'),
@@ -271,7 +272,7 @@ test('init --json keeps the PATH-collision warning off stdout', () => {
         cwd: home,
         env: {
           ...process.env,
-          HOME: home,
+          ...homeEnv(home),
           PATH: `${binDir}:/usr/bin:/bin`,
           GSD_AMAUTA_PORT: '18991',
           CLAUDE_CONFIG_DIR: path.join(home, '.claude'),

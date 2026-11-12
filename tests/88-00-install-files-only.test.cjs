@@ -15,6 +15,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { homeEnv } = require('./support/home-env.cjs');
 
 const INSTALL = path.resolve(__dirname, '..', 'bin', 'install.js');
 let tmp, bin, calls;
@@ -43,7 +44,7 @@ function run(args, name) {
     input: '',
     env: Object.assign({}, process.env, {
       PATH: bin + path.delimiter + process.env.PATH,
-      HOME: path.join(tmp, 'home-' + name),
+      ...homeEnv(path.join(tmp, 'home-' + name)),
       GSD_INSTALL_FILES_ONLY: '',
       GSD_TEST_MODE: '', // the runner's GSD_TEST_MODE=1 makes install.js skip its main block
       GSD_SHUNT: '', GSD_COMPRESS: '',

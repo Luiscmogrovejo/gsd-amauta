@@ -17,6 +17,7 @@ const net = require('net');
 const os = require('os');
 const path = require('path');
 const { spawnSync, execFileSync } = require('child_process');
+const { homeEnv } = require('./support/home-env.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const BIN_INIT = path.join(ROOT, 'bin', 'init.cjs');
@@ -108,8 +109,10 @@ function listening(port) {
 function runInit(extraArgs, envOverrides, port, home) {
   const env = { ...process.env, ...envOverrides };
   delete env.NODE_TEST_CONTEXT;
-  Object.assign(env, {
-    HOME: home,
+  // homeEnv sets HOME, USERPROFILE, HOMEDRIVE and HOMEPATH: on Windows os.homedir() follows
+  // USERPROFILE, so HOME alone left the gate seeing the real profile (and reporting
+  // foreign_config_dir instead of foreign_home). os.userInfo().homedir ignores all of them.
+  Object.assign(env, homeEnv(home), {
     CLAUDE_CONFIG_DIR: path.join(home, '.claude'),
     AMAUTA_DATA_DIR: path.join(home, 'data'),
     GSD_AMAUTA_PORT: String(port),
