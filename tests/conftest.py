@@ -42,12 +42,25 @@ import hermetic_guard  # noqa: E402
 # ---------------------------------------------------------------------------
 os.environ["GSD_TEST_MODE"] = "1"
 
+#: Variables that would point a test at a live database or cache.
+#:
+#: All FIVE legacy cache names are here (plan 89-09 task 06), matching
+#: scripts/run-tests.cjs's DELETED_KEYS exactly: services/cache_url.py reads
+#: GSD_REDIS_URL, AMAUTA_REDIS_URL, VALKEY_URL, REDIS_URL and
+#: REDIS_HOST+REDIS_PORT in that order, so leaving any of them through would let
+#: an ambient value outrank the disposable cache this file configures.
+#:
+#: GSD_REDIS_URL, the CANONICAL name, is deliberately NOT scrubbed: it is the one
+#: the session fixture SETS, to an ephemeral free port.
 _DELETED_KEYS = (
     "GSD_POSTGRES_URL",
     "DATABASE_URL",
     "AMAUTA_MEMORY_DATABASE_URL",
     "VALKEY_URL",
     "REDIS_URL",
+    "AMAUTA_REDIS_URL",
+    "REDIS_HOST",
+    "REDIS_PORT",
     "GSD_PG_PORT",
 )
 _LIVE_PORTS = {18799, 18798, 6379, 5433}
