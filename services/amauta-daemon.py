@@ -85,6 +85,12 @@ else:
 
 log = logging.getLogger("amauta.daemon")
 
+# The ONE cache-URL resolver (plan 89-09 task 04)
+try:
+    from services import cache_url
+except ImportError:  # pragma: no cover - script-launched from services/
+    import cache_url
+
 # Infrastructure detection
 _HAS_INFRA_DETECT = False
 _infra_result = None
@@ -936,7 +942,11 @@ def _rlm_watchdog():
 
 
 # ── Redis Service Management ──────────────────────────────────────────────────
-REDIS_URL = os.environ.get("GSD_REDIS_URL", "redis://127.0.0.1:6379/0")
+# plan 89-09 task 04: the ONE resolver. This site already read the canonical
+# name, and is converted anyway, because the point is that ONE function
+# decides and a site that happens to read the right name still cannot report
+# its source. `cache_url.report()` is what the /health cache row publishes.
+CACHE_URL = cache_url.redis_url()
 REDIS_MAX_RESTARTS = 3
 _redis_restart_count = 0
 _redis_last_successful_uptime = None  # epoch seconds of first healthy observation post-reconnect; resets to None after each reconnect event so the 300s uptime gate re-arms
@@ -957,13 +967,13 @@ def _start_redis():
         return False
     try:
         _redis_client = redis_module.from_url(
-            REDIS_URL, decode_responses=False, socket_timeout=2, socket_connect_timeout=2
+            CACHE_URL, decode_responses=False, socket_timeout=2, socket_connect_timeout=2
         )
         _redis_client.ping()
         _redis_restart_count = 0
         log.info(
             "redis_connected url=%s",
-            REDIS_URL.split("@")[-1] if "@" in REDIS_URL else REDIS_URL,
+            CACHE_URL.split("@")[-1] if "@" in CACHE_URL else CACHE_URL,
         )
         return True
     except Exception as e:
@@ -1008,13 +1018,13 @@ def _auto_start_redis_container():
             time.sleep(0.5)
             try:
                 _redis_client = redis_module.from_url(
-                    REDIS_URL, decode_responses=False, socket_timeout=2, socket_connect_timeout=2
+                    CACHE_URL, decode_responses=False, socket_timeout=2, socket_connect_timeout=2
                 )
                 _redis_client.ping()
                 _redis_restart_count = 0
                 log.info(
                     "redis_auto_started url=%s",
-                    REDIS_URL.split("@")[-1] if "@" in REDIS_URL else REDIS_URL,
+                    CACHE_URL.split("@")[-1] if "@" in CACHE_URL else CACHE_URL,
                 )
                 return True
             except Exception:
@@ -2106,7 +2116,7 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                 "redis_managed": _redis_enabled and _HAS_REDIS,
                 "redis_running": _check_redis_health(),
                 "redis_url": (
-                    REDIS_URL.split("@")[-1] if "@" in REDIS_URL else REDIS_URL
+                    CACHE_URL.split("@")[-1] if "@" in CACHE_URL else CACHE_URL
                 ) if (_redis_enabled and _HAS_REDIS) else None,
                 "redis_restarts": _redis_restart_count,
                 "api_keys": {
@@ -5684,7 +5694,7 @@ def start_server(foreground=False):
         redis_started = _start_redis()
         if redis_started:
             print(
-                f"  Redis: connected ({REDIS_URL.split('@')[-1] if '@' in REDIS_URL else REDIS_URL})"
+                f"  Redis: connected ({CACHE_URL.split('@')[-1] if '@' in CACHE_URL else CACHE_URL})"
             )
             # Inject Redis client into bridge module for pg_store access
             try:

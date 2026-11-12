@@ -225,6 +225,12 @@ class MCPDatabase:
 
 # ── MCPValkey: optional Redis/Valkey client (redis.from_url pattern) ──────────
 
+# The ONE cache-URL resolver (plan 89-09 task 04)
+try:
+    from services import cache_url
+except ImportError:  # pragma: no cover - script-launched from services/
+    import cache_url
+
 try:
     import redis as _redis_lib
     _HAS_REDIS = True
@@ -236,7 +242,9 @@ except ImportError:
 class MCPValkey:
     """Optional Valkey/Redis client.
 
-    Connection URL: VALKEY_URL env first, then REDIS_URL, else None (no client).
+    Connection URL: services/cache_url.py, the ONE resolver (plan 89-09 task 04).
+    When NOTHING is configured there is still no client and no socket: the local
+    6379 is the operator's own server, so an unconfigured MCP must not dial it.
     Valkey is OPTIONAL — when unavailable, tools skip the cache path gracefully.
     All methods swallow exceptions; get() returns None on failure; setex() returns False.
     """
@@ -246,9 +254,13 @@ class MCPValkey:
         self._init_error = None
         self._ping_ok = False
 
-        url = os.environ.get("VALKEY_URL") or os.environ.get("REDIS_URL")
-        if not url:
-            self._init_error = "VALKEY_URL / REDIS_URL not set"
+        url = cache_url.redis_url()
+        source = cache_url.redis_url_source()
+        if source == cache_url.DEFAULT_SOURCE:
+            self._init_error = (
+                "no cache URL configured: export %s (the legacy names %s are still "
+                "read, in that order)" % (cache_url.CANONICAL, ", ".join(cache_url.LEGACY_NAMES))
+            )
             return
 
         if not _HAS_REDIS:
@@ -260,7 +272,10 @@ class MCPValkey:
             self._client.ping()
             self._ping_ok = True
         except Exception as e:
-            self._init_error = f"Valkey ping failed: {e}"
+            self._init_error = (
+                f"Valkey ping failed: {e} (cache URL from {source}, canonical name "
+                f"{cache_url.CANONICAL}: {cache_url.masked_redis_url()})"
+            )
             self._ping_ok = False
 
     def available(self) -> bool:

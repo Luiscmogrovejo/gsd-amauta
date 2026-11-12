@@ -34,6 +34,12 @@ import sys
 import urllib.request
 import urllib.error
 
+# The ONE cache-URL resolver (plan 89-09 task 04)
+try:
+    from services import cache_url
+except ImportError:  # pragma: no cover - script-launched from services/
+    import cache_url
+
 # ── Config ────────────────────────────────────────────────────────────────────
 PORT = int(os.environ.get("GSD_AMAUTA_PORT", "18799"))
 RLM_PORT = int(os.environ.get("GSD_RLM_PORT", "18798"))
@@ -757,7 +763,9 @@ def check_postgres(health):
 # ══ Check 8: Valkey/Redis ═════════════════════════════════════════════════════
 def check_valkey(health):
     try:
-        default_url = os.environ.get("GSD_REDIS_URL", "redis://127.0.0.1:6379/0")
+        # plan 89-09 task 04: the ONE resolver, so this row and /health agree
+        # about the address AND about which name supplied it.
+        default_url = cache_url.redis_url()
         if health is not None:
             redis_running = health.get("redis_running", False)
             redis_url = health.get("redis_url") or default_url

@@ -170,6 +170,7 @@ const path = require('path');
 const { execSync, spawnSync } = require('child_process');
 // Phase 88 plan 88-15: one Python launcher resolver, one `which`, one home dir.
 const platform = require('./lib/platform.cjs');
+const { cacheUrl } = require('./lib/cache-url.cjs');
 const { error } = require('./lib/core.cjs');
 const state = require('./lib/state.cjs');
 const phase = require('./lib/phase.cjs');
@@ -421,7 +422,7 @@ async function circuitBreakerCheck(agentName) {
     return { allowed: true, state: 'exempt', failures: 0, exempt: true };
   }
 
-  const redisUrl = process.env.GSD_REDIS_URL || 'redis://127.0.0.1:6379/0';
+  const redisUrl = cacheUrl();
   const key = `cb:${agentName}`;
 
   try {
@@ -472,7 +473,7 @@ async function circuitBreakerCheck(agentName) {
 async function circuitBreakerRecord(agentName, outcome) {
   if (CB_EXEMPT_AGENTS.has(agentName)) return { exempt: true };
 
-  const redisUrl = process.env.GSD_REDIS_URL || 'redis://127.0.0.1:6379/0';
+  const redisUrl = cacheUrl();
   const key = `cb:${agentName}`;
 
   try {
