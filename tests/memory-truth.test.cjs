@@ -132,6 +132,12 @@ test('distill fallback: the Anthropic API key never appears on a command line', 
     "  fs.appendFileSync(log, 'CFGMODE: ' + (fs.statSync(cfg).mode & 0o777).toString(8) + '\\n');",
     "  const hits = fs.readFileSync(cfg, 'utf8').split('\\n').filter(l => l.includes('x-api-key')).length;",
     "  fs.appendFileSync(log, 'CFGHASKEY: ' + hits + '\\n');",
+    // Recorded HERE, while the directory still exists: the product removes its
+    // temp dir in a finally, so the test cannot stat it afterwards.
+    "  const os2 = require('os'), path2 = require('path');",
+    "  const under = fs.realpathSync(path2.dirname(cfg)).toLowerCase()",
+    "    .startsWith(fs.realpathSync(os2.tmpdir()).toLowerCase());",
+    "  fs.appendFileSync(log, 'CFGUNDERTMP: ' + (under ? 1 : 0) + '\\n');",
     '}',
     'process.stdout.write(\'{"content":[{"text":"A distilled summary long enough to pass the twenty character floor."}]}\');',
     '',
@@ -180,13 +186,9 @@ test('distill fallback: the Anthropic API key never appears on a command line', 
   // %LOCALAPPDATA%\Temp, ACL-restricted to that user. Both halves are
   // asserted; neither platform is left unchecked. The gap (no explicit ACL on
   // Windows) is recorded in 88-15-RECORD.md for the operator.
-  const cfgPath = (log.match(/ARGV: --config (.+)/) || [])[1];
-  assert.ok(cfgPath, `the fake curl must record the config path:\n${log}`);
-  if (process.platform === 'win32') {
-    const tmpRoot = fs.realpathSync(os.tmpdir()).toLowerCase();
-    assert.ok(fs.realpathSync(path.dirname(cfgPath.trim())).toLowerCase().startsWith(tmpRoot),
-      `the config file must live under the per-user temp dir: ${cfgPath}`);
-  } else {
+  assert.match(log, /CFGUNDERTMP: 1/,
+    `the config file must live under the per-user temp dir:\n${log}`);
+  if (process.platform !== 'win32') {
     assert.match(log, /CFGMODE: 600\b/, 'the config file must be 0o600 (mode & 0o777 read with fs.statSync)');
   }
 });
