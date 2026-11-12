@@ -46,10 +46,26 @@ const CLI_ENTRY = path.join(ROOT, 'bin', 'cli.cjs');
 // as before.
 const pg = require('./support/pg-fixture.cjs');
 
+// Plan 88-16-09, isolation BY CONSTRUCTION: `node --test` runs files in
+// parallel processes, so the four party suites were writing party_sessions
+// rows into one database at the same time and
+// `e2e-status-sorted-by-updated-at-desc` read a SIBLING FILE's session at the
+// top of "most recently updated" (measured, run 43181201335: idx=5). Each file
+// gets its own database, created from the disposable server with every
+// migration applied, and drops it when the file ends.
+const _ISOLATED_DSN = pg.createIsolatedDatabase('party_dec_e2e');
+
 /** @returns {NodeJS.ProcessEnv} the child environment for a party CLI spawn */
 function partyEnv() {
-  return pg.postgresDsn() ? pg.pgChildEnv() : process.env;
+  if (!_ISOLATED_DSN) return process.env;
+  const env = pg.pgChildEnv();
+  env.GSD_POSTGRES_URL = _ISOLATED_DSN;
+  env.DATABASE_URL = _ISOLATED_DSN;
+  env.GSD_TEST_POSTGRES_URL = _ISOLATED_DSN;
+  return env;
 }
+
+process.on('exit', () => pg.dropIsolatedDatabase(_ISOLATED_DSN));
 
 /**
  * Run `node gsd-tools.cjs party <subArgs>` and return { stdout, stderr, status }.

@@ -142,10 +142,123 @@ function pgChildEnv(base = process.env) {
   return env;
 }
 
+/**
+ * Replace the database name in a DSN.
+ * @param {string} dsn
+ * @param {string} name the new database name
+ * @returns {string}
+ */
+function dsnWithDatabase(dsn, name) {
+  const u = new URL(dsn);
+  u.pathname = '/' + name;
+  return u.toString();
+}
+
+/**
+ * Create a FRESH database on the test server, with every migration applied.
+ *
+ * Isolation by construction, not by ordering (plan 88-16-09). `node --test`
+ * runs test FILES in parallel processes, so the four party suites were writing
+ * party_sessions rows into one database at the same time and
+ * `e2e-status-sorted-by-updated-at-desc` read a sibling file's session at the
+ * top of "most recently updated" (measured, run 43181201335, idx=5).
+ * `scripts/run-tests.cjs`'s `LAST_TESTS` ordering was the old mitigation, and
+ * its own comment — "shared-PG data conflicts" — is the evidence that ordering
+ * is not isolation.
+ *
+ * The work happens in a Python child because psycopg2 is the only PostgreSQL
+ * client guaranteed on every cell, and `services/migrate_runner.py` is the one
+ * path that applies this repository's schema.
+ *
+ * @param {string} label a short, file-identifying label (`[a-z0-9_]`)
+ * @returns {string|null} the DSN of the new database, or null when no
+ *   disposable server is configured
+ * @throws {Error} when creation or migration fails, with the child's output
+ * @example
+ *   const dsn = createIsolatedDatabase('party_e2e');
+ *   after(() => dropIsolatedDatabase(dsn));
+ */
+function createIsolatedDatabase(label) {
+  const base = postgresDsn();
+  if (!base) return null;
+  const path = require('path');
+  const crypto = require('crypto');
+  const platform = require('../../get-shit-done/bin/lib/platform.cjs');
+  const name = 'gsd_t_' + String(label).replace(/[^a-z0-9_]/gi, '_').toLowerCase() +
+    '_' + crypto.randomBytes(4).toString('hex');
+  const admin = dsnWithDatabase(base, 'postgres');
+  const target = dsnWithDatabase(base, name);
+  const repo = path.resolve(__dirname, '..', '..');
+  const script = [
+    'import sys',
+    'import psycopg2',
+    'from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT',
+    'sys.path.insert(0, sys.argv[3])',
+    'c = psycopg2.connect(sys.argv[1], connect_timeout=10)',
+    'c.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)',
+    'cur = c.cursor()',
+    'cur.execute(\'CREATE DATABASE "%s"\' % sys.argv[4])',
+    'c.close()',
+    'from services import migrate_runner',
+    'migrate_runner.apply_migrations(dsn=sys.argv[2], log=lambda *a: None)',
+    'print("ISOLATED_OK")',
+  ].join('\n');
+  const r = platform.spawnPython(['-c', script, admin, target, repo, name], {
+    encoding: 'utf8',
+    timeout: 180000,
+    cwd: repo,
+  });
+  if (!String(r.stdout || '').includes('ISOLATED_OK')) {
+    throw new Error(
+      'pg-fixture.createIsolatedDatabase(' + label + ') failed (status ' + r.status + ')\n' +
+        '--- stdout ---\n' + (r.stdout || '') + '\n--- stderr ---\n' + (r.stderr || '')
+    );
+  }
+  return target;
+}
+
+/**
+ * Drop a database created by {@link createIsolatedDatabase}. Best effort.
+ *
+ * @param {string|null} dsn the DSN returned by `createIsolatedDatabase`
+ * @returns {void}
+ */
+function dropIsolatedDatabase(dsn) {
+  if (!dsn) return;
+  const path = require('path');
+  const platform = require('../../get-shit-done/bin/lib/platform.cjs');
+  const name = new URL(dsn).pathname.replace(/^\//, '');
+  if (!/^gsd_t_/.test(name)) return; // never drop anything this module did not make
+  const script = [
+    'import sys',
+    'import psycopg2',
+    'from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT',
+    'c = psycopg2.connect(sys.argv[1], connect_timeout=10)',
+    'c.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)',
+    'cur = c.cursor()',
+    'cur.execute("SELECT pg_terminate_backend(pid) FROM pg_stat_activity '
+      + 'WHERE datname = %s AND pid <> pg_backend_pid()", (sys.argv[2],))',
+    'cur.execute(\'DROP DATABASE IF EXISTS "%s"\' % sys.argv[2])',
+    'c.close()',
+  ].join('\n');
+  try {
+    platform.spawnPython(['-c', script, dsnWithDatabase(dsn, 'postgres'), name], {
+      encoding: 'utf8',
+      timeout: 60000,
+      cwd: path.resolve(__dirname, '..', '..'),
+    });
+  } catch (_e) {
+    /* best effort: the server is disposable */
+  }
+}
+
 module.exports = {
   LIVE_PORTS,
   SKIP_REASON,
   assertNotLiveDsn,
+  createIsolatedDatabase,
+  dropIsolatedDatabase,
+  dsnWithDatabase,
   pgChildEnv,
   pgSkip,
   portOfDsn,

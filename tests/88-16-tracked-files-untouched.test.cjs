@@ -36,8 +36,14 @@ test('88-16-07: the .mcp.json writer honours GSD_INSTALL_PROJECT_ROOT', () => {
   );
   assert.match(
     src,
-    /GSD_TEST_MODE === '1' && process\.env\.AMAUTA_DATA_DIR/,
-    'under test mode the default target must be the throw-away data dir, not the current directory'
+    /GSD_TEST_MODE === '1'\s*\n?\s*\? \(process\.env\.AMAUTA_DATA_DIR/,
+    'under test mode the default target must be a throw-away directory, never the current one'
+  );
+  assert.match(
+    src,
+    /gsd-mcp-json-/,
+    'test mode must have a last-resort temp directory, so a child with neither ' +
+      'AMAUTA_DATA_DIR nor CLAUDE_CONFIG_DIR still cannot write into the repository'
   );
   assert.doesNotMatch(
     src,

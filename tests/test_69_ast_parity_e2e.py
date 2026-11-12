@@ -270,7 +270,7 @@ def _assert_parity(fixture_project, language):
 
 @pytest.mark.xfail(
     reason=(
-        "plan 88-16-09 routed this to Phase 89: with a real PostgreSQL the RLM retrieval leg answers `legacy_in_memory_fallback` / no rows instead of the hybrid engine. The cause is in the retrieval pipeline Phase 89 rewrites (ingestion populates rlm_chunks without embeddings when no provider is configured, and the main pytest step deliberately carries no Voyage key), not in anything this plan owns. EXIT CRITERION: remove this marker when the hybrid engine answers for a freshly ingested fixture project on the Linux cell. It is a NON-strict xfail, so a fix does not turn the cell red before anyone notices."
+        "plan 88-16-09 routed this to Phase 89: with a real PostgreSQL the RLM retrieval leg answers `legacy_in_memory_fallback` / no rows instead of the hybrid engine. The cause is in the retrieval pipeline Phase 89 rewrites (ingestion populates rlm_chunks without embeddings when no provider is configured, which the main pytest step deliberately has not), not in anything this plan owns. EXIT CRITERION: remove this marker when the hybrid engine answers for a freshly ingested fixture project on the Linux cell. It is a NON-strict xfail, so a fix does not turn the cell red before anyone notices."
     ),
     strict=False,
 )
@@ -281,7 +281,7 @@ class TestKotlinSymbolQueryParity:
 
 @pytest.mark.xfail(
     reason=(
-        "plan 88-16-09 routed this to Phase 89: with a real PostgreSQL the RLM retrieval leg answers `legacy_in_memory_fallback` / no rows instead of the hybrid engine. The cause is in the retrieval pipeline Phase 89 rewrites (ingestion populates rlm_chunks without embeddings when no provider is configured, and the main pytest step deliberately carries no Voyage key), not in anything this plan owns. EXIT CRITERION: remove this marker when the hybrid engine answers for a freshly ingested fixture project on the Linux cell. It is a NON-strict xfail, so a fix does not turn the cell red before anyone notices."
+        "plan 88-16-09 routed this to Phase 89: with a real PostgreSQL the RLM retrieval leg answers `legacy_in_memory_fallback` / no rows instead of the hybrid engine. The cause is in the retrieval pipeline Phase 89 rewrites (ingestion populates rlm_chunks without embeddings when no provider is configured, which the main pytest step deliberately has not), not in anything this plan owns. EXIT CRITERION: remove this marker when the hybrid engine answers for a freshly ingested fixture project on the Linux cell. It is a NON-strict xfail, so a fix does not turn the cell red before anyone notices."
     ),
     strict=False,
 )
@@ -292,7 +292,7 @@ class TestSwiftSymbolQueryParity:
 
 @pytest.mark.xfail(
     reason=(
-        "plan 88-16-09 routed this to Phase 89: with a real PostgreSQL the RLM retrieval leg answers `legacy_in_memory_fallback` / no rows instead of the hybrid engine. The cause is in the retrieval pipeline Phase 89 rewrites (ingestion populates rlm_chunks without embeddings when no provider is configured, and the main pytest step deliberately carries no Voyage key), not in anything this plan owns. EXIT CRITERION: remove this marker when the hybrid engine answers for a freshly ingested fixture project on the Linux cell. It is a NON-strict xfail, so a fix does not turn the cell red before anyone notices."
+        "plan 88-16-09 routed this to Phase 89: with a real PostgreSQL the RLM retrieval leg answers `legacy_in_memory_fallback` / no rows instead of the hybrid engine. The cause is in the retrieval pipeline Phase 89 rewrites (ingestion populates rlm_chunks without embeddings when no provider is configured, which the main pytest step deliberately has not), not in anything this plan owns. EXIT CRITERION: remove this marker when the hybrid engine answers for a freshly ingested fixture project on the Linux cell. It is a NON-strict xfail, so a fix does not turn the cell red before anyone notices."
     ),
     strict=False,
 )
@@ -303,7 +303,7 @@ class TestGoSymbolQueryParity:
 
 @pytest.mark.xfail(
     reason=(
-        "plan 88-16-09 routed this to Phase 89: with a real PostgreSQL the RLM retrieval leg answers `legacy_in_memory_fallback` / no rows instead of the hybrid engine. The cause is in the retrieval pipeline Phase 89 rewrites (ingestion populates rlm_chunks without embeddings when no provider is configured, and the main pytest step deliberately carries no Voyage key), not in anything this plan owns. EXIT CRITERION: remove this marker when the hybrid engine answers for a freshly ingested fixture project on the Linux cell. It is a NON-strict xfail, so a fix does not turn the cell red before anyone notices."
+        "plan 88-16-09 routed this to Phase 89: with a real PostgreSQL the RLM retrieval leg answers `legacy_in_memory_fallback` / no rows instead of the hybrid engine. The cause is in the retrieval pipeline Phase 89 rewrites (ingestion populates rlm_chunks without embeddings when no provider is configured, which the main pytest step deliberately has not), not in anything this plan owns. EXIT CRITERION: remove this marker when the hybrid engine answers for a freshly ingested fixture project on the Linux cell. It is a NON-strict xfail, so a fix does not turn the cell red before anyone notices."
     ),
     strict=False,
 )
@@ -314,7 +314,7 @@ class TestRustSymbolQueryParity:
 
 @pytest.mark.xfail(
     reason=(
-        "plan 88-16-09 routed this to Phase 89: with a real PostgreSQL the RLM retrieval leg answers `legacy_in_memory_fallback` / no rows instead of the hybrid engine. The cause is in the retrieval pipeline Phase 89 rewrites (ingestion populates rlm_chunks without embeddings when no provider is configured, and the main pytest step deliberately carries no Voyage key), not in anything this plan owns. EXIT CRITERION: remove this marker when the hybrid engine answers for a freshly ingested fixture project on the Linux cell. It is a NON-strict xfail, so a fix does not turn the cell red before anyone notices."
+        "plan 88-16-09 routed this to Phase 89: with a real PostgreSQL the RLM retrieval leg answers `legacy_in_memory_fallback` / no rows instead of the hybrid engine. The cause is in the retrieval pipeline Phase 89 rewrites (ingestion populates rlm_chunks without embeddings when no provider is configured, which the main pytest step deliberately has not), not in anything this plan owns. EXIT CRITERION: remove this marker when the hybrid engine answers for a freshly ingested fixture project on the Linux cell. It is a NON-strict xfail, so a fix does not turn the cell red before anyone notices."
     ),
     strict=False,
 )

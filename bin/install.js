@@ -2582,8 +2582,10 @@ function install(isGlobal, runtime = 'claude') {
       // test mode the behaviour is exactly what it was.
       const mcpProjectRoot =
         process.env.GSD_INSTALL_PROJECT_ROOT ||
-        (process.env.GSD_TEST_MODE === '1' && process.env.AMAUTA_DATA_DIR
-          ? process.env.AMAUTA_DATA_DIR
+        (process.env.GSD_TEST_MODE === '1'
+          ? (process.env.AMAUTA_DATA_DIR ||
+             process.env.CLAUDE_CONFIG_DIR ||
+             fs.mkdtempSync(path.join(os.tmpdir(), 'gsd-mcp-json-')))
           : process.cwd());
       fs.writeFileSync(path.join(mcpProjectRoot, '.mcp.json'), mcpJsonContent + '\n', 'utf8');
       console.log(`  ${green}✓${reset} .mcp.json written (MCP auto-discovery for Claude Code)`);
