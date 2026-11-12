@@ -1,45 +1,36 @@
 #!/usr/bin/env bash
-# Amauta backup script — backs up tasks.json and PostgreSQL
+# RETIRED by Phase 89 plan 89-04. This script is kept as a loud refusal rather
+# than deleted, so operator muscle memory and any stale doc link meet an
+# explanation instead of "command not found". Replacement:
+#   python3 services/backup_snapshot.py create --reason manual --scope all
+# See docs/BACKUP-AND-RESTORE.md.
 set -euo pipefail
 
-BACKUP_DIR="${AMAUTA_BACKUP_DIR:-./backups}"
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-DATA_DIR="${AMAUTA_DATA_DIR:-.}"
-PG_URL="${GSD_POSTGRES_URL:-postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta}"
+cat >&2 <<'REFUSAL'
+scripts/backup.sh is RETIRED and will not run. It was not a backup.
 
-# Extract components for safe pg_dump usage (avoid credentials in process listing)
-_PG_HOST=$(echo "$PG_URL" | sed -E 's|.*@([^:/]+).*|\1|')
-_PG_PORT=$(echo "$PG_URL" | sed -E 's|.*:([0-9]+)/.*|\1|')
-_PG_DB=$(echo "$PG_URL" | sed -E 's|.*/([^?]+).*|\1|')
-_PG_USER=$(echo "$PG_URL" | sed -E 's|.*://([^:]+):.*|\1|')
-_PG_PASS=$(echo "$PG_URL" | sed -E 's|.*://[^:]+:([^@]+)@.*|\1|')
+Three measured defects, each enough on its own:
+  1. line 8 hard-coded a CREDENTIALED DSN as the default
+     (GSD_POSTGRES_URL:-postgresql://gsd:...@127.0.0.1:5433/gsd_amauta) --
+     exactly the kind of literal the DSN-containment work of 2026-09-07 exists
+     to forbid, because the day the variable goes missing it aims the command
+     at whatever is on that port.
+  2. the dump line ended with `&& echo ok || echo skipped`, so a FAILED
+     pg_dump exited 0 and the script carried on reporting success. The `||`
+     also defeats `set -e`. A failed dump that reports success is worse than
+     no backup, because it is believed.
+  3. no checksum, no manifest, no verification and no restore test. Nothing
+     ever proved one of its outputs could be restored.
 
-mkdir -p "$BACKUP_DIR"
+Use the verb instead. It takes a pg_dump -Fc of the whole database, copies the
+SQLite file through the online-backup API, copies tasks.json under the
+product's own lock, writes per-file SHA-256 and a per-table census into a
+manifest, and VERIFIES its own output before recording verified_at:
 
-# Backup tasks.json
-if [ -f "$DATA_DIR/tasks.json" ]; then
-  cp "$DATA_DIR/tasks.json" "$BACKUP_DIR/tasks_${TIMESTAMP}.json"
-  echo "[backup] tasks.json → $BACKUP_DIR/tasks_${TIMESTAMP}.json"
-fi
+  python3 services/backup_snapshot.py create --reason manual --scope all
+  python3 services/backup_snapshot.py verify --latest
+  python3 services/backup_snapshot.py list
 
-# Backup memory.jsonl
-if [ -f "$DATA_DIR/memory.jsonl" ]; then
-  cp "$DATA_DIR/memory.jsonl" "$BACKUP_DIR/memory_${TIMESTAMP}.jsonl"
-  echo "[backup] memory.jsonl → $BACKUP_DIR/memory_${TIMESTAMP}.jsonl"
-fi
-
-# Backup PostgreSQL
-if command -v pg_dump &>/dev/null; then
-  PGPASSWORD="$_PG_PASS" pg_dump -h "$_PG_HOST" -p "$_PG_PORT" -U "$_PG_USER" "$_PG_DB" > "$BACKUP_DIR/pg_dump_${TIMESTAMP}.sql" 2>/dev/null && \
-    echo "[backup] PostgreSQL → $BACKUP_DIR/pg_dump_${TIMESTAMP}.sql" || \
-    echo "[backup] PostgreSQL dump skipped (connection failed)"
-else
-  echo "[backup] pg_dump not found, skipping PostgreSQL backup"
-fi
-
-# Rotate: keep last 30 backups
-ls -t "$BACKUP_DIR"/tasks_*.json 2>/dev/null | tail -n +31 | xargs rm -f 2>/dev/null || true
-ls -t "$BACKUP_DIR"/memory_*.jsonl 2>/dev/null | tail -n +31 | xargs rm -f 2>/dev/null || true
-ls -t "$BACKUP_DIR"/pg_dump_*.sql 2>/dev/null | tail -n +31 | xargs rm -f 2>/dev/null || true
-
-echo "[backup] Complete. Backups in $BACKUP_DIR"
+Read docs/BACKUP-AND-RESTORE.md first. Exit code 2.
+REFUSAL
+exit 2

@@ -704,3 +704,334 @@ def test_the_manifest_census_matches_the_database(isolated, tmp_path, pinned_hom
     assert pg["server_version"]
     assert created["manifest"]["dsn_fingerprint"] == bs.dsn_fingerprint(dsn)
     assert "://" not in json.dumps(created["manifest"])
+
+
+# ══════════════════════════════════════════════════════════════════
+# Task 89-04-05: the dry run writes NOTHING, proven from the server's own view
+# ══════════════════════════════════════════════════════════════════
+
+def _observe_backends(dsn):
+    """Every other backend on this database, with its write-transaction id.
+
+    ``backend_xid`` is the precise statement of "this backend has written": a
+    read-only transaction has ``backend_xid IS NULL`` and only acquires an xid
+    when it first writes.  ``backend_xmin`` is deliberately reported too, so the
+    evidence shows the backend really was inside a snapshot and the sample is
+    not an artefact of an idle connection.
+
+    Args:
+        dsn: the database to observe.
+
+    Returns:
+        list[dict]: ``{"pid", "backend_xid", "backend_xmin", "state", "query"}``.
+    """
+    import psycopg2
+
+    conn = psycopg2.connect(dsn, connect_timeout=15)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT pid, backend_xid, backend_xmin, state, "
+                "left(coalesce(query, ''), 120) "
+                "FROM pg_stat_activity "
+                "WHERE datname = current_database() AND pid <> pg_backend_pid()")
+            return [{"pid": r[0], "backend_xid": r[1], "backend_xmin": r[2],
+                     "state": r[3], "query": r[4]} for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def _make_source_sqlite(path, rows=5):
+    """A SQLite source shaped like the real one, with ``rows`` memories.
+
+    Args:
+        path: where to create it.
+        rows: how many rows.
+
+    Returns:
+        str: the path.
+    """
+    import sqlite3
+
+    conn = sqlite3.connect(str(path))
+    try:
+        conn.execute(
+            "CREATE TABLE gsd_memory (id TEXT PRIMARY KEY, text TEXT, "
+            "agent_id TEXT, source TEXT, tags TEXT, metadata TEXT, "
+            "project_id TEXT, created_at TEXT, updated_at TEXT)")
+        conn.executemany(
+            "INSERT INTO gsd_memory (id, text, source, project_id) "
+            "VALUES (?, ?, ?, ?)",
+            [("mem-dry-%04d" % i, "dry run fixture %d" % i, "agent",
+              "gsd-amauta") for i in range(rows)])
+        conn.execute(
+            "CREATE TABLE gsd_shared_kb (id TEXT PRIMARY KEY, title TEXT, "
+            "content TEXT, category TEXT, agent_id TEXT, tags TEXT, "
+            "importance INTEGER, source_task TEXT, created_at TEXT, "
+            "updated_at TEXT)")
+        conn.executemany(
+            "INSERT INTO gsd_shared_kb (id, title, content, importance) "
+            "VALUES (?, ?, ?, ?)",
+            [("skb-dry-%04d" % i, "t%d" % i, "c%d" % i, 5) for i in range(rows)])
+        conn.commit()
+    finally:
+        conn.close()
+    return str(path)
+
+
+def _per_table_counts(report):
+    """The seven count columns per table, as a comparable mapping.
+
+    Args:
+        report: a ``migrate_sqlite_to_pg`` report.
+
+    Returns:
+        dict: ``{table: {source, insert, identical, conflict,
+        content_duplicate, failed}}``.
+    """
+    keys = ("source", "insert", "identical", "conflict", "content_duplicate",
+            "failed")
+    return {plan["table"]: {k: plan.get(k) for k in keys}
+            for plan in report["tables"]}
+
+
+@requires_pg
+def test_the_dry_run_opens_no_write_transaction(isolated, tmp_path):
+    """``backend_xid IS NULL`` for every backend the dry run uses.
+
+    Success criterion 1 says the dry run "writes nothing".  This is that claim
+    stated from the SERVER's own view rather than from the report's: a backend
+    acquires a ``backend_xid`` the moment it writes, so ``backend_xid IS NULL``
+    for every backend on the database while the dry run is mid-flight is the
+    precise form of "wrote nothing".
+
+    The sample is taken from inside ``plan_table``, so the dry run's own
+    backends are certainly alive — and the sample is asserted NON-EMPTY, because
+    an empty sample would prove nothing at all.
+    """
+    from services import migrate_sqlite_to_pg as migrator
+
+    dsn = isolated["dsn"]
+    source = _make_source_sqlite(tmp_path / "source.db", rows=5)
+    before = census(dsn)["rows"]
+
+    samples = []
+    real_plan_table = migrator.plan_table
+
+    def sampling_plan_table(*args, **kwargs):
+        out = real_plan_table(*args, **kwargs)
+        if not samples:
+            samples.append(_observe_backends(dsn))
+        return out
+
+    migrator.plan_table = sampling_plan_table
+    try:
+        ok, report = migrator.migrate(sqlite_path=source, dsn=dsn, dry_run=True,
+                                      log=lambda *_a: None)
+    finally:
+        migrator.plan_table = real_plan_table
+
+    assert report["dry_run"] is True
+    assert samples, "no sample was taken, so this test proved nothing"
+    sample = samples[0]
+    assert sample, ("pg_stat_activity showed no other backend on this database "
+                    "while the dry run was running, so the sample is vacuous")
+    writers = [row for row in sample if row["backend_xid"] is not None]
+    assert writers == [], (
+        "a backend opened a WRITE transaction during the dry run: %s" % writers)
+    assert any(row["backend_xmin"] is not None or row["state"] for row in sample), (
+        "the sampled backends show no snapshot or state at all, which would "
+        "mean the sample caught nothing real")
+    # And the data-level statement of the same thing.
+    assert census(dsn)["rows"] == before
+
+
+@requires_pg
+def test_the_backend_xid_assertion_can_fail(isolated, tmp_path):
+    """The MUTATION: make the dry run write on purpose; the proof must break.
+
+    An assertion that cannot fail is decoration.  Here ``plan_table`` is wrapped
+    so that it opens a real INSERT and leaves the transaction open while the
+    sample is taken — exactly what a dry run must never do — and the same
+    predicate that passed above now finds a writer.  The row is rolled back, so
+    the database is unchanged.
+    """
+    from services import migrate_sqlite_to_pg as migrator
+
+    dsn = isolated["dsn"]
+    source = _make_source_sqlite(tmp_path / "source.db", rows=3)
+    before = census(dsn)["rows"]
+
+    samples = []
+    real_plan_table = migrator.plan_table
+
+    def mutating_plan_table(sqlite_conn, store, table, *args, **kwargs):
+        out = real_plan_table(sqlite_conn, store, table, *args, **kwargs)
+        if not samples:
+            with store._get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "INSERT INTO gsd_shared_kb (id, title, content) "
+                        "VALUES ('skb-mutation-8904', 'mutation', 'mutation')")
+                samples.append(_observe_backends(dsn))
+                conn.rollback()
+        return out
+
+    migrator.plan_table = mutating_plan_table
+    try:
+        migrator.migrate(sqlite_path=source, dsn=dsn, dry_run=True,
+                         log=lambda *_a: None)
+    finally:
+        migrator.plan_table = real_plan_table
+
+    assert samples, "the mutating wrapper never fired"
+    writers = [row for row in samples[0] if row["backend_xid"] is not None]
+    assert writers, ("the mutation did not take: pg_stat_activity showed no "
+                     "write transaction even though a row was inserted")
+    # THE SAME ASSERTION AS THE TEST ABOVE, now failing.
+    with pytest.raises(AssertionError):
+        assert writers == []
+    # The row was rolled back, so the mutation left nothing behind.
+    assert census(dsn)["rows"] == before
+
+
+@requires_pg
+def test_the_dry_run_counts_equal_the_real_run_and_a_second_run_inserts_zero(
+        isolated, tmp_path, pinned_home):
+    """Three claims, one mechanical diff of two JSON reports written to disk.
+
+    1. the dry run's per-table counts equal the real run's;
+    2. the identity ``insert + identical + conflict + content_duplicate ==
+       source`` holds on every table;
+    3. a SECOND real run inserts 0 on every table — idempotency, stated as a
+       number rather than as a hope.
+    """
+    dsn = isolated["dsn"]
+    source = _make_source_sqlite(tmp_path / "source.db", rows=6)
+    script = str(REPO_ROOT / "services" / "migrate_sqlite_to_pg.py")
+    env = dict(pinned_home)
+    env["GSD_TEST_MODE"] = "1"  # the guard is disarmed for the suite by design
+
+    def run(*flags):
+        """Run the migrator CLI with ``--json`` and return the parsed report."""
+        import subprocess
+
+        out = subprocess.run(
+            [sys.executable, script, "--sqlite", source, "--dsn", dsn,
+             "--exclude-table", "gsd_tasks", "--json"] + list(flags),
+            capture_output=True, text=True, cwd=str(REPO_ROOT), env=env,
+            timeout=600)
+        assert out.returncode == 0, out.stdout + out.stderr
+        return json.loads(out.stdout)
+
+    dry = run("--dry-run")
+    (tmp_path / "dry.json").write_text(json.dumps(dry, indent=2, sort_keys=True),
+                                       encoding="utf-8")
+    first = run()
+    (tmp_path / "real.json").write_text(json.dumps(first, indent=2, sort_keys=True),
+                                        encoding="utf-8")
+
+    dry_counts = _per_table_counts(dry)
+    real_counts = _per_table_counts(first)
+    # A mechanical diff, not an eyeball: the two mappings must be equal.
+    assert dry_counts == real_counts, (
+        json.dumps({"dry": dry_counts, "real": real_counts}, indent=2))
+    assert dry_counts, "no table was planned, so the comparison is vacuous"
+    assert dry_counts["gsd_memory"]["source"] == 6
+    assert dry_counts["gsd_memory"]["insert"] == 6
+
+    for table, counts in real_counts.items():
+        assert (counts["insert"] + counts["identical"] + counts["conflict"]
+                + counts["content_duplicate"]) == counts["source"], (table, counts)
+
+    second = run()
+    second_counts = _per_table_counts(second)
+    assert second_counts, "the second run planned nothing"
+    for table, counts in second_counts.items():
+        assert counts["insert"] == 0, (table, counts)
+        assert counts["identical"] == counts["source"], (table, counts)
+    totals = {
+        "source": sum(c["source"] for c in second_counts.values()),
+        "insert": sum(c["insert"] for c in second_counts.values()),
+        "identical": sum(c["identical"] for c in second_counts.values()),
+        "conflict": sum(c["conflict"] for c in second_counts.values()),
+        "content_duplicate": sum(c["content_duplicate"]
+                                 for c in second_counts.values()),
+        "failed": sum(c["failed"] for c in second_counts.values()),
+    }
+    assert totals["insert"] == 0, totals
+    assert totals["identical"] == totals["source"], totals
+    (tmp_path / "second-total.json").write_text(
+        json.dumps(totals, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def test_the_json_flag_already_exists_on_the_migrator():
+    """The research's claim that ``--json`` must be ADDED is wrong; it is there.
+
+    Measured on master 881345e: ``services/migrate_sqlite_to_pg.py`` already
+    defines ``--json`` and ``_print_report`` already prints the per-table
+    ``sqlite | pg_before | insert | same | conflict | dup | failed`` columns and
+    a TOTAL row.  What did not exist is a PROOF that the dry run opens no write
+    transaction, which is what the two tests above add.
+    """
+    source = (REPO_ROOT / "services" / "migrate_sqlite_to_pg.py").read_text(
+        encoding="utf-8")
+    assert '"--json"' in source
+    lines = source.splitlines()
+    at = [i + 1 for i, line in enumerate(lines) if '"--json"' in line]
+    assert len(at) == 1, at
+    # The line number moved when plan 89-04 added the guard flags above it; the
+    # claim is that the flag EXISTS, which is what this asserts.
+    assert at[0] > 600, at
+    assert "'TOTAL'" in source or '"TOTAL"' in source
+
+
+def test_the_retired_shell_scripts_name_their_replacement_and_their_defects():
+    """Both scripts refuse loudly, by content, on every platform.
+
+    Executing them needs ``bash``, which the Windows cell does not have — part
+    of why they are retired rather than fixed — so the CONTENT is what is
+    asserted here and the execution is in the record.
+    """
+    backup_sh = (REPO_ROOT / "scripts" / "backup.sh").read_text(encoding="utf-8")
+    restore_sh = (REPO_ROOT / "scripts" / "restore.sh").read_text(encoding="utf-8")
+    for text in (backup_sh, restore_sh):
+        assert "RETIRED" in text
+        assert "backup_snapshot" in text
+        assert "exit 2" in text
+    assert "echo skipped" in backup_sh, "defect 2 must be named"
+    assert "ON_ERROR_STOP" in restore_sh, "the missing guard must be named"
+    assert "CREDENTIALED DSN" in backup_sh and "CREDENTIALED DSN" in restore_sh
+    # The credentialed literal itself is gone from both.
+    for text in (backup_sh, restore_sh):
+        assert "gsd:gsd@" not in text
+    # No `||` survives as EXECUTABLE shell in either script. The defects are
+    # QUOTED inside the heredoc on purpose — naming `&& echo ok || echo skipped`
+    # is the whole point of the refusal — so the check is on the executable
+    # part, which is everything outside the quoted REFUSAL body.
+    for name, text in (("backup.sh", backup_sh), ("restore.sh", restore_sh)):
+        lines = text.splitlines()
+        start = [i for i, line in enumerate(lines) if "<<'REFUSAL'" in line]
+        end = [i for i, line in enumerate(lines) if line.strip() == "REFUSAL"]
+        assert len(start) == 1 and len(end) == 1, (name, start, end)
+        executable = [line for i, line in enumerate(lines)
+                      if not (start[0] <= i <= end[0])
+                      and not line.strip().startswith("#")]
+        joined = "\n".join(executable)
+        assert "||" not in joined, (name, joined)
+        assert "pg_dump" not in joined, (name, joined)
+        assert "psql" not in joined, (name, joined)
+        assert "exit 2" in joined, name
+
+
+def test_the_backup_and_restore_doc_states_decision_d9():
+    """``docs/BACKUP-AND-RESTORE.md`` says the old auto files are not backups."""
+    doc = (REPO_ROOT / "docs" / "BACKUP-AND-RESTORE.md").read_text(
+        encoding="utf-8")
+    assert "gsd-auto" in doc
+    assert "not restorable" in doc.lower()
+    for topic in ("manifest", "retention", "24", "pg_dump", "Windows",
+                  "GSD_BACKUP_GUARD", "--allow-stale-backup"):
+        assert topic in doc, topic
+    for reason in bs.REASONS:
+        assert reason in doc, reason

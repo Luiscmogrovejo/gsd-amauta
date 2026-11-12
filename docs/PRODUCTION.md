@@ -128,12 +128,20 @@ server {
 
 ## Backup Schedule
 
+`scripts/backup.sh` is **retired** (Phase 89, plan 89-04): it hard-coded a
+credentialed DSN and a failed `pg_dump` exited 0. Running it now prints the
+three defects and exits 2. Use the verb, which verifies its own output:
+
 ```bash
 # /etc/cron.d/amauta-backup
-0 */6 * * * amauta /opt/amauta/scripts/backup.sh >> /var/log/amauta-backup.log 2>&1
+0 */6 * * * amauta python3 /opt/amauta/services/backup_snapshot.py create --reason auto --scope all >> /var/log/amauta-backup.log 2>&1
 ```
 
-Keep 30 days of backups (default rotation in backup.sh).
+Retention is by reason, not by count alone: `auto` keeps the last 7, `manual` is
+never pruned automatically, every other reason is kept 30 days and never fewer
+than the last 3, and the newest **verified** snapshot of any reason is never
+deleted. Apply it with `python3 services/backup_snapshot.py prune` (add
+`--dry-run` first). See [docs/BACKUP-AND-RESTORE.md](BACKUP-AND-RESTORE.md).
 
 ## Log Rotation
 
@@ -191,16 +199,25 @@ See `.env.example` for all variables with descriptions.
 
 ## Disaster Recovery
 
+`scripts/restore.sh` is **retired** (Phase 89, plan 89-04): it piped a dump into
+`psql` with no `ON_ERROR_STOP` and with stderr discarded, so a partial restore
+printed "restored". Running it now prints the three defects and exits 2.
+
 ```bash
-# List available backups
-ls -la backups/
+# List snapshots, with each one's verified_at
+python3 services/backup_snapshot.py list
 
-# Restore from backup
-./scripts/restore.sh 20260314_120000
+# Verify before you trust it (a snapshot can rot on disk)
+python3 services/backup_snapshot.py verify --latest
 
-# Manual PG restore
-PGPASSWORD=gsd psql -h 127.0.0.1 -p 5433 -U gsd -d gsd_amauta < backups/pg_dump_20260314_120000.sql
+# Restore. It refuses an unverified or now-failing snapshot, takes a
+# reason=pre-restore snapshot of the target first, and treats a PARTIAL
+# restore as a failure (pg_restore --clean --if-exists --exit-on-error).
+python3 services/backup_snapshot.py restore <snapshot-dir> --mode replace --confirm
 ```
+
+See [docs/BACKUP-AND-RESTORE.md](BACKUP-AND-RESTORE.md) for the manifest, the
+`pg_dump` resolution order and the 24-hour backup guard.
 
 ## Security Hardening
 
