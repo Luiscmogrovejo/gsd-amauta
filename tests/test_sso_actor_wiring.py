@@ -140,7 +140,7 @@ class TestDaemonHandlerActorFix(unittest.TestCase):
             os.path.dirname(os.path.abspath(__file__)),
             "..", "services", "amauta-daemon.py"
         )
-        with open(daemon_path, "r") as f:
+        with open(daemon_path, "r", encoding="utf-8") as f:
             return f.read()
 
     def test_fixed_actor_expression_present(self):

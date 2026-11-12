@@ -161,7 +161,7 @@ def fixture_project():
         os.makedirs(os.path.join(tmp_dir, "wear"), exist_ok=True)
         for rel_path, source in _FIXTURE_SOURCES.items():
             full_path = os.path.join(tmp_dir, rel_path)
-            with open(full_path, "w") as f:
+            with open(full_path, "w", encoding="utf-8") as f:
                 f.write(source)
 
         # Longer timeout than the query calls: /reindex triggers a full

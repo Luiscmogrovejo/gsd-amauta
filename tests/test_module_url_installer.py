@@ -134,7 +134,7 @@ class TestVerifyBeforeInstallPipeline(unittest.TestCase):
     def _setup_trust_store(self, key_id, pubkey_hex, td):
         store = Path(td) / "trusted-keys"
         store.mkdir(parents=True, exist_ok=True)
-        (store / f"{key_id}.pub").write_text(pubkey_hex)
+        (store / f"{key_id}.pub").write_text(pubkey_hex, encoding="utf-8")
         return store
 
     def _setup_registry(self, entry, td):
@@ -146,7 +146,7 @@ class TestVerifyBeforeInstallPipeline(unittest.TestCase):
                 "manifest_url": entry.manifest_url, "maintainer": entry.maintainer,
                 "signed_by": entry.signed_by, "signature": entry.signature,
             }],
-        }))
+        }), encoding="utf-8")
         return idx_path
 
     def test_sha256_mismatch_fails_closed(self):
@@ -211,7 +211,7 @@ class TestVerifyBeforeInstallPipeline(unittest.TestCase):
         # registry: scheme to a name not in the index
         with tempfile.TemporaryDirectory() as td:
             idx_path = Path(td) / "index.json"
-            idx_path.write_text(json.dumps({"registry_version": "1.0", "entries": []}))
+            idx_path.write_text(json.dumps({"registry_version": "1.0", "entries": []}), encoding="utf-8")
             with mock.patch("services.module_search.REPO_INDEX_PATH", idx_path):
                 with mock.patch(
                     "services.module_search.CACHE_PATH", Path(td) / "nonexistent_cache.json"
@@ -225,7 +225,7 @@ class TestVerifyBeforeInstallPipeline(unittest.TestCase):
         yaml_text = _fixture_manifest_yaml()
         with tempfile.TemporaryDirectory() as td:
             idx_path = Path(td) / "index.json"
-            idx_path.write_text(json.dumps({"registry_version": "1.0", "entries": []}))
+            idx_path.write_text(json.dumps({"registry_version": "1.0", "entries": []}), encoding="utf-8")
             with mock.patch("services.module_search.REPO_INDEX_PATH", idx_path):
                 with mock.patch(
                     "services.module_search.CACHE_PATH", Path(td) / "nonexistent_cache.json"

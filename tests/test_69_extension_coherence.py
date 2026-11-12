@@ -54,7 +54,7 @@ def _load_rlm_service_module():
 
 
 def _read_rlm_service_source():
-    with open(_RLM_SERVICE_PATH, "r") as f:
+    with open(_RLM_SERVICE_PATH, "r", encoding="utf-8") as f:
         return f.read()
 
 

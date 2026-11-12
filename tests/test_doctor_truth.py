@@ -20,6 +20,7 @@ import os
 import pathlib
 import shutil
 import subprocess
+import stat
 import sys
 import tempfile
 import threading
@@ -28,8 +29,12 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 PYTHON = sys.executable
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "tests" / "support"))
+
+import fake_exe  # noqa: E402  (tests/support: portable fake executables)
+
 DOCTOR = str(ROOT / "services" / "doctor.py")
-PKG_VERSION = json.loads((ROOT / "package.json").read_text())["version"]
+PKG_VERSION = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
 
 
 # ── Stub daemon ───────────────────────────────────────────────────────────────
@@ -64,16 +69,33 @@ def start_stub(routes):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+isolated_path = fake_exe.isolated_path
+
+
+def force_rmtree(path):
+    """``shutil.rmtree`` that also removes read-only files (git's object files are read-only on Windows)."""
+    def _writable_then_retry(func, target, _exc):
+        os.chmod(target, stat.S_IWRITE)
+        func(target)
+
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(path, onexc=_writable_then_retry)
+    else:
+        shutil.rmtree(path, onerror=_writable_then_retry)
+
+
 def base_env(**extra):
     env = dict(os.environ)
     env["HOME"] = tempfile.mkdtemp(prefix="doctor-home-")
+    # Path.home() / expanduser read USERPROFILE on Windows and ignore HOME: pin both.
+    env["USERPROFILE"] = env["HOME"]
     # Unused ports by default: nothing must reach the live daemon/RLM.
     env["GSD_AMAUTA_PORT"] = "18991"
     env["GSD_RLM_PORT"] = "18992"
     # Default to a PATH with no `amauta` at all, so the operator's own install
     # cannot change a test outcome. Collision tests override PATH explicitly.
     # A fake `gh` leads it: the real one (present on CI runners) is never run.
-    env["PATH"] = f"{_fake_gh_dir()}:/usr/bin:/bin"
+    env["PATH"] = isolated_path(_fake_gh_dir())
     env.pop("CLAUDE_CONFIG_DIR", None)
     # check_api_keys is FAIL with none set. A runner has none and a laptop has
     # some, so the exit code depended on the machine; fix them.
@@ -93,18 +115,22 @@ def make_fake_gh(dirpath, status_text=NOT_LOGGED_IN, exit_code=1):
     is visible in `<dirpath>/gh-calls.log`.
     """
     os.makedirs(dirpath, exist_ok=True)
-    pathlib.Path(dirpath, "status.txt").write_text(status_text)
+    pathlib.Path(dirpath, "status.txt").write_text(status_text, encoding="utf-8")
+    # A Python body, not a shell script: it behaves the same under sh and under a Windows .cmd shim,
+    # and needs nothing from PATH (the launcher execs sys.executable by its absolute path).
     body = (
-        "#!/bin/sh\n"
-        f'echo "$@" >> "{dirpath}/gh-calls.log"\n'
-        'if [ "$1" = "auth" ] && [ "$2" = "status" ]; then\n'
-        # shell builtins only: PATH may hold nothing but this script
-        f'  while IFS= read -r line; do printf \'%s\\n\' "$line"; done < "{dirpath}/status.txt"\n'
-        f"  exit {exit_code}\n"
-        "fi\n"
-        "exit 99\n"
+        "import os, sys\n"
+        f"d = {str(dirpath)!r}\n"
+        "with open(os.path.join(d, 'gh-calls.log'), 'a', encoding='utf-8', newline='\\n') as f:\n"
+        "    f.write(' '.join(sys.argv[1:]) + '\\n')\n"
+        "if sys.argv[1:3] == ['auth', 'status']:\n"
+        "    with open(os.path.join(d, 'status.txt'), 'rb') as f:\n"
+        "        sys.stdout.buffer.write(f.read())\n"
+        "    sys.stdout.flush()\n"
+        f"    sys.exit({exit_code})\n"
+        "sys.exit(99)\n"
     )
-    return make_fake_bin(dirpath, "gh", body)
+    return fake_exe.write_fake_exe(dirpath, "gh", body)
 
 
 def _fake_gh_dir():
@@ -113,7 +139,7 @@ def _fake_gh_dir():
 
 def run_doctor(env, args=("--json",)):
     res = subprocess.run([PYTHON, DOCTOR, *args], capture_output=True, text=True,
-                         timeout=30, env=env, cwd=str(ROOT))
+                         timeout=30, env=env, cwd=str(ROOT), encoding="utf-8")
     parsed = None
     if "--json" in args:
         try:
@@ -133,7 +159,7 @@ def check_row(parsed, category):
 def make_fake_bin(dirpath, name, body="#!/bin/sh\necho fake\n"):
     os.makedirs(dirpath, exist_ok=True)
     p = os.path.join(dirpath, name)
-    with open(p, "w") as fh:
+    with open(p, "w", encoding="utf-8") as fh:
         fh.write(body)
     os.chmod(p, 0o755)
     return p
@@ -147,11 +173,11 @@ def make_install(config_dir, version=PKG_VERSION, tamper=False, missing=False):
     """Build a fake installed copy + the manifest install.js would have written."""
     gsd = pathlib.Path(config_dir) / "get-shit-done"
     (gsd / "bin").mkdir(parents=True, exist_ok=True)
-    (gsd / "VERSION").write_text(version)
+    (gsd / "VERSION").write_text(version, encoding="utf-8")
     f1 = gsd / "bin" / "gsd-tools.cjs"
-    f1.write_text("// installed copy with rewritten absolute paths\n")
+    f1.write_text("// installed copy with rewritten absolute paths\n", encoding="utf-8")
     f2 = gsd / "bin" / "gsd-memory.cjs"
-    f2.write_text("// second installed file\n")
+    f2.write_text("// second installed file\n", encoding="utf-8")
     manifest = {
         "version": version,
         "timestamp": "2026-01-01T00:00:00Z",
@@ -160,9 +186,9 @@ def make_install(config_dir, version=PKG_VERSION, tamper=False, missing=False):
             "get-shit-done/bin/gsd-memory.cjs": sha256(f2),
         },
     }
-    (pathlib.Path(config_dir) / "gsd-file-manifest.json").write_text(json.dumps(manifest))
+    (pathlib.Path(config_dir) / "gsd-file-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     if tamper:
-        f1.write_text("// EDITED AFTER INSTALL\n")
+        f1.write_text("// EDITED AFTER INSTALL\n", encoding="utf-8")
     if missing:
         f2.unlink()
     return config_dir
@@ -176,7 +202,7 @@ class TestPathCollision(unittest.TestCase):
         """A pipx-style `amauta` shadowing ours is FAIL and exits 2."""
         tmp = tempfile.mkdtemp(prefix="doctor-path-")
         make_fake_bin(tmp, "amauta")
-        env = base_env(PATH=f"{tmp}:/usr/bin:/bin")
+        env = base_env(PATH=isolated_path(tmp))
         rc, _out, _err, parsed = run_doctor(env)
         rowc = check_row(parsed, "path_collision")
         self.assertEqual(rowc["status"], "FAIL", rowc["detail"])
@@ -188,7 +214,7 @@ class TestPathCollision(unittest.TestCase):
         os.symlink(str(ROOT / "get-shit-done" / "bin" / "amauta.cjs"),
                    os.path.join(tmp, "amauta"))
         os.symlink(str(ROOT / "bin" / "cli.cjs"), os.path.join(tmp, "gsd-amauta"))
-        env = base_env(PATH=f"{tmp}:/usr/bin:/bin")
+        env = base_env(PATH=isolated_path(tmp))
         _rc, _out, _err, parsed = run_doctor(env)
         rowc = check_row(parsed, "path_collision")
         self.assertEqual(rowc["status"], "OK", rowc["detail"])
@@ -387,11 +413,11 @@ def write_package(root, files, shipped=("lib",)):
     root = pathlib.Path(root)
     root.mkdir(parents=True, exist_ok=True)
     (root / "package.json").write_text(json.dumps({"name": "x", "version": "1.0.0",
-                                                   "files": list(shipped)}))
+                                                   "files": list(shipped)}), encoding="utf-8")
     for rel, text in files.items():
         f = root / rel
         f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_text(text)
+        f.write_text(text, encoding="utf-8")
     return root
 
 
@@ -415,10 +441,10 @@ class TestInstallStale(unittest.TestCase):
         return subprocess.run(
             ["git", "-C", self.pkg, "-c", "user.email=t@t", "-c", "user.name=t",
              "-c", "commit.gpgsign=false", *args],
-            capture_output=True, text=True, check=True).stdout.strip()
+            capture_output=True, text=True, check=True, encoding="utf-8").stdout.strip()
 
     def commit(self, name, text=None):
-        with open(os.path.join(self.pkg, name), "w") as f:
+        with open(os.path.join(self.pkg, name), "w", encoding="utf-8") as f:
             f.write(text if text is not None else name)
         self.git("add", "-A")
         self.git("commit", "-q", "-m", name)
@@ -438,7 +464,7 @@ class TestInstallStale(unittest.TestCase):
             fmap = self.mod.shipped_file_map(self.pkg)
             rec["shipped_hash"] = self.mod.shipped_hash_from_map(fmap)
             rec["shipped_files"] = fmap
-        with open(self.record, "w") as f:
+        with open(self.record, "w", encoding="utf-8") as f:
             json.dump(rec, f)
 
     def test_matching_hash_is_ok(self):
@@ -491,7 +517,7 @@ class TestInstallStale(unittest.TestCase):
                     "lib/.DS_Store", "lib/x.pyc"):
             f = os.path.join(self.pkg, rel)
             os.makedirs(os.path.dirname(f), exist_ok=True)
-            open(f, "w").write("junk")
+            open(f, "w", encoding="utf-8").write("junk")
         mod, (status, *_rest) = self.run_check()
         self.assertEqual(status, mod.OK)
 
@@ -510,11 +536,10 @@ class TestInstallStale(unittest.TestCase):
     def test_non_git_package_is_not_a_warning(self):
         """Content comparison needs no git: a matching hash is OK without a checkout."""
         self.write_record(self.first)
-        shutil.rmtree(os.path.join(self.pkg, ".git"))
+        force_rmtree(os.path.join(self.pkg, ".git"))
         mod, (status, *_rest) = self.run_check()
         self.assertEqual(status, mod.OK)
 
-    @unittest.skipUnless(sys.platform != "win32", "parity script uses a POSIX node path")
     def test_node_and_python_hash_the_same_tree_identically(self):
         """bin/init.cjs writes the hash doctor.py checks: both folds must agree."""
         node = "/opt/homebrew/bin/node" if os.path.exists("/opt/homebrew/bin/node") else shutil.which("node")
@@ -529,7 +554,7 @@ class TestInstallStale(unittest.TestCase):
             res = subprocess.run(
                 [node, "-e", "const i=require('./bin/init.cjs');"
                  "console.log(i.shippedHashFromMap(i.shippedFileMap(process.argv[1])))", root],
-                capture_output=True, text=True, cwd=str(ROOT), timeout=60, env=base_env())
+                capture_output=True, text=True, cwd=str(ROOT), timeout=60, env=base_env(), encoding="utf-8")
             self.assertEqual(res.returncode, 0, res.stderr)
             self.assertEqual(res.stdout.strip(), self.mod.shipped_file_hash(root), root)
 
@@ -589,7 +614,7 @@ class TestGithubAccess(unittest.TestCase):
 
     def gh_calls(self):
         log = pathlib.Path(self.bin, "gh-calls.log")
-        return log.read_text().splitlines() if log.exists() else []
+        return log.read_text(encoding="utf-8").splitlines() if log.exists() else []
 
     def test_logged_in_with_repo_and_workflow_is_ok(self):
         self.install_gh(GH_BOTH)
@@ -660,8 +685,8 @@ class TestGithubAccess(unittest.TestCase):
         """End to end: main() with a fake gh leading PATH never reaches the real one."""
         fake = _fake_gh_dir()
         env = base_env(GSD_AMAUTA_PORT=18991)
-        env["PATH"] = f"{fake}:/usr/bin:/bin"
+        env["PATH"] = isolated_path(fake)
         _rc, _out, _err, parsed = run_doctor(env)
         self.assertEqual(check_row(parsed, "github_access")["category"], "github_access")
-        calls = pathlib.Path(fake, "gh-calls.log").read_text().splitlines()
+        calls = pathlib.Path(fake, "gh-calls.log").read_text(encoding="utf-8").splitlines()
         self.assertEqual(calls, ["auth status --hostname github.com"])

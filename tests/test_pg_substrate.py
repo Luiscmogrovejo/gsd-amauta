@@ -21,7 +21,7 @@ import pytest
 
 
 def _read_migration():
-    return pathlib.Path('migrations/011-paradedb-setup.sql').read_text()
+    return pathlib.Path('migrations/011-paradedb-setup.sql').read_text(encoding="utf-8")
 
 
 def test_infra02_migration_has_version_assertion():
@@ -69,7 +69,7 @@ def test_infra02_migration_down_exists():
 
 def test_infra02_pg_store_enables_iterative_scan():
     """pg_store.py _get_conn sets hnsw.iterative_scan = relaxed_order."""
-    pg_store = pathlib.Path('services/pg_store.py').read_text()
+    pg_store = pathlib.Path('services/pg_store.py').read_text(encoding="utf-8")
     # ivfflat.iterative_scan -> hnsw.iterative_scan in 1d51227 (66-04-02).
     assert 'hnsw.iterative_scan' in pg_store
     assert 'relaxed_order' in pg_store
@@ -77,7 +77,7 @@ def test_infra02_pg_store_enables_iterative_scan():
 
 def test_infra02_docker_compose_uses_paradedb_image():
     """docker-compose.yml uses paradedb/paradedb:latest-pg16 image."""
-    compose = pathlib.Path('docker/docker-compose.yml').read_text()
+    compose = pathlib.Path('docker/docker-compose.yml').read_text(encoding="utf-8")
     # Deviation: tag is latest-pg16 (not pg16) — ParadeDB tagging convention
     assert 'paradedb/paradedb:latest-pg16' in compose
     assert 'pgvector/pgvector:pg16' not in compose
@@ -85,7 +85,7 @@ def test_infra02_docker_compose_uses_paradedb_image():
 
 def test_infra03_docker_compose_has_pg_search_preload():
     """docker-compose.yml has pg_search in shared_preload_libraries command."""
-    compose = pathlib.Path('docker/docker-compose.yml').read_text()
+    compose = pathlib.Path('docker/docker-compose.yml').read_text(encoding="utf-8")
     assert 'shared_preload_libraries=pg_search' in compose
 
 
@@ -94,7 +94,7 @@ def test_infra02_extension_fixture_exists():
     fixture = pathlib.Path('tests/fixtures/26-pg-extensions.txt')
     if not fixture.exists():
         pytest.skip('Extension fixture not created — run 26-02-03 task first')
-    content = fixture.read_text()
+    content = fixture.read_text(encoding="utf-8")
     assert 'extversion' in content
     assert 'PASS' in content
 

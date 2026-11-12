@@ -65,7 +65,7 @@ def test_legacy_chunker_execs_module_once(tmp_path, monkeypatch):
     monkeypatch.setattr(_importlib_util, "spec_from_file_location", counting_wrapper)
 
     md_file = tmp_path / "sample.md"
-    md_file.write_text("# Title\n\nSome markdown content for chunking.\n")
+    md_file.write_text("# Title\n\nSome markdown content for chunking.\n", encoding="utf-8")
 
     result1 = ast_chunker.legacy_chunker(str(md_file))
     result2 = ast_chunker.legacy_chunker(str(md_file))

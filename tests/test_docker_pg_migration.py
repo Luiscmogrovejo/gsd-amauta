@@ -37,7 +37,7 @@ from services import migrate_runner, pg_dsn  # noqa: E402
 from services import infra_detect  # noqa: E402
 
 MIGRATIONS_DIR = REPO_ROOT / "migrations"
-COMPOSE = (REPO_ROOT / "docker" / "docker-compose.yml").read_text()
+COMPOSE = (REPO_ROOT / "docker" / "docker-compose.yml").read_text(encoding="utf-8")
 #: Compose file with comment lines removed — the comments explain the fixes and
 #: therefore quote the very strings these tests assert are gone.
 COMPOSE_CODE = "\n".join(
@@ -193,7 +193,7 @@ class TestCompose:
         assert "mcp==" in COMPOSE_CODE
 
     def test_env_example_documents_every_port(self):
-        env_example = (REPO_ROOT / "docker" / ".env.example").read_text()
+        env_example = (REPO_ROOT / "docker" / ".env.example").read_text(encoding="utf-8")
         for name in ("GSD_PG_PORT", "GSD_REDIS_PORT", "GSD_MCP_PORT",
                      "POSTGRES_USER", "POSTGRES_PASSWORD"):
             assert name in env_example
@@ -258,8 +258,8 @@ class TestDsnResolution:
                          "port": "1234", "database": "dbname"}
 
     def test_infra_detect_and_pg_store_use_the_same_resolver(self):
-        infra_src = (REPO_ROOT / "services" / "infra_detect.py").read_text()
-        store_src = (REPO_ROOT / "services" / "pg_store.py").read_text()
+        infra_src = (REPO_ROOT / "services" / "infra_detect.py").read_text(encoding="utf-8")
+        store_src = (REPO_ROOT / "services" / "pg_store.py").read_text(encoding="utf-8")
         assert "pg_dsn import" in infra_src
         assert "pg_dsn import" in store_src
         # PGStore resolves through the fail-closed entry point: no default DSN.
@@ -277,7 +277,7 @@ class TestMigrationFiles:
         for path in sorted(MIGRATIONS_DIR.glob("*.sql")):
             if migrate_runner.is_down_file(path.name):
                 continue
-            for number, line in enumerate(path.read_text().splitlines(), 1):
+            for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
                 stripped = line.strip()
                 if stripped.startswith("--"):
                     continue
@@ -300,7 +300,7 @@ class TestMigrationFiles:
         "022-module-installs",
     ])
     def test_previously_non_idempotent_migrations_now_guard_creates(self, name):
-        sql = (MIGRATIONS_DIR / f"{name}.sql").read_text()
+        sql = (MIGRATIONS_DIR / f"{name}.sql").read_text(encoding="utf-8")
         assert "CREATE TABLE IF NOT EXISTS" in sql
 
     def test_every_up_migration_has_a_down_file(self):
@@ -313,7 +313,7 @@ class TestMigrationFiles:
 
 def _preceded_by_drop_index(path, line_number):
     """True when the two lines above *line_number* contain DROP INDEX."""
-    lines = path.read_text().splitlines()
+    lines = path.read_text(encoding="utf-8").splitlines()
     window = " ".join(lines[max(0, line_number - 3):line_number - 1]).upper()
     return "DROP INDEX IF EXISTS" in window
 
@@ -391,11 +391,11 @@ class TestMigrationRunnerIntegration:
     def test_a_failing_migration_exits_non_zero_and_rolls_its_file_back(
             self, scratch_dsn, tmp_path):
         (tmp_path / "001-ok.sql").write_text(
-            "BEGIN;\nCREATE TABLE IF NOT EXISTS ok_one (id int);\nCOMMIT;\n")
+            "BEGIN;\nCREATE TABLE IF NOT EXISTS ok_one (id int);\nCOMMIT;\n", encoding="utf-8")
         (tmp_path / "002-bad.sql").write_text(
-            "BEGIN;\nCREATE TABLE bad_two (id int);\nSELECT 1/0;\nCOMMIT;\n")
+            "BEGIN;\nCREATE TABLE bad_two (id int);\nSELECT 1/0;\nCOMMIT;\n", encoding="utf-8")
         (tmp_path / "003-ok.sql").write_text(
-            "BEGIN;\nCREATE TABLE IF NOT EXISTS ok_three (id int);\nCOMMIT;\n")
+            "BEGIN;\nCREATE TABLE IF NOT EXISTS ok_three (id int);\nCOMMIT;\n", encoding="utf-8")
 
         with pytest.raises(migrate_runner.MigrationError) as excinfo:
             migrate_runner.apply_migrations(
@@ -420,7 +420,7 @@ class TestMigrationRunnerIntegration:
 
     def test_baseline_records_without_executing(self, scratch_dsn, tmp_path):
         (tmp_path / "001-ok.sql").write_text(
-            "BEGIN;\nCREATE TABLE IF NOT EXISTS never_created (id int);\nCOMMIT;\n")
+            "BEGIN;\nCREATE TABLE IF NOT EXISTS never_created (id int);\nCOMMIT;\n", encoding="utf-8")
         migrate_runner.apply_migrations(
             dsn=scratch_dsn, migrations_dir=str(tmp_path), baseline=True,
             log=lambda *_: None)
@@ -436,10 +436,10 @@ class TestMigrationRunnerIntegration:
     def test_an_edited_applied_migration_is_reported_as_drift_not_re_run(
             self, scratch_dsn, tmp_path):
         path = tmp_path / "001-ok.sql"
-        path.write_text("BEGIN;\nCREATE TABLE IF NOT EXISTS drift_t (id int);\nCOMMIT;\n")
+        path.write_text("BEGIN;\nCREATE TABLE IF NOT EXISTS drift_t (id int);\nCOMMIT;\n", encoding="utf-8")
         migrate_runner.apply_migrations(
             dsn=scratch_dsn, migrations_dir=str(tmp_path), log=lambda *_: None)
-        path.write_text("BEGIN;\nCREATE TABLE IF NOT EXISTS drift_t (id int);\n-- edit\nCOMMIT;\n")
+        path.write_text("BEGIN;\nCREATE TABLE IF NOT EXISTS drift_t (id int);\n-- edit\nCOMMIT;\n", encoding="utf-8")
         status = migrate_runner.status(dsn=scratch_dsn, migrations_dir=str(tmp_path))
         assert status["drifted"] == ["001-ok.sql"]
         assert status["pending"] == []
@@ -486,7 +486,7 @@ class TestCapabilityPrecheckUnit:
 
     def test_the_floor_matches_what_the_migrations_demand(self):
         assert infra_detect.MIN_PGVECTOR == (0, 8, 0)
-        assert "0.8.0" in (MIGRATIONS_DIR / "011-paradedb-setup.sql").read_text()
+        assert "0.8.0" in (MIGRATIONS_DIR / "011-paradedb-setup.sql").read_text(encoding="utf-8")
         assert "pg_search" in infra_detect.REQUIRED_EXTENSIONS
         assert "vector" in infra_detect.REQUIRED_EXTENSIONS
 
@@ -509,7 +509,7 @@ class TestCapabilityPrecheckUnit:
             assert "status" in service and "detail" in service
 
     def test_auto_start_only_brings_up_the_postgres_service(self):
-        src = (REPO_ROOT / "services" / "infra_detect.py").read_text()
+        src = (REPO_ROOT / "services" / "infra_detect.py").read_text(encoding="utf-8")
         assert '"up", "-d", "postgres"' in src
         assert '"up", "-d"]' not in src
 
@@ -713,7 +713,7 @@ class TestSqliteMigrationUnit:
         assert out == {"id": "a"}
 
     def test_no_embedding_api_is_referenced(self):
-        src = (REPO_ROOT / "services" / "migrate_sqlite_to_pg.py").read_text()
+        src = (REPO_ROOT / "services" / "migrate_sqlite_to_pg.py").read_text(encoding="utf-8")
         for forbidden in ("generate_embedding", "embed_code", "voyageai",
                           "VOYAGE_API_KEY", "OPENAI_API_KEY"):
             assert forbidden not in src, f"{forbidden} must not be used by the migrator"
@@ -796,7 +796,7 @@ class TestSqliteMigrationIntegration:
         for sql in sorted(MIGRATIONS_DIR.glob("*.sql")):
             if sql.name.startswith(("029", "030")):
                 continue
-            (partial / sql.name).write_text(sql.read_text())
+            (partial / sql.name).write_text(sql.read_text(encoding="utf-8"), encoding="utf-8")
         migrate_runner.apply_migrations(dsn=scratch_dsn,
                                         migrations_dir=str(partial),
                                         log=lambda *_: None)
@@ -883,13 +883,13 @@ class TestRlmEmbeddingsUnit:
 
 class TestRlmSearchUnit:
     def test_the_query_is_embedded_as_a_query(self):
-        src = (REPO_ROOT / "services" / "rlm_search.py").read_text()
+        src = (REPO_ROOT / "services" / "rlm_search.py").read_text(encoding="utf-8")
         assert "INPUT_TYPE_QUERY" in src
         assert "input_type=INPUT_TYPE_QUERY" in src
 
     def test_the_file_filter_no_longer_matches_sibling_directories(self):
         src = _strip_py_comments(
-            (REPO_ROOT / "services" / "rlm_search.py").read_text())
+            (REPO_ROOT / "services" / "rlm_search.py").read_text(encoding="utf-8"))
         # Neither the hybrid leg nor the BM25-only leg may use a bare prefix LIKE.
         assert 'f"{file_filter}%"' not in src
         assert "AND (c.file_path = %s OR c.file_path LIKE %s)" in src
@@ -906,14 +906,14 @@ class TestRlmSearchUnit:
 
 class TestRlmIngestionUnit:
     def test_ingest_file_deletes_this_file_s_stale_chunks(self):
-        src = (REPO_ROOT / "services" / "rlm_ingestion.py").read_text()
+        src = (REPO_ROOT / "services" / "rlm_ingestion.py").read_text(encoding="utf-8")
         assert "DELETE FROM rlm_chunks " in src
         assert "id <> ALL(%s)" in src
 
     def test_prune_missing_files_exists_and_avoids_the_sibling_prefix_bug(self):
         from services.rlm_ingestion import prune_missing_files
         assert callable(prune_missing_files)
-        src = (REPO_ROOT / "services" / "rlm_ingestion.py").read_text()
+        src = (REPO_ROOT / "services" / "rlm_ingestion.py").read_text(encoding="utf-8")
         assert "WHERE file_path = %s OR file_path LIKE %s" in src
 
     def test_file_stat_returns_none_for_a_missing_file(self):
@@ -923,13 +923,13 @@ class TestRlmIngestionUnit:
     def test_file_stat_matches_os_stat(self, tmp_path):
         from services.rlm_ingestion import file_stat
         path = tmp_path / "f.py"
-        path.write_text("x = 1\n")
+        path.write_text("x = 1\n", encoding="utf-8")
         mtime, size = file_stat(str(path))
         assert size == path.stat().st_size
         assert abs(mtime - path.stat().st_mtime) < 1e-6
 
     def test_the_per_query_ingest_does_not_prune(self):
-        src = (REPO_ROOT / "services" / "rlm-service.py").read_text()
+        src = (REPO_ROOT / "services" / "rlm-service.py").read_text(encoding="utf-8")
         assert "stats = ingest_directory(directory, pg_conn)" in src
         assert "prune=True" in src  # only the explicit /reindex pass prunes
 
@@ -954,7 +954,7 @@ class TestRlmIntegration:
         from services.rlm_ingestion import ingest_file
         source = tmp_path / "mod.py"
         source.write_text(
-            "def alpha():\n    return 1\n\ndef beta():\n    return 2\n")
+            "def alpha():\n    return 1\n\ndef beta():\n    return 2\n", encoding="utf-8")
         conn = self._conn(migrated_dsn)
         try:
             first = ingest_file(str(source), conn)
@@ -964,7 +964,7 @@ class TestRlmIntegration:
             # Rename beta -> gamma AND shift every line: both halves of the
             # upsert key change, so the old rows can only go via the DELETE.
             source.write_text(
-                "# header\n\ndef alpha():\n    return 1\n\ndef gamma():\n    return 3\n")
+                "# header\n\ndef alpha():\n    return 1\n\ndef gamma():\n    return 3\n", encoding="utf-8")
             second = ingest_file(str(source), conn)
             assert second["chunks_deleted"] == 2
 
@@ -982,8 +982,8 @@ class TestRlmIntegration:
         from services.rlm_ingestion import ingest_directory, prune_missing_files
         root = tmp_path / "root"
         (root / "keep").mkdir(parents=True)
-        (root / "keep" / "a.py").write_text("def kept():\n    return 1\n")
-        (root / "gone.py").write_text("def removed():\n    return 2\n")
+        (root / "keep" / "a.py").write_text("def kept():\n    return 1\n", encoding="utf-8")
+        (root / "gone.py").write_text("def removed():\n    return 2\n", encoding="utf-8")
         conn = self._conn(migrated_dsn)
         try:
             ingest_directory(str(root), conn)
@@ -1002,7 +1002,7 @@ class TestRlmIntegration:
         self._no_embeddings(monkeypatch)
         from services import rlm_ingestion
         source = tmp_path / "s.py"
-        source.write_text("def f():\n    return 1\n")
+        source.write_text("def f():\n    return 1\n", encoding="utf-8")
         conn = self._conn(migrated_dsn)
         try:
             rlm_ingestion.ingest_file(str(source), conn)
@@ -1024,7 +1024,7 @@ class TestRlmIntegration:
         monkeypatch.setattr(emb, "_try_qodo", lambda text: [0.01] * 1024)
         from services.rlm_ingestion import ingest_file
         source = tmp_path / "m.py"
-        source.write_text("def f():\n    return 1\n")
+        source.write_text("def f():\n    return 1\n", encoding="utf-8")
         conn = self._conn(migrated_dsn)
         try:
             ingest_file(str(source), conn)
@@ -1049,9 +1049,9 @@ class TestRlmIntegration:
         (root / "b").mkdir(parents=True)
         (root / "bc").mkdir(parents=True)
         (root / "b" / "x.py").write_text(
-            "def kumquat_inside():\n    return 'kumquat'\n")
+            "def kumquat_inside():\n    return 'kumquat'\n", encoding="utf-8")
         (root / "bc" / "y.py").write_text(
-            "def kumquat_sibling():\n    return 'kumquat'\n")
+            "def kumquat_sibling():\n    return 'kumquat'\n", encoding="utf-8")
         conn = self._conn(migrated_dsn)
         try:
             ingest_directory(str(root), conn)
@@ -1078,8 +1078,8 @@ class TestRlmIntegration:
 
         root = tmp_path / "v"
         root.mkdir()
-        (root / "one.py").write_text("def plumbus_one():\n    return 'plumbus'\n")
-        (root / "two.py").write_text("def plumbus_two():\n    return 'plumbus'\n")
+        (root / "one.py").write_text("def plumbus_one():\n    return 'plumbus'\n", encoding="utf-8")
+        (root / "two.py").write_text("def plumbus_two():\n    return 'plumbus'\n", encoding="utf-8")
         conn = self._conn(migrated_dsn)
         try:
             ingest_directory(str(root), conn)
@@ -1126,7 +1126,7 @@ class TestSentinelsUnit:
 
     def test_003_sentinel_is_the_column_type_it_would_otherwise_rewrite(self):
         """003 NULLs every embedding unless the column is already vector(1024)."""
-        sql = (MIGRATIONS_DIR / "003-embedding-1024.sql").read_text()
+        sql = (MIGRATIONS_DIR / "003-embedding-1024.sql").read_text(encoding="utf-8")
         assert "SET embedding = NULL" in sql
         assert ("coltype", "gsd_memory", "embedding", "vector(1024)") in \
             migrate_runner.MIGRATION_SENTINELS["003-embedding-1024.sql"]
@@ -1147,7 +1147,7 @@ class TestBaselineDetectionIntegration:
             if int(name.split("-")[0]) > through:
                 continue
             with conn.cursor() as cur:
-                cur.execute(pathlib.Path(path).read_text())
+                cur.execute(pathlib.Path(path).read_text(encoding="utf-8"))
         conn.close()
 
     def test_status_infers_what_is_applied_without_writing(self, scratch_dsn):
@@ -1451,7 +1451,7 @@ class TestForceSqlite:
                 assert forbidden not in argv, f"forced SQLite ran: {argv}"
 
     def test_the_init_flow_test_no_longer_runs_detection_with_auto_start(self):
-        src = (REPO_ROOT / "tests" / "test-init-flow.test.cjs").read_text()
+        src = (REPO_ROOT / "tests" / "test-init-flow.test.cjs").read_text(encoding="utf-8")
         # Both invocations must be hermetic — this is the test that started
         # the developer's real gsd-postgres container mid-suite.
         assert src.count("GSD_FORCE_SQLITE: '1'") == 2

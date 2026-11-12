@@ -160,7 +160,7 @@ class TestFileLockReentrantNoDeadlock(unittest.TestCase):
         try:
             lock_file = Path(tmpdir) / ".amauta.lock"
             tasks_file = Path(tmpdir) / "tasks.json"
-            tasks_file.write_text(json.dumps(_make_data([])))
+            tasks_file.write_text(json.dumps(_make_data([])), encoding="utf-8")
 
             completed = []
 
@@ -201,11 +201,11 @@ class TestWatchdogRevertsStaleTask(unittest.TestCase):
                 "claimed_at": _ago_iso(hours=72),
                 "notes": [],
             }
-            tasks_file.write_text(json.dumps({"items": [stale_task], "metadata": {}}))
+            tasks_file.write_text(json.dumps({"items": [stale_task], "metadata": {}}), encoding="utf-8")
 
             # Read daemon source and extract the function logic
             daemon_path = Path(__file__).parent.parent / "services" / "amauta-daemon.py"
-            source = daemon_path.read_text()
+            source = daemon_path.read_text(encoding="utf-8")
 
             # Verify the watchdog function exists and references STALE_THRESHOLD_HOURS
             self.assertIn("_stale_task_watchdog", source)
@@ -228,6 +228,7 @@ class TestWatchdogRevertsStaleTask(unittest.TestCase):
                      "--agent", "watchdog", "--force",
                      "--note", f"Auto-reverted by watchdog: no RPETD activity in >48h"],
                     capture_output=True, text=True, timeout=30,
+                    encoding="utf-8",
                 )
                 mock_run.assert_called_once()
                 call_args = mock_run.call_args[0][0]
@@ -313,7 +314,7 @@ class TestFlushRetryQueueDrainsOnRecovery(unittest.TestCase):
 
             # Write 3 items to retry queue
             queue = [{"id": f"TK-Q-{i}", "title": f"Task {i}", "status": "done"} for i in range(3)]
-            (Path(tmpdir) / "pg_retry_queue.json").write_text(json.dumps(queue))
+            (Path(tmpdir) / "pg_retry_queue.json").write_text(json.dumps(queue), encoding="utf-8")
 
             # Mock task_upsert to succeed for all
             store.task_upsert = MagicMock(return_value="TK-Q-0")
@@ -324,7 +325,7 @@ class TestFlushRetryQueueDrainsOnRecovery(unittest.TestCase):
             self.assertEqual(remaining, 0)
 
             # Queue file should be empty after flush
-            after = json.loads((Path(tmpdir) / "pg_retry_queue.json").read_text())
+            after = json.loads((Path(tmpdir) / "pg_retry_queue.json").read_text(encoding="utf-8"))
             self.assertEqual(len(after), 0)
         finally:
             if old_env is not None:
@@ -351,7 +352,7 @@ class TestFlushRetryQueueKeepsFailedItems(unittest.TestCase):
             store._lock = threading.Lock()
 
             queue = [{"id": f"TK-F-{i}", "title": f"Task {i}", "status": "done"} for i in range(3)]
-            (Path(tmpdir) / "pg_retry_queue.json").write_text(json.dumps(queue))
+            (Path(tmpdir) / "pg_retry_queue.json").write_text(json.dumps(queue), encoding="utf-8")
 
             # First 2 succeed, 3rd fails
             store.task_upsert = MagicMock(side_effect=["TK-F-0", "TK-F-1", None])
@@ -362,7 +363,7 @@ class TestFlushRetryQueueKeepsFailedItems(unittest.TestCase):
             self.assertEqual(remaining, 1)
 
             # Queue file should have 1 remaining item
-            after = json.loads((Path(tmpdir) / "pg_retry_queue.json").read_text())
+            after = json.loads((Path(tmpdir) / "pg_retry_queue.json").read_text(encoding="utf-8"))
             self.assertEqual(len(after), 1)
             self.assertEqual(after[0]["id"], "TK-F-2")
         finally:
@@ -380,7 +381,7 @@ class TestRetryFlusherExponentialBackoff(unittest.TestCase):
         """Consecutive failures double sleep times: 60 -> 120 -> 240."""
         # Read daemon source to verify backoff formula
         daemon_path = Path(__file__).parent.parent / "services" / "amauta-daemon.py"
-        source = daemon_path.read_text()
+        source = daemon_path.read_text(encoding="utf-8")
         self.assertIn("2 ** min(consecutive_failures", source,
                        "Daemon should use exponential backoff formula")
 
@@ -452,12 +453,12 @@ class TestArchiveReconcileFixDeletesFromPG(unittest.TestCase):
 
             # Active tasks (in JSON)
             active = [_make_task("TK-ALIVE-001", status="in-progress", days_ago=1)]
-            tasks_file.write_text(json.dumps(_make_data(active)))
+            tasks_file.write_text(json.dumps(_make_data(active)), encoding="utf-8")
 
             # Archive has TK-ARCH-001
             archive_data = _empty_archive()
             archive_data["items"].append(_make_task("TK-ARCH-001", status="done", days_ago=15))
-            archive_file.write_text(json.dumps(archive_data))
+            archive_file.write_text(json.dumps(archive_data), encoding="utf-8")
 
             # PG has both TK-ALIVE-001 and TK-ARCH-001
             pg_rows = [

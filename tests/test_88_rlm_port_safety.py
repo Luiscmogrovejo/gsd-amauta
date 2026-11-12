@@ -10,7 +10,6 @@ Only ``test_default_pair_unchanged`` names the default numbers, and it binds not
 import importlib.util
 import logging
 import os
-import shutil
 import signal
 import socket
 import subprocess
@@ -24,10 +23,10 @@ import pytest
 _REPO = Path(__file__).resolve().parent.parent
 _DAEMON = _REPO / "services" / "amauta-daemon.py"
 
-pytestmark = pytest.mark.skipif(
-    shutil.which("lsof") is None,
-    reason="lsof is not installed in this environment (the port-holder lookup needs it)",
-)
+# 88-18: there used to be a module-level skipif on the lsof tool being absent here. On Windows it
+# silently skipped all seven tests, so plan 88-15-01's pin on tests 4 and 7 would have been a no-op on
+# that cell. The tests now always run: where the product's port-holder lookup still needs ``lsof``
+# (plan 88-15 replaces it with a portable one) they FAIL and are listed as handed to 88-15, not skipped.
 
 _LISTENER = (
     "import socket,sys,time\n"
@@ -75,7 +74,7 @@ def _spawn_listener(port, script=None):
         cmd = [sys.executable, "-c", _LISTENER, str(port)]
     else:
         cmd = [sys.executable, str(script), str(port)]
-    child = subprocess.Popen(cmd, stdout=subprocess.PIPE, text=True)
+    child = subprocess.Popen(cmd, stdout=subprocess.PIPE, text=True, encoding="utf-8")
     line = child.stdout.readline()
     assert line.strip() == "ready", "listener child did not start: %r" % line
     return child
@@ -180,7 +179,7 @@ def test_kill_port_holder_refuses_empty_allowlist(monkeypatch, tmp_path, caplog)
 
 def _stub_rlm_script(directory):
     script = directory / "rlm-service.py"
-    script.write_text(_LISTENER)
+    script.write_text(_LISTENER, encoding="utf-8")
     return script
 
 
@@ -203,17 +202,17 @@ def test_restarted_daemon_reclaims_its_own_orphaned_rlm(monkeypatch, tmp_path, c
     stranger = None
     try:
         own = _spawn_listener(port_a, script=_stub_rlm_script(script_dir))
-        (script_dir / "rlm-service.pid").write_text(str(own.pid))
+        (script_dir / "rlm-service.pid").write_text(str(own.pid), encoding="utf-8")
         allowed = mod._rlm_allowed_pids()
         assert own.pid in allowed, "pid file %r -> command line seen: %r" % (
-            (script_dir / "rlm-service.pid").read_text(), mod._pid_command_line(own.pid))
+            (script_dir / "rlm-service.pid").read_text(encoding="utf-8"), mod._pid_command_line(own.pid))
         assert mod._kill_port_holder(port_a, allowed) is True
         assert own.wait(timeout=5) in (-signal.SIGTERM, -signal.SIGKILL)
 
         # Case B: a pid in the pid file whose command line is not an RLM service.
         port_b = _free_port()
         stranger = _spawn_listener(port_b)
-        (script_dir / "rlm-service.pid").write_text(str(stranger.pid))
+        (script_dir / "rlm-service.pid").write_text(str(stranger.pid), encoding="utf-8")
         allowed = mod._rlm_allowed_pids()
         assert stranger.pid not in allowed
         with caplog.at_level(logging.INFO, logger="amauta.daemon"):

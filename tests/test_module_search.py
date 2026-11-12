@@ -167,6 +167,7 @@ class TestCLI(unittest.TestCase):
             capture_output=True,
             text=True,
             timeout=10,
+            encoding="utf-8",
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         data = json.loads(result.stdout)
@@ -181,6 +182,7 @@ class TestCLI(unittest.TestCase):
             capture_output=True,
             text=True,
             timeout=10,
+            encoding="utf-8",
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         data = json.loads(result.stdout)

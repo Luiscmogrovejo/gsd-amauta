@@ -35,7 +35,7 @@ RLM_URL = f"http://127.0.0.1:{os.environ.get('GSD_RLM_PORT', '18798')}"
 def _load_golden():
     if not os.path.exists(FIXTURE_PATH):
         pytest.skip(f"Golden fixture not found: {FIXTURE_PATH}")
-    with open(FIXTURE_PATH) as f:
+    with open(FIXTURE_PATH, encoding="utf-8") as f:
         return json.load(f)
 
 

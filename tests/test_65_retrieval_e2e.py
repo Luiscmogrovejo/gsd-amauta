@@ -134,9 +134,9 @@ def fixture_project():
     canonical fixture used by tests/test_65_graph_wiring.py)."""
     tmp_dir = tempfile.mkdtemp(prefix="gsd65e2e_")
     try:
-        with open(os.path.join(tmp_dir, "worker.py"), "w") as f:
+        with open(os.path.join(tmp_dir, "worker.py"), "w", encoding="utf-8") as f:
             f.write("def frobnicate_widget():\n    return 7\n")
-        with open(os.path.join(tmp_dir, "caller.py"), "w") as f:
+        with open(os.path.join(tmp_dir, "caller.py"), "w", encoding="utf-8") as f:
             f.write(
                 "from worker import frobnicate_widget\n\n"
                 "def main_entry():\n    return frobnicate_widget()\n"
@@ -159,7 +159,7 @@ def unindexed_project():
     the AST/legacy ingestion sets AND the legacy in-memory scanner's set."""
     tmp_dir = tempfile.mkdtemp(prefix="gsd65e2e_")
     try:
-        with open(os.path.join(tmp_dir, "notes.rst"), "w") as f:
+        with open(os.path.join(tmp_dir, "notes.rst"), "w", encoding="utf-8") as f:
             f.write("This is a note about frobnication procedures.\n")
         yield tmp_dir
     finally:
@@ -256,6 +256,7 @@ class TestCliPrintsHybridProvenance:
             capture_output=True,
             text=True,
             timeout=30,
+            encoding="utf-8",
         )
         assert result.returncode == 0, (
             f"CLI query failed rc={result.returncode} stdout={result.stdout!r} stderr={result.stderr!r}"

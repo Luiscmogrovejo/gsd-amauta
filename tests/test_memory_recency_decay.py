@@ -39,7 +39,7 @@ def _parse_constant_from_file(filepath, constant_name):
     Works even if the file has complex import chains.
     """
     import re as _re
-    with open(filepath) as f:
+    with open(filepath, encoding="utf-8") as f:
         for line in f:
             stripped = line.strip()
             if stripped.startswith(constant_name + " =") or stripped.startswith(constant_name + "="):

@@ -112,7 +112,7 @@ def test_rlm02_rlm_service_deprecated_markers():
     marker (the BM25 fallback scorer) and the retired mtime-based index no
     longer appears anywhere in the source."""
     import pathlib
-    src = pathlib.Path('services/rlm-service.py').read_text()
+    src = pathlib.Path('services/rlm-service.py').read_text(encoding="utf-8")
     count = src.count('DEPRECATED Phase 27')
     assert count == 1, f'Expected exactly 1 DEPRECATED Phase 27 marker, got {count}'
     assert 'MtimeIndex' not in src, 'MtimeIndex must not appear in source -- SHA-256 is the single staleness authority'
@@ -122,7 +122,7 @@ def test_rlm02_rlm_service_deprecated_markers():
 def test_rlm02_rlm_service_wires_pipeline():
     """rlm-service.py must wire hybrid_search, rerank, expand_chunks_with_graph."""
     import pathlib
-    src = pathlib.Path('services/rlm-service.py').read_text()
+    src = pathlib.Path('services/rlm-service.py').read_text(encoding="utf-8")
     assert 'hybrid_search' in src, 'hybrid_search must be wired in /search'
     assert 'expand_chunks_with_graph' in src, 'graph expansion must be wired in /search'
     assert 'pg_chunks_count' in src, 'health endpoint must include pg_chunks_count'

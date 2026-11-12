@@ -131,6 +131,7 @@ def test_setup_stdio_is_a_noop_with_no_locale_variables():
         env={"PATH": os.environ["PATH"]},  # no LANG, no LC_*, no PYTHON* variables
         capture_output=True,
         text=True,
+        encoding="utf-8",
     )
     assert r.returncode == 0, r.stderr
     assert r.stdout.strip() == "False"
@@ -261,6 +262,7 @@ def test_platform_is_importable_from_each_entry_point_directory(rel):
         env={"PATH": os.environ["PATH"], **({"SYSTEMROOT": os.environ["SYSTEMROOT"]} if "SYSTEMROOT" in os.environ else {})},
         capture_output=True,
         text=True,
+        encoding="utf-8",
     )
     assert r.returncode == 0, r.stderr
     assert Path(r.stdout.strip()).resolve() == (ROOT / "services" / "_platform.py").resolve()

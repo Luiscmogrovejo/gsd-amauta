@@ -175,7 +175,7 @@ class TestConstants(unittest.TestCase):
         module_path = os.path.join(
             os.path.dirname(__file__), "..", "services", "amauta-mcp.py"
         )
-        with open(module_path) as f:
+        with open(module_path, encoding="utf-8") as f:
             source = f.read()
         for code in required_codes:
             self.assertIn(
