@@ -196,6 +196,54 @@ fi
 
 4. **Wait for all agents in wave to complete.**
 
+   #### Circuit Breaker Check (BEHAV-02)
+
+   After each task completes (success or failure), record the outcome. The verb takes the
+   agent name and the outcome word, and the word must be exactly `success` or `failure` —
+   anything else exits 1 without recording:
+
+   ```
+   node get-shit-done/bin/gsd-tools.cjs circuit-breaker-record "$EXECUTOR_AGENT" "$TASK_OUTCOME"
+   ```
+
+   Before spawning the next task, check whether that agent's breaker is open. The verb takes
+   the agent name alone and reports the verdict twice: as its exit code (0 = allowed,
+   2 = open) and as the `allowed` field of its JSON:
+
+   ```
+   CB_RESULT=$(node get-shit-done/bin/gsd-tools.cjs circuit-breaker-check "$EXECUTOR_AGENT") || true
+   CB_ALLOWED=$(echo "$CB_RESULT" | jq -r 'if .allowed == false then "false" else "true" end')
+   if [ "$CB_ALLOWED" = "false" ]; then
+     echo "[CB] $EXECUTOR_AGENT circuit breaker OPEN — routing task to gsd-executor-general"
+     EXECUTOR_AGENT="gsd-executor-general"
+   fi
+   ```
+
+   The `|| true` is required, not defensive: an open breaker is exit 2, and without it the
+   assignment propagates a failure the step must not treat as an error.
+
+   Read `allowed` with the explicit `if .allowed == false` test, **not** with
+   `jq -r '.allowed // true'`. `//` is jq's alternative operator and treats `false` exactly
+   like `null`, so `false // true` evaluates to `true` — that spelling reports every open
+   breaker as allowed and the reroute would never fire. The explicit form is also correct
+   when the field is absent, which is the only case a default was wanted for.
+
+   `gsd-executor-general` (and the short alias `executor-general`) is exempt — it has NO
+   circuit breaker of its own, so the reroute terminates: `circuit-breaker-check` answers
+   `{"allowed": true, "state": "exempt", …}` and `circuit-breaker-record` is a no-op
+   returning `{"exempt": true}`, neither of which touches a cache. If
+   `gsd-executor-general` then fails, that is an unrecoverable error — surface it to the
+   user, do not re-route further.
+
+   **When the verb is unavailable: continue and report, never HALT.** Both breaker verbs
+   read state from a Redis/Valkey cache and degrade on their own rather than raising:
+   `circuit-breaker-check` returns `{"allowed": true, "state": "unknown", "failOpen": true}`
+   and `circuit-breaker-record` returns `{"skipped": true}`, both with exit 0, after printing
+   a `[circuit-breaker] Valkey unavailable: … — failing open` line to stderr. Log that line
+   in the wave report and dispatch the task as routed. A breaker whose state cannot be read
+   is a routing optimisation that is unavailable; it is never a gate, and it never stops a
+   wave.
+
    #### Per-task manifest check (HARDEN-01)
 
    The `manifest-check` subcommand from `get-shit-done/bin/gsd-tools.cjs` runs once per task and compares the git diff between a before/after sha pair against the task's declared `files_expected:` block.
@@ -249,6 +297,44 @@ fi
       - Exit 1 with `orchestrator_action: "halt"` → HARD HALT the wave. Read the violation report and surface it. Do not continue to the next task.
       - Exit 1 with `orchestrator_action: "halt_orchestrator_owned"` → HARD HALT always. This override ignores `GSD_MANIFEST_CHECK=warn`.
       - `GSD_MANIFEST_CHECK=warn` → exit 0, but the violation report is still written with `orchestrator_action: "warn"`. Log the warning inline. This override is removed in v2.7.
+
+   #### Lint-After-Edit (BEHAV-04 — advisory)
+
+   After manifest-check passes, run the linter on each modified or created file. The verb
+   takes exactly one path:
+
+   ```
+   node get-shit-done/bin/gsd-tools.cjs lint-after-edit "$f"
+   ```
+
+   and for every file whose report has a non-empty `findings[]`, report them:
+
+   ```
+   for f in ${MODIFIED_FILES} ${CREATED_FILES}; do
+     LINT_REPORT=$(node get-shit-done/bin/gsd-tools.cjs lint-after-edit "$f") || true
+     FINDINGS_COUNT=$(echo "$LINT_REPORT" | jq -r '.findings | length')
+     if [ "${FINDINGS_COUNT:-0}" -gt 0 ]; then
+       echo "[LINT] $f: $FINDINGS_COUNT finding(s) — advisory, does not block"
+       echo "$LINT_REPORT" | jq -r '.findings[] | "  [\(.severity)] line \(.line): \(.message) (\(.rule))"'
+     fi
+   done
+   ```
+
+   The verb exits with the report's own `exit_code`, which is non-zero when a finding has
+   error severity — hence the `|| true`. **That exit code is advisory: a finding does not
+   fail the task, it is reported.** Add the lint_report(s) to the wave's VERIFICATION block
+   in SUMMARY.md:
+
+   ```
+   lint_report: <JSON from lint-after-edit> (one entry per modified file)
+   ```
+
+   **When the verb is unavailable: continue and report, never HALT.** `lint-after-edit`
+   never throws and always returns a report. A file type with no linter, a tool that is not
+   installed, and a path that does not exist all yield the same fallback result —
+   `{"linter":"none","exit_code":0,"findings":[],"fallback_used":false}` — with exit 0, and
+   a tool found only outside the project sets `"fallback_used": true` on an otherwise normal
+   report. Record whichever report came back and move on; lint never blocks a wave.
 
    #### Migration note
 
