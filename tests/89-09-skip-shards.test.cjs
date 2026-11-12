@@ -729,8 +729,9 @@ const ADDED_EXPECTED = 51;
  * make the set-equality proof below report the OTHER plan's entries as an
  * undeclared gain, which is precisely the loss the proof exists to catch.
  *
- * 89-02 declared 48 literal tuples; 89-04 derives its 51 from the shard it
- * owns and pins the count separately (ADDED_EXPECTED).
+ * 89-02 declared its tuples literally (56 of them, measured — the comment above
+ * that block says 48 and is stale); 89-04 derives its 51 from the shard it owns
+ * and pins the count separately (ADDED_EXPECTED).
  */
 const ADDED_SINCE_SHARDING = [...ADDED_BY_89_02, ...ADDED_BY_89_04];
 
@@ -820,8 +821,14 @@ describe('89-09 the shard migration lost nothing', () => {
     // literal tuples plus 89-04's 51 derived ones: if either side had been
     // dropped, the set-equality proof below would blame the surviving plan for
     // an undeclared gain.
-    assert.strictEqual(ADDED_BY_89_02.length, 48, "plan 89-02's declaration was lost");
-    assert.strictEqual(ADDED_SINCE_SHARDING.length, 48 + ADDED_EXPECTED);
+    // Counted against 89-02's OWN shard rather than against a literal, so this
+    // assertion cannot go stale when that plan's count changes — and measured:
+    // its declaration is 56 entries, not the 48 its comment above says.
+    const shard8902 = JSON.parse(fs.readFileSync(path.join(DIR, '89-02.json'), 'utf8'));
+    assert.strictEqual(ADDED_BY_89_02.length, shard8902.length,
+      "plan 89-02's declaration no longer matches its own shard");
+    assert.strictEqual(ADDED_SINCE_SHARDING.length,
+      ADDED_BY_89_02.length + ADDED_EXPECTED);
     const at = (t, f) => t[FIELDS.indexOf(f)];
     const platforms = new Set(ADDED_BY_89_04.map((t) => at(t, 'platform')));
     assert.deepStrictEqual([...platforms].sort(), ['darwin', 'linux', 'win32']);
