@@ -81,7 +81,24 @@ const path = require('node:path');
 //   d8a0fdbfa40d339f3c623335742cfe7cd839ebdd  fix(88-15): HOME, which, 2>/dev/null, find|grep|head and a username in a public file
 // Every assertion is kept. This PR must be merged with a merge commit (NEVER squash, never rebase-merge) or this
 // SHA stops resolving on master. The full list is in 88-15-RECORD.md.
-const PHASE_50_BASE = 'd8a0fdbfa40d339f3c623335742cfe7cd839ebdd';
+// RE-BASELINED AGAIN 2026-11-12 (plan 88-11 task 04, operator sign-off: delegated in the task brief). ONE pinned
+// path changed on purpose since the base above:
+//   services/amauta-mcp.py           88-11-04 the import-time .env loader now reads nothing inside a test
+//                                    session (GSD_TEST_MODE / PYTEST_CURRENT_TEST, with GSD_DOTENV_PATH as the
+//                                    one opt-in). Outside test mode it is unchanged. The block is kept
+//                                    byte-identical to the three copies in amauta.py,
+//                                    services/amauta-daemon.py and services/rlm-service.py, and
+//                                    tests/test_88_11_dotenv_loader.py fails if they drift (33191d5)
+// MEASURED, NOT ASSUMED: `git diff --name-only d8a0fdb..HEAD` lists 208 files, and the
+// intersection with the pinned list read out of the four canary files is exactly services/amauta-mcp.py.
+// agents/ did not move and tests/agents-compile-claude-target-byte-match.test.cjs is green. The base is now the
+// one commit of this series that touches a pinned path:
+//   33191d581f4754e7569f9b39c458509b0fc09f94  fix(dotenv): a test run never reads an ambient .env
+// Every assertion is kept (7/7). PHASE_52_BASE and PHASE_53_BASE are deliberately NOT moved: neither of
+// their pinned sets changed (phase-53-canary does not pin amauta-mcp.py by diff, and its partial checks on the
+// six Phase 46 tool names are green). This PR must be merged with a merge commit (NEVER squash, never
+// rebase-merge) or this SHA stops resolving on master. The full list is in 88-11-DOTENV-RECORD.md.
+const PHASE_50_BASE = '33191d581f4754e7569f9b39c458509b0fc09f94';
 
 const ROOT = path.resolve(__dirname, '..');
 
