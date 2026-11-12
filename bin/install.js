@@ -57,8 +57,105 @@ const CODEX_AGENT_SANDBOX = {
 // Get version from package.json
 const pkg = require('../package.json');
 
+// ═══════════════════════════════════════════════════════
+// Flag table (plan 88-11): ONE source for --help and the unknown-flag check
+// ═══════════════════════════════════════════════════════
+
+/**
+ * Every argument `bin/install.js` accepts.
+ *
+ * ONE table drives the `--help` text AND the unknown-argument check, so a flag
+ * cannot exist in the parser and be missing from the documentation. Before plan
+ * 88-11 an unknown flag was ignored in silence here as well, which is how
+ * `bin/init.cjs --upgrade --files-only` ran a full install: nothing on either
+ * side of the shell-out objected to a flag it did not know.
+ *
+ *   `takesValue` the NEXT argument is this flag's value (also accepted as
+ *                `--flag=value`), and is not itself checked against the table
+ *   `help`       the one-line description `--help` prints (empty = undocumented
+ *                legacy spelling kept working, documented by `documentedAs`)
+ *
+ * @type {ReadonlyArray<{flag: string, aliases?: string[], takesValue?: boolean, value?: string, help: string}>}
+ */
+const INSTALL_FLAGS = [
+  { flag: '--global', aliases: ['-g'], help: 'Install globally (to config directory)' },
+  { flag: '--local', aliases: ['-l'], help: 'Install locally (to current directory)' },
+  { flag: '--claude', help: 'Install for Claude Code only' },
+  { flag: '--opencode', help: 'Install for OpenCode only' },
+  { flag: '--gemini', help: 'Install for Gemini only' },
+  { flag: '--codex', help: 'Install for Codex only' },
+  { flag: '--all', help: 'Install for all runtimes' },
+  { flag: '--both', help: 'Legacy alias for --claude --opencode' },
+  { flag: '--uninstall', aliases: ['-u'], help: 'Uninstall Amauta (remove all files)' },
+  { flag: '--config-dir', aliases: ['-c'], takesValue: true, value: '<path>', help: 'Specify custom config directory' },
+  { flag: '--help', aliases: ['-h'], help: 'Show this help message' },
+  { flag: '--force-statusline', help: 'Replace existing statusline config' },
+  { flag: '--enable-compression', help: 'Opt in to output-compression hooks (Claude only; default off)' },
+  { flag: '--enable-shunt', help: 'Opt in to the token-saving read shunt (Claude only; default off)' },
+  { flag: '--enable-mobile-mcp', help: 'Opt in to the mobile MCP server entries (default off)' },
+  { flag: '--files-only', help: 'Install files and settings only; start no containers and no daemon' },
+  { flag: '--skip-postgres', help: 'Install everything else but never start the PostgreSQL container' },
+];
+
+/**
+ * Arguments that are not in `table`, in the order they were given.
+ * Mirrors `unknownArgs` in bin/init.cjs (same contract, same exit code 2).
+ *
+ * @param {string[]} argv the arguments to check
+ * @param {ReadonlyArray<object>} [table=INSTALL_FLAGS]
+ * @returns {string[]} the unrecognised arguments (empty when all are known)
+ * @example
+ *   unknownArgs(['--claude', '--files-only']);  // => []
+ *   unknownArgs(['--file-only']);               // => ['--file-only']
+ */
+function unknownArgs(argv, table = INSTALL_FLAGS) {
+  const known = new Set();
+  const valued = new Set();
+  for (const f of table) {
+    for (const name of [f.flag, ...(f.aliases || [])]) {
+      known.add(name);
+      if (f.takesValue) valued.add(name);
+    }
+  }
+  const unknown = [];
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (valued.has(a)) { i += 1; continue; }
+    const eq = a.indexOf('=');
+    if (known.has(eq > 0 ? a.slice(0, eq) : a)) continue;
+    unknown.push(a);
+  }
+  return unknown;
+}
+
+/**
+ * The Options block of `--help`, rendered from INSTALL_FLAGS.
+ * @returns {string} one line per flag, already coloured and indented
+ */
+function renderInstallOptions() {
+  return INSTALL_FLAGS.map((f) => {
+    const names = [...(f.aliases || []), f.flag].join(', ') + (f.value ? ` ${f.value}` : '');
+    return `    ${cyan}${names}${reset}${' '.repeat(Math.max(1, 26 - names.length))}${f.help}`;
+  }).join('\n');
+}
+
 // Parse args
 const args = process.argv.slice(2);
+
+// ── 88-11: an unknown argument is an error, before anything is installed ─────
+// Exit 2, nothing done — not even the banner. Only when run as a program: tests
+// that require() this file for its exports pass the test runner's own argv.
+if (require.main === module) {
+  const unknown = unknownArgs(args);
+  if (unknown.length > 0) {
+    process.stderr.write(
+      `Error: unknown ${unknown.length === 1 ? 'argument' : 'arguments'}: ${unknown.join(', ')}\n` +
+      'Nothing was done. Run `node bin/install.js --help` for the accepted flags.\n'
+    );
+    process.exit(2);
+  }
+}
+
 const hasGlobal = args.includes('--global') || args.includes('-g');
 const hasLocal = args.includes('--local') || args.includes('-l');
 const hasOpencode = args.includes('--opencode');
@@ -241,13 +338,20 @@ const enableMobileMcp = args.includes('--enable-mobile-mcp') || process.env.GSD_
 const enableCompression = args.includes('--enable-compression') || process.env.GSD_COMPRESS === 'on';
 const enableShunt = args.includes('--enable-shunt') || process.env.GSD_SHUNT === 'on';
 // --files-only: install files and settings, start nothing (no containers, no daemon).
+// Honoured as a flag AND as an environment variable: bin/init.cjs passes both
+// (plan 88-11), and the npm "install" lifecycle script reaches this file with no
+// arguments at all, so the variable is the only channel it has.
 const filesOnly = args.includes('--files-only') || process.env.GSD_INSTALL_FILES_ONLY === '1';
+// --skip-postgres: narrower than --files-only. Everything else installs; the
+// "Amauta Infrastructure" block never starts the PostgreSQL container. Used by
+// an upgrade of an install recorded as backend "sqlite" (plan 88-11).
+const skipPostgres = args.includes('--skip-postgres') || process.env.GSD_INSTALL_SKIP_POSTGRES === '1';
 
 console.log(banner);
 
 // Show help if requested
 if (hasHelp) {
-  console.log(`  ${yellow}Usage:${reset} node bin/install.js [options]\n\n  ${yellow}Options:${reset}\n    ${cyan}-g, --global${reset}              Install globally (to config directory)\n    ${cyan}-l, --local${reset}               Install locally (to current directory)\n    ${cyan}--claude${reset}                  Install for Claude Code only\n    ${cyan}--opencode${reset}                Install for OpenCode only\n    ${cyan}--gemini${reset}                  Install for Gemini only\n    ${cyan}--codex${reset}                   Install for Codex only\n    ${cyan}--all${reset}                     Install for all runtimes\n    ${cyan}-u, --uninstall${reset}           Uninstall Amauta (remove all files)\n    ${cyan}-c, --config-dir <path>${reset}   Specify custom config directory\n    ${cyan}-h, --help${reset}                Show this help message\n    ${cyan}--force-statusline${reset}        Replace existing statusline config\n    ${cyan}--enable-compression${reset}      Opt in to output-compression hooks (Claude only; default off)\n    ${cyan}--enable-shunt${reset}            Opt in to the token-saving read shunt (Claude only; default off)\n    ${cyan}--files-only${reset}              Install files and settings only; start no containers and no daemon\n\n  ${yellow}Examples:${reset}\n    ${dim}# Interactive install (prompts for runtime and location)${reset}\n    npx get-shit-done-cc\n\n    ${dim}# Install for Claude Code globally${reset}\n    npx get-shit-done-cc --claude --global\n\n    ${dim}# Install for Gemini globally${reset}\n    npx get-shit-done-cc --gemini --global\n\n    ${dim}# Install for Codex globally${reset}\n    npx get-shit-done-cc --codex --global\n\n    ${dim}# Install for all runtimes globally${reset}\n    npx get-shit-done-cc --all --global\n\n    ${dim}# Install to custom config directory${reset}\n    npx get-shit-done-cc --codex --global --config-dir ~/.codex-work\n\n    ${dim}# Install to current project only${reset}\n    npx get-shit-done-cc --claude --local\n\n    ${dim}# Uninstall GSD from Codex globally${reset}\n    npx get-shit-done-cc --codex --global --uninstall\n\n  ${yellow}Notes:${reset}\n    The --config-dir option is useful when you have multiple configurations.\n    It takes priority over CLAUDE_CONFIG_DIR / GEMINI_CONFIG_DIR / CODEX_HOME environment variables.\n`);
+  console.log(`  ${yellow}Usage:${reset} node bin/install.js [options]\n\n  ${yellow}Options:${reset}\n${renderInstallOptions()}\n\n  ${yellow}Examples:${reset}\n    ${dim}# Interactive install (prompts for runtime and location)${reset}\n    npx get-shit-done-cc\n\n    ${dim}# Install for Claude Code globally${reset}\n    npx get-shit-done-cc --claude --global\n\n    ${dim}# Install for Gemini globally${reset}\n    npx get-shit-done-cc --gemini --global\n\n    ${dim}# Install for Codex globally${reset}\n    npx get-shit-done-cc --codex --global\n\n    ${dim}# Install for all runtimes globally${reset}\n    npx get-shit-done-cc --all --global\n\n    ${dim}# Install to custom config directory${reset}\n    npx get-shit-done-cc --codex --global --config-dir ~/.codex-work\n\n    ${dim}# Install to current project only${reset}\n    npx get-shit-done-cc --claude --local\n\n    ${dim}# Uninstall GSD from Codex globally${reset}\n    npx get-shit-done-cc --codex --global --uninstall\n\n  ${yellow}Notes:${reset}\n    The --config-dir option is useful when you have multiple configurations.\n    It takes priority over CLAUDE_CONFIG_DIR / GEMINI_CONFIG_DIR / CODEX_HOME environment variables.\n`);
   process.exit(0);
 }
 
@@ -3072,12 +3176,15 @@ async function installAmauta(targetDir) {
 
   // ─── Step 1: Check prerequisites ────────────────
 
-  const hasDocker = checkCommand('docker', ['--version']);
+  // 88-11: when PostgreSQL is off the table, do not probe docker either. The
+  // probe is harmless on its own, but "this run executed no docker command" is
+  // a claim a test can assert, and "it only ran `docker --version`" is not.
+  const hasDocker = skipPostgres ? false : checkCommand('docker', ['--version']);
   const hasPython = checkCommand(platform.resolvePython().command,
     [...platform.resolvePython().args, '--version']);
-  const hasDockerCompose = checkCommand('docker', ['compose', 'version']);
+  const hasDockerCompose = skipPostgres ? false : checkCommand('docker', ['compose', 'version']);
 
-  if (!hasDocker) {
+  if (!hasDocker && !skipPostgres) {
     console.log(`  ${yellow}⚠${reset} Docker not found — skipping PostgreSQL setup`);
     console.log(`    ${dim}Install Docker Desktop to enable persistent memory${reset}`);
   }
@@ -3088,7 +3195,12 @@ async function installAmauta(targetDir) {
 
   // ─── Step 2: Docker PostgreSQL ──────────────────
 
-  if (hasDocker && hasDockerCompose) {
+  // 88-11: --skip-postgres (or GSD_INSTALL_SKIP_POSTGRES=1) means the caller has
+  // already decided this machine stays on its recorded backend. Say so and run
+  // no docker command at all — skipped work must be visible, not implied.
+  if (skipPostgres) {
+    console.log(`  ${dim}Skipped PostgreSQL setup (--skip-postgres): no docker or docker compose command was run${reset}`);
+  } else if (hasDocker && hasDockerCompose) {
     const composeFile = path.join(pluginRoot, 'docker', 'docker-compose.yml');
     if (fs.existsSync(composeFile)) {
       try {

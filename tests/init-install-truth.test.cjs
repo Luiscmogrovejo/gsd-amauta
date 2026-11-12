@@ -50,6 +50,13 @@ function runInit(args, opts) {
     GSD_AMAUTA_PORT: '18991',   // dead port: never touch a running daemon
     CLAUDE_CONFIG_DIR: opts.configDir || path.join(home, '.claude'),
     GSD_TEST_MODE: '',          // init shells out to install.js, which skips its main block under test mode
+    // scripts/run-tests.cjs sets GSD_INSTALL_FILES_ONLY=1 for the whole suite (so the
+    // npm "install" lifecycle cannot do a real install). Since plan 88-11 that variable
+    // also puts bin/init.cjs in files-only mode, where detect_infra / migrations /
+    // start_daemon / verify all skip with reason `files_only`. These cases assert the
+    // FULL flow, so they must say they want it; the files-only flow has its own suite
+    // in tests/88-11-installer-files-only.test.cjs.
+    GSD_INSTALL_FILES_ONLY: '',
   };
   let stdout = '';
   let stderr = '';

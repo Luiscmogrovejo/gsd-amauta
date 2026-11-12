@@ -363,11 +363,57 @@ def check_version_skew(config_dir, manifest):
 
 
 # ══ Check 4b: Stale install (package moved on since the files were installed) ══
-# Names that never ship, wherever they sit in a shipped directory. `__pycache__`
-# matters most: running doctor itself writes it, and it must not read as a change.
-SHIPPED_EXCLUDE_DIRS = frozenset({".git", "node_modules", "__pycache__"})
-SHIPPED_EXCLUDE_NAMES = frozenset({".DS_Store"})
-SHIPPED_EXCLUDE_SUFFIXES = (".pyc", ".pyo")
+# Names that never ship, wherever they sit in a shipped directory. ONE list, kept
+# byte-identical to SHIPPED_EXCLUDE_* in bin/init.cjs (the installer writes the
+# hash this check reads): tests/test_88_11_shipped_exclusions.py compares the two
+# name sets literally and hashes the same tree with both implementations.
+#
+# `__pycache__` matters because running doctor itself writes it. The `*.pid` and
+# `*.log` entries come from plan 88-11: on a machine where `plugin_root` IS the
+# repository, the daemon and the RLM service write their pid files into the
+# shipped `services/` directory, so every daemon restart produced
+# "install_stale WARN: 2 files differ: services/amauta-daemon.pid,
+# services/rlm-service.pid". Those are runtime state, not shipped content.
+#
+# The package's .gitignore is deliberately NOT the source of this list:
+# `hooks/dist/` is gitignored AND an entry of package.json `files` (a build
+# output committed to npm, not to git), so a gitignore-derived rule would drop a
+# whole shipped directory out of the hash.
+SHIPPED_EXCLUDE_DIRS = frozenset({
+    ".git", "node_modules", "__pycache__", ".pytest_cache", "data", "logs", "backups",
+})
+SHIPPED_EXCLUDE_NAMES = frozenset({".DS_Store", "Thumbs.db", ".env"})
+SHIPPED_EXCLUDE_SUFFIXES = (".pyc", ".pyo", ".pid", ".log", ".sock", ".bak", ".tmp")
+
+
+def is_shipped_path(rel):
+    """Does a relative path survive the shared shipped-set exclusions?
+
+    The one predicate both sides of the comparison use: the installer applies it
+    while hashing (``shippedFileMap`` in bin/init.cjs) and this module applies it
+    both while re-hashing and while diffing a RECORDED map, so a record written
+    before plan 88-11 (which still lists ``services/*.pid``) cannot report a pid
+    file as a differing shipped file.
+
+    Args:
+        rel: path relative to the package root, posix separators.
+
+    Returns:
+        bool: True when the path is part of the shipped set.
+
+    Example:
+        >>> is_shipped_path("services/doctor.py")
+        True
+        >>> is_shipped_path("services/amauta-daemon.pid")
+        False
+    """
+    parts = str(rel).replace("\\", "/").split("/")
+    name = parts[-1]
+    if name in SHIPPED_EXCLUDE_NAMES or name.endswith(SHIPPED_EXCLUDE_SUFFIXES):
+        return False
+    return not any(p in SHIPPED_EXCLUDE_DIRS for p in parts[:-1])
+
+
 INSTALL_UPGRADE_HINT = "node bin/init.cjs --upgrade --files-only"
 STALE_PATHS_CAP = 5
 
@@ -406,7 +452,7 @@ def shipped_file_map(package_root):
 
     def add(path):
         rel = path.relative_to(root).as_posix()
-        if path.name in SHIPPED_EXCLUDE_NAMES or path.name.endswith(SHIPPED_EXCLUDE_SUFFIXES):
+        if not is_shipped_path(rel):
             return
         if os.path.isfile(path):  # follows a symlink to a file, like the installer's copy
             found[rel] = sha256_file(path)
@@ -500,6 +546,10 @@ def check_install_stale(record_path=None, package_root=None):
             return
         recorded_map = record.get("shipped_files")
         if isinstance(recorded_map, dict):
+            # Filter the RECORDED side through the same predicate: a record
+            # written before plan 88-11 still lists services/*.pid, and a runtime
+            # artefact must not be reported as a differing shipped file.
+            recorded_map = {p: h for p, h in recorded_map.items() if is_shipped_path(p)}
             changed = sorted(
                 p for p in set(recorded_map) | set(current_map)
                 if recorded_map.get(p) != current_map.get(p)

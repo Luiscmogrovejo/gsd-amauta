@@ -98,7 +98,27 @@ const path = require('node:path');
 // their pinned sets changed (phase-53-canary does not pin amauta-mcp.py by diff, and its partial checks on the
 // six Phase 46 tool names are green). This PR must be merged with a merge commit (NEVER squash, never
 // rebase-merge) or this SHA stops resolving on master. The full list is in 88-11-DOTENV-RECORD.md.
-const PHASE_50_BASE = '33191d581f4754e7569f9b39c458509b0fc09f94';
+// RE-BASELINED AGAIN 2026-11-12 (plan 88-11 tasks 06-07 close-out, operator sign-off: delegated in the task
+// brief). ONE pinned path changed on purpose since the base above:
+//   bin/init.cjs                     a real --files-only mode (fresh install and --upgrade), unknown
+//                                    arguments are exit 2 from ONE flag table shared by the parser and
+//                                    --help, `shouldStartPostgres` keeps an install recorded as sqlite on
+//                                    sqlite, `daemonRestartPlan` kickstarts a launchd-managed daemon instead
+//                                    of replacing it with a detached one, and the shipped-set exclusion list
+//                                    drops runtime artefacts (*.pid, *.log, data/, …) (37ee48f)
+// MEASURED, NOT ASSUMED: `git diff --name-only 33191d5..HEAD` lists 12 files, and the intersection with the
+// pinned list read out of the four canary files is exactly bin/init.cjs. (The only other hit,
+// tests/phase-52-canary.test.cjs, is that canary's own file name inside an EXISTENCE check against
+// PHASE_52_BASE, not a byte-diff pin — the same artefact 88-15-RECORD.md and 88-11-DOTENV-RECORD.md saw.)
+// agents/ did not move (`git diff --name-only <base>...HEAD -- agents/` is empty) and the byte-match test is
+// green. The base is now the one commit of this series that touches a pinned path:
+//   37ee48f2fa59a87fd663d9844b6dc5a35752fc3b  fix(installer): a real --files-only mode, unknown flags are errors, and pid files are not shipped content
+// Every assertion is kept (7/7). CANARY_BASE, PHASE_52_BASE and PHASE_53_BASE are deliberately NOT moved:
+// none of their pinned sets changed (bin/init.cjs is not pinned by diff in phase-52-canary, and
+// phase-53-canary's partial checks on it — the seven Phase 44 step names plus --upgrade and --uninstall —
+// are present and green). This PR must be merged with a merge commit (NEVER squash, never rebase-merge) or
+// this SHA stops resolving on master. The full list is in 88-11-INSTALLER-RECORD.md.
+const PHASE_50_BASE = '37ee48f2fa59a87fd663d9844b6dc5a35752fc3b';
 
 const ROOT = path.resolve(__dirname, '..');
 
