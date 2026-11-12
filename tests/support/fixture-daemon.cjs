@@ -267,10 +267,32 @@ async function stopFixtureDaemon(handle) {
     await done;
   }
   appendLedger(handle.dataDir, { event: 'stopped', kind: 'daemon', pid: proc.pid });
-  // An RLM service the daemon started (never in test mode, but recorded if present).
+  // An RLM service the daemon started. Killing the daemon does NOT kill it on
+  // Windows — a terminated parent leaves its children running — and plan 88-16
+  // measured exactly that: `test (windows-latest, node 20)`, run 43189642396,
+  // ended with `SURVIVING PYTHON pid=6044 … services\amauta-daemon.py run` and
+  // `pid=7936 ppid=6044 … services\rlm-service.py run`. The pid comes from this
+  // fixture's OWN data directory, so it is a process this harness started.
   try {
     const rlmPid = parseInt(fs.readFileSync(path.join(handle.dataDir, 'rlm-service.pid'), 'utf8').trim(), 10);
     if (rlmPid > 0) {
+      if (pidAlive(rlmPid)) {
+        try {
+          process.kill(rlmPid, 'SIGTERM');
+        } catch (_e) {
+          /* already gone */
+        }
+        for (let i = 0; i < 20 && pidAlive(rlmPid); i += 1) {
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        if (pidAlive(rlmPid)) {
+          try {
+            process.kill(rlmPid, 'SIGKILL');
+          } catch (_e) {
+            /* exited after SIGTERM */
+          }
+        }
+      }
       appendLedger(handle.dataDir, {
         event: pidAlive(rlmPid) ? 'started' : 'stopped',
         kind: 'rlm',

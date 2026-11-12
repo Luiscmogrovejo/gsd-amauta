@@ -18,7 +18,7 @@
  */
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { spawnSync, execFileSync } = require('node:child_process');
+const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const { existsSync, readFileSync } = fs;
 const os = require('node:os');
@@ -31,28 +31,48 @@ const PROJECT_ROOT = path.resolve(__dirname, '..');
 
 /**
  * Is an external tool on PATH?
+ *
+ * Through the shared resolver, which uses `where` on Windows and `which`
+ * elsewhere. The previous implementation ran `command -v <bin>` with
+ * `shell: true`: on Windows that shell is `cmd.exe`, which has no `command`
+ * builtin, so EVERY scanner read as absent there no matter what was installed
+ * (measured, run 43189642396 — gitleaks and trivy were installed and verified
+ * on both Windows cells and six assertions still skipped).
+ *
  * @param {string} bin Executable name.
- * @returns {boolean} true when `command -v <bin>` finds it.
+ * @returns {boolean} true when the resolver finds it on PATH.
  */
 function haveTool(bin) {
-  try {
-    execFileSync('command', ['-v', bin], { shell: true, stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
+  return platformHelper.which(bin) !== null;
+}
+
+/**
+ * Path of a locally installed scanner binary, extension included.
+ *
+ * The installers write `node_modules/.bin/<tool>.exe` on Windows. A check for
+ * the extension-less name is false there even when the binary is present.
+ *
+ * @param {string} tool `gitleaks` or `trivy`
+ * @returns {string|null} the path that exists, or null
+ */
+function localScanner(tool) {
+  const base = path.join(PROJECT_ROOT, 'node_modules', '.bin', tool);
+  for (const candidate of [base, base + '.exe', base + '.cmd']) {
+    if (existsSync(candidate)) return candidate;
   }
+  return null;
 }
 
 // The installers (scripts/install-gitleaks.cjs, install-trivy.cjs) skip only when the binary already sits at
 // node_modules/.bin/<tool>; a copy elsewhere on PATH does not stop them downloading. A test that runs an
 // installer for real must therefore be gated on that exact path, not on PATH, or it reaches the network.
-const LOCAL_GITLEAKS = path.join(PROJECT_ROOT, 'node_modules', '.bin', 'gitleaks');
-const LOCAL_TRIVY = path.join(PROJECT_ROOT, 'node_modules', '.bin', 'trivy');
-const HAVE_GITLEAKS = haveTool('gitleaks') || existsSync(LOCAL_GITLEAKS);
-const GITLEAKS_INSTALLER_SKIP = existsSync(LOCAL_GITLEAKS)
+const LOCAL_GITLEAKS = localScanner('gitleaks');
+const LOCAL_TRIVY = localScanner('trivy');
+const HAVE_GITLEAKS = haveTool('gitleaks') || LOCAL_GITLEAKS !== null;
+const GITLEAKS_INSTALLER_SKIP = LOCAL_GITLEAKS
   ? false
   : 'gitleaks is not installed and this test must not download a binary from the network';
-const TRIVY_INSTALLER_SKIP = existsSync(LOCAL_TRIVY)
+const TRIVY_INSTALLER_SKIP = LOCAL_TRIVY
   ? false
   : 'trivy is not installed and this test must not download a binary from the network';
 
