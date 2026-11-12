@@ -121,6 +121,11 @@ function runInit(extraArgs, envOverrides, port, home) {
     CLAUDE_CONFIG_DIR: path.join(home, '.claude'),
     AMAUTA_DATA_DIR: path.join(home, 'data'),
     GSD_AMAUTA_PORT: String(port),
+    // scripts/run-tests.cjs sets GSD_INSTALL_FILES_ONLY=1 suite-wide, and since
+    // plan 88-11 that variable also puts init in files-only mode, where
+    // start_daemon skips for `files_only` BEFORE the daemon gate is consulted.
+    // This suite is about the gate's own reasons, so it opts out of files-only.
+    GSD_INSTALL_FILES_ONLY: '',
   });
   for (const k of Object.keys(envOverrides)) if (envOverrides[k] === undefined) delete env[k];
   const r = spawnSync(process.execPath, [BIN_INIT, '--json', '--skip-install', '--backend', 'sqlite', ...extraArgs], {

@@ -15,19 +15,9 @@
  *   npx gsd-amauta init [options]
  *   node bin/init.cjs [options]
  *
- * Options:
- *   --skip-install         Skip agent/command/skill installation
- *   --skip-daemon          Skip daemon startup
- *   --start-daemon         Start the daemon even in test mode or from a HOME that is not the operator's
- *   --opencode             Install OpenCode config (legacy alias for --tools opencode)
- *   --claude               Install Claude Code config (legacy alias for --tools claude-code)
- *   --backend <type>       Force backend: pg, sqlite, auto (default: auto)
- *   --force                Force re-detection even if daemon is running
- *   --yes                  Non-interactive mode; skip-with-warn on ambiguity (never destructive)
- *   --tools <list>         Comma-list of IDEs to install (e.g. claude-code,cursor)
- *   --force-migrate        Bypass legacy-migration collision guard
- *   --json                 Output results as JSON
- *   --help, -h             Print this help and exit 0
+ * Options: see INIT_FLAGS below — ONE table drives both `--help` and the
+ * unknown-flag check, so a flag cannot be in the parser and out of the docs.
+ * An unknown argument is an error (exit 2) and no step runs.
  */
 
 'use strict';
@@ -149,6 +139,215 @@ function daemonSkipMessage(reason) {
   return `skipped — ${DAEMON_SKIP_TEXT[reason] || reason}; pass --start-daemon to override`;
 }
 
+// ═══════════════════════════════════════════════════════
+// Files-only mode + the PostgreSQL gate + the daemon-restart plan (plan 88-11)
+// ═══════════════════════════════════════════════════════
+
+/** The one `skip_reason` every step uses in files-only mode. */
+const FILES_ONLY_REASON = 'files_only';
+
+/** Label of the macOS launchd job that owns the daemon when one is installed. */
+const LAUNCHD_LABEL = 'com.amauta.daemon';
+
+/** True for the values the harness treats as "on" in an environment variable. */
+function envTrue(value) {
+  return /^(1|true|yes|on)$/i.test(String(value === undefined || value === null ? '' : value));
+}
+
+/**
+ * A FROZEN step result for a step that files-only mode does not run.
+ *
+ * @param {string} name the FROZEN step name
+ * @param {string} what what this step would otherwise have done
+ * @returns {object} buildStepResult with status 'skip' and skip_reason 'files_only'
+ * @example
+ *   filesOnlySkip('migrations', 'apply database migrations');
+ *   // => { name: 'migrations', status: 'skip', message: 'skipped — --files-only: …', … }
+ */
+function filesOnlySkip(name, what) {
+  return buildStepResult(name, 'skip',
+    `skipped — --files-only: did not ${what}`,
+    { skip_reason: FILES_ONLY_REASON, would_apply: what });
+}
+
+/**
+ * May this run start the PostgreSQL container and apply PostgreSQL migrations?
+ *
+ * The 2026-11-11 incident: an upgrade of an install recorded as `backend:
+ * "sqlite"` started the container anyway (via `infra_detect.py --auto-start`),
+ * migrated it, and brought the daemon back on PostgreSQL — against a launchd
+ * plist that pins `GSD_BACKEND=sqlite`. Changing the backend is now something
+ * the operator asks for, never something an upgrade decides.
+ *
+ * First match wins:
+ *   --start-postgres        -> yes (forced_by_flag)
+ *   --backend pg            -> yes (backend_flag_pg)
+ *   GSD_FORCE_SQLITE truthy -> no  (env_force_sqlite)
+ *   GSD_BACKEND=sqlite      -> no  (env_backend_sqlite)
+ *   --backend sqlite        -> no  (backend_flag_sqlite)
+ *   record.backend=sqlite   -> no  (record_backend_sqlite)
+ *   otherwise               -> yes (no_recorded_backend)
+ *
+ * The last row is the UNCHANGED fresh-install default: an install with no
+ * record still auto-detects (and auto-starts) Docker PostgreSQL exactly as
+ * before this plan. The guarded case is an existing install recorded as sqlite.
+ *
+ * @param {{env: object, record: (object|null), flags: {startPostgres?: boolean, backend?: string}}} ctx
+ * @returns {{start: boolean, reason: string}}
+ * @example
+ *   shouldStartPostgres({ env: {}, record: { backend: 'sqlite' }, flags: {} });
+ *   // => { start: false, reason: 'record_backend_sqlite' }
+ */
+function shouldStartPostgres({ env, record, flags: f }) {
+  const e = env || {};
+  const fl = f || {};
+  if (fl.startPostgres) return { start: true, reason: 'forced_by_flag' };
+  if (fl.backend === 'pg') return { start: true, reason: 'backend_flag_pg' };
+  if (envTrue(e.GSD_FORCE_SQLITE)) return { start: false, reason: 'env_force_sqlite' };
+  if (String(e.GSD_BACKEND || '').toLowerCase() === 'sqlite') return { start: false, reason: 'env_backend_sqlite' };
+  if (fl.backend === 'sqlite') return { start: false, reason: 'backend_flag_sqlite' };
+  if (record && String(record.backend || '').toLowerCase() === 'sqlite') {
+    return { start: false, reason: 'record_backend_sqlite' };
+  }
+  return { start: true, reason: 'no_recorded_backend' };
+}
+
+/** Human text for a declined PostgreSQL gate, by reason. */
+const PG_SKIP_TEXT = {
+  env_force_sqlite: 'GSD_FORCE_SQLITE is set',
+  env_backend_sqlite: 'GSD_BACKEND=sqlite',
+  backend_flag_sqlite: '--backend sqlite',
+  record_backend_sqlite: 'the install record says backend "sqlite"',
+};
+
+/**
+ * @param {string} reason a declined PostgreSQL-gate reason
+ * @returns {string} message naming what was skipped and the override
+ */
+function pgSkipMessage(reason) {
+  return `${PG_SKIP_TEXT[reason] || reason}; the PostgreSQL container was NOT started and no ` +
+    'PG migration was applied — pass --start-postgres to change the backend';
+}
+
+/**
+ * How to bring the daemon back: through launchd, by a detached spawn, or not at all.
+ *
+ * The 2026-11-11 incident: `--upgrade` SIGTERMed the launchd-managed daemon and
+ * spawned a detached replacement, which came up with this process's environment
+ * instead of the plist's (so on PostgreSQL, against a plist pinning
+ * `GSD_BACKEND=sqlite`) and mirrored 2914 tasks into the wrong store. A service
+ * macOS owns must be restarted by macOS, which also restores its environment.
+ *
+ * `launchdManaged` is the result of an INJECTED probe, never a launchctl call
+ * made here, so the decision table is unit-testable on every platform and no
+ * test touches a real service:
+ *   true  -> kickstart gui/<uid>/<label>
+ *   false -> spawn (this run owns the daemon)
+ *   null  -> skip: the probe could not answer, so neither action is safe
+ *
+ * @param {{platform: string, uid: (number|null), launchdManaged: (boolean|null), label?: string}} ctx
+ * @returns {{action: 'kickstart'|'spawn'|'skip', target: (string|null), reason: string}}
+ * @example
+ *   daemonRestartPlan({ platform: 'darwin', uid: 501, launchdManaged: true });
+ *   // => { action: 'kickstart', target: 'gui/501/com.amauta.daemon', reason: 'launchd_managed' }
+ */
+function daemonRestartPlan({ platform: plat, uid, launchdManaged, label = LAUNCHD_LABEL }) {
+  if (plat !== 'darwin') return { action: 'spawn', target: null, reason: 'not_macos' };
+  if (uid === null || uid === undefined || !Number.isInteger(uid)) {
+    return { action: 'spawn', target: null, reason: 'uid_unknown' };
+  }
+  if (launchdManaged === null || launchdManaged === undefined) {
+    return { action: 'skip', target: `gui/${uid}/${label}`, reason: 'launchd_probe_failed' };
+  }
+  if (launchdManaged === false) return { action: 'spawn', target: null, reason: 'not_launchd_managed' };
+  return { action: 'kickstart', target: `gui/${uid}/${label}`, reason: 'launchd_managed' };
+}
+
+/**
+ * Is `label` loaded in this user's launchd domain? The ONLY place that runs
+ * launchctl. Never reached from a test: `restart_daemon` runs it only after the
+ * daemon gate opens, which it never does under GSD_TEST_MODE=1 or a foreign HOME.
+ *
+ * @param {number} uid the gui domain's uid
+ * @param {string} [label=LAUNCHD_LABEL]
+ * @returns {boolean|null} true/false, or null when launchctl could not answer
+ */
+function probeLaunchdManaged(uid, label = LAUNCHD_LABEL) {
+  try {
+    const r = spawnSync('launchctl', ['print', `gui/${uid}/${label}`],
+      { encoding: 'utf-8', timeout: 10000, stdio: ['ignore', 'pipe', 'pipe'] });
+    if (r.error) return null;              // no launchctl on PATH at all
+    if (r.status === 0) return true;
+    // launchctl exits non-zero both for "no such service" and for a domain error.
+    // Only the first is a definite "not managed".
+    const text = `${r.stdout || ''}${r.stderr || ''}`;
+    if (/could not find service|no such process|not find service/i.test(text)) return false;
+    return null;
+  } catch (_e) {
+    return null;
+  }
+}
+
+/**
+ * The extra arguments `bin/install.js` must receive from this run.
+ *
+ * `--files-only` is passed EXPLICITLY (and `GSD_INSTALL_FILES_ONLY=1` with it,
+ * see installerEnv): install.js used to decide "interactive or not" from
+ * `process.stdin.isTTY`, which tells you nothing about whether the caller wants
+ * a container started. The opt-in feature flags are forwarded verbatim so
+ * `init --enable-shunt` registers the shunt, instead of being ignored.
+ *
+ * @param {object} f the flags object
+ * @param {{skipPostgres?: boolean}} [opts] extra gating decided by the caller
+ * @returns {string[]} arguments to append after the runtime flag
+ * @example
+ *   installerArgs({ filesOnly: true, '--enable-shunt': true });  // => ['--files-only']
+ */
+function installerArgs(f, opts = {}) {
+  const out = [];
+  if (f.filesOnly) out.push('--files-only');
+  if (opts.skipPostgres) out.push('--skip-postgres');
+  for (const flag of INSTALL_PASSTHROUGH_FLAGS) {
+    if (args.includes(flag)) out.push(flag);
+  }
+  return out;
+}
+
+/**
+ * The environment `bin/install.js` is spawned with. Belt to installerArgs's
+ * braces: install.js honours the flag AND the variable, and an `npm` lifecycle
+ * that reaches it without arguments still gets files-only.
+ *
+ * @param {object} f the flags object
+ * @returns {object} a copy of process.env with GSD_INSTALL_FILES_ONLY set or cleared
+ */
+function installerEnv(f) {
+  return { ...process.env, GSD_INSTALL_FILES_ONLY: f.filesOnly ? '1' : '' };
+}
+
+/**
+ * A FROZEN detect_infra result that names SQLite without running infra
+ * detection. `infra_detect.py --auto-start` is the call that STARTS the
+ * container, so a run that must not start one cannot ask it what it sees.
+ *
+ * @param {string} why one line explaining why detection was not run
+ * @returns {object} buildStepResult('detect_infra', 'warn', …) with a raw payload
+ */
+function sqliteInfraStep(why) {
+  const connection_url = `sqlite:///${path.join(
+    process.env.GSD_DATA_DIR || path.join(os.homedir(), '.amauta', 'data'),
+    'gsd_amauta.db'
+  )}`;
+  const raw = {
+    backend: 'sqlite',
+    connection_url,
+    features: ['memory', 'tasks', 'skb', 'validation', 'fts'],
+    message: why,
+  };
+  return buildStepResult('detect_infra', 'warn', why,
+    { backend: 'sqlite', connection_url, features: raw.features, raw });
+}
+
 // Colors
 const cyan = '\x1b[36m';
 const green = '\x1b[32m';
@@ -188,28 +387,135 @@ function friendlyError(err) {
   return msg.split('\n')[0].substring(0, 120);
 }
 
+// ═══════════════════════════════════════════════════════
+// Flag table (plan 88-11): ONE source for --help and the unknown-flag check
+// ═══════════════════════════════════════════════════════
+
+/**
+ * Every argument `bin/init.cjs` accepts.
+ *
+ * ONE table drives the help text AND the unknown-argument check, so a flag
+ * cannot exist in the parser and be missing from the documentation (or the
+ * reverse). The 2026-11-11 incident is the failure this closes: `--files-only`
+ * was not known here and an unknown flag was ignored in silence, so
+ * `--upgrade --files-only --enable-shunt` ran the FULL upgrade — it started the
+ * operator's PostgreSQL container, applied 30 migrations to it and replaced the
+ * launchd-managed daemon with a detached one on the wrong backend.
+ *
+ * Field meanings:
+ *   `flag`       the canonical spelling, as `--help` prints it
+ *   `aliases`    other accepted spellings (e.g. `-h`)
+ *   `takesValue` the NEXT argument is this flag's value, and is not itself
+ *                checked against the table
+ *   `section`    which `--help` block the row is printed under
+ *   `help`       one-line description (may contain newlines for continuation)
+ *
+ * @type {ReadonlyArray<{flag: string, aliases?: string[], takesValue?: boolean, section: string, help: string}>}
+ */
+const INIT_FLAGS = [
+  { flag: '--skip-install', section: 'Options', help: 'Skip agent/command/skill installation' },
+  { flag: '--skip-daemon', section: 'Options', help: 'Skip daemon startup' },
+  { flag: '--start-daemon', section: 'Options', help: "Start the daemon even in test mode or from a HOME that is not the operator's account" },
+  { flag: '--opencode', section: 'Options', help: 'Install OpenCode config (legacy alias for --tools opencode)' },
+  { flag: '--claude', section: 'Options', help: 'Install Claude Code config (legacy alias for --tools claude-code)' },
+  { flag: '--backend', takesValue: true, value: '<type>', section: 'Options', help: 'Force backend: pg, sqlite, auto (default: auto)' },
+  { flag: '--force', section: 'Options', help: 'Force re-detection even if daemon is running' },
+  { flag: '--yes', section: 'Options', help: 'Non-interactive mode; skip-with-warn on ambiguity (never destructive)' },
+  { flag: '--tools', takesValue: true, value: '<list>', section: 'Options', help: 'Comma-list of IDEs to install (e.g. claude-code,cursor)' },
+  { flag: '--force-migrate', section: 'Options', help: 'Bypass legacy-migration collision guard' },
+  { flag: '--json', section: 'Options', help: 'Output results as JSON' },
+  { flag: '--verbose', section: 'Options', help: 'Print debug output (stack traces, raw error detail)' },
+  { flag: '--help', aliases: ['-h'], section: 'Options', help: 'Print this help and exit 0' },
+
+  {
+    flag: '--files-only',
+    section: 'Safety',
+    help: 'Refresh the installed FILES and nothing else: no container is started or\n' +
+      '                         stopped, no docker / docker compose call, no migration, no daemon or\n' +
+      '                         RLM start/stop/restart, no launchd call. The skipped steps appear in\n' +
+      '                         the step table as `skip` with reason `files_only`. Also selected by\n' +
+      '                         GSD_INSTALL_FILES_ONLY=1.',
+  },
+  {
+    flag: '--start-postgres',
+    section: 'Safety',
+    help: 'Allow an upgrade to start the PostgreSQL container and apply PG\n' +
+      '                         migrations even when the install record says backend "sqlite" or the\n' +
+      '                         environment pins GSD_BACKEND=sqlite / GSD_FORCE_SQLITE=1. Without it\n' +
+      '                         such an upgrade keeps the recorded backend and says what it skipped.',
+  },
+
+  { flag: '--enable-shunt', section: 'Installed features (passed to install.js)', help: 'Opt in to the token-saving read shunt (Claude only; default off)' },
+  { flag: '--enable-compression', section: 'Installed features (passed to install.js)', help: 'Opt in to output-compression hooks (Claude only; default off)' },
+  { flag: '--enable-mobile-mcp', section: 'Installed features (passed to install.js)', help: 'Opt in to the mobile MCP server entries (default off)' },
+  { flag: '--force-statusline', section: 'Installed features (passed to install.js)', help: 'Replace an existing statusline config' },
+
+  { flag: '--upgrade', section: 'Upgrade / Uninstall', help: '' },
+  { flag: '--uninstall', section: 'Upgrade / Uninstall', help: '' },
+  { flag: '--dry-run', section: 'Upgrade / Uninstall', help: '' },
+];
+
+/** The flags init forwards verbatim to bin/install.js (same spelling on both sides). */
+const INSTALL_PASSTHROUGH_FLAGS = INIT_FLAGS
+  .filter((f) => f.section === 'Installed features (passed to install.js)')
+  .map((f) => f.flag);
+
+/**
+ * Arguments that are not in `table`, in the order they were given.
+ *
+ * A value-taking flag consumes the argument after it, so `--backend sqlite`
+ * reports nothing. `--flag=value` is matched on the part before the `=`. A bare
+ * word (a stray positional) is reported too: silently ignoring it is how a typo
+ * such as `--file-only` turned into a full upgrade.
+ *
+ * @param {string[]} argv arguments, with any leading `init` already removed
+ * @param {ReadonlyArray<object>} [table=INIT_FLAGS] the flag table
+ * @returns {string[]} the unrecognised arguments (empty when all are known)
+ * @example
+ *   unknownArgs(['--upgrade', '--files-only']);  // => []
+ *   unknownArgs(['--file-only']);                // => ['--file-only']
+ */
+function unknownArgs(argv, table = INIT_FLAGS) {
+  const known = new Set();
+  const valued = new Set();
+  for (const f of table) {
+    for (const name of [f.flag, ...(f.aliases || [])]) {
+      known.add(name);
+      if (f.takesValue) valued.add(name);
+    }
+  }
+  const unknown = [];
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (valued.has(a)) { i += 1; continue; }        // its value is not a flag
+    const eq = a.indexOf('=');
+    if (known.has(eq > 0 ? a.slice(0, eq) : a)) continue;
+    unknown.push(a);
+  }
+  return unknown;
+}
+
 /**
  * Print help text and exit 0.
  * Invoked when --help / -h is passed (Phase 44 INST-03 doc requirement).
+ * Rendered from INIT_FLAGS: every accepted flag is documented by construction.
  */
 function printHelp() {
+  const pad = (s) => s.padEnd(23);
+  let opts = '';
+  let lastSection = null;
+  for (const f of INIT_FLAGS) {
+    if (f.section === 'Upgrade / Uninstall') continue;  // long-form prose below
+    if (f.section !== lastSection) {
+      opts += `${lastSection === null ? '' : '\n'}${f.section}:\n`;
+      lastSection = f.section;
+    }
+    const names = [f.flag, ...(f.aliases || [])].join(', ') + (f.value ? ` ${f.value}` : '');
+    opts += `  ${pad(names)}${f.help}\n`;
+  }
   process.stdout.write(`gsd-amauta init [options]
 
-Options:
-  --skip-install         Skip agent/command/skill installation
-  --skip-daemon          Skip daemon startup
-  --start-daemon         Start the daemon even in test mode or from a HOME that is not the operator's account
-  --opencode             Install OpenCode config (legacy alias for --tools opencode)
-  --claude               Install Claude Code config (legacy alias for --tools claude-code)
-  --backend <type>       Force backend: pg, sqlite, auto (default: auto)
-  --force                Force re-detection even if daemon is running
-  --yes                  Non-interactive mode; skip-with-warn on ambiguity (never destructive)
-  --tools <list>         Comma-list of IDEs to install (e.g. claude-code,cursor)
-  --force-migrate        Bypass legacy-migration collision guard
-  --json                 Output results as JSON
-  --verbose              Print debug output (stack traces, raw error detail)
-  --help, -h             Print this help and exit 0
-
+${opts}
 Upgrade / Uninstall (POLISH-02 — mutually exclusive):
   --upgrade              Upgrade Amauta in-place: detect version (derived from the
                          installed VERSION/manifest when no install record exists),
@@ -260,7 +566,32 @@ const flags = {
   uninstall: args.includes('--uninstall'),       // NEW POLISH-02: remove Amauta from project
   dryRun: args.includes('--dry-run'),            // NEW POLISH-02: preview without state changes
   verbose: args.includes('--verbose'),           // NEW PUB-04: print debug output (stack traces, raw error detail)
+  // 88-11: refresh files and nothing else. Also selected by the env var the npm
+  // lifecycle already uses, so `GSD_INSTALL_FILES_ONLY=1 … --upgrade` is safe too.
+  filesOnly: args.includes('--files-only') || process.env.GSD_INSTALL_FILES_ONLY === '1',
+  // 88-11: the one explicit opt-in that lets an upgrade start PostgreSQL against
+  // an install recorded as sqlite (or an environment that pins sqlite).
+  startPostgres: args.includes('--start-postgres'),
 };
+
+// ── 88-11: an unknown argument is an error, before any step runs ─────────────
+// Unknown flags used to be ignored in silence. `--upgrade --files-only` was
+// therefore a FULL upgrade (`--files-only` did not exist here), which started
+// the operator's PostgreSQL container, applied 30 migrations and replaced the
+// launchd daemon. Exit code 2 distinguishes "you typed something I do not know"
+// from the existing exit 1 ("a flag's VALUE is wrong") and from a step failure.
+// Checked at load, like the --backend and --upgrade/--uninstall guards above it.
+{
+  const unknown = unknownArgs(args);
+  if (unknown.length > 0) {
+    const plural = unknown.length === 1 ? 'argument' : 'arguments';
+    process.stderr.write(
+      `Error: unknown ${plural}: ${unknown.join(', ')}\n` +
+      'Nothing was done. Run `gsd-amauta init --help` for the accepted flags.\n'
+    );
+    process.exit(2);
+  }
+}
 
 const backendIdx = args.indexOf('--backend');
 if (backendIdx !== -1 && args[backendIdx + 1]) {
@@ -669,10 +1000,11 @@ async function stepInstall(log, detections) {
 
   let installErr = null;
   try {
-    execFileSync(process.execPath, [INSTALL_SCRIPT, runtimeFlag], {
+    execFileSync(process.execPath, [INSTALL_SCRIPT, runtimeFlag, ...installerArgs(flags)], {
       stdio: flags.json ? 'pipe' : 'inherit',
       cwd: PLUGIN_ROOT,
       timeout: 60000,
+      env: installerEnv(flags),
     });
     log('install.js done');
   } catch (err) {
@@ -773,6 +1105,16 @@ function stepDetectInfra(log) {
       process.env.GSD_DATA_DIR || path.join(os.homedir(), '.amauta', 'data'),
       'gsd_amauta.db'
     )}`;
+  }
+
+  // 88-11 files-only: infra detection runs `infra_detect.py --auto-start`, which
+  // STARTS the Docker PostgreSQL container. A run that may not start anything
+  // cannot ask it, so it reports a skip rather than a backend.
+  if (flags.filesOnly) {
+    log('Skipped (--files-only: no infra detection, no container start)');
+    const r = filesOnlySkip('detect_infra', 'detect infrastructure (would auto-start the PostgreSQL container)');
+    r.duration_ms = Date.now() - start;
+    return r;
   }
 
   // If user forced sqlite backend, short-circuit
@@ -879,6 +1221,14 @@ function stepDetectInfra(log) {
 function stepMigrations(log, infraResult) {
   const start = Date.now();
 
+  // 88-11 files-only: no SQL runs, and nothing is recorded as applied.
+  if (flags.filesOnly) {
+    log('Skipped (--files-only: no migrations applied)');
+    const r = filesOnlySkip('migrations', 'apply any migration');
+    r.duration_ms = Date.now() - start;
+    return r;
+  }
+
   // Extract raw infra data from FROZEN result or legacy plain object
   const infraRaw = (infraResult && infraResult.details && infraResult.details.raw)
     ? infraResult.details.raw
@@ -979,6 +1329,15 @@ async function stepStartDaemon(log, infraResult) {
   const infraRaw = (infraResult && infraResult.details && infraResult.details.raw)
     ? infraResult.details.raw
     : infraResult;
+
+  // 88-11 files-only: no daemon is started, stopped or restarted. Checked before
+  // the daemon gate so the reason the operator reads is the one they asked for.
+  if (flags.filesOnly) {
+    log('Skipped (--files-only: no daemon started)');
+    const r = filesOnlySkip('start_daemon', 'start, stop or restart a daemon');
+    r.duration_ms = Date.now() - start;
+    return r;
+  }
 
   const gate = daemonGate(flags);
   if (!gate.start) {
@@ -1097,6 +1456,15 @@ async function stepStartDaemon(log, infraResult) {
  */
 async function stepVerify(log) {
   const start = Date.now();
+
+  // 88-11 files-only: no daemon was started, so there is nothing to verify and
+  // no /health call to make (a live daemon on the port is not this run's).
+  if (flags.filesOnly) {
+    log('Skipped (--files-only: no daemon to verify)');
+    const r = filesOnlySkip('verify', 'contact a daemon');
+    r.duration_ms = Date.now() - start;
+    return r;
+  }
 
   // Same gate as the start step: a daemon that was never started is not verified
   // (and a throwaway HOME must not report the operator's live daemon as its own).
@@ -1508,11 +1876,27 @@ function packageCommit() {
 }
 
 // Never part of the shipped set, wherever they sit in a shipped directory.
-// Must stay in step with SHIPPED_EXCLUDE_* in services/doctor.py (a test pins
-// that both implementations return the same digest).
-const SHIPPED_EXCLUDE_DIRS = new Set(['.git', 'node_modules', '__pycache__']);
-const SHIPPED_EXCLUDE_NAMES = new Set(['.DS_Store']);
-const SHIPPED_EXCLUDE_SUFFIXES = ['.pyc', '.pyo'];
+// Must stay in step with SHIPPED_EXCLUDE_* in services/doctor.py: one list on
+// both sides, pinned by tests/test_88_11_shipped_exclusions.py (the two name
+// sets are compared literally, and both implementations must hash a tree with
+// runtime artefacts in it to the same digest).
+//
+// Why these names (plan 88-11): on a machine where `plugin_root` IS the
+// repository, the daemon and the RLM service write their pid files into the
+// shipped `services/` directory, so `doctor` reported
+// "install_stale WARN: 2 files differ: services/amauta-daemon.pid,
+// services/rlm-service.pid" after every daemon restart. A pid, a log or a
+// __pycache__ entry is RUNTIME state, not shipped content.
+//
+// The package's own .gitignore is deliberately NOT the source of this list:
+// `hooks/dist/` is gitignored AND is an entry of package.json `files` (it is a
+// build output committed to npm, not to git), so a gitignore-derived rule would
+// drop a whole shipped directory from the hash.
+const SHIPPED_EXCLUDE_DIRS = new Set([
+  '.git', 'node_modules', '__pycache__', '.pytest_cache', 'data', 'logs', 'backups',
+]);
+const SHIPPED_EXCLUDE_NAMES = new Set(['.DS_Store', 'Thumbs.db', '.env']);
+const SHIPPED_EXCLUDE_SUFFIXES = ['.pyc', '.pyo', '.pid', '.log', '.sock', '.bak', '.tmp'];
 
 /**
  * {relative posix path: sha256 hex of content} for every file the package ships.
@@ -1523,13 +1907,21 @@ const SHIPPED_EXCLUDE_SUFFIXES = ['.pyc', '.pyo'];
  * @returns {Object<string,string>} relative path to content digest
  * @throws {Error} package.json unreadable or malformed
  */
+function isShippedPath(rel) {
+  const parts = String(rel).split(/[\\/]/);
+  const name = parts[parts.length - 1];
+  if (SHIPPED_EXCLUDE_NAMES.has(name)) return false;
+  if (SHIPPED_EXCLUDE_SUFFIXES.some((x) => name.endsWith(x))) return false;
+  return !parts.slice(0, -1).some((p) => SHIPPED_EXCLUDE_DIRS.has(p));
+}
+
 function shippedFileMap(root) {
   const crypto = require('crypto');
   const entries = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf-8')).files || [];
   const found = {};
   const add = (full) => {
-    const name = path.basename(full);
-    if (SHIPPED_EXCLUDE_NAMES.has(name) || SHIPPED_EXCLUDE_SUFFIXES.some(x => name.endsWith(x))) return;
+    const relCheck = path.relative(root, full).split(path.sep).join('/');
+    if (!isShippedPath(relCheck)) return;
     let st;
     try { st = fs.statSync(full); } catch (_e) { return; }   // dangling symlink
     if (!st.isFile()) return;
@@ -1610,6 +2002,15 @@ function writeInstallRecord(fields) {
       ? JSON.parse(fs.readFileSync(INSTALL_RECORD_PATH, 'utf-8'))
       : null;
     if (existing && existing.installed_at) record.installed_at = existing.installed_at;
+    // 88-11: a files-only run does not detect infrastructure, so it has no
+    // backend to report. Keeping the recorded one is the whole point: the
+    // record must not start saying "unknown" because the files were refreshed.
+    if (existing && existing.backend && (!fields.backend || fields.backend === 'unknown')) {
+      record.backend = existing.backend;
+    }
+    if (existing && existing.upgraded_at && !record.upgraded_at) {
+      record.upgraded_at = existing.upgraded_at;
+    }
   } catch (_e) { /* corrupt record is replaced */ }
   fs.mkdirSync(path.dirname(INSTALL_RECORD_PATH), { recursive: true });
   fs.writeFileSync(INSTALL_RECORD_PATH, JSON.stringify(record, null, 2), 'utf-8');
@@ -1806,6 +2207,18 @@ async function runUpgrade(f) {
     }
   }
 
+  // The two gates this upgrade is bound by, decided ONCE from the record that
+  // step 1 read, so every step below answers the same question the same way.
+  const pgGate = shouldStartPostgres({ env: process.env, record: installRecord, flags: f });
+  if (!f.json) {
+    if (f.filesOnly) {
+      console.log(`${dim}--files-only: refreshing installed files only — no container, no migration, ` +
+        `no daemon or RLM start/stop, no launchctl call.${reset}`);
+    } else if (!pgGate.start) {
+      console.log(`${yellow}PostgreSQL left alone: ${pgSkipMessage(pgGate.reason)}.${reset}`);
+    }
+  }
+
   // ── Step 2: compute_migration_delta ────────────────────────────────────────
   {
     const start = Date.now();
@@ -1871,15 +2284,21 @@ async function runUpgrade(f) {
       results.push(r);
     } else {
       const runtimeFlag = f.runtime === 'opencode' ? '--opencode' : '--claude';
+      // install.js has an "Amauta Infrastructure" block that starts the PG
+      // container and a daemon. It must be told what this run is allowed to do;
+      // it used to infer "interactive" from process.stdin.isTTY, which says
+      // nothing about that. Flag AND environment variable, see installerArgs.
+      const extraArgs = installerArgs(f, { skipPostgres: !pgGate.start });
       try {
-        execFileSync(process.execPath, [INSTALL_SCRIPT, runtimeFlag], {
+        execFileSync(process.execPath, [INSTALL_SCRIPT, runtimeFlag, ...extraArgs], {
           stdio: f.json ? 'pipe' : 'inherit',
           cwd: PLUGIN_ROOT,
           timeout: 120000,
+          env: installerEnv(f),
         });
         const r = buildStepResult('refresh_installed_files', 'pass',
           'installed copy refreshed via install.js (path rewriting + manifest regenerated)',
-          { installer: INSTALL_SCRIPT, runtime: runtimeFlag });
+          { installer: INSTALL_SCRIPT, runtime: runtimeFlag, installer_args: extraArgs });
         r.duration_ms = Date.now() - start;
         results.push(r);
       } catch (err) {
@@ -1895,7 +2314,16 @@ async function runUpgrade(f) {
   // ── Step 4: apply_upgrade_migrations ───────────────────────────────────────
   {
     const start = Date.now();
-    if (idempotentSkip) {
+    if (f.filesOnly) {
+      // No SQL runs and appliedFiles stays empty, so step 5 cannot record a
+      // migration this run did not apply.
+      const r = filesOnlySkip('apply_upgrade_migrations',
+        `apply ${deltaFiles.length} migration(s) or touch any database`);
+      r.details.would_apply = deltaFiles;
+      r.details.recorded_as_applied = [];
+      r.duration_ms = Date.now() - start;
+      results.push(r);
+    } else if (idempotentSkip) {
       const r = buildStepResult('apply_upgrade_migrations', 'skip',
         'skipped — already up-to-date (idempotent)', null);
       r.duration_ms = Date.now() - start;
@@ -1904,6 +2332,21 @@ async function runUpgrade(f) {
       const r = buildStepResult('apply_upgrade_migrations', 'skip',
         `dry-run: would apply ${deltaFiles.length} migration(s)`,
         { would_apply: deltaFiles });
+      r.duration_ms = Date.now() - start;
+      results.push(r);
+    } else if (!pgGate.start) {
+      // The incident's second half: stepDetectInfra runs infra_detect.py
+      // --auto-start, which STARTS the container. An upgrade of an install
+      // recorded as sqlite must not even ask.
+      appliedFiles = [];
+      const r = buildStepResult('apply_upgrade_migrations', 'skip',
+        `skipped — ${pgSkipMessage(pgGate.reason)}`,
+        {
+          skip_reason: pgGate.reason,
+          backend: 'sqlite',
+          would_apply: deltaFiles,
+          recorded_as_applied: [],
+        });
       r.duration_ms = Date.now() - start;
       results.push(r);
     } else {
@@ -2032,7 +2475,14 @@ async function runUpgrade(f) {
   {
     const start = Date.now();
     const restartGate = daemonGate(f);
-    if (idempotentSkip || !restartGate.start) {
+    if (f.filesOnly) {
+      // The incident: this step SIGTERMed the launchd-managed daemon and spawned
+      // a detached replacement on the wrong backend. Files-only never touches it.
+      const r = filesOnlySkip('restart_daemon',
+        'stop, start or restart the daemon or the RLM service (no launchctl call either)');
+      r.duration_ms = Date.now() - start;
+      results.push(r);
+    } else if (idempotentSkip || !restartGate.start) {
       const skipReason = idempotentSkip ? 'already up-to-date (idempotent)'
         : (restartGate.reason === 'skip_daemon_flag' ? '--skip-daemon'
           : `${DAEMON_SKIP_TEXT[restartGate.reason] || restartGate.reason}; pass --start-daemon to override`);
@@ -2047,32 +2497,79 @@ async function runUpgrade(f) {
       r.duration_ms = Date.now() - start;
       results.push(r);
     } else {
-      // Kill existing daemon if running
-      const pidFile = path.join(PLUGIN_ROOT, 'services', 'amauta-daemon.pid');
-      let killedPid = null;
-      try {
-        if (fs.existsSync(pidFile)) {
-          const pid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
-          if (!isNaN(pid)) {
-            process.kill(pid, 'SIGTERM');
-            killedPid = pid;
-            await sleep(500); // brief wait for graceful shutdown
-          }
-        }
-      } catch { /* pid may not exist — ok */ }
+      // Who owns the daemon decides how it comes back. A launchd job must be
+      // restarted BY launchd, or the replacement loses the plist's pinned
+      // environment (that is how the 2026-11-11 run came up on postgresql
+      // against a plist pinning GSD_BACKEND=sqlite).
+      let uid = null;
+      try { uid = os.userInfo().uid; } catch (_e) { uid = null; }
+      const plan = daemonRestartPlan({
+        platform: process.platform,
+        uid: typeof uid === 'number' ? uid : null,
+        launchdManaged: process.platform === 'darwin' && typeof uid === 'number'
+          ? probeLaunchdManaged(uid)
+          : false,
+      });
 
-      // Re-start daemon via stepStartDaemon pattern
-      if (!fs.existsSync(DAEMON_SCRIPT)) {
+      if (plan.action === 'kickstart') {
+        const kick = spawnSync('launchctl', ['kickstart', '-k', plan.target],
+          { encoding: 'utf-8', timeout: 30000, stdio: ['ignore', 'pipe', 'pipe'] });
+        const ok = !kick.error && kick.status === 0;
+        const r = ok
+          ? buildStepResult('restart_daemon', 'pass',
+            `daemon restart: launchctl kickstart -k ${plan.target} (plist environment preserved)`,
+            { restart_mode: 'launchctl_kickstart', target: plan.target, reason: plan.reason })
+          : buildStepResult('restart_daemon', 'skip',
+            `skipped — ${plan.target} is launchd-managed and \`launchctl kickstart -k ${plan.target}\` ` +
+            `failed (${(kick.error && kick.error.message) || (kick.stderr || '').trim() || `exit ${kick.status}`}); ` +
+            'the daemon was NOT stopped. Restart it yourself with: ' +
+            `launchctl kickstart -k ${plan.target}`,
+            { restart_mode: 'launchctl_failed', target: plan.target, reason: plan.reason });
+        r.duration_ms = Date.now() - start;
+        results.push(r);
+      } else if (plan.action === 'skip') {
+        const r = buildStepResult('restart_daemon', 'skip',
+          `skipped — could not tell whether ${plan.target} is launchd-managed, so the daemon was ` +
+          'left alone rather than replaced by a detached process with a different environment. ' +
+          `Restart it yourself with: launchctl kickstart -k ${plan.target}`,
+          { restart_mode: 'launchd_probe_failed', target: plan.target, reason: plan.reason });
+        r.duration_ms = Date.now() - start;
+        results.push(r);
+      } else if (!fs.existsSync(DAEMON_SCRIPT)) {
         const r = buildStepResult('restart_daemon', 'fail', 'daemon script not found', null);
         r.duration_ms = Date.now() - start;
         results.push(r);
       } else {
-        const infraResult = stepDetectInfra(() => {});
+        // This run owns the daemon: stop the pid it wrote, then start a new one.
+        const pidFile = path.join(PLUGIN_ROOT, 'services', 'amauta-daemon.pid');
+        let killedPid = null;
+        try {
+          if (fs.existsSync(pidFile)) {
+            const pid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
+            if (!isNaN(pid)) {
+              process.kill(pid, 'SIGTERM');
+              killedPid = pid;
+              await sleep(500); // brief wait for graceful shutdown
+            }
+          }
+        } catch { /* pid may not exist — ok */ }
+
+        // The infra the daemon comes back on is the gate's answer, not a fresh
+        // detection: stepDetectInfra would auto-start the container the gate
+        // just declined, and the daemon would then come up on postgresql.
+        const infraResult = pgGate.start
+          ? stepDetectInfra(() => {})
+          : sqliteInfraStep(`SQLite kept: ${pgSkipMessage(pgGate.reason)}`);
         const daemonResult = await stepStartDaemon(() => {}, infraResult);
         // Reframe as restart_daemon step (POLISH-02 frozen name)
         const r = buildStepResult('restart_daemon', daemonResult.status,
           `daemon restart: ${daemonResult.message}`,
-          { killed_pid: killedPid, ...((daemonResult.details) || {}) });
+          {
+            killed_pid: killedPid,
+            restart_mode: 'spawn',
+            reason: plan.reason,
+            ...((daemonResult.details) || {}),
+          });
         r.duration_ms = Date.now() - start;
         results.push(r);
       }
@@ -2527,6 +3024,10 @@ async function main() {
   if (!flags.json) {
     console.log(`\n${bold}gsd-amauta init${reset}`);
     console.log('================\n');
+    if (flags.filesOnly) {
+      console.log(`${dim}--files-only: installing files only — no container, no migration, ` +
+        `no daemon or RLM start/stop, no launchctl call.${reset}\n`);
+    }
   }
 
   // Helper: step logger
@@ -2583,7 +3084,10 @@ async function main() {
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
   const hasFailure = results.some(r => r.status === 'fail');
-  const degraded = degradedReport(infraResult);
+  // 88-11: a files-only run never detected a backend, so it has nothing to call
+  // degraded. Printing the DEGRADED banner off an un-run detection would tell
+  // the operator PostgreSQL is off when all that happened is it was not asked.
+  const degraded = flags.filesOnly ? null : degradedReport(infraResult);
 
   // Record the install so `--upgrade` has something to read. Nothing wrote
   // this file before, which is why --upgrade always failed on a real install.
@@ -2637,4 +3141,11 @@ if (require.main === module) {
   });
 }
 
-module.exports = { stepDetectIdes, buildStepResult, renderStepTable, migrateLegacyCommands, stepAssertions, runUpgrade, runUninstall, shippedFileMap, shippedHashFromMap, shouldStartDaemon };
+module.exports = {
+  stepDetectIdes, buildStepResult, renderStepTable, migrateLegacyCommands, stepAssertions,
+  runUpgrade, runUninstall, shippedFileMap, shippedHashFromMap, shouldStartDaemon,
+  // plan 88-11
+  INIT_FLAGS, INSTALL_PASSTHROUGH_FLAGS, unknownArgs, installerArgs,
+  shouldStartPostgres, daemonRestartPlan, filesOnlySkip, isShippedPath,
+  SHIPPED_EXCLUDE_DIRS, SHIPPED_EXCLUDE_NAMES, SHIPPED_EXCLUDE_SUFFIXES,
+};
