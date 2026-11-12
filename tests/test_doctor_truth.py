@@ -581,12 +581,19 @@ class TestGithubAccess(unittest.TestCase):
         self.pkg = os.path.join(self.tmp, "pkg")
         write_package(self.pkg, {"lib/a.txt": "a"})
         self.set_remote("https://github.com/acme/widgets.git")
-        # PATH holds only `git` (symlinked) and, when asked, the fake gh.
+        # PATH holds only `git` and, when asked, the fake gh.
         self.bin = os.path.join(self.tmp, "bin")
         os.makedirs(self.bin)
-        os.symlink(shutil.which("git"), os.path.join(self.bin, "git"))
+        git = shutil.which("git")
         self.old_path = os.environ["PATH"]
-        os.environ["PATH"] = self.bin
+        if sys.platform == "win32":
+            # A symlink named `git` (no .exe) is not an executable to CreateProcess, and Git for Windows
+            # finds its helpers relative to its own path, so the real directory goes on PATH instead.
+            # That directory holds no `gh`, which is the point: only the fake can be found.
+            os.environ["PATH"] = os.pathsep.join([self.bin, os.path.dirname(git)])
+        else:
+            os.symlink(git, os.path.join(self.bin, "git"))
+            os.environ["PATH"] = self.bin
         self.mod = load_doctor()
 
     def tearDown(self):
@@ -687,6 +694,9 @@ class TestGithubAccess(unittest.TestCase):
         env = base_env(GSD_AMAUTA_PORT=18991)
         env["PATH"] = isolated_path(fake)
         _rc, _out, _err, parsed = run_doctor(env)
-        self.assertEqual(check_row(parsed, "github_access")["category"], "github_access")
-        calls = pathlib.Path(fake, "gh-calls.log").read_text(encoding="utf-8").splitlines()
+        gh_row = check_row(parsed, "github_access")
+        self.assertEqual(gh_row["category"], "github_access")
+        log = pathlib.Path(fake, "gh-calls.log")
+        self.assertTrue(log.exists(), "the fake gh was never run; the row says: %r" % (gh_row,))
+        calls = log.read_text(encoding="utf-8").splitlines()
         self.assertEqual(calls, ["auth status --hostname github.com"])
