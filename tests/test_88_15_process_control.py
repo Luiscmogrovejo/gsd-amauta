@@ -115,12 +115,29 @@ class _Recorder:
 # 1. The process command lookup: `ps -ww -o command= -p <pid>` + /proc
 # ══════════════════════════════════════════════════════════════════════════
 
+def _force_posix(monkeypatch):
+    """Pin the POSIX BRANCH of the shared module on any host.
+
+    The argv below is the pre-88-15 argv; on a Windows host the same helper
+    builds a PowerShell call instead, which is asserted by the injected-win32
+    tests in section 7. Forcing the branch keeps this a POSIX pin everywhere
+    rather than a test that only runs on one platform.
+    """
+    sys.path.insert(0, str(_REPO / "services"))
+    try:
+        import _platform as plat
+    finally:
+        sys.path.pop(0)
+    monkeypatch.setattr(plat, "_is_windows", lambda platform=None: False)
+
+
 PINNED_PS_ARGV = ["ps", "-ww", "-o", "command=", "-p", "4242"]
 PINNED_PS_KWARGS = {"capture_output": True, "text": True, "timeout": 5}
 
 
 def test_golden_process_command_posix_argv(monkeypatch, tmp_path):
     """_pid_command_line runs exactly `ps -ww -o command= -p <pid>` on POSIX."""
+    _force_posix(monkeypatch)
     mod = _daemon(monkeypatch, tmp_path)
     rec = _Recorder(result=SimpleNamespace(returncode=0, stdout="python3 rlm-service.py run\n"))
     monkeypatch.setattr(subprocess, "run", rec)
@@ -171,6 +188,7 @@ PINNED_LSOF_KWARGS = {"capture_output": True, "text": True, "timeout": 5}
 
 def test_golden_port_holders_posix_argv(monkeypatch, tmp_path):
     """_port_holder_pids maps PORT -> PIDS with a byte-identical lsof argv."""
+    _force_posix(monkeypatch)
     mod = _daemon(monkeypatch, tmp_path)
     port = _free_port()
     rec = _Recorder(result=SimpleNamespace(returncode=0, stdout="111\n222\n"))
@@ -478,7 +496,14 @@ def test_golden_rlm_child_is_started_detached(monkeypatch, tmp_path):
         mod._rlm_process = None
     args, kwargs = rec.calls[0]
     assert list(args[0])[1:] == [mod.RLM_SERVICE_PY, "run"], args[0]
-    assert kwargs.get("start_new_session") is True, kwargs
+    # The DETACH keywords, whichever they are on this platform: start_new_session
+    # on POSIX (unchanged), CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS on
+    # Windows, where the POSIX keyword is silently ignored and a non-detached
+    # child dies with its parent.
+    for key, value in _platform_of(mod).detached_popen_kwargs().items():
+        assert kwargs.get(key) == value, (key, kwargs.get(key))
+    if not IS_WINDOWS:
+        assert kwargs.get("start_new_session") is True, kwargs
     assert kwargs["env"]["GSD_RLM_PORT"] == str(port)
 
 
@@ -686,17 +711,31 @@ def test_pid_alive_rejects_an_invalid_pid():
 
 
 def test_terminate_polite_then_forced_on_a_child_this_test_owns():
+    # POSIX encodes the killing signal in the exit status; Windows has neither
+    # SIGTERM nor SIGKILL and TerminateProcess sets the exit CODE instead, so
+    # the portable half of the assertion is "the child really stopped" and the
+    # signal encoding is asserted on POSIX only.
+    stopped_by = (
+        (-signal.SIGTERM, -signal.SIGKILL, signal.SIGTERM) if not IS_WINDOWS else None
+    )
+
     child = _spawn_sleeper()
     try:
-        assert _platform.terminate(child.pid) is True            # SIGTERM only
-        assert child.wait(timeout=30) in (-signal.SIGTERM, -signal.SIGKILL, signal.SIGTERM)
+        assert _platform.terminate(child.pid) is True            # the polite stop
+        status = child.wait(timeout=30)
+        assert status is not None, "the child must have stopped"
+        if stopped_by is not None:
+            assert status in stopped_by, status
     finally:
         _reap(child)
 
     child = _spawn_sleeper()
     try:
         assert _platform.terminate(child.pid, force=True, grace_s=0.05, settle_s=0.05) is True
-        assert child.wait(timeout=30) in (-signal.SIGTERM, -signal.SIGKILL)
+        status = child.wait(timeout=30)
+        assert status is not None, "the forced stop must have stopped the child"
+        if stopped_by is not None:
+            assert status in (-signal.SIGTERM, -signal.SIGKILL), status
         assert _platform.pid_alive(child.pid) is False or child.poll() is not None
     finally:
         _reap(child)

@@ -116,7 +116,12 @@ test('distill fallback: the Anthropic API key never appears on a command line', 
   // stat (ubuntu CI) `-f` means "filesystem status" and exits 0 printing a multi-line report, so the `||`
   // fallback never ran and the log held `CFGMODE:   File: "<tmpdir>/..."` instead of the mode (88-CI-BASELINE,
   // ubuntu/20 + ubuntu/22). The code under test was right; the probe was not portable. fs.statSync is.
-  writeFakeExe(binDir, 'curl', { node: [
+  // Phase 88 plan 88-15: the fake is ALSO written as a plain .cjs the test runs
+  // through node via GSD_CURL, because a bare `curl` spawn is resolved by the
+  // OS loader and the System32 copy always wins on Windows -- a .cmd shim can
+  // never shadow it, and current Node refuses to spawn a .cmd without a shell.
+  const curlJs = path.join(binDir, 'fake-curl.cjs');
+  const curlBody = [
     "const fs = require('fs');",
     `const log = ${JSON.stringify(argvLog)};`,
     'const args = process.argv.slice(2);',
@@ -130,7 +135,9 @@ test('distill fallback: the Anthropic API key never appears on a command line', 
     '}',
     'process.stdout.write(\'{"content":[{"text":"A distilled summary long enough to pass the twenty character floor."}]}\');',
     '',
-  ].join('\n') });
+  ].join('\n');
+  fs.writeFileSync(curlJs, curlBody, 'utf8');
+  writeFakeExe(binDir, 'curl', { node: curlBody });
 
   const SENTINEL = 'sk-ant-TESTSENTINEL-0123456789';
   const driver = path.join(binDir, 'driver.cjs');
@@ -148,6 +155,9 @@ test('distill fallback: the Anthropic API key never appears on a command line', 
     env: {
       ...process.env,
       PATH: prependPath([binDir]),
+      // The interpreter plus the script, as a JSON array: no shell, nothing
+      // interpreted, and the same on POSIX and Windows.
+      GSD_CURL: JSON.stringify([process.execPath, curlJs]),
       ANTHROPIC_API_KEY: SENTINEL,
     },
   });
@@ -169,6 +179,14 @@ test('distill fallback: no shell interpolation of the key in the source', () => 
   const src = fs.readFileSync(MEMORY, 'utf-8');
   assert.ok(!/-H ["']x-api-key: \$\{apiKey\}/.test(src),
     'the key must not be interpolated into a command string');
-  assert.ok(src.includes("execFileSync('curl', ['--config'"),
+  // Phase 88 plan 88-15: the bare `curl` name is resolved through the platform
+  // helper (GSD_CURL, then `where`/`which`), because a bare-name execFile spawn
+  // is resolved by the OS loader and the System32 copy always wins on Windows.
+  // The contract is unchanged and stronger: a config FILE, never the argv.
+  assert.ok(src.includes("platform.resolveTool('GSD_CURL', 'curl')"),
+    'the fallback must resolve curl through the platform helper');
+  assert.ok(/execFileSync\(curlTool\.command, \[\.\.\.curlTool\.args, '--config', cfgPath\]/.test(src),
     'the fallback must invoke curl with a config file');
+  assert.ok(!/execFileSync\(\s*'curl'/.test(src),
+    'no bare-name curl spawn may survive');
 });

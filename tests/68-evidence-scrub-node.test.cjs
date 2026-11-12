@@ -18,7 +18,6 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawnSync } = require('child_process');
-const { writeFakeExe, prependPath } = require('./support/fake-exe.cjs');
 
 const cliPath = path.resolve(__dirname, '../get-shit-done/bin/gsd-amauta.cjs');
 const { scrubEvidence, loadEvidenceScrubPatterns } = require(cliPath);
@@ -152,66 +151,78 @@ test('fail-open: corrupt patterns file degrades to unchanged passthrough, never 
 // first on PATH that just echoes its argv -- proving the CLI passes the
 // SCRUBBED content string to the subprocess, not the raw secret.
 
-function makeFakePython3Dir() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fake-python3-'));
-  // Node body: the same program behind a shebang on POSIX and a .cmd shim on Windows.
-  // (On Windows the product still spawns the bare name `python3`, which a .cmd cannot shadow:
-  // these three rows are handed to plan 88-15, which makes the spawn resolve through the
-  // platform helper and GSD_PYTHON.)
-  writeFakeExe(dir, 'python3', {
-    node: "process.stdout.write('FAKE_PYTHON3_ARGV:' + process.argv.slice(2).join(' ') + '\\n');",
-  });
-  return dir;
+// Phase 88 plan 88-15: intercept the SCRIPT, not the interpreter.
+//
+// This used to put a fake `python3` first on PATH. That cannot work on
+// Windows -- a .cmd shim does not shadow a bare-name execFile spawn, and
+// current Node refuses to spawn a .cmd without a shell at all -- and once the
+// product resolves its interpreter through the platform helper (which VERIFIES
+// a candidate with `-c "import sys; print(sys.version_info[0])"`) an echo-only
+// fake is rejected as not being a Python 3 anyway.
+//
+// GSD_AMAUTA_PY is an existing, documented override for the script the CLI
+// runs. Pointing it at a tiny Python file that echoes its argv proves the same
+// thing -- that the CLI hands the SCRUBBED content to the subprocess -- with
+// the REAL interpreter, identically on every platform.
+function makeFakeAmautaPy() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fake-amauta-py-'));
+  const script = path.join(dir, 'fake_amauta.py');
+  fs.writeFileSync(script, [
+    'import sys',
+    "sys.stdout.write('FAKE_PYTHON3_ARGV:' + ' '.join(sys.argv[1:]) + '\\n')",
+    '',
+  ].join('\n'), 'utf8');
+  return { dir, script };
 }
 
-function directFallbackEnv(fakePythonDir) {
+function directFallbackEnv(fake) {
   return {
-    PATH: prependPath([fakePythonDir]),
+    GSD_AMAUTA_PY: fake.script,
     GSD_AMAUTA_PORT: '18999', // unused port -- forces isDaemonRunning() to fail fast
     GSD_AMAUTA_NO_AUTO_START: '1',
   };
 }
 
 test('cmdNote CLI (file-fallback path) scrubs --content before reaching python3', () => {
-  const fakeDir = makeFakePython3Dir();
+  const fake = makeFakeAmautaPy();
   try {
     const result = runCli(
       ['note', 'FAKE-68-02-04', '--content', 'storePassword=hunter2'],
-      directFallbackEnv(fakeDir)
+      directFallbackEnv(fake)
     );
     assert.match(result.stdout, /FAKE_PYTHON3_ARGV/, result.stderr);
     assert.ok(!result.stdout.includes('hunter2'), `raw secret leaked into subprocess argv: ${result.stdout}`);
     assert.ok(result.stdout.includes('[scrubbed:keystore-password]'), result.stdout);
   } finally {
-    fs.rmSync(fakeDir, { recursive: true, force: true });
+    fs.rmSync(fake.dir, { recursive: true, force: true });
   }
 });
 
 test('cmdRpetd CLI (file-fallback path) scrubs --content before reaching python3', () => {
-  const fakeDir = makeFakePython3Dir();
+  const fake = makeFakeAmautaPy();
   try {
     const result = runCli(
       ['rpetd', 'FAKE-68-02-04', '--phase', 'T', '--content', 'AKIAABCDEFGHIJKLMNOP'],
-      directFallbackEnv(fakeDir)
+      directFallbackEnv(fake)
     );
     assert.match(result.stdout, /FAKE_PYTHON3_ARGV/, result.stderr);
     assert.ok(!result.stdout.includes('AKIAABCDEFGHIJKLMNOP'), `raw secret leaked into subprocess argv: ${result.stdout}`);
     assert.ok(result.stdout.includes('[scrubbed:aws-access-key]'), result.stdout);
   } finally {
-    fs.rmSync(fakeDir, { recursive: true, force: true });
+    fs.rmSync(fake.dir, { recursive: true, force: true });
   }
 });
 
 test('cmdNote CLI honors GSD_EVIDENCE_SCRUB=off (kill switch mirrored in the CLI path)', () => {
-  const fakeDir = makeFakePython3Dir();
+  const fake = makeFakeAmautaPy();
   try {
     const result = runCli(
       ['note', 'FAKE-68-02-04', '--content', 'storePassword=hunter2'],
-      { ...directFallbackEnv(fakeDir), GSD_EVIDENCE_SCRUB: 'off' }
+      { ...directFallbackEnv(fake), GSD_EVIDENCE_SCRUB: 'off' }
     );
     assert.match(result.stdout, /FAKE_PYTHON3_ARGV/, result.stderr);
     assert.ok(result.stdout.includes('storePassword=hunter2'), 'kill switch should have left content unscrubbed');
   } finally {
-    fs.rmSync(fakeDir, { recursive: true, force: true });
+    fs.rmSync(fake.dir, { recursive: true, force: true });
   }
 });

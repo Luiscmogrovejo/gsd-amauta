@@ -268,8 +268,53 @@ function homeDir() {
   return home && String(home).length ? home : path.resolve('.');
 }
 
+
+/**
+ * Resolve an external tool to spawn, with an environment override.
+ *
+ * Phase 88 plan 88-15. A BARE tool name handed to execFile is resolved by the
+ * OS loader, which on Windows means the system copy always wins — a test (or
+ * an operator) cannot put a different one in front of it, and `where` would
+ * find a `.cmd` shim that current Node refuses to spawn without a shell.
+ *
+ * `envVar` may hold either a plain path, or a JSON ARRAY of strings when the
+ * launcher needs leading arguments (`["C:/Program Files/nodejs/node.exe",
+ * "C:/wrap/curl.cjs"]`). The array form is parsed with JSON.parse and every
+ * element must be a string; it is passed to execFile-style argv and NEVER to a
+ * shell, so nothing in it is interpreted.
+ *
+ * @param {string} envVar - the override variable name, e.g. 'GSD_CURL'.
+ * @param {string} name - the tool's bare name, e.g. 'curl'.
+ * @param {object} [opts]
+ * @param {object} [opts.env] - environment override for tests.
+ * @param {string} [opts.platform] - platform override for tests.
+ * @returns {{command: string, args: string[]}}
+ * @example
+ *   const curl = resolveTool('GSD_CURL', 'curl');
+ *   execFileSync(curl.command, [...curl.args, '--config', cfgPath]);
+ */
+function resolveTool(envVar, name, opts = {}) {
+  const env = opts.env || process.env;
+  const raw = (env[envVar] || '').trim();
+  if (raw) {
+    if (raw.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0 && parsed.every((x) => typeof x === 'string')) {
+          return { command: parsed[0], args: parsed.slice(1) };
+        }
+      } catch {
+        // fall through: a malformed override is treated as a plain path
+      }
+    }
+    return { command: raw, args: [] };
+  }
+  return { command: which(name, opts) || name, args: [] };
+}
+
 module.exports = {
   resolvePython,
+  resolveTool,
   resetPythonCache,
   pythonEnv,
   spawnPython,
