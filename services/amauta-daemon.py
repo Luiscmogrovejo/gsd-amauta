@@ -1748,6 +1748,48 @@ def _phase_out(value):
         return value
 
 
+#: Every status an ``agent_messages`` row can carry (migration 015's own comment,
+#: and the SQLite mirror's DEFAULT 'pending'). ``PATCH /api/messages/:id`` accepts
+#: the last three as transitions; 'pending' is what an insert starts at.
+MESSAGE_STATUSES = ("pending", "approved", "denied", "responded")
+
+#: What ``GET /api/messages/:agent`` returns when the caller names no status —
+#: the inbox as it behaved before plan 89-05 added the filter.
+MESSAGE_STATUS_DEFAULT = ("pending", "approved")
+
+
+def _message_status_filter(raw_path):
+    """Statuses ``GET /api/messages/:agent`` should return, from ``?status=``.
+
+    Args:
+        raw_path: ``self.path``, query string included.
+
+    Returns:
+        tuple[tuple[str, ...], str | None]: the statuses to filter on and an error
+        sentence, exactly one of which is meaningful. The default is
+        :data:`MESSAGE_STATUS_DEFAULT`; an empty ``?status=`` is the default too,
+        never "no statuses" (which would silently answer an empty inbox).
+
+    Example:
+        >>> _message_status_filter("/api/messages/b?status=responded")
+        (('responded',), None)
+    """
+    raw = parse_qs(urlparse(raw_path).query).get("status", [None])[0]
+    if raw is None or not raw.strip():
+        return MESSAGE_STATUS_DEFAULT, None
+    wanted = [piece.strip() for piece in raw.split(",") if piece.strip()]
+    unknown = [piece for piece in wanted if piece not in MESSAGE_STATUSES]
+    if unknown:
+        return (), (
+            "status must be a comma-separated subset of: "
+            + ", ".join(MESSAGE_STATUSES)
+            + f" (unknown: {', '.join(unknown)})"
+        )
+    # De-duplicated, and in the vocabulary's own order so the SQL and the
+    # response order do not depend on how the caller spelled the query.
+    return tuple(s for s in MESSAGE_STATUSES if s in wanted), None
+
+
 def _requires_postgres_payload(feature, detail=None):
     """Body for a PG-only endpoint reached on the SQLite backend.
 
@@ -2979,26 +3021,44 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             if not agent_name:
                 self._send_json({"error": "agent_name required in path"}, 400)
                 return
+            # ?status=<csv> — which statuses the inbox returns. Default
+            # "pending,approved": the pre-89-05 behaviour, byte for byte, so no
+            # existing caller changes.
+            #
+            # Plan 89-05 (ORC-02) measured the gap this closes: `PATCH
+            # /api/messages/:id {"status": "responded", "response": "..."}` is the
+            # documented way to ANSWER a question, and it moved the row out of the
+            # only route that returns `response`. The answer was write-only on BOTH
+            # backends — tests/38-blackboard-communication.integration.test.cjs
+            # asserts only `updated: true` and never reads the text back. With the
+            # blackboard the single agent-to-agent channel, an unreadable answer is
+            # a broken channel, so the filter is explicit and both branches share
+            # the vocabulary.
+            statuses, status_error = _message_status_filter(self.path)
+            if status_error:
+                self._send_json({"error": status_error}, 400)
+                return
             store = _get_store()
             if not store:
                 self._send_json({"error": "No database available"}, 503)
                 return
             if _is_sqlite(store):
                 try:
-                    messages = store.messages_for_agent(agent_name)
+                    messages = store.messages_for_agent(agent_name, statuses=statuses)
                     self._send_json({"messages": messages, "count": len(messages)})
                 except Exception as e:
                     self._internal_error(e)
                 return
             try:
                 with store._get_conn() as conn, conn.cursor() as cur:
+                    placeholders = ", ".join(["%s"] * len(statuses))
                     cur.execute(
                         "SELECT id, from_agent, to_agent, task_id, message_type, content,"
                         " response, status, operator_approved, created_at, responded_at"
                         " FROM agent_messages"
-                        " WHERE to_agent = %s AND status IN ('pending', 'approved')"
+                        f" WHERE to_agent = %s AND status IN ({placeholders})"
                         " ORDER BY created_at ASC",
-                        (agent_name,),
+                        (agent_name, *statuses),
                     )
                     rows = cur.fetchall()
                 messages = [

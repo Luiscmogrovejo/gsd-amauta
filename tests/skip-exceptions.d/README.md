@@ -27,6 +27,7 @@ removes that constraint entirely.
    {
      "plan": "89-05",
      "shard": "tests/skip-exceptions.d/89-05.json",
+     "shard_is_all_added": false,
      "note": "why these entries exist and what closes them",
      "added":   [ ["name", "file", "platform", "context", "reason", "reason_class", "owner", owner_phase, "exit_criterion"] ],
      "removed": [ ... ]
@@ -34,6 +35,11 @@ removes that constraint entirely.
    ```
 
    `added` and `removed` hold **full nine-field tuples** in `FIELDS` order.
+   `shard_is_all_added` is required and must be declared, never guessed: `true`
+   when the plan OPENED its shard, so every entry in it is one of that plan's
+   additions and the two counts must match (89-01, 89-02, 89-04); `false` when
+   plan 89-09's migration filled the shard from the pre-shard ledger, so the
+   plan's additions are a subset of it (89-05, 89-07, `carried`).
    `tests/89-09-skip-shards.test.cjs` loads the union of these files and proves that
    the pre-shard 467-entry set, plus every `added`, minus every `removed`, is still
    exactly the live union — so an entry cannot change without a declaration. It also

@@ -1,6 +1,7 @@
 {
   "plan": "89-02",
   "shard": "tests/skip-exceptions.d/89-02.json",
+  "shard_is_all_added": true,
   "note": "Plan 89-02 (FND-11) added 56 entries: 28 PostgreSQL-gated tests in tests/test_89_02_decimal_phase.py times the two cells with no disposable database (darwin, win32). Task 89-07-04 removes them. Migrated out of ADDED_BY_MASTER_LANES by plan 89-05 (addendum A), by content, count-preserving.",
   "added": [
     [

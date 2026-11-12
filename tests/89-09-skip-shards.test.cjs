@@ -102,8 +102,15 @@ const DELTA_DIR = path.join(DIR, 'delta');
  * two. A silently ignored delta file would let a plan's declaration disappear
  * without the digest check noticing which plan lost it.
  *
+ * The optional boolean `shard_is_all_added` declares that the plan's shard was
+ * CREATED by that plan, so its every entry is one of this plan's additions. True
+ * for a shard a Phase 89 plan opened (89-01, 89-02, 89-04); false for a shard
+ * plan 89-09's migration filled from the pre-shard ledger (89-05, 89-07,
+ * carried), where the plan's own additions are a subset. It must be declared, not
+ * guessed: `shard_is_all_added` is what keeps the count assertion plan 89-09 had.
+ *
  * @param {string} dir directory holding `<plan>.json` delta files
- * @returns {{deltas: Array<{plan: string, source: string, added: Array<Array<unknown>>, removed: Array<Array<unknown>>}>, problems: string[]}}
+ * @returns {{deltas: Array<{plan: string, source: string, allAdded: boolean, added: Array<Array<unknown>>, removed: Array<Array<unknown>>}>, problems: string[]}}
  */
 function loadDeltas(dir) {
   const deltas = [];
@@ -137,6 +144,10 @@ function loadDeltas(dir) {
       problems.push(`${source}: "plan" is ${JSON.stringify(doc.plan)} but the file is named ${name}`);
       continue;
     }
+    if (typeof doc.shard_is_all_added !== 'boolean') {
+      problems.push(`${source}: "shard_is_all_added" must be true or false, declared not guessed`);
+      continue;
+    }
     const lists = {};
     let shapeOk = true;
     for (const list of ['added', 'removed']) {
@@ -166,7 +177,13 @@ function loadDeltas(dir) {
       lists[list] = rows;
     }
     if (!shapeOk) continue;
-    deltas.push({ plan: doc.plan, source, added: lists.added, removed: lists.removed });
+    deltas.push({
+      plan: doc.plan,
+      source,
+      allAdded: doc.shard_is_all_added,
+      added: lists.added,
+      removed: lists.removed,
+    });
   }
   return { deltas, problems };
 }
@@ -296,9 +313,19 @@ describe('89-09 the shard migration lost nothing', () => {
         assert.ok(own.has(JSON.stringify(row)),
           `${d.source} declares an addition its own shard does not hold: ${JSON.stringify(row)}`);
       }
-      assert.strictEqual(d.added.length, own.size,
-        `${d.source} declares ${d.added.length} additions but ${d.plan}.json holds ${own.size}: `
-        + 'every entry of a plan-owned shard was added by that plan and must be declared');
+      if (d.allAdded) {
+        // The shard was opened by this plan, so it holds nothing else. This is
+        // the count assertion plan 89-09 made for 89-01, 89-02 and 89-04, kept.
+        assert.strictEqual(d.added.length, own.size,
+          `${d.source} declares ${d.added.length} additions but ${d.plan}.json holds ${own.size}, `
+          + 'and shard_is_all_added says the plan created that shard');
+      } else {
+        // A shard plan 89-09 filled from the pre-shard ledger: this plan's
+        // additions are a subset, and the remainder is covered by the frozen
+        // digest check below.
+        assert.ok(d.added.length <= own.size,
+          `${d.source} declares more additions (${d.added.length}) than ${d.plan}.json holds (${own.size})`);
+      }
       for (const row of d.removed) {
         assert.ok(!liveAll.has(JSON.stringify(row)),
           `${d.source} declares a removal that is still live in the ledger: ${JSON.stringify(row)}`);
@@ -403,6 +430,23 @@ describe('89-05 the per-plan delta loader fails closed', () => {
   const tupleOf = (over = {}) => FIELDS.map((f) => entry(over)[f]);
 
   /**
+   * A schema-valid delta document, with overrides.
+   * @param {string} plan the plan id (must match the file name)
+   * @param {object} [over] field overrides
+   * @returns {object}
+   */
+  function doc(plan, over = {}) {
+    return {
+      plan,
+      shard: `tests/skip-exceptions.d/${plan}.json`,
+      shard_is_all_added: true,
+      added: [],
+      removed: [],
+      ...over,
+    };
+  }
+
+  /**
    * A temp delta directory holding the given files.
    * @param {Record<string, unknown>} files name -> document (object) or raw string
    * @returns {string} the directory
@@ -418,8 +462,8 @@ describe('89-05 the per-plan delta loader fails closed', () => {
 
   test('a well-formed pair of delta files loads with no problem', () => {
     const r = loadDeltas(deltaDir({
-      '89-aa.json': { plan: '89-aa', added: [tupleOf()], removed: [] },
-      '89-bb.json': { plan: '89-bb', added: [], removed: [tupleOf({ name: 'gone' })] },
+      '89-aa.json': doc('89-aa', { added: [tupleOf()] }),
+      '89-bb.json': doc('89-bb', { removed: [tupleOf({ name: 'gone' })] }),
     }));
     assert.deepStrictEqual(r.problems, []);
     assert.strictEqual(r.deltas.length, 2);
@@ -429,7 +473,7 @@ describe('89-05 the per-plan delta loader fails closed', () => {
 
   test('an unparseable delta file is a problem naming it, and contributes nothing', () => {
     const r = loadDeltas(deltaDir({
-      '89-aa.json': { plan: '89-aa', added: [tupleOf()], removed: [] },
+      '89-aa.json': doc('89-aa', { added: [tupleOf()] }),
       '89-bb.json': '{ not json',
     }));
     assert.strictEqual(r.problems.length, 1, r.problems.join('; '));
@@ -445,9 +489,9 @@ describe('89-05 the per-plan delta loader fails closed', () => {
 
   test('a non-array added/removed is a problem naming the list', () => {
     for (const list of ['added', 'removed']) {
-      const doc = { plan: '89-aa', added: [], removed: [] };
-      doc[list] = 'all of them';
-      const r = loadDeltas(deltaDir({ '89-aa.json': doc }));
+      const broken = doc('89-aa');
+      broken[list] = 'all of them';
+      const r = loadDeltas(deltaDir({ '89-aa.json': broken }));
       assert.match(r.problems.join('\n'),
         new RegExp(`89-aa\\.json: "${list}" must be an array of nine-field tuples`));
       assert.deepStrictEqual(r.deltas, []);
@@ -456,7 +500,7 @@ describe('89-05 the per-plan delta loader fails closed', () => {
 
   test('a row that is not a nine-element tuple is a problem quoting the row', () => {
     const r = loadDeltas(deltaDir({
-      '89-aa.json': { plan: '89-aa', added: [tupleOf().slice(0, 8)], removed: [] },
+      '89-aa.json': doc('89-aa', { added: [tupleOf().slice(0, 8)] }),
     }));
     assert.match(r.problems.join('\n'), /is not a 9-element tuple/);
     assert.deepStrictEqual(r.deltas, []);
@@ -464,7 +508,7 @@ describe('89-05 the per-plan delta loader fails closed', () => {
 
   test('the same tuple twice IN ONE delta file is a problem', () => {
     const t = tupleOf();
-    const r = loadDeltas(deltaDir({ '89-aa.json': { plan: '89-aa', added: [t, t], removed: [] } }));
+    const r = loadDeltas(deltaDir({ '89-aa.json': doc('89-aa', { added: [t, t] }) }));
     assert.match(r.problems.join('\n'), /repeats a tuple already declared/);
     assert.deepStrictEqual(r.deltas, []);
   });
@@ -472,8 +516,8 @@ describe('89-05 the per-plan delta loader fails closed', () => {
   test('the same tuple in TWO delta files is a problem naming both', () => {
     const t = tupleOf();
     const r = loadDeltas(deltaDir({
-      '89-aa.json': { plan: '89-aa', added: [t], removed: [] },
-      '89-bb.json': { plan: '89-bb', added: [t], removed: [] },
+      '89-aa.json': doc('89-aa', { added: [t] }),
+      '89-bb.json': doc('89-bb', { added: [t] }),
     }));
     assert.strictEqual(r.problems.length, 1, r.problems.join('; '));
     assert.match(r.problems[0], /89-bb\.json/);
@@ -482,9 +526,21 @@ describe('89-05 the per-plan delta loader fails closed', () => {
   });
 
   test('a delta whose "plan" disagrees with its file name is a problem', () => {
-    const r = loadDeltas(deltaDir({ '89-aa.json': { plan: '89-zz', added: [], removed: [] } }));
+    const r = loadDeltas(deltaDir({ '89-aa.json': doc('89-zz') }));
     assert.match(r.problems.join('\n'), /"plan" is "89-zz" but the file is named 89-aa\.json/);
     assert.deepStrictEqual(r.deltas, []);
+  });
+
+  test('an undeclared shard_is_all_added is a problem, not a default', () => {
+    const missing = doc('89-aa');
+    delete missing.shard_is_all_added;
+    const r = loadDeltas(deltaDir({ '89-aa.json': missing }));
+    assert.match(r.problems.join('\n'),
+      /"shard_is_all_added" must be true or false, declared not guessed/);
+    assert.deepStrictEqual(r.deltas, []);
+    const wrongType = doc('89-aa', { shard_is_all_added: 'yes' });
+    assert.match(loadDeltas(deltaDir({ '89-aa.json': wrongType })).problems.join('\n'),
+      /"shard_is_all_added" must be true or false/);
   });
 
   test('an empty delta directory is a problem, not a silent zero delta', () => {
