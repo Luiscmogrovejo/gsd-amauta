@@ -45,14 +45,19 @@ def _load_dotenv():
 
 _load_dotenv()
 
-try:
-    import fcntl
-except ImportError:
-    fcntl = None  # Not available on Windows; file locking will be skipped
 import socket
 import threading
 import tempfile
 import uuid
+
+# Platform differences (Phase 88, plan 88-15). REQUIRED, not optional: the
+# cross-process lock on tasks.json lives there, and a missing lock loses writes
+# silently. Per the Phase 60 sys.path learning the directory is added
+# explicitly so the module resolves however this file was loaded.
+_SERVICES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "services")
+if _SERVICES_DIR not in sys.path:
+    sys.path.append(_SERVICES_DIR)
+import _platform  # noqa: E402
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -510,17 +515,33 @@ class _file_lock:
     Reentrant: if the lock is already held by the current thread (e.g., a cmd_*
     function acquires the lock, then calls save() which also acquires the lock),
     the nested acquisition is a no-op -- no deadlock.
+
+    Phase 88 plan 88-15: the primitive lives in services/_platform.file_lock
+    (flock on POSIX, msvcrt.locking on Windows). Before that this class took the
+    POSIX primitive from an optional import and guarded every call on it, so on
+    Windows -- where that import fails -- the lock was a NO-OP and two concurrent
+    amauta invocations lost an update to tasks.json. The helper raises where it
+    cannot lock; it never does nothing.
+    The reentrancy flag, the acquisition order and the __exit__ ordering below
+    are unchanged.
     """
     def __init__(self):
         self._fd = None
         self._acquired = False  # Did THIS instance acquire the lock?
+        self._lock = None
     def __enter__(self):
         if getattr(_lock_held, 'held', False):
             # Already held by this thread -- skip acquisition (reentrant)
             return self
         self._fd = open(_LOCK_FILE, "w", encoding="utf-8")
-        if fcntl:
-            fcntl.flock(self._fd, fcntl.LOCK_EX)
+        self._lock = _platform.file_lock(self._fd)
+        try:
+            self._lock.__enter__()
+        except BaseException:
+            self._lock = None
+            self._fd.close()
+            self._fd = None
+            raise
         self._acquired = True
         _lock_held.held = True
         return self
@@ -528,8 +549,9 @@ class _file_lock:
         if self._acquired:
             _lock_held.held = False
             if self._fd:
-                if fcntl:
-                    fcntl.flock(self._fd, fcntl.LOCK_UN)
+                if self._lock is not None:
+                    self._lock.__exit__(None, None, None)
+                    self._lock = None
                 self._fd.close()
 
 # ── Persistence ────────────────────────────────────────────────────────────────

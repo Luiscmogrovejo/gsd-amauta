@@ -23,6 +23,7 @@ __all__ = [
     "process_command",
     "port_holders",
     "detached_popen_kwargs",
+    "file_lock",
 ]
 
 # ── Windows plumbing, configurable per ENG-04 (never a hard-coded literal) ────
@@ -555,3 +556,164 @@ def port_holders(port, *, on_error=None, platform=None):
         except ValueError:
             continue
     return pids
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Cross-process file locking (Phase 88, plan 88-15 task 03)
+#
+# amauta.py used to import fcntl in a try, set it to None on Windows, and then
+# guard every lock call with `if fcntl:`.  Its own comment said it: "file
+# locking will be skipped".  The in-process reentrancy flag made a single run
+# look correct, so nothing failed -- two concurrent `amauta` invocations simply
+# lost an update to tasks.json.  A silent no-op is the defect; an explicit
+# failure is correctable.
+# ═══════════════════════════════════════════════════════════════════════════
+
+# How long file_lock waits for a holder before giving up (ENG-04: a knob with a
+# default, never a hard-coded literal). msvcrt.LK_LOCK itself blocks for about
+# ten seconds per attempt and then raises; the retry below turns that into one
+# bounded wait instead of a spurious failure.
+FILE_LOCK_TIMEOUT_S = max(1.0, float(os.environ.get("GSD_FILE_LOCK_TIMEOUT_S") or "120"))
+_MSVCRT_LOCK_BYTES = 1  # msvcrt locks a byte range from the current position
+
+
+def _load_fcntl():
+    """The POSIX locking primitive, or None where it does not exist."""
+    try:
+        import fcntl as _fcntl
+        return _fcntl
+    except ImportError:
+        return None
+
+
+def _load_msvcrt():
+    """The Windows locking primitive, or None where it does not exist."""
+    try:
+        import msvcrt as _msvcrt
+        return _msvcrt
+    except ImportError:
+        return None
+
+
+def file_lock(target, *, platform=None, timeout_s=None):
+    """Exclusive, cross-process advisory lock on `target`.
+
+    POSIX: ``fcntl.flock(fd, LOCK_EX)`` -- identical to the pre-88-15
+    behaviour, including the blocking wait and the ``LOCK_UN`` on exit.
+
+    Windows: ``msvcrt.locking(fd.fileno(), msvcrt.LK_LOCK, 1)``. ``msvcrt``
+    locks a byte RANGE from the current file position, so the position is set
+    to 0 and exactly one byte is locked; the same range is unlocked on exit
+    (locking a region past EOF is legal on Windows and is what makes a
+    zero-length lock file work). ``LK_LOCK`` blocks for about ten seconds and
+    then raises, so it is retried until ``timeout_s`` is spent -- a long but
+    legitimate hold must not read as a failure.
+
+    NEITHER PLATFORM MAY SILENTLY DO NOTHING. With no locking primitive at all
+    this raises ``RuntimeError`` naming the platform.
+
+    Args:
+        target: A path to open (``"w"``, ``encoding="utf-8"``) and lock, or an
+            already-open file object the caller owns and will close itself.
+        platform: ``sys.platform`` override for tests.
+        timeout_s: Windows retry budget; defaults to GSD_FILE_LOCK_TIMEOUT_S.
+
+    Yields:
+        The open file object holding the lock.
+
+    Raises:
+        RuntimeError: no locking primitive is available on this platform.
+        OSError: the lock could not be taken within the budget.
+
+    Example:
+        with file_lock(data_dir / ".amauta.lock"):
+            rewrite(tasks_json)
+    """
+    return _FileLock(target, platform=platform, timeout_s=timeout_s)
+
+
+class _FileLock:
+    """The context manager `file_lock` returns (a class, so it is re-enterable).
+
+    Kept separate from the function so `file_lock(...)` can be stored and
+    entered later, which `amauta.py._file_lock` does.
+    """
+
+    def __init__(self, target, *, platform=None, timeout_s=None):
+        self._target = target
+        self._platform = platform
+        self._timeout_s = FILE_LOCK_TIMEOUT_S if timeout_s is None else timeout_s
+        self._handle = None
+        self._owns_handle = False
+
+    def __enter__(self):
+        if hasattr(self._target, "fileno"):
+            self._handle = self._target
+            self._owns_handle = False
+        else:
+            self._handle = open(self._target, "w", encoding="utf-8")
+            self._owns_handle = True
+        try:
+            self._acquire()
+        except BaseException:
+            if self._owns_handle:
+                self._handle.close()
+            self._handle = None
+            raise
+        return self._handle
+
+    def __exit__(self, *exc):
+        handle, self._handle = self._handle, None
+        if handle is None:
+            return False
+        try:
+            self._release(handle)
+        finally:
+            if self._owns_handle:
+                handle.close()
+        return False
+
+    def _acquire(self):
+        if _is_windows(self._platform):
+            msvcrt = _load_msvcrt()
+            if msvcrt is None:
+                raise RuntimeError(
+                    "no cross-process file lock on this platform (%s): msvcrt is not "
+                    "importable. Refusing to run unlocked -- a silent no-op loses "
+                    "updates." % (self._platform or sys.platform)
+                )
+            deadline = time.monotonic() + self._timeout_s
+            while True:
+                self._handle.seek(0)
+                try:
+                    msvcrt.locking(self._handle.fileno(), msvcrt.LK_LOCK, _MSVCRT_LOCK_BYTES)
+                    return
+                except OSError:
+                    # LK_LOCK gives up after ~10s; a legitimate long hold is not
+                    # a failure, so retry until the budget is spent.
+                    if time.monotonic() >= deadline:
+                        raise
+        fcntl = _load_fcntl()
+        if fcntl is None:
+            raise RuntimeError(
+                "no cross-process file lock on this platform (%s): neither fcntl nor "
+                "msvcrt is importable. Refusing to run unlocked -- a silent no-op "
+                "loses updates." % (self._platform or sys.platform)
+            )
+        fcntl.flock(self._handle, fcntl.LOCK_EX)
+
+    def _release(self, handle):
+        if _is_windows(self._platform):
+            msvcrt = _load_msvcrt()
+            if msvcrt is None:
+                return
+            handle.seek(0)
+            try:
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, _MSVCRT_LOCK_BYTES)
+            except OSError:
+                pass  # the handle is about to close, which releases it anyway
+            return
+        fcntl = _load_fcntl()
+        if fcntl is None:
+            return
+        fcntl.flock(handle, fcntl.LOCK_UN)

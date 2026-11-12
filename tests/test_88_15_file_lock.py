@@ -186,3 +186,100 @@ def test_golden_lock_file_lives_under_the_data_dir(tmp_path):
     )
     assert r.returncode == 0, r.stderr
     assert r.stdout.strip() == str(data_dir / ".amauta.lock")
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Task 88-15-03: the helper itself.
+#   The silent no-op is the defect. file_lock must lock on both platforms and
+#   RAISE where it cannot -- never yield having done nothing.
+# ══════════════════════════════════════════════════════════════════════════
+
+sys.path.insert(0, str(_REPO / "services"))
+import _platform  # noqa: E402
+sys.path.pop(0)
+
+
+def test_file_lock_raises_when_no_primitive_is_available(tmp_path, monkeypatch):
+    """With neither fcntl nor msvcrt importable, the lock RAISES, never yields."""
+    monkeypatch.setattr(_platform, "_load_fcntl", lambda: None)
+    monkeypatch.setattr(_platform, "_load_msvcrt", lambda: None)
+    target = tmp_path / "lock"
+    entered = []
+    with pytest.raises(RuntimeError) as exc:
+        with _platform.file_lock(target):
+            entered.append(True)
+    assert entered == [], "a lock with no primitive must not yield"
+    assert "no cross-process file lock" in str(exc.value)
+    assert sys.platform in str(exc.value) or "win32" in str(exc.value)
+
+    # The same on the Windows branch.
+    with pytest.raises(RuntimeError) as exc_win:
+        with _platform.file_lock(target, platform="win32"):
+            entered.append(True)
+    assert entered == []
+    assert "msvcrt" in str(exc_win.value)
+
+
+class _StubMsvcrt:
+    """Records msvcrt.locking calls; the real thing cannot run on macOS."""
+
+    LK_LOCK = 1
+    LK_UNLCK = 0
+
+    def __init__(self, fail_times=0):
+        self.calls = []
+        self._fail_times = fail_times
+
+    def locking(self, fd, mode, nbytes):
+        self.calls.append((mode, nbytes))
+        if mode == self.LK_LOCK and self._fail_times > 0:
+            self._fail_times -= 1
+            raise OSError(36, "Resource deadlock avoided")
+
+
+def test_injected_win32_file_lock_uses_lk_lock_and_unlocks_the_same_range(tmp_path, monkeypatch):
+    stub = _StubMsvcrt()
+    monkeypatch.setattr(_platform, "_load_msvcrt", lambda: stub)
+    monkeypatch.setattr(_platform, "_load_fcntl", lambda: None)  # must not be reached
+    target = tmp_path / "lock"
+    with _platform.file_lock(target, platform="win32") as handle:
+        assert handle.tell() == 0, "msvcrt locks from the current position"
+    assert stub.calls == [(_StubMsvcrt.LK_LOCK, 1), (_StubMsvcrt.LK_UNLCK, 1)], stub.calls
+
+
+def test_injected_win32_file_lock_retries_a_busy_lock_then_succeeds(tmp_path, monkeypatch):
+    """LK_LOCK gives up after ~10s; a legitimate long hold must not read as failure."""
+    stub = _StubMsvcrt(fail_times=2)
+    monkeypatch.setattr(_platform, "_load_msvcrt", lambda: stub)
+    with _platform.file_lock(tmp_path / "lock", platform="win32", timeout_s=30):
+        pass
+    modes = [m for m, _n in stub.calls]
+    assert modes == [_StubMsvcrt.LK_LOCK, _StubMsvcrt.LK_LOCK, _StubMsvcrt.LK_LOCK,
+                     _StubMsvcrt.LK_UNLCK], stub.calls
+
+
+def test_injected_win32_file_lock_gives_up_when_the_budget_is_spent(tmp_path, monkeypatch):
+    stub = _StubMsvcrt(fail_times=10**6)
+    monkeypatch.setattr(_platform, "_load_msvcrt", lambda: stub)
+    with pytest.raises(OSError):
+        with _platform.file_lock(tmp_path / "lock", platform="win32", timeout_s=0.01):
+            pass
+
+
+def test_file_lock_accepts_an_already_open_handle_and_leaves_it_open(tmp_path):
+    """amauta.py owns the lock-file handle; the helper must not close it."""
+    target = tmp_path / "lock"
+    handle = open(target, "w", encoding="utf-8")
+    try:
+        with _platform.file_lock(handle) as got:
+            assert got is handle
+        assert not handle.closed, "the caller's handle stays open"
+    finally:
+        handle.close()
+
+
+def test_amauta_file_lock_no_longer_guards_on_a_possibly_none_module():
+    src = (_REPO / "amauta.py").read_text(encoding="utf-8")
+    assert "if fcntl:" not in src
+    assert "import fcntl" not in src
+    assert "_platform.file_lock" in src
