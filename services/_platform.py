@@ -640,6 +640,13 @@ class _FileLock:
     """
 
     def __init__(self, target, *, platform=None, timeout_s=None):
+        """Capture the lock target; nothing is opened or locked until entry.
+
+        Args:
+            target: A path, or an already-open file the caller owns.
+            platform: ``sys.platform`` override for tests.
+            timeout_s: Windows retry budget; None means FILE_LOCK_TIMEOUT_S.
+        """
         self._target = target
         self._platform = platform
         self._timeout_s = FILE_LOCK_TIMEOUT_S if timeout_s is None else timeout_s
@@ -647,6 +654,15 @@ class _FileLock:
         self._owns_handle = False
 
     def __enter__(self):
+        """Open the target when needed, take the lock, and return the handle.
+
+        Returns:
+            The open file object holding the lock.
+
+        Raises:
+            RuntimeError: no locking primitive exists on this platform.
+            OSError: the lock could not be taken within the budget.
+        """
         if hasattr(self._target, "fileno"):
             self._handle = self._target
             self._owns_handle = False
@@ -663,6 +679,11 @@ class _FileLock:
         return self._handle
 
     def __exit__(self, *exc):
+        """Release the lock, and close the handle only if this object opened it.
+
+        Returns:
+            bool: always False, so an exception in the body propagates.
+        """
         handle, self._handle = self._handle, None
         if handle is None:
             return False
@@ -674,6 +695,12 @@ class _FileLock:
         return False
 
     def _acquire(self):
+        """Take the exclusive lock, or raise. NEVER a silent no-op.
+
+        Raises:
+            RuntimeError: neither fcntl nor msvcrt is importable.
+            OSError: msvcrt could not lock within the retry budget.
+        """
         if _is_windows(self._platform):
             msvcrt = _load_msvcrt()
             if msvcrt is None:
@@ -703,6 +730,11 @@ class _FileLock:
         fcntl.flock(self._handle, fcntl.LOCK_EX)
 
     def _release(self, handle):
+        """Unlock exactly the range that was locked.
+
+        Args:
+            handle: the open file the lock was taken on.
+        """
         if _is_windows(self._platform):
             msvcrt = _load_msvcrt()
             if msvcrt is None:

@@ -14,9 +14,9 @@
  *     Windows ships `python.exe` and `py.exe`, and `python3.exe` is a Microsoft
  *     Store STUB that opens the Store instead of running Python. On a real
  *     Windows machine the harness could not run Python at all.
- *   - `which` is a POSIX program, and it was called through a shell string
- *     reads as "absent" on Windows, so scripts/security-scan.cjs reported every
- *     scanner missing and the pipeline looked clean.
+ *   - `which` is a POSIX program, and it was called through a shell string, so
+ *     on Windows every lookup read as "absent": scripts/security-scan.cjs
+ *     reported every scanner missing and the pipeline looked clean.
  *   - `process.env.HOME` is unset on cmd and PowerShell, so `process.env.HOME || ''`
  *     resolved config paths RELATIVE to the current directory and the files were
  *     silently not found.
