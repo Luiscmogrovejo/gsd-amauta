@@ -6,22 +6,28 @@
  * Pattern for gsd-tester: one test = one complete user journey.
  * Guard: skipped if E2E_BASE_URL not set (CI without UI).
  *
- * This conditional-skip pattern is intentional and correct:
- * - It uses an empty it() body when E2E_BASE_URL is unset — NOT a flaky marker.
- * - Do NOT use .skip() / xit() / xdescribe() — those are flaky markers.
- * - The quality-audit.cjs no-assertion heuristic scopes to *.unit.test.cjs and
- *   *.integration.test.cjs only; this *.e2e.test.cjs is intentionally excluded.
+ * Phase 88 plan 88-16-02: the empty `it()` body this file used when
+ * E2E_BASE_URL was unset reported a PASS without running anything, so the
+ * journey's absence was invisible in every count. It is now a real
+ * `{ skip: … }` with the reason it always had. `.skip()` / `xit()` /
+ * `xdescribe()` remain forbidden — a declarative `{ skip: reason }` is counted
+ * by the runner and by plan 88-19's gate, which is the whole point.
+ * (The quality-audit.cjs no-assertion heuristic scopes to *.unit.test.cjs and
+ * *.integration.test.cjs only; this *.e2e.test.cjs is outside it either way.)
  */
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 
 const BASE_URL = process.env.E2E_BASE_URL;
 const SKIP_E2E = !BASE_URL;
+/** The named reason the counted skip carries when no board UI was published. */
+const BOARD_SKIP =
+  'E2E_BASE_URL is not set: this journey drives a real browser (Playwright) ' +
+  'against a published Task Board UI, which the fixture daemon does not serve';
 
 if (SKIP_E2E) {
-  describe('E2E: Task Board (SKIPPED — E2E_BASE_URL not set)', () => {
-    it('skipped: set E2E_BASE_URL to run E2E tests', () => {
-      // Intentional conditional skip — not a flaky marker.
+  describe('E2E: Task Board', () => {
+    it('create and complete task journey', { skip: BOARD_SKIP }, () => {
       // Run with: E2E_BASE_URL=http://localhost:3000 node --test tests/board.e2e.test.cjs
     });
   });

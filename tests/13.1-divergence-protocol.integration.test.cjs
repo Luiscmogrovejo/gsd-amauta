@@ -54,11 +54,16 @@ const { execSync, spawnSync } = require('node:child_process');
 // In the dedicated behavioral CI job (.github/workflows/behavioral-tests.yml)
 // GSD_LLM_INTEGRATION=true is set explicitly so real execution runs.
 const _LLM_INTEGRATION = process.env.GSD_LLM_INTEGRATION === 'true';
-if (!_LLM_INTEGRATION) {
-  console.log('[STAB-05] GSD_LLM_INTEGRATION not set — skipping all LLM behavioral tests.');
-  console.log('[STAB-05] Set GSD_LLM_INTEGRATION=true to run real LLM tests (requires claude CLI + ANTHROPIC_API_KEY).');
-  process.exit(0);  // node:test exits 0 with no tests collected
-}
+// Phase 88 plan 88-16-02: this used to be `process.exit(0)`, which left the file
+// reporting success with ZERO tests collected — four behavioural runs that no
+// count on any cell could see. They are counted skips now. Plan 88-17 (ORC-05)
+// routes the model call through the host runtime and puts a fake `claude` on
+// PATH, which is what will let them run everywhere.
+const LLM_SKIP = _LLM_INTEGRATION
+  ? false
+  : 'GSD_LLM_INTEGRATION is not set: these four behavioural runs drive a real ' +
+    'model through the `claude` CLI (plan 88-17, ORC-05, replaces this with the ' +
+    'host runtime)';
 
 // Discovery manifest — printed at module load so `npm run test:behavioral`
 // output always includes every test name even when the default node --test
@@ -453,7 +458,7 @@ function assertDivergenceFiled(ctx, result) {
 // replay) = 4, matching plan 13.1-05-03 AC. The 5-run loop lives
 // inside each test body and produces 5 real invocations at runtime.
 
-test('behavioral: stale_prerequisite x5 runs', async () => {
+test('behavioral: stale_prerequisite x5 runs', { skip: LLM_SKIP }, async () => {
   for (let run = 0; run < 5; run++) {
     const ctx = createStalePrerequisiteScenario();
     try {
@@ -474,7 +479,7 @@ test('behavioral: stale_prerequisite x5 runs', async () => {
   }
 });
 
-test('behavioral: unexpected_file_state x5 runs', async () => {
+test('behavioral: unexpected_file_state x5 runs', { skip: LLM_SKIP }, async () => {
   for (let run = 0; run < 5; run++) {
     const ctx = createUnexpectedFileStateScenario();
     try {
@@ -495,7 +500,7 @@ test('behavioral: unexpected_file_state x5 runs', async () => {
   }
 });
 
-test('behavioral: manifest_violation x5 runs', async () => {
+test('behavioral: manifest_violation x5 runs', { skip: LLM_SKIP }, async () => {
   for (let run = 0; run < 5; run++) {
     const ctx = createManifestViolationScenario();
     try {
@@ -518,7 +523,7 @@ test('behavioral: manifest_violation x5 runs', async () => {
 
 // ── Phase 13 incident replay test ─────────────────────────────────────────
 
-test('Phase 13 incident replay: silent re-implementation is now caught', async () => {
+test('Phase 13 incident replay: silent re-implementation is now caught', { skip: LLM_SKIP }, async () => {
   const ctx = createPhase13ReplayScenario();
   try {
     const result = invokeExecutor({

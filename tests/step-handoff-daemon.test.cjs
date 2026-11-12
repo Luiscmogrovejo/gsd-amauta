@@ -208,25 +208,19 @@ describe('[SHARD-04] Daemon file: /api/steps/ routes are defined', () => {
 
 describe('[SHARD-04] Live GET /api/steps/ endpoint tests', () => {
 
-  if (SKIP_REASON) {
-    it(`[SKIP] ${SKIP_REASON}`, () => {
-      console.log(`[skip] Daemon/route not available: ${SKIP_REASON}`);
-      assert.ok(true, 'Graceful skip — daemon or route not available');
-    });
-  } else {
 
-    it('GET returns {"step_id": null} when no handoff exists', async () => {
+    it('GET returns {"step_id": null} when no handoff exists', { skip: SKIP_REASON }, async () => {
       const r = await httpRequest('GET', `${STEPS_BASE}/plan-phase/999999`, null);
       assert.strictEqual(r.status, 200, `Expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
       assert.strictEqual(r.body.step_id, null, `Expected null step_id, got: ${r.body.step_id}`);
     });
 
-    it('GET returns 400 for non-integer phase', async () => {
+    it('GET returns 400 for non-integer phase', { skip: SKIP_REASON }, async () => {
       const r = await httpRequest('GET', `${STEPS_BASE}/plan-phase/abc`, null);
       assert.strictEqual(r.status, 400, `Expected 400, got ${r.status}: ${JSON.stringify(r.body)}`);
     });
 
-    it('POST creates handoff and returns 201 with id and created_at', async () => {
+    it('POST creates handoff and returns 201 with id and created_at', { skip: SKIP_REASON }, async () => {
       const r = await httpRequest('POST', `${STEPS_BASE}/plan-phase/99/handoff`, {
         workflow_name: 'plan-phase',
         step_id: 'step-01-init',
@@ -242,7 +236,7 @@ describe('[SHARD-04] Live GET /api/steps/ endpoint tests', () => {
       assert.ok(r.body.created_at, `Response missing created_at field: ${JSON.stringify(r.body)}`);
     });
 
-    it('GET returns latest handoff after POST', async () => {
+    it('GET returns latest handoff after POST', { skip: SKIP_REASON }, async () => {
       // POST first handoff
       await httpRequest('POST', `${STEPS_BASE}/plan-phase/99/handoff`, {
         step_id: 'step-01-init',
@@ -265,7 +259,7 @@ describe('[SHARD-04] Live GET /api/steps/ endpoint tests', () => {
       assert.strictEqual(r.body.step_id, 'step-02-research', `Expected step-02-research, got: ${r.body.step_id}`);
     });
 
-    it('GET includes all expected fields when handoff exists', async () => {
+    it('GET includes all expected fields when handoff exists', { skip: SKIP_REASON }, async () => {
       const r = await httpRequest('GET', `${STEPS_BASE}/plan-phase/99`, null);
       assert.strictEqual(r.status, 200);
       const fields = ['workflow_name', 'step_id', 'task_id', 'phase_number', 'completed_steps', 'context_snapshot'];
@@ -274,7 +268,7 @@ describe('[SHARD-04] Live GET /api/steps/ endpoint tests', () => {
       }
     });
 
-    it('POST preserves JSONB fields (context_snapshot, artifacts, decisions)', async () => {
+    it('POST preserves JSONB fields (context_snapshot, artifacts, decisions)', { skip: SKIP_REASON }, async () => {
       const complexContext = { key1: 'value1', nested: { a: 1, b: [1, 2, 3] } };
       const complexArtifacts = { plan_files: ['f1.md'], summaries: ['s1'] };
       const complexDecisions = [{ decision: 'test', rationale: 'r', agent: 'test-agent' }];
@@ -293,7 +287,7 @@ describe('[SHARD-04] Live GET /api/steps/ endpoint tests', () => {
       assert.ok(r.body.context_snapshot !== null, 'context_snapshot should not be null');
     });
 
-    it('Multiple workflows are independent (plan-phase vs execute-phase)', async () => {
+    it('Multiple workflows are independent (plan-phase vs execute-phase)', { skip: SKIP_REASON }, async () => {
       await httpRequest('POST', `${STEPS_BASE}/plan-phase/99/handoff`, {
         step_id: 'step-04-check',
         task_id: 'daemon-test-wf-01',
@@ -314,6 +308,5 @@ describe('[SHARD-04] Live GET /api/steps/ endpoint tests', () => {
       assert.strictEqual(execR.body.step_id, 'step-02-route', `execute-phase step wrong: ${execR.body.step_id}`);
     });
 
-  }
 
 });
