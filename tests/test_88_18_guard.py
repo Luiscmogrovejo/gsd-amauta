@@ -130,6 +130,16 @@ def test_prepend_path_uses_the_platform_separator():
     assert os.pathsep in fake_exe.prepend_path(["x", "y"], base="")
 
 
+def test_isolated_path_leads_with_the_fakes_and_keeps_only_system_dirs():
+    parts = fake_exe.isolated_path("fakes-dir").split(os.pathsep)
+    assert parts[0] == "fakes-dir"
+    assert len(parts) >= 2
+    if sys.platform == "win32":
+        assert any(p.lower().endswith("system32") for p in parts[1:])
+    else:
+        assert parts[1:] == ["/usr/bin", "/bin"]
+
+
 # --- the guard marker ---------------------------------------------------------------------
 
 

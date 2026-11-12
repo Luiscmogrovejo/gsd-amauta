@@ -15,6 +15,11 @@ the Node helper plan 88-14 adds in ``tests/support/fake-exe.cjs``:
     Joins ``dirs`` in front of ``base`` (default: the current ``PATH``) with
     ``os.pathsep``, so the same call is right on ``:`` and ``;`` platforms.
 
+``isolated_path(first)``
+    A ``PATH`` that leads with ``first`` and then holds only the system directories, for a child
+    that must not see the operator's own tools (``/usr/bin:/bin`` on POSIX; ``System32`` and the
+    directory of ``git`` on Windows, where a PATH without ``System32`` cannot start a child).
+
 Limitation, carried forward from plan 88-14 and the reason a naive fake is useless on
 Windows: **a ``.cmd`` shim cannot shadow a bare-name spawn.** Python's ``subprocess``
 resolves a bare name on Windows only against ``.exe`` and ``.com``; it does not apply
@@ -35,6 +40,7 @@ Example:
 """
 import os
 import shlex
+import shutil
 import stat
 import sys
 from pathlib import Path
@@ -103,3 +109,25 @@ def prepend_path(dirs, base=None):
     if base:
         parts.append(base)
     return os.pathsep.join(parts)
+
+
+def isolated_path(first):
+    """Return a ``PATH`` that leads with ``first`` and holds only the system directories after it.
+
+    Args:
+        first: the directory searched first (the fake binaries).
+
+    Returns:
+        str: the entries joined with ``os.pathsep``.
+
+    Example:
+        >>> isolated_path("fakes").split(os.pathsep)[0]
+        'fakes'
+    """
+    if _is_windows():
+        root = os.environ.get("SystemRoot", r"C:\Windows")
+        git = shutil.which("git")
+        rest = [os.path.join(root, "System32")] + ([os.path.dirname(git)] if git else [])
+    else:
+        rest = ["/usr/bin", "/bin"]
+    return os.pathsep.join([str(first)] + rest)

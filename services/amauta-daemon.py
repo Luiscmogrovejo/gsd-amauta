@@ -49,6 +49,7 @@ import uuid
 import threading
 from collections import defaultdict
 from pathlib import Path
+import socketserver
 from socketserver import ThreadingMixIn
 from urllib.parse import parse_qs, urlparse
 import logging
@@ -1770,6 +1771,22 @@ class ThreadedHTTPServer(ThreadingMixIn, http.server.HTTPServer):
     """Handle requests in separate threads."""
     daemon_threads = True
     allow_reuse_address = True
+
+    def server_bind(self):
+        """Bind the listening socket without ``HTTPServer``'s reverse-DNS lookup.
+
+        ``http.server.HTTPServer.server_bind`` calls ``socket.getfqdn(host)`` only to fill
+        ``server_name``, which nothing here reads. On a host whose resolver is slow (a GitHub
+        macOS runner, a laptop on a VPN) that call blocks for tens of seconds before the daemon
+        announces its port, so every readiness poll times out. Binding is unchanged.
+
+        Raises:
+            OSError: when the address cannot be bound, exactly as before.
+        """
+        socketserver.TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name = host
+        self.server_port = port
 
 
 class AmautaHandler(http.server.BaseHTTPRequestHandler):
