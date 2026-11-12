@@ -1,0 +1,146 @@
+[
+  {
+    "id": "mem-89rel-01",
+    "text": "psycopg connection pooling exhaustion: a pool opened per request leaves sockets in CLOSE_WAIT until the kernel reaps them, so size the pool once per process and hand connections back in a finally block.",
+    "source": "lesson-learned",
+    "tags": ["postgres", "pooling"]
+  },
+  {
+    "id": "mem-89rel-02",
+    "text": "A long-lived database connection that sat idle through a failover answers the next statement with a terminated-connection error; probe liveness before reusing one.",
+    "source": "lesson-learned",
+    "tags": ["postgres"]
+  },
+  {
+    "id": "mem-89rel-03",
+    "text": "Autocommit off means every read opens a transaction, and a transaction left open holds the snapshot that blocks vacuum.",
+    "source": "best-practice",
+    "tags": ["postgres"]
+  },
+  {
+    "id": "mem-89rel-04",
+    "text": "Bound parameters are not string formatting: build every WHERE clause with placeholders so the planner can cache the statement and no value can escape its slot.",
+    "source": "best-practice",
+    "tags": ["sql", "security"]
+  },
+  {
+    "id": "mem-89rel-05",
+    "text": "An idempotent alembic migration pairs every upgrade with a downgrade that actually reverses it, uses IF NOT EXISTS on index creation, and never rewrites a populated table in place.",
+    "source": "best-practice",
+    "tags": ["migrations", "alembic"]
+  },
+  {
+    "id": "mem-89rel-06",
+    "text": "Adding a NOT NULL column with a default rewrites the whole table on older servers; add it nullable, backfill in batches, then set the constraint.",
+    "source": "lesson-learned",
+    "tags": ["migrations"]
+  },
+  {
+    "id": "mem-89rel-07",
+    "text": "A schema change that ships ahead of the code that reads it is safe; the reverse order is an outage. Deploy the migration first, always.",
+    "source": "best-practice",
+    "tags": ["migrations", "deploy"]
+  },
+  {
+    "id": "mem-89rel-08",
+    "text": "Renaming a column is two releases: add the new name and write both, move the readers, then drop the old one.",
+    "source": "best-practice",
+    "tags": ["migrations"]
+  },
+  {
+    "id": "mem-89rel-09",
+    "text": "JWT verification of an expired token must raise TokenExpiredError, never return None: a decoder that answers None on expiry turns an authentication failure into an attribute error three frames away.",
+    "source": "lesson-learned",
+    "tags": ["auth", "jwt"]
+  },
+  {
+    "id": "mem-89rel-10",
+    "text": "Signature checks belong before claim parsing. Reading a claim out of an unverified payload is reading attacker-controlled input.",
+    "source": "best-practice",
+    "tags": ["auth", "security"]
+  },
+  {
+    "id": "mem-89rel-11",
+    "text": "Clock skew between issuer and verifier makes a short leeway necessary; without one, valid credentials are rejected for seconds after issue.",
+    "source": "lesson-learned",
+    "tags": ["auth"]
+  },
+  {
+    "id": "mem-89rel-12",
+    "text": "A session identifier in a log line is a credential in a log line. Redact it at the formatter, not at each call site.",
+    "source": "best-practice",
+    "tags": ["security", "logging"]
+  },
+  {
+    "id": "mem-89rel-13",
+    "text": "Valkey cache stampede: when a hot key expires, every worker recomputes it at once. Single flight it behind a short lock and let the losers read the value the winner writes.",
+    "source": "lesson-learned",
+    "tags": ["cache", "valkey"]
+  },
+  {
+    "id": "mem-89rel-14",
+    "text": "A write-through cache that stores the computed value before committing the row serves a value no reader can confirm; commit first.",
+    "source": "lesson-learned",
+    "tags": ["cache"]
+  },
+  {
+    "id": "mem-89rel-15",
+    "text": "A key namespace without a version prefix cannot be invalidated by deploy; put the schema version in the key.",
+    "source": "best-practice",
+    "tags": ["cache"]
+  },
+  {
+    "id": "mem-89rel-16",
+    "text": "An unbounded in-process memo is a leak with a hit rate. Give every memo a size cap and evict.",
+    "source": "best-practice",
+    "tags": ["cache", "memory"]
+  },
+  {
+    "id": "mem-89rel-17",
+    "text": "ParadeDB bm25 search: a filter fragment spliced into two statements must not be alias qualified unless both statements alias their table, otherwise the unaliased one cannot be planned and answers an undefined-table error.",
+    "source": "lesson-learned",
+    "tags": ["paradedb", "bm25", "sql"]
+  },
+  {
+    "id": "mem-89rel-18",
+    "text": "A field-qualified match string is required by newer pg_search releases: a bare term is parsed against the key field and errors on anything non-numeric.",
+    "source": "lesson-learned",
+    "tags": ["paradedb", "bm25"]
+  },
+  {
+    "id": "mem-89rel-19",
+    "text": "Reciprocal rank fusion with a large constant makes adjacent ranks nearly indistinguishable, so a noisy second leg reorders the head of the list.",
+    "source": "best-practice",
+    "tags": ["ranking", "rrf"]
+  },
+  {
+    "id": "mem-89rel-20",
+    "text": "Scoring one leg and ranking the other mixes units. Fuse ranks with ranks, or scores with scores, never one of each.",
+    "source": "best-practice",
+    "tags": ["ranking"]
+  },
+  {
+    "id": "mem-89rel-21",
+    "text": "Voyage embedding dimension mismatch: a matryoshka truncation to the leading components is not what a typed vector cast does, and a vector(N) cast enforces an exact dimension rather than slicing, so the comparison raises on every call.",
+    "source": "lesson-learned",
+    "tags": ["embeddings", "voyage"]
+  },
+  {
+    "id": "mem-89rel-22",
+    "text": "Asymmetric models want the query side embedded as a query and the document side as a document; embedding a question as a passage throws away recall for nothing.",
+    "source": "best-practice",
+    "tags": ["embeddings"]
+  },
+  {
+    "id": "mem-89rel-23",
+    "text": "Vectors written by two different models share a column but not a space; cosine distance across them is noise. Filter the vector leg to the active model.",
+    "source": "lesson-learned",
+    "tags": ["embeddings"]
+  },
+  {
+    "id": "mem-89rel-24",
+    "text": "A provider that returns nothing when no key is configured is a feature: the caller degrades to lexical search instead of failing the request.",
+    "source": "best-practice",
+    "tags": ["embeddings", "degradation"]
+  }
+]
