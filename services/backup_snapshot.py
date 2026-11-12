@@ -478,6 +478,55 @@ def find_tool(name, env=None):
     return None
 
 
+def versioned_tool_dirs(major):
+    """Where a PostgreSQL client of one MAJOR version lives, per packaging.
+
+    Every mainstream packaging installs each major side by side in a versioned
+    directory and puts only one of them on ``PATH``.  That is why the resolver
+    has to look here: measured on ``ubuntu-latest`` 2026-11-12, ``pg_dump`` on
+    ``PATH`` is **18.6** while the disposable server is **16.14**, and an 18
+    ``pg_restore`` cannot load into a 16 server (see
+    :func:`resolve_pg_tool`).
+
+    Args:
+        major: the major version wanted.
+
+    Returns:
+        list[str]: candidate directories, existing or not.
+    """
+    major = str(major)
+    return [
+        os.path.join(os.sep, "usr", "lib", "postgresql", major, "bin"),
+        os.path.join(os.sep, "usr", "pgsql-" + major, "bin"),
+        os.path.join(os.sep, "usr", "lib", "postgresql" + major, "bin"),
+        os.path.join(os.sep, "opt", "homebrew", "opt", "postgresql@" + major, "bin"),
+        os.path.join(os.sep, "usr", "local", "opt", "postgresql@" + major, "bin"),
+        os.path.join("C:" + os.sep, "Program Files", "PostgreSQL", major, "bin"),
+    ]
+
+
+def find_versioned_tool(name, major):
+    """A client of exactly ``major``, from a versioned install directory.
+
+    Args:
+        name: ``"pg_dump"`` or ``"pg_restore"``.
+        major: the major version wanted.
+
+    Returns:
+        str | None: the executable, or None when no such install exists.
+    """
+    if major is None:
+        return None
+    for directory in versioned_tool_dirs(major):
+        if not os.path.isdir(directory):
+            continue
+        for suffix in ("", ".exe"):
+            candidate = os.path.join(directory, name + suffix)
+            if os.path.isfile(candidate):
+                return candidate
+    return None
+
+
 def _tool_major(path):
     """The major version a PostgreSQL client tool reports.
 
@@ -488,7 +537,8 @@ def _tool_major(path):
         int | None
     """
     try:
-        out = subprocess.run([path, "--version"], capture_output=True, text=True,
+        out = subprocess.run([path, "--version"], capture_output=True,
+                             text=True, encoding="utf-8", errors="replace",
                              timeout=60)
     except Exception:  # noqa: BLE001 - an unversionable tool is simply unusable
         return None
@@ -542,14 +592,39 @@ def describe_resolution_order():
     """
     return [
         {"step": 1, "what": "GSD_PG_DUMP_BIN / GSD_PG_RESTORE_BIN, validated as an existing file"},
-        {"step": 2, "what": "a host tool whose major version is >= the server's"},
+        {"step": 2, "what": "a host tool whose major version EQUALS the server's — "
+                            "on PATH, else in a versioned install directory "
+                            "(/usr/lib/postgresql/<major>/bin and friends)"},
         {"step": 3, "what": "docker exec <container> — ONLY with GSD_BACKUP_ALLOW_DOCKER=1"},
         {"step": 4, "what": "the typed error pg_dump_unavailable, naming both variables and both versions"},
     ]
 
 
-def resolve_pg_tool(tool, dsn=None, env=None, server_major=None):
+def resolve_pg_tool(tool, dsn=None, env=None, server_major=None,
+                    allow_any_major=False):
     """Resolve ``pg_dump`` or ``pg_restore`` by this module's stated order.
+
+    **Step 2 requires the client's major to EQUAL the server's**, and that is a
+    correction the CI cells measured rather than a preference. The plan wrote
+    ">= the server's", which is the right rule for *dumping* and the wrong rule
+    for a dump-and-restore round trip against the same server:
+
+    ``ubuntu-latest``, 2026-11-12, run 43316131590 — ``pg_dump``/``pg_restore``
+    on ``PATH`` are **18.6**, the disposable server is **16.14**, and the
+    restore died with
+
+        pg_restore: error: could not execute query: ERROR:
+          unrecognized configuration parameter "transaction_timeout"
+        Command was: SET transaction_timeout = 0;
+
+    ``transaction_timeout`` arrived in PostgreSQL 17, and a 17-or-newer
+    ``pg_restore`` emits that ``SET`` in its fixed preamble for every archive —
+    so a newer client produces an artefact the older server refuses. The other
+    direction is worse: an older ``pg_restore`` cannot even read a newer
+    archive's header. **Only an equal major round-trips**, so that is what the
+    resolver demands, and it looks in the versioned install directories
+    (:func:`versioned_tool_dirs`) because every mainstream packaging installs
+    the majors side by side and puts exactly one of them on ``PATH``.
 
     Args:
         tool: ``"pg_dump"`` or ``"pg_restore"``.
@@ -557,6 +632,11 @@ def resolve_pg_tool(tool, dsn=None, env=None, server_major=None):
         env: the environment to read.
         server_major: an already-measured server major, to avoid a second
             connection.
+        allow_any_major: accept whatever is on ``PATH`` when no matching major
+            exists. Used ONLY by :func:`verify`'s structural
+            ``pg_restore --list``, which reads an archive and touches no
+            database, and where a newer client reading an older archive is
+            fine.
 
     Returns:
         dict: ``{"argv_prefix": [...], "source": "...", "client_major": N|None,
@@ -581,16 +661,29 @@ def resolve_pg_tool(tool, dsn=None, env=None, server_major=None):
                 "client_major": _tool_major(explicit),
                 "server_major": server_major, "docker": False}
 
-    if server_major is None:
+    if server_major is None and dsn:
         server_major = server_major_version(dsn)
 
     host_tool = find_tool(tool, env=env)
     client_major = _tool_major(host_tool) if host_tool else None
-    if host_tool and (server_major is None or
-                      (client_major is not None and client_major >= server_major)):
+
+    if host_tool and server_major is None:
+        # Nothing to match against (no DSN was given), so any client will do.
+        return {"argv_prefix": [host_tool], "source": "PATH",
+                "client_major": client_major, "server_major": None,
+                "docker": False}
+
+    if host_tool and client_major == server_major:
         return {"argv_prefix": [host_tool], "source": "PATH",
                 "client_major": client_major, "server_major": server_major,
                 "docker": False}
+
+    matched = find_versioned_tool(tool, server_major)
+    if matched:
+        return {"argv_prefix": [matched],
+                "source": "versioned install (%s)" % os.path.dirname(matched),
+                "client_major": _tool_major(matched),
+                "server_major": server_major, "docker": False}
 
     if _truthy(env.get("GSD_BACKUP_ALLOW_DOCKER")):
         container = (env.get("GSD_BACKUP_DOCKER_CONTAINER") or "gsd-postgres").strip()
@@ -601,19 +694,31 @@ def resolve_pg_tool(tool, dsn=None, env=None, server_major=None):
                     "client_major": None, "server_major": server_major,
                     "docker": True}
 
+    if allow_any_major and host_tool:
+        # Structural read only (`pg_restore --list`): no database is touched and
+        # a newer client reads an older archive without complaint.
+        return {"argv_prefix": [host_tool], "source": "PATH (any major, read-only)",
+                "client_major": client_major, "server_major": server_major,
+                "docker": False}
+
     raise BackupError(
         "pg_dump_unavailable",
         "no usable %s. Resolution order: (1) %s (unset); (2) a host %s whose "
-        "major version is >= the server's — found %s (client major %s, server "
-        "major %s); (3) docker exec, which needs GSD_BACKUP_ALLOW_DOCKER=1 "
-        "(not set, and no test sets it); (4) this error. Set %s to a %s of "
-        "major %s or newer, or set GSD_BACKUP_ALLOW_DOCKER=1 to use the "
-        "container's own client." % (
+        "major version EQUALS the server's — found %s (client major %s, server "
+        "major %s), and no major-%s install under %s; (3) docker exec, which "
+        "needs GSD_BACKUP_ALLOW_DOCKER=1 (not set, and no test sets it); "
+        "(4) this error. Set %s to a %s of major %s exactly, or set "
+        "GSD_BACKUP_ALLOW_DOCKER=1 to use the container's own client. A client "
+        "of a DIFFERENT major cannot round-trip: a 17-or-newer pg_restore "
+        "emits `SET transaction_timeout = 0`, which a 16 server rejects, and an "
+        "older pg_restore cannot read a newer archive's header." % (
             tool, var, tool, host_tool or "none", client_major, server_major,
+            server_major, ", ".join(versioned_tool_dirs(server_major)),
             var, tool, server_major if server_major is not None else "the server's",
         ),
         tool=tool, variable=var, host_tool=host_tool,
         client_major=client_major, server_major=server_major,
+        searched=versioned_tool_dirs(server_major),
         allow_docker_variable="GSD_BACKUP_ALLOW_DOCKER",
     )
 
@@ -1026,7 +1131,8 @@ def _git_sha():
         return None
     try:
         out = subprocess.run([git, "-C", _REPO_ROOT, "rev-parse", "HEAD"],
-                             capture_output=True, text=True, timeout=30)
+                             capture_output=True, text=True, encoding="utf-8",
+                             errors="replace", timeout=30)
     except Exception:  # noqa: BLE001
         return None
     sha = (out.stdout or "").strip()
@@ -1432,7 +1538,7 @@ def _verify_dump_structure(dump, env, runner, checks):
     """
     try:
         resolved = resolve_pg_tool("pg_restore", dsn=None, env=env,
-                                   server_major=None)
+                                   server_major=None, allow_any_major=True)
     except BackupError as exc:
         return ["%s: cannot be structurally checked — %s"
                 % (DUMP_ARTEFACT, exc.payload["message"])]

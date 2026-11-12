@@ -102,6 +102,12 @@ def pinned_env(home, **extra):
         "GSD_RLM_PORT": "0",
         "AMAUTA_MEMORY_DATABASE_URL": "",
         "GSD_POSTGRES_URL": "",
+        # tests/conftest.py:167-168 exports the DISPOSABLE DSN under both
+        # GSD_POSTGRES_URL and DATABASE_URL when CI supplies one, so blanking
+        # only the first leaves `resolve_dsn` finding the second -- which is how
+        # `for migrations --scope all` quietly succeeded on the Linux cell
+        # instead of refusing. All three names are blanked.
+        "DATABASE_URL": "",
         "AMAUTA_AUTO_BACKUP": "off",
         "PYTHONPATH": str(REPO_ROOT),
     })
@@ -130,8 +136,8 @@ def run_cli(args, home, **extra):
     return subprocess.run(
         [sys.executable, str(REPO_ROOT / "services" / "backup_snapshot.py")]
         + [str(a) for a in args],
-        capture_output=True, text=True, cwd=str(REPO_ROOT),
-        env=pinned_env(home, **extra), timeout=300,
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        cwd=str(REPO_ROOT), env=pinned_env(home, **extra), timeout=300,
     )
 
 
@@ -387,7 +393,8 @@ def _tool_version(name):
         return "(absent)"
     try:
         out = subprocess.run([resolved, "--version"], capture_output=True,
-                             text=True, timeout=60)
+                             text=True, encoding="utf-8", errors="replace",
+                             timeout=60)
     except Exception as exc:  # noqa: BLE001 - a probe reports, it does not raise
         return "(error: %s)" % exc
     return "%s -> %s" % (resolved, (out.stdout or out.stderr).strip())
@@ -426,15 +433,32 @@ def test_pg_dump_capability_probe():
             finally:
                 conn.close()
             lines.append("server_version         : %s (num %s)" % (version, num))
-            lines.append("server major           : %s" % bs.server_major_version(dsn))
-            try:
-                resolved = bs.resolve_pg_tool("pg_dump", dsn=dsn)
-                lines.append("resolved pg_dump       : %s via %s (client major %s)"
-                             % (resolved["argv_prefix"], resolved["source"],
-                                resolved["client_major"]))
-            except bs.BackupError as exc:
-                lines.append("resolved pg_dump       : REFUSED %s"
-                             % json.dumps(exc.payload))
+            major = bs.server_major_version(dsn)
+            lines.append("server major           : %s" % major)
+            for directory in bs.versioned_tool_dirs(major):
+                exists = os.path.isdir(directory)
+                contents = ""
+                if exists:
+                    try:
+                        contents = ", ".join(sorted(
+                            n for n in os.listdir(directory)
+                            if n.startswith("pg_dump") or n.startswith("pg_restore")))
+                    except OSError as exc:
+                        contents = "(unreadable: %s)" % exc
+                lines.append("  versioned dir        : %-46s %s %s"
+                             % (directory, "EXISTS" if exists else "absent",
+                                contents))
+            for tool in ("pg_dump", "pg_restore"):
+                found = bs.find_versioned_tool(tool, major)
+                lines.append("  major-%s %-12s: %s" % (major, tool, found or "(none)"))
+                try:
+                    resolved = bs.resolve_pg_tool(tool, dsn=dsn)
+                    lines.append("  resolved %-12s: %s via %s (client major %s)"
+                                 % (tool, resolved["argv_prefix"],
+                                    resolved["source"], resolved["client_major"]))
+                except bs.BackupError as exc:
+                    lines.append("  resolved %-12s: REFUSED %s"
+                                 % (tool, json.dumps(exc.payload)))
         except Exception as exc:  # noqa: BLE001 - a probe reports, it does not raise
             lines.append("server_version         : (error: %s)" % exc)
     lines.append("resolution order       : %s"
@@ -904,6 +928,23 @@ def test_verify_refuses_a_directory_that_is_not_a_snapshot(tmp_path):
 # The pg_dump resolution order, each step forced by environment
 # ══════════════════════════════════════════════════════════════════
 
+def _no_versioned_installs(monkeypatch):
+    """Neutralise the versioned-install search for one test.
+
+    The CI cells really do carry PostgreSQL clients under
+    ``/usr/lib/postgresql/<major>/bin``, so a test that wants to prove the
+    REFUSAL path must remove that source of a match; otherwise the test would
+    pass or fail depending on the runner image, which is not a test.
+
+    Args:
+        monkeypatch: the pytest fixture.
+
+    Returns:
+        None
+    """
+    monkeypatch.setattr(bs, "versioned_tool_dirs", lambda _major: [])
+
+
 def test_resolution_step_1_explicit_binary_wins(tmp_path, home):
     """``GSD_PG_DUMP_BIN`` wins, and is validated as an existing file."""
     fake = write_fake_exe(str(tmp_path / "bin"), "pg_dump",
@@ -925,8 +966,9 @@ def test_resolution_step_1_rejects_a_path_that_is_not_a_file(tmp_path, home):
     assert caught.value.payload["variable"] == "GSD_PG_DUMP_BIN"
 
 
-def test_resolution_step_2_host_tool_when_its_major_is_high_enough(tmp_path, home):
-    """A host ``pg_dump`` of major >= the server's is used."""
+def test_resolution_step_2_host_tool_when_its_major_matches_the_server(tmp_path,
+                                                                       home):
+    """A host ``pg_dump`` of the SAME major as the server is used."""
     fakes = tmp_path / "fakes"
     write_fake_exe(str(fakes), "pg_dump", "print('pg_dump (PostgreSQL) 16.4')")
     env = pinned_env(home, PATH=isolated_path(str(fakes)))
@@ -936,16 +978,18 @@ def test_resolution_step_2_host_tool_when_its_major_is_high_enough(tmp_path, hom
     assert resolved["docker"] is False
 
 
-def test_resolution_step_2_refuses_a_client_older_than_the_server(tmp_path, home):
+def test_resolution_step_2_refuses_a_client_older_than_the_server(tmp_path, home,
+                                                                   monkeypatch):
     """An older client is NOT used — this is the operator's own machine.
 
-    Measured in task 89-04-01: the operator's host carries ``pg_dump`` 14 while
-    the container serves 16, so step 2 must reject it rather than produce a dump
-    the server's own ``pg_restore`` would refuse.
+    Measured in task 89-04-01: the operator's host carries ``pg_dump`` 14.22
+    while the container serves 16, so step 2 must reject it rather than produce
+    an archive the server's own ``pg_restore`` would refuse.
     """
     fakes = tmp_path / "fakes"
     write_fake_exe(str(fakes), "pg_dump", "print('pg_dump (PostgreSQL) 14.22')")
     env = pinned_env(home, PATH=isolated_path(str(fakes)))
+    _no_versioned_installs(monkeypatch)
     with pytest.raises(bs.BackupError) as caught:
         bs.resolve_pg_tool("pg_dump", dsn=None, env=env, server_major=16)
     payload = caught.value.payload
@@ -956,7 +1000,94 @@ def test_resolution_step_2_refuses_a_client_older_than_the_server(tmp_path, home
     assert "GSD_BACKUP_ALLOW_DOCKER" in payload["message"]
 
 
-def test_resolution_step_3_needs_the_explicit_docker_opt_in(tmp_path, home):
+def test_resolution_step_2_refuses_a_client_NEWER_than_the_server(tmp_path, home,
+                                                                  monkeypatch):
+    """A NEWER client is refused too, and CI is what proved it necessary.
+
+    `ubuntu-latest`, run 43316131590: ``pg_restore`` on PATH is 18.6, the
+    disposable server is 16.14, and the restore died with
+
+        ERROR:  unrecognized configuration parameter "transaction_timeout"
+        Command was: SET transaction_timeout = 0;
+
+    ``transaction_timeout`` arrived in PostgreSQL 17 and a 17-or-newer
+    ``pg_restore`` emits that ``SET`` for every archive. The plan's rule
+    (">= the server's") is right for dumping and wrong for a round trip, so the
+    resolver demands an EQUAL major. Recorded as a deviation.
+    """
+    fakes = tmp_path / "fakes"
+    write_fake_exe(str(fakes), "pg_restore", "print('pg_restore (PostgreSQL) 18.6')")
+    env = pinned_env(home, PATH=isolated_path(str(fakes)))
+    _no_versioned_installs(monkeypatch)
+    with pytest.raises(bs.BackupError) as caught:
+        bs.resolve_pg_tool("pg_restore", dsn=None, env=env, server_major=16)
+    payload = caught.value.payload
+    assert payload["error"] == "pg_dump_unavailable"
+    assert payload["client_major"] == 18
+    assert payload["server_major"] == 16
+    assert "transaction_timeout" in payload["message"]
+    # `searched` is the list the resolver looked in. It is EMPTY here only
+    # because this test neutralised it on purpose; the unneutralised list is
+    # asserted non-empty by
+    # test_the_versioned_directories_cover_every_packaging_we_target.
+    assert payload["searched"] == []
+
+
+def test_resolution_step_2_prefers_a_versioned_install_over_the_path_tool(
+        tmp_path, home, monkeypatch):
+    """When PATH carries the wrong major, a versioned install is used.
+
+    Every mainstream packaging keeps the majors side by side and puts one on
+    PATH; that is the shape the CI cell has.
+    """
+    on_path = tmp_path / "onpath"
+    write_fake_exe(str(on_path), "pg_dump", "print('pg_dump (PostgreSQL) 18.6')")
+    versioned = tmp_path / "pg16" / "bin"
+    matching = write_fake_exe(str(versioned), "pg_dump",
+                              "print('pg_dump (PostgreSQL) 16.14')")
+    monkeypatch.setattr(bs, "versioned_tool_dirs",
+                        lambda major: [str(versioned)] if str(major) == "16" else [])
+    env = pinned_env(home, PATH=isolated_path(str(on_path)))
+    resolved = bs.resolve_pg_tool("pg_dump", dsn=None, env=env, server_major=16)
+    assert resolved["argv_prefix"] == [matching]
+    assert resolved["client_major"] == 16
+    assert resolved["source"].startswith("versioned install")
+
+
+def test_the_versioned_directories_cover_every_packaging_we_target():
+    """The search list names the Debian, RHEL, Homebrew and Windows layouts."""
+    dirs = bs.versioned_tool_dirs(16)
+    joined = " ".join(dirs)
+    assert "postgresql" in joined
+    assert any("pgsql-16" in d for d in dirs), dirs
+    assert any("postgresql@16" in d for d in dirs), dirs
+    assert any("Program Files" in d for d in dirs), dirs
+    assert all("16" in d for d in dirs), dirs
+    assert bs.find_versioned_tool("pg_dump", None) is None
+
+
+def test_verify_may_use_any_major_for_a_structural_read(tmp_path, home,
+                                                        monkeypatch):
+    """``pg_restore --list`` reads an archive and touches no database.
+
+    A newer client reading an older archive is fine, so ``verify`` is allowed
+    the escape hatch that ``restore`` is not — and the escape is explicit
+    (``allow_any_major``), not a silent widening of step 2.
+    """
+    fakes = tmp_path / "fakes"
+    write_fake_exe(str(fakes), "pg_restore", "print('pg_restore (PostgreSQL) 18.6')")
+    env = pinned_env(home, PATH=isolated_path(str(fakes)))
+    _no_versioned_installs(monkeypatch)
+    with pytest.raises(bs.BackupError):
+        bs.resolve_pg_tool("pg_restore", dsn=None, env=env, server_major=16)
+    relaxed = bs.resolve_pg_tool("pg_restore", dsn=None, env=env, server_major=16,
+                                 allow_any_major=True)
+    assert relaxed["client_major"] == 18
+    assert "read-only" in relaxed["source"]
+
+
+def test_resolution_step_3_needs_the_explicit_docker_opt_in(tmp_path, home,
+                                                            monkeypatch):
     """Docker is reachable ONLY with ``GSD_BACKUP_ALLOW_DOCKER=1``.
 
     The argv is asserted; nothing is spawned.  No test in this plan sets the
@@ -966,6 +1097,7 @@ def test_resolution_step_3_needs_the_explicit_docker_opt_in(tmp_path, home):
     write_fake_exe(str(fakes), "docker", "print('Docker version 99')")
     write_fake_exe(str(fakes), "pg_dump", "print('pg_dump (PostgreSQL) 14.0')")
     path = isolated_path(str(fakes))
+    _no_versioned_installs(monkeypatch)
 
     without = pinned_env(home, PATH=path)
     with pytest.raises(bs.BackupError):
@@ -980,9 +1112,10 @@ def test_resolution_step_3_needs_the_explicit_docker_opt_in(tmp_path, home):
     assert resolved["source"] == "docker exec gsd-postgres"
 
 
-def test_resolution_step_4_is_a_typed_error_naming_both_variables(home):
+def test_resolution_step_4_is_a_typed_error_naming_both_variables(home, monkeypatch):
     """With nothing available the answer is ``pg_dump_unavailable``."""
     env = pinned_env(home, PATH="", PGBIN=None)
+    _no_versioned_installs(monkeypatch)
     with pytest.raises(bs.BackupError) as caught:
         bs.resolve_pg_tool("pg_restore", dsn=None, env=env, server_major=16)
     payload = caught.value.payload

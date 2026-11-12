@@ -327,7 +327,8 @@ def test_the_remedy_command_runs_and_makes_the_guard_pass(home, backups):
     # RUN IT UNCHANGED. No flag is added here: a remedy that needs the reader
     # to complete it is not a remedy.
     run = subprocess.run(shlex.split(remedy), capture_output=True, text=True,
-                         env=env, cwd=str(REPO_ROOT), timeout=300)
+                         encoding="utf-8", errors="replace", env=env,
+                         cwd=str(REPO_ROOT), timeout=300)
     assert run.returncode == 0, run.stdout + run.stderr
 
     after = guard.require_recent_backup(step="migrations", scope="tasks",
@@ -530,6 +531,34 @@ def scratch():
             conn.close()
 
 
+def _has_gsd_schema(dsn):
+    """Whether the database carries this repository's own schema.
+
+    The precise question the guard tests ask. A raw table COUNT cannot answer
+    it: measured on the ParadeDB image, a freshly created database already has
+    one public table inherited from the template.
+
+    Args:
+        dsn: the database.
+
+    Returns:
+        bool
+    """
+    import psycopg2
+
+    conn = psycopg2.connect(dsn, connect_timeout=15)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*) FROM information_schema.tables "
+                "WHERE table_schema = 'public' AND table_type = 'BASE TABLE' "
+                "AND table_name IN ('gsd_memory', 'gsd_tasks', 'gsd_shared_kb', "
+                "'schema_migrations')")
+            return int(cur.fetchone()[0]) > 0
+    finally:
+        conn.close()
+
+
 def _table_count(dsn):
     """How many public base tables the database holds.
 
@@ -563,7 +592,11 @@ def test_apply_migrations_refuses_when_armed_with_no_snapshot(scratch, home,
     refused before the first BEGIN, so nothing was created.
     """
     env = pinned_env(home, GSD_BACKUP_GUARD="on", CI="true")
-    assert _table_count(scratch["dsn"]) == 0
+    # NOT `== 0`: measured on the ParadeDB image, a freshly created database
+    # inherits a public table from the template. The claim is that the guard
+    # changed NOTHING, so the baseline is captured and compared.
+    baseline = _table_count(scratch["dsn"])
+    assert not _has_gsd_schema(scratch["dsn"]), "the target must start un-migrated"
     with pytest.raises(guard.BackupRequired) as caught:
         migrate_runner.apply_migrations(dsn=scratch["dsn"],
                                         backups_dir=str(backups), env=env,
@@ -573,7 +606,8 @@ def test_apply_migrations_refuses_when_armed_with_no_snapshot(scratch, home,
     assert payload["guard_reason"] == "no_snapshot"
     assert payload["max_age_hours"] == 24
     assert "for migrations" in payload["remedy"]
-    assert _table_count(scratch["dsn"]) == 0, "the guard fired before any DDL"
+    assert _table_count(scratch["dsn"]) == baseline, "the guard fired before any DDL"
+    assert not _has_gsd_schema(scratch["dsn"])
 
 
 @requires_pg
@@ -621,17 +655,19 @@ def test_dry_run_and_status_are_never_gated(scratch, home, backups):
     """
     env = pinned_env(home, GSD_BACKUP_GUARD="on", CI="true")
     assert os.listdir(str(backups)) == []
+    baseline = _table_count(scratch["dsn"])
     dry = migrate_runner.apply_migrations(
         dsn=scratch["dsn"], dry_run=True, backups_dir=str(backups), env=env,
         log=lambda *_a: None)
     assert dry["dry_run"] is True
     assert dry["pending"], "the dry run really classified the pending files"
-    assert _table_count(scratch["dsn"]) == 0
+    assert _table_count(scratch["dsn"]) == baseline
+    assert not _has_gsd_schema(scratch["dsn"])
 
     payload = migrate_runner.status(dsn=scratch["dsn"])
     assert payload["tracking_table"] is False
     assert payload["pending"]
-    assert _table_count(scratch["dsn"]) == 0
+    assert _table_count(scratch["dsn"]) == baseline
 
 
 @requires_pg
@@ -642,7 +678,8 @@ def test_the_status_cli_is_never_gated(scratch, home, backups):
         [sys.executable, str(REPO_ROOT / "services" / "migrate_runner.py"),
          "--status", "--dsn", scratch["dsn"], "--backups-dir", str(backups),
          "--json"],
-        capture_output=True, text=True, env=env, cwd=str(REPO_ROOT), timeout=300)
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        env=env, cwd=str(REPO_ROOT), timeout=300)
     assert run.returncode == 0, run.stdout + run.stderr
     assert json.loads(run.stdout)["tracking_table"] is False
 
@@ -652,15 +689,18 @@ def test_the_migrate_cli_refuses_with_a_typed_payload_and_exit_one(scratch, home
                                                                    backups):
     """The CLI's own arm: exit 1 and ``backup_required`` on stdout as JSON."""
     env = pinned_env(home, GSD_BACKUP_GUARD="on", CI="true")
+    baseline = _table_count(scratch["dsn"])
     run = subprocess.run(
         [sys.executable, str(REPO_ROOT / "services" / "migrate_runner.py"),
          "--dsn", scratch["dsn"], "--backups-dir", str(backups), "--json"],
-        capture_output=True, text=True, env=env, cwd=str(REPO_ROOT), timeout=300)
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        env=env, cwd=str(REPO_ROOT), timeout=300)
     assert run.returncode == 1, run.stdout + run.stderr
+    assert _table_count(scratch["dsn"]) == baseline
     payload = json.loads(run.stdout)
     assert payload["error"] == "backup_required"
     assert payload["max_age_hours"] == 24
-    assert _table_count(scratch["dsn"]) == 0
+    assert not _has_gsd_schema(scratch["dsn"]), "the CLI created no GSD table"
 
 
 @requires_pg
@@ -708,8 +748,11 @@ def test_migrate_sqlite_to_pg_refuses_in_write_mode_but_not_in_dry_run(
         backups_dir=str(backups), env=env, log=lambda *_a: None)
     assert report["dry_run"] is True
     memory = [t for t in report["tables"] if t["table"] == "gsd_memory"][0]
-    assert memory["sqlite"] == 3
-    assert memory["insert"] == 3
+    # The printed COLUMN is headed `sqlite`; the report KEY is `source`
+    # (services/migrate_sqlite_to_pg.py `_print_report`). Reading the header as
+    # the key is how a report assertion goes vacuous.
+    assert memory["source"] == 3, memory
+    assert memory["insert"] == 3, memory
 
 
 @requires_pg
