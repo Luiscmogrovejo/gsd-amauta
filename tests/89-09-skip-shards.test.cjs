@@ -63,8 +63,30 @@ const PRE_SHARD_DIGEST = '75cd221c305f84dec466e190ca55e108b55e2a78a838fe91c91dfb
 /** `[name, file, platform, context, reason, reason_class, owner, owner_phase, exit_criterion]` tuples removed since the migration. */
 const REMOVED_SINCE_SHARDING = [];
 
-/** The same shape, for entries added since the migration. */
-const ADDED_SINCE_SHARDING = [];
+/**
+ * The same shape, for entries added since the migration.
+ *
+ * Plan 89-04 added 42 entries: 21 Postgres-gated tests (13 in
+ * `tests/test_89_04_restore_e2e.py`, 8 in `tests/test_89_04_backup_guard.py`)
+ * times the two cells with no disposable database, `darwin` and `win32`. They
+ * are DERIVED from the shard that owns them rather than copied here as 42
+ * literal nine-element arrays, for two reasons: 378 hand-copied strings is a
+ * transcription hazard with no upside, and the proof below keeps its full
+ * strength for every OTHER shard either way — removing this plan's own entries
+ * from the union is exactly what a literal list would do.
+ *
+ * What the literal list did give is a COUNT nobody can change silently, so the
+ * count is pinned here instead (`ADDED_EXPECTED`): if `89-04.json` grows or
+ * shrinks, this file fails and the change has to be declared.
+ */
+const ADDED_BY_89_04 = JSON.parse(
+  fs.readFileSync(path.join(DIR, '89-04.json'), 'utf8')
+).map((e) => FIELDS.map((f) => e[f]));
+
+/** How many entries plan 89-04 declared. 21 tests x 2 cells. */
+const ADDED_EXPECTED = 42;
+
+const ADDED_SINCE_SHARDING = [...ADDED_BY_89_04];
 
 const TMP_DIRS = [];
 
@@ -143,6 +165,25 @@ describe('89-09 the shard migration lost nothing', () => {
       false,
       'the monolith is deleted; the shards are the ledger'
     );
+  });
+
+  test('the declared additions are exactly plan 89-04\'s 42, all in its own shard', () => {
+    assert.strictEqual(ADDED_BY_89_04.length, ADDED_EXPECTED,
+      'tests/skip-exceptions.d/89-04.json changed size without updating ADDED_EXPECTED');
+    assert.strictEqual(ADDED_SINCE_SHARDING.length, ADDED_EXPECTED);
+    const platforms = new Set(ADDED_BY_89_04.map((t) => t[FIELDS.indexOf('platform')]));
+    assert.deepStrictEqual([...platforms].sort(), ['darwin', 'win32'],
+      'these entries exist only for the two cells with no disposable database');
+    const classes = new Set(ADDED_BY_89_04.map((t) => t[FIELDS.indexOf('reason_class')]));
+    assert.deepStrictEqual([...classes], ['pg-no-disposable-database']);
+    const files = new Set(ADDED_BY_89_04.map((t) => t[FIELDS.indexOf('file')]));
+    assert.deepStrictEqual([...files].sort(),
+      ['tests/test_89_04_backup_guard.py', 'tests/test_89_04_restore_e2e.py'],
+      'tests/test_89_04_backup_snapshot.py needs no entry: it reaches for no database');
+    for (const tuple of ADDED_BY_89_04) {
+      assert.match(tuple[FIELDS.indexOf('exit_criterion')], /89-07-04/,
+        'every entry must name the task that removes it');
+    }
   });
 
   test('the union is SET-EQUAL to the pre-shard ledger on the full nine-field tuple', () => {
