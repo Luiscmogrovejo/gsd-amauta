@@ -37,7 +37,7 @@ def _load_dotenv():
         "/srv/amauta/.env",
     ]:
         if os.path.isfile(candidate):
-            with open(candidate) as f:
+            with open(candidate, encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
                     if not line or line.startswith("#"):
@@ -1287,7 +1287,7 @@ def start_server(foreground=False):
     if not foreground:
         if PID_FILE.exists():
             try:
-                pid = int(PID_FILE.read_text().strip())
+                pid = int(PID_FILE.read_text(encoding="utf-8").strip())
                 os.kill(pid, 0)
                 print(f"RLM service already running (PID {pid})")
                 return
@@ -1295,7 +1295,7 @@ def start_server(foreground=False):
                 PID_FILE.unlink(missing_ok=True)
 
     server = ThreadedHTTPServer((HOST, PORT), RLMHandler)
-    PID_FILE.write_text(str(os.getpid()))
+    PID_FILE.write_text(str(os.getpid()), encoding="utf-8")
 
     # RETR-05: rebuild the dependency graph on startup, non-blocking (never
     # delays serving requests on PG cold-start/unavailability).
@@ -1356,7 +1356,7 @@ def stop_server():
         print("RLM service not running (no PID file)")
         return
     try:
-        pid = int(PID_FILE.read_text().strip())
+        pid = int(PID_FILE.read_text(encoding="utf-8").strip())
         os.kill(pid, signal.SIGTERM)
         print(f"Sent SIGTERM to PID {pid}")
         PID_FILE.unlink(missing_ok=True)
@@ -1373,7 +1373,7 @@ def check_status():
         print("RLM service not running")
         return False
     try:
-        pid = int(PID_FILE.read_text().strip())
+        pid = int(PID_FILE.read_text(encoding="utf-8").strip())
         os.kill(pid, 0)
         print(f"RLM service running (PID {pid}) on {HOST}:{PORT}")
         return True
@@ -1384,6 +1384,15 @@ def check_status():
 
 
 if __name__ == "__main__":
+    # Phase 88-13: UTF-8 stdio when the console code page is not (Windows cp1252); a no-op otherwise.
+    import os as _os, sys as _sys
+    _sys.path.append(_os.path.dirname(_os.path.abspath(__file__)))
+    try:
+        from _platform import setup_stdio
+    except ImportError:  # pragma: no cover - a tree without services/ on sys.path
+        def setup_stdio():  # type: ignore[misc]
+            return False
+    setup_stdio()
     if len(sys.argv) < 2:
         print("Usage: rlm-service.py {start|stop|status|run}")
         sys.exit(1)

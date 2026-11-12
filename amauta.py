@@ -29,7 +29,7 @@ def _load_dotenv():
         "/srv/amauta/.env",
     ]:
         if os.path.isfile(candidate):
-            with open(candidate) as f:
+            with open(candidate, encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
                     if not line or line.startswith("#"):
@@ -356,7 +356,7 @@ def _project_id_from_config(start_dir: str, repo_root: Optional[str]) -> Optiona
         cfg_path = os.path.join(cur, ".planning", "config.json")
         if os.path.isfile(cfg_path):
             try:
-                with open(cfg_path) as f:
+                with open(cfg_path, encoding="utf-8") as f:
                     cfg = json.load(f) or {}
                 declared = cfg.get("project_id")
                 if declared is None:
@@ -518,7 +518,7 @@ class _file_lock:
         if getattr(_lock_held, 'held', False):
             # Already held by this thread -- skip acquisition (reentrant)
             return self
-        self._fd = open(_LOCK_FILE, "w")
+        self._fd = open(_LOCK_FILE, "w", encoding="utf-8")
         if fcntl:
             fcntl.flock(self._fd, fcntl.LOCK_EX)
         self._acquired = True
@@ -536,14 +536,14 @@ class _file_lock:
 def load() -> dict:
     if TASKS_FILE.exists():
         try:
-            with open(TASKS_FILE) as f:
+            with open(TASKS_FILE, encoding="utf-8") as f:
                 return json.load(f)
         except json.JSONDecodeError as e:
             # Try to read from the .bak backup if the main file is corrupt
             backup = Path(str(TASKS_FILE) + ".bak")
             if backup.exists():
                 try:
-                    with open(backup) as f:
+                    with open(backup, encoding="utf-8") as f:
                         data = json.load(f)
                     print(f"\033[93mWARNING: {TASKS_FILE} was corrupt ({e}). Recovered from backup.\033[0m",
                           file=sys.stderr)
@@ -611,7 +611,7 @@ def _load_archive() -> dict:
     """Load the archive file, or return an empty archive structure."""
     if ARCHIVE_FILE.exists():
         try:
-            with open(ARCHIVE_FILE) as f:
+            with open(ARCHIVE_FILE, encoding="utf-8") as f:
                 return json.load(f)
         except json.JSONDecodeError:
             pass
@@ -648,7 +648,7 @@ def _mem_load() -> list:
     if not MEMORY_FILE.exists():
         return []
     out = []
-    with open(MEMORY_FILE, "r", errors="ignore") as f:
+    with open(MEMORY_FILE, "r", errors="ignore", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line:
@@ -660,7 +660,7 @@ def _mem_load() -> list:
     return out
 
 def _mem_append(row: dict):
-    with open(MEMORY_FILE, "a") as f:
+    with open(MEMORY_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(row, ensure_ascii=True) + "\n")
 
 def _mem_db_url() -> str:
@@ -671,7 +671,7 @@ def _mem_db_url() -> str:
     if not dsn:
         env_file = Path("/srv/amauta/.env")
         if env_file.exists():
-            for ln in env_file.read_text(errors="ignore").splitlines():
+            for ln in env_file.read_text(errors="ignore", encoding="utf-8").splitlines():
                 if ln.startswith("AMAUTA_MEMORY_DATABASE_URL="):
                     dsn = ln.split("=", 1)[1].strip().strip('"').strip("'")
                     break
@@ -724,7 +724,7 @@ def _mem_backend() -> str:
         return "postgres"
     env_file = Path("/srv/amauta/.env")
     if env_file.exists():
-        for ln in env_file.read_text(errors="ignore").splitlines():
+        for ln in env_file.read_text(errors="ignore", encoding="utf-8").splitlines():
             if ln.startswith("AMAUTA_MEMORY_BACKEND="):
                 return ln.split("=", 1)[1].strip().strip('"').strip("'").lower()
             if ln.startswith("GSD_POSTGRES_URL="):
@@ -932,6 +932,8 @@ def _mem_semantic_search(query: str, top_k: int = 5, include_noise: bool = False
     """
     import urllib.request, urllib.error, json as _json
     try:
+        if _live_port_blocked("GSD_DAEMON_PORT", "18799"):
+            raise RuntimeError("daemon route skipped in test mode")  # take the fallback below
         port = os.environ.get("GSD_DAEMON_PORT", "18799")
         url = f"http://127.0.0.1:{port}/api/memory/semantic-search"
         req_body = {"query": query, "limit": top_k}
@@ -989,6 +991,29 @@ def _mem_semantic_search(query: str, top_k: int = 5, include_noise: bool = False
         if _mem_pg_available():
             return _mem_pg_search(query, None, top_k)
     return []
+
+def _live_port_blocked(port_env: str, default_port: str) -> bool:
+    """True when a CLI helper must not dial this local service (test mode only).
+
+    The helpers that POST to the daemon (default 18799) or the RLM service (default 18798)
+    are best-effort and used to run under ``GSD_TEST_MODE=1`` too, so a test or a hand-run
+    probe reached the operator's live services whenever its environment did not pin every
+    port variable (Phase 88, plan 88-13: five ``claim`` runs reached the live RLM).
+    In test mode the call is skipped when the port variable is unset, empty, ``0`` or equal
+    to either live default (18798 RLM, 18799 daemon). A test that points the variable at a fixture service on an
+    ephemeral port still gets the call.
+
+    Args:
+        port_env: Name of the environment variable holding the port.
+        default_port: The live default port as a string.
+
+    Returns:
+        bool: True when ``GSD_TEST_MODE`` is "1" and the port is unset, empty, "0" or a live default.
+    """
+    if os.environ.get("GSD_TEST_MODE", "") != "1":
+        return False
+    return os.environ.get(port_env, default_port).strip() in ("", "0", "18798", "18799", default_port)
+
 
 def _research_chain_blocked() -> bool:
     """True when the research chain must not spawn anything (test mode).
@@ -1240,6 +1265,8 @@ def _mem_log_event(agent_id: str, tags: list[str], text: str, *, source: str = "
             stored_via_daemon = False
             try:
                 import urllib.request, json as _json
+                if _live_port_blocked("GSD_DAEMON_PORT", "18799"):
+                    raise RuntimeError("daemon route skipped in test mode")
                 port = os.environ.get("GSD_DAEMON_PORT", "18799")
                 url = f"http://127.0.0.1:{port}/api/memory/store"
                 body = _json.dumps({
@@ -1349,7 +1376,10 @@ def _mem_log_task_transition(item: dict, old_status: str, new_status: str, actor
 
 def _agent_performance_summary(agent_id: str):
     """Query agent performance from the daemon's pg_store (via HTTP).
-    Returns summary dict or None if PG unavailable."""
+    Returns summary dict or None if PG unavailable (and None, with no network call,
+    in test mode when GSD_AMAUTA_PORT is unset, 0 or the live default)."""
+    if _live_port_blocked("GSD_AMAUTA_PORT", "18799"):
+        return None
     try:
         import urllib.request, urllib.error
         port = int(os.environ.get("GSD_AMAUTA_PORT", "18799"))
@@ -1403,7 +1433,10 @@ def _calc_duration_minutes(item):
 
 
 def _record_agent_performance(agent_id, task_id, outcome, **kwargs):
-    """Record agent performance via daemon HTTP API. Best-effort."""
+    """Record agent performance via daemon HTTP API. Best-effort.
+    No-op, with no network call, in test mode when GSD_AMAUTA_PORT is unset, 0 or the live default."""
+    if _live_port_blocked("GSD_AMAUTA_PORT", "18799"):
+        return
     try:
         import urllib.request, urllib.error
         port = int(os.environ.get("GSD_AMAUTA_PORT", "18799"))
@@ -1424,8 +1457,11 @@ def _audit_log_event(task_id, event_type, agent_id=None, actor=None,
     """Write an immutable audit log entry via daemon HTTP API.
 
     Best-effort: never blocks or raises. Uses /api/audit/log endpoint.
-    Falls back silently if daemon is unreachable.
+    Falls back silently if daemon is unreachable. No-op, with no network call, in test
+    mode when GSD_AMAUTA_PORT is unset, 0 or the live default.
     """
+    if _live_port_blocked("GSD_AMAUTA_PORT", "18799"):
+        return
     try:
         import urllib.request
         port = int(os.environ.get("GSD_AMAUTA_PORT", "18799"))
@@ -2223,9 +2259,12 @@ def _rlm_query(query: str, doc_path: str = "", text: str = "", task_id: str = ""
     Uses /search for single-file queries, /query for directory queries.
     Falls back to querying project CWD when no doc_path is provided.
     Returns top-k chunk text concatenated, or empty string on failure.
-    Best-effort -- never raises.
+    Best-effort -- never raises. Returns "" with no network call in test mode when
+    GSD_RLM_PORT is unset, 0 or the live default (see _live_port_blocked).
     """
     import urllib.request, urllib.error, json as _json
+    if _live_port_blocked("GSD_RLM_PORT", "18798"):
+        return ""
     try:
         port = os.environ.get("GSD_RLM_PORT", "18798")
         base_url = f"http://127.0.0.1:{port}"
@@ -3132,7 +3171,7 @@ def _gitflow_globally_disabled() -> bool:
     try:
         cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 ".planning", "config.json")
-        with open(cfg_path) as f:
+        with open(cfg_path, encoding="utf-8") as f:
             wf = (json.load(f) or {}).get("workflow", {}) or {}
         if wf.get("gitflow") is False:
             return True
@@ -4482,7 +4521,7 @@ def cmd_atomize(args):
             subtask_titles = [s.strip() for s in re.split(r"[\n;]+", raw) if s.strip()]
         elif args.subtasks_file:
             import pathlib
-            lines = pathlib.Path(args.subtasks_file).read_text().splitlines()
+            lines = pathlib.Path(args.subtasks_file).read_text(encoding="utf-8").splitlines()
             subtask_titles = [l.strip() for l in lines if l.strip() and not l.startswith("#")]
 
         if not subtask_titles:
@@ -5859,7 +5898,7 @@ def cmd_export(args):
     data = load()
     out  = json.dumps(data, indent=2)
     if args.output:
-        Path(args.output).write_text(out)
+        Path(args.output).write_text(out, encoding="utf-8")
         print(c(f"Exported to {args.output}", GREEN))
     else:
         print(out)
@@ -5870,7 +5909,7 @@ def cmd_import(args):
         if not src.exists():
             print(c(f"File not found: {args.file}", RED)); sys.exit(1)
         try:
-            incoming = json.loads(src.read_text())
+            incoming = json.loads(src.read_text(encoding="utf-8"))
         except json.JSONDecodeError as e:
             print(c(f"Import file contains invalid JSON: {e}", RED)); sys.exit(1)
         # Schema validation: imported data must have 'items' list
@@ -6563,6 +6602,15 @@ def main():
 
 
 if __name__ == "__main__":
+    # Phase 88-13: UTF-8 stdio when the console code page is not (Windows cp1252); a no-op otherwise.
+    import os as _os, sys as _sys
+    _sys.path.append(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "services"))
+    try:
+        from _platform import setup_stdio
+    except ImportError:  # pragma: no cover - a tree without services/ on sys.path
+        def setup_stdio():  # type: ignore[misc]
+            return False
+    setup_stdio()
     main()
 
 # TK-2045: host-write access verification marker (no runtime effect)

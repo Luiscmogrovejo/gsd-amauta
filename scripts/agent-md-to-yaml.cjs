@@ -29,6 +29,20 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 
+/**
+ * Read a source file with CRLF normalised away. A Windows checkout (core.autocrlf=true) or a
+ * Windows editor writes \r\n; every parser below splits on '\n' and would keep a trailing \r
+ * on each captured value, which breaks the frontmatter delimiter and every field name.
+ * Same approach as get-shit-done/bin/lib/planning-drift.cjs readText().
+ *
+ * @param {string} file - path of a user-editable .yaml/.yml/.md source
+ * @returns {string} the file contents with every \r\n replaced by \n
+ * @throws {Error} when the file cannot be read (same as fs.readFileSync)
+ */
+function readSource(file) {
+  return fs.readFileSync(file, 'utf-8').replace(/\r\n/g, '\n');
+}
+
 // ─── HEADING_TO_KEY — Locked bidirectional map ──────────────────────────────
 // 9 human-readable '## ' headings + 1 synthetic metadata key.
 // FROZEN (Phase 52 COMPILE-01). Reordering without updating SECTION_KEY_ORDER
@@ -90,7 +104,7 @@ const SECTION_KEY_ORDER = [
  */
 function parseAgentFrontmatter(text) {
   const result = {};
-  const lines = text.split('\n');
+  const lines = text.split(/\r?\n/); // exported: the caller supplies the string, tolerate CRLF
   let i = 0;
 
   while (i < lines.length) {
@@ -307,7 +321,7 @@ function convert(inputMdPath, outputDir, opts) {
   // ── Read source .md ──
   let content;
   try {
-    content = fs.readFileSync(inputMdPath, 'utf8');
+    content = readSource(inputMdPath);
   } catch (err) {
     const e = new Error(`I/O error reading ${inputMdPath}: ${err.message}`);
     e.code = 'IO_ERROR';

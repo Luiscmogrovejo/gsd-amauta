@@ -123,7 +123,7 @@ def read_telemetry_config():
     defaults. Any read/parse failure (missing file, invalid JSON, missing
     key) returns pure defaults — never raises."""
     try:
-        with open(_config_path(), "r") as f:
+        with open(_config_path(), "r", encoding="utf-8") as f:
             parsed = json.load(f)
         section = parsed.get("telemetry") if isinstance(parsed, dict) else None
         section = section if isinstance(section, dict) else {}
@@ -174,7 +174,7 @@ def read_token_budget_config():
         "action"} merged over defaults.
     """
     try:
-        with open(_config_path(), "r") as f:
+        with open(_config_path(), "r", encoding="utf-8") as f:
             parsed = json.load(f)
         section = parsed.get("token_budget") if isinstance(parsed, dict) else None
         section = section if isinstance(section, dict) else {}
@@ -361,7 +361,7 @@ def emit_event(event_type, payload=None):
 
         try:
             os.makedirs(os.path.dirname(b_path), exist_ok=True)
-            with open(b_path, "a") as f:
+            with open(b_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(event) + "\n")
         except Exception:
             return {"emitted": False, "reason": "write_failed"}
@@ -369,12 +369,12 @@ def emit_event(event_type, payload=None):
         # Enforce the bounded cap — oldest lines dropped first.
         try:
             cap = _buffer_cap()
-            with open(b_path, "r") as f:
+            with open(b_path, "r", encoding="utf-8") as f:
                 raw = f.read()
             lines = [l for l in raw.split("\n") if l.strip()]
             if len(lines) > cap:
                 kept = lines[len(lines) - cap:]
-                with open(b_path, "w") as f:
+                with open(b_path, "w", encoding="utf-8") as f:
                     f.write("\n".join(kept) + "\n")
         except Exception:
             # Fail-open: cap enforcement failing must never block emit success.

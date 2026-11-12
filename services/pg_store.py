@@ -524,7 +524,7 @@ def load_tag_rules():
     for p in candidates:
         try:
             if os.path.exists(p):
-                with open(p, "r") as f:
+                with open(p, "r", encoding="utf-8") as f:
                     _TAG_RULES_CACHE = json.load(f)
                 return _TAG_RULES_CACHE
         except Exception:
@@ -2211,7 +2211,7 @@ class PGStore:
         if not os.path.exists(path):
             return []
         try:
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 items = json.load(f)
             return items if isinstance(items, list) else []
         except (json.JSONDecodeError, OSError):
@@ -2229,7 +2229,7 @@ class PGStore:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         tmp = path + ".tmp"
         try:
-            with open(tmp, "w") as f:
+            with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(items, f)
             os.replace(tmp, path)
         except OSError as e:

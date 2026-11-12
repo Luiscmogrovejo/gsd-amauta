@@ -303,7 +303,7 @@ def load_capability_catalog(force_reload: bool = False) -> dict:
             continue
         try:
             if os.path.exists(p):
-                with open(p, "r") as f:
+                with open(p, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 if data.get("catalog_version") != CATALOG_VERSION and not _CATALOG_VERSION_WARNED:
                     print(

@@ -34,6 +34,20 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
+/**
+ * Read a source file with CRLF normalised away. A Windows checkout (core.autocrlf=true) or a
+ * Windows editor writes \r\n; every parser below splits on '\n' and would keep a trailing \r
+ * on each captured value, which breaks the frontmatter delimiter and every field name.
+ * Same approach as get-shit-done/bin/lib/planning-drift.cjs readText().
+ *
+ * @param {string} file - path of a user-editable .yaml/.yml/.md source
+ * @returns {string} the file contents with every \r\n replaced by \n
+ * @throws {Error} when the file cannot be read (same as fs.readFileSync)
+ */
+function readSource(file) {
+  return fs.readFileSync(file, 'utf-8').replace(/\r\n/g, '\n');
+}
+
 // ─── HOOKS_COMMENT_BLOCK ─────────────────────────────────────────────────────
 // Verbatim commented hooks block emitted for claude-code target agents that had
 // this block in their pre-Phase-52 agents/*.md frontmatter.
@@ -218,7 +232,7 @@ function loadPlatformCodes(refPath) {
 
   let raw;
   try {
-    raw = fs.readFileSync(yamlPath, 'utf8');
+    raw = readSource(yamlPath);
   } catch (_e) {
     return {};
   }
@@ -301,7 +315,7 @@ for (const [ideId, codes] of Object.entries(_platformCodes)) {
  * @returns {{ frontmatter: Object, body_preamble: string|null, sections: Object }}
  */
 function parseAgentYaml(yamlText) {
-  const lines = yamlText.split('\n');
+  const lines = yamlText.split(/\r?\n/); // caller-supplied string: tolerate CRLF here too
   const frontmatter = {};
   let body_preamble = null;
   const sections = {};
@@ -811,7 +825,7 @@ function validate(agentDir) {
   }
   let content;
   try {
-    content = fs.readFileSync(agentPath, 'utf8');
+    content = readSource(agentPath);
   } catch (e) {
     return { ok: false, errors: [`Failed to read ${agentPath}: ${e.message}`] };
   }
@@ -930,7 +944,7 @@ function compile(target, opts) {
   for (const agentMeta of agents) {
     let yamlContent;
     try {
-      yamlContent = fs.readFileSync(agentMeta.path, 'utf8');
+      yamlContent = readSource(agentMeta.path);
     } catch (e) {
       const msg = `Failed to read ${agentMeta.path}: ${e.message}`;
       process.stderr.write(`WARN [manifest_skip] ${agentMeta.name}: ${msg}\n`);

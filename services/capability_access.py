@@ -253,7 +253,7 @@ def _buffer_access(record):
     try:
         path = buffer_path()
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "a") as f:
+        with open(path, "a", encoding="utf-8") as f:
             f.write(json.dumps(record) + "\n")
         return True
     except Exception:
@@ -275,7 +275,7 @@ def flush_buffer(store, max_lines=1000):
         return {"flushed": 0}
 
     try:
-        with open(path, "r") as f:
+        with open(path, "r", encoding="utf-8") as f:
             lines = f.readlines()
     except Exception:
         return {"flushed": 0}
@@ -302,7 +302,7 @@ def flush_buffer(store, max_lines=1000):
                 },
             )
             flushed += 1
-        with open(path, "w") as f:
+        with open(path, "w", encoding="utf-8") as f:
             f.writelines(remainder)
         return {"flushed": flushed}
     except Exception as e:
@@ -461,7 +461,7 @@ def audit_diff(store=None, agents_root=None, catalog=None, lookback_limit=10000)
     try:
         bpath = buffer_path()
         if os.path.isfile(bpath):
-            with open(bpath, "r") as f:
+            with open(bpath, "r", encoding="utf-8") as f:
                 buffered_pending = sum(1 for _ in f)
     except Exception:
         buffered_pending = 0

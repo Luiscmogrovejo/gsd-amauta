@@ -88,7 +88,7 @@ def load_patterns(force_reload=False):
             continue
         try:
             if os.path.exists(p):
-                with open(p, "r") as f:
+                with open(p, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 raw_patterns = data.get("patterns", [])
                 compiled = []
