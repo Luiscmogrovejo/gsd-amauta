@@ -1,0 +1,9 @@
+{
+  "//": "Phase 88 plan 88-15. The c8 configuration lived in the test:coverage npm script as command-line flags with SINGLE-QUOTED globs. npm runs a script through cmd.exe on Windows, and cmd does not strip single quotes, so c8 received a literal \"'get-shit-done/bin/lib/*.cjs'\" that matched nothing: the Windows cells reported 0% for every file and scripts/coverage-ratchet.cjs then failed on a coverage-summary.json with no total.lines.pct. Nobody saw it because the test step failed first and the ratchet step was skipped. In a config file there is no shell between the value and c8, on any platform.",
+  "check-coverage": true,
+  "lines": 70,
+  "reporter": ["text", "json-summary"],
+  "include": ["get-shit-done/bin/lib/*.cjs"],
+  "exclude": ["tests/**"],
+  "all": true
+}
