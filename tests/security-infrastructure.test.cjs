@@ -286,25 +286,86 @@ describe('Migration Chain Integrity', () => {
 // ═══════════════════════════════════════════════════════
 
 describe('Backup/Restore Security', () => {
-  test('backup.sh uses PGPASSWORD env var instead of DSN in command', () => {
-    const script = fs.readFileSync(path.join(ROOT, 'scripts', 'backup.sh'), 'utf-8');
-    assert.ok(script.includes('PGPASSWORD='), 'Must use PGPASSWORD env var');
-    assert.ok(script.includes('-h "$_PG_HOST"'), 'Must use -h flag with extracted host');
-    assert.ok(script.includes('-U "$_PG_USER"'), 'Must use -U flag with extracted user');
-    // Should NOT pass full DSN to pg_dump
-    assert.ok(!script.includes('pg_dump "$PG_URL"'), 'Must NOT pass full DSN to pg_dump');
+  // Phase 89 plan 89-04 RE-POINTED these three, in the same way plan 88-15
+  // re-pointed the two Windows-locking tests below: the subject was retired
+  // because the contract inverted, so the assertions follow the contract rather
+  // than being deleted with it.
+  //
+  // They used to assert that `scripts/backup.sh` and `scripts/restore.sh`
+  // carried the password in PGPASSWORD rather than in the pg_dump/psql argv, and
+  // that backup.sh rotated `memory_*.jsonl`. All three were true, and all three
+  // were beside the point:
+  //
+  //   * backup.sh:8 and restore.sh:7 hard-coded a CREDENTIALED DSN as the
+  //     default, so the one secret the PGPASSWORD discipline protected was
+  //     sitting in the file two lines above it;
+  //   * `pg_dump … && echo ok || echo skipped` made a FAILED dump exit 0, so the
+  //     rotation these tests checked was rotating files that might be empty;
+  //   * restore.sh piped into psql with no ON_ERROR_STOP and stderr discarded,
+  //     so a PARTIAL restore printed "restored".
+  //
+  // Both scripts are now loud refusals that exit 2, and the real work moved to
+  // `services/backup_snapshot.py`. The security property these tests existed for
+  // is therefore asserted THERE, where a connection is actually made, and the
+  // retirement is asserted here so neither script can quietly come back.
+  const backupSh = () => fs.readFileSync(path.join(ROOT, 'scripts', 'backup.sh'), 'utf-8');
+  const restoreSh = () => fs.readFileSync(path.join(ROOT, 'scripts', 'restore.sh'), 'utf-8');
+
+  /** The executable part of a retired script: everything outside the quoted refusal heredoc. */
+  function executablePart(text) {
+    const lines = text.split(/\r?\n/);
+    const start = lines.findIndex((l) => l.includes("<<'REFUSAL'"));
+    const end = lines.findIndex((l) => l.trim() === 'REFUSAL');
+    assert.ok(start >= 0 && end > start, 'the refusal heredoc must be present');
+    return lines
+      .filter((l, i) => (i < start || i > end) && !l.trim().startsWith('#'))
+      .join('\n');
+  }
+
+  test('backup.sh is retired: it connects to nothing and exits non-zero', () => {
+    const script = backupSh();
+    assert.ok(script.includes('RETIRED'), 'must say so');
+    assert.ok(script.includes('backup_snapshot'), 'must name the replacement');
+    // The credentialed literal the PGPASSWORD discipline could never protect.
+    assert.ok(!script.includes('gsd:gsd@'), 'the credentialed DSN literal must be gone');
+    const body = executablePart(script);
+    assert.ok(!body.includes('pg_dump'), 'must not run pg_dump at all any more');
+    assert.ok(!body.includes('PGPASSWORD'), 'nothing to protect: it connects to nothing');
+    assert.ok(!body.includes('||'), 'no `||` may defeat set -e in the executable part');
+    assert.ok(body.includes('exit 2'), 'must exit 2');
+    // And it names the defect that made the old rotation worthless.
+    assert.ok(script.includes('echo skipped'), 'must name the exit-0-on-failure defect');
   });
 
-  test('restore.sh uses PGPASSWORD env var instead of DSN in command', () => {
-    const script = fs.readFileSync(path.join(ROOT, 'scripts', 'restore.sh'), 'utf-8');
-    assert.ok(script.includes('PGPASSWORD='), 'Must use PGPASSWORD env var');
-    // Should NOT pass full DSN to psql
-    assert.ok(!script.includes('psql "$PG_URL"'), 'Must NOT pass full DSN to psql');
+  test('restore.sh is retired: it connects to nothing and exits non-zero', () => {
+    const script = restoreSh();
+    assert.ok(script.includes('RETIRED'), 'must say so');
+    assert.ok(script.includes('backup_snapshot'), 'must name the replacement');
+    assert.ok(!script.includes('gsd:gsd@'), 'the credentialed DSN literal must be gone');
+    const body = executablePart(script);
+    assert.ok(!body.includes('psql'), 'must not run psql at all any more');
+    assert.ok(!body.includes('PGPASSWORD'), 'nothing to protect: it connects to nothing');
+    assert.ok(!body.includes('||'), 'no `||` may defeat set -e in the executable part');
+    assert.ok(body.includes('exit 2'), 'must exit 2');
+    assert.ok(script.includes('ON_ERROR_STOP'), 'must name the missing-guard defect');
   });
 
-  test('backup.sh rotates memory.jsonl backups', () => {
-    const script = fs.readFileSync(path.join(ROOT, 'scripts', 'backup.sh'), 'utf-8');
-    assert.ok(script.includes('memory_*.jsonl'), 'Must rotate memory backups');
+  test('the replacement keeps the password out of argv and holds no DSN literal', () => {
+    const module = fs.readFileSync(path.join(ROOT, 'services', 'backup_snapshot.py'), 'utf-8');
+    // This is the property the two retired tests existed for, asserted where a
+    // connection is really made.
+    assert.ok(module.includes('PGPASSWORD'), 'the password travels in the environment');
+    assert.ok(module.includes('"-h", parts["host"]'), 'host comes from the parsed DSN');
+    assert.ok(module.includes('"-U", parts["user"]'), 'user comes from the parsed DSN');
+    assert.ok(!module.includes('postgresql://'), 'and no DSN literal survives anywhere');
+    // A failed dump is a FAILURE, which is what `&& echo ok || echo skipped` was not.
+    assert.ok(module.includes('pg_dump_failed'), 'a non-zero dump exit is a typed failure');
+    // A partial restore is a FAILURE, which is what a missing ON_ERROR_STOP was not.
+    assert.ok(module.includes('--exit-on-error'), 'pg_restore stops on the first error');
+    assert.ok(module.includes('restore_failed'), 'and reports it as a typed failure');
+    // Retention replaced the `ls | tail | xargs rm` rotation the third test checked.
+    assert.ok(module.includes('def prune('), 'retention is a verb with a dry run');
+    assert.ok(module.includes('AUTO_KEEP'), 'and auto still keeps a bounded number');
   });
 });
 

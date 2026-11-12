@@ -46,6 +46,13 @@ try:
 except ImportError:  # pragma: no cover - script-launched from services/
     from pg_dsn import local_docker_dsn, mask_dsn, require_dsn
 
+try:
+    from services import backup_guard
+    from services.backup_snapshot import dsn_fingerprint
+except ImportError:  # pragma: no cover - script-launched from services/
+    import backup_guard
+    from backup_snapshot import dsn_fingerprint
+
 DEFAULT_MIGRATIONS_DIR = os.path.join(_REPO_ROOT, "migrations")
 
 #: ``NNN-slug.sql`` is an UP migration; ``NNN-slug-DOWN.sql`` is its rollback.
@@ -372,14 +379,43 @@ def plan(conn, migrations_dir=DEFAULT_MIGRATIONS_DIR):
 
 
 def auto_baseline(conn, migrations_dir=DEFAULT_MIGRATIONS_DIR, dry_run=False,
-                  log=print):
+                  log=print, dsn=None, backups_dir=None,
+                  allow_stale_backup=False, no_backup_check=False, env=None):
     """Record, as applied, the migrations the live schema already satisfies.
 
     Called once on a database that carries GSD schema but has no tracking
     table — the fingerprint of the old untracked psql loop, which is exactly
     the state of the real ``gsd-pg-data`` volume. Returns the list of
     filenames baselined.
+
+    Plan 89-04: baselining WRITES ``schema_migrations`` rows, so it is a
+    data-touching step and the backup guard applies — except under
+    ``dry_run``, which records nothing and is never gated.
+
+    Args:
+        conn: an open connection.
+        migrations_dir: where the migration files live.
+        dry_run: classify without recording; never gated.
+        log: a line sink.
+        dsn: the target DSN, for the guard's fingerprint and the override row.
+        backups_dir: where the guard looks for snapshots.
+        allow_stale_backup: accept an older snapshot, and record that.
+        no_backup_check: skip the guard, print the consequence, record it.
+        env: the environment to read.
+
+    Returns:
+        list[str]: the filenames baselined.
+
+    Raises:
+        backup_guard.BackupRequired: when the guard is armed and no verified
+            snapshot newer than 24 hours covers this database.
     """
+    if not dry_run:
+        backup_guard.require_recent_backup(
+            step="migrations", backups_dir=backups_dir,
+            dsn_fingerprint=dsn_fingerprint(dsn) if dsn else None,
+            env=env, allow_stale_backup=allow_stale_backup,
+            no_backup_check=no_backup_check, dsn=dsn, log=log)
     detected, unknown = detect_applied_by_schema(conn, migrations_dir)
     for filename in unknown:
         log(f"  NOTE  {filename} has no schema sentinel — treated as pending")
@@ -393,7 +429,8 @@ def auto_baseline(conn, migrations_dir=DEFAULT_MIGRATIONS_DIR, dry_run=False,
 
 def apply_migrations(dsn=None, migrations_dir=DEFAULT_MIGRATIONS_DIR,
                      dry_run=False, baseline=False, auto_baseline_enabled=True,
-                     log=print):
+                     log=print, backups_dir=None, allow_stale_backup=False,
+                     no_backup_check=False, env=None):
     """Apply every pending UP migration, each in its own transaction.
 
     Args:
@@ -402,11 +439,32 @@ def apply_migrations(dsn=None, migrations_dir=DEFAULT_MIGRATIONS_DIR,
             GSD schema, record the migrations whose schema sentinels are all
             satisfied (see MIGRATION_SENTINELS) and apply only the rest.
             Default True. Pass False to apply every file regardless.
+        backups_dir: where the backup guard looks for snapshots.
+        allow_stale_backup: accept a snapshot older than 24 hours, and record
+            that override in the audit log and the install record.
+        no_backup_check: skip the guard entirely; prints the full consequence
+            sentence and records the override.
+        env: the environment the guard reads.
 
     Returns a result dict. Raises :class:`MigrationError` on the first failure
     (after rolling that file back); earlier files stay applied and recorded.
+
+    Raises:
+        backup_guard.BackupRequired: when the guard is armed and no verified
+            snapshot newer than 24 hours covers this database. The refusal is
+            typed and names the one command that fixes it.
+
+    Plan 89-04: the guard runs HERE — after the DSN is resolved and **before
+    the first BEGIN**, so a refusal has not even opened a connection, let alone
+    started a transaction. ``dry_run`` is never gated.
     """
     dsn = require_dsn(dsn, component="migrate_runner")
+    if not dry_run:
+        backup_guard.require_recent_backup(
+            step="migrations", backups_dir=backups_dir,
+            dsn_fingerprint=dsn_fingerprint(dsn), env=env,
+            allow_stale_backup=allow_stale_backup,
+            no_backup_check=no_backup_check, dsn=dsn, log=log)
     conn = _connect(dsn)
     try:
         pre_migrated = looks_pre_migrated(conn) and not tracking_table_exists(conn)
@@ -422,7 +480,10 @@ def apply_migrations(dsn=None, migrations_dir=DEFAULT_MIGRATIONS_DIR,
                 "already applied."
             )
             baselined = auto_baseline(conn, migrations_dir, dry_run=dry_run,
-                                      log=log)
+                                      log=log, dsn=dsn,
+                                      backups_dir=backups_dir,
+                                      allow_stale_backup=allow_stale_backup,
+                                      no_backup_check=no_backup_check, env=env)
             log(f"  baselined from schema: {len(baselined)} migration(s)"
                 + (f" (through {baselined[-1]})" if baselined else ""))
 
@@ -557,6 +618,20 @@ def main(argv=None):
                              "migrations are already applied from the schema — "
                              "apply every file (safe but slow: rebuilds BM25 "
                              "indexes).")
+    parser.add_argument("--backups-dir", default=None,
+                        help="Where the backup guard looks for verified "
+                             "snapshots. Default: the backup module's own "
+                             "resolution (AMAUTA_DATA_DIR/backups, else "
+                             "<home>/.amauta/backups).")
+    parser.add_argument("--allow-stale-backup", action="store_true",
+                        help="Proceed with a verified snapshot OLDER than 24 "
+                             "hours. Explicit, and recorded in the audit log "
+                             "and the install record as last_override.")
+    parser.add_argument("--no-backup-check", action="store_true",
+                        help="Disable the backup guard for this run. Prints "
+                             "the full consequence sentence and records the "
+                             "override. --dry-run and --status are never "
+                             "gated, so neither needs this flag.")
     parser.add_argument("--json", action="store_true", help="Machine-readable output.")
     args = parser.parse_args(argv)
     if args.local_docker and not args.dsn:
@@ -596,6 +671,9 @@ def main(argv=None):
             baseline=args.baseline,
             auto_baseline_enabled=not args.no_auto_baseline,
             log=log,
+            backups_dir=args.backups_dir,
+            allow_stale_backup=args.allow_stale_backup,
+            no_backup_check=args.no_backup_check,
         )
         if args.json:
             print(_json.dumps(result, indent=2, default=str))
@@ -607,6 +685,13 @@ def main(argv=None):
                 f"{len(result['drifted'])} drifted"
             )
         return 0
+    except backup_guard.BackupRequired as exc:
+        # Plan 89-04: a typed refusal, so bin/init.cjs (plan 89-11) and the
+        # cutover can branch on the payload rather than on a message.
+        if args.json:
+            print(_json.dumps(exc.payload, indent=2, default=str))
+        print(f"ERROR: {exc.payload['message']}", file=sys.stderr)
+        return 1
     except MigrationError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1

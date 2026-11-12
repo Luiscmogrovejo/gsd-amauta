@@ -260,9 +260,20 @@ def _is_setup_call(stmt):
     )
 
 
+# Plan 89-04 added `services/backup_snapshot.py`, an 18th entry point. The
+# count is a CENSUS FLOOR, not a cap: it exists so a new `__main__` cannot ship
+# without the UTF-8 prelude, and so one cannot quietly disappear. A plan that
+# adds or removes an entry point updates this number and says so in its record.
+EXPECTED_ENTRY_POINTS = 18
+
+
 def test_every_entry_point_sets_up_stdio():
     entries = _entry_points()
-    assert len(entries) == 17, "expected 17 entry points, found %d: %s" % (len(entries), [e[0] for e in entries])
+    assert len(entries) == EXPECTED_ENTRY_POINTS, (
+        "expected %d entry points, found %d: %s"
+        % (EXPECTED_ENTRY_POINTS, len(entries), [e[0] for e in entries]))
+    assert "services/backup_snapshot.py" in [e[0] for e in entries], (
+        "plan 89-04's backup verb is an entry point and must carry the prelude")
     for rel, node in entries:
         idx = [i for i, st in enumerate(node.body) if _is_setup_call(st)]
         assert idx, "%s: no setup_stdio() call directly in the __main__ block" % rel

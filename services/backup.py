@@ -1,10 +1,36 @@
 #!/usr/bin/env python3
 """
-GSD-Amauta Backup/Restore Service (Phase 8: Data Durability)
+GSD-Amauta PARTIAL LOGICAL EXPORT (Phase 8: Data Durability)
 
-Exports all persistent data (memory, tasks, SKB, validations, agent performance)
-to compressed JSON. Restores with merge/replace semantics. Verifies integrity
-via SHA-256 checksums and count validation.
+THIS IS NOT A RESTORABLE SNAPSHOT. Read this before reaching for it.
+
+``BackupManager`` writes a gzipped JSON export of SIX logical table types
+(memory, tasks, SKB, validations, agent performance, audit) — that is 6 of the
+~22 tables a PostgreSQL install carries — and **it strips every embedding on the
+way out**. The stripping happens at three sites in ``services/pg_store.py`` —
+line 456 (``_score_core``), line 2982 (the memory-search scorer) and line 3281
+(``PGStore._rows_to_dicts``, the export path this module depends on) — each
+doing ``d.pop("embedding", None)``. Measured on 2026-11-12: a
+``~/.amauta/backups/gsd-auto-*.json.gz`` file contains the string
+``"embedding"`` exactly ZERO times and covers 6 tables.
+
+So a restore from one of these files silently loses every vector and every table
+it never covered. **That is why it is not a restorable snapshot, and why the
+existing ``gsd-auto-*.json.gz`` files are not backups** (Phase 89 decision D9).
+
+What to use instead: ``services/backup_snapshot.py``. It takes a
+``pg_dump -Fc`` of the whole database, copies the SQLite file through the
+online-backup API, copies ``tasks.json`` under the product's own lock, writes a
+manifest with per-file SHA-256 and a per-table row/embedding/dimension census,
+and VERIFIES its own output before it writes ``verified_at``. Its CI test
+restores a dropped database and asserts the vectors came back byte-identical —
+the assertion that fails against this module and the reason it was replaced.
+
+This module is kept, unchanged in behaviour, because the daemon's DUR-05
+``auto_backup`` still calls it and because its output is a useful logical export
+of the six table types it does cover. The limitation is pinned by
+``tests/test_89_04_restore_e2e.py``, so a future change that stops stripping
+embeddings must update this label in the same commit.
 
 Works with both PGStore and SQLiteStore via their export_all_* / import_* methods.
 

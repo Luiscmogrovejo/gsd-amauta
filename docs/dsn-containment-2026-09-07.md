@@ -120,6 +120,12 @@ daemon being *started*, but nothing stops one being *called*.
   Note **5432**, not 5433: a different instance from the one in the incident.
   This script's purpose is destructive, and it is not covered.
 - `scripts/backup.sh:8`, `scripts/restore.sh:7` — `${GSD_POSTGRES_URL:-postgresql://gsd:…@127.0.0.1:5433/…}`.
+  **CLOSED 2026-11-12 by Phase 89 plan 89-04.** Both scripts are retired: each
+  body is now a refusal that names this literal as defect 1, prints the
+  replacement `services/backup_snapshot.py` command and exits 2. The
+  replacement holds no DSN literal at all and records only
+  `dsn_fingerprint = sha256("host:port/database")[:16]` — never a DSN, never a
+  password. See `docs/BACKUP-AND-RESTORE.md`.
 - `bin/install.js:3047,3142,3169,3190` — the installer, which is *supposed* to
   know a default; it writes config rather than connecting to do work.
 - `services/infra_detect.py:104,108,126,199` — a detector whose job is to probe.

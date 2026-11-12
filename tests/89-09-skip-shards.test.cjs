@@ -190,7 +190,12 @@ const REMOVED_SINCE_SHARDING = [
 // (FND-11) added 56 (tests/skip-exceptions.d/89-02.json): PostgreSQL arms on the two cells
 // that have no disposable database (darwin, win32). Task 89-07-04 removes them and moves
 // each tuple to REMOVED_SINCE_SHARDING.
-const ADDED_SINCE_SHARDING = [
+//
+// Plan 89-04 renamed this constant and unions its own declaration into
+// ADDED_SINCE_SHARDING below. Three lanes now declare entries here, and git resolves a
+// conflict in this file by taking ONE side -- which is exactly the loss the set-equality
+// proof below exists to catch, so every lane's entries are kept rather than merged away.
+const ADDED_BY_MASTER_LANES = [
   [
     "test_cell1_alias_qualified_filter_with_embedding_returns_rows",
     "tests/test_89_01_bm25_alias_matrix.py",
@@ -984,6 +989,54 @@ const ADDED_SINCE_SHARDING = [
     "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
   ],
 ];
+/**
+ * The same shape, for entries added since the migration.
+ *
+ * Plan 89-04 added 51 entries, in two groups that are closed by two different
+ * things:
+ *
+ *   * 46 `pg-no-disposable-database` — 23 Postgres-gated tests (15 in
+ *     `tests/test_89_04_restore_e2e.py`, 8 in
+ *     `tests/test_89_04_backup_guard.py`) times the two cells that carry no
+ *     PostgreSQL at all, `darwin` and `win32`. Removed by task 89-07-04.
+ *   * 5 `pg-client-major-mismatch` on `linux` — the five tests that perform a
+ *     real, SUCCESSFUL `pg_restore`. The Linux cell HAS a database; what it
+ *     lacks is a client of the server's own major (measured: 18.6 against
+ *     16.14). Removed by plan 89-07, which owns the workflow.
+ *
+ * They are DERIVED from the shard that owns them rather than copied here as 51
+ * literal nine-element arrays, for two reasons: 459 hand-copied strings is a
+ * transcription hazard with no upside, and the proof below keeps its full
+ * strength for every OTHER shard either way — removing this plan's own entries
+ * from the union is exactly what a literal list would do.
+ *
+ * What the literal list did give is a COUNT nobody can change silently, so the
+ * count is pinned here instead (`ADDED_EXPECTED`): if `89-04.json` grows or
+ * shrinks, this file fails and the change has to be declared.
+ */
+const ADDED_BY_89_04 = JSON.parse(
+  fs.readFileSync(path.join(DIR, '89-04.json'), 'utf8')
+).map((e) => FIELDS.map((f) => e[f]));
+
+/** How many entries plan 89-04 declared: 23 tests x 2 cells, plus 5 on linux. */
+const ADDED_EXPECTED = 51;
+
+/**
+ * The union of every lane's declarations.
+ *
+ * Plans 89-01, 89-02 and 89-04 each added entries in parallel, and git resolves
+ * a conflict in this file by taking ONE side. Every side is kept: dropping any
+ * of them would make the set-equality proof below report the surviving plans'
+ * entries as an undeclared gain, which is precisely the loss the proof exists
+ * to catch.
+ *
+ * `ADDED_BY_MASTER_LANES` holds 89-01's 16 plus 89-02's 56 as literal tuples,
+ * exactly as they arrived on master; 89-04 derives its 51 from the shard it owns
+ * and pins that count separately (`ADDED_EXPECTED`). The literal count is NOT
+ * hard-coded here — it is compared against those plans' own shards, so it cannot
+ * go stale when they edit them.
+ */
+const ADDED_SINCE_SHARDING = [...ADDED_BY_MASTER_LANES, ...ADDED_BY_89_04];
 
 const TMP_DIRS = [];
 
@@ -1062,6 +1115,55 @@ describe('89-09 the shard migration lost nothing', () => {
       false,
       'the monolith is deleted; the shards are the ledger'
     );
+  });
+
+  test('the declared additions are exactly plan 89-04\'s 51, all in its own shard', () => {
+    assert.strictEqual(ADDED_BY_89_04.length, ADDED_EXPECTED,
+      'tests/skip-exceptions.d/89-04.json changed size without updating ADDED_EXPECTED');
+    // And both lanes' declarations survived the merge of this file. 89-02's 48
+    // literal tuples plus 89-04's 51 derived ones: if either side had been
+    // dropped, the set-equality proof below would blame the surviving plan for
+    // an undeclared gain.
+    // Counted against the OTHER lanes' own shards rather than against a
+    // literal, so this assertion cannot go stale when they edit them.
+    const otherLanes = ['89-01.json', '89-02.json'].reduce((n, f) =>
+      n + JSON.parse(fs.readFileSync(path.join(DIR, f), 'utf8')).length, 0);
+    assert.strictEqual(ADDED_BY_MASTER_LANES.length, otherLanes,
+      "a lane's declaration no longer matches its own shard: 89-01 + 89-02 "
+      + `shards hold ${otherLanes}, the declaration holds ${ADDED_BY_MASTER_LANES.length}`);
+    assert.strictEqual(ADDED_SINCE_SHARDING.length,
+      ADDED_BY_MASTER_LANES.length + ADDED_EXPECTED);
+    const at = (t, f) => t[FIELDS.indexOf(f)];
+    const platforms = new Set(ADDED_BY_89_04.map((t) => at(t, 'platform')));
+    assert.deepStrictEqual([...platforms].sort(), ['darwin', 'linux', 'win32']);
+    const classes = new Set(ADDED_BY_89_04.map((t) => at(t, 'reason_class')));
+    assert.deepStrictEqual([...classes].sort(),
+      ['pg-client-major-mismatch', 'pg-no-disposable-database']);
+    const files = new Set(ADDED_BY_89_04.map((t) => at(t, 'file')));
+    assert.deepStrictEqual([...files].sort(),
+      ['tests/test_89_04_backup_guard.py', 'tests/test_89_04_restore_e2e.py'],
+      'tests/test_89_04_backup_snapshot.py needs no entry: it reaches for no database');
+
+    // The two groups, counted apart, because they are closed by two different
+    // things and a change to either must be visible.
+    const noDb = ADDED_BY_89_04.filter((t) => at(t, 'reason_class') === 'pg-no-disposable-database');
+    const mismatch = ADDED_BY_89_04.filter((t) => at(t, 'reason_class') === 'pg-client-major-mismatch');
+    assert.strictEqual(noDb.length, 46, '23 tests x darwin + win32');
+    assert.strictEqual(mismatch.length, 5, 'the five tests that perform a real restore');
+    assert.deepStrictEqual([...new Set(noDb.map((t) => at(t, 'platform')))].sort(),
+      ['darwin', 'win32']);
+    assert.deepStrictEqual([...new Set(mismatch.map((t) => at(t, 'platform')))], ['linux'],
+      'the Linux cell HAS a database; only its client major is wrong');
+    for (const tuple of mismatch) {
+      assert.match(at(tuple, 'exit_criterion'), /postgresql-client-16/,
+        'the mismatch entries must name the install step that removes them');
+    }
+    for (const tuple of ADDED_BY_89_04) {
+      assert.match(at(tuple, 'exit_criterion'), /89-07/,
+        'every entry must name the plan that removes it');
+      assert.strictEqual(at(tuple, 'owner_phase'), 89);
+      assert.strictEqual(at(tuple, 'context'), 'any');
+    }
   });
 
   test('the union is SET-EQUAL to the pre-shard ledger on the full nine-field tuple', () => {

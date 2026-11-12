@@ -1,41 +1,35 @@
 #!/usr/bin/env bash
-# Amauta restore script — restores from a backup
+# RETIRED by Phase 89 plan 89-04. Kept as a loud refusal rather than deleted,
+# so operator muscle memory and any stale doc link meet an explanation instead
+# of "command not found". Replacement:
+#   python3 services/backup_snapshot.py restore <snapshot-dir> --mode replace --confirm
+# See docs/BACKUP-AND-RESTORE.md.
 set -euo pipefail
 
-BACKUP_DIR="${AMAUTA_BACKUP_DIR:-./backups}"
-DATA_DIR="${AMAUTA_DATA_DIR:-.}"
-PG_URL="${GSD_POSTGRES_URL:-postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta}"
+cat >&2 <<'REFUSAL'
+scripts/restore.sh is RETIRED and will not run. It could report success after
+restoring only part of a database.
 
-# Extract components for safe psql usage (avoid credentials in process listing)
-_PG_HOST=$(echo "$PG_URL" | sed -E 's|.*@([^:/]+).*|\1|')
-_PG_PORT=$(echo "$PG_URL" | sed -E 's|.*:([0-9]+)/.*|\1|')
-_PG_DB=$(echo "$PG_URL" | sed -E 's|.*/([^?]+).*|\1|')
-_PG_USER=$(echo "$PG_URL" | sed -E 's|.*://([^:]+):.*|\1|')
-_PG_PASS=$(echo "$PG_URL" | sed -E 's|.*://[^:]+:([^@]+)@.*|\1|')
+Three measured defects:
+  1. line 7 hard-coded a CREDENTIALED DSN as the default, the same literal
+     scripts/backup.sh carried.
+  2. `psql < dump` ran with NO ON_ERROR_STOP and with stderr sent to
+     /dev/null, so a PARTIAL restore printed "[restore] PostgreSQL restored".
+     A half-restored database that reports success is how data loss becomes
+     invisible.
+  3. `cp tasks.json tasks.json.pre-restore || true` silently skipped the
+     pre-restore copy, so a failed restore had nothing to go back to.
 
-if [ $# -lt 1 ]; then
-  echo "Usage: restore.sh <timestamp>"
-  echo "Available backups:"
-  ls -1 "$BACKUP_DIR"/tasks_*.json 2>/dev/null | sed 's/.*tasks_//;s/\.json//' | sort -r | head -10
-  exit 1
-fi
+Use the verb instead. It refuses a snapshot that carries no verified_at AND one
+that fails a fresh verification; it uses pg_restore --clean --if-exists
+--exit-on-error, so a partial restore is a FAILURE and never a "restored"
+message; and it takes a reason=pre-restore snapshot of the target before it
+writes anything, unless you pass --no-pre-restore-snapshot, which is recorded:
 
-TS="$1"
+  python3 services/backup_snapshot.py list
+  python3 services/backup_snapshot.py verify <snapshot-dir>
+  python3 services/backup_snapshot.py restore <snapshot-dir> --mode replace --confirm
 
-# Restore tasks.json
-if [ -f "$BACKUP_DIR/tasks_${TS}.json" ]; then
-  cp "$DATA_DIR/tasks.json" "$DATA_DIR/tasks.json.pre-restore" 2>/dev/null || true
-  cp "$BACKUP_DIR/tasks_${TS}.json" "$DATA_DIR/tasks.json"
-  echo "[restore] tasks.json restored from ${TS}"
-else
-  echo "[restore] No tasks backup found for ${TS}"
-fi
-
-# Restore PostgreSQL
-if [ -f "$BACKUP_DIR/pg_dump_${TS}.sql" ] && command -v psql &>/dev/null; then
-  PGPASSWORD="$_PG_PASS" psql -h "$_PG_HOST" -p "$_PG_PORT" -U "$_PG_USER" "$_PG_DB" < "$BACKUP_DIR/pg_dump_${TS}.sql" 2>/dev/null && \
-    echo "[restore] PostgreSQL restored from ${TS}" || \
-    echo "[restore] PostgreSQL restore failed"
-fi
-
-echo "[restore] Complete."
+Read docs/BACKUP-AND-RESTORE.md first. Exit code 2.
+REFUSAL
+exit 2
