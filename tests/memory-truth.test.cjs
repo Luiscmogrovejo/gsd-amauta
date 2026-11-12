@@ -172,7 +172,23 @@ test('distill fallback: the Anthropic API key never appears on a command line', 
     `the API key must not appear in curl's argv:\n${log}`);
   assert.match(log, /--config/, 'the key must travel in a curl config file');
   assert.match(log, /CFGHASKEY: 1/, 'the config file carries the header');
-  assert.match(log, /CFGMODE: 600\b/, 'the config file must be 0o600 (mode & 0o777 read with fs.statSync)');
+  // Phase 88 plan 88-15: `mode: 0o600` is a POSIX permission bit. NTFS has no
+  // such thing -- Node reports 666 for any non-read-only file on Windows and
+  // `chmodSync` cannot express an ACL -- so the mode assertion is POSIX-only.
+  // What protects the key on Windows is that the file is created by
+  // fs.mkdtempSync under os.tmpdir(), which there is the PER-USER
+  // %LOCALAPPDATA%\Temp, ACL-restricted to that user. Both halves are
+  // asserted; neither platform is left unchecked. The gap (no explicit ACL on
+  // Windows) is recorded in 88-15-RECORD.md for the operator.
+  const cfgPath = (log.match(/ARGV: --config (.+)/) || [])[1];
+  assert.ok(cfgPath, `the fake curl must record the config path:\n${log}`);
+  if (process.platform === 'win32') {
+    const tmpRoot = fs.realpathSync(os.tmpdir()).toLowerCase();
+    assert.ok(fs.realpathSync(path.dirname(cfgPath.trim())).toLowerCase().startsWith(tmpRoot),
+      `the config file must live under the per-user temp dir: ${cfgPath}`);
+  } else {
+    assert.match(log, /CFGMODE: 600\b/, 'the config file must be 0o600 (mode & 0o777 read with fs.statSync)');
+  }
 });
 
 test('distill fallback: no shell interpolation of the key in the source', () => {
