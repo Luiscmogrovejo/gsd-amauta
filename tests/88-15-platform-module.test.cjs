@@ -489,3 +489,82 @@ test('88-15-07: verify-v26 resolves its memory dir with no /tmp and no username'
   assert.equal(slug('/a/b/c'), '-a-b-c');
   assert.ok(path.isAbsolute(path.join(platform.homeDir(), '.claude', 'projects', slug('/a/b/c'))));
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Task 88-15-08: the scanner installers.
+//
+// resolveAssetName() returned `null` on Windows in BOTH installers (the
+// research checked gitleaks and said of trivy "I did not check"), so the
+// caller behaved as if the scanner were merely unavailable — a silent absence
+// that reads as a clean scan. NOTHING here downloads anything: the asset table
+// is pure resolution, and the hermetic guard would block the network anyway.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const INSTALLERS = [
+  ['gitleaks', '../scripts/install-gitleaks.cjs', {
+    'linux/x64': 'gitleaks_8.18.4_linux_x64.tar.gz',
+    'linux/arm64': 'gitleaks_8.18.4_linux_arm64.tar.gz',
+    'darwin/x64': 'gitleaks_8.18.4_darwin_x64.tar.gz',
+    'darwin/arm64': 'gitleaks_8.18.4_darwin_arm64.tar.gz',
+    'win32/x64': 'gitleaks_8.18.4_windows_x64.zip',
+  }],
+  ['trivy', '../scripts/install-trivy.cjs', {
+    'linux/x64': 'trivy_0.50.1_Linux-64bit.tar.gz',
+    'linux/arm64': 'trivy_0.50.1_Linux-ARM64.tar.gz',
+    'darwin/x64': 'trivy_0.50.1_macOS-64bit.tar.gz',
+    'darwin/arm64': 'trivy_0.50.1_macOS-ARM64.tar.gz',
+    'win32/x64': 'trivy_0.50.1_windows-64bit.zip',
+  }],
+];
+
+for (const [tool, mod, table] of INSTALLERS) {
+  test(`88-15-08: ${tool} resolves an asset for every supported platform/arch`, () => {
+    const installer = require(mod);
+    for (const [key, asset] of Object.entries(table)) {
+      const [plat, arch] = key.split('/');
+      const got = installer.resolveAssetName(plat, arch);
+      assert.equal(got.supported, true, `${key}: ${JSON.stringify(got)}`);
+      assert.equal(got.asset, asset, key);
+      assert.equal(got.format, asset.endsWith('.zip') ? 'zip' : 'tar.gz', key);
+      assert.equal(got.member, plat === 'win32' ? `${tool}.exe` : tool, key);
+    }
+  });
+
+  test(`88-15-08: ${tool} returns an EXPLICIT unsupported result, never null`, () => {
+    const installer = require(mod);
+    // There is no Windows ARM64 build of either tool: an honest unsupported
+    // result, not a guessed asset name.
+    for (const [plat, arch] of [['win32', 'arm64'], ['freebsd', 'x64'], ['sunos', 'x64']]) {
+      const got = installer.resolveAssetName(plat, arch);
+      assert.notEqual(got, null, 'null is the defect: the caller cannot tell why');
+      assert.equal(got.supported, false, `${plat}/${arch}`);
+      assert.equal(got.platform, plat);
+      assert.equal(got.arch, arch);
+      assert.match(got.reason, /unsupported platform/i, got.reason);
+      assert.match(got.reason, new RegExp(`${plat}/${arch}`), got.reason);
+    }
+  });
+
+  test(`88-15-08: ${tool} installs to a .exe path on Windows`, () => {
+    const installer = require(mod);
+    const win = installer.installPathFor(installer.resolveAssetName('win32', 'x64'));
+    const posix = installer.installPathFor(installer.resolveAssetName('linux', 'x64'));
+    assert.ok(win.endsWith(`${tool}.exe`), win);
+    assert.ok(posix.endsWith(tool) && !posix.endsWith('.exe'), posix);
+  });
+
+  test(`88-15-08: ${tool} extraction branches on FORMAT and never uses a shell string`, () => {
+    const src = fs.readFileSync(path.resolve(__dirname, mod), 'utf8');
+    assert.ok(/-xzf/.test(src), 'the tar.gz path survives');
+    assert.ok(/'-xf'/.test(src), 'the zip path drops the gzip filter');
+    assert.ok(!/execSync\(`tar/.test(src), 'no shell string for extraction');
+    assert.ok(!/execSync\(`powershell/.test(src), 'no shell string for PowerShell');
+    assert.ok(/execFileSync\('tar'/.test(src), 'extraction is execFile-style');
+  });
+}
+
+test('88-15-08: no installer test downloads anything', () => {
+  const self = fs.readFileSync(__filename, 'utf8');
+  assert.ok(!/https:\/\/github\.com\/[^\s'"`]*\/releases\/download/.test(self),
+    'this test file must never name a release download URL');
+});
