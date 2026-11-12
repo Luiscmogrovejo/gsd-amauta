@@ -487,9 +487,13 @@ test('88-15-07: verify-v26 resolves its memory dir with no /tmp and no username'
   assert.ok(!/'\/tmp'/.test(src), 'no /tmp fallback');
   assert.ok(/platform\.homeDir\(\)/.test(src), 'the home comes from the shared helper');
   assert.ok(/claudeProjectSlug/.test(src), 'the slug is derived in one named place');
-  // The slug rule itself, exercised the way the file uses it.
+  // The slug rule itself, exercised the way the file uses it. path.resolve is
+  // platform-dependent (a POSIX '/a/b/c' becomes 'D:\\a\\b\\c' on Windows), so the
+  // expectation is derived the same way rather than hard-coded to one platform.
   const slug = (root) => path.resolve(root).replace(/[\\/:]+/g, '-');
-  assert.equal(slug('/a/b/c'), '-a-b-c');
+  assert.equal(slug('/a/b/c'), path.resolve('/a/b/c').replace(/[\\/:]+/g, '-'));
+  assert.ok(slug('/a/b/c').endsWith('-a-b-c'), slug('/a/b/c'));
+  assert.ok(!/[\\/:]/.test(slug('/a/b/c')), 'no separator may survive in the slug');
   assert.ok(path.isAbsolute(path.join(platform.homeDir(), '.claude', 'projects', slug('/a/b/c'))));
 });
 

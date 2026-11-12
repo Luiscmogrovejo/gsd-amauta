@@ -24,7 +24,28 @@ import time
 
 
 SCHEMA_VERSION = "2.1.0"
-BACKUP_DIR = os.path.expanduser("~/.amauta/backups")
+def _default_backup_dir():
+    """Where automatic and listed backups live.
+
+    Production is unchanged: ``~/.amauta/backups``. Phase 88 plan 88-15: under
+    GSD_TEST_MODE with an explicit AMAUTA_DATA_DIR the directory follows the
+    data dir instead, so a test run can never create or prune anything under
+    the operator's real home. amauta-daemon.py already monkeypatched
+    BACKUP_DIR for exactly this reason; the rule now lives where the constant
+    does, so every importer gets it -- the Windows CI cell caught a run that
+    created ``C:\\Users\\runneradmin\\.amauta\\backups``.
+
+    Returns:
+        str: the backup directory path.
+    """
+    if os.environ.get("GSD_TEST_MODE", "").strip().lower() in ("1", "true", "yes", "on"):
+        data_dir = os.environ.get("AMAUTA_DATA_DIR")
+        if data_dir:
+            return os.path.join(data_dir, "backups")
+    return os.path.expanduser("~/.amauta/backups")
+
+
+BACKUP_DIR = _default_backup_dir()
 
 
 class BackupManager:

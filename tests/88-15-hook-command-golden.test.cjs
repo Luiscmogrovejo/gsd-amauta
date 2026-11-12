@@ -100,23 +100,29 @@ const POSIX_SHELLSPLIT_CORPUS = [
   ['cat a\\\\b', ['cat', 'a\\b']],                                // escaped backslash -> one backslash
 ];
 
+// The POSIX branch is named explicitly so this stays a POSIX pin on every
+// host: after task 88-15-04 shellSplit branches by platform, and on a Windows
+// runner the default branch is (correctly) the Windows one.
 test('GOLDEN: shellSplit on the POSIX corpus (backslash is an escape on POSIX)', () => {
   for (const [cmd, expected] of POSIX_SHELLSPLIT_CORPUS) {
-    assert.deepEqual(shellSplit(cmd), expected, `shellSplit(${JSON.stringify(cmd)})`);
+    assert.deepEqual(shellSplit(cmd, 'darwin'), expected, `shellSplit(${JSON.stringify(cmd)})`);
+    assert.deepEqual(shellSplit(cmd, 'linux'), expected, `shellSplit(${JSON.stringify(cmd)})`);
   }
 });
 
-test('GOLDEN: shellSplit returns null on an unterminated quote', () => {
-  assert.equal(shellSplit('cat "unterminated'), null);
-  assert.equal(shellSplit("cat 'unterminated"), null);
+test('GOLDEN: shellSplit returns null on an unterminated quote, on every platform', () => {
+  for (const plat of ['darwin', 'linux', 'win32']) {
+    assert.equal(shellSplit('cat "unterminated', plat), null, plat);
+    assert.equal(shellSplit("cat 'unterminated", plat), null, plat);
+  }
 });
 
 test('GOLDEN: bashTargets on the POSIX corpus', () => {
   const { bashTargets } = shuntGate;
-  assert.deepEqual(bashTargets('cat foo.txt'), ['foo.txt']);
-  assert.deepEqual(bashTargets('cat foo\\ bar.txt'), ['foo bar.txt']);
-  assert.deepEqual(bashTargets('head -n 5 foo.txt'), []);        // flagged head -> not a bare dump
-  assert.deepEqual(bashTargets('ls -la'), []);                   // not a dump command
+  assert.deepEqual(bashTargets('cat foo.txt', 'darwin'), ['foo.txt']);
+  assert.deepEqual(bashTargets('cat foo\\ bar.txt', 'darwin'), ['foo bar.txt']);
+  assert.deepEqual(bashTargets('head -n 5 foo.txt', 'darwin'), []);   // flagged head -> not a bare dump
+  assert.deepEqual(bashTargets('ls -la', 'darwin'), []);              // not a dump command
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -209,9 +215,13 @@ test('88-15-04 PROOF (a): the command emitted for a path WITH A SPACE really run
     fs.writeFileSync(wrapper, "process.stdout.write('WRAPPER-RAN-88-15 ' + process.argv.slice(2).join(' '));\n", 'utf8');
     const command = buildWrappedCommand('git status', wrapper);
     assert.match(command, /^node "/, command);
-    const r = spawnSync('/bin/sh', ['-c', command.replace(/^node /, process.execPath + ' ')], {
-      encoding: 'utf8',
-    });
+    // Executed through the HOST's shell: /bin/sh on POSIX, cmd.exe (shell:true)
+    // on Windows, which has no /bin/sh. The command string is built by this
+    // test from a temp path it created; nothing user-controlled reaches it.
+    const toRun = command.replace(/^node /, JSON.stringify(process.execPath) + ' ');
+    const r = process.platform === 'win32'
+      ? spawnSync(toRun, { shell: true, encoding: 'utf8' })
+      : spawnSync('/bin/sh', ['-c', toRun], { encoding: 'utf8' });
     assert.equal(r.status, 0, `the emitted command must run: ${r.stderr}`);
     assert.match(r.stdout, /^WRAPPER-RAN-88-15 -- git status$/, r.stdout);
   } finally {
