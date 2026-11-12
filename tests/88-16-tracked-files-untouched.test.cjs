@@ -31,8 +31,13 @@ test('88-16-07: the .mcp.json writer honours GSD_INSTALL_PROJECT_ROOT', () => {
   const src = fs.readFileSync(path.join(ROOT, 'bin', 'install.js'), 'utf-8');
   assert.match(
     src,
-    /GSD_INSTALL_PROJECT_ROOT \|\| process\.cwd\(\)/,
-    'bin/install.js must resolve the .mcp.json target through the override, not process.cwd() alone'
+    /process\.env\.GSD_INSTALL_PROJECT_ROOT \|\|/,
+    'bin/install.js must resolve the .mcp.json target through the override first'
+  );
+  assert.match(
+    src,
+    /GSD_TEST_MODE === '1' && process\.env\.AMAUTA_DATA_DIR/,
+    'under test mode the default target must be the throw-away data dir, not the current directory'
   );
   assert.doesNotMatch(
     src,

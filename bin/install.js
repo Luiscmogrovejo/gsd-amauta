@@ -2573,7 +2573,18 @@ function install(isGlobal, runtime = 'claude') {
       // resolved launcher is `py`. `GSD_INSTALL_PROJECT_ROOT` lets a test
       // point it at a temp directory; unset, the behaviour is exactly what it
       // was.
-      const mcpProjectRoot = process.env.GSD_INSTALL_PROJECT_ROOT || process.cwd();
+      // Under GSD_TEST_MODE the default target is the throw-away data dir, not
+      // the current directory: every test runs with cwd at the repository root,
+      // and plan 88-15 caught this rewriting the TRACKED `.mcp.json` (invisible
+      // on POSIX, where the written value happened to equal the tracked one;
+      // visible on Windows and on any CI runner, where the resolved launcher
+      // differs). An explicit GSD_INSTALL_PROJECT_ROOT still wins, and outside
+      // test mode the behaviour is exactly what it was.
+      const mcpProjectRoot =
+        process.env.GSD_INSTALL_PROJECT_ROOT ||
+        (process.env.GSD_TEST_MODE === '1' && process.env.AMAUTA_DATA_DIR
+          ? process.env.AMAUTA_DATA_DIR
+          : process.cwd());
       fs.writeFileSync(path.join(mcpProjectRoot, '.mcp.json'), mcpJsonContent + '\n', 'utf8');
       console.log(`  ${green}✓${reset} .mcp.json written (MCP auto-discovery for Claude Code)`);
     }

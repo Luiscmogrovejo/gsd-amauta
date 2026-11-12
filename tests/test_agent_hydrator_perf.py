@@ -19,6 +19,11 @@ import pytest
 
 # ── Repo root on sys.path ──────────────────────────────────────────────────────
 
+# Plan 88-16-09: ONE reason for "there is no disposable PostgreSQL". Nine
+# different sentences said the same thing, and plan 88-19's gate reads the
+# reason, so nine spellings are nine rows a human has to recognise as one cause.
+from conftest import PG_SKIP_REASON  # noqa: E402
+
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
@@ -44,12 +49,13 @@ def _pg_available() -> bool:
 
 from services.agent_hydrator import hydrate  # noqa: E402
 
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Perf test
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.skipif(not _pg_available(), reason="PG required for perf test")
+@pytest.mark.skipif(not _pg_available(), reason=PG_SKIP_REASON)
 def test_hydrate_p95_under_500ms():
     """p95 latency of hydrate('planner') must be < 500ms over 19 samples (warmup excluded).
 

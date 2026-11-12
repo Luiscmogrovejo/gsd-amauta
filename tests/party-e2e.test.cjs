@@ -149,7 +149,10 @@ function postFinding(sessionId, agentName, findingType, content) {
     encoding: 'utf8',
     timeout: 30000,
     cwd: ROOT,
-    env: { ...process.env, PYTHONPATH: ROOT },
+    // Plan 88-16-09: these FRESH python children drive services/party_session.py,
+    // which builds a PGStore and therefore needs the disposable DSN. The runner
+    // deletes it from every child; partyEnv() reinstates the validated one.
+    env: { ...partyEnv(), PYTHONPATH: ROOT },
   });
 
   if (r.status !== 0) {
@@ -186,7 +189,7 @@ describe('party-e2e (PG required)', (suite) => {
 
   test('e2e-create-start', (t) => {
     if (!pgUp || sessionId === null) {
-      t.skip('PG required for SC4 E2E');
+      t.skip(pg.SKIP_REASON);
       return;
     }
     // Verify the session created by probeCreate() has correct shape
@@ -217,7 +220,7 @@ describe('party-e2e (PG required)', (suite) => {
 
   test('e2e-post-three-findings', (t) => {
     if (!pgUp || sessionId === null) {
-      t.skip('PG required for SC4 E2E');
+      t.skip(pg.SKIP_REASON);
       return;
     }
     // F1 from gsd-planner
@@ -244,7 +247,7 @@ describe('party-e2e (PG required)', (suite) => {
 
   test('e2e-pause', (t) => {
     if (!pgUp || sessionId === null) {
-      t.skip('PG required for SC4 E2E');
+      t.skip(pg.SKIP_REASON);
       return;
     }
     const r = runParty(['pause', sessionId, '--json']);
@@ -271,7 +274,7 @@ describe('party-e2e (PG required)', (suite) => {
 
   test('e2e-simulated-daemon-restart-resume', (t) => {
     if (!pgUp || sessionId === null) {
-      t.skip('PG required for SC4 E2E');
+      t.skip(pg.SKIP_REASON);
       return;
     }
     // FRESH subprocess (node → gsd-tools.cjs → party_session_cli.py → psycopg2)
@@ -318,7 +321,7 @@ describe('party-e2e (PG required)', (suite) => {
 
   test('e2e-terminate', (t) => {
     if (!pgUp || sessionId === null) {
-      t.skip('PG required for SC4 E2E');
+      t.skip(pg.SKIP_REASON);
       return;
     }
     const r = runParty(['terminate', sessionId, '--json']);
@@ -340,7 +343,7 @@ describe('party-e2e (PG required)', (suite) => {
 
   test('e2e-terminated-cannot-resume', (t) => {
     if (!pgUp || sessionId === null) {
-      t.skip('PG required for SC4 E2E');
+      t.skip(pg.SKIP_REASON);
       return;
     }
     const r = runParty(['resume', sessionId, '--json']);
@@ -368,7 +371,7 @@ describe('party-e2e (PG required)', (suite) => {
 
   test('e2e-shortcut-equivalence', (t) => {
     if (!pgUp || sessionId === null) {
-      t.skip('PG required for SC4 E2E');
+      t.skip(pg.SKIP_REASON);
       return;
     }
     const toolsR = runParty(['get', sessionId, '--json', '--with-findings']);

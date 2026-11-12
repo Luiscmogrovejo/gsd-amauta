@@ -45,8 +45,27 @@ def test_install_is_idempotent():
 
 
 def test_conftest_scrubbed_environment():
-    assert os.environ.get("GSD_POSTGRES_URL") is None
-    assert os.environ.get("DATABASE_URL") is None
+    # Plan 88-16-09 sharpened this one property and left the rest alone: a DSN
+    # may be present ONLY if tests/conftest.py validated it against the live
+    # service ports at import. "absent" became "absent or validated, never
+    # inherited", which is strictly stronger than what was asserted before —
+    # the old form would have passed with a live DSN that conftest merely
+    # forgot to delete.
+    import conftest as _c
+
+    for key in ("GSD_POSTGRES_URL", "DATABASE_URL"):
+        value = os.environ.get(key)
+        if value is None:
+            assert _c.postgres_dsn_or_none() is None, (
+                "%s is absent but a disposable database is configured" % key
+            )
+            continue
+        assert value == _c.postgres_dsn_or_none(), (
+            "%s holds something other than the validated disposable DSN" % key
+        )
+        assert _c._port_of_dsn(value) not in _c._LIVE_PORTS, (
+            "%s names a live service port" % key
+        )
     assert os.environ.get("REDIS_URL") is None
     assert os.environ["GSD_FORCE_SQLITE"] == "1"
     assert os.environ["GSD_TEST_MODE"] == "1"

@@ -37,7 +37,18 @@ rules:
       confidence: HIGH
       phase: 43
     patterns:
-      - pattern-regex: "(?ms)^---\\n((?!allowed-tools:).)*?^name:.*?\\n---"
+      # Plan 88-16-07. The previous regex was
+      #   (?ms)^---\n((?!allowed-tools:).)*?^name:.*?\n---
+      # whose negative lookahead only covered the span from the opening `---`
+      # to `name:`. Every SKILL.md in this repository writes `name:` on the
+      # first line of its frontmatter and `allowed-tools:` lower down, so the
+      # rule matched ALL THREE canonical skills even though all three declare
+      # the field. It is a false positive in a security rule, and it went
+      # unnoticed because semgrep had never been installed in CI — the five
+      # tests that would have caught it skipped with "semgrep not installed".
+      # The lookahead now guards every position inside the frontmatter block,
+      # so a match means the field is genuinely absent.
+      - pattern-regex: "(?ms)\\A---\\n(?:(?!^allowed-tools:)(?!^---\\s*$).)*^---\\s*$"
 
   - id: skill-bash-mutation-verbs-readonly
     languages: [generic]

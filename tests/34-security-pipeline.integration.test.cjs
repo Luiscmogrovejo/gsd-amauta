@@ -81,7 +81,12 @@ describe('[SEC-01][SEC-02][SEC-03][SEC-06] security-scan.cjs: graceful degradati
   const result = spawnSync('node', ['scripts/security-scan.cjs'], {
     cwd: PROJECT_ROOT,
     encoding: 'utf-8',
-    timeout: 60000,
+    // 180 s, not 60: with the scanners installed this really runs semgrep,
+    // gitleaks and trivy. The runner's hermetic environment stops trivy
+    // downloading a vulnerability database and semgrep fetching a registry
+    // ruleset, so the degradation path is fast — but a scanner that decides to
+    // retry should fail the assertion, not the clock.
+    timeout: 180000,
     env: { ...process.env, npm_config_offline: 'true' },
   });
 

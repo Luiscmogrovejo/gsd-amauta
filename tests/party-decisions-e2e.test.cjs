@@ -148,7 +148,10 @@ function postDecisionViaPython(sessionId, agentName, decisionType, content) {
     encoding: 'utf8',
     timeout: 30000,
     cwd: ROOT,
-    env: { ...process.env, PYTHONPATH: ROOT },
+    // Plan 88-16-09: these FRESH python children drive services/party_session.py,
+    // which builds a PGStore and therefore needs the disposable DSN. The runner
+    // deletes it from every child; partyEnv() reinstates the validated one.
+    env: { ...partyEnv(), PYTHONPATH: ROOT },
   });
 
   if (r.status !== 0) {
@@ -192,7 +195,7 @@ describe('party-decisions-e2e (PG required)', (suite) => {
 
   test('e2e-create-start', (t) => {
     if (!_pgUp || sessionId === null) {
-      t.skip('PG unavailable');
+      t.skip(pg.SKIP_REASON);
       return;
     }
     // Start the session created by probeCreate() (participants: gsd-planner,gsd-checker,gsd-operator)
@@ -216,7 +219,7 @@ describe('party-decisions-e2e (PG required)', (suite) => {
 
   test('e2e-post-four-decisions-via-subprocess', (t) => {
     if (!_pgUp || sessionId === null) {
-      t.skip('PG unavailable');
+      t.skip(pg.SKIP_REASON);
       return;
     }
 
@@ -261,7 +264,7 @@ describe('party-decisions-e2e (PG required)', (suite) => {
 
   test('e2e-status-returns-counts', (t) => {
     if (!_pgUp || sessionId === null) {
-      t.skip('PG unavailable');
+      t.skip(pg.SKIP_REASON);
       return;
     }
     const r = runParty(['status', '--json']);
@@ -299,7 +302,7 @@ describe('party-decisions-e2e (PG required)', (suite) => {
 
   test('e2e-status-sorted-by-updated-at-desc', (t) => {
     if (!_pgUp || sessionId === null) {
-      t.skip('PG unavailable');
+      t.skip(pg.SKIP_REASON);
       return;
     }
     const r = runParty(['status', '--json']);
@@ -328,7 +331,7 @@ describe('party-decisions-e2e (PG required)', (suite) => {
 
   test('e2e-inspect-frozen-shape-with-four-decisions', (t) => {
     if (!_pgUp || sessionId === null) {
-      t.skip('PG unavailable');
+      t.skip(pg.SKIP_REASON);
       return;
     }
     const r = runParty(['inspect', sessionId, '--json']);
@@ -404,7 +407,7 @@ describe('party-decisions-e2e (PG required)', (suite) => {
 
   test('e2e-dissent-did-not-rollback-session', (t) => {
     if (!_pgUp || sessionId === null) {
-      t.skip('PG unavailable');
+      t.skip(pg.SKIP_REASON);
       return;
     }
     // Re-fetch inspect if subtest 5 was skipped or cached value is missing
@@ -446,7 +449,7 @@ describe('party-decisions-e2e (PG required)', (suite) => {
 
   test('e2e-kill-records-audit-and-terminates', (t) => {
     if (!_pgUp || sessionId === null) {
-      t.skip('PG unavailable');
+      t.skip(pg.SKIP_REASON);
       return;
     }
 
@@ -553,7 +556,7 @@ describe('party-decisions-e2e (PG required)', (suite) => {
 
   test('e2e-kill-already-terminated-exit-1', (t) => {
     if (!_pgUp || sessionId === null) {
-      t.skip('PG unavailable');
+      t.skip(pg.SKIP_REASON);
       return;
     }
     // Session was killed in the previous subtest — second kill must exit 1
@@ -576,7 +579,7 @@ describe('party-decisions-e2e (PG required)', (suite) => {
 
   test('e2e-cli-shortcut-equivalence', (t) => {
     if (!_pgUp) {
-      t.skip('PG unavailable');
+      t.skip(pg.SKIP_REASON);
       return;
     }
     // Create + start a fresh session via gsd-tools

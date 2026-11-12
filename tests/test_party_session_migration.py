@@ -12,7 +12,13 @@ Skips gracefully when PG is unavailable (psycopg2 not installed or server unreac
 import os
 import pytest
 
+
 # ── PG availability gate ───────────────────────────────────────────────────────
+
+# Plan 88-16-09: ONE reason for "there is no disposable PostgreSQL". Nine
+# different sentences said the same thing, and plan 88-19's gate reads the
+# reason, so nine spellings are nine rows a human has to recognise as one cause.
+from conftest import PG_SKIP_REASON  # noqa: E402
 
 _PG_OK = False
 
@@ -40,7 +46,7 @@ except (ImportError, Exception):
 def _require_pg():
     """Call inside a test to skip explicitly when PG is not available."""
     if not _PG_OK:
-        pytest.skip("PG not available — skipping migration test")
+        pytest.skip(PG_SKIP_REASON)
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -66,7 +72,7 @@ def _apply_migration(sql_path: str) -> None:
 
 # ── Tests ──────────────────────────────────────────────────────────────────────
 
-@pytest.mark.skipif(not _PG_OK, reason="PG not available")
+@pytest.mark.skipif(not _PG_OK, reason=PG_SKIP_REASON)
 def test_migration_021_applies():
     """Apply migration 021 UP; assert party_sessions table exists via information_schema."""
     _apply_migration("migrations/021-party-sessions.sql")
@@ -89,7 +95,7 @@ def test_migration_021_applies():
     )
 
 
-@pytest.mark.skipif(not _PG_OK, reason="PG not available")
+@pytest.mark.skipif(not _PG_OK, reason=PG_SKIP_REASON)
 def test_party_sessions_columns_present():
     """All 7 named columns exist on party_sessions with correct types after Migration 021 UP."""
     expected_columns = {
@@ -125,7 +131,7 @@ def test_party_sessions_columns_present():
         )
 
 
-@pytest.mark.skipif(not _PG_OK, reason="PG not available")
+@pytest.mark.skipif(not _PG_OK, reason=PG_SKIP_REASON)
 def test_party_sessions_status_check_constraint():
     """pg_constraint shows party_sessions_status_chk exists after Migration 021 UP."""
     store = _store()
@@ -146,7 +152,7 @@ def test_party_sessions_status_check_constraint():
     )
 
 
-@pytest.mark.skipif(not _PG_OK, reason="PG not available")
+@pytest.mark.skipif(not _PG_OK, reason=PG_SKIP_REASON)
 def test_agent_findings_session_id_column_added():
     """agent_findings.session_id column has type uuid after Migration 021 UP."""
     store = _store()
@@ -171,7 +177,7 @@ def test_agent_findings_session_id_column_added():
     )
 
 
-@pytest.mark.skipif(not _PG_OK, reason="PG not available")
+@pytest.mark.skipif(not _PG_OK, reason=PG_SKIP_REASON)
 def test_indexes_present():
     """Both Migration 021 indexes exist: idx_party_sessions_status_recent + idx_agent_findings_session."""
     expected_indexes = {
@@ -199,7 +205,7 @@ def test_indexes_present():
     )
 
 
-@pytest.mark.skipif(not _PG_OK, reason="PG not available")
+@pytest.mark.skipif(not _PG_OK, reason=PG_SKIP_REASON)
 def test_migration_021_down_reverses():
     """Apply DOWN migration; assert party_sessions gone + agent_findings.session_id gone.
 

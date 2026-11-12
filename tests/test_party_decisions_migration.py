@@ -12,7 +12,13 @@ Skips gracefully when PG is unavailable (psycopg2 not installed or server unreac
 import os
 import pytest
 
+
 # ── PG availability gate ───────────────────────────────────────────────────────
+
+# Plan 88-16-09: ONE reason for "there is no disposable PostgreSQL". Nine
+# different sentences said the same thing, and plan 88-19's gate reads the
+# reason, so nine spellings are nine rows a human has to recognise as one cause.
+from conftest import PG_SKIP_REASON  # noqa: E402
 
 _PG_OK = False
 
@@ -40,7 +46,7 @@ except (ImportError, Exception):
 def _require_pg():
     """Call inside a test to skip explicitly when PG is not available."""
     if not _PG_OK:
-        pytest.skip("PG not available — skipping migration test")
+        pytest.skip(PG_SKIP_REASON)
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -67,7 +73,7 @@ def _apply_migration(sql_path: str) -> None:
 
 # ── Tests ──────────────────────────────────────────────────────────────────────
 
-@pytest.mark.skipif(not _PG_OK, reason="PG not available")
+@pytest.mark.skipif(not _PG_OK, reason=PG_SKIP_REASON)
 def test_migration_023_applies():
     """Apply migration 023 UP; assert agent_findings.decision_type column exists
     via information_schema.columns with data_type='character varying' and
@@ -100,7 +106,7 @@ def test_migration_023_applies():
     )
 
 
-@pytest.mark.skipif(not _PG_OK, reason="PG not available")
+@pytest.mark.skipif(not _PG_OK, reason=PG_SKIP_REASON)
 def test_decision_index_present():
     """pg_indexes shows idx_agent_findings_session_decision on agent_findings
     with WHERE predicate containing 'decision_type IS NOT NULL'."""
@@ -130,7 +136,7 @@ def test_decision_index_present():
     )
 
 
-@pytest.mark.skipif(not _PG_OK, reason="PG not available")
+@pytest.mark.skipif(not _PG_OK, reason=PG_SKIP_REASON)
 def test_migration_023_down_reverses():
     """Apply DOWN migration; assert decision_type column is gone AND
     idx_agent_findings_session_decision is gone. Then re-applies UP to
@@ -175,7 +181,7 @@ def test_migration_023_down_reverses():
     _apply_migration("migrations/023-party-decisions.sql")
 
 
-@pytest.mark.skipif(not _PG_OK, reason="PG not available")
+@pytest.mark.skipif(not _PG_OK, reason=PG_SKIP_REASON)
 def test_no_check_constraint_on_decision_type():
     """pg_constraint confirms there is NO CHECK constraint on agent_findings
     named like 'agent_findings_decision_type_chk'. Write-site enforcement only

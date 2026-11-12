@@ -135,6 +135,21 @@ function buildHermeticEnv(baseEnv) {
     npm_config_audit: 'false',
     npm_config_fund: 'false',
     npm_config_update_notifier: 'false',
+    // 88-16-07: the scanners are INSTALLED in CI now, so `scripts/security-scan.cjs`
+    // really invokes them — and `trivy image` pulls three container images and a
+    // vulnerability database. That is not something a unit-test suite may do: the
+    // 60 s budget in tests/34-security-pipeline.integration.test.cjs was exceeded on
+    // the first run that had trivy (43178758984, macOS, status null = killed).
+    // With no cache and updates off, trivy fails in milliseconds, which is the
+    // degradation path those tests are about. That the binary installs and runs is
+    // proven in the workflow step (`trivy --version`), outside the suite.
+    TRIVY_SKIP_DB_UPDATE: 'true',
+    TRIVY_SKIP_JAVA_DB_UPDATE: 'true',
+    TRIVY_NO_PROGRESS: 'true',
+    TRIVY_CACHE_DIR: path.join(os.tmpdir(), 'gsd-trivy-cache-empty'),
+    // semgrep must not phone its registry either (`--config auto`) or send metrics.
+    SEMGREP_SEND_METRICS: 'off',
+    SEMGREP_ENABLE_VERSION_CHECK: '0',
   });
 
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gsd-tests-'));

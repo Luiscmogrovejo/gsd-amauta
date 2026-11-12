@@ -146,7 +146,7 @@ describe('party-state-machine (PG required)', (suite) => {
 
   test('party-create-roundtrip', (t) => {
     if (!pgUp) {
-      t.skip('PG unavailable — skipping state-machine tests');
+      t.skip(pg.SKIP_REASON);
       return;
     }
     const r = runParty(['create', '--participants', 'gsd-planner,gsd-checker', '--json']);
@@ -169,7 +169,7 @@ describe('party-state-machine (PG required)', (suite) => {
 
   test('party-start-transitions', (t) => {
     if (!pgUp || sessionId === null) {
-      t.skip('PG unavailable or session not created — skipping');
+      t.skip(pg.SKIP_REASON);
       return;
     }
     const r = runParty(['start', sessionId, '--json']);
@@ -184,7 +184,7 @@ describe('party-state-machine (PG required)', (suite) => {
 
   test('party-pause-transitions', (t) => {
     if (!pgUp || sessionId === null) {
-      t.skip('PG unavailable or session not created — skipping');
+      t.skip(pg.SKIP_REASON);
       return;
     }
     const r = runParty(['pause', sessionId, '--json']);
@@ -199,7 +199,7 @@ describe('party-state-machine (PG required)', (suite) => {
 
   test('party-resume-transitions', (t) => {
     if (!pgUp || sessionId === null) {
-      t.skip('PG unavailable or session not created — skipping');
+      t.skip(pg.SKIP_REASON);
       return;
     }
     const r = runParty(['resume', sessionId, '--json']);
@@ -218,7 +218,7 @@ describe('party-state-machine (PG required)', (suite) => {
 
   test('party-terminate-transitions', (t) => {
     if (!pgUp || sessionId === null) {
-      t.skip('PG unavailable or session not created — skipping');
+      t.skip(pg.SKIP_REASON);
       return;
     }
     const r = runParty(['terminate', sessionId, '--json']);
@@ -236,7 +236,7 @@ describe('party-state-machine (PG required)', (suite) => {
 
   test('party-invalid-transition-exit-1', (t) => {
     if (!pgUp) {
-      t.skip('PG unavailable — skipping');
+      t.skip(pg.SKIP_REASON);
       return;
     }
     // Create a fresh session then try to terminate it directly from 'created'
@@ -272,7 +272,7 @@ describe('party-state-machine (PG required)', (suite) => {
 
 test('party-cli-shortcut-mirrors-tools', (t) => {
   if (!pgAvailable()) {
-    t.skip('PG unavailable — skipping shortcut comparison test');
+    t.skip(pg.SKIP_REASON);
     return;
   }
   // Create via gsd-tools directly

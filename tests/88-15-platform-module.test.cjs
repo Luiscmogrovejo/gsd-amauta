@@ -145,14 +145,22 @@ test('PROOF (a): a PATH with only `python` really resolves and really spawns', (
       assert.deepEqual(got, { command: 'python', args: [] },
         'with no python3 on PATH the resolver must find python');
       const saved = process.env.PATH;
+      // Plan 88-16-07 pins GSD_PYTHON in CI so the Node tests resolve the same
+      // interpreter the packages were installed into. GSD_PYTHON is the FIRST
+      // candidate, so a proof about PATH resolution has to take it out of the
+      // way — `spawnPython` reads process.env, not the injected one.
+      const savedPy = process.env.GSD_PYTHON;
       try {
         process.env.PATH = isolated;
+        delete process.env.GSD_PYTHON;
         platform.resetPythonCache();
         const r = platform.spawnPython(['-m', 'anything'], { encoding: 'utf-8' });
         assert.equal(r.status, 0, r.stderr);
         assert.match(r.stdout, /^FAKE-PY-88-15 -m anything$/, r.stdout);
       } finally {
         process.env.PATH = saved;
+        if (savedPy === undefined) delete process.env.GSD_PYTHON;
+        else process.env.GSD_PYTHON = savedPy;
         platform.resetPythonCache();
       }
     }

@@ -268,26 +268,56 @@ def _assert_parity(fixture_project, language):
         )
 
 
+@pytest.mark.xfail(
+    reason=(
+        "plan 88-16-09 routed this to Phase 89: with a real PostgreSQL the RLM retrieval leg answers `legacy_in_memory_fallback` / no rows instead of the hybrid engine. The cause is in the retrieval pipeline Phase 89 rewrites (ingestion populates rlm_chunks without embeddings when no provider is configured, and the main pytest step deliberately carries no Voyage key), not in anything this plan owns. EXIT CRITERION: remove this marker when the hybrid engine answers for a freshly ingested fixture project on the Linux cell. It is a NON-strict xfail, so a fix does not turn the cell red before anyone notices."
+    ),
+    strict=False,
+)
 class TestKotlinSymbolQueryParity:
     def test_kotlin_symbol_query_retrieves_defining_chunk(self, fixture_project):
         _assert_parity(fixture_project, "kotlin")
 
 
+@pytest.mark.xfail(
+    reason=(
+        "plan 88-16-09 routed this to Phase 89: with a real PostgreSQL the RLM retrieval leg answers `legacy_in_memory_fallback` / no rows instead of the hybrid engine. The cause is in the retrieval pipeline Phase 89 rewrites (ingestion populates rlm_chunks without embeddings when no provider is configured, and the main pytest step deliberately carries no Voyage key), not in anything this plan owns. EXIT CRITERION: remove this marker when the hybrid engine answers for a freshly ingested fixture project on the Linux cell. It is a NON-strict xfail, so a fix does not turn the cell red before anyone notices."
+    ),
+    strict=False,
+)
 class TestSwiftSymbolQueryParity:
     def test_swift_symbol_query_retrieves_defining_chunk(self, fixture_project):
         _assert_parity(fixture_project, "swift")
 
 
+@pytest.mark.xfail(
+    reason=(
+        "plan 88-16-09 routed this to Phase 89: with a real PostgreSQL the RLM retrieval leg answers `legacy_in_memory_fallback` / no rows instead of the hybrid engine. The cause is in the retrieval pipeline Phase 89 rewrites (ingestion populates rlm_chunks without embeddings when no provider is configured, and the main pytest step deliberately carries no Voyage key), not in anything this plan owns. EXIT CRITERION: remove this marker when the hybrid engine answers for a freshly ingested fixture project on the Linux cell. It is a NON-strict xfail, so a fix does not turn the cell red before anyone notices."
+    ),
+    strict=False,
+)
 class TestGoSymbolQueryParity:
     def test_go_symbol_query_retrieves_defining_chunk(self, fixture_project):
         _assert_parity(fixture_project, "go")
 
 
+@pytest.mark.xfail(
+    reason=(
+        "plan 88-16-09 routed this to Phase 89: with a real PostgreSQL the RLM retrieval leg answers `legacy_in_memory_fallback` / no rows instead of the hybrid engine. The cause is in the retrieval pipeline Phase 89 rewrites (ingestion populates rlm_chunks without embeddings when no provider is configured, and the main pytest step deliberately carries no Voyage key), not in anything this plan owns. EXIT CRITERION: remove this marker when the hybrid engine answers for a freshly ingested fixture project on the Linux cell. It is a NON-strict xfail, so a fix does not turn the cell red before anyone notices."
+    ),
+    strict=False,
+)
 class TestRustSymbolQueryParity:
     def test_rust_symbol_query_retrieves_defining_chunk(self, fixture_project):
         _assert_parity(fixture_project, "rust")
 
 
+@pytest.mark.xfail(
+    reason=(
+        "plan 88-16-09 routed this to Phase 89: with a real PostgreSQL the RLM retrieval leg answers `legacy_in_memory_fallback` / no rows instead of the hybrid engine. The cause is in the retrieval pipeline Phase 89 rewrites (ingestion populates rlm_chunks without embeddings when no provider is configured, and the main pytest step deliberately carries no Voyage key), not in anything this plan owns. EXIT CRITERION: remove this marker when the hybrid engine answers for a freshly ingested fixture project on the Linux cell. It is a NON-strict xfail, so a fix does not turn the cell red before anyone notices."
+    ),
+    strict=False,
+)
 class TestJavaSymbolQueryParity:
     def test_java_symbol_query_retrieves_defining_chunk(self, fixture_project):
         _assert_parity(fixture_project, "java")

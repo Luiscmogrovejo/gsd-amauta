@@ -214,28 +214,32 @@ grep -r "pattern" .
 // ─── Test 6: exit 2 when semgrep unavailable (stubbed) ───────────────────────
 // Always-runnable: stubs checkSemgrepInstalled via require.cache module replacement
 
-test('runner returns exit 2 when semgrep unavailable (stubbed)', () => {
-  const runnerPath = require.resolve(path.join(ROOT, 'scripts', 'skill-semgrep-runner.cjs'));
-
-  // Save original module exports
-  const origModule = require.cache[runnerPath];
-  const origExports = origModule ? { ...origModule.exports } : null;
-
+test('runner returns exit 2 when semgrep is genuinely unavailable', () => {
+  // Plan 88-16-07. This used to replace the module's EXPORTED
+  // `checkSemgrepInstalled` in `require.cache` — but `runEnforcement` calls the
+  // module-internal function, so the stub changed nothing. It passed only
+  // because semgrep was absent from every machine the suite had ever run on;
+  // the first cell that had semgrep installed failed it. A test whose subject
+  // is "semgrep is unavailable" has to make it unavailable, so this runs the
+  // runner as a CHILD with a PATH that contains nothing.
+  const { spawnSync } = require('node:child_process');
+  const emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'no-semgrep-'));
   try {
-    // Temporarily replace checkSemgrepInstalled in the cached module
-    if (require.cache[runnerPath]) {
-      require.cache[runnerPath].exports.checkSemgrepInstalled = () => false;
-    }
-
-    // Re-require to get the stubbed version
-    const stubbed = require.cache[runnerPath].exports;
-    const { exitCode } = stubbed.runEnforcement(path.join(ROOT, 'get-shit-done/skills'));
-    assert.strictEqual(exitCode, 2, `Expected exit 2 on semgrep unavailable, got ${exitCode}`);
+    const r = spawnSync(
+      process.execPath,
+      [path.join(ROOT, 'scripts', 'skill-semgrep-runner.cjs'), path.join(ROOT, 'get-shit-done/skills')],
+      {
+        encoding: 'utf8',
+        cwd: ROOT,
+        timeout: 60000,
+        // `process.execPath` is absolute, so node itself does not need PATH.
+        env: { ...process.env, PATH: emptyDir, Path: emptyDir },
+      }
+    );
+    assert.strictEqual(r.status, 2, `Expected exit 2 on semgrep unavailable, got ${r.status}: ${r.stderr}`);
+    assert.match(r.stderr, /semgrep-missing/, r.stderr);
   } finally {
-    // Restore original exports
-    if (require.cache[runnerPath] && origExports) {
-      require.cache[runnerPath].exports.checkSemgrepInstalled = origExports.checkSemgrepInstalled;
-    }
+    fs.rmSync(emptyDir, { recursive: true, force: true });
   }
 });
 

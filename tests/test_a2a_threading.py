@@ -126,7 +126,14 @@ class TestGetThreadPGIntegration(unittest.TestCase):
         self._pg_env.__enter__()
         self.addCleanup(self._pg_env.__exit__, None, None, None)
         self._store = PGStore()
-        self._conn = self._store._get_conn().__enter__()
+        # Plan 88-16-09: keep the context manager that was ENTERED. tearDown used
+        # to call `self._store._get_conn().__exit__(...)` on a BRAND NEW
+        # generator that had never started, which raises
+        # `RuntimeError: generator didn't stop`. Invisible for as long as the
+        # class skipped itself; the first run against a real database failed all
+        # five of its tests on it.
+        self._conn_ctx = self._store._get_conn()
+        self._conn = self._conn_ctx.__enter__()
         self._inserted_ids = []
 
     def tearDown(self):
@@ -139,7 +146,7 @@ class TestGetThreadPGIntegration(unittest.TestCase):
                         (rid,),
                     )
         self._conn.commit()
-        self._store._get_conn().__exit__(None, None, None)
+        self._conn_ctx.__exit__(None, None, None)
 
     def _insert_row(self, *, from_agent, to_agent, capability, payload,
                     kind, status, parent_id=None):
