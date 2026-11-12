@@ -39,7 +39,8 @@ import logging
 import os
 import re
 import warnings
-from typing import Optional
+from decimal import Decimal, InvalidOperation
+from typing import Optional, Union
 
 try:
     import psycopg2
@@ -644,9 +645,48 @@ def apply_escalation(
     }
 
 
+def _pg_phase(value) -> Optional[Decimal]:
+    """A phase identifier as a PostgreSQL ``numeric`` query parameter.
+
+    `task_completions.phase_number` is `NUMERIC(10,3)` since migration 031 (Phase 89,
+    FND-11) so that a decimal phase such as `72.1` — which `/amauta:insert-phase`
+    creates — can be stored at all.
+
+    psycopg2 interpolates client-side; `psycopg2.extensions.adapt(x).getquoted()`
+    measures the result, and both a `Decimal` and a `float` become an unquoted decimal
+    literal that PostgreSQL types as `numeric`. The reason to bind a `Decimal` is the
+    DIGITS: a float goes through `repr()`, so a value produced by arithmetic emits up
+    to seventeen significant digits (`0.1 + 0.2` -> `0.30000000000000004`), which
+    `NUMERIC(10,3)` then rounds on INSERT. `Decimal(str(v))` stores exactly the digits
+    the caller wrote.
+
+    Args:
+        value: int, float, Decimal or numeric string.
+
+    Returns:
+        decimal.Decimal, or None when `value` is None.
+
+    Raises:
+        ValueError: when `value` is not a number. The caller answers a typed client
+            error rather than letting psycopg2 raise mid-INSERT.
+
+    Example:
+        >>> _pg_phase("72.1")
+        Decimal('72.1')
+    """
+    if value is None:
+        return None
+    if isinstance(value, Decimal):
+        return value
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError) as exc:
+        raise ValueError(f"phase_number must be a number, got {value!r}") from exc
+
+
 def store_completion(
     task_id: str,
-    phase_number: int,
+    phase_number: Union[int, float, Decimal, str],
     workflow_name: str,
     features: dict,
     raw_score: int,
@@ -668,8 +708,11 @@ def store_completion(
     ----------
     task_id : str
         Task identifier (e.g., "TK-0042").
-    phase_number : int
-        Phase number being recorded.
+    phase_number : int, float, Decimal or str
+        Phase number being recorded. Decimal phases (`72.1`, from
+        `/amauta:insert-phase`) are accepted since Phase 89's migration 031 made
+        `task_completions.phase_number` `NUMERIC(10,3)`; the value is bound as a
+        `Decimal` so PostgreSQL receives `numeric` and not a binary float.
     workflow_name : str
         One of: plan-phase, execute-phase, discuss-phase.
     features : dict
@@ -697,9 +740,11 @@ def store_completion(
     Raises
     ------
     ValueError
-        If outcome_label is not in OUTCOME_LABELS, or scores are out of range.
+        If outcome_label is not in OUTCOME_LABELS, scores are out of range, or
+        phase_number is not a number.
     """
     # Input validation
+    phase_param = _pg_phase(phase_number)
     if outcome_label not in OUTCOME_LABELS:
         raise ValueError(
             f"store_completion: outcome_label '{outcome_label}' not in {OUTCOME_LABELS}"
@@ -757,7 +802,7 @@ def store_completion(
                     sql,
                     (
                         task_id,
-                        phase_number,
+                        phase_param,
                         workflow_name,
                         json.dumps(features),
                         raw_score,

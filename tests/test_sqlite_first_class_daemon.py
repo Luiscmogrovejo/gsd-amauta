@@ -548,15 +548,51 @@ class TestPhaseParsingAgainstEachBackend(unittest.TestCase):
         self.assertIsNone(err, err)
         self.assertEqual(value, 72.1)
 
-    def test_postgres_rejects_a_decimal_phase_with_an_explanatory_400(self):
-        """The PG column is INTEGER (migration 017): refuse, never truncate."""
+    def test_postgres_accepts_a_decimal_phase_too(self):
+        """CONVERTED by plan 89-02 (FND-11).
+
+        This case used to assert the HTTP 400 that named the PostgreSQL column type,
+        because `step_handoffs.phase_number` was INTEGER on PostgreSQL (migration 017)
+        and truncating 72.1 to 72 would have filed a handoff under the wrong phase.
+        Migration 031 retyped the column to NUMERIC(10,3), so the refusal is gone with
+        its cause and the PostgreSQL branch now answers exactly as the SQLite one does.
+        The test is converted rather than deleted: the behaviour it guards —
+        "a decimal phase is not truncated" — still matters, it is just satisfied by
+        acceptance now instead of by refusal.
+        """
         value, err = self.mod._parse_phase_arg("72.1", _FakePGStore())
-        self.assertIsNone(value)
-        payload, status = err
-        self.assertEqual(status, 400)
-        self.assertEqual(payload["error"], "decimal_phase_unsupported_on_postgres")
-        self.assertIn("INTEGER", payload["detail"])
-        self.assertIn("72.1", payload["detail"])
+        self.assertIsNone(err, err)
+        self.assertEqual(value, 72.1)
+        self.assertIsInstance(value, float)
+
+    def test_the_two_backends_parse_a_decimal_phase_identically(self):
+        """One parser, one answer — the point of removing the backend branch."""
+        for raw in ("72", "72.0", "72.1", "7.25"):
+            sqlite_value, sqlite_err = self.mod._parse_phase_arg(raw, _FakeSQLiteStore())
+            pg_value, pg_err = self.mod._parse_phase_arg(raw, _FakePGStore())
+            self.assertIsNone(sqlite_err, sqlite_err)
+            self.assertIsNone(pg_err, pg_err)
+            self.assertEqual(sqlite_value, pg_value, raw)
+            self.assertIs(type(sqlite_value), type(pg_value), raw)
+
+    def test_a_decimal_phase_binds_as_numeric_not_as_a_float(self):
+        """`_pg_phase` is what keeps `= 72.1` an exact comparison on NUMERIC(10,3)."""
+        from decimal import Decimal
+
+        self.assertEqual(self.mod._pg_phase(72.1), Decimal("72.1"))
+        self.assertIsInstance(self.mod._pg_phase(72.1), Decimal)
+        self.assertEqual(self.mod._pg_phase(72), Decimal("72"))
+        self.assertIsNone(self.mod._pg_phase(None))
+
+    def test_a_phase_read_back_has_the_same_shape_on_both_backends(self):
+        """`_phase_out` hides psycopg2's Decimal so one route has one JSON type."""
+        from decimal import Decimal
+
+        self.assertEqual(self.mod._phase_out(Decimal("72.000")), 72)
+        self.assertIsInstance(self.mod._phase_out(Decimal("72.000")), int)
+        self.assertEqual(self.mod._phase_out(Decimal("72.100")), 72.1)
+        self.assertEqual(self.mod._phase_out("72.1"), 72.1)
+        self.assertIsNone(self.mod._phase_out(None))
 
     def test_whole_phases_pass_on_both_backends(self):
         for store in (_FakeSQLiteStore(), _FakePGStore()):

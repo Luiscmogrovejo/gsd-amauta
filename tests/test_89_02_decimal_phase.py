@@ -656,3 +656,612 @@ class TestMigration031Down:
         _exec_file(migrated_dsn, MIGRATION_UP)
         assert _column_facts(migrated_dsn, "step_handoffs") == ("numeric", 10, 3)
         assert _column_facts(migrated_dsn, "task_completions") == ("numeric", 10, 3)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# THE REFUSAL IS GONE, AND WHAT REPLACED IT — backend-neutral, so every cell
+# runs these.
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+class TestTheRefusalIsGone:
+    """The PostgreSQL decimal-phase refusal was a placeholder; 031 removed its cause."""
+
+    @pytest.mark.parametrize("raw", PHASE_CASES)
+    def test_the_two_backends_parse_identically(self, daemon_mod, raw):
+        sqlite_value, sqlite_err = daemon_mod._parse_phase_arg(raw, FakeSQLiteStore())
+        pg_value, pg_err = daemon_mod._parse_phase_arg(raw, FakePGStore())
+        assert sqlite_err is None, sqlite_err
+        assert pg_err is None, pg_err
+        assert sqlite_value == pg_value
+        assert type(sqlite_value) is type(pg_value)
+
+    def test_a_decimal_phase_is_no_longer_refused_on_postgres(self, daemon_mod):
+        value, err = daemon_mod._parse_phase_arg("72.1", FakePGStore())
+        assert err is None, err
+        assert value == 72.1
+
+    def test_a_non_number_is_still_a_typed_400_on_postgres(self, daemon_mod):
+        value, err = daemon_mod._parse_phase_arg(NON_NUMBER, FakePGStore())
+        assert value is None
+        payload, status = err
+        assert status == 400
+        assert payload["error"] == "phase must be a number (e.g. 72 or 72.1)"
+
+    def test_the_refusal_string_is_gone_from_the_module(self, daemon_mod):
+        source = (_REPO / "services" / "amauta-daemon.py").read_text(encoding="utf-8")
+        # The bare prefix: stricter than the full old error name, and it keeps the
+        # tree free of the string so the plan's census grep really reads zero.
+        assert "decimal_phase" not in source
+
+    def test_the_normaliser_is_no_longer_named_for_one_backend(self, daemon_mod):
+        source = (_REPO / "services" / "amauta-daemon.py").read_text(encoding="utf-8")
+        assert "_sqlite_normalize_phase" not in source
+        assert hasattr(daemon_mod, "_normalize_phase")
+
+    def test_the_truncating_int_is_gone_from_both_complexity_endpoints(self):
+        source = (_REPO / "services" / "amauta-daemon.py").read_text(encoding="utf-8")
+        assert 'int(body.get("phase_number")' not in source
+
+
+class TestPgPhaseWireType:
+    """`_pg_phase` is the whole reason `= 72.1` stays exact on a NUMERIC column."""
+
+    @pytest.mark.parametrize(
+        "raw,expected",
+        [(72, Decimal("72")), (72.0, Decimal("72")), (72.1, Decimal("72.1")),
+         ("72.1", Decimal("72.1")), (7.25, Decimal("7.25")),
+         (Decimal("72.1"), Decimal("72.1"))],
+    )
+    def test_every_input_becomes_an_exact_decimal(self, daemon_mod, raw, expected):
+        got = daemon_mod._pg_phase(raw)
+        assert isinstance(got, Decimal)
+        assert got == expected
+
+    def test_none_passes_through(self, daemon_mod):
+        assert daemon_mod._pg_phase(None) is None
+
+    def test_the_wire_representation_is_an_unquoted_decimal_literal(self):
+        """The measurement, not the claim: what the adapter actually emits.
+
+        psycopg2 interpolates client-side, so `psycopg2.extensions.adapt(x).getquoted()`
+        IS the bytes the server parses. An UNQUOTED decimal literal is typed `numeric`
+        by PostgreSQL's parser — never `double precision` — which is what keeps
+        `phase_number = %s` exact and `idx_handoffs_latest` usable on NUMERIC(10,3).
+        A quoted or `::float8`-cast literal would not be.
+        """
+        pytest.importorskip("psycopg2")
+        from psycopg2.extensions import adapt
+
+        assert adapt(Decimal("72.1")).getquoted() == b"72.1"
+        assert adapt(Decimal("72")).getquoted() == b"72"
+        assert adapt(Decimal("7.25")).getquoted() == b"7.25"
+
+    def test_a_derived_float_would_carry_binary_noise_a_decimal_does_not(self):
+        """Why the parameter is a Decimal even though a float also lands as `numeric`.
+
+        A float reaches its literal through `repr()`. A value produced by arithmetic
+        therefore emits up to seventeen significant digits, which NUMERIC(10,3) ROUNDS
+        on INSERT while a predicate built the same way still carries all seventeen — the
+        row becomes unfindable. `Decimal(str(normalised))` carries only the digits the
+        caller wrote.
+        """
+        pytest.importorskip("psycopg2")
+        from psycopg2.extensions import adapt
+
+        derived = 0.1 + 0.2
+        assert adapt(derived).getquoted() == b"0.30000000000000004", adapt(derived).getquoted()
+        # The same number, normalised and then bound the way the product binds it.
+        assert adapt(Decimal(str(round(derived, 3)))).getquoted() == b"0.3"
+
+
+class TestPhaseOutShape:
+    """A handoff read back on Postgres must have the shape SQLite returns."""
+
+    @pytest.mark.parametrize(
+        "raw,expected,expected_type",
+        [(Decimal("72"), 72, int), (Decimal("72.000"), 72, int),
+         (Decimal("72.100"), 72.1, float), (Decimal("7.250"), 7.25, float),
+         ("72", 72, int), ("72.1", 72.1, float)],
+    )
+    def test_the_json_type_matches_the_sqlite_contract(self, daemon_mod, raw,
+                                                       expected, expected_type):
+        got = daemon_mod._phase_out(raw)
+        assert got == expected
+        assert isinstance(got, expected_type)
+
+    def test_none_stays_none(self, daemon_mod):
+        assert daemon_mod._phase_out(None) is None
+
+    def test_a_decimal_survives_json_serialisation(self, daemon_mod):
+        """psycopg2 returns Decimal; json.dumps raises on it unless it is converted."""
+        payload = {"phase_number": daemon_mod._phase_out(Decimal("72.100"))}
+        assert json.loads(json.dumps(payload))["phase_number"] == 72.1
+
+
+class TestStepOrchestratorField:
+    """The Pydantic field and its dataclass fallback both take a decimal, with gt=0."""
+
+    def test_a_decimal_phase_is_accepted(self, orchestrator_mod):
+        handoff = orchestrator_mod.StepHandoff(
+            workflow_name="execute-phase", step_id="step-01-prepare",
+            task_id="TK-8902", phase_number="72.1", context_snapshot={},
+        )
+        assert handoff.phase_number == Decimal("72.1")
+
+    def test_a_whole_phase_is_accepted(self, orchestrator_mod):
+        handoff = orchestrator_mod.StepHandoff(
+            workflow_name="execute-phase", step_id="step-01-prepare",
+            task_id="TK-8902", phase_number=72, context_snapshot={},
+        )
+        assert handoff.phase_number == Decimal("72")
+
+    def test_the_bound_is_gt_0_not_ge_1(self, orchestrator_mod):
+        """`ge=1` would have excluded 0.5 while calling itself a minimum."""
+        pytest.importorskip("pydantic")
+        handoff = orchestrator_mod.StepHandoff(
+            workflow_name="execute-phase", step_id="step-01-prepare",
+            task_id="TK-8902", phase_number="0.5", context_snapshot={},
+        )
+        assert handoff.phase_number == Decimal("0.5")
+        with pytest.raises(Exception):
+            orchestrator_mod.StepHandoff(
+                workflow_name="execute-phase", step_id="step-01-prepare",
+                task_id="TK-8902", phase_number=0, context_snapshot={},
+            )
+
+    def test_pg_phase_binds_a_decimal(self, orchestrator_mod):
+        assert orchestrator_mod.pg_phase("72.1") == Decimal("72.1")
+        assert isinstance(orchestrator_mod.pg_phase(72.1), Decimal)
+        assert orchestrator_mod.pg_phase(None) is None
+        with pytest.raises(ValueError):
+            orchestrator_mod.pg_phase(NON_NUMBER)
+
+    def test_the_declared_bound_is_in_the_source(self):
+        source = (_REPO / "services" / "step-orchestrator.py").read_text(encoding="utf-8")
+        assert "phase_number: Decimal = Field(..., gt=0," in source
+        assert "ge=1" not in source
+
+
+class TestComplexityScorerPhaseParameter:
+    """`store_completion` writes task_completions.phase_number — NUMERIC(10,3) now."""
+
+    def test_pg_phase_accepts_a_decimal_phase(self):
+        import complexity_scorer as cs
+
+        assert cs._pg_phase("72.1") == Decimal("72.1")
+        assert isinstance(cs._pg_phase(72), Decimal)
+        assert cs._pg_phase(None) is None
+
+    def test_pg_phase_refuses_a_non_number_with_a_value_error(self):
+        import complexity_scorer as cs
+
+        with pytest.raises(ValueError):
+            cs._pg_phase(NON_NUMBER)
+
+    def test_the_declared_type_follows_the_column(self):
+        source = (_REPO / "services" / "complexity_scorer.py").read_text(encoding="utf-8")
+        assert "phase_number: Union[int, float, Decimal, str]" in source
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# THE PARAMETERISED BOTH-BACKENDS PROOF
+#
+# One test, parameterised over (backend, phase), writing a handoff and reading it
+# back; plus the non-collision pair in both directions and the zero-scale
+# equality on each backend. The PostgreSQL arm uses the EXACT statements the
+# daemon's PG branch runs (_PG_HANDOFF_INSERT / _PG_HANDOFF_SELECT above), so it
+# proves the data path the route uses rather than a paraphrase of it.
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+@pytest.fixture
+def handoff_backend(request, tmp_path):
+    """A `(write, read)` pair of callables for one backend.
+
+    Parameterising on the BACKEND rather than writing two test classes is what makes
+    "the same parameter set passes on both" an assertion instead of a convention.
+
+    Args:
+        request: pytest's request; ``request.param`` is ``"sqlite"`` or ``"postgres"``.
+
+    Returns:
+        tuple: ``(write(phase, task_id), read(phase) -> task_id | None)``.
+    """
+    if request.param == "sqlite":
+        store = SQLiteStore(db_path=str(tmp_path / "gsd_amauta.db"))
+
+        def write(phase, task_id):
+            store.step_handoff_insert(
+                "execute-phase", phase, step_id="step-01-prepare",
+                task_id=task_id, context_snapshot={"phase": str(phase)},
+            )
+
+        def read(phase):
+            row = store.step_handoff_latest("execute-phase", phase)
+            return None if row is None else row["task_id"]
+
+        return write, read
+
+    dsn = request.getfixturevalue("migrated_dsn")
+
+    def write(phase, task_id):
+        _pg_handoff_insert(dsn, "execute-phase", _pg_param(phase), task_id,
+                           {"phase": str(phase)})
+
+    def read(phase):
+        row = _pg_handoff_latest(dsn, "execute-phase", _pg_param(phase))
+        return None if row is None else row[3]
+
+    return write, read
+
+
+def _pg_param(phase):
+    """Normalise then bind, exactly as the daemon does before touching PostgreSQL."""
+    return Decimal(str(normalize_phase_number(phase)))
+
+
+#: `pytest.param` so the PostgreSQL arm skips with the one standard reason rather than
+#: erroring when no disposable database exists.
+BACKENDS = [
+    pytest.param("sqlite", id="sqlite"),
+    pytest.param("postgres", id="postgres",
+                 marks=pytest.mark.skipif(TEST_DSN_ABSENT, reason=PG_SKIP_REASON)),
+]
+
+
+@pytest.mark.parametrize("handoff_backend", BACKENDS, indirect=True)
+class TestHandoffRoundTripOnBothBackends:
+    """FND-11's acceptance: the same parameter set, the same answers, either backend."""
+
+    @pytest.mark.parametrize("raw", PHASE_CASES)
+    def test_a_handoff_writes_and_reads_back(self, handoff_backend, raw):
+        write, read = handoff_backend
+        write(raw, f"TK-{raw}")
+        assert read(raw) == f"TK-{raw}", f"phase {raw!r} did not read back"
+
+    def test_a_72_handoff_is_not_read_back_by_a_lookup_for_72_1(self, handoff_backend):
+        """The truncation bug the 400 was protecting against."""
+        write, read = handoff_backend
+        write("72", "TK-WHOLE")
+        assert read("72.1") is None, "a lookup for 72.1 read back phase 72's handoff"
+        assert read("72") == "TK-WHOLE"
+
+    def test_a_72_1_handoff_is_not_read_back_by_a_lookup_for_72(self, handoff_backend):
+        write, read = handoff_backend
+        write("72.1", "TK-DECIMAL")
+        assert read("72") is None, "a lookup for 72 read back phase 72.1's handoff"
+        assert read("72.1") == "TK-DECIMAL"
+
+    def test_72_and_72_0_do_read_each_other_back(self, handoff_backend):
+        """`normalize_phase_number`'s contract: zero scale is not a different phase."""
+        write, read = handoff_backend
+        write("72.0", "TK-ZERO-SCALE")
+        assert read("72") == "TK-ZERO-SCALE"
+        assert read("72.000") == "TK-ZERO-SCALE"
+
+    def test_7_25_is_its_own_phase(self, handoff_backend):
+        """Three decimal places, the scale the column declares."""
+        write, read = handoff_backend
+        write("7.25", "TK-SEVEN-QUARTER")
+        assert read("7.25") == "TK-SEVEN-QUARTER"
+        assert read("7.2") is None
+        assert read("7") is None
+
+    def test_a_non_number_is_refused_before_any_write(self, handoff_backend):
+        """ValueError specifically — `Exception` would pass on a connection error too."""
+        write, read = handoff_backend
+        with pytest.raises(ValueError):
+            write(NON_NUMBER, "TK-GARBAGE")
+        assert read("72") is None, "the refused write left a row behind"
+
+
+@requires_pg
+class TestPostgresWireTypeMeasuredOnTheServer:
+    """`pg_typeof` of the bound parameter — the server's own answer, not an inference."""
+
+    @pytest.mark.parametrize("raw", PHASE_CASES)
+    def test_the_bound_parameter_arrives_as_numeric(self, scratch_dsn, raw,
+                                                    record_property):
+        conn = _connect(scratch_dsn)
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT pg_typeof(%s)", (_pg_param(raw),))
+                wire_type = cur.fetchone()[0]
+        finally:
+            conn.close()
+        _measure(record_property, f"pg_typeof({raw})", wire_type)
+        assert wire_type == "numeric", (
+            f"phase {raw!r} arrived as {wire_type!r}; a double precision parameter "
+            "makes = 72.1 a binary-float comparison against a NUMERIC column"
+        )
+
+    def test_the_stored_value_equals_the_bound_value_exactly(self, migrated_dsn,
+                                                             record_property):
+        """Round-trip equality IN the database, with the column's own comparison."""
+        conn = _connect(migrated_dsn)
+        try:
+            with conn.cursor() as cur:
+                for raw in PHASE_CASES:
+                    cur.execute(
+                        _PG_HANDOFF_INSERT,
+                        ("execute-phase", "step-01-prepare", f"TK-{raw}",
+                         _pg_param(raw), [], json.dumps({}), json.dumps({}),
+                         json.dumps([]), json.dumps([]), "step-02-route", []),
+                    )
+                cur.execute(
+                    "SELECT task_id, phase_number, phase_number = %s AS exact"
+                    " FROM step_handoffs WHERE task_id = %s",
+                    (_pg_param("72.1"), "TK-72.1"),
+                )
+                row = cur.fetchone()
+        finally:
+            conn.close()
+        _measure(record_property, "stored-72.1", f"{row[1]!r} exact={row[2]}")
+        assert row[2] is True, f"phase_number = 72.1 did not match the stored {row[1]!r}"
+        assert row[1] == Decimal("72.1")
+
+    def test_an_index_scan_is_available_for_the_predicate(self, migrated_dsn,
+                                                          record_property):
+        """A numeric parameter keeps idx_handoffs_latest usable; a float cast would not.
+
+        The plan asks only that the index survive; this goes one step further and asks
+        the planner whether it CAN be used, which is the reason NUMERIC was chosen over
+        TEXT in the first place.
+        """
+        conn = _connect(migrated_dsn)
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SET enable_seqscan = off")
+                cur.execute(
+                    "EXPLAIN " + _PG_HANDOFF_SELECT,
+                    ("execute-phase", _pg_param("72.1")),
+                )
+                plan_text = " ".join(row[0] for row in cur.fetchall())
+        finally:
+            conn.close()
+        _measure(record_property, "explain", plan_text)
+        assert "idx_handoffs_latest" in plan_text, plan_text
+
+
+@requires_pg
+class TestStepOrchestratorOnPostgres:
+    """The orchestrator's own PostgreSQL-only product code, with a decimal phase."""
+
+    def test_save_then_load_round_trips_a_decimal_phase(self, migrated_dsn,
+                                                        orchestrator_mod, monkeypatch):
+        monkeypatch.setenv("GSD_POSTGRES_URL", migrated_dsn)
+        monkeypatch.setenv("DATABASE_URL", migrated_dsn)
+
+        handoff = orchestrator_mod.StepHandoff(
+            workflow_name="execute-phase", step_id="step-01-prepare",
+            task_id="TK-ORCH-721", phase_number="72.1",
+            context_snapshot={"phase": "72.1"}, next_step="step-02-route",
+        )
+        orchestrator_mod.save_handoff(handoff)
+
+        loaded = orchestrator_mod.load_or_create_handoff("execute-phase", "72.1",
+                                                         "TK-ORCH-721")
+        assert loaded.id == handoff.id, "the decimal-phase handoff did not load back"
+        assert loaded.phase_number == Decimal("72.1")
+        assert loaded.step_id == "step-01-prepare"
+
+    def test_a_lookup_for_72_does_not_find_the_72_1_handoff(self, migrated_dsn,
+                                                            orchestrator_mod,
+                                                            monkeypatch):
+        monkeypatch.setenv("GSD_POSTGRES_URL", migrated_dsn)
+        monkeypatch.setenv("DATABASE_URL", migrated_dsn)
+
+        orchestrator_mod.save_handoff(orchestrator_mod.StepHandoff(
+            workflow_name="execute-phase", step_id="step-03-execute",
+            task_id="TK-ORCH-NC", phase_number="72.1",
+            context_snapshot={}, next_step="step-04-verify",
+        ))
+        fresh = orchestrator_mod.load_or_create_handoff("execute-phase", 72,
+                                                        "TK-ORCH-NC")
+        # No row for phase 72, so a FRESH handoff is created at the first step.
+        assert fresh.step_id == "step-01-prepare", (
+            f"a lookup for phase 72 loaded phase 72.1's handoff ({fresh.step_id})"
+        )
+        assert fresh.phase_number == Decimal("72")
+
+
+@requires_pg
+class TestComplexityScorerOnPostgres:
+    """`store_completion` writes task_completions.phase_number — NUMERIC(10,3) now."""
+
+    def test_a_decimal_phase_completion_is_stored_exactly(self, migrated_dsn,
+                                                          monkeypatch):
+        monkeypatch.setenv("GSD_POSTGRES_URL", migrated_dsn)
+        monkeypatch.setenv("DATABASE_URL", migrated_dsn)
+        import complexity_scorer as cs
+
+        row_id = cs.store_completion(
+            task_id="TK-CS-721", phase_number="72.1", workflow_name="execute-phase",
+            features={"files": 3}, raw_score=42, calibrated_score=None,
+            chosen_phases=["R", "E"], phases_run=["R", "E"],
+            outcome_label="validator_pass", escalation_history=[], embedding=None,
+        )
+        assert row_id, "store_completion returned no id on the disposable database"
+
+        conn = _connect(migrated_dsn)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT phase_number FROM task_completions WHERE task_id = %s",
+                    ("TK-CS-721",),
+                )
+                stored = cur.fetchone()[0]
+        finally:
+            conn.close()
+        assert stored == Decimal("72.1"), stored
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# THE EXECUTE-PHASE LOOP, THROUGH THE DAEMON ROUTE IT ACTUALLY USES
+#
+# get-shit-done/workflows/execute-phase/workflow.md:78-142 posts a handoff after
+# EVERY step and HALTs when `.step_id` of
+#   GET /api/steps/execute-phase/${PHASE}
+# is empty. ${PHASE} is substituted literally, so a decimal phase went through
+# that URL and came back 400. These tests drive the two real routes over HTTP on
+# the fixture daemon, so they run on every cell rather than only where a
+# disposable Postgres exists.
+# ═════════════════════════════════════════════════════════════════════════════
+
+#: The two routes the sharded workflow uses, by name, so the record can quote them.
+STEPS_GET = "/api/steps/{workflow}/{phase}"
+STEPS_POST = "/api/steps/{workflow}/{phase}/handoff"
+
+
+def _http(port, method, path, body=None):
+    """One request to the fixture daemon on 127.0.0.1, returning ``(status, body)``."""
+    import urllib.error
+    import urllib.request
+
+    data = None if body is None else json.dumps(body).encode("utf-8")
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{port}{path}", data=data, method=method,
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as response:
+            raw = response.read().decode("utf-8")
+            status = response.status
+    except urllib.error.HTTPError as err:
+        raw = err.read().decode("utf-8")
+        status = err.code
+    try:
+        return status, json.loads(raw)
+    except json.JSONDecodeError:
+        return status, raw
+
+
+class TestExecutePhaseLoopThroughTheDaemonRoutes:
+    """A decimal-phase handoff is readable back, so the HALT condition cannot fire."""
+
+    @pytest.mark.parametrize("phase", ["77.1", "94.1", "99.1"])
+    def test_the_phases_this_milestone_carries_round_trip(self, fixture_daemon, phase):
+        """77.1, 94.1 and 99.1 are the inserted phases on this milestone."""
+        status, created = _http(
+            fixture_daemon.port,
+            "POST", STEPS_POST.format(workflow="execute-phase", phase=phase),
+            {
+                "step_id": "step-01-prepare",
+                "task_id": f"TK-{phase}",
+                "completed_steps": [],
+                "context_snapshot": {"phase": phase},
+                "next_step": "step-02-route",
+            },
+        )
+        assert status == 201, (status, created)
+
+        status, handoff = _http(
+            fixture_daemon.port,
+            "GET", STEPS_GET.format(workflow="execute-phase", phase=phase),
+        )
+        assert status == 200, (status, handoff)
+        # THE assertion the workflow's Layer 3 gate makes: `.step_id // empty`.
+        assert handoff.get("step_id") == "step-01-prepare", (
+            f"GET /api/steps/execute-phase/{phase} returned no step_id — the "
+            "execute-phase workflow would HALT here"
+        )
+        assert handoff["phase_number"] == float(phase)
+        assert handoff["task_id"] == f"TK-{phase}"
+
+    def test_a_handoff_for_77_is_not_the_handoff_for_77_1(self, fixture_daemon):
+        """Through the route, both directions, on the shape the gate reads."""
+        for phase, step in (("77", "step-02-route"), ("77.1", "step-04-verify")):
+            status, _ = _http(
+                fixture_daemon.port,
+                "POST", STEPS_POST.format(workflow="execute-phase", phase=phase),
+                {"step_id": step, "task_id": f"TK-{phase}",
+                 "context_snapshot": {}, "next_step": None},
+            )
+            assert status == 201, status
+
+        _, whole = _http(fixture_daemon.port,
+                         "GET", STEPS_GET.format(workflow="execute-phase", phase="77"))
+        _, decimal = _http(fixture_daemon.port,
+                           "GET", STEPS_GET.format(workflow="execute-phase", phase="77.1"))
+        assert whole["step_id"] == "step-02-route", whole
+        assert decimal["step_id"] == "step-04-verify", decimal
+        assert whole["task_id"] == "TK-77" and decimal["task_id"] == "TK-77.1"
+
+    def test_a_non_number_phase_is_a_typed_400_on_the_route(self, fixture_daemon):
+        status, body = _http(
+            fixture_daemon.port,
+            "GET", STEPS_GET.format(workflow="execute-phase", phase=NON_NUMBER),
+        )
+        assert status == 400, (status, body)
+        assert body["error"] == "phase must be a number (e.g. 72 or 72.1)", body
+
+    def test_the_route_never_answers_the_removed_refusal(self, fixture_daemon):
+        for phase in PHASE_CASES:
+            status, body = _http(
+                fixture_daemon.port,
+                "GET", STEPS_GET.format(workflow="execute-phase", phase=phase),
+            )
+            assert status == 200, (phase, status, body)
+            assert "decimal_phase" not in json.dumps(body), (phase, body)
+
+
+class TestComplexityEndpointsAreTypedNotFiveHundred:
+    """`/api/complexity/complete` and `/escalate` answered 500 on a decimal phase."""
+
+    @pytest.mark.parametrize("route", ["/api/complexity/complete",
+                                       "/api/complexity/escalate"])
+    def test_a_non_number_is_a_400_and_not_a_500(self, fixture_daemon, route):
+        status, body = _http(fixture_daemon.port, "POST", route, {
+            "task_id": "TK-8902", "phase_number": NON_NUMBER,
+            "workflow_name": "execute-phase", "outcome_label": "validator_pass",
+            "raw_score": 10, "feature_vector": {}, "chosen_phases": [],
+            "phases_run": [],
+        })
+        assert status == 400, (status, body)
+        assert body["error"] == "phase must be a number (e.g. 72 or 72.1)", body
+        assert body["field"] == "phase_number", body
+
+    @pytest.mark.parametrize("route", ["/api/complexity/complete",
+                                       "/api/complexity/escalate"])
+    def test_a_decimal_phase_is_not_a_500(self, fixture_daemon, route):
+        """`int("72.1")` raised here; the endpoint must now get past the parse.
+
+        On the SQLite backend neither endpoint can write (`task_completions` is a
+        PostgreSQL table and `/escalate` needs a handoff), so the assertion is about
+        the STATUS CLASS: anything but a 5xx and anything but the parse error.
+        """
+        status, body = _http(fixture_daemon.port, "POST", route, {
+            "task_id": "TK-8902", "phase_number": "72.1",
+            "workflow_name": "execute-phase", "outcome_label": "validator_pass",
+            "raw_score": 10, "feature_vector": {}, "chosen_phases": [],
+            "phases_run": [],
+        })
+        assert status < 500, (status, body)
+        assert json.dumps(body).find("phase must be a number") == -1, body
+
+    def test_escalate_reads_the_decimal_phases_own_handoff(self, fixture_daemon):
+        """The bug behind the SQLite re-normalise this plan deleted.
+
+        A handoff exists for 72 and none for 72.1. With the old bare `int()` the
+        escalate call for "72.1" looked up phase 72 and escalated the wrong phase's
+        handoff; the SQLite branch patched it over by re-normalising. With one
+        normaliser at the top, the answer for 72.1 is `no_handoff`.
+        """
+        status, _ = _http(
+            fixture_daemon.port,
+            "POST", STEPS_POST.format(workflow="execute-phase", phase="72"),
+            {"step_id": "step-03-execute", "task_id": "TK-ESC-72",
+             "context_snapshot": {"complexity_score": 50}, "next_step": None},
+        )
+        assert status == 201, status
+
+        status, body = _http(fixture_daemon.port, "POST", "/api/complexity/escalate", {
+            "task_id": "TK-ESC-72", "phase_number": "72.1",
+            "workflow_name": "execute-phase",
+        })
+        assert status == 200, (status, body)
+        assert body.get("reason") == "no_handoff", (
+            f"escalate for 72.1 found something; it must not read phase 72's "
+            f"handoff: {body}"
+        )
