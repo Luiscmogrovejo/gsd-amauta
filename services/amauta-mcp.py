@@ -21,7 +21,7 @@ def _load_dotenv():
         "/srv/amauta/.env",
     ]:
         if os.path.isfile(candidate):
-            with open(candidate) as f:
+            with open(candidate, encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
                     if not line or line.startswith("#"):

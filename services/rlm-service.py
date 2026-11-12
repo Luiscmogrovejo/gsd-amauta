@@ -37,7 +37,7 @@ def _load_dotenv():
         "/srv/amauta/.env",
     ]:
         if os.path.isfile(candidate):
-            with open(candidate) as f:
+            with open(candidate, encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
                     if not line or line.startswith("#"):
@@ -1287,7 +1287,7 @@ def start_server(foreground=False):
     if not foreground:
         if PID_FILE.exists():
             try:
-                pid = int(PID_FILE.read_text().strip())
+                pid = int(PID_FILE.read_text(encoding="utf-8").strip())
                 os.kill(pid, 0)
                 print(f"RLM service already running (PID {pid})")
                 return
@@ -1295,7 +1295,7 @@ def start_server(foreground=False):
                 PID_FILE.unlink(missing_ok=True)
 
     server = ThreadedHTTPServer((HOST, PORT), RLMHandler)
-    PID_FILE.write_text(str(os.getpid()))
+    PID_FILE.write_text(str(os.getpid()), encoding="utf-8")
 
     # RETR-05: rebuild the dependency graph on startup, non-blocking (never
     # delays serving requests on PG cold-start/unavailability).
@@ -1356,7 +1356,7 @@ def stop_server():
         print("RLM service not running (no PID file)")
         return
     try:
-        pid = int(PID_FILE.read_text().strip())
+        pid = int(PID_FILE.read_text(encoding="utf-8").strip())
         os.kill(pid, signal.SIGTERM)
         print(f"Sent SIGTERM to PID {pid}")
         PID_FILE.unlink(missing_ok=True)
@@ -1373,7 +1373,7 @@ def check_status():
         print("RLM service not running")
         return False
     try:
-        pid = int(PID_FILE.read_text().strip())
+        pid = int(PID_FILE.read_text(encoding="utf-8").strip())
         os.kill(pid, 0)
         print(f"RLM service running (PID {pid}) on {HOST}:{PORT}")
         return True

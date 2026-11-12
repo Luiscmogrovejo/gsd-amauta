@@ -28,7 +28,7 @@ def _load_dotenv():
         "/srv/amauta/.env",
     ]:
         if os.path.isfile(candidate):
-            with open(candidate) as f:
+            with open(candidate, encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
                     if not line or line.startswith("#"):
@@ -615,7 +615,7 @@ def _rlm_allowed_pids():
     if _rlm_process is not None:
         allowed.add(_rlm_process.pid)
     try:
-        pid = int(_rlm_pid_file_path().read_text().strip())
+        pid = int(_rlm_pid_file_path().read_text(encoding="utf-8").strip())
     except (OSError, ValueError):
         pid = None
     if pid is not None and pid != os.getpid() and _pid_is_rlm_service(pid):
@@ -791,7 +791,7 @@ def _start_rlm():
         env = os.environ.copy()
         env["GSD_RLM_PORT"] = str(RLM_PORT)
         rlm_log_path = os.path.join(DATA_DIR, "rlm-service.log")
-        rlm_log_file = open(rlm_log_path, "a")
+        rlm_log_file = open(rlm_log_path, "a", encoding="utf-8")
         _rlm_process = subprocess.Popen(
             [sys.executable, RLM_SERVICE_PY, "run"],
             env=env,
@@ -1108,7 +1108,7 @@ def _stale_task_watchdog():
         try:
             tasks_file = Path(DATA_DIR) / "tasks.json"
             if tasks_file.exists():
-                data = json.loads(tasks_file.read_text())
+                data = json.loads(tasks_file.read_text(encoding="utf-8"))
                 items = data.get("items", [])
                 now = datetime.now(timezone.utc)
                 total_in_progress = 0
@@ -1217,7 +1217,7 @@ def _retry_queue_flusher():
                 retry_path = Path(DATA_DIR) / "pg_retry_queue.json"
                 if retry_path.exists():
                     try:
-                        queue = json.loads(retry_path.read_text())
+                        queue = json.loads(retry_path.read_text(encoding="utf-8"))
                         _metrics.set_gauge("retry_queue_size", len(queue) if isinstance(queue, list) else 0)
                     except (json.JSONDecodeError, OSError):
                         pass
@@ -1673,7 +1673,7 @@ def _make_compaction_llm_call():
     try:
         config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                                     '.planning', 'config.json')
-        with open(config_path, 'r') as f:
+        with open(config_path, 'r', encoding="utf-8") as f:
             config = json.load(f)
         model_routing = config.get('model_routing', {})
         compaction_model = model_routing.get('compaction', 'haiku')
@@ -5349,7 +5349,7 @@ def start_server(foreground=False):
         # Check if already running
         if PID_FILE.exists():
             try:
-                pid = int(PID_FILE.read_text().strip())
+                pid = int(PID_FILE.read_text(encoding="utf-8").strip())
                 os.kill(pid, 0)  # Check if process exists
                 print(f"Daemon already running (PID {pid})")
                 return
@@ -5375,7 +5375,7 @@ def start_server(foreground=False):
         sys.stdout.flush()
 
     # Write PID file
-    PID_FILE.write_text(str(os.getpid()))
+    PID_FILE.write_text(str(os.getpid()), encoding="utf-8")
 
     # Graceful shutdown.
     # IMPORTANT: this handler runs in the SAME (main) thread as
@@ -5550,7 +5550,7 @@ def start_server(foreground=False):
             if not tasks_file.exists():
                 return
             import json as _json
-            data = _json.loads(tasks_file.read_text())
+            data = _json.loads(tasks_file.read_text(encoding="utf-8"))
             items = data.get("items", [])
             store = _get_store()
             if not items or not store:
@@ -5759,7 +5759,7 @@ def stop_server():
         return
 
     try:
-        pid = int(PID_FILE.read_text().strip())
+        pid = int(PID_FILE.read_text(encoding="utf-8").strip())
         os.kill(pid, signal.SIGTERM)
         print(f"Sent SIGTERM to PID {pid}")
         # Wait for graceful exit (SIGTERM). If it does not die, escalate to
@@ -5804,7 +5804,7 @@ def check_status():
         return False
 
     try:
-        pid = int(PID_FILE.read_text().strip())
+        pid = int(PID_FILE.read_text(encoding="utf-8").strip())
         os.kill(pid, 0)
         print(f"Daemon running (PID {pid}) on {HOST}:{PORT}")
         return True

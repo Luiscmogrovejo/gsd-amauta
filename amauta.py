@@ -29,7 +29,7 @@ def _load_dotenv():
         "/srv/amauta/.env",
     ]:
         if os.path.isfile(candidate):
-            with open(candidate) as f:
+            with open(candidate, encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
                     if not line or line.startswith("#"):
@@ -356,7 +356,7 @@ def _project_id_from_config(start_dir: str, repo_root: Optional[str]) -> Optiona
         cfg_path = os.path.join(cur, ".planning", "config.json")
         if os.path.isfile(cfg_path):
             try:
-                with open(cfg_path) as f:
+                with open(cfg_path, encoding="utf-8") as f:
                     cfg = json.load(f) or {}
                 declared = cfg.get("project_id")
                 if declared is None:
@@ -518,7 +518,7 @@ class _file_lock:
         if getattr(_lock_held, 'held', False):
             # Already held by this thread -- skip acquisition (reentrant)
             return self
-        self._fd = open(_LOCK_FILE, "w")
+        self._fd = open(_LOCK_FILE, "w", encoding="utf-8")
         if fcntl:
             fcntl.flock(self._fd, fcntl.LOCK_EX)
         self._acquired = True
@@ -536,14 +536,14 @@ class _file_lock:
 def load() -> dict:
     if TASKS_FILE.exists():
         try:
-            with open(TASKS_FILE) as f:
+            with open(TASKS_FILE, encoding="utf-8") as f:
                 return json.load(f)
         except json.JSONDecodeError as e:
             # Try to read from the .bak backup if the main file is corrupt
             backup = Path(str(TASKS_FILE) + ".bak")
             if backup.exists():
                 try:
-                    with open(backup) as f:
+                    with open(backup, encoding="utf-8") as f:
                         data = json.load(f)
                     print(f"\033[93mWARNING: {TASKS_FILE} was corrupt ({e}). Recovered from backup.\033[0m",
                           file=sys.stderr)
@@ -611,7 +611,7 @@ def _load_archive() -> dict:
     """Load the archive file, or return an empty archive structure."""
     if ARCHIVE_FILE.exists():
         try:
-            with open(ARCHIVE_FILE) as f:
+            with open(ARCHIVE_FILE, encoding="utf-8") as f:
                 return json.load(f)
         except json.JSONDecodeError:
             pass
@@ -648,7 +648,7 @@ def _mem_load() -> list:
     if not MEMORY_FILE.exists():
         return []
     out = []
-    with open(MEMORY_FILE, "r", errors="ignore") as f:
+    with open(MEMORY_FILE, "r", errors="ignore", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line:
@@ -660,7 +660,7 @@ def _mem_load() -> list:
     return out
 
 def _mem_append(row: dict):
-    with open(MEMORY_FILE, "a") as f:
+    with open(MEMORY_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(row, ensure_ascii=True) + "\n")
 
 def _mem_db_url() -> str:
@@ -671,7 +671,7 @@ def _mem_db_url() -> str:
     if not dsn:
         env_file = Path("/srv/amauta/.env")
         if env_file.exists():
-            for ln in env_file.read_text(errors="ignore").splitlines():
+            for ln in env_file.read_text(errors="ignore", encoding="utf-8").splitlines():
                 if ln.startswith("AMAUTA_MEMORY_DATABASE_URL="):
                     dsn = ln.split("=", 1)[1].strip().strip('"').strip("'")
                     break
@@ -724,7 +724,7 @@ def _mem_backend() -> str:
         return "postgres"
     env_file = Path("/srv/amauta/.env")
     if env_file.exists():
-        for ln in env_file.read_text(errors="ignore").splitlines():
+        for ln in env_file.read_text(errors="ignore", encoding="utf-8").splitlines():
             if ln.startswith("AMAUTA_MEMORY_BACKEND="):
                 return ln.split("=", 1)[1].strip().strip('"').strip("'").lower()
             if ln.startswith("GSD_POSTGRES_URL="):
@@ -3171,7 +3171,7 @@ def _gitflow_globally_disabled() -> bool:
     try:
         cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 ".planning", "config.json")
-        with open(cfg_path) as f:
+        with open(cfg_path, encoding="utf-8") as f:
             wf = (json.load(f) or {}).get("workflow", {}) or {}
         if wf.get("gitflow") is False:
             return True
@@ -4521,7 +4521,7 @@ def cmd_atomize(args):
             subtask_titles = [s.strip() for s in re.split(r"[\n;]+", raw) if s.strip()]
         elif args.subtasks_file:
             import pathlib
-            lines = pathlib.Path(args.subtasks_file).read_text().splitlines()
+            lines = pathlib.Path(args.subtasks_file).read_text(encoding="utf-8").splitlines()
             subtask_titles = [l.strip() for l in lines if l.strip() and not l.startswith("#")]
 
         if not subtask_titles:
@@ -5898,7 +5898,7 @@ def cmd_export(args):
     data = load()
     out  = json.dumps(data, indent=2)
     if args.output:
-        Path(args.output).write_text(out)
+        Path(args.output).write_text(out, encoding="utf-8")
         print(c(f"Exported to {args.output}", GREEN))
     else:
         print(out)
@@ -5909,7 +5909,7 @@ def cmd_import(args):
         if not src.exists():
             print(c(f"File not found: {args.file}", RED)); sys.exit(1)
         try:
-            incoming = json.loads(src.read_text())
+            incoming = json.loads(src.read_text(encoding="utf-8"))
         except json.JSONDecodeError as e:
             print(c(f"Import file contains invalid JSON: {e}", RED)); sys.exit(1)
         # Schema validation: imported data must have 'items' list

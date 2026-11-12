@@ -107,7 +107,7 @@ def _load_aliases() -> dict:
         dict mapping alias -> project_id (empty when the file is absent).
     """
     try:
-        with open(ALIAS_FILE) as f:
+        with open(ALIAS_FILE, encoding="utf-8") as f:
             return (json.load(f) or {}).get("aliases", {}) or {}
     except FileNotFoundError:
         return {}
@@ -176,7 +176,7 @@ def _tasks_lock(data_dir: Path):
         None, with the lock held.
     """
     lock_path = data_dir / ".amauta.lock"
-    fd = open(lock_path, "w")
+    fd = open(lock_path, "w", encoding="utf-8")
     try:
         if fcntl:
             fcntl.flock(fd, fcntl.LOCK_EX)
@@ -307,7 +307,7 @@ def _pg_url():
             return v
     env_file = ROOT / ".env"
     if env_file.is_file():
-        for line in env_file.read_text().splitlines():
+        for line in env_file.read_text(encoding="utf-8").splitlines():
             if line.startswith("GSD_POSTGRES_URL="):
                 return line.split("=", 1)[1].strip()
     return None
@@ -559,7 +559,7 @@ def _run(args, ctx, tasks_file):
     Returns:
         int: process exit code.
     """
-    with open(tasks_file) as f:
+    with open(tasks_file, encoding="utf-8") as f:
         data = json.load(f)
     items = data.get("items", [])
 
