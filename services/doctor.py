@@ -412,6 +412,8 @@ def is_shipped_path(rel):
     if name in SHIPPED_EXCLUDE_NAMES or name.endswith(SHIPPED_EXCLUDE_SUFFIXES):
         return False
     return not any(p in SHIPPED_EXCLUDE_DIRS for p in parts[:-1])
+
+
 INSTALL_UPGRADE_HINT = "node bin/init.cjs --upgrade --files-only"
 STALE_PATHS_CAP = 5
 
