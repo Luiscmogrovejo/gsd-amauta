@@ -33,6 +33,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+// Phase 88 plan 88-15: one Python launcher resolver, one `which`, one home dir.
+const platform = require('../get-shit-done/bin/lib/platform.cjs');
 
 /**
  * Read a source file with CRLF normalised away. A Windows checkout (core.autocrlf=true) or a
@@ -693,8 +695,7 @@ function invokeHydration(agentName) {
     'print(render_markdown(payload))',
   ].join('; ');
 
-  const renderResult = spawnSync(
-    'python3',
+  const renderResult = platform.spawnPython(
     ['-c', renderScript],
     {
       input: JSON.stringify(payload),

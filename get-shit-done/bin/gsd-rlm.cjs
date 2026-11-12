@@ -44,6 +44,8 @@ const http = require('http');
 const { execFileSync, spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+// Phase 88 plan 88-15: one Python launcher resolver, one `which`, one home dir.
+const platform = require('./lib/platform.cjs');
 
 // ── Load .env file (skipped in test mode) ─────────────
 (function loadDotenv() {
@@ -200,7 +202,7 @@ async function isServiceRunning() {
 async function startService() {
   if (!fs.existsSync(RLM_SERVICE)) return false;
 
-  const child = spawn('python3', [RLM_SERVICE, 'start'], {
+  const child = platform.launchPython([RLM_SERVICE, 'start'], {
     detached: true,
     stdio: 'ignore',
     env: { ...process.env, GSD_RLM_PORT: String(PORT) },
@@ -555,7 +557,7 @@ async function cmdStart() {
 async function cmdStop() {
   if (!fs.existsSync(RLM_SERVICE)) die(`RLM service script not found: ${RLM_SERVICE}`);
   try {
-    execFileSync('python3', [RLM_SERVICE, 'stop'], { encoding: 'utf-8' });
+    platform.runPython([RLM_SERVICE, 'stop'], { encoding: 'utf-8' });
     console.log('RLM service stopped');
   } catch (err) {
     console.error(err.stdout || err.stderr || err.message);

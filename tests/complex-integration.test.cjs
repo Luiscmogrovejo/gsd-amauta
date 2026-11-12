@@ -891,10 +891,17 @@ describe('File Locking and Concurrency Safety', () => {
       'Should have file locking class');
   });
 
-  test('8.2 fcntl used for exclusive locking', () => {
+  test('8.2 a real cross-process exclusive lock is used', () => {
+    // Phase 88 plan 88-15: amauta.py no longer names the POSIX-only module;
+    // the primitive lives in services/_platform.file_lock (flock on POSIX,
+    // msvcrt.locking on Windows) and raises where neither exists.
     const content = fs.readFileSync(PY, 'utf-8');
-    assert.ok(content.includes('fcntl') || content.includes('lockf'), 
-      'Should use fcntl for file locking');
+    assert.ok(content.includes('_platform.file_lock'), 'Should take an exclusive lock');
+    const helper = fs.readFileSync(
+      path.join(path.dirname(PY), 'services', '_platform.py'), 'utf-8');
+    assert.ok(helper.includes('flock') || helper.includes('lockf'),
+      'Should use flock for file locking on POSIX');
+    assert.ok(helper.includes('LK_LOCK'), 'Should use msvcrt locking on Windows');
   });
 
   test('8.3 save() uses atomic write pattern', () => {

@@ -4,6 +4,8 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const readline = require('readline');
+// Phase 88 plan 88-15: one Python launcher resolver, one `which`, one home dir.
+const platform = require('../get-shit-done/bin/lib/platform.cjs');
 const crypto = require('crypto');
 
 // Phase 88: a test-mode run must never install into the operator's real ~/.claude.
@@ -2549,11 +2551,16 @@ function install(isGlobal, runtime = 'claude') {
     // Phase 29 MCP-01: write .mcp.json for Claude Code MCP auto-discovery
     // Only for Claude runtime — Claude Code reads .mcp.json from project root
     if (runtime === 'claude') {
+      const mcpPython = platform.resolvePython();
       const mcpJsonContent = JSON.stringify({
         mcpServers: {
           amauta: {
-            command: 'python3',
-            args: ['services/amauta-mcp.py'],
+            // Phase 88 plan 88-15: the launcher the host runtime will spawn. A
+            // literal `python3` is a Microsoft Store stub on a python.org
+            // Windows install, so write the VERIFIED launcher (and the `py -3`
+            // argument prefix, which a bare command string cannot express).
+            command: mcpPython.command,
+            args: [...mcpPython.args, 'services/amauta-mcp.py'],
             cwd: '.'
           }
         }
@@ -3027,7 +3034,8 @@ async function installAmauta(targetDir) {
   // ─── Step 1: Check prerequisites ────────────────
 
   const hasDocker = checkCommand('docker', ['--version']);
-  const hasPython = checkCommand('python3', ['--version']);
+  const hasPython = checkCommand(platform.resolvePython().command,
+    [...platform.resolvePython().args, '--version']);
   const hasDockerCompose = checkCommand('docker', ['compose', 'version']);
 
   if (!hasDocker) {
@@ -3129,7 +3137,7 @@ async function installAmauta(targetDir) {
           fs.mkdirSync(dataDir, { recursive: true });
 
           const pgUrl = process.env.GSD_POSTGRES_URL || 'postgresql://gsd:gsd@127.0.0.1:5433/gsd_amauta';
-          const child = spawn2('python3', [daemonScript, 'start'], {
+          const child = platform.launchPython([daemonScript, 'start'], {
             detached: true,
             stdio: 'ignore',
             env: {

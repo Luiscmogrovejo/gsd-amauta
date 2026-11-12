@@ -30,7 +30,7 @@
   {
     "rule": "POSIX_PS",
     "file": "tests/test_88_15_process_control.py",
-    "count": 2,
+    "count": 3,
     "reason": "The GOLDEN POSIX PINS of plan 88-15: the expected argv the daemon builds today (ps -ww -o command= -p <pid>, and lsof -t -iTCP:<port> -sTCP:LISTEN). The strings are the expected values of an assertion, not a spawn. Permanent.",
     "owner_plan": "none"
   },

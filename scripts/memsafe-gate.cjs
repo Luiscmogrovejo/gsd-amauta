@@ -18,7 +18,7 @@
  *   GSD_MEMSAFE_REQUIRE_PG=1  make an unreachable PostgreSQL a FAILURE rather
  *                             than a skip. CI sets this so an unrun suite can
  *                             never present itself as a green gate.
- *   GSD_MEMSAFE_PYTHON        python interpreter (default: python3)
+ *   GSD_MEMSAFE_PYTHON        python interpreter (default: the resolved launcher)
  *
  * Usage:
  *   node scripts/memsafe-gate.cjs
@@ -27,9 +27,16 @@
 
 const path = require('path');
 const { execFileSync } = require('child_process');
+// Phase 88 plan 88-15: one Python launcher resolver, one `which`, one home dir.
+const platform = require('../get-shit-done/bin/lib/platform.cjs');
 
 const REPO = path.join(__dirname, '..');
-const PYTHON = process.env.GSD_MEMSAFE_PYTHON || 'python3';
+// GSD_MEMSAFE_PYTHON still wins; the default is the VERIFIED interpreter the
+// platform resolver found (py -3 / python / python3), not a literal name that
+// does not exist on a python.org Windows install.
+const _resolvedPython = platform.resolvePython();
+const PYTHON = process.env.GSD_MEMSAFE_PYTHON || _resolvedPython.command;
+const PYTHON_PREFIX = process.env.GSD_MEMSAFE_PYTHON ? [] : _resolvedPython.args;
 
 const NODE_TEST = 'tests/85-01-memsafe-containment.test.cjs';
 const PY_TEST = 'tests/test_85_memsafe_counter_proofs.py';
@@ -62,7 +69,7 @@ const results = [
   ['containment + debounce (node:test)', run('containment + debounce (node:test)',
     process.execPath, ['--test', NODE_TEST])],
   ['counter-proofs CP1-CP5 (pytest)', run('counter-proofs CP1-CP5 (pytest)',
-    PYTHON, ['-m', 'pytest', PY_TEST, '-v', '-p', 'no:cacheprovider'])],
+    PYTHON, [...PYTHON_PREFIX, '-m', 'pytest', PY_TEST, '-v', '-p', 'no:cacheprovider'])],
 ];
 
 process.stdout.write('\n=== MEMSAFE gate summary ===\n');
