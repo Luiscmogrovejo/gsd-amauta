@@ -16,6 +16,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { homeEnv } = require('./support/home-env.cjs');
+const { writeFakeExe, prependPath } = require('./support/fake-exe.cjs');
 
 const INSTALL = path.resolve(__dirname, '..', 'bin', 'install.js');
 let tmp, bin, calls;
@@ -26,10 +27,12 @@ before(() => {
   calls = path.join(tmp, 'calls.log');
   fs.mkdirSync(bin);
   for (const name of ['docker', 'python3']) {
-    const p = path.join(bin, name);
-    // --version must succeed so the installer believes the tool exists.
-    fs.writeFileSync(p, `#!/bin/sh\necho "${name} $*" >> "${calls}"\necho "${name} 1.0"\nexit 0\n`);
-    fs.chmodSync(p, 0o755);
+    // --version must succeed so the installer believes the tool exists. Node body: one program,
+    // a shebang file on POSIX and a .cmd shim on Windows (same output as the old `echo "$name $*"`).
+    writeFakeExe(bin, name, { node: [
+      `require('fs').appendFileSync(${JSON.stringify(calls)}, ${JSON.stringify(name)} + ' ' + process.argv.slice(2).join(' ') + '\\n');`,
+      `console.log(${JSON.stringify(name)} + ' 1.0');`,
+    ].join('\n') });
   }
 });
 
@@ -43,7 +46,7 @@ function run(args, name) {
     timeout: 120000,
     input: '',
     env: Object.assign({}, process.env, {
-      PATH: bin + path.delimiter + process.env.PATH,
+      PATH: prependPath([bin]),
       ...homeEnv(path.join(tmp, 'home-' + name)),
       GSD_INSTALL_FILES_ONLY: '',
       GSD_TEST_MODE: '', // the runner's GSD_TEST_MODE=1 makes install.js skip its main block

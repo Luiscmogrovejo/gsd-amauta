@@ -21,6 +21,7 @@ const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { writeFakeExe, prependPath } = require('./support/fake-exe.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const MEMORY = path.join(ROOT, 'get-shit-done', 'bin', 'gsd-memory.cjs');
@@ -105,18 +106,17 @@ test('distill fallback: the Anthropic API key never appears on a command line', 
   const argvLog = path.join(binDir, 'curl-argv.txt');
 
   // `claude` fails so the HTTP fallback is exercised.
-  const fakeClaude = path.join(binDir, 'claude');
-  fs.writeFileSync(fakeClaude, '#!/bin/sh\nexit 1\n');
-  fs.chmodSync(fakeClaude, 0o755);
+  // Node bodies: one program behind a shebang (POSIX) or a .cmd shim (Windows). On Windows the
+  // product spawns the bare names `claude` and `curl`, which a .cmd cannot shadow: this test is
+  // handed to plan 88-15 (platform-aware resolution), not skipped.
+  writeFakeExe(binDir, 'claude', { node: 'process.exit(1);' });
 
   // `curl` records its argv + the mode of any --config file, then answers.
   // Written as a node script, not sh: the old `stat -f '%Lp' || stat -c '%a'` probe is BSD-first, and on GNU
   // stat (ubuntu CI) `-f` means "filesystem status" and exits 0 printing a multi-line report, so the `||`
   // fallback never ran and the log held `CFGMODE:   File: "<tmpdir>/..."` instead of the mode (88-CI-BASELINE,
   // ubuntu/20 + ubuntu/22). The code under test was right; the probe was not portable. fs.statSync is.
-  const fakeCurl = path.join(binDir, 'curl');
-  fs.writeFileSync(fakeCurl, [
-    `#!${process.execPath}`,
+  writeFakeExe(binDir, 'curl', { node: [
     "const fs = require('fs');",
     `const log = ${JSON.stringify(argvLog)};`,
     'const args = process.argv.slice(2);',
@@ -130,8 +130,7 @@ test('distill fallback: the Anthropic API key never appears on a command line', 
     '}',
     'process.stdout.write(\'{"content":[{"text":"A distilled summary long enough to pass the twenty character floor."}]}\');',
     '',
-  ].join('\n'));
-  fs.chmodSync(fakeCurl, 0o755);
+  ].join('\n') });
 
   const SENTINEL = 'sk-ant-TESTSENTINEL-0123456789';
   const driver = path.join(binDir, 'driver.cjs');
@@ -148,7 +147,7 @@ test('distill fallback: the Anthropic API key never appears on a command line', 
     cwd: ROOT,
     env: {
       ...process.env,
-      PATH: `${binDir}:${process.env.PATH}`,
+      PATH: prependPath([binDir]),
       ANTHROPIC_API_KEY: SENTINEL,
     },
   });

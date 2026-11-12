@@ -29,6 +29,11 @@ const ROOT = path.resolve(__dirname, '..');
 const BIN_INIT = path.join(ROOT, 'bin', 'init.cjs');
 const PKG_VERSION = require(path.join(ROOT, 'package.json')).version;
 const { homeEnv } = require('./support/home-env.cjs');
+const { writeFakeExe, prependPath } = require('./support/fake-exe.cjs');
+
+// POSIX keeps the minimal `/usr/bin:/bin` tail (a hermetic PATH); on Windows that tail does not
+// exist and the child needs the runner's PATH to find its tools.
+const BASE_PATH = process.platform === 'win32' ? process.env.PATH : ['/usr/bin', '/bin'].join(path.delimiter);
 
 function tmp(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -229,9 +234,10 @@ test('--uninstall --yes removes the global install too', () => {
 
 test('init detects a foreign binary named `amauta` ahead of ours on PATH', () => {
   const binDir = tmp('init-truth-bin-');
-  const fake = path.join(binDir, 'amauta');
-  fs.writeFileSync(fake, '#!/bin/sh\necho not gsd\n');
-  fs.chmodSync(fake, 0o755);
+  // sh + cmd body, not a node body: the product sniffs the head of the file it finds first on PATH
+  // (classifyPathBinary) to tell "another gsd-amauta" from "something foreign", and a node shebang
+  // would put process.execPath into that head and couple the verdict to where node is installed.
+  const fake = writeFakeExe(binDir, 'amauta', { sh: 'echo not gsd', cmd: 'echo not gsd' });
 
   const home = tmp('init-truth-');
   let stdout = '';
@@ -242,7 +248,7 @@ test('init detects a foreign binary named `amauta` ahead of ours on PATH', () =>
         env: {
           ...process.env,
           ...homeEnv(home),
-          PATH: `${binDir}:/usr/bin:/bin`,
+          PATH: prependPath([binDir], BASE_PATH),
           GSD_AMAUTA_PORT: '18991',
           CLAUDE_CONFIG_DIR: path.join(home, '.claude'),
         },
@@ -259,9 +265,10 @@ test('init detects a foreign binary named `amauta` ahead of ours on PATH', () =>
 
 test('init --json keeps the PATH-collision warning off stdout', () => {
   const binDir = tmp('init-truth-bin-');
-  const fake = path.join(binDir, 'amauta');
-  fs.writeFileSync(fake, '#!/bin/sh\necho not gsd\n');
-  fs.chmodSync(fake, 0o755);
+  // sh + cmd body, not a node body: the product sniffs the head of the file it finds first on PATH
+  // (classifyPathBinary) to tell "another gsd-amauta" from "something foreign", and a node shebang
+  // would put process.execPath into that head and couple the verdict to where node is installed.
+  const fake = writeFakeExe(binDir, 'amauta', { sh: 'echo not gsd', cmd: 'echo not gsd' });
 
   const home = tmp('init-truth-');
   let stdout = '';
@@ -273,7 +280,7 @@ test('init --json keeps the PATH-collision warning off stdout', () => {
         env: {
           ...process.env,
           ...homeEnv(home),
-          PATH: `${binDir}:/usr/bin:/bin`,
+          PATH: prependPath([binDir], BASE_PATH),
           GSD_AMAUTA_PORT: '18991',
           CLAUDE_CONFIG_DIR: path.join(home, '.claude'),
         },

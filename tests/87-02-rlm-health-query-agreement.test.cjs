@@ -28,6 +28,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
+const { writeFakeExe, prependPath } = require('./support/fake-exe.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const RLM_CLI = path.join(ROOT, 'get-shit-done', 'bin', 'gsd-rlm.cjs');
@@ -90,9 +91,9 @@ before(() => {
   // A python3 that does nothing, so the CLI's "service not running, starting..."
   // path cannot spawn a real rlm-service.py onto a probe's port.
   fakeBinDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tk2384-bin-'));
-  const fake = path.join(fakeBinDir, 'python3');
-  fs.writeFileSync(fake, '#!/bin/sh\nexit 0\n');
-  fs.chmodSync(fake, 0o755);
+  // Node body: a shebang file on POSIX, a .cmd shim on Windows. (On Windows the CLI spawns the bare
+  // name `python3`, which a .cmd cannot shadow; plan 88-15 makes that spawn platform-aware.)
+  writeFakeExe(fakeBinDir, 'python3', { node: 'process.exit(0);' });
 });
 
 after(() => {
@@ -116,7 +117,7 @@ function cli(scenario, args, opts = {}) {
       // 25 x (200ms + health timeout), which against a black hole is 55s. A test
       // file that can hang is not a test file.
       GSD_RLM_DEADLINE_MS: String(opts.deadlineMs !== undefined ? opts.deadlineMs : 12000),
-      ...(opts.fakePython ? { PATH: `${fakeBinDir}:${process.env.PATH}` } : {}),
+      ...(opts.fakePython ? { PATH: prependPath([fakeBinDir]) } : {}),
     },
   });
 }

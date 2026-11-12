@@ -4,6 +4,7 @@
  *
  *   - py-embed.cjs   (G2)  paths reach embedded Python through argv or a correct literal
  *   - home-env.cjs   (G7)  HOME, USERPROFILE, HOMEDRIVE and HOMEPATH are set together
+ *   - fake-exe.cjs   (G8)  a fake executable is a .cmd shim on Windows; PATH uses path.delimiter
  *
  * Windows itself cannot be run on the machines this suite is developed on, so these tests
  * exercise the CONTENT that breaks there (a backslash path, a path with a space, a path that
@@ -13,13 +14,14 @@
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { execFileSync } = require('node:child_process');
+const { execFileSync, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
 const { pyLiteral, pyArgs } = require('./support/py-embed.cjs');
 const { homeEnv, applyHomeEnv, HOME_VARS } = require('./support/home-env.cjs');
+const { writeFakeExe, prependPath } = require('./support/fake-exe.cjs');
 
 /** Python bytes of stdout, decoded as UTF-8, so the check is independent of the console code page. */
 function runPy(argv, baseEnv = process.env) {
@@ -199,5 +201,116 @@ describe('[88-14] home-env: applyHomeEnv', () => {
       restore();
     }
     assert.deepEqual(HOME_VARS.map((k) => process.env[k]), before);
+  });
+});
+
+describe('[88-14] fake-exe: prependPath', () => {
+  it('joins with the delimiter it is given (":" POSIX, ";" Windows), tool dirs first', () => {
+    assert.equal(prependPath(['/a', '/b'], '/usr/bin', ':'), '/a:/b:/usr/bin');
+    assert.equal(prependPath(['C:\\a', 'D:\\b'], 'C:\\Windows', ';'), 'C:\\a;D:\\b;C:\\Windows');
+  });
+
+  it('uses path.delimiter by default (asserted against path.delimiter, not against ":")', () => {
+    const joined = prependPath(['/a', '/b'], '/base');
+    assert.equal(joined, ['/a', '/b', '/base'].join(path.delimiter));
+    assert.deepEqual(joined.split(path.delimiter), ['/a', '/b', '/base']);
+  });
+
+  it('adds no trailing delimiter when there is no base PATH, and rejects bad dirs', () => {
+    assert.equal(prependPath(['/a'], ''), '/a');
+    assert.equal(prependPath(['/a'], undefined, ':').startsWith('/a'), true);
+    assert.throws(() => prependPath('/a'), TypeError);
+    assert.throws(() => prependPath(['/a', '']), TypeError);
+  });
+});
+
+describe('[88-14] fake-exe: writeFakeExe', () => {
+  /** Run `fn(dir)` with a fresh temp dir that is removed afterwards. */
+  function withDir(fn) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fake-exe-'));
+    try {
+      return fn(dir);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it('POSIX layout: an extensionless file with a #! line, mode 0o755, chmod called', () => {
+    withDir((dir) => {
+      const calls = [];
+      const orig = fs.chmodSync;
+      fs.chmodSync = (...args) => { calls.push(args); return orig(...args); };
+      let file;
+      try {
+        file = writeFakeExe(dir, 'tool', { node: 'console.log(1)' }, { platform: 'linux', nodePath: '/x/node' });
+      } finally {
+        fs.chmodSync = orig;
+      }
+      assert.equal(file, path.join(dir, 'tool'));
+      assert.equal(fs.readFileSync(file, 'utf8'), '#!/x/node\nconsole.log(1)\n');
+      assert.deepEqual(calls.map((c) => c[1]), [0o755]);
+    });
+  });
+
+  it('POSIX shell body: #!/bin/sh and the sh text', () => {
+    withDir((dir) => {
+      const file = writeFakeExe(dir, 'tool', { sh: 'echo not gsd', cmd: 'echo not gsd' }, { platform: 'darwin' });
+      assert.equal(fs.readFileSync(file, 'utf8'), '#!/bin/sh\necho not gsd\n');
+    });
+  });
+
+  it('Windows layout: a <name>.cmd shim calling a <name>.cjs, CRLF, and NO chmod', () => {
+    withDir((dir) => {
+      const calls = [];
+      const orig = fs.chmodSync;
+      fs.chmodSync = (...args) => { calls.push(args); return orig(...args); };
+      let shim;
+      try {
+        shim = writeFakeExe(dir, 'python3', { node: "console.log('hi')" }, { platform: 'win32', nodePath: 'C:\\n\\node.exe' });
+      } finally {
+        fs.chmodSync = orig;
+      }
+      assert.equal(shim, path.join(dir, 'python3.cmd'));
+      assert.equal(fs.readFileSync(shim, 'utf8'), '@echo off\r\n"C:\\n\\node.exe" "%~dp0python3.cjs" %*\r\n');
+      assert.equal(fs.readFileSync(path.join(dir, 'python3.cjs'), 'utf8'), "console.log('hi')\n");
+      assert.deepEqual(calls, [], 'chmod is POSIX-only');
+      assert.equal(fs.existsSync(path.join(dir, 'python3')), false, 'no extensionless file on Windows');
+    });
+  });
+
+  it('Windows batch body: the cmd text with CRLF line endings', () => {
+    withDir((dir) => {
+      const shim = writeFakeExe(dir, 'amauta', { sh: 'echo not gsd', cmd: 'echo not gsd' }, { platform: 'win32' });
+      assert.equal(fs.readFileSync(shim, 'utf8'), '@echo off\r\necho not gsd\r\n');
+    });
+  });
+
+  it('rejects a path-like name and a body with no usable form', () => {
+    withDir((dir) => {
+      assert.throws(() => writeFakeExe(dir, '../evil', { node: '1' }), TypeError);
+      assert.throws(() => writeFakeExe(dir, 'a b', { node: '1' }), TypeError);
+      assert.throws(() => writeFakeExe(dir, 'tool', {}), TypeError);
+      assert.throws(() => writeFakeExe(dir, 'tool', { sh: 'exit 0' }), TypeError, 'sh without cmd');
+      assert.throws(() => writeFakeExe('', 'tool', { node: '1' }), TypeError);
+    });
+  });
+
+  it('BEHAVIOUR: a fake with a Node body really shadows the real tool when its dir leads PATH', () => {
+    // The property the five G8 failures are about: a fake that silently fails to shadow turns a
+    // hermetic test into a live one. A shell is used to launch it so that PATHEXT applies on
+    // Windows (a bare-name spawn of a .cmd without a shell cannot work there; see fake-exe.cjs).
+    withDir((dir) => {
+      writeFakeExe(dir, 'python3', {
+        node: "process.stdout.write('SENTINEL-88-14 ' + process.argv.slice(2).join(' '));",
+      });
+      const r = spawnSync('python3 --version', {
+        shell: true,
+        encoding: 'utf8',
+        env: { ...process.env, PATH: prependPath([dir]) },
+        timeout: 30000,
+      });
+      assert.equal(r.status, 0, r.stderr);
+      assert.equal(r.stdout.trim(), 'SENTINEL-88-14 --version', 'the fake ran, not the real python3');
+    });
   });
 });
