@@ -1,0 +1,918 @@
+"""Golden POSIX pins for the daemon's and the RLM service's process control.
+
+Phase 88, plan 88-15 task 01: written and green BEFORE a single Windows branch
+was added, against the unmodified code at origin/master ``f114bf0``.
+
+Why this file exists
+--------------------
+Plan 88-15 replaces every ``os.kill``, ``fork``, ``setsid``, ``ps`` and ``lsof``
+site in ``services/amauta-daemon.py`` and ``services/rlm-service.py`` with
+helpers in ``services/_platform.py``.  That is the code the operator's LIVE
+LaunchAgent daemon runs.  88-CONTEXT.md requires every Windows branch to be
+additive and the POSIX path to stay behaviourally byte-for-byte identical, so
+this file pins -- against today's code -- the argv, the call shape, the
+``PermissionError`` behaviour per site and the daemonise parent/child split.
+After task 88-15-02 every expectation here must still hold **unedited**.
+
+Hermetic by construction
+------------------------
+Nothing here binds, connects to or signals anything.  ``os.kill``,
+``subprocess.run`` and ``subprocess.Popen`` are replaced by recorders, so the
+assertions are about the call the product *would* make.  No live port of the
+operator's daemon, RLM, Postgres or Redis appears anywhere in this file, every
+port is obtained by binding ('127.0.0.1', 0), and no process is started.
+"""
+
+import ast
+import importlib.util
+import os
+import signal
+import socket
+import subprocess
+import sys
+import textwrap
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+_REPO = Path(__file__).resolve().parents[1]
+_DAEMON = _REPO / "services" / "amauta-daemon.py"
+_RLM = _REPO / "services" / "rlm-service.py"
+
+_loads = [0]
+
+
+def _free_port():
+    """An ephemeral loopback port the test owns; the socket is closed at once."""
+    s = socket.socket()
+    try:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+    finally:
+        s.close()
+
+
+def _load(monkeypatch, tmp_path, module_path, env):
+    """Import a service module under the pinned hermetic environment.
+
+    Plan 88-12 verified that importing the daemon with GSD_AMAUTA_NO_AUTO_START=1
+    starts no server.
+    """
+    for key in ("GSD_POSTGRES_URL", "AMAUTA_MEMORY_DATABASE_URL", "DATABASE_URL"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("AMAUTA_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("AMAUTA_LOG_FILE", "off")
+    monkeypatch.setenv("GSD_AMAUTA_NO_AUTO_START", "1")
+    monkeypatch.setenv("GSD_TEST_MODE", "1")
+    monkeypatch.setenv("GSD_FORCE_SQLITE", "1")
+    monkeypatch.setenv("AMAUTA_AUTO_BACKUP", "off")
+    for key, value in (env or {}).items():
+        monkeypatch.setenv(key, value)
+    _loads[0] += 1
+    name = "gsd_88_15_%s_%d" % (module_path.stem.replace("-", "_"), _loads[0])
+    spec = importlib.util.spec_from_file_location(name, str(module_path))
+    mod = importlib.util.module_from_spec(spec)
+    sys.path.insert(0, str(_REPO / "services"))
+    try:
+        spec.loader.exec_module(mod)
+    finally:
+        sys.path.remove(str(_REPO / "services"))
+    return mod
+
+
+def _daemon(monkeypatch, tmp_path, env=None):
+    base = {"GSD_AMAUTA_PORT": str(_free_port())}
+    base.update(env or {})
+    return _load(monkeypatch, tmp_path, _DAEMON, base)
+
+
+def _rlm(monkeypatch, tmp_path, env=None):
+    base = {"GSD_RLM_PORT": str(_free_port())}
+    base.update(env or {})
+    return _load(monkeypatch, tmp_path, _RLM, base)
+
+
+class _Recorder:
+    """Records every call; returns a canned value."""
+
+    def __init__(self, result=None, raises=None, side_effect=None):
+        self.calls = []
+        self._result = result
+        self._raises = raises
+        self._side_effect = side_effect
+
+    def __call__(self, *args, **kwargs):
+        self.calls.append((args, kwargs))
+        if self._side_effect is not None:
+            return self._side_effect(len(self.calls), args, kwargs)
+        if self._raises is not None:
+            raise self._raises
+        return self._result
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 1. The process command lookup: `ps -ww -o command= -p <pid>` + /proc
+# ══════════════════════════════════════════════════════════════════════════
+
+def _force_posix(monkeypatch):
+    """Pin the POSIX BRANCH of the shared module on any host.
+
+    The argv below is the pre-88-15 argv; on a Windows host the same helper
+    builds a PowerShell call instead, which is asserted by the injected-win32
+    tests in section 7. Forcing the branch keeps this a POSIX pin everywhere
+    rather than a test that only runs on one platform.
+    """
+    sys.path.insert(0, str(_REPO / "services"))
+    try:
+        import _platform as plat
+    finally:
+        sys.path.pop(0)
+    monkeypatch.setattr(plat, "_is_windows", lambda platform=None: False)
+
+
+PINNED_PS_ARGV = ["ps", "-ww", "-o", "command=", "-p", "4242"]
+PINNED_PS_KWARGS = {"capture_output": True, "text": True, "timeout": 5}
+
+
+def test_golden_process_command_posix_argv(monkeypatch, tmp_path):
+    """_pid_command_line runs exactly `ps -ww -o command= -p <pid>` on POSIX."""
+    _force_posix(monkeypatch)
+    mod = _daemon(monkeypatch, tmp_path)
+    rec = _Recorder(result=SimpleNamespace(returncode=0, stdout="python3 rlm-service.py run\n"))
+    monkeypatch.setattr(subprocess, "run", rec)
+    out = mod._pid_command_line(4242)
+    assert len(rec.calls) == 1, rec.calls
+    args, kwargs = rec.calls[0]
+    assert list(args[0]) == PINNED_PS_ARGV
+    assert kwargs == PINNED_PS_KWARGS
+    assert "rlm-service.py" in out
+
+
+def test_golden_process_command_non_zero_returncode_is_dropped(monkeypatch, tmp_path):
+    """A non-zero `ps` exit contributes nothing; the result stays falsy on macOS."""
+    mod = _daemon(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        subprocess, "run", _Recorder(result=SimpleNamespace(returncode=1, stdout="ignored"))
+    )
+    assert "ignored" not in mod._pid_command_line(4242)
+
+
+def test_golden_pid_is_rlm_service_contract(monkeypatch, tmp_path):
+    """The identity check is a substring test on the command line, nothing else."""
+    mod = _daemon(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        subprocess, "run",
+        _Recorder(result=SimpleNamespace(returncode=0, stdout="/usr/bin/python3 /x/rlm-service.py run")),
+    )
+    assert mod._pid_is_rlm_service(4242) is True
+    monkeypatch.setattr(
+        subprocess, "run", _Recorder(result=SimpleNamespace(returncode=0, stdout="/bin/sleep 900"))
+    )
+    assert mod._pid_is_rlm_service(4242) is False
+
+
+def test_golden_process_command_unreadable_is_foreign(monkeypatch, tmp_path):
+    """A lookup that fails must widen "foreign", never narrow it."""
+    mod = _daemon(monkeypatch, tmp_path)
+    monkeypatch.setattr(subprocess, "run", _Recorder(raises=OSError("no ps")))
+    assert mod._pid_is_rlm_service(4242) is False
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 2. The port-holder lookup: port -> pids, `lsof -t -iTCP:<port> -sTCP:LISTEN`
+# ══════════════════════════════════════════════════════════════════════════
+
+PINNED_LSOF_KWARGS = {"capture_output": True, "text": True, "timeout": 5}
+
+
+def test_golden_port_holders_posix_argv(monkeypatch, tmp_path):
+    """_port_holder_pids maps PORT -> PIDS with a byte-identical lsof argv."""
+    _force_posix(monkeypatch)
+    mod = _daemon(monkeypatch, tmp_path)
+    port = _free_port()
+    rec = _Recorder(result=SimpleNamespace(returncode=0, stdout="111\n222\n"))
+    monkeypatch.setattr(subprocess, "run", rec)
+    pids = mod._port_holder_pids(port)
+    assert pids == [111, 222]
+    args, kwargs = rec.calls[0]
+    assert list(args[0]) == ["lsof", "-t", "-iTCP:%d" % port, "-sTCP:LISTEN"]
+    assert kwargs == PINNED_LSOF_KWARGS
+
+
+def test_golden_port_holders_failure_is_empty(monkeypatch, tmp_path):
+    mod = _daemon(monkeypatch, tmp_path)
+    monkeypatch.setattr(subprocess, "run", _Recorder(raises=OSError("no lsof")))
+    assert mod._port_holder_pids(_free_port()) == []
+    monkeypatch.setattr(
+        subprocess, "run", _Recorder(result=SimpleNamespace(returncode=1, stdout=""))
+    )
+    assert mod._port_holder_pids(_free_port()) == []
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 3. The liveness probe and the PermissionError edge PER SITE.
+#
+#    Measured on the base commit: amauta-daemon.py start_server and
+#    check_status, and the two rlm-service.py twins, all catch
+#    (ProcessLookupError, ValueError) only, so a PermissionError PROPAGATES.
+#    _kill_port_holder catches it and logs rlm_port_kill_permission.
+#    Task 88-15-02 keeps every one of these.
+#
+#    The probe is recorded at the services/_platform boundary, which is the
+#    contract the daemon depends on and is the same on every platform. The
+#    POSIX SIGNAL argv underneath it (os.kill(pid, 0), SIGTERM, SIGKILL) is
+#    pinned in the POSIX branch of each test, because Windows has no such
+#    signals at all -- it uses OpenProcess and TerminateProcess, which the
+#    injected-win32 tests in section 7 cover.
+# ══════════════════════════════════════════════════════════════════════════
+
+IS_WINDOWS = sys.platform.startswith("win")
+
+
+def _alive_recorder(monkeypatch, platform_mod, *, result=True, raises=None, side_effect=None):
+    """Record every pid_alive call at the platform boundary."""
+    rec = _Recorder(result=result, raises=raises, side_effect=side_effect)
+    monkeypatch.setattr(platform_mod, "pid_alive", rec)
+    return rec
+
+
+def _terminate_recorder(monkeypatch, platform_mod, *, result=True, raises=None, side_effect=None):
+    """Record every terminate call at the platform boundary."""
+    rec = _Recorder(result=result, raises=raises, side_effect=side_effect)
+    monkeypatch.setattr(platform_mod, "terminate", rec)
+    return rec
+
+
+def _platform_of(mod):
+    """The _platform module object the service under test imported."""
+    return mod._platform
+
+
+sys.path.insert(0, str(_REPO / "services"))
+import _platform as _PLATFORM  # noqa: E402
+sys.path.pop(0)
+_REAL_TERMINATE = _PLATFORM.terminate
+_REAL_PID_ALIVE = _PLATFORM.pid_alive
+
+
+def test_golden_check_status_probes_without_signalling(monkeypatch, tmp_path, capsys):
+    mod = _daemon(monkeypatch, tmp_path)
+    mod.PID_FILE.parent.mkdir(parents=True, exist_ok=True)
+    mod.PID_FILE.write_text("4242", encoding="utf-8")
+    rec = _alive_recorder(monkeypatch, _platform_of(mod), result=True)
+    assert mod.check_status() is True
+    assert rec.calls == [((4242,), {"strict": True})], rec.calls
+    assert "Daemon running (PID 4242)" in capsys.readouterr().out
+
+
+def test_golden_check_status_posix_probe_is_signal_zero(monkeypatch, tmp_path, capsys):
+    """POSIX argv pin: the probe really is os.kill(pid, 0) and nothing else."""
+    if IS_WINDOWS:
+        # os.kill with any signal but the console-control events calls
+        # TerminateProcess here, which is exactly why the probe must not use
+        # it; the Windows path is pinned by the injected-win32 tests.
+        import _platform as _p  # noqa: F401  (imported for the assertion below)
+        assert sys.modules["_platform"] is not None
+        return
+    mod = _daemon(monkeypatch, tmp_path)
+    mod.PID_FILE.parent.mkdir(parents=True, exist_ok=True)
+    mod.PID_FILE.write_text("4242", encoding="utf-8")
+    rec = _Recorder(result=None)
+    monkeypatch.setattr(os, "kill", rec)
+    assert mod.check_status() is True
+    assert rec.calls == [((4242, 0), {})]
+    capsys.readouterr()
+
+
+def test_golden_check_status_dead_pid_is_stale(monkeypatch, tmp_path, capsys):
+    mod = _daemon(monkeypatch, tmp_path)
+    mod.PID_FILE.parent.mkdir(parents=True, exist_ok=True)
+    mod.PID_FILE.write_text("4242", encoding="utf-8")
+    _alive_recorder(monkeypatch, _platform_of(mod), result=False)
+    assert mod.check_status() is False
+    assert not mod.PID_FILE.exists()
+    assert "stale PID file" in capsys.readouterr().out
+
+
+def test_golden_check_status_permission_error_propagates(monkeypatch, tmp_path):
+    """PINNED SITE amauta-daemon.py check_status -- PermissionError is NOT caught."""
+    mod = _daemon(monkeypatch, tmp_path)
+    mod.PID_FILE.parent.mkdir(parents=True, exist_ok=True)
+    mod.PID_FILE.write_text("4242", encoding="utf-8")
+    _alive_recorder(monkeypatch, _platform_of(mod), raises=PermissionError())
+    with pytest.raises(PermissionError):
+        mod.check_status()
+    assert mod.PID_FILE.exists(), "the pid file must survive a PermissionError"
+
+
+def test_golden_start_server_already_running_probe(monkeypatch, tmp_path, capsys):
+    """PINNED SITE amauta-daemon.py start_server -- the probe returns before any bind."""
+    mod = _daemon(monkeypatch, tmp_path)
+    mod.PID_FILE.parent.mkdir(parents=True, exist_ok=True)
+    mod.PID_FILE.write_text("4242", encoding="utf-8")
+    rec = _alive_recorder(monkeypatch, _platform_of(mod), result=True)
+    mod.start_server(foreground=False)
+    assert rec.calls == [((4242,), {"strict": True})]
+    assert "Daemon already running (PID 4242)" in capsys.readouterr().out
+
+
+def test_golden_start_server_permission_error_propagates(monkeypatch, tmp_path):
+    mod = _daemon(monkeypatch, tmp_path)
+    mod.PID_FILE.parent.mkdir(parents=True, exist_ok=True)
+    mod.PID_FILE.write_text("4242", encoding="utf-8")
+    _alive_recorder(monkeypatch, _platform_of(mod), raises=PermissionError())
+    with pytest.raises(PermissionError):
+        mod.start_server(foreground=False)
+
+
+def test_golden_rlm_check_status_probe_and_permission_edge(monkeypatch, tmp_path, capsys):
+    """PINNED SITE rlm-service.py check_status -- probe, and PermissionError propagates."""
+    mod = _rlm(monkeypatch, tmp_path)
+    mod.PID_FILE.parent.mkdir(parents=True, exist_ok=True)
+    mod.PID_FILE.write_text("4242", encoding="utf-8")
+    rec = _alive_recorder(monkeypatch, _platform_of(mod), result=True)
+    assert mod.check_status() is True
+    assert rec.calls == [((4242,), {"strict": True})]
+    assert "RLM service running (PID 4242)" in capsys.readouterr().out
+
+    _alive_recorder(monkeypatch, _platform_of(mod), raises=PermissionError())
+    with pytest.raises(PermissionError):
+        mod.check_status()
+
+
+def test_golden_rlm_start_server_already_running_probe(monkeypatch, tmp_path, capsys):
+    """PINNED SITE rlm-service.py start_server -- probe before any bind."""
+    mod = _rlm(monkeypatch, tmp_path)
+    mod.PID_FILE.parent.mkdir(parents=True, exist_ok=True)
+    mod.PID_FILE.write_text("4242", encoding="utf-8")
+    rec = _alive_recorder(monkeypatch, _platform_of(mod), result=True)
+    mod.start_server(foreground=False)
+    assert rec.calls == [((4242,), {"strict": True})]
+    assert "RLM service already running (PID 4242)" in capsys.readouterr().out
+
+    _alive_recorder(monkeypatch, _platform_of(mod), raises=PermissionError())
+    with pytest.raises(PermissionError):
+        mod.start_server(foreground=False)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 4. terminate: the polite signal, then the forced escalation and its cadence
+# ══════════════════════════════════════════════════════════════════════════
+
+
+def test_golden_stop_server_terminates_then_probes_once(monkeypatch, tmp_path, capsys):
+    mod = _daemon(monkeypatch, tmp_path)
+    mod.PID_FILE.parent.mkdir(parents=True, exist_ok=True)
+    mod.PID_FILE.write_text("4242", encoding="utf-8")
+    monkeypatch.setattr(mod.time, "sleep", lambda _s: None)
+    term = _terminate_recorder(monkeypatch, _platform_of(mod))
+    alive = _alive_recorder(monkeypatch, _platform_of(mod), result=False)
+    mod.stop_server()
+    assert term.calls == [((4242,), {})], term.calls
+    assert alive.calls == [((4242,), {"strict": True})], alive.calls
+    out = capsys.readouterr().out
+    assert "Sent SIGTERM to PID 4242" in out
+    assert "Daemon stopped" in out
+    assert not mod.PID_FILE.exists()
+
+
+def test_golden_stop_server_escalation_cadence(monkeypatch, tmp_path, capsys):
+    """The pinned cadence: polite stop, 20 probes, forced stop, 10 probes, warning."""
+    mod = _daemon(monkeypatch, tmp_path)
+    mod.PID_FILE.parent.mkdir(parents=True, exist_ok=True)
+    mod.PID_FILE.write_text("4242", encoding="utf-8")
+    monkeypatch.setattr(mod.time, "sleep", lambda _s: None)
+    term = _terminate_recorder(monkeypatch, _platform_of(mod))
+    alive = _alive_recorder(monkeypatch, _platform_of(mod), result=True)  # nothing ever dies
+    mod.stop_server()
+    assert [c[1] for c in term.calls] == [{}, {"graceful": False, "force": True}], term.calls
+    assert len(alive.calls) == 30, "20 probes before the escalation and 10 after"
+    out = capsys.readouterr().out
+    assert "did not exit on SIGTERM" in out
+    assert "may still be running" in out
+
+
+def test_golden_stop_server_posix_signal_argv(monkeypatch, tmp_path, capsys):
+    """POSIX argv pin under the boundary: SIGTERM, probe, SIGKILL."""
+    if IS_WINDOWS:
+        return  # Windows has neither SIGTERM nor SIGKILL; see section 7
+    mod = _daemon(monkeypatch, tmp_path)
+    mod.PID_FILE.parent.mkdir(parents=True, exist_ok=True)
+    mod.PID_FILE.write_text("4242", encoding="utf-8")
+    monkeypatch.setattr(mod.time, "sleep", lambda _s: None)
+    rec = _Recorder(result=None)  # nothing ever dies
+    monkeypatch.setattr(os, "kill", rec)
+    mod.stop_server()
+    signals = [c[0][1] for c in rec.calls]
+    assert signals[0] == signal.SIGTERM
+    assert signals[1:21] == [0] * 20
+    assert signals[21] == signal.SIGKILL
+    assert signals[22:] == [0] * 10
+    capsys.readouterr()
+
+
+def test_golden_rlm_stop_server_is_polite_only(monkeypatch, tmp_path, capsys):
+    """PINNED SITE rlm-service.py stop_server -- one polite stop, no escalation."""
+    mod = _rlm(monkeypatch, tmp_path)
+    mod.PID_FILE.parent.mkdir(parents=True, exist_ok=True)
+    mod.PID_FILE.write_text("4242", encoding="utf-8")
+    term = _terminate_recorder(monkeypatch, _platform_of(mod))
+    mod.stop_server()
+    assert term.calls == [((4242,), {})]
+    assert "Sent SIGTERM to PID 4242" in capsys.readouterr().out
+    assert not mod.PID_FILE.exists()
+    if not IS_WINDOWS:
+        # POSIX argv pin UNDER the boundary: put the real terminate back first.
+        monkeypatch.setattr(_platform_of(mod), "terminate", _REAL_TERMINATE)
+        mod.PID_FILE.write_text("4242", encoding="utf-8")
+        rec = _Recorder(result=None)
+        monkeypatch.setattr(os, "kill", rec)
+        mod.stop_server()
+        assert rec.calls == [((4242, signal.SIGTERM), {})], rec.calls
+        capsys.readouterr()
+
+
+def test_golden_kill_port_holder_sequence_and_permission_edge(monkeypatch, tmp_path, caplog):
+    """PINNED SITE _kill_port_holder -- polite, probe, forced; a PermissionError
+    from any of them is caught and logged as rlm_port_kill_permission."""
+    import logging
+
+    mod = _daemon(monkeypatch, tmp_path)
+    port = _free_port()
+    monkeypatch.setattr(mod.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(mod, "_port_holder_pids", lambda _p: [4242])
+    term = _terminate_recorder(monkeypatch, _platform_of(mod))
+    assert mod._kill_port_holder(port, {4242}) is True
+    assert term.calls == [((4242,), {"force": True})], term.calls
+
+    caplog.clear()
+    _terminate_recorder(monkeypatch, _platform_of(mod), raises=PermissionError())
+    with caplog.at_level(logging.INFO, logger="amauta.daemon"):
+        assert mod._kill_port_holder(port, {4242}) is False
+    assert "rlm_port_kill_permission pid=4242" in caplog.text
+
+    if not IS_WINDOWS:
+        # POSIX argv pin UNDER the boundary: put the real terminate back first.
+        monkeypatch.setattr(_platform_of(mod), "terminate", _REAL_TERMINATE)
+        mod2 = _daemon(monkeypatch, tmp_path)
+        monkeypatch.setattr(mod2.time, "sleep", lambda _s: None)
+        monkeypatch.setattr(mod2, "_port_holder_pids", lambda _p: [4242])
+        rec = _Recorder(result=None)
+        monkeypatch.setattr(os, "kill", rec)
+        assert mod2._kill_port_holder(port, {4242}) is True
+        assert [c[0][1] for c in rec.calls] == [signal.SIGTERM, 0, signal.SIGKILL]
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 5. The detached start: start_new_session=True on the RLM child
+# ══════════════════════════════════════════════════════════════════════════
+
+
+def test_golden_rlm_child_is_started_detached(monkeypatch, tmp_path):
+    """amauta-daemon.py:800 -- the RLM child is spawned with start_new_session=True
+    so it survives a daemon restart (the premise of _rlm_allowed_pids)."""
+    import urllib.request
+
+    port = _free_port()
+    mod = _daemon(
+        monkeypatch, tmp_path,
+        {"GSD_AMAUTA_PORT": str(_free_port()), "GSD_RLM_PORT": str(port)},
+    )
+    assert mod.RLM_PORT == port, "an explicit GSD_RLM_PORT wins (88-12 contract)"
+    Path(mod.DATA_DIR).mkdir(parents=True, exist_ok=True)
+    mod._rlm_enabled = True
+    mod._rlm_process = None
+    monkeypatch.setattr(mod, "_port_is_free", lambda _p: True)
+    monkeypatch.setattr(mod.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(
+        urllib.request, "urlopen", lambda *a, **k: SimpleNamespace(status=200)
+    )
+    rec = _Recorder(result=SimpleNamespace(pid=4242))
+    monkeypatch.setattr(subprocess, "Popen", rec)
+    try:
+        assert mod._start_rlm() is True
+    finally:
+        mod._rlm_process = None
+    args, kwargs = rec.calls[0]
+    assert list(args[0])[1:] == [mod.RLM_SERVICE_PY, "run"], args[0]
+    # The DETACH keywords, whichever they are on this platform: start_new_session
+    # on POSIX (unchanged), CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS on
+    # Windows, where the POSIX keyword is silently ignored and a non-detached
+    # child dies with its parent.
+    for key, value in _platform_of(mod).detached_popen_kwargs().items():
+        assert kwargs.get(key) == value, (key, kwargs.get(key))
+    if not IS_WINDOWS:
+        assert kwargs.get("start_new_session") is True, kwargs
+    assert kwargs["env"]["GSD_RLM_PORT"] == str(port)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 6. The daemonise parent/child split.
+#
+#    `daemonize() -> None` could not express what the code does: the PARENT
+#    prints "starting in background" and returns, while the CHILD goes on to
+#    run start_server.  The pin executes the real
+#    `if __name__ == "__main__":` dispatch with daemonize and start_server
+#    replaced by recorders -- no process is forked, no server is started and
+#    nothing is spawned.
+# ══════════════════════════════════════════════════════════════════════════
+
+
+def _main_block_source(module_path):
+    """Source of the `if __name__ == "__main__":` body, dedented."""
+    src = module_path.read_text(encoding="utf-8")
+    lines = src.splitlines()
+    tree = ast.parse(src)
+    for node in tree.body:
+        if isinstance(node, ast.If) and "__main__" in ast.dump(node.test):
+            first = node.body[0].lineno - 1
+            last = max(getattr(s, "end_lineno", s.lineno) for s in node.body)
+            return textwrap.dedent("\n".join(lines[first:last])) + "\n"
+    raise AssertionError("no __main__ block in %s" % module_path)
+
+
+def _run_start_dispatch(mod, module_path, monkeypatch, *, role=None, unsupported=False):
+    """Execute the real `start` dispatch with the platform boundary recorded."""
+    started = _Recorder(result=None)
+    printed = []
+    plat = _platform_of(mod)
+    if unsupported:
+        monkeypatch.setattr(plat, "daemonize", _Recorder(raises=plat.DaemonizeUnsupported("no fork")))
+    else:
+        monkeypatch.setattr(plat, "daemonize", _Recorder(result=role))
+    popen = _Recorder(result=SimpleNamespace(pid=4242))
+    monkeypatch.setattr(subprocess, "Popen", popen)
+    ns = dict(mod.__dict__)
+    ns["start_server"] = started
+    ns["print"] = lambda *a, **k: printed.append(" ".join(str(x) for x in a))
+    ns["sys"] = SimpleNamespace(
+        argv=[str(module_path), "start"],
+        exit=lambda code=0: (_ for _ in ()).throw(AssertionError("sys.exit(%r)" % code)),
+        path=list(sys.path),
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+        executable=sys.executable,
+        modules=sys.modules,
+    )
+    exec(compile(_main_block_source(module_path), str(module_path), "exec"), ns)  # noqa: S102
+    return started, printed, popen
+
+
+def test_golden_daemonize_child_branch_runs_the_server(monkeypatch, tmp_path):
+    mod = _daemon(monkeypatch, tmp_path)
+    started, printed, popen = _run_start_dispatch(mod, _DAEMON, monkeypatch, role="child")
+    assert started.calls == [((), {"foreground": False})], "the CHILD runs start_server"
+    assert printed == [], "the CHILD prints nothing"
+    assert popen.calls == [], "the CHILD spawns nothing"
+
+
+def test_golden_daemonize_parent_branch_prints_and_returns(monkeypatch, tmp_path):
+    mod = _daemon(monkeypatch, tmp_path)
+    started, printed, popen = _run_start_dispatch(mod, _DAEMON, monkeypatch, role="parent")
+    assert started.calls == [], "the PARENT does not run start_server"
+    assert printed == ["Daemon starting in background..."]
+    assert popen.calls == []
+
+
+def test_golden_rlm_daemonize_child_and_parent(monkeypatch, tmp_path):
+    mod = _rlm(monkeypatch, tmp_path)
+    started, printed, _ = _run_start_dispatch(mod, _RLM, monkeypatch, role="child")
+    assert started.calls == [((), {"foreground": False})]
+    assert printed == []
+
+    started, printed, _ = _run_start_dispatch(mod, _RLM, monkeypatch, role="parent")
+    assert started.calls == []
+    assert printed == ["RLM service starting in background..."]
+
+
+def test_the_start_verb_respawns_detached_where_there_is_no_fork(monkeypatch, tmp_path):
+    """Windows has no fork, so the start verb must still work: the parent
+    re-spawns this script with CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS and
+    prints the same line. Proven with a recorded Popen -- nothing is started."""
+    for mod, module_path, line in (
+        (_daemon(monkeypatch, tmp_path), _DAEMON, "Daemon starting in background..."),
+        (_rlm(monkeypatch, tmp_path), _RLM, "RLM service starting in background..."),
+    ):
+        started, printed, popen = _run_start_dispatch(mod, module_path, monkeypatch, unsupported=True)
+        assert started.calls == [], "the parent never runs the server in-process"
+        assert printed == [line]
+        assert len(popen.calls) == 1, popen.calls
+        args, kwargs = popen.calls[0]
+        assert list(args[0])[1:] == [os.path.abspath(str(module_path)), "run"], args[0]
+        assert kwargs.get("close_fds") is True
+        detached = _platform_of(mod).detached_popen_kwargs()
+        for key, value in detached.items():
+            assert kwargs.get(key) == value, (key, kwargs)
+
+
+def test_daemonize_itself_forks_on_posix_and_raises_on_windows(monkeypatch):
+    """The helper, directly: POSIX forks and setsids; Windows raises a TYPED error."""
+    sys.path.insert(0, str(_REPO / "services"))
+    try:
+        import _platform as plat
+    finally:
+        sys.path.pop(0)
+    if IS_WINDOWS:
+        with pytest.raises(plat.DaemonizeUnsupported):
+            plat.daemonize()
+        return
+    setsid = _Recorder(result=None)
+    monkeypatch.setattr(os, "setsid", setsid)
+    monkeypatch.setattr(os, "fork", _Recorder(result=0))
+    assert plat.daemonize() == "child"
+    assert len(setsid.calls) == 1
+    setsid2 = _Recorder(result=None)
+    monkeypatch.setattr(os, "setsid", setsid2)
+    monkeypatch.setattr(os, "fork", _Recorder(result=4242))
+    assert plat.daemonize() == "parent"
+    assert setsid2.calls == []
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 7. Task 88-15-02: the helpers themselves.
+#
+#    The defect this plan exists for: Python's docs say that on Windows
+#    os.kill with any signal but CTRL_C_EVENT / CTRL_BREAK_EVENT calls
+#    TerminateProcess, so `os.kill(pid, 0)` -- used as an "is it alive?" probe
+#    at seven sites -- KILLED the process it was checking.  Every test below
+#    either owns the process it signals or signals nothing at all.
+# ══════════════════════════════════════════════════════════════════════════
+
+sys.path.insert(0, str(_REPO / "services"))
+import _platform  # noqa: E402
+sys.path.pop(0)
+
+
+_SLEEPER = (
+    "import sys, time\n"
+    "sys.stdout.write('ready\\n'); sys.stdout.flush()\n"
+    "time.sleep(300)\n"
+)
+
+
+def _spawn_sleeper():
+    """A child process THIS TEST owns; it prints 'ready' and then sleeps."""
+    child = subprocess.Popen(
+        [sys.executable, "-c", _SLEEPER],
+        stdout=subprocess.PIPE, text=True, encoding="utf-8",
+    )
+    line = child.stdout.readline()
+    assert line.strip() == "ready", "sleeper child did not start: %r" % line
+    return child
+
+
+def _reap(child):
+    if child is None:
+        return
+    try:
+        if child.poll() is None:
+            child.kill()
+        child.wait(timeout=30)
+    finally:
+        if child.stdout:
+            child.stdout.close()
+
+
+def test_pid_alive_probes_a_hundred_times_without_killing_the_child():
+    """THE defect test: a liveness probe must never terminate its target.
+
+    On Windows, os.kill(pid, 0) calls TerminateProcess, so the pre-88-15 probe
+    killed the daemon it was checking.  100 probes, and the child is still
+    running with no exit status.
+    """
+    child = _spawn_sleeper()
+    try:
+        for _ in range(100):
+            assert _platform.pid_alive(child.pid) is True
+        assert child.poll() is None, (
+            "the probe terminated the process it only meant to observe "
+            "(exit status %r after 100 calls)" % child.returncode
+        )
+        assert _platform.pid_alive(child.pid, strict=True) is True
+    finally:
+        _reap(child)
+
+
+def test_pid_alive_is_false_for_a_reaped_child():
+    child = _spawn_sleeper()
+    pid = child.pid
+    _reap(child)
+    assert _platform.pid_alive(pid) is False
+
+
+def test_pid_alive_rejects_an_invalid_pid():
+    for bad in ("4242", 4242.0, True, None, [4242]):
+        with pytest.raises(TypeError):
+            _platform.pid_alive(bad)
+    for bad in (0, -1):
+        with pytest.raises(ValueError):
+            _platform.pid_alive(bad)
+
+
+def test_terminate_polite_then_forced_on_a_child_this_test_owns():
+    # POSIX encodes the killing signal in the exit status; Windows has neither
+    # SIGTERM nor SIGKILL and TerminateProcess sets the exit CODE instead, so
+    # the portable half of the assertion is "the child really stopped" and the
+    # signal encoding is asserted on POSIX only.
+    stopped_by = (
+        (-signal.SIGTERM, -signal.SIGKILL, signal.SIGTERM) if not IS_WINDOWS else None
+    )
+
+    child = _spawn_sleeper()
+    try:
+        assert _platform.terminate(child.pid) is True            # the polite stop
+        status = child.wait(timeout=30)
+        assert status is not None, "the child must have stopped"
+        if stopped_by is not None:
+            assert status in stopped_by, status
+    finally:
+        _reap(child)
+
+    child = _spawn_sleeper()
+    try:
+        assert _platform.terminate(child.pid, force=True, grace_s=0.05, settle_s=0.05) is True
+        status = child.wait(timeout=30)
+        assert status is not None, "the forced stop must have stopped the child"
+        if stopped_by is not None:
+            assert status in (-signal.SIGTERM, -signal.SIGKILL), status
+        assert _platform.pid_alive(child.pid) is False or child.poll() is not None
+    finally:
+        _reap(child)
+
+
+def test_terminate_refuses_a_no_op_combination():
+    with pytest.raises(ValueError):
+        _platform.terminate(4242, graceful=False, force=False)
+
+
+class _FakeKernel32:
+    """Records the Win32 calls the Windows branch makes."""
+
+    def __init__(self, handle=0x1234, wait=0x00000102, last_error=0, terminate_ok=True):
+        self.calls = []
+        self._handle = handle
+        self._wait = wait
+        self.last_error = last_error
+        self._terminate_ok = terminate_ok
+
+    def OpenProcess(self, access, inherit, pid):
+        self.calls.append(("OpenProcess", access, inherit, pid))
+        return self._handle
+
+    def WaitForSingleObject(self, handle, ms):
+        self.calls.append(("WaitForSingleObject", handle, ms))
+        return self._wait
+
+    def TerminateProcess(self, handle, code):
+        self.calls.append(("TerminateProcess", handle, code))
+        return 1 if self._terminate_ok else 0
+
+    def CloseHandle(self, handle):
+        self.calls.append(("CloseHandle", handle))
+        return 1
+
+
+def _no_kill(monkeypatch):
+    """Arm a recorder that FAILS the test if os.kill is called at all."""
+    seen = []
+
+    def boom(*args, **kwargs):
+        seen.append(args)
+        raise AssertionError("os.kill must never be called on Windows: %r" % (args,))
+
+    monkeypatch.setattr(os, "kill", boom)
+    return seen
+
+
+def test_injected_win32_pid_alive_uses_openprocess_and_never_os_kill(monkeypatch):
+    seen = _no_kill(monkeypatch)
+    fake = _FakeKernel32(handle=0x1234, wait=0x00000102)  # WAIT_TIMEOUT -> alive
+    monkeypatch.setattr(_platform, "_load_kernel32", lambda: (fake, lambda: 0))
+    assert _platform.pid_alive(4242, platform="win32") is True
+    assert fake.calls[0][0] == "OpenProcess"
+    assert fake.calls[0][3] == 4242
+    assert ("WaitForSingleObject", 0x1234, 0) in fake.calls
+    assert ("CloseHandle", 0x1234) in fake.calls
+    assert seen == []
+
+    fake_dead = _FakeKernel32(handle=0x1234, wait=0)  # WAIT_OBJECT_0 -> exited
+    monkeypatch.setattr(_platform, "_load_kernel32", lambda: (fake_dead, lambda: 0))
+    assert _platform.pid_alive(4242, platform="win32") is False
+
+    gone = _FakeKernel32(handle=0)
+    monkeypatch.setattr(_platform, "_load_kernel32", lambda: (gone, lambda: 87))
+    assert _platform.pid_alive(4242, platform="win32") is False
+
+    denied = _FakeKernel32(handle=0)
+    monkeypatch.setattr(_platform, "_load_kernel32", lambda: (denied, lambda: 5))
+    assert _platform.pid_alive(4242, platform="win32") is True
+    with pytest.raises(PermissionError):
+        _platform.pid_alive(4242, strict=True, platform="win32")
+    assert seen == []
+
+
+def test_injected_win32_terminate_uses_terminateprocess_and_never_os_kill(monkeypatch):
+    seen = _no_kill(monkeypatch)
+    fake = _FakeKernel32()
+    monkeypatch.setattr(_platform, "_load_kernel32", lambda: (fake, lambda: 0))
+    assert _platform.terminate(4242, platform="win32") is True
+    assert ("TerminateProcess", 0x1234, 1) in fake.calls
+    assert ("CloseHandle", 0x1234) in fake.calls
+
+    gone = _FakeKernel32(handle=0)
+    monkeypatch.setattr(_platform, "_load_kernel32", lambda: (gone, lambda: 87))
+    with pytest.raises(ProcessLookupError):
+        _platform.terminate(4242, platform="win32")
+
+    denied = _FakeKernel32(handle=0)
+    monkeypatch.setattr(_platform, "_load_kernel32", lambda: (denied, lambda: 5))
+    with pytest.raises(PermissionError):
+        _platform.terminate(4242, force=True, platform="win32")
+    assert seen == []
+
+
+def test_injected_win32_process_command_uses_powershell_execfile_argv(monkeypatch):
+    seen = _no_kill(monkeypatch)
+    rec = _Recorder(result=SimpleNamespace(returncode=0, stdout="python.exe rlm-service.py run\r\n"))
+    monkeypatch.setattr(subprocess, "run", rec)
+    out = _platform.process_command(4242, platform="win32")
+    assert out == "python.exe rlm-service.py run"
+    argv = rec.calls[0][0][0]
+    assert isinstance(argv, list), "never a shell string"
+    assert argv[1:4] == ["-NoProfile", "-NonInteractive", "-Command"]
+    assert "Win32_Process" in argv[4] and "ProcessId=4242" in argv[4]
+    assert rec.calls[0][1]["capture_output"] is True
+    assert seen == []
+
+
+def test_injected_win32_port_holders_uses_get_nettcpconnection(monkeypatch):
+    seen = _no_kill(monkeypatch)
+    rec = _Recorder(result=SimpleNamespace(returncode=0, stdout="111\r\n222\r\n"))
+    monkeypatch.setattr(subprocess, "run", rec)
+    port = _free_port()
+    assert _platform.port_holders(port, platform="win32") == [111, 222]
+    argv = rec.calls[0][0][0]
+    assert isinstance(argv, list)
+    assert "Get-NetTCPConnection" in argv[4]
+    assert "-LocalPort %d" % port in argv[4]
+    assert "OwningProcess" in argv[4]
+    assert seen == []
+
+
+def test_a_pid_or_port_is_validated_before_it_reaches_a_command_line(monkeypatch):
+    """Security: nothing user-controlled is interpolated into a -Command string."""
+    rec = _Recorder(result=SimpleNamespace(returncode=0, stdout=""))
+    monkeypatch.setattr(subprocess, "run", rec)
+    for bad in ("4242; Remove-Item -Recurse C:\\", "12", 1.5, -3, 0, None, [4242], True):
+        with pytest.raises((TypeError, ValueError)):
+            _platform.process_command(bad, platform="win32")
+        with pytest.raises((TypeError, ValueError)):
+            _platform.port_holders(bad, platform="win32")
+    assert rec.calls == [], "a rejected value must never reach PowerShell"
+
+
+def test_injected_win32_powershell_failure_returns_none_and_empty(monkeypatch):
+    """PowerShell absent or failing: process_command None (foreign), holders []."""
+    monkeypatch.setattr(subprocess, "run", _Recorder(raises=FileNotFoundError("no powershell")))
+    errors = []
+    assert _platform.process_command(4242, on_error=errors.append, platform="win32") is None
+    assert _platform.port_holders(4242, on_error=errors.append, platform="win32") == []
+    assert len(errors) == 2
+
+
+def test_injected_win32_daemonize_raises_a_typed_error_not_attributeerror():
+    with pytest.raises(_platform.DaemonizeUnsupported):
+        _platform.daemonize(platform="win32")
+
+
+def test_detached_popen_kwargs_per_platform():
+    assert _platform.detached_popen_kwargs(platform="darwin") == {"start_new_session": True}
+    assert _platform.detached_popen_kwargs(platform="linux") == {"start_new_session": True}
+    win = _platform.detached_popen_kwargs(platform="win32")
+    assert set(win) == {"creationflags"}
+    assert win["creationflags"] == 0x00000200 | 0x00000008
+
+
+def test_injected_darwin_argv_is_the_golden_posix_argv(monkeypatch):
+    """Injected platform='darwin' reproduces the pinned POSIX argv byte-for-byte."""
+    rec = _Recorder(result=SimpleNamespace(returncode=0, stdout="x"))
+    monkeypatch.setattr(subprocess, "run", rec)
+    _platform.process_command(4242, platform="darwin")
+    assert list(rec.calls[0][0][0]) == PINNED_PS_ARGV
+    assert rec.calls[0][1] == PINNED_PS_KWARGS
+
+    rec2 = _Recorder(result=SimpleNamespace(returncode=0, stdout="7\n"))
+    monkeypatch.setattr(subprocess, "run", rec2)
+    port = _free_port()
+    assert _platform.port_holders(port, platform="darwin") == [7]
+    assert list(rec2.calls[0][0][0]) == ["lsof", "-t", "-iTCP:%d" % port, "-sTCP:LISTEN"]
+    assert rec2.calls[0][1] == PINNED_LSOF_KWARGS
+
+
+def test_process_command_none_widens_foreign_in_the_daemon(monkeypatch, tmp_path):
+    """Plan 88-12's contract: an unidentifiable pid is FOREIGN, never our own."""
+    mod = _daemon(monkeypatch, tmp_path)
+    monkeypatch.setattr(_platform, "process_command", lambda *a, **k: None)
+    assert mod._pid_command_line(4242) == ""
+    assert mod._pid_is_rlm_service(4242) is False

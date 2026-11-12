@@ -23,6 +23,10 @@ const fs = require('node:fs');
 const os = require('node:os');
 const { pyLiteral } = require('./support/py-embed.cjs');
 
+// Phase 88 plan 88-15: spawn Python through the shared resolver (GSD_PYTHON,
+// then py -3 / python / python3, each VERIFIED), never a literal name.
+const platform = require('../get-shit-done/bin/lib/platform.cjs');
+
 const ROOT = path.resolve(__dirname, '..');
 const AMAUTA_PY = path.join(ROOT, 'amauta.py');
 
@@ -30,7 +34,7 @@ const AMAUTA_PY = path.join(ROOT, 'amauta.py');
 const TEST_DATA_DIR = path.join(os.tmpdir(), `amauta-test-archive-${Date.now()}`);
 
 function pyExec(code, opts = {}) {
-  return execFileSync('python3', ['-c', code], {
+  return platform.runPython(['-c', code], {
     cwd: ROOT,
     env: {
       ...process.env,
@@ -44,7 +48,7 @@ function pyExec(code, opts = {}) {
 }
 
 function amautaCmd(args, opts = {}) {
-  return execFileSync('python3', [AMAUTA_PY, ...args], {
+  return platform.runPython([AMAUTA_PY, ...args], {
     cwd: ROOT,
     env: {
       ...process.env,

@@ -23,6 +23,10 @@ const os = require('node:os');
 const path = require('node:path');
 const { pyLiteral } = require('./support/py-embed.cjs');
 
+// Phase 88 plan 88-15: spawn Python through the shared resolver (GSD_PYTHON,
+// then py -3 / python / python3, each VERIFIED), never a literal name.
+const platform = require('../get-shit-done/bin/lib/platform.cjs');
+
 const ROOT = path.resolve(__dirname, '..');
 const MIGRATIONS_DIR = path.join(ROOT, 'migrations');
 
@@ -49,7 +53,7 @@ function pyFile(scriptContent, options = {}) {
   const tmpFile = path.join(tmpDir, 'script.py');
   try {
     fs.writeFileSync(tmpFile, scriptContent);
-    const result = execSync(`python3 "${tmpFile}"`, {
+    const result = platform.runPython([tmpFile], {
       encoding: 'utf8',
       cwd: ROOT,
       timeout: 15000,

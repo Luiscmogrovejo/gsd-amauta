@@ -23,6 +23,10 @@ const os = require('node:os');
 const path = require('node:path');
 const { pyLiteral } = require('./support/py-embed.cjs');
 
+// Phase 88 plan 88-15: spawn Python through the shared resolver (GSD_PYTHON,
+// then py -3 / python / python3, each VERIFIED), never a literal name.
+const platform = require('../get-shit-done/bin/lib/platform.cjs');
+
 const ROOT = path.resolve(__dirname, '..');
 
 // Python bootstrap: load complexity_scorer via importlib.
@@ -67,7 +71,7 @@ const SCALE03_FEATURES_PY = `{
 }`;
 
 // Check python3 is on PATH
-const pythonCheck = spawnSync('python3', ['--version'], { encoding: 'utf8' });
+const pythonCheck = platform.spawnPython(['--version'], { encoding: 'utf8' });
 if (pythonCheck.error || pythonCheck.status !== 0) {
   console.log('SKIP: python3 not on PATH — skipping task-completions-learning tests');
   process.exit(0);
@@ -77,7 +81,7 @@ if (pythonCheck.error || pythonCheck.status !== 0) {
 // "p > 0.5" / "p < 0.5" assertion vacuous. requirements.txt deliberately does not list numpy
 // (heavy numerical dependency for every install), so those assertions run only when it exists.
 const NUMPY = (() => {
-  try { execFileSync('python3', ['-c', 'import numpy'], { stdio: 'ignore' }); return true; }
+  try { platform.runPython(['-c', 'import numpy'], { stdio: 'ignore' }); return true; }
   catch { return false; }
 })();
 const NUMPY_SKIP = NUMPY ? false
@@ -90,7 +94,7 @@ function pyFile(scriptContent) {
   const tmpFile = path.join(tmpDir, 'script.py');
   try {
     fs.writeFileSync(tmpFile, scriptContent);
-    const result = spawnSync('python3', [tmpFile], {
+    const result = platform.spawnPython([tmpFile], {
       encoding: 'utf8',
       cwd: ROOT,
       timeout: 30000,

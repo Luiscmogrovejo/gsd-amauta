@@ -34,3 +34,37 @@ jobs:
 
       - name: Run hook gates CI mirror
         run: node scripts/hook-gates-ci.cjs
+
+  # Phase 88 plan 88-15. The hooks run on EVERY tool call, and this plan changed
+  # three of them (the wrapper-path quoting, the shellSplit backslash rule and
+  # the search filter's drive letter) -- all of them Windows path handling, which
+  # an ubuntu-only gate cannot see.
+  #
+  # A SECOND JOB, not a matrix: the existing check name `hook-gates` must not
+  # change, because plan 88-11 adds it to the ruleset by that name, and a matrix
+  # renames it to `hook-gates (ubuntu-latest)` unless the `name:` expression is
+  # contrived. The two check names are therefore `hook-gates` and
+  # `hook-gates-windows`.
+  hook-gates-windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out with LF line endings (88-13, research G4)
+        shell: bash
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run hook gates CI mirror
+        shell: bash
+        run: node scripts/hook-gates-ci.cjs

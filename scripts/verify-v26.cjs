@@ -11,6 +11,28 @@ const { manifestCheck, resolvePhaseDir, GLOBAL_ALLOWLIST } = require('../get-shi
 
 const fs = require('fs');
 const path = require('path');
+// Phase 88 plan 88-15: one Python launcher resolver, one `which`, one home dir.
+const platform = require('../get-shit-done/bin/lib/platform.cjs');
+
+// ── The Claude Code project-slug convention ─────────────────────────────────
+// `~/.claude/projects/<slug>` where <slug> is the project's absolute path with
+// every separator replaced by `-`. Phase 88 plan 88-15: this file used to carry
+// the slug as a hard-coded literal containing the operator's own username,
+// baked into a tracked file in a PUBLIC repository, and
+// a `/tmp` fallback that does not exist on Windows. No other place in the
+// codebase derives this slug, so the rule lives here, once.
+const REPO_ROOT_FOR_SLUG = path.resolve(__dirname, '..');
+
+/**
+ * claudeProjectSlug(root) — the ~/.claude/projects directory name for a repo.
+ *
+ * @param {string} root - absolute path to the project root.
+ * @returns {string} the slug, e.g. `/a/b/c` -> `-a-b-c`.
+ */
+function claudeProjectSlug(root) {
+  return path.resolve(root).replace(/[\\/:]+/g, '-');
+}
+
 const { spawnSync } = require('child_process');
 
 // Directly require the audit function rather than subprocessing (CONTEXT.md
@@ -674,7 +696,7 @@ function scanDogfoodLedgerDepths(memoryDir, ledgerPath) {
   } catch (_e) { observations.push('ledger_scan_degraded: ledger_unavailable'); }
 
   // Source 2: Scan memory directory
-  const memDir = memoryDir || path.join(process.env.HOME || '/tmp', '.claude', 'projects', '-Users-luismogrovejo-Code-gsd-amauta', 'memory');
+  const memDir = memoryDir || path.join(platform.homeDir(), '.claude', 'projects', claudeProjectSlug(REPO_ROOT_FOR_SLUG), 'memory');
   let memoryDepths = null;
   try {
     const depthRe = /[Dd]epth[-:\s]+(\d+)/;

@@ -46,6 +46,8 @@ const http = require('http');
 const { execFileSync, spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+// Phase 88 plan 88-15: one Python launcher resolver, one `which`, one home dir.
+const platform = require('./lib/platform.cjs');
 // Phase 76 DISC-01/02/03: shared raw-evidence side-channel resolver (single
 // source; scrub injected — the lib never requires this CLI back). Follows
 // [gsd-compress:raw-ref <path>] markers to their raw file so evidence stored
@@ -179,7 +181,7 @@ function _resolvePluginRoot() {
     if (fs.existsSync(path.join(c, 'amauta.py'))) return c;
   }
   // Final fallback chain — common dev/install locations
-  const home = process.env.HOME || require('os').homedir();
+  const home = platform.homeDir();
   const fallbacks = [
     path.join(home, 'Code', 'gsd-amauta'),
     path.join(home, 'gsd-amauta'),
@@ -237,7 +239,7 @@ function resolveReferencePath(relPath) {
 const DAEMON_SCRIPT = (function() {
   const local = path.join(PLUGIN_ROOT, 'services', 'amauta-daemon.py');
   if (fs.existsSync(local)) return local;
-  const home = process.env.HOME || require('os').homedir();
+  const home = platform.homeDir();
   for (const c of [
     path.join(home, 'Code', 'gsd-amauta', 'services', 'amauta-daemon.py'),
     path.join(home, 'gsd-amauta', 'services', 'amauta-daemon.py'),
@@ -328,7 +330,7 @@ async function startDaemon() {
   }
 
   // Use spawn with detached + unref so daemon outlives this process
-  const child = spawn('python3', [DAEMON_SCRIPT, 'start'], {
+  const child = platform.launchPython([DAEMON_SCRIPT, 'start'], {
     detached: true,
     stdio: 'ignore',
     env: {
@@ -340,7 +342,9 @@ async function startDaemon() {
   });
   child.on('error', (err) => {
     if (err.code === 'ENOENT') {
-      process.stderr.write('ERROR: python3 not found. Install Python 3.9+ to use Amauta daemon.\n');
+      // Name what was actually searched for, not a literal that may never have been tried.
+      const tried = platform.resolvePython();
+      process.stderr.write(`ERROR: Python 3 not found (tried \`${[tried.command, ...tried.args].join(' ')}\`). Install Python 3.9+ or set GSD_PYTHON to use the Amauta daemon.\n`);
     }
   });
   child.unref();
@@ -395,7 +399,7 @@ async function ensureDaemon() {
  */
 function runDirect(args) {
   try {
-    const result = execFileSync('python3', [AMAUTA_PY, ...args], {
+    const result = platform.runPython([AMAUTA_PY, ...args], {
       encoding: 'utf-8',
       // Same ceiling the daemon applies to the same subprocess — runDirect() IS
       // the daemon-side execution, so it takes cmdTimeoutMs() without the
@@ -2271,7 +2275,7 @@ async function cmdDaemon(subcommand) {
       // Forward stop_server's own report (it now escalates SIGTERM→SIGKILL and
       // prints "Daemon stopped" only if the process actually died, else a
       // WARNING) instead of hard-coding a success message.
-      const out = execFileSync('python3', [DAEMON_SCRIPT, 'stop'], {
+      const out = platform.runPython([DAEMON_SCRIPT, 'stop'], {
         encoding: 'utf-8',
         env: { ...process.env, AMAUTA_DATA_DIR: DATA_DIR },
       });
@@ -2284,7 +2288,7 @@ async function cmdDaemon(subcommand) {
 
   if (subcommand === 'run') {
     // Run in foreground — just exec the python daemon
-    const child = spawn('python3', [DAEMON_SCRIPT, 'run'], {
+    const child = platform.launchPython([DAEMON_SCRIPT, 'run'], {
       stdio: 'inherit',
       env: {
         ...process.env,
@@ -2340,7 +2344,7 @@ function loadEvidenceScrubPatterns(forceReload = false) {
     ? [envOverride]
     : [
         path.resolve(__dirname, '..', 'config', 'evidence-scrub-patterns.json'),
-        path.join(process.env.HOME || '', '.claude', 'get-shit-done', 'config', 'evidence-scrub-patterns.json'),
+        path.join(platform.homeDir(), '.claude', 'get-shit-done', 'config', 'evidence-scrub-patterns.json'),
       ];
 
   for (const p of candidates) {
@@ -2686,7 +2690,7 @@ function _resolveCapabilityCatalogWritePath() {
   if (envOverride) return envOverride;
   const repoLocal = path.resolve(__dirname, '..', 'config', 'capability-catalog.json');
   if (fs.existsSync(repoLocal)) return repoLocal;
-  return path.join(process.env.HOME || '', '.claude', 'get-shit-done', 'config', 'capability-catalog.json');
+  return path.join(platform.homeDir(), '.claude', 'get-shit-done', 'config', 'capability-catalog.json');
 }
 
 async function cmdCapabilityAdd(flags, jsonMode) {

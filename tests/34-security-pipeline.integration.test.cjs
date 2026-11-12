@@ -24,6 +24,9 @@ const { existsSync, readFileSync } = fs;
 const os = require('node:os');
 const path = require('node:path');
 
+// Phase 88 plan 88-15: one PATHEXT-aware executable lookup.
+const platformHelper = require('../get-shit-done/bin/lib/platform.cjs');
+
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 
 /**
@@ -314,10 +317,24 @@ describe('[SEC-06] install-trivy.cjs: graceful degradation (exits 0 always)', ()
 describe('[SEC-02][SEC-06] absent scanners are reported as unavailable, never as a clean scan', () => {
   let stage;
 
-  /** A throw-away project root holding a copy of one script, so ROOT-relative paths resolve inside it. */
+  /** A throw-away project root holding a copy of one script, so ROOT-relative paths resolve inside it.
+   *
+   * Phase 88 plan 88-15: the staged scripts now require the shared platform
+   * module (one `which` implementation instead of a `which … 2>/dev/null ||
+   * command -v …` shell string, which read every scanner as absent on
+   * Windows), so the stage carries it too. It is a REQUIRED dependency on
+   * purpose — a scanner that cannot be detected must say so, never degrade
+   * into a clean scan.
+   */
   function stageProject(...scripts) {
     stage = fs.mkdtempSync(path.join(os.tmpdir(), 'gsd-34-stage-'));
     fs.mkdirSync(path.join(stage, 'scripts'), { recursive: true });
+    const libDir = path.join(stage, 'get-shit-done', 'bin', 'lib');
+    fs.mkdirSync(libDir, { recursive: true });
+    fs.copyFileSync(
+      path.join(PROJECT_ROOT, 'get-shit-done', 'bin', 'lib', 'platform.cjs'),
+      path.join(libDir, 'platform.cjs'),
+    );
     for (const sc of scripts) fs.copyFileSync(path.join(PROJECT_ROOT, 'scripts', sc), path.join(stage, 'scripts', sc));
     return stage;
   }
@@ -417,7 +434,7 @@ describe('[SEC-01] Semgrep rule file: parse and rule ID assertions', () => {
 
   it('[SEC-01] semgrep fixture detection: if semgrep available, detects 34-vulnerable.js (conditional)',
     { skip: haveTool('semgrep') ? false : 'semgrep is not installed in this environment' }, () => {
-    const whichResult = spawnSync('which', ['semgrep'], { encoding: 'utf-8' });
+    const whichResult = { status: platformHelper.which('semgrep') ? 0 : 1 };
     const semgrepAvailable = whichResult.status === 0;
     if (semgrepAvailable) {
       const scan = spawnSync('semgrep', [
@@ -462,7 +479,7 @@ describe('[SEC-02] Gitleaks: config allowlist + fixture detection (conditional)'
     if (existsSync(localBin)) {
       gitleaksBin = localBin;
     } else {
-      const whichResult = spawnSync('which', ['gitleaks'], { encoding: 'utf-8' });
+      const whichResult = { status: platformHelper.which('gitleaks') ? 0 : 1 };
       if (whichResult.status === 0) {
         gitleaksBin = 'gitleaks';
       }

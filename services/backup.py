@@ -20,11 +20,49 @@ import gzip
 import hashlib
 import json
 import os
+import tempfile
 import time
 
 
 SCHEMA_VERSION = "2.1.0"
-BACKUP_DIR = os.path.expanduser("~/.amauta/backups")
+def _default_backup_dir():
+    """Where automatic and listed backups live.
+
+    Rules, in order:
+      1. an explicit ``AMAUTA_DATA_DIR`` wins -- backups live beside the data
+         they back up. ``amauta-daemon.py`` already monkeypatched BACKUP_DIR to
+         exactly this; the rule now lives where the constant does, so every
+         importer gets it instead of just the daemon;
+      2. otherwise, under ``GSD_TEST_MODE``, a temp directory -- never the real
+         home;
+      3. otherwise ``~/.amauta/backups``, unchanged.
+
+    The operator's LaunchAgent sets no ``AMAUTA_DATA_DIR`` (checked), so rule 3
+    is the one its daemon takes and PRODUCTION BEHAVIOUR IS UNCHANGED.
+
+    Phase 88 plan 88-15: the Windows CI cell caught a run creating
+    ``C:\\Users\\runneradmin\\.amauta\\backups``, and plan 88-14 measured that on
+    that runner ``expanduser("~")`` resolves the REAL profile even with every
+    home variable redirected -- so a redirected HOME is not a defence and the
+    path must not be derived from ``~`` at all when a data dir is known.
+
+    Returns:
+        str: the backup directory path.
+    """
+    data_dir = os.environ.get("AMAUTA_DATA_DIR")
+    if data_dir:
+        return os.path.join(data_dir, "backups")
+    if os.environ.get("GSD_TEST_MODE", "").strip().lower() in ("1", "true", "yes", "on"):
+        # Test mode with no data dir: anywhere but the real home. On the
+        # Windows runner `os.path.expanduser("~")` resolves the REAL profile
+        # even when HOME, USERPROFILE, HOMEDRIVE and HOMEPATH are all
+        # redirected (measured by plan 88-14), so `~` is not a safe base here
+        # under any circumstances.
+        return os.path.join(tempfile.gettempdir(), "gsd-test-backups")
+    return os.path.expanduser("~/.amauta/backups")
+
+
+BACKUP_DIR = _default_backup_dir()
 
 
 class BackupManager:

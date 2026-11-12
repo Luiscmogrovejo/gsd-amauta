@@ -36,6 +36,8 @@ const { execFileSync, spawn, spawnSync } = require('child_process');
 const http = require('http');
 const path = require('path');
 const fs = require('fs');
+// Phase 88 plan 88-15: one Python launcher resolver, one `which`, one home dir.
+const platform = require('../get-shit-done/bin/lib/platform.cjs');
 const os = require('os');
 
 // Skill compiler — optional (gracefully degrade if not installed)
@@ -484,14 +486,15 @@ async function stepDetectIdes() {
    */
   function cliOnPath(cliName) {
     try {
-      execFileSync('which', [cliName], { stdio: 'pipe' });
+      // `which` is POSIX-only; the helper uses `where` on Windows, which honours PATHEXT.
+      if (!platform.which(cliName)) return false;
       return true;
     } catch (_e) {
       return false;
     }
   }
 
-  const homeDir = process.env.HOME || os.homedir();
+  const homeDir = platform.homeDir();
   const cwdDir = process.cwd();
 
   const detections = [];
@@ -591,11 +594,13 @@ function classifyPathBinary(binPath) {
 function detectAmautaAiConflict() {
   const result = { conflict: false, pipxPath: null, shadowed: [] };
   try {
-    const whichCmd = process.platform === 'win32' ? 'where' : 'which';
-    const r = spawnSync(whichCmd, ['amauta-ai'], { stdio: 'pipe', encoding: 'utf-8' });
-    if (r.status === 0 && r.stdout.trim()) {
+    // Phase 88 plan 88-15: this file carried the ONLY win32/`where` branch in
+    // the product; it is now the shared helper, so `which` has one
+    // implementation and converting cliOnPath above changed nothing here.
+    const hit = platform.which('amauta-ai');
+    if (hit) {
       result.conflict = true;
-      result.pipxPath = r.stdout.trim().split('\n')[0];
+      result.pipxPath = hit;
     }
   } catch (_e) { /* advisory only */ }
 
@@ -805,7 +810,7 @@ function stepDetectInfra(log) {
   }
 
   try {
-    const output = execFileSync('python3', [INFRA_DETECT, '--auto-start'], {
+    const output = platform.runPython([INFRA_DETECT, '--auto-start'], {
       cwd: PLUGIN_ROOT,
       timeout: 90000, // Docker auto-start can take up to 60s+
       encoding: 'utf-8',
@@ -930,8 +935,7 @@ function stepMigrations(log, infraResult) {
   let alreadyApplied = 0;
   let runnerOutput = '';
   try {
-    runnerOutput = execFileSync(
-      'python3',
+    runnerOutput = platform.runPython(
       [MIGRATE_RUNNER, '--dsn', connUrl, '--json'],
       { timeout: 300000, stdio: 'pipe', encoding: 'utf8', env: { ...process.env } },
     );
@@ -1038,7 +1042,7 @@ async function stepStartDaemon(log, infraResult) {
   }
 
   // Spawn daemon detached
-  const child = spawn('python3', [DAEMON_SCRIPT, 'start'], {
+  const child = platform.launchPython([DAEMON_SCRIPT, 'start'], {
     detached: true,
     stdio: 'ignore',
     cwd: PLUGIN_ROOT,
@@ -1046,7 +1050,9 @@ async function stepStartDaemon(log, infraResult) {
   });
   child.on('error', (err) => {
     if (err.code === 'ENOENT') {
-      process.stderr.write(`${red}ERROR: python3 not found. Install Python 3.9+ to use Amauta daemon.${reset}\n`);
+      // Name what was actually searched for, not a literal that may never have been tried.
+      const tried = platform.resolvePython();
+      process.stderr.write(`${red}ERROR: Python 3 not found (tried \`${[tried.command, ...tried.args].join(' ')}\`). Install Python 3.9+ or set GSD_PYTHON to use the Amauta daemon.${reset}\n`);
     }
   });
   child.unref();

@@ -17,6 +17,10 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
+// Phase 88 plan 88-15: spawn Python through the shared resolver (GSD_PYTHON,
+// then py -3 / python / python3, each VERIFIED), never a literal name.
+const platform = require('../get-shit-done/bin/lib/platform.cjs');
+
 const ROOT = path.resolve(__dirname, '..');
 
 describe('init flow integration', () => {
@@ -36,7 +40,7 @@ describe('init flow integration', () => {
     // on 5433 mid-suite. GSD_FORCE_SQLITE short-circuits detection entirely
     // and --no-auto-start is a second belt. The assertions below accept
     // either backend, so neither flag weakens them.
-    const result = execFileSync('python3', [detectScript, '--no-auto-start'], {
+    const result = platform.runPython([detectScript, '--no-auto-start'], {
       encoding: 'utf-8',
       timeout: 30000,
       env: { ...process.env, GSD_FORCE_SQLITE: '1' },
@@ -116,7 +120,7 @@ describe('init flow integration', () => {
     const env = {
       ...process.env, GSD_POSTGRES_URL: '', GSD_FORCE_SQLITE: '1',
     };
-    const result = execFileSync('python3', [detectScript, '--no-auto-start'], {
+    const result = platform.runPython([detectScript, '--no-auto-start'], {
       encoding: 'utf-8',
       timeout: 30000,
       env,

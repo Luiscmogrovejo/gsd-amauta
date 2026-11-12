@@ -24,6 +24,10 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { pyArgs } = require('./support/py-embed.cjs');
 
+// Phase 88 plan 88-15: spawn Python through the shared resolver (GSD_PYTHON,
+// then py -3 / python / python3, each VERIFIED), never a literal name.
+const platform = require('../get-shit-done/bin/lib/platform.cjs');
+
 // ---------------------------------------------------------------------------
 // Corpus files
 // ---------------------------------------------------------------------------
@@ -346,7 +350,7 @@ function getCavemanDescription(relPath) {
     const code = 'import sys; sys.path.insert(0, sys.argv[1]); '
       + 'from services.caveman_descriptions import generate_caveman_description; '
       + 'print(generate_caveman_description(sys.argv[2]))';
-    return execFileSync('python3', pyArgs(code, [PROJECT_ROOT, absPath]), {
+    return platform.runPython(pyArgs(code, [PROJECT_ROOT, absPath]), {
       encoding: 'utf8',
       timeout: 15000,
       // Windows pipes default to the ANSI code page; the product text is UTF-8.

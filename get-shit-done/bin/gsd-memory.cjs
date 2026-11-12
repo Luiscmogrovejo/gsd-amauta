@@ -59,6 +59,8 @@ const http = require('http');
 // https module removed — Claude CLI used for distillation, curl for API fallback
 const path = require('path');
 const fs = require('fs');
+// Phase 88 plan 88-15: one Python launcher resolver, one `which`, one home dir.
+const platform = require('./lib/platform.cjs');
 // Model ids resolve through the single source of truth (lib/model-registry.json)
 // — MODL-01 currency + MODL-06 centralization. Honors the fable→opus fallback.
 const { resolveModelId, resolveModelAlias } = require('./lib/model-registry.cjs');
@@ -129,7 +131,7 @@ function loadTagRules() {
   if (_TAG_RULES_CACHE) return _TAG_RULES_CACHE;
   const candidates = [
     path.resolve(__dirname, '..', 'config', 'tag-rules.json'),
-    path.resolve(process.env.HOME || '', '.claude', 'get-shit-done', 'config', 'tag-rules.json'),
+    path.resolve(platform.homeDir(), '.claude', 'get-shit-done', 'config', 'tag-rules.json'),
   ];
   for (const p of candidates) {
     try {
@@ -2372,13 +2374,9 @@ async function maybeAutoDistill() {
 // ── LLM Distill Helpers (02-03) ─────────────────────────────────────────────
 
 function isOllamaAvailable() {
-  try {
-    const { execSync } = require('child_process');
-    execSync('which ollama', { stdio: 'pipe' });
-    return true;
-  } catch {
-    return false;
-  }
+  // Phase 88 plan 88-15: `which` is POSIX-only; the helper uses `where` on
+  // Windows and never goes through a shell.
+  return platform.which('ollama') !== null;
 }
 
 function selectOllamaModel() {
@@ -2517,7 +2515,13 @@ function claudeSummarize(entries, model) {
         '',
       ].join('\n'), { mode: 0o600 });
 
-      const apiResult = execFileSync('curl', ['--config', cfgPath], {
+      // Phase 88 plan 88-15: a BARE `curl` is resolved by the OS loader, so on
+      // Windows the System32 copy always wins and nothing can be put in front
+      // of it. GSD_CURL overrides it (a path, or a JSON array when the
+      // launcher needs leading arguments); the key still travels in the config
+      // file, never on the command line.
+      const curlTool = platform.resolveTool('GSD_CURL', 'curl');
+      const apiResult = execFileSync(curlTool.command, [...curlTool.args, '--config', cfgPath], {
         timeout: 35000, encoding: 'utf8',
       });
       const parsed = JSON.parse(apiResult);

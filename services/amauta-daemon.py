@@ -151,6 +151,16 @@ try:
 except ImportError:
     OIDCAuth = None  # type: ignore
 
+# Platform differences (Phase 88, plan 88-15). REQUIRED, not optional: every
+# liveness probe, terminate, detach and process/port lookup goes through it, and
+# on Windows a null-signal probe would TERMINATE the process it only means to
+# observe. Per the Phase 60 sys.path learning the directory is added explicitly
+# so the module resolves however this file was loaded.
+_SERVICES_DIR = os.path.dirname(os.path.abspath(__file__))
+if _SERVICES_DIR not in sys.path:
+    sys.path.append(_SERVICES_DIR)
+import _platform  # noqa: E402
+
 # Evidence scrub (optional — graceful degradation, Phase 68 MOBL-04).
 # Guarded import per the Phase 60 sys.path learning: NEVER a silent
 # except-pass — a missing module gets a loud one-time stderr warning so a
@@ -560,9 +570,14 @@ def _rlm_pid_file_path():
 def _pid_command_line(pid):
     """Command line of `pid`, or "" when it cannot be read.
 
-    Reads ``ps -ww -o command= -p <pid>`` (``-ww`` lifts any column cap on procps
-    and BSD ps) and, on Linux, also ``/proc/<pid>/cmdline``; the two are joined so
-    a pid is judged on whichever source answered.
+    Delegates to ``_platform.process_command``: on POSIX that is the same
+    ``ps -ww -o command= -p <pid>`` (``-ww`` lifts any column cap on procps and
+    BSD ps) joined with ``/proc/<pid>/cmdline``; on Windows it is
+    ``Get-CimInstance Win32_Process`` through PowerShell, because ``ps`` does
+    not exist there.
+
+    A lookup that cannot answer returns "" -- which makes `_pid_is_rlm_service`
+    False and therefore widens "foreign", never narrows it.
 
     Args:
         pid: Process id to inspect.
@@ -570,22 +585,10 @@ def _pid_command_line(pid):
     Returns:
         str: the command line(s) found, possibly empty.
     """
-    parts = []
-    try:
-        out = subprocess.run(
-            ["ps", "-ww", "-o", "command=", "-p", str(int(pid))],
-            capture_output=True, text=True, timeout=5,
-        )
-        if out.returncode == 0:
-            parts.append(out.stdout)
-    except Exception as e:
-        log.warning("rlm_pid_identity_check_failed pid=%s error=%s", pid, e)
-    try:
-        with open("/proc/%d/cmdline" % int(pid), "rb") as fh:
-            parts.append(fh.read().replace(b"\0", b" ").decode("utf-8", "replace"))
-    except (OSError, ValueError):
-        pass  # no /proc (macOS) or the process is gone
-    return " ".join(parts)
+    return _platform.process_command(
+        pid,
+        on_error=lambda e: log.warning("rlm_pid_identity_check_failed pid=%s error=%s", pid, e),
+    ) or ""
 
 
 def _pid_is_rlm_service(pid):
@@ -609,9 +612,9 @@ def _rlm_allowed_pids():
 
     Exactly two sources, both this daemon's own record: the child it spawned in
     this process lifetime, and the pid in its own RLM pid file provided the
-    process really is an rlm-service.py (the RLM child runs with
-    start_new_session=True, so it survives a daemon restart and the pid file is
-    the restarted daemon's only handle on it).
+    process really is an rlm-service.py (the RLM child is spawned detached in
+    its own session, so it survives a daemon restart and the pid file is the
+    restarted daemon's only handle on it).
 
     Returns:
         set: pids that are safe to terminate.
@@ -629,24 +632,15 @@ def _rlm_allowed_pids():
 
 
 def _port_holder_pids(port):
-    """Pids with a LISTEN socket on `port` (lsof). Empty list on any failure."""
-    try:
-        result = subprocess.run(
-            ["lsof", "-t", f"-iTCP:{port}", "-sTCP:LISTEN"],
-            capture_output=True, text=True, timeout=5,
-        )
-    except Exception as e:
-        log.warning("rlm_port_check_failed error=%s", str(e))
-        return []
-    if result.returncode != 0 or not result.stdout.strip():
-        return []
-    pids = []
-    for line in result.stdout.split():
-        try:
-            pids.append(int(line))
-        except ValueError:
-            continue
-    return pids
+    """Pids with a LISTEN socket on `port`. Empty list on any failure.
+
+    Delegates to ``_platform.port_holders`` (port -> pids): ``lsof -t
+    -iTCP:<port> -sTCP:LISTEN`` on POSIX, ``Get-NetTCPConnection`` on Windows,
+    where lsof does not exist.
+    """
+    return _platform.port_holders(
+        port, on_error=lambda e: log.warning("rlm_port_check_failed error=%s", str(e))
+    )
 
 
 def _kill_port_holder(port, allowed_pids):
@@ -668,14 +662,10 @@ def _kill_port_holder(port, allowed_pids):
                 log.warning("rlm_port_holder_foreign port=%d pid=%d", port, pid)
                 continue
             try:
-                os.kill(pid, signal.SIGTERM)
-                time.sleep(0.5)
-                try:
-                    os.kill(pid, 0)  # Check if still alive
-                    os.kill(pid, signal.SIGKILL)
-                    time.sleep(0.3)
-                except ProcessLookupError:
-                    pass
+                # Polite signal, wait, probe, hard stop — the same sequence as
+                # before, chosen per platform in one place (Windows has neither
+                # a polite signal nor a non-fatal probe; see _platform.terminate).
+                _platform.terminate(pid, force=True)
                 log.info("rlm_port_freed pid=%d port=%d", pid, port)
                 signalled = True
             except ProcessLookupError:
@@ -802,7 +792,10 @@ def _start_rlm():
             env=env,
             stdout=rlm_log_file,
             stderr=rlm_log_file,
-            start_new_session=True,
+            # A new session on POSIX (unchanged), CREATE_NEW_PROCESS_GROUP |
+            # DETACHED_PROCESS on Windows, where the POSIX keyword is ignored and
+            # a non-detached child dies with its parent.
+            **_platform.detached_popen_kwargs(),
         )
         # Wait for health check
         import urllib.request
@@ -5377,7 +5370,11 @@ def start_server(foreground=False):
         if PID_FILE.exists():
             try:
                 pid = int(PID_FILE.read_text(encoding="utf-8").strip())
-                os.kill(pid, 0)  # Check if process exists
+                # strict=True keeps the pre-88-15 behaviour exactly: a
+                # PermissionError means the pid belongs to another user and is
+                # NOT swallowed here. The probe never signals the process.
+                if not _platform.pid_alive(pid, strict=True):
+                    raise ProcessLookupError(pid)
                 print(f"Daemon already running (PID {pid})")
                 return
             except (ProcessLookupError, ValueError):
@@ -5787,29 +5784,25 @@ def stop_server():
 
     try:
         pid = int(PID_FILE.read_text(encoding="utf-8").strip())
-        os.kill(pid, signal.SIGTERM)
+        _platform.terminate(pid)
         print(f"Sent SIGTERM to PID {pid}")
         # Wait for graceful exit (SIGTERM). If it does not die, escalate to
-        # SIGKILL rather than removing the PID file and falsely reporting
+        # a hard stop rather than removing the PID file and falsely reporting
         # success — a lingering process would keep holding the port and block
         # the next start.
         died = False
         for _ in range(20):  # up to ~6s for graceful shutdown
             time.sleep(0.3)
-            try:
-                os.kill(pid, 0)
-            except ProcessLookupError:
+            if not _platform.pid_alive(pid, strict=True):
                 died = True
                 break
         if not died:
             print(f"PID {pid} did not exit on SIGTERM — sending SIGKILL")
             try:
-                os.kill(pid, signal.SIGKILL)
+                _platform.terminate(pid, graceful=False, force=True)
                 for _ in range(10):  # up to ~3s for the kernel to reap
                     time.sleep(0.3)
-                    try:
-                        os.kill(pid, 0)
-                    except ProcessLookupError:
+                    if not _platform.pid_alive(pid, strict=True):
                         died = True
                         break
             except ProcessLookupError:
@@ -5832,7 +5825,10 @@ def check_status():
 
     try:
         pid = int(PID_FILE.read_text(encoding="utf-8").strip())
-        os.kill(pid, 0)
+        # strict=True: a PermissionError propagates exactly as it did before
+        # 88-15. The probe observes, it never signals.
+        if not _platform.pid_alive(pid, strict=True):
+            raise ProcessLookupError(pid)
         print(f"Daemon running (PID {pid}) on {HOST}:{PORT}")
         return True
     except (ProcessLookupError, ValueError):
@@ -5857,12 +5853,27 @@ if __name__ == "__main__":
 
     cmd = sys.argv[1]
     if cmd == "start":
-        # Fork to background
-        if os.fork() == 0:
-            os.setsid()
-            start_server(foreground=False)
-        else:
+        # Detach to the background. On POSIX this is the same fork + setsid as
+        # before: the CHILD runs start_server and the PARENT prints and returns.
+        # Windows has no fork, so daemonize() raises and the parent re-spawns
+        # this script detached (CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS).
+        try:
+            _role = _platform.daemonize()
+        except _platform.DaemonizeUnsupported:
+            subprocess.Popen(
+                [sys.executable, os.path.abspath(__file__), "run"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                close_fds=True,
+                **_platform.detached_popen_kwargs(),
+            )
             print("Daemon starting in background...")
+        else:
+            if _role == "child":
+                start_server(foreground=False)
+            else:
+                print("Daemon starting in background...")
     elif cmd == "run":
         start_server(foreground=True)
     elif cmd == "stop":

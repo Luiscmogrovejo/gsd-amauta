@@ -23,12 +23,16 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { pyLiteral } = require('./support/py-embed.cjs');
 
+// Phase 88 plan 88-15: spawn Python through the shared resolver (GSD_PYTHON,
+// then py -3 / python / python3, each VERIFIED), never a literal name.
+const platform = require('../get-shit-done/bin/lib/platform.cjs');
+
 const ROOT = path.resolve(__dirname, '..');
 const DAEMON_PY = path.join(ROOT, 'services', 'amauta-daemon.py');
 const DAEMON_SRC = fs.readFileSync(DAEMON_PY, 'utf-8');
 
 function pyExec(code) {
-  return execFileSync('python3', ['-c', code], {
+  return platform.runPython(['-c', code], {
     cwd: ROOT,
     env: { ...process.env, GSD_AMAUTA_NO_AUTO_START: '1', PYTHONDONTWRITEBYTECODE: '1' },
     encoding: 'utf-8',

@@ -68,6 +68,24 @@ def _load_daemon(monkeypatch, tmp_path, env):
     return mod
 
 
+# Phase 88 plan 88-15: POSIX encodes the killing signal in the exit status.
+# Windows has neither SIGTERM nor SIGKILL -- `signal.SIGKILL` does not even
+# exist there, so naming it raises AttributeError before any assertion runs --
+# and TerminateProcess sets an exit CODE instead. The contract these two tests
+# check is "the daemon stopped this child", so the portable half is asserted
+# everywhere and the POSIX signal encoding on POSIX.
+_IS_WINDOWS = sys.platform.startswith("win")
+_STOPPED_BY_SIGNAL = () if _IS_WINDOWS else (-signal.SIGTERM, -signal.SIGKILL)
+
+
+def _assert_stopped(child, timeout=5):
+    """The child was stopped by the daemon, whatever the platform encodes."""
+    status = child.wait(timeout=timeout)
+    assert status is not None, "the child is still running"
+    if _STOPPED_BY_SIGNAL:
+        assert status in _STOPPED_BY_SIGNAL, status
+
+
 def _spawn_listener(port, script=None):
     """Start a child that listens on `port`; returns the Popen once it is ready."""
     if script is None:
@@ -159,7 +177,7 @@ def test_own_child_is_killed(monkeypatch, tmp_path):
         monkeypatch.setattr(mod, "_rlm_process", SimpleNamespace(pid=child.pid))
         assert mod._rlm_allowed_pids() >= {child.pid}
         assert mod._kill_port_holder(port, {child.pid}) is True
-        assert child.wait(timeout=5) in (-signal.SIGTERM, -signal.SIGKILL)
+        _assert_stopped(child)
     finally:
         _reap(child)
 
@@ -207,7 +225,7 @@ def test_restarted_daemon_reclaims_its_own_orphaned_rlm(monkeypatch, tmp_path, c
         assert own.pid in allowed, "pid file %r -> command line seen: %r" % (
             (script_dir / "rlm-service.pid").read_text(encoding="utf-8"), mod._pid_command_line(own.pid))
         assert mod._kill_port_holder(port_a, allowed) is True
-        assert own.wait(timeout=5) in (-signal.SIGTERM, -signal.SIGKILL)
+        _assert_stopped(own)
 
         # Case B: a pid in the pid file whose command line is not an RLM service.
         port_b = _free_port()

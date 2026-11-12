@@ -22,6 +22,10 @@ const { execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
+// Phase 88 plan 88-15: spawn Python through the shared resolver (GSD_PYTHON,
+// then py -3 / python / python3, each VERIFIED), never a literal name.
+const platform = require('../get-shit-done/bin/lib/platform.cjs');
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -33,7 +37,7 @@ const CLI_CJS = path.join(PROJECT_ROOT, 'get-shit-done', 'bin', 'gsd-amauta.cjs'
 
 // Run a Python one-liner from PROJECT_ROOT, return stdout as string
 function runPython(code) {
-  return execSync(`python3 -c "${code}"`, {
+  return platform.runPython(['-c', code], {
     cwd: PROJECT_ROOT,
     encoding: 'utf-8',
   }).trim();
@@ -57,7 +61,9 @@ describe('prompt_cache module', () => {
 
   it('prompt_cache module imports successfully', () => {
     const out = runPython(
-      'from services.prompt_cache import PromptCacheMetrics, annotate_cache_control; print(\\"OK\\")'
+      // argv form (plan 88-15): the quotes no longer travel through a shell,
+      // so they are ordinary Python quotes, not shell-escaped ones.
+      'from services.prompt_cache import PromptCacheMetrics, annotate_cache_control; print(\"OK\")'
     );
     assert.strictEqual(out, 'OK');
   });

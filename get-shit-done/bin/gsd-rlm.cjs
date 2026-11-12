@@ -44,6 +44,33 @@ const http = require('http');
 const { execFileSync, spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+// Phase 88 plan 88-15: one Python launcher resolver, one `which`, one home dir.
+const platform = require('./lib/platform.cjs');
+
+/**
+ * displayPath(p) — a filesystem path shortened for display: the current
+ * directory stripped, the home directory shown as `~/`.
+ *
+ * Phase 88 plan 88-15: these three sites did
+ * a raw HOME-variable concatenation with '/'. With HOME unset (Windows cmd and
+ * PowerShell) that concatenates the STRING "undefined/" and the result is
+ * wrong in a way nobody would trace. homeDir() is never empty, and
+ * path.sep keeps the separator right on both platforms.
+ *
+ * @param {string} p - the path to shorten.
+ * @returns {string} the display form.
+ */
+function displayPath(p) {
+  if (typeof p !== 'string' || !p) return p;
+  const cwd = process.cwd();
+  let out = p.startsWith(cwd + path.sep) ? p.slice(cwd.length + 1)
+    : p.startsWith(cwd + '/') ? p.slice(cwd.length + 1) : p;
+  const home = platform.homeDir();
+  if (out.startsWith(home + path.sep)) return '~/' + out.slice(home.length + 1);
+  if (out.startsWith(home + '/')) return '~/' + out.slice(home.length + 1);
+  return out;
+}
+
 
 // ── Load .env file (skipped in test mode) ─────────────
 (function loadDotenv() {
@@ -200,7 +227,7 @@ async function isServiceRunning() {
 async function startService() {
   if (!fs.existsSync(RLM_SERVICE)) return false;
 
-  const child = spawn('python3', [RLM_SERVICE, 'start'], {
+  const child = platform.launchPython([RLM_SERVICE, 'start'], {
     detached: true,
     stdio: 'ignore',
     env: { ...process.env, GSD_RLM_PORT: String(PORT) },
@@ -311,7 +338,7 @@ function formatResults(results, compact = false) {
   }
 
   for (const r of results) {
-    const relPath = r.filepath.replace(process.cwd() + '/', '').replace(process.env.HOME + '/', '~/');
+    const relPath = displayPath(r.filepath);
     const score = r.relevance_score !== undefined ? ` ${DIM}score=${r.relevance_score}${RESET}` : '';
     const chars = ` ${DIM}(${r.char_count} chars)${RESET}`;
 
@@ -332,7 +359,7 @@ function formatResults(results, compact = false) {
 }
 
 function formatChunks(chunks, filepath) {
-  const relPath = filepath.replace(process.cwd() + '/', '').replace(process.env.HOME + '/', '~/');
+  const relPath = displayPath(filepath);
   console.log(`${BOLD}${relPath}${RESET} — ${chunks.length} chunks\n`);
 
   for (const c of chunks) {
@@ -555,7 +582,7 @@ async function cmdStart() {
 async function cmdStop() {
   if (!fs.existsSync(RLM_SERVICE)) die(`RLM service script not found: ${RLM_SERVICE}`);
   try {
-    execFileSync('python3', [RLM_SERVICE, 'stop'], { encoding: 'utf-8' });
+    platform.runPython([RLM_SERVICE, 'stop'], { encoding: 'utf-8' });
     console.log('RLM service stopped');
   } catch (err) {
     console.error(err.stdout || err.stderr || err.message);
@@ -654,7 +681,7 @@ function printFallbackMessage(suggestions, query, reason) {
   if (suggestions.length > 0) {
     console.log(`${BOLD}Suggested files (sorted by likely relevance):${RESET}`);
     for (const s of suggestions) {
-      const rel = s.replace(process.cwd() + '/', '').replace(process.env.HOME + '/', '~/');
+      const rel = displayPath(s);
       console.log(`  ${CYAN}${rel}${RESET}`);
     }
     console.log(`\n${DIM}Use the Read tool to examine these files directly.${RESET}`);

@@ -25,9 +25,13 @@ const { pyLiteral, pyArgs } = require('./support/py-embed.cjs');
 const { homeEnv, applyHomeEnv, HOME_VARS } = require('./support/home-env.cjs');
 const { writeFakeExe, prependPath } = require('./support/fake-exe.cjs');
 
+// Phase 88 plan 88-15: spawn Python through the shared resolver (GSD_PYTHON,
+// then py -3 / python / python3, each VERIFIED), never a literal name.
+const platform = require('../get-shit-done/bin/lib/platform.cjs');
+
 /** Python bytes of stdout, decoded as UTF-8, so the check is independent of the console code page. */
 function runPy(argv, baseEnv = process.env) {
-  return execFileSync('python3', argv, {
+  return platform.runPython(argv, {
     encoding: 'buffer',
     stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...baseEnv, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' },

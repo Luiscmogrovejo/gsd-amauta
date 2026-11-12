@@ -31,6 +31,16 @@ import re
 import sys
 from typing import Dict, List, Optional
 
+# Phase 88 plan 88-15: one home-directory resolution. A bare HOME lookup
+# is empty on Windows cmd and PowerShell, which turns every config path below
+# into a RELATIVE one. Per the Phase 60 sys.path learning the directory is
+# added explicitly so the module resolves however this file was loaded.
+_SERVICES_DIR = os.path.dirname(os.path.abspath(__file__))
+if _SERVICES_DIR not in sys.path:
+    sys.path.append(_SERVICES_DIR)
+from _platform import home_dir  # noqa: E402
+
+
 log = logging.getLogger("amauta.capability_schema")
 
 # ─── Import-safety: pydantic (mirrors agent_schema.py / module_schema.py) ─────
@@ -295,7 +305,7 @@ def load_capability_catalog(force_reload: bool = False) -> dict:
         here = os.path.dirname(os.path.abspath(__file__))
         candidates = [
             os.path.join(here, "..", "get-shit-done", "config", "capability-catalog.json"),
-            os.path.join(os.environ.get("HOME", ""), ".claude", "get-shit-done", "config", "capability-catalog.json"),
+            os.path.join(home_dir(), ".claude", "get-shit-done", "config", "capability-catalog.json"),
         ]
 
     for p in candidates:

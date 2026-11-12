@@ -18,6 +18,9 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { spawnSync } = require('node:child_process');
 
+// Phase 88 plan 88-15: one PATHEXT-aware executable lookup.
+const platformHelper = require('../get-shit-done/bin/lib/platform.cjs');
+
 const ROOT = path.resolve(__dirname, '..');
 const GSD = path.join(ROOT, 'get-shit-done');
 
@@ -97,8 +100,9 @@ test('sharded step files contain GSD_HYDRATE_TASKS hydration hook', () => {
 // ─── Test 4: kill switch shell logic ─────────────────────────────────────────
 
 test('kill switch GSD_HYDRATE_TASKS=off produces empty HYDRATION; ON captures output', () => {
-  const bash = spawnSync('which', ['bash'], { encoding: 'utf8' });
-  if (bash.status !== 0) {
+  // Phase 88 plan 88-15: `which` is POSIX-only; the shared helper uses
+  // `where` on Windows and honours PATHEXT.
+  if (!platformHelper.which('bash')) {
     // Skip if bash is unavailable
     return;
   }

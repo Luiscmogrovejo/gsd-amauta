@@ -114,8 +114,28 @@ function bigFile(p, cwd, t) {
   return { path: abs, lines, bytes: st.size, capped: lines >= t.minLines };
 }
 
-/** Minimal POSIX-ish tokenizer; returns null on an unterminated quote. */
-function shellSplit(cmd) {
+/**
+ * shellSplit(cmd, platform) — minimal shell tokenizer; null on an unterminated quote.
+ *
+ * Phase 88 plan 88-15 (G9): `\` is an ESCAPE on POSIX and a PATH SEPARATOR on
+ * Windows. Treating it as an escape everywhere turned `D:\a\big.js` into
+ * `D:abig.js`, so the filename never matched and the gate FAILED OPEN — safe,
+ * but doing nothing at all.
+ *
+ * The branch is by PLATFORM, never by content: `cat foo\ bar.txt` is one
+ * argument on POSIX and must stay one (pinned by the 88-15-01 golden corpus),
+ * while on Windows the same backslash is part of the path.
+ *
+ * `platform` is an injectable parameter, NOT a require of a shared platform
+ * module: hooks ship with only ./lib/hook-common.cjs beside them, and a
+ * missing require throws AT LOAD, which would break the fail-open guarantee.
+ *
+ * @param {string} cmd - the command line to tokenise.
+ * @param {string} [platform=process.platform] - platform override for tests.
+ * @returns {string[]|null} the tokens, or null on an unterminated quote.
+ */
+function shellSplit(cmd, platform = process.platform) {
+  const backslashEscapes = !String(platform).startsWith('win');
   const out = [];
   let cur = '';
   let quote = null;
@@ -127,7 +147,7 @@ function shellSplit(cmd) {
       else cur += c;
     } else if (c === '"' || c === "'") {
       quote = c; has = true;
-    } else if (c === '\\' && i + 1 < cmd.length) {
+    } else if (backslashEscapes && c === '\\' && i + 1 < cmd.length) {
       cur += cmd[++i]; has = true;
     } else if (/\s/.test(c)) {
       if (has || cur) { out.push(cur); cur = ''; has = false; }
@@ -140,10 +160,13 @@ function shellSplit(cmd) {
   return out;
 }
 
-/** bashTargets(cmd) — files a bare dump command would print whole; [] otherwise. */
-function bashTargets(cmd) {
+/**
+ * bashTargets(cmd, platform) — files a bare dump command would print whole; [] otherwise.
+ * `platform` is forwarded to shellSplit so a Windows path survives tokenisation.
+ */
+function bashTargets(cmd, platform = process.platform) {
   if (!cmd || /[|;&><`$(\n]/.test(cmd)) return [];
-  const parts = shellSplit(cmd);
+  const parts = shellSplit(cmd, platform);
   if (!parts || parts.length === 0) return [];
   const prog = path.basename(parts[0]);
   if (!DUMP_CMDS.has(prog)) return [];
@@ -194,7 +217,7 @@ function logEvent(event) {
  * decide(input) — pure decision. Returns null (allow) or
  * {hit, tool, agent} for a call that should be shunted.
  */
-function decide(input) {
+function decide(input, platform = process.platform) {
   if (!input || typeof input !== 'object') return null;
   const agent = input.agent_type || null;
   if (agent && exemptAgents().has(agent)) return null;
@@ -208,7 +231,7 @@ function decide(input) {
     return hit ? { hit, tool, agent } : null;
   }
   if (tool === 'Bash') {
-    for (const p of bashTargets(ti.command || '')) {
+    for (const p of bashTargets(ti.command || '', platform)) {
       const hit = bigFile(p, input.cwd, t);
       if (hit) return { hit, tool, agent };
     }

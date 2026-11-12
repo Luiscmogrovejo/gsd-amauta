@@ -36,6 +36,10 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 
+// Phase 88 plan 88-15: spawn Python through the shared resolver (GSD_PYTHON,
+// then py -3 / python / python3, each VERIFIED), never a literal name.
+const platform = require('../get-shit-done/bin/lib/platform.cjs');
+
 const ROOT = path.resolve(__dirname, '..');
 const AMAUTA_PY = path.join(ROOT, 'amauta.py');
 
@@ -67,7 +71,7 @@ const TITLE_DAEMON = 'Untold origin task arriving through an exec passthrough';
  */
 function amauta(args, opts = {}) {
   try {
-    const stdout = execFileSync('python3', [AMAUTA_PY, ...args], {
+    const stdout = platform.runPython([AMAUTA_PY, ...args], {
       cwd: opts.cwd || ROOT,
       env: {
         ...process.env,
@@ -273,7 +277,7 @@ describe('TK-2229 daemon arg building', () => {
     ].join('\n');
     let raw;
     try {
-      raw = execFileSync('python3', ['-c', probe], {
+      raw = platform.runPython(['-c', probe], {
         cwd: ROOT, encoding: 'utf-8', timeout: 30000,
         env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
       });

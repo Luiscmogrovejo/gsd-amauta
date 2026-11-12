@@ -25,13 +25,15 @@ jobs:
     strategy:
       # Source of the matrix decision: .planning/phases/88-foundation-hermetic-ci/88-CONTEXT.md
       # (locked 2026-11-11). Node 18 is gone: package.json engines.node is
-      # >=20 and Node 18 is end of life. ubuntu and macos on Node 20 and 22 are
-      # required cells. Windows is a supported platform (operator decision
-      # 2026-11-11: "All needs to pass even windows ... this is a universal
-      # tool"), so both Windows cells are on their way to required: they stay
-      # `required: false` only while plans 88-13 to 88-14 drive their failing
-      # set to zero, and plan 88-15 flips them to required. fail-fast is off
-      # so one red cell cannot cancel (and hide) the others.
+      # >=20 and Node 18 is end of life.
+      #
+      # EVERY cell is required. Operator decision 2026-11-11: "All needs to
+      # pass even windows so don't skip tests, make them all work, this is a
+      # universal tool." Windows is a SUPPORTED PLATFORM, not a best-effort
+      # one: plans 88-13, 88-14 and 88-15 drove its failing set from 332 to
+      # zero, and plan 88-15 made the two Windows cells blocking so it cannot
+      # drift back. fail-fast is off so one red cell cannot cancel (and hide)
+      # the others.
       fail-fast: false
       matrix:
         include:
@@ -39,8 +41,8 @@ jobs:
           - { os: ubuntu-latest, node-version: 22, required: true }
           - { os: macos-latest, node-version: 20, required: true }
           - { os: macos-latest, node-version: 22, required: true }
-          - { os: windows-latest, node-version: 22, required: false }
-          - { os: windows-latest, node-version: 20, required: false }
+          - { os: windows-latest, node-version: 22, required: true }
+          - { os: windows-latest, node-version: 20, required: true }
 
     steps:
       - name: Check out with LF line endings (88-13, research G4)
@@ -89,21 +91,22 @@ jobs:
     name: pytest (${{ matrix.os }}, python ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
-    # Every row is non-required for now. Operator decision 2026-11-11 ("All
-    # needs to pass even windows ... this is a universal tool"): the Python
-    # suite must run and pass on Linux, macOS and Windows. The macOS and
-    # Windows rows start here to get a measured baseline (88-PYTEST-BASELINE.md
-    # is the ubuntu one); plan 88-15 flips the macOS and Windows rows to
-    # required and plan 88-11 flips the ubuntu row, which keeps the literal
-    # check name `pytest (ubuntu-latest, python 3.12)` that the ruleset names.
+    # Operator decision 2026-11-11 ("All needs to pass even windows ... this is
+    # a universal tool"): the Python suite must run and pass on Linux, macOS
+    # and Windows. Plan 88-15 flips the macOS and Windows rows to required,
+    # both green at that point. The ubuntu row is deliberately LEFT at
+    # required: false here: plan 88-11 task 88-11-01 step 0 flips it and first
+    # proves it can go red, and that sequencing is the point -- a required flag
+    # on a job that cannot fail is decoration. The literal check name
+    # `pytest (ubuntu-latest, python 3.12)` is what the ruleset names.
     continue-on-error: ${{ !matrix.required }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - { os: ubuntu-latest,  python-version: '3.12', required: false }
-          - { os: macos-latest,   python-version: '3.12', required: false }
-          - { os: windows-latest, python-version: '3.12', required: false }
+          - { os: macos-latest,   python-version: '3.12', required: true }
+          - { os: windows-latest, python-version: '3.12', required: true }
     steps:
       - name: Check out with LF line endings (88-13, research G4)
         shell: bash

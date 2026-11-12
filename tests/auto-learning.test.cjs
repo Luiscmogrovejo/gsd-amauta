@@ -19,6 +19,10 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const { pyLiteral } = require('./support/py-embed.cjs');
 
+// Phase 88 plan 88-15: spawn Python through the shared resolver (GSD_PYTHON,
+// then py -3 / python / python3, each VERIFIED), never a literal name.
+const platform = require('../get-shit-done/bin/lib/platform.cjs');
+
 const AMAUTA_PY = path.join(__dirname, '..', 'amauta.py');
 
 function withTmp(fn) {
@@ -29,7 +33,7 @@ function withTmp(fn) {
 
 function py(args, dataDir) {
   try {
-    const out = execFileSync('python3', [AMAUTA_PY, ...args], {
+    const out = platform.runPython([AMAUTA_PY, ...args], {
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, AMAUTA_DATA_DIR: dataDir, NO_COLOR: '1', GSD_AMAUTA_PORT: '19999' },
@@ -49,7 +53,7 @@ function py(args, dataDir) {
 describe('_extract_failed_gate() — gate extraction from notes', () => {
 
   function extractGate(notes) {
-    const result = execFileSync('python3', ['-c', `
+    const result = platform.runPython(['-c', `
 import sys; sys.path.insert(0, ${pyLiteral(path.join(__dirname, '..'))})
 from amauta import _extract_failed_gate
 print(_extract_failed_gate(${JSON.stringify(notes)}))
@@ -122,7 +126,7 @@ print(_extract_failed_gate(${JSON.stringify(notes)}))
 describe('_calc_duration_minutes() — duration calculation', () => {
 
   function calcDuration(claimedAt) {
-    const result = execFileSync('python3', ['-c', `
+    const result = platform.runPython(['-c', `
 import sys; sys.path.insert(0, ${pyLiteral(path.join(__dirname, '..'))})
 from amauta import _calc_duration_minutes
 print(_calc_duration_minutes(${JSON.stringify(claimedAt)}))
@@ -135,7 +139,7 @@ print(_calc_duration_minutes(${JSON.stringify(claimedAt)}))
   });
 
   test('returns None for null claimed_at', () => {
-    const result = execFileSync('python3', ['-c', `
+    const result = platform.runPython(['-c', `
 import sys; sys.path.insert(0, ${pyLiteral(path.join(__dirname, '..'))})
 from amauta import _calc_duration_minutes
 print(_calc_duration_minutes({"claimed_at": None}))

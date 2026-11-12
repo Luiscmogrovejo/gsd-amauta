@@ -6,7 +6,7 @@ const path = require('node:path');
 
 // Discovery manifest — printed at module load for grep-verifiability
 console.log('[discovery] MCP-01: amauta-mcp.py exists and has Server("amauta")');
-console.log('[discovery] MCP-01: .mcp.json exists with mcpServers.amauta.command=python3');
+console.log('[discovery] MCP-01: .mcp.json exists with mcpServers.amauta.command = a Python launcher');
 console.log('[discovery] MCP-01: mcp>=1.0 in requirements.txt');
 console.log('[discovery] MCP-01: port 18800 in docker-compose.yml');
 console.log('[discovery] MCP-02: search-code tool in list_tools with required query param');
@@ -51,8 +51,16 @@ test('MCP-01: .mcp.json exists with mcpServers.amauta pointing to amauta-mcp.py'
   const config = JSON.parse(fs.readFileSync(mcpJson, 'utf8'));
   assert.ok(config.mcpServers, '.mcp.json must have mcpServers key');
   assert.ok(config.mcpServers.amauta, '.mcp.json must have mcpServers.amauta');
-  assert.equal(config.mcpServers.amauta.command, 'python3', 'command must be python3');
-  assert.deepEqual(config.mcpServers.amauta.args, ['services/amauta-mcp.py'],
+  // Phase 88 plan 88-15: the installer writes the VERIFIED launcher, because a
+  // literal `python3` on a python.org Windows install is a Microsoft Store stub.
+  // On POSIX that resolves to `python3` and this file is byte-identical; the
+  // contract is "a Python 3 launcher", so assert that rather than one spelling.
+  assert.match(
+    config.mcpServers.amauta.command,
+    /(^|[\\/])(python3?|py)(\.exe)?$/,
+    `command must be a Python launcher, got ${config.mcpServers.amauta.command}`,
+  );
+  assert.deepEqual(config.mcpServers.amauta.args.slice(-1), ['services/amauta-mcp.py'],
     'args must be ["services/amauta-mcp.py"]');
 });
 

@@ -28,6 +28,8 @@
 const { execSync, spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+// Phase 88 plan 88-15: one Python launcher resolver, one `which`, one home dir.
+const platform = require('../get-shit-done/bin/lib/platform.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const REPORTS_DIR = path.join(ROOT, 'reports');
@@ -45,12 +47,12 @@ const TRIVY_IMAGES = [
 // ─────────────────────────────────────────────────────────────────────────────
 
 function toolAvailable(name) {
-  try {
-    execSync(`which ${name} 2>/dev/null || command -v ${name} 2>/dev/null`, { stdio: 'pipe' });
-    return true;
-  } catch {
-    return false;
-  }
+  // Phase 88 plan 88-15: this was `which <name> 2>/dev/null || command -v …`
+  // in a SHELL STRING. On Windows neither program exists, so every scanner
+  // read as absent and the security pipeline reported a clean scan. The
+  // helper uses `where` on Windows (which honours PATHEXT) and `which`
+  // elsewhere, through execFile-style argv — no shell, no redirect.
+  return platform.which(name) !== null;
 }
 
 function localBinAvailable(name) {
@@ -435,4 +437,11 @@ function main() {
   process.exit(0); // ALL other cases — even if all tools are absent
 }
 
-main();
+// Phase 88 plan 88-15: run as a script, but expose the tool-detection surface
+// so a test can prove `which` resolution works (it used to be a shell string
+// that read every scanner as absent on Windows, reporting a clean scan).
+if (require.main === module) {
+  main();
+} else {
+  module.exports = { toolAvailable, localBinAvailable };
+}

@@ -73,7 +73,22 @@ const crypto = require('node:crypto');
 //   9cd9dd46507b240b37f57588cbe7d568be21abcd  fix(88-13): every product open(), read_text and write_text names encoding="utf-8"
 // Every assertion is kept. This PR must be merged with a merge commit (never squash, never rebase-merge) or this SHA
 // stops resolving on master. The full list of pinned files and commits is in 88-13-RECORD.md.
-const PHASE_51_BASE = '9cd9dd46507b240b37f57588cbe7d568be21abcd';
+// RE-BASELINED AGAIN 2026-11-12 (plan 88-15 "Windows 3", operator sign-off: delegated 2026-11-11). FOUR pinned paths
+// changed on purpose since the base above, with the task and the commit:
+//   bin/init.cjs                     88-15-05 three literal python3 spawns and the ENOENT message (7eaac98);
+//                                    88-15-06 the home lookup (d8a0fdb); 88-15-07 `which` folded into the
+//                                    shared helper, which previously lived only here (d8a0fdb)
+//   get-shit-done/bin/gsd-tools.cjs  88-15-05 the python3 spawns inside the agent-hydrate, module and party
+//                                    BLOCKS (7eaac98); 88-15-06 the home lookup (d8a0fdb); 88-15-07 two
+//                                    redundant 2>/dev/null redirects that break on Windows cmd (d8a0fdb)
+//   bin/cli.cjs                      88-15-05 the doctor spawn, which is OUTSIDE every pinned block (7eaac98)
+//   scripts/agent-compiler.cjs       88-15-05 the hydration render spawn (7eaac98)
+// agents/ did not move (git diff --name-only <base>...HEAD -- agents/ is empty) and the byte-match test is green.
+// The base is now the last commit of that series that touches a pinned path:
+//   d8a0fdbfa40d339f3c623335742cfe7cd839ebdd  fix(88-15): HOME, which, 2>/dev/null, find|grep|head and a username in a public file
+// Every assertion is kept. This PR must be merged with a merge commit (NEVER squash, never rebase-merge) or this
+// SHA stops resolving on master. The full list is in 88-15-RECORD.md.
+const PHASE_51_BASE = 'd8a0fdbfa40d339f3c623335742cfe7cd839ebdd';
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -333,7 +348,12 @@ test('canary-gsd-tools-party-dispatch-lines-preserved', () => {
     "const action = args[1];",
     "const rest = args.slice(2);",
     "const partyCli = path.join(repoRoot, 'services', 'party_session_cli.py');",
-    "spawnSync('python3', subprocArgs, { encoding: 'utf8', cwd: repoRoot });",
+    // Phase 88 plan 88-15 changed this one line inside the pinned block: the
+    // dispatch now resolves the Python launcher instead of spawning a literal
+    // `python3`, which on a python.org Windows install is a Microsoft Store
+    // stub. The assertion is kept and re-pointed at the new contract, and the
+    // block's byte-identity moves with the canary re-baseline in the same PR.
+    "platform.spawnPython(subprocArgs, { encoding: 'utf8', cwd: repoRoot });",
     "process.exit(result.status === null ? 1 : result.status);",
   ];
 

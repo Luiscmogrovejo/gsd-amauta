@@ -58,13 +58,15 @@ import tempfile
 import uuid
 from pathlib import Path
 
-try:
-    import fcntl
-except ImportError:  # pragma: no cover - Windows
-    fcntl = None
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+
+# Phase 88 plan 88-15: the lock primitive lives in services/_platform. This
+# script used to take the POSIX one from an optional import and guard on it,
+# so on Windows it held NO lock at all while claiming to hold amauta.py's --
+# exactly the lost-update race the lock exists to prevent.
+sys.path.append(str(ROOT / "services"))
+from _platform import file_lock as _platform_file_lock  # noqa: E402
 
 ALIAS_FILE = ROOT / "scripts" / "project-aliases.json"
 DEFAULT_PROJECT_ID = "default"
@@ -178,12 +180,9 @@ def _tasks_lock(data_dir: Path):
     lock_path = data_dir / ".amauta.lock"
     fd = open(lock_path, "w", encoding="utf-8")
     try:
-        if fcntl:
-            fcntl.flock(fd, fcntl.LOCK_EX)
-        yield
+        with _platform_file_lock(fd):
+            yield
     finally:
-        if fcntl:
-            fcntl.flock(fd, fcntl.LOCK_UN)
         fd.close()
 
 

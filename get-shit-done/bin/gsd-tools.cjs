@@ -168,6 +168,8 @@
 const fs = require('fs');
 const path = require('path');
 const { execSync, spawnSync } = require('child_process');
+// Phase 88 plan 88-15: one Python launcher resolver, one `which`, one home dir.
+const platform = require('./lib/platform.cjs');
 const { error } = require('./lib/core.cjs');
 const state = require('./lib/state.cjs');
 const phase = require('./lib/phase.cjs');
@@ -525,7 +527,10 @@ function _detectLinter(fileExt) {
   }
   if (fileExt === '.py') {
     if (_try('ruff --version')) return { linter: 'ruff', cmd: 'ruff check', fallback: false };
-    return { linter: 'py_compile', cmd: 'python3 -m py_compile', fallback: true };
+    // The displayed command names the VERIFIED launcher, not a literal that is a
+    // Microsoft Store stub on a python.org Windows install (plan 88-15).
+    const _py = platform.resolvePython();
+    return { linter: 'py_compile', cmd: `${[_py.command, ..._py.args].join(' ')} -m py_compile`, fallback: true };
   }
   return null; // No linter for this file type
 }
@@ -569,7 +574,10 @@ function lintAfterEdit(filePath, options = {}) {
     if (detected.linter === 'eslint') {
       // eslint --format json for structured output
       try {
-        rawOutput = execSync(`${detected.cmd} --format json "${filePath}" 2>/dev/null || true`,
+        // Phase 88 plan 88-15: `2>/dev/null` and `|| true` were redundant —
+        // stdio[2] is already 'ignore' and the catch below yields the same
+        // empty result — and both break the command on Windows cmd.
+        rawOutput = execSync(`${detected.cmd} --format json "${filePath}"`,
           { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
         const parsed = JSON.parse(rawOutput);
         findings = (parsed[0]?.messages || []).map(m => ({
@@ -595,7 +603,9 @@ function lintAfterEdit(filePath, options = {}) {
 
     } else if (detected.linter === 'ruff') {
       try {
-        rawOutput = execSync(`${detected.cmd} --output-format json "${filePath}" 2>/dev/null`,
+        // Phase 88 plan 88-15: stdio[2] is already 'ignore', so the redirect
+        // added nothing on POSIX and broke the command on Windows cmd.
+        rawOutput = execSync(`${detected.cmd} --output-format json "${filePath}"`,
           { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
         const parsed = JSON.parse(rawOutput || '[]');
         findings = parsed.map(r => ({
@@ -606,12 +616,16 @@ function lintAfterEdit(filePath, options = {}) {
       } catch { findings = []; exit_code = 0; }
 
     } else if (detected.linter === 'py_compile') {
-      try {
-        execSync(`python3 -m py_compile "${filePath}"`, { stdio: 'pipe' });
+      // argv form, no shell: the interpreter is the resolved launcher and the
+      // path travels as an argument, so a space or a backslash in it is safe.
+      const pyc = platform.spawnPython(['-m', 'py_compile', filePath], {
+        stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8',
+      });
+      if (pyc.status === 0) {
         exit_code = 0;
-      } catch (e) {
+      } else {
         exit_code = 1;
-        const stderr = (e.stderr || '').toString();
+        const stderr = (pyc.stderr || (pyc.error && pyc.error.message) || '').toString();
         findings = [{ file: filePath, line: 0, rule: 'syntax', message: stderr.trim().split('\n')[0], severity: 'error' }];
       }
     }
@@ -716,7 +730,7 @@ function featureListGenerate(planFile) {
  */
 function featureListUpdate(featureListFile) {
   const fs = require('fs');
-  const { execSync } = require('child_process');
+  const { spawnSync } = require('child_process');
 
   const payload = JSON.parse(fs.readFileSync(featureListFile, 'utf8'));
   let anyFailing = false;
@@ -728,10 +742,17 @@ function featureListUpdate(featureListFile) {
     }
     try {
       const isJs = feature.test_file.endsWith('.test.cjs') || feature.test_file.endsWith('.test.js');
-      const cmd = isJs
-        ? `node --test "${feature.test_file}" 2>&1`
-        : `python3 -m pytest "${feature.test_file}" -q 2>&1`;
-      execSync(cmd, { stdio: 'ignore', timeout: 60000 });
+      if (isJs) {
+        // argv form, no shell: `2>&1` was redundant under stdio:'ignore' and
+        // breaks on Windows cmd (plan 88-15).
+        const r = spawnSync(process.execPath, ['--test', feature.test_file],
+          { stdio: 'ignore', timeout: 60000 });
+        if (r.error || r.status !== 0) throw new Error(`test failed: ${feature.test_file}`);
+      } else {
+        const r = platform.spawnPython(['-m', 'pytest', feature.test_file, '-q'],
+          { stdio: 'ignore', timeout: 60000 });
+        if (r.error || r.status !== 0) throw new Error(`test failed: ${feature.test_file}`);
+      }
       feature.status = 'passing';
     } catch {
       feature.status = 'failing';
@@ -2333,7 +2354,7 @@ async function computePatternStats({ projectState, planPath } = {}) {
         'except Exception as e:',
         '    print("unavailable:" + str(e))',
       ].join('\n');
-      const out = _efs('python3', ['-c', pyCode], {
+      const out = platform.runPython(['-c', pyCode], {
         encoding: 'utf8', timeout: 8000, stdio: ['ignore', 'pipe', 'pipe'],
         cwd: process.cwd(),
         env: { ...process.env },
@@ -2424,7 +2445,7 @@ async function computePatternStats({ projectState, planPath } = {}) {
         '    print("unavailable:" + str(e))',
       ].join('\n');
 
-      const out = _efs('python3', ['-c', pyCode], {
+      const out = platform.runPython(['-c', pyCode], {
         encoding: 'utf8', timeout: 15000, stdio: ['ignore', 'pipe', 'pipe'],
         cwd: process.cwd(),
         env: { ...process.env },
@@ -2482,7 +2503,7 @@ async function computePatternStats({ projectState, planPath } = {}) {
         'except Exception as e:',
         '    print("null")',
       ].join('\n');
-      const out = _efs('python3', ['-c', pyCode], {
+      const out = platform.runPython(['-c', pyCode], {
         encoding: 'utf8', timeout: 8000, stdio: ['ignore', 'pipe', 'pipe'],
         cwd: process.cwd(),
         env: { ...process.env },
@@ -2739,7 +2760,7 @@ function loadCapabilityCatalog(forceReload = false) {
     ? [envOverride]
     : [
         path.resolve(__dirname, '..', 'config', 'capability-catalog.json'),
-        path.join(process.env.HOME || '', '.claude', 'get-shit-done', 'config', 'capability-catalog.json'),
+        path.join(platform.homeDir(), '.claude', 'get-shit-done', 'config', 'capability-catalog.json'),
       ];
 
   for (const p of candidates) {
@@ -5077,7 +5098,7 @@ Examples:
       subprocArgs.push('--budget', String(budget));
       if (terseFlag) subprocArgs.push('--terse');
 
-      const result = spawnSync('python3', subprocArgs, { encoding: 'utf8', cwd: repoRoot });
+      const result = platform.spawnPython(subprocArgs, { encoding: 'utf8', cwd: repoRoot });
 
       if (result.error) {
         process.stderr.write(`agent-hydrate subprocess failed: ${result.error.message}\n`);
@@ -5275,7 +5296,7 @@ Options:
         const subprocArgs = [cliPath, ...manifestPaths];
         if (jsonFlag) subprocArgs.push('--json');
 
-        const result = spawnSync('python3', subprocArgs, { encoding: 'utf8', cwd: repoRoot });
+        const result = platform.spawnPython(subprocArgs, { encoding: 'utf8', cwd: repoRoot });
 
         if (result.error) {
           process.stderr.write(`module validate subprocess failed: ${result.error.message}\n`);
@@ -5295,7 +5316,7 @@ Options:
         for (let i = 3; i < args.length; i++) {
           searchArgs.push(args[i]);
         }
-        const searchResult = spawnSync('python3', searchArgs, { stdio: 'inherit', cwd: repoRoot });
+        const searchResult = platform.spawnPython(searchArgs, { stdio: 'inherit', cwd: repoRoot });
         if (searchResult.error) {
           process.stderr.write(`module search subprocess failed: ${searchResult.error.message}\n`);
           process.exit(2);
@@ -5326,7 +5347,7 @@ Options:
             '    import sys as _sys; _sys.stderr.write(f"ERROR ({e.error_code}): {e.detail}\\n")',
             '    sys.exit(2)',
           ].join('\n');
-          const urlResult = spawnSync('python3', ['-c', urlInstallerScript, source], {
+          const urlResult = platform.spawnPython(['-c', urlInstallerScript, source], {
             stdio: 'inherit',
             cwd: repoRoot,
           });
@@ -5346,7 +5367,7 @@ Options:
       // positional argument (manifest_path or module_name).
       const lifecycleCli = path.join(repoRoot, 'services', 'module_lifecycle_cli.py');
       const subprocArgs = [lifecycleCli, action, ...rest];
-      const result = spawnSync('python3', subprocArgs, { encoding: 'utf8', cwd: repoRoot });
+      const result = platform.spawnPython(subprocArgs, { encoding: 'utf8', cwd: repoRoot });
       if (result.error) {
         process.stderr.write(`module ${action} subprocess failed: ${result.error.message}\n`);
         process.exit(2);
@@ -5390,7 +5411,7 @@ Options:
       const repoRoot = path.resolve(__dirname, '..', '..');
       const partyCli = path.join(repoRoot, 'services', 'party_session_cli.py');
       const subprocArgs = [partyCli, action, ...rest];
-      const result = spawnSync('python3', subprocArgs, { encoding: 'utf8', cwd: repoRoot });
+      const result = platform.spawnPython(subprocArgs, { encoding: 'utf8', cwd: repoRoot });
       if (result.error) {
         process.stderr.write(`party ${action} subprocess failed: ${result.error.message}\n`);
         process.exit(2);
@@ -5532,7 +5553,7 @@ Options:
       const repoRoot = path.resolve(__dirname, '..', '..');
       const a2aCli = path.join(repoRoot, 'services', 'a2a_registry_cli.py');
       const subprocArgs = [a2aCli, action, ...rest];
-      const result = spawnSync('python3', subprocArgs, { encoding: 'utf8', cwd: repoRoot });
+      const result = platform.spawnPython(subprocArgs, { encoding: 'utf8', cwd: repoRoot });
       if (result.error) {
         process.stderr.write(`a2a ${action} subprocess failed: ${result.error.message}\n`);
         process.exit(2);

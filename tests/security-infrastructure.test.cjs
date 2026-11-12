@@ -11,7 +11,7 @@
  * - Docker configuration correctness
  * - Migration chain integrity (DOWN migrations match UP)
  * - Backup/restore credential safety
- * - Windows compatibility (fcntl guard)
+ * - Windows compatibility (the lock is real on both platforms, never a no-op)
  * - .env.example completeness
  * - Connection pool leak prevention
  */
@@ -313,21 +313,34 @@ describe('Backup/Restore Security', () => {
 // ═══════════════════════════════════════════════════════
 
 describe('Windows Compatibility', () => {
-  test('amauta.py has guarded fcntl import', () => {
+  // Phase 88 plan 88-15 re-pointed these two. They used to assert that
+  // amauta.py imports the POSIX locking module in a try, sets it to None on
+  // ImportError and guards every call on it -- which IS the Windows defect:
+  // the comment in the source said "file locking will be skipped", so two
+  // concurrent amauta invocations lost an update to tasks.json silently. The
+  // contract is now the opposite and stronger: the lock is real on both
+  // platforms and RAISES where it cannot lock.
+  test('amauta.py takes its lock from the shared platform module, not an optional import', () => {
     const source = fs.readFileSync(path.join(ROOT, 'amauta.py'), 'utf-8');
-    assert.ok(source.includes('try:'), 'Must have try block for fcntl');
-    assert.ok(source.includes('import fcntl'), 'Must import fcntl');
-    assert.ok(source.includes('except ImportError'), 'Must catch ImportError');
-    assert.ok(source.includes('fcntl = None'), 'Must set fcntl to None on Windows');
+    assert.ok(!source.includes('import fcntl'), 'must not import the POSIX-only module directly');
+    assert.ok(!source.includes('fcntl = None'), 'must not degrade to a no-op lock');
+    assert.ok(source.includes('_platform.file_lock'), 'must delegate to the shared helper');
+    assert.ok(source.includes("import _platform"), 'must import the shared platform module');
   });
 
-  test('amauta.py file locking guards fcntl usage', () => {
+  test('amauta.py file locking cannot be a silent no-op', () => {
     const source = fs.readFileSync(path.join(ROOT, 'amauta.py'), 'utf-8');
     const lockClass = source.substring(
       source.indexOf('class _file_lock'),
       source.indexOf('# ── Persistence')
     );
-    assert.ok(lockClass.includes('if fcntl:'), 'Must guard fcntl.flock calls with if fcntl:');
+    assert.ok(!lockClass.includes('if fcntl:'), 'no guard may skip the acquisition');
+    assert.ok(lockClass.includes('_platform.file_lock'), 'the acquisition goes through the helper');
+    const helper = fs.readFileSync(path.join(ROOT, 'services', '_platform.py'), 'utf-8');
+    assert.ok(helper.includes('flock'), 'the helper locks with flock on POSIX');
+    assert.ok(helper.includes('msvcrt'), 'the helper locks with msvcrt on Windows');
+    assert.ok(/raise RuntimeError\(\s*\n?\s*"no cross-process file lock/.test(helper),
+      'the helper raises where no primitive exists');
   });
 });
 

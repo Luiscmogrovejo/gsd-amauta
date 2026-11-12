@@ -322,6 +322,49 @@ function cmdInitPlanPhase(cwd, phase, raw, phaseDirOverride) {
   }
 }
 
+
+/**
+ * findCodeFiles(dir, limit) — up to `limit` source files within 3 directory
+ * levels, skipping node_modules and .git.
+ *
+ * Replaces a `find | grep | head` shell pipeline (Phase 88 plan 88-15). Windows
+ * `find` is a different program and `grep`/`head` are absent, so the pipeline
+ * could only ever throw there. A depth-bounded Node walk has no platform
+ * branch at all, which is the point: translating the pipeline would be the
+ * trap.
+ *
+ * @param {string} dir - directory to walk.
+ * @param {number} [limit=5] - stop after this many hits.
+ * @returns {string[]} absolute paths of the matches.
+ */
+const CODE_EXTENSIONS = new Set(['.ts', '.js', '.py', '.go', '.rs', '.swift', '.java']);
+const SKIP_DIRS = new Set(['node_modules', '.git']);
+
+function findCodeFiles(dir, limit = 5) {
+  const hits = [];
+  const walk = (current, depth) => {
+    if (hits.length >= limit || depth > 3) return;
+    let entries;
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      return; // unreadable directory: not a reason to fail detection
+    }
+    for (const entry of entries) {
+      if (hits.length >= limit) return;
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        if (SKIP_DIRS.has(entry.name)) continue;
+        walk(full, depth + 1);
+      } else if (entry.isFile() && CODE_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) {
+        hits.push(full);
+      }
+    }
+  };
+  walk(dir, 1);
+  return hits;
+}
+
 function cmdInitNewProject(cwd, raw) {
   const config = loadConfig(cwd);
 
@@ -334,13 +377,17 @@ function cmdInitNewProject(cwd, raw) {
   let hasCode = false;
   let hasPackageFile = false;
   try {
-    const files = execSync('find . -maxdepth 3 \\( -name "*.ts" -o -name "*.js" -o -name "*.py" -o -name "*.go" -o -name "*.rs" -o -name "*.swift" -o -name "*.java" \\) 2>/dev/null | grep -v node_modules | grep -v .git | head -5', {
-      cwd,
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-    hasCode = files.trim().length > 0;
-  } catch {}
+    hasCode = findCodeFiles(cwd).length > 0;
+  } catch (e) {
+    // Phase 88 plan 88-15: this used to be
+    // a `find`-depth-3 shell pipeline filtered through grep and head
+    // inside an EMPTY catch. On Windows `find` is a completely different
+    // program and `grep`/`head` are absent, so the pipeline threw, the empty
+    // catch swallowed it and hasCode was silently false — project detection
+    // quietly reported no code. The walk below is platform-free; the catch
+    // stays, but it now says why it fired instead of discarding it.
+    process.stderr.write(`[gsd-init] code detection degraded: ${e && e.message ? e.message : e}\n`);
+  }
 
   hasPackageFile = pathExistsInternal(cwd, 'package.json') ||
                    pathExistsInternal(cwd, 'requirements.txt') ||
@@ -877,4 +924,5 @@ module.exports = {
   cmdInitMapCodebase,
   cmdInitProgress,
   validatePhaseDirOverride,
+  findCodeFiles,
 };

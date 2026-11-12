@@ -191,7 +191,12 @@ describe('shunt gate: pure helpers', () => {
 
   test('shellSplit returns null on an unterminated quote', () => {
     assert.equal(gate.shellSplit('cat "a'), null);
-    assert.deepEqual(gate.shellSplit("cat 'a b' c\\ d"), ['cat', 'a b', 'c d']);
+    // Phase 88 plan 88-15: `\\` is an ESCAPE on POSIX and a PATH SEPARATOR on
+    // Windows, so shellSplit takes an injectable platform. The POSIX corpus is
+    // asserted with the POSIX branch on every host; the Windows branch has its
+    // own assertions in tests/88-15-hook-command-golden.test.cjs.
+    assert.deepEqual(gate.shellSplit("cat 'a b' c\\ d", 'darwin'), ['cat', 'a b', 'c d']);
+    assert.deepEqual(gate.shellSplit('cat D:\\a\\big.js', 'win32'), ['cat', 'D:\\a\\big.js']);
   });
 });
 

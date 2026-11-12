@@ -76,7 +76,11 @@ function runCli(args, { extraEnv = {} } = {}) {
 // cases cannot pass there.
 const { test } = require('node:test');
 const { homeEnv } = require('./support/home-env.cjs');
-const pyHas = (mod) => spawnSync('python3', ['-c', `import ${mod}`], { stdio: 'ignore' }).status === 0;
+
+// Phase 88 plan 88-15: spawn Python through the shared resolver (GSD_PYTHON,
+// then py -3 / python / python3, each VERIFIED), never a literal name.
+const platform = require('../get-shit-done/bin/lib/platform.cjs');
+const pyHas = (mod) => platform.spawnPython(['-c', `import ${mod}`], { stdio: 'ignore' }).status === 0;
 const HAVE_PYYAML = pyHas('yaml');
 const SKIP_NO_PYYAML = HAVE_PYYAML
   ? false

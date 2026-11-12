@@ -26,6 +26,10 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 
+// Phase 88 plan 88-15: spawn Python through the shared resolver (GSD_PYTHON,
+// then py -3 / python / python3, each VERIFIED), never a literal name.
+const platform = require('../get-shit-done/bin/lib/platform.cjs');
+
 const ROOT = path.resolve(__dirname, '..');
 const AMAUTA_PY = path.join(ROOT, 'amauta.py');
 const RESEARCH_CJS = path.join(ROOT, 'get-shit-done', 'bin', 'gsd-research.cjs');
@@ -33,7 +37,7 @@ const RESEARCH_CJS = path.join(ROOT, 'get-shit-done', 'bin', 'gsd-research.cjs')
 const TEST_DATA_DIR = path.join(os.tmpdir(), `amauta-test-token-${Date.now()}`);
 
 function pyExec(code, opts = {}) {
-  return execFileSync('python3', ['-c', code], {
+  return platform.runPython(['-c', code], {
     cwd: ROOT,
     env: {
       ...process.env,
@@ -47,7 +51,7 @@ function pyExec(code, opts = {}) {
 }
 
 function amautaCmd(args, opts = {}) {
-  return execFileSync('python3', [AMAUTA_PY, ...args], {
+  return platform.runPython([AMAUTA_PY, ...args], {
     cwd: ROOT,
     env: {
       ...process.env,
@@ -62,7 +66,7 @@ function amautaCmd(args, opts = {}) {
 
 function amautaCmdWithStderr(args, opts = {}) {
   try {
-    const result = execFileSync('python3', [AMAUTA_PY, ...args], {
+    const result = platform.runPython([AMAUTA_PY, ...args], {
       cwd: ROOT,
       env: {
         ...process.env,
@@ -307,7 +311,7 @@ print("PASS")
     const bigContent = 'X'.repeat(2500);
     let stderr = '';
     try {
-      execFileSync('python3', [AMAUTA_PY, 'rpetd', 'TK-SC01', '--phase', 'E', '--content', bigContent, '--agent', 'test'], {
+      platform.runPython([AMAUTA_PY, 'rpetd', 'TK-SC01', '--phase', 'E', '--content', bigContent, '--agent', 'test'], {
         cwd: ROOT,
         env: {
           ...process.env,
@@ -326,7 +330,7 @@ print("PASS")
     // The command may succeed (exit 0) and we capture stderr from the normal flow
     // Re-run capturing stderr properly
     const { spawnSync } = require('node:child_process');
-    const proc = spawnSync('python3', [AMAUTA_PY, 'rpetd', 'TK-SC01', '--phase', 'T', '--content', bigContent, '--agent', 'test'], {
+    const proc = platform.spawnPython([AMAUTA_PY, 'rpetd', 'TK-SC01', '--phase', 'T', '--content', bigContent, '--agent', 'test'], {
       cwd: ROOT,
       env: {
         ...process.env,
@@ -360,7 +364,7 @@ print("PASS")
 
     const smallContent = 'Y'.repeat(1500);
     const { spawnSync } = require('node:child_process');
-    const proc = spawnSync('python3', [AMAUTA_PY, 'rpetd', 'TK-SC02', '--phase', 'R', '--content', smallContent, '--agent', 'test'], {
+    const proc = platform.spawnPython([AMAUTA_PY, 'rpetd', 'TK-SC02', '--phase', 'R', '--content', smallContent, '--agent', 'test'], {
       cwd: ROOT,
       env: {
         ...process.env,

@@ -22,6 +22,8 @@
 
 const path = require('path');
 const { execSync, spawnSync } = require('child_process');
+// Phase 88 plan 88-15: one Python launcher resolver, one `which`, one home dir.
+const platform = require('../get-shit-done/bin/lib/platform.cjs');
 
 const command = process.argv[2];
 
@@ -209,7 +211,7 @@ if (command === 'a2a') {
 
 if (command === 'doctor') {
   const doctorPath = path.resolve(__dirname, '../services/doctor.py');
-  const result = spawnSync('python3', [doctorPath, ...process.argv.slice(3)], {
+  const result = platform.spawnPython([doctorPath, ...process.argv.slice(3)], {
     stdio: 'inherit',
     cwd: path.resolve(__dirname, '..'),
   });
