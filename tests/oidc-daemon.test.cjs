@@ -18,6 +18,10 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const { pyLiteral } = require('./support/py-embed.cjs');
 
+// Phase 88 plan 88-15: spawn Python through the shared resolver (GSD_PYTHON,
+// then py -3 / python / python3, each VERIFIED), never a literal name.
+const platform = require('../get-shit-done/bin/lib/platform.cjs');
+
 const ROOT = path.join(__dirname, '..');
 const SERVICES = path.join(ROOT, 'services');
 const OIDC_MODULE = path.join(SERVICES, 'oidc_auth.py');
@@ -28,7 +32,7 @@ function pyEval(code, env = {}) {
     // SERVICES is a platform path inside Python source, so it goes through pyLiteral
     // (a raw '${SERVICES}' mangles D:\a\... on Windows, which is the ModuleNotFoundError
     // for oidc_auth that this file used to show there).
-    const result = execFileSync('python3', ['-c', `
+    const result = platform.runPython(['-c', `
 import sys, json, os
 sys.path.insert(0, ${pyLiteral(SERVICES)})
 ${code}

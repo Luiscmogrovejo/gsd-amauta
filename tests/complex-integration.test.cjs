@@ -20,6 +20,10 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const { pyLiteral } = require('./support/py-embed.cjs');
 
+// Phase 88 plan 88-15: spawn Python through the shared resolver (GSD_PYTHON,
+// then py -3 / python / python3, each VERIFIED), never a literal name.
+const platform = require('../get-shit-done/bin/lib/platform.cjs');
+
 const PY = path.join(__dirname, '..', 'amauta.py');
 const ROOT = path.join(__dirname, '..');
 const AGENTS_DIR = path.join(ROOT, 'agents');
@@ -36,7 +40,7 @@ function withTmp(fn) {
 
 function py(args, dataDir, extraEnv = {}) {
   try {
-    const out = execFileSync('python3', [PY, ...args], {
+    const out = platform.runPython([PY, ...args], {
       encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'],
       // GSD_GITFLOW is pinned ON: the tracked .planning/config.json sets workflow.gitflow=false,
       // which would make every fixture a "non-code" task and skip the BRANCH_EVIDENCE / PR_URL
@@ -52,7 +56,7 @@ function py(args, dataDir, extraEnv = {}) {
 
 function pyInline(code) {
   try {
-    const r = execFileSync('python3', ['-c', `
+    const r = platform.runPython(['-c', `
 import sys, json; sys.path.insert(0, ${pyLiteral(ROOT)})
 ${code}
 `], { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 10000 });

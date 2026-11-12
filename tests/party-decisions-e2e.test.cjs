@@ -27,6 +27,10 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const { spawnSync } = require('child_process');
 
+// Phase 88 plan 88-15: spawn Python through the shared resolver (GSD_PYTHON,
+// then py -3 / python / python3, each VERIFIED), never a literal name.
+const platform = require('../get-shit-done/bin/lib/platform.cjs');
+
 const ROOT = path.resolve(__dirname, '..');
 const TOOLS = path.join(ROOT, 'get-shit-done', 'bin', 'gsd-tools.cjs');
 const CLI_ENTRY = path.join(ROOT, 'bin', 'cli.cjs');
@@ -124,7 +128,7 @@ function postDecisionViaPython(sessionId, agentName, decisionType, content) {
     'print(fid)',
   ].join('; ');
 
-  const r = spawnSync('python3', ['-c', script], {
+  const r = platform.spawnPython(['-c', script], {
     encoding: 'utf8',
     timeout: 30000,
     cwd: ROOT,

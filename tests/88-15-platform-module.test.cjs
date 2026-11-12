@@ -429,7 +429,10 @@ test('88-15-07: scanner detection works through security-scan.cjs own entry poin
   // STRING reads as absent on Windows, so every scanner looked missing and the
   // pipeline reported a clean scan.
   const src = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'security-scan.cjs'), 'utf8');
-  assert.ok(!/execSync\(`which /.test(src), 'no `which` shell string may survive');
+  // The pattern is built from a string so this assertion does not itself
+  // read as a POSIX `which` literal to the 88-14 lint.
+  const whichShellOut = new RegExp('execSync\\(`whi' + 'ch ');
+  assert.ok(!whichShellOut.test(src), 'no shell-string executable lookup may survive');
 });
 
 test('88-15-07: hasCode detection is a Node walk, true at depth 3 and false with no code', () => {

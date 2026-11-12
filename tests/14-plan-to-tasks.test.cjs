@@ -39,6 +39,10 @@ const {
 
 const { startFixtureDaemon, stopFixtureDaemon } = require('./support/fixture-daemon.cjs');
 
+// Phase 88 plan 88-15: spawn Python through the shared resolver (GSD_PYTHON,
+// then py -3 / python / python3, each VERIFIED), never a literal name.
+const platform = require('../get-shit-done/bin/lib/platform.cjs');
+
 /**
  * Run `fn(handle)` against a fixture daemon (SQLite, ephemeral port, temp data dir) with the
  * daemon's environment applied to this process, because planToTasks() reads AMAUTA_DATA_DIR and
@@ -72,6 +76,7 @@ async function withFixtureEnv(fn) {
  */
 function runCliAgainst(planFile, h) {
   const { spawn: spawnChild } = require('child_process');
+
   return new Promise((resolve) => {
     const child = spawnChild(process.execPath, [GSD_TOOLS, 'plan-to-tasks', planFile], {
       cwd: REPO_ROOT,
@@ -920,7 +925,7 @@ function readMirrorRows(dbPath, taskId) {
     'print(json.dumps([dict(r) for r in rows]))',
   ].join('\n');
   return JSON.parse(
-    execFileSync('python3', ['-c', script, dbPath, taskId], { encoding: 'utf8' })
+    platform.runPython(['-c', script, dbPath, taskId], { encoding: 'utf8' })
   );
 }
 
@@ -1048,7 +1053,7 @@ test('mirror guard: a claim that times out AFTER committing tasks.json still rea
     fs.writeFileSync(driver, DRIVER_PY);
 
     const port = await getFreePort();
-    const child = spawn('python3', [driver], {
+    const child = platform.launchPython([driver], {
       env: {
         ...process.env,
         TEST_SERVICES_DIR: SERVICES_DIR,

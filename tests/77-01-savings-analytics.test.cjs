@@ -30,6 +30,10 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
+// Phase 88 plan 88-15: spawn Python through the shared resolver (GSD_PYTHON,
+// then py -3 / python / python3, each VERIFIED), never a literal name.
+const platform = require('../get-shit-done/bin/lib/platform.cjs');
+
 const REPO_ROOT = path.resolve(__dirname, '..');
 const TELEMETRY_CJS = path.join(REPO_ROOT, 'get-shit-done', 'bin', 'lib', 'telemetry.cjs');
 const COMPRESS_CJS = path.join(REPO_ROOT, 'get-shit-done', 'bin', 'gsd-compress.cjs');
@@ -42,7 +46,7 @@ const TELEMETRY_PY = path.join(REPO_ROOT, 'services', 'telemetry.py');
 const PY_EXISTS = (() => {
   try {
     if (!fs.existsSync(TELEMETRY_PY)) return false;
-    const probe = spawnSync('python3', ['--version'], { encoding: 'utf8' });
+    const probe = platform.spawnPython(['--version'], { encoding: 'utf8' });
     return !probe.error && probe.status === 0;
   } catch {
     return false;
@@ -77,6 +81,7 @@ test('GAIN-02: telemetry.cjs carries SCHEMA_VERSION 1.1 and compression_run in E
 
 (PY_EXISTS ? test : test.skip)('GAIN-02: services/telemetry.py is byte-parallel with telemetry.cjs (SCHEMA_VERSION + EVENT_TYPES)', () => {
   const t = require(TELEMETRY_CJS);
+
   const nodeTypes = [...t.EVENT_TYPES];
 
   const py = spawnSync(

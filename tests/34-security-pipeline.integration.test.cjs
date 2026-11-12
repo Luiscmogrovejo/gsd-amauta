@@ -24,6 +24,9 @@ const { existsSync, readFileSync } = fs;
 const os = require('node:os');
 const path = require('node:path');
 
+// Phase 88 plan 88-15: one PATHEXT-aware executable lookup.
+const platformHelper = require('../get-shit-done/bin/lib/platform.cjs');
+
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 
 /**
@@ -431,7 +434,7 @@ describe('[SEC-01] Semgrep rule file: parse and rule ID assertions', () => {
 
   it('[SEC-01] semgrep fixture detection: if semgrep available, detects 34-vulnerable.js (conditional)',
     { skip: haveTool('semgrep') ? false : 'semgrep is not installed in this environment' }, () => {
-    const whichResult = spawnSync('which', ['semgrep'], { encoding: 'utf-8' });
+    const whichResult = { status: platformHelper.which('semgrep') ? 0 : 1 };
     const semgrepAvailable = whichResult.status === 0;
     if (semgrepAvailable) {
       const scan = spawnSync('semgrep', [
@@ -476,7 +479,7 @@ describe('[SEC-02] Gitleaks: config allowlist + fixture detection (conditional)'
     if (existsSync(localBin)) {
       gitleaksBin = localBin;
     } else {
-      const whichResult = spawnSync('which', ['gitleaks'], { encoding: 'utf-8' });
+      const whichResult = { status: platformHelper.which('gitleaks') ? 0 : 1 };
       if (whichResult.status === 0) {
         gitleaksBin = 'gitleaks';
       }

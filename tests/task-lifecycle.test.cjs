@@ -20,12 +20,16 @@ const { execFileSync } = require('node:child_process');
 const path = require('node:path');
 const { pyLiteral } = require('./support/py-embed.cjs');
 
+// Phase 88 plan 88-15: spawn Python through the shared resolver (GSD_PYTHON,
+// then py -3 / python / python3, each VERIFIED), never a literal name.
+const platform = require('../get-shit-done/bin/lib/platform.cjs');
+
 const ROOT = path.resolve(__dirname, '..');
 const AMAUTA_PY = path.join(ROOT, 'amauta.py');
 const PG_STORE = path.join(ROOT, 'services', 'pg_store.py');
 
 function pyExec(code) {
-  return execFileSync('python3', ['-c', code], {
+  return platform.runPython(['-c', code], {
     cwd: ROOT,
     // PYTHONIOENCODING: the snippets print the product's check marks (U+2713); a Windows pipe
     // defaults to the ANSI code page (cp1252), which cannot encode them, and this side decodes UTF-8.

@@ -47,7 +47,7 @@ const SOURCE = fs.readFileSync(MEMORY_CJS, 'utf8');
  * Extracts each function's source from the file and eval()s it in a
  * sandboxed context with the given execSync.
  */
-function buildHelpersWithExecSync(execSyncFn) {
+function buildHelpersWithExecSync(execSyncFn, whichFn = () => null) {
   // Extract function bodies from source using simple start/end detection
   function extractFunction(name) {
     const startMarker = `function ${name}(`;
@@ -85,15 +85,20 @@ function buildHelpersWithExecSync(execSyncFn) {
     return require(mod);
   };
 
+  // Phase 88 plan 88-15: isOllamaAvailable now resolves the executable through
+  // the shared platform helper (`where` on Windows, `which` elsewhere, never a
+  // shell string), so the extracted source needs that binding injected too.
+  const fakePlatform = { which: whichFn };
+
   // eslint-disable-next-line no-new-func
-  const factory = new Function('require', 'process', `
+  const factory = new Function('require', 'process', 'platform', `
     ${isOllamaAvailableSrc}
     ${selectOllamaModelSrc}
     ${llmSummarizeSrc}
     return { isOllamaAvailable, selectOllamaModel, llmSummarize };
   `);
 
-  return factory(fakeRequire, process);
+  return factory(fakeRequire, process, fakePlatform);
 }
 
 // ── Code structure tests ─────────────────────────────────────────────────────
@@ -106,10 +111,16 @@ describe('distill LLM flag and code structure (02-03)', () => {
     );
   });
 
-  test('isOllamaAvailable uses which ollama to detect binary', () => {
+  test('isOllamaAvailable resolves the ollama binary through the platform helper', () => {
+    // Phase 88 plan 88-15: it used to be a `which ollama` SHELL STRING, which
+    // on Windows always failed, so ollama always read as absent.
     assert.ok(
-      SOURCE.includes("execSync('which ollama'"),
-      'isOllamaAvailable should call which ollama'
+      SOURCE.includes("platform.which('ollama')"),
+      'isOllamaAvailable should resolve ollama through the shared platform helper'
+    );
+    assert.ok(
+      !SOURCE.includes("execSync('whi" + "ch ollama'"),
+      'the POSIX-only shell lookup must be gone'
     );
   });
 
@@ -231,18 +242,19 @@ describe('distill LLM flag and code structure (02-03)', () => {
 // ── Runtime tests with injected execSync ─────────────────────────────────────
 
 describe('isOllamaAvailable runtime (02-03)', () => {
-  test('returns true when which ollama succeeds', () => {
-    const helpers = buildHelpersWithExecSync((cmd) => {
-      if (cmd === 'which ollama') return '/usr/local/bin/ollama\n';
-      throw new Error(`unexpected: ${cmd}`);
-    });
+  test('returns true when the platform helper finds ollama', () => {
+    const helpers = buildHelpersWithExecSync(
+      () => { throw new Error('execSync must not be used for the lookup'); },
+      (name) => (name === 'ollama' ? '/usr/local/bin/ollama' : null),
+    );
     assert.strictEqual(helpers.isOllamaAvailable(), true);
   });
 
-  test('returns false when which ollama throws', () => {
-    const helpers = buildHelpersWithExecSync(() => {
-      throw new Error('not found');
-    });
+  test('returns false when the platform helper does not find ollama', () => {
+    const helpers = buildHelpersWithExecSync(
+      () => { throw new Error('execSync must not be used for the lookup'); },
+      () => null,
+    );
     assert.strictEqual(helpers.isOllamaAvailable(), false);
   });
 });

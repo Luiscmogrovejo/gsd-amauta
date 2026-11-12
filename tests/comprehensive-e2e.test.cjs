@@ -12,6 +12,10 @@ const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
+// Phase 88 plan 88-15: spawn Python through the shared resolver (GSD_PYTHON,
+// then py -3 / python / python3, each VERIFIED), never a literal name.
+const platform = require('../get-shit-done/bin/lib/platform.cjs');
+
 const CLI = path.join(__dirname, '..', 'get-shit-done', 'bin', 'gsd-amauta.cjs');
 const MEM = path.join(__dirname, '..', 'get-shit-done', 'bin', 'gsd-memory.cjs');
 const RLM = path.join(__dirname, '..', 'get-shit-done', 'bin', 'gsd-rlm.cjs');
@@ -45,7 +49,7 @@ function run(bin, args, dataDir, env = {}) {
 
 function py(args, dataDir) {
   try {
-    const out = execFileSync('python3', [PY, ...args], {
+    const out = platform.runPython([PY, ...args], {
       encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'],
       env: {
         ...process.env, AMAUTA_DATA_DIR: dataDir, NO_COLOR: '1', GSD_AMAUTA_PORT: '19999',

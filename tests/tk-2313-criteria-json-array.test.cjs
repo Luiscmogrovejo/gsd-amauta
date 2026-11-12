@@ -32,6 +32,10 @@ const os = require('os');
 const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 
+// Phase 88 plan 88-15: spawn Python through the shared resolver (GSD_PYTHON,
+// then py -3 / python / python3, each VERIFIED), never a literal name.
+const platform = require('../get-shit-done/bin/lib/platform.cjs');
+
 const ROOT = process.env.TK2313_ROOT_UNDER_TEST || path.join(__dirname, '..');
 const PY = path.join(ROOT, 'amauta.py');
 const DAEMON_PY = path.join(ROOT, 'services', 'amauta-daemon.py');
@@ -50,7 +54,7 @@ function withTmp(fn) {
 }
 
 function py(args, dataDir) {
-  const r = spawnSync('python3', [PY, ...args], {
+  const r = platform.spawnPython([PY, ...args], {
     encoding: 'utf-8',
     env: { ...process.env, AMAUTA_DATA_DIR: dataDir, NO_COLOR: '1',
            GSD_AMAUTA_PORT: PORT, GSD_AMAUTA_NO_AUTO_START: '1' },
@@ -245,7 +249,7 @@ describe('TK-2313 C3/D2 — no split path remains and every caller emits JSON', 
       'a3 = build(None, "update", {"id": "TK-0001", "criteria": s})',
       'print(json.dumps({"a1": a1, "a2": a2, "a3": a3}))',
     ].join('\n');
-    const out = execFileSync('python3', ['-c', code], { encoding: 'utf-8', env: { ...process.env, GSD_AMAUTA_NO_AUTO_START: '1' } });
+    const out = platform.runPython(['-c', code], { encoding: 'utf-8', env: { ...process.env, GSD_AMAUTA_NO_AUTO_START: '1' } });
     const { a1, a2, a3 } = JSON.parse(out);
     const expected = JSON.stringify([PIPE_CRITERION, 'second']);
     assert.strictEqual(a1[a1.indexOf('--criteria') + 1], expected, 'string body must pass verbatim');

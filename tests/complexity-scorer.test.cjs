@@ -20,6 +20,10 @@ const os = require('node:os');
 const path = require('node:path');
 const { pyLiteral } = require('./support/py-embed.cjs');
 
+// Phase 88 plan 88-15: spawn Python through the shared resolver (GSD_PYTHON,
+// then py -3 / python / python3, each VERIFIED), never a literal name.
+const platform = require('../get-shit-done/bin/lib/platform.cjs');
+
 const ROOT = path.resolve(__dirname, '..');
 const SCORER_PATH = path.join(ROOT, 'services', 'complexity_scorer.py');
 
@@ -53,7 +57,7 @@ const DEFAULT_CONFIG = JSON.stringify({
 });
 
 // Check python3 is on PATH
-const pythonCheck = spawnSync('python3', ['--version'], { encoding: 'utf8' });
+const pythonCheck = platform.spawnPython(['--version'], { encoding: 'utf8' });
 if (pythonCheck.error || pythonCheck.status !== 0) {
   console.log('SKIP: python3 not on PATH — skipping complexity-scorer tests');
   process.exit(0);
@@ -65,7 +69,7 @@ function pyFile(scriptContent, options = {}) {
   const tmpFile = path.join(tmpDir, 'script.py');
   try {
     fs.writeFileSync(tmpFile, scriptContent);
-    const result = spawnSync('python3', [tmpFile], {
+    const result = platform.spawnPython([tmpFile], {
       encoding: 'utf8',
       cwd: ROOT,
       timeout: 20000,

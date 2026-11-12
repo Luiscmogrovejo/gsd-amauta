@@ -30,11 +30,15 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const { pyLiteral } = require('./support/py-embed.cjs');
 
+// Phase 88 plan 88-15: spawn Python through the shared resolver (GSD_PYTHON,
+// then py -3 / python / python3, each VERIFIED), never a literal name.
+const platform = require('../get-shit-done/bin/lib/platform.cjs');
+
 const ROOT = path.join(__dirname, '..');
 
 function pyEval(code) {
   try {
-    const result = execFileSync('python3', ['-c', `
+    const result = platform.runPython(['-c', `
 import sys, json; sys.path.insert(0, ${pyLiteral(ROOT)})
 ${code}
 `], { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 8000 });

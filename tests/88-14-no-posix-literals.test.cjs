@@ -46,7 +46,50 @@ const REPO_ROOT = path.resolve(__dirname, '..');
  */
 const SCAN_ROOTS = [
   { dir: 'tests', exts: ['.cjs', '.py'], exclude: ['tests/fixtures'] },
+  // Plan 88-15 appends the PRODUCT roots. 88-CONTEXT.md: "No new literal
+  // python3 spawn, os.kill(pid, 0), lsof, ps, which, /tmp or process.env.HOME
+  // may be added outside [the two shared modules]; a lint test enforces it for
+  // product code AND for tests."
+  { dir: 'get-shit-done/bin', exts: ['.cjs', '.js'], exclude: [] },
+  { dir: 'bin', exts: ['.cjs', '.js'], exclude: [] },
+  { dir: 'scripts', exts: ['.cjs', '.js', '.py'], exclude: [] },
+  { dir: 'hooks', exts: ['.cjs', '.js'], exclude: [] },
+  { dir: 'services', exts: ['.py'], exclude: [] },
+  { dir: '.', exts: ['.py'], exclude: [], files: ['amauta.py'] },
 ];
+
+/**
+ * The two shared platform modules. They are the ONLY files exempt from the
+ * product rules, and the exemption lives HERE, in the rule definitions — not
+ * in the exceptions file, because a path-based exemption anyone can add to a
+ * JSON file is not a boundary.
+ */
+const SHARED_PLATFORM_MODULES = [
+  'get-shit-done/bin/lib/platform.cjs',
+  'services/_platform.py',
+];
+
+/** Repo-relative paths of the roots that hold PRODUCT code (as opposed to tests/). */
+const PRODUCT_ROOTS = ['get-shit-done/bin', 'bin', 'scripts', 'hooks', 'services', 'amauta.py'];
+
+/**
+ * Whether a scanned file is product code (so the product-only rules apply).
+ * @param {string} rel forward-slash repo-relative path
+ * @returns {boolean}
+ */
+function isProductFile(rel) {
+  if (SHARED_PLATFORM_MODULES.includes(rel)) return false;
+  return PRODUCT_ROOTS.some((r) => rel === r || rel.startsWith(`${r}/`));
+}
+
+/**
+ * Whether a scanned file is test code (so the test-only rules apply).
+ * @param {string} rel forward-slash repo-relative path
+ * @returns {boolean}
+ */
+function isTestFile(rel) {
+  return rel.startsWith('tests/');
+}
 
 /**
  * Files that are not scanned because they contain every pattern as source text or as a
@@ -193,8 +236,70 @@ function expressionsOf(tpl) {
  * @type {{id: string, use: string, exts: string[], detect: (ctx: {lines: string[], text: string, ext: string}) => number[]}[]}
  */
 const RULES = [
+  // -- Plan 88-15: the PRODUCT rules. 88-CONTEXT.md requires a lint for the
+  //    product half too. Each is scope:'product', so the two shared platform
+  //    modules and every test file are outside them by construction.
+  {
+    id: 'POSIX_OS_KILL_PROBE',
+    scope: 'product',
+    use: '_platform.pid_alive (a probe) / _platform.terminate (a signal)',
+    exts: ['.py'],
+    // On Windows os.kill with any signal but the console-control events calls
+    // TerminateProcess, so `os.kill(pid, 0)` KILLS the process it checks.
+    detect: ({ lines, ext }) => matchLines(lines, ext, [/\bos\.kill\s*\(/]),
+  },
+  {
+    id: 'POSIX_SIGKILL',
+    scope: 'product',
+    use: '_platform.terminate(force=True)',
+    exts: ['.py'],
+    // Anchored on `signal.SIGKILL`, the MECHANISM. A user-facing message that
+    // merely names SIGKILL is text, not a signal, and is not a violation.
+    detect: ({ lines, ext }) => matchLines(lines, ext, [/\bsignal\.SIGKILL\b/]),
+  },
+  {
+    id: 'POSIX_FORK',
+    scope: 'product',
+    use: '_platform.daemonize / _platform.detached_popen_kwargs',
+    exts: ['.py'],
+    detect: ({ lines, ext }) => matchLines(lines, ext, [
+      /\bos\.fork\s*\(\s*\)/, /\bos\.setsid\s*\(\s*\)/, /\bstart_new_session\s*=/,
+    ]),
+  },
+  {
+    id: 'POSIX_FCNTL',
+    scope: 'product',
+    use: '_platform.file_lock',
+    exts: ['.py'],
+    detect: ({ lines, ext }) => matchLines(lines, ext, [/^\s*import\s+fcntl\b/, /\bfcntl\.(?:flock|lockf)\b/]),
+  },
+  {
+    id: 'POSIX_ENV_HOME',
+    scope: 'product',
+    use: 'homeDir() from platform.cjs / home_dir() from _platform.py',
+    exts: ['.cjs', '.js', '.py'],
+    detect: ({ lines, ext }) => matchLines(lines, ext, ext === '.py'
+      ? [/os\.environ\.get\(\s*["']HOME["']/, /os\.environ\[\s*["']HOME["']\s*\]/, /os\.getenv\(\s*["']HOME["']/]
+      : [/process\.env\.HOME\b/]),
+  },
+  {
+    id: 'POSIX_DEVNULL',
+    scope: 'product',
+    use: "the stdio option (stdio: ['ignore','pipe','ignore'])",
+    exts: ['.cjs', '.js'],
+    // NAMED EXCLUSION, measured in task 88-15-01: scripts/agent-compiler.cjs's
+    // HOOKS_COMMENT_BLOCK carries `2>/dev/null` as EMITTED TEXT -- it is the
+    // frontmatter the compiler writes into agents/, whose bytes are pinned by
+    // the canaries (34 compiled agents carry the line). It is not a spawn
+    // string and it stays. Everything else must use the stdio option.
+    detect: ({ lines, ext, rel }) => {
+      if (rel === 'scripts/agent-compiler.cjs') return [];
+      return matchLines(lines, ext, [/(?:execSync|exec|spawnSync|spawn)\([^)]*2>\/dev\/null/]);
+    },
+  },
   {
     id: 'POSIX_TMP',
+    scope: 'both',
     use: 'fs.mkdtempSync(path.join(os.tmpdir(), ...)) / pytest tmp_path',
     exts: ['.cjs', '.py'],
     // a string literal that IS /tmp or starts with /tmp/
@@ -202,6 +307,7 @@ const RULES = [
   },
   {
     id: 'POSIX_HOME_ONLY',
+    scope: 'test',
     use: 'tests/support/home-env.cjs (homeEnv / applyHomeEnv): HOME, USERPROFILE, HOMEDRIVE, HOMEPATH together',
     exts: ['.cjs', '.py'],
     detect: ({ lines, ext }) => {
@@ -221,6 +327,7 @@ const RULES = [
   },
   {
     id: 'POSIX_PATH_COLON',
+    scope: 'test',
     use: 'path.delimiter / os.pathsep (tests/support/fake-exe.cjs prependPath)',
     exts: ['.cjs', '.py'],
     detect: ({ lines, ext }) => {
@@ -236,7 +343,13 @@ const RULES = [
   },
   {
     id: 'POSIX_PS',
-    use: 'the live-store-canary helpers (identify / commandOf / listeningPorts)',
+    scope: 'both',
+    // NAMED EXCLUSION, measured in task 88-15-01: `docker ps` is NOT the POSIX
+    // `ps` (services/infra_detect.py 390, 438, 618 and
+    // services/amauta-daemon.py 981). The pattern is anchored on the argv-LIST
+    // form `["ps"` / `['ps'`, which `["docker", "ps"` cannot match, so
+    // docker ps is excluded by construction, not by an exceptions entry.
+    use: 'the live-store-canary helpers (tests) / _platform.process_command and port_holders (product)',
     exts: ['.cjs', '.py'],
     detect: ({ lines, ext }) => matchLines(lines, ext, ext === '.py'
       ? [/\[\s*["'](?:ps|lsof)["']/, /subprocess\.\w+\(\s*["'](?:ps|lsof)\b/]
@@ -248,6 +361,7 @@ const RULES = [
   },
   {
     id: 'POSIX_WHICH',
+    scope: 'both',
     use: 'the platform helper (a PATHEXT-aware which)',
     exts: ['.cjs', '.py'],
     detect: ({ lines, ext }) => matchLines(lines, ext, ext === '.py'
@@ -256,7 +370,12 @@ const RULES = [
   },
   {
     id: 'POSIX_PY3_LITERAL',
-    use: 'pythonBin() / GSD_PYTHON (plan 88-15 platform helper)',
+    scope: 'both',
+    // NAMED EXCLUSION: a user-facing MESSAGE or a documentation string that
+    // merely names python3 ("Start it: python3 services/amauta-daemon.py") is
+    // not a spawn. The patterns are anchored on a spawn call or an inline
+    // `python3 -c` command, so prose is excluded by construction.
+    use: 'resolvePython / spawnPython / runPython / launchPython from platform.cjs',
     exts: ['.cjs', '.py'],
     detect: ({ lines, ext }) => matchLines(lines, ext, ext === '.py'
       ? [/\[\s*["']python3["']/, /subprocess\.\w+\(\s*["']python3\b/]
@@ -268,6 +387,7 @@ const RULES = [
   },
   {
     id: 'POSIX_SHEBANG_FAKE',
+    scope: 'test',
     use: 'tests/support/fake-exe.cjs (writeFakeExe)',
     exts: ['.cjs', '.py'],
     // two signals inside a window: a "#!" string and a chmod / 0o755 nearby
@@ -284,6 +404,7 @@ const RULES = [
   },
   {
     id: 'POSIX_PY_INTERP',
+    scope: 'test',
     use: 'tests/support/py-embed.cjs (pyArgs, or pyLiteral inside a larger expression)',
     exts: ['.cjs'],
     // two signals: a template literal that looks like Python source, and a ${} in it that is a
@@ -339,7 +460,15 @@ function listFiles(repoRoot = REPO_ROOT, roots = SCAN_ROOTS) {
       else if (e.isFile() && root.exts.includes(path.extname(e.name))) out.push(child);
     }
   };
-  for (const root of roots) walk(root.dir, root);
+  for (const root of roots) {
+    if (root.files) {
+      for (const f of root.files) {
+        if (fs.existsSync(path.join(repoRoot, f))) out.push(f);
+      }
+      continue;
+    }
+    walk(root.dir, root);
+  }
   return out.sort();
 }
 
@@ -349,11 +478,19 @@ function listFiles(repoRoot = REPO_ROOT, roots = SCAN_ROOTS) {
  * @param {string} ext '.cjs' or '.py'
  * @returns {Record<string, number[]>} rule id -> 0-based hit line indexes (rules with no hit omitted)
  */
-function scanText(text, ext) {
-  const ctx = { lines: text.split(/\r?\n/), text, ext };
+function scanText(text, ext, rel = '') {
+  const ctx = { lines: text.split(/\r?\n/), text, ext, rel };
   const found = {};
   for (const rule of RULES) {
     if (!rule.exts.includes(ext)) continue;
+    // `scope` (plan 88-15): 'test' rules only see tests/, 'product' rules only
+    // see the product roots minus the two shared modules, 'both' sees all.
+    const scope = rule.scope || 'both';
+    if (rel) {
+      if (scope === 'test' && !isTestFile(rel)) continue;
+      if (scope === 'product' && !isProductFile(rel)) continue;
+      if (scope === 'both' && !isTestFile(rel) && !isProductFile(rel)) continue;
+    }
     const hits = rule.detect(ctx);
     if (hits.length > 0) found[rule.id] = hits;
   }
@@ -370,7 +507,7 @@ function scanAll(repoRoot = REPO_ROOT, roots = SCAN_ROOTS) {
   const result = new Map();
   for (const rel of listFiles(repoRoot, roots)) {
     const text = fs.readFileSync(path.join(repoRoot, rel), 'utf8');
-    const found = scanText(text, path.extname(rel));
+    const found = scanText(text, path.extname(rel), rel);
     for (const [rule, lines] of Object.entries(found)) {
       result.set(`${rule}|${rel}`, { rule, file: rel, count: lines.length, lines: lines.map((l) => l + 1) });
     }
@@ -496,11 +633,51 @@ describe('88-14 no POSIX literals under tests/', () => {
     assertRuleClean('POSIX_PY_INTERP');
   });
 
+  // -- Plan 88-15: the six PRODUCT rules, one subtest each --------------------
+
+  test('POSIX_OS_KILL_PROBE: no os.kill in the product (use _platform.pid_alive / terminate)', () => {
+    assertRuleClean('POSIX_OS_KILL_PROBE');
+  });
+
+  test('POSIX_SIGKILL: no signal.SIGKILL in the product (use _platform.terminate(force=True))', () => {
+    assertRuleClean('POSIX_SIGKILL');
+  });
+
+  test('POSIX_FORK: no os.fork/os.setsid/start_new_session (use _platform.daemonize)', () => {
+    assertRuleClean('POSIX_FORK');
+  });
+
+  test('POSIX_FCNTL: no direct fcntl in the product (use _platform.file_lock)', () => {
+    assertRuleClean('POSIX_FCNTL');
+  });
+
+  test('POSIX_ENV_HOME: no process.env.HOME / environ HOME (use homeDir() / home_dir())', () => {
+    assertRuleClean('POSIX_ENV_HOME');
+  });
+
+  test('POSIX_DEVNULL: no 2>/dev/null in a spawn string (use the stdio option)', () => {
+    assertRuleClean('POSIX_DEVNULL');
+  });
+
   test('every rule in the table has its own subtest above', () => {
     assert.deepEqual(RULES.map((r) => r.id).sort(), [
-      'POSIX_HOME_ONLY', 'POSIX_PATH_COLON', 'POSIX_PS', 'POSIX_PY3_LITERAL',
-      'POSIX_PY_INTERP', 'POSIX_SHEBANG_FAKE', 'POSIX_TMP', 'POSIX_WHICH',
+      'POSIX_DEVNULL', 'POSIX_ENV_HOME', 'POSIX_FCNTL', 'POSIX_FORK',
+      'POSIX_HOME_ONLY', 'POSIX_OS_KILL_PROBE', 'POSIX_PATH_COLON', 'POSIX_PS',
+      'POSIX_PY3_LITERAL', 'POSIX_PY_INTERP', 'POSIX_SHEBANG_FAKE',
+      'POSIX_SIGKILL', 'POSIX_TMP', 'POSIX_WHICH',
     ]);
+  });
+
+  test('the scan really covers the PRODUCT roots too (plan 88-15)', () => {
+    const files = listFiles();
+    for (const root of ['get-shit-done/bin/', 'bin/', 'scripts/', 'hooks/', 'services/']) {
+      assert.ok(files.some((f) => f.startsWith(root)), `${root} is not scanned`);
+    }
+    assert.ok(files.includes('amauta.py'), 'amauta.py is not scanned');
+    // The two shared modules ARE scanned but are outside every product rule.
+    for (const shared of SHARED_PLATFORM_MODULES) {
+      assert.equal(isProductFile(shared), false, `${shared} must be exempt by RULE, not by entry`);
+    }
   });
 });
 
@@ -575,15 +752,56 @@ describe('88-14 every rule fires on a violation and stays quiet on the portable 
       "const ROOT = path.resolve(__dirname, '..');\nrun(`\nimport sys\nsys.path.insert(0, '${ROOT}')\nprint(1)\n`);",
       "run(`import os; os.path.join('${path.join(a, b)}', 'x')`);",
     ],
+    // Plan 88-15, the product rules. Each one is PROVEN ABLE TO FAIL here, in
+    // the suite itself, rather than only by a one-off scratch-file mutation.
+    POSIX_OS_KILL_PROBE: ["os.kill(pid, 0)", "os.kill(pid, signal.SIGTERM)"],
+    POSIX_SIGKILL: ["os.kill(pid, signal.SIGKILL)", "    sig = signal.SIGKILL"],
+    POSIX_FORK: ["if os.fork() == 0:", "    os.setsid()", "    start_new_session=True,"],
+    POSIX_FCNTL: ["import fcntl", "fcntl.flock(fd, fcntl.LOCK_EX)"],
+    POSIX_ENV_HOME: ["const h = process.env.HOME || '';", "path.join(process.env.HOME, '.claude')"],
+    POSIX_DEVNULL: ["execSync(`ruff check \"${f}\" 2>/dev/null`);", "spawnSync('sh', ['-c', 'x 2>/dev/null'])"],
+  };
+
+  /** The language each rule's samples are written in (default: JavaScript). */
+  const SAMPLE_EXT = {
+    POSIX_OS_KILL_PROBE: '.py',
+    POSIX_SIGKILL: '.py',
+    POSIX_FORK: '.py',
+    POSIX_FCNTL: '.py',
   };
 
   for (const rule of RULES) {
     test(`${rule.id} fires on its violations`, () => {
+      const ext = SAMPLE_EXT[rule.id] || '.cjs';
       for (const sample of VIOLATIONS_BY_RULE[rule.id]) {
-        assert.ok(fires(sample).includes(rule.id), `${rule.id} should fire on: ${sample}`);
+        assert.ok(fires(sample, ext).includes(rule.id), `${rule.id} should fire on: ${sample}`);
       }
     });
   }
+
+  test('the product rules are quiet on the portable form', () => {
+    const quietPy = [
+      "if _platform.pid_alive(pid, strict=True):",
+      "_platform.terminate(pid, force=True)",
+      "role = _platform.daemonize()",
+      "**_platform.detached_popen_kwargs(),",
+      "with _platform.file_lock(path):",
+      'home = home_dir()',
+    ];
+    for (const sample of quietPy) assert.deepEqual(fires(sample, '.py'), [], sample);
+    const quietJs = [
+      "const h = platform.homeDir();",
+      "execSync(`ruff check \"${f}\"`, { stdio: ['ignore', 'pipe', 'ignore'] });",
+    ];
+    for (const sample of quietJs) assert.deepEqual(fires(sample), [], sample);
+  });
+
+  test('a user-facing message naming a POSIX tool is NOT a violation', () => {
+    // The three measured exclusions, asserted as behaviour.
+    assert.deepEqual(fires('print(f"PID {pid} did not exit on SIGTERM - sending SIGKILL")', '.py'), []);
+    assert.deepEqual(fires("console.log('Start daemon: python3 services/amauta-daemon.py start');"), []);
+    assert.deepEqual(fires('subprocess.run(["docker", "ps", "-a"], capture_output=True)', '.py'), []);
+  });
 
   test('the portable forms are quiet', () => {
     const quiet = [

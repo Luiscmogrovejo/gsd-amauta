@@ -333,7 +333,12 @@ test('canary-gsd-tools-party-dispatch-lines-preserved', () => {
     "const action = args[1];",
     "const rest = args.slice(2);",
     "const partyCli = path.join(repoRoot, 'services', 'party_session_cli.py');",
-    "spawnSync('python3', subprocArgs, { encoding: 'utf8', cwd: repoRoot });",
+    // Phase 88 plan 88-15 changed this one line inside the pinned block: the
+    // dispatch now resolves the Python launcher instead of spawning a literal
+    // `python3`, which on a python.org Windows install is a Microsoft Store
+    // stub. The assertion is kept and re-pointed at the new contract, and the
+    // block's byte-identity moves with the canary re-baseline in the same PR.
+    "platform.spawnPython(subprocArgs, { encoding: 'utf8', cwd: repoRoot });",
     "process.exit(result.status === null ? 1 : result.status);",
   ];
 
