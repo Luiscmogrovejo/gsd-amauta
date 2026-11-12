@@ -241,6 +241,55 @@ async function startFixtureDaemon(opts = {}) {
 }
 
 /**
+ * The pid written in a pid file, or null when the file is absent or unusable.
+ *
+ * The files read here are written BY the fixture's own daemon INTO the
+ * fixture's own temporary data directory (`_test_mode()` moves
+ * `amauta-daemon.pid` there precisely so a fixture can never touch the live
+ * daemon's). A pid obtained this way is a pid this harness started — which is
+ * what makes killing it by exact pid legitimate, and why no name pattern is
+ * ever used.
+ *
+ * @param {string} file absolute path of the pid file
+ * @returns {number|null}
+ * @example
+ *   readPidFile('/tmp/d/amauta-daemon.pid') // 1076
+ */
+function readPidFile(file) {
+  try {
+    const pid = parseInt(fs.readFileSync(file, 'utf8').trim(), 10);
+    return Number.isInteger(pid) && pid > 0 ? pid : null;
+  } catch (_e) {
+    return null;
+  }
+}
+
+/**
+ * Kill one exact pid: SIGTERM, bounded wait, SIGKILL, bounded wait.
+ *
+ * @param {number} pid the exact pid to stop
+ * @param {number} graceMs budget for EACH of the two waits
+ * @returns {Promise<boolean>} true when the pid has stopped answering
+ * @example
+ *   await killPid(1076, 5000) // true
+ */
+async function killPid(pid, graceMs) {
+  if (!pidAlive(pid)) return true;
+  try {
+    process.kill(pid, 'SIGTERM');
+  } catch (_e) {
+    /* exited between the probe and the signal */
+  }
+  if (await waitForExit(pid, graceMs)) return true;
+  try {
+    process.kill(pid, 'SIGKILL');
+  } catch (_e) {
+    /* exited after SIGTERM */
+  }
+  return waitForExit(pid, graceMs);
+}
+
+/**
  * Wait until `pid` stops answering signal 0, or the budget runs out.
  *
  * @param {number} pid the pid to watch
@@ -270,12 +319,36 @@ async function waitForExit(pid, ms) {
  * recorded `started` with the port and data directory the detector needs to
  * identify it.
  *
+ * **The process that must die is not always the process that was spawned**
+ * (plan 88-11, the 2026-11-12 Windows leak). `resolvePython()` offers `py -3`
+ * as a Windows candidate, and `py.exe` is a LAUNCHER: it starts the real
+ * `python.exe` as a CHILD and waits on it. `proc` is then the launcher, and
+ * node's kill on Windows terminates that one process — children survive a
+ * terminated parent. Run 43223847244, `test (windows-latest, node 20)`, ended
+ * `fail 0` and exited 5 with `SURVIVING PYTHON pid=1076 … amauta-daemon.py run`
+ * and `pid=7328 ppid=1076 … rlm-service.py run` still alive, while the ledger
+ * recorded `stopped` — truthfully, for the launcher, which really had exited.
+ * The interpreter in that orphan's command line was 3.15.2, not the 3.12.10 the
+ * workflow pins in `GSD_PYTHON`, which is the launcher's signature: `py -3`
+ * picks the newest Python installed, so the resolver had fallen past the pinned
+ * interpreter to the `py` candidate.
+ *
+ * So the kill pass now targets the pids the fixture's OWN daemon recorded in its
+ * OWN temp data directory — `amauta-daemon.pid` (written by the daemon under
+ * test mode) and `rlm-service.pid` — each by exact pid, each bounded, never by
+ * process name, and `gone` is true only when every one of them has stopped
+ * answering. Each pid gets its own ledger line, so a survivor can never again be
+ * a process no ledger line accounts for.
+ *
  * @param {{proc: import('child_process').ChildProcess, dataDir: string, port?: number, keep?: boolean}} handle
  * @returns {Promise<void>}
  */
 async function stopFixtureDaemon(handle) {
   if (!handle || !handle.proc) return;
   const { proc } = handle;
+  // Read BEFORE signalling: a daemon that exits cleanly unlinks its own pid
+  // file, and the pid of the process that must die would go with it.
+  const realPid = readPidFile(path.join(handle.dataDir, 'amauta-daemon.pid'));
   const done = new Promise((resolve) => {
     if (proc.exitCode !== null || proc.signalCode !== null) return resolve();
     proc.once('exit', () => resolve());
@@ -296,16 +369,46 @@ async function stopFixtureDaemon(handle) {
   }
   // Verify by pid rather than by the child handle: the 'exit' event can only
   // speak for a direct child this process is still parenting.
-  const gone = await waitForExit(proc.pid, STOP_GRACE_MS);
+  //
+  // One exception, and it is the whole of the false-alarm half of this defect:
+  // when libuv has REAPED the child (exitCode or signalCode is set) the child is
+  // definitively dead, and a pid that still answers is a DIFFERENT process that
+  // Windows handed the recycled number to. Probing it reported a stray with no
+  // identity evidence — `pid 4604 (daemon, port 63355): NOT signalled: not ours
+  // (EPERM)` in run 43223847244, a pid the post-job census did not find among
+  // the live python processes at all. The handle outranks the number.
+  const reaped = proc.exitCode !== null || proc.signalCode !== null;
+  const launcherGone = reaped || (await waitForExit(proc.pid, STOP_GRACE_MS));
+  // The real daemon, when `proc` was only its launcher. Killing by exact pid,
+  // bounded, SIGTERM then SIGKILL — the same pass the launcher got.
+  let realGone = true;
+  if (realPid && realPid !== proc.pid) {
+    realGone = await killPid(realPid, STOP_GRACE_MS);
+    appendLedger(handle.dataDir, {
+      event: realGone ? 'stopped' : 'started',
+      kind: 'daemon',
+      pid: realPid,
+      port: handle.port || null,
+      dataDir: handle.dataDir,
+      at: Date.now(),
+    });
+    if (!realGone) {
+      console.error(
+        'fixture-daemon: the daemon pid ' + realPid + ' named in ' + handle.dataDir
+        + '/amauta-daemon.pid outlived SIGTERM and SIGKILL; recorded as RUNNING',
+      );
+    }
+  }
+  const gone = launcherGone && realGone;
   appendLedger(handle.dataDir, {
-    event: gone ? 'stopped' : 'started',
+    event: launcherGone ? 'stopped' : 'started',
     kind: 'daemon',
     pid: proc.pid,
     port: handle.port || null,
     dataDir: handle.dataDir,
     at: Date.now(),
   });
-  if (!gone) {
+  if (!launcherGone) {
     console.error(
       'fixture-daemon: pid ' + proc.pid + ' is still alive after SIGTERM and SIGKILL; '
       + 'recorded as RUNNING so the stray detector can see it',
@@ -317,41 +420,32 @@ async function stopFixtureDaemon(handle) {
   // ended with `SURVIVING PYTHON pid=6044 … services\amauta-daemon.py run` and
   // `pid=7936 ppid=6044 … services\rlm-service.py run`. The pid comes from this
   // fixture's OWN data directory, so it is a process this harness started.
-  try {
-    const rlmPid = parseInt(fs.readFileSync(path.join(handle.dataDir, 'rlm-service.pid'), 'utf8').trim(), 10);
-    if (rlmPid > 0) {
-      if (pidAlive(rlmPid)) {
-        try {
-          process.kill(rlmPid, 'SIGTERM');
-        } catch (_e) {
-          /* already gone */
-        }
-        for (let i = 0; i < 20 && pidAlive(rlmPid); i += 1) {
-          await new Promise((r) => setTimeout(r, 100));
-        }
-        if (pidAlive(rlmPid)) {
-          try {
-            process.kill(rlmPid, 'SIGKILL');
-          } catch (_e) {
-            /* exited after SIGTERM */
-          }
-        }
-      }
-      appendLedger(handle.dataDir, {
-        event: pidAlive(rlmPid) ? 'started' : 'stopped',
-        kind: 'rlm',
-        pid: rlmPid,
-        port: Number(process.env.GSD_RLM_PORT) || null,
-        dataDir: handle.dataDir,
-        at: Date.now(),
-      });
+  //
+  // The wait AFTER SIGKILL is load-bearing: a signal is a request the kernel
+  // completes asynchronously, so the old code — which read `pidAlive` on the
+  // line after `process.kill(..., 'SIGKILL')` — recorded `started` for an RLM
+  // that was in the act of dying, and the ledger then carried a stray that no
+  // longer existed. `killPid` waits for the pid to stop answering, bounded, and
+  // reports what it measured.
+  let rlmGone = true;
+  const rlmPid = readPidFile(path.join(handle.dataDir, 'rlm-service.pid'));
+  if (rlmPid) {
+    rlmGone = await killPid(rlmPid, STOP_GRACE_MS);
+    appendLedger(handle.dataDir, {
+      event: rlmGone ? 'stopped' : 'started',
+      kind: 'rlm',
+      pid: rlmPid,
+      port: Number(process.env.GSD_RLM_PORT) || null,
+      dataDir: handle.dataDir,
+      at: Date.now(),
+    });
+    if (!rlmGone) {
+      console.error('fixture-daemon: RLM pid ' + rlmPid + ' outlived SIGTERM and SIGKILL; recorded as RUNNING');
     }
-  } catch (_e) {
-    /* no RLM pid file: nothing to record */
   }
   // Never delete the data directory of a process that is still running: the
   // stray detector identifies a pid by the data directory on its command line.
-  if (!handle.keep && gone) fs.rmSync(handle.dataDir, { recursive: true, force: true });
+  if (!handle.keep && gone && rlmGone) fs.rmSync(handle.dataDir, { recursive: true, force: true });
 }
 
-module.exports = { startFixtureDaemon, stopFixtureDaemon };
+module.exports = { startFixtureDaemon, stopFixtureDaemon, killPid, readPidFile };
