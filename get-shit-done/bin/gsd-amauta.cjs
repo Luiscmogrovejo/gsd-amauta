@@ -63,7 +63,20 @@ function _telemetryEmit(eventType, payload) {
 // ── Load .env file (skipped in test mode) ─────────────
 (function loadDotenv() {
   if (process.env.GSD_AMAUTA_NO_AUTO_START) return;
-  for (const f of [path.join(__dirname, '..', '..', '.env'), '/srv/amauta/.env']) {
+  // Plan 88-11 task 04: a test session must never read the operator's .env --
+  // it holds the live DSN, the live ports and API keys, and this runs at
+  // require time. In test mode nothing is read unless GSD_DOTENV_PATH names
+  // one file (the opt-in the loader's own tests use). Outside test mode the
+  // behaviour is unchanged. PYTEST_CURRENT_TEST covers a CLI spawned from a
+  // pytest test that cleared GSD_TEST_MODE.
+  const testMode = /^(1|true|yes|on)$/i.test(String(process.env.GSD_TEST_MODE || ''))
+    || Boolean(process.env.PYTEST_CURRENT_TEST);
+  const explicit = testMode ? String(process.env.GSD_DOTENV_PATH || '') : '';
+  if (testMode && !explicit) return;
+  const candidates = explicit
+    ? [explicit]
+    : [path.join(__dirname, '..', '..', '.env'), '/srv/amauta/.env'];
+  for (const f of candidates) {
     try {
       for (const line of fs.readFileSync(f, 'utf-8').split('\n')) {
         const t = line.trim();

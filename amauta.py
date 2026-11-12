@@ -19,15 +19,62 @@ import re
 import sys
 
 # ── Load .env file (project root or /srv/amauta) ──────────────────────────────
+#
+# Two names carry every per-file difference: the directory the repository-root
+# .env is resolved from, and the extra variables that switch this loader off.
+# EVERYTHING BELOW THEM IS BYTE-IDENTICAL in amauta.py,
+# services/amauta-daemon.py, services/rlm-service.py and services/amauta-mcp.py.
+# It is copied rather than imported because three of the four call it before
+# their own imports are resolved, and an import at that point would add a
+# failure mode to four entry points to save twenty lines.
+# tests/test_88_11_dotenv_loader.py fails if the four copies drift.
+_DOTENV_ROOT = os.path.dirname(os.path.abspath(__file__))
+_DOTENV_EXTRA_SKIP = ("GSD_AMAUTA_NO_AUTO_START",)
+
+
+def _dotenv_suppressed():
+    """True when this process must not read an ambient .env file.
+
+    Plan 88-11 task 04: this loader runs at import time in four entry points,
+    so a test that imported any of them used to re-inject the operator's live
+    DSN, live ports and API keys into an environment tests/conftest.py had
+    just scrubbed. Inside a test session the answer is always True.
+
+    Returns:
+        bool: True when any name in ``_DOTENV_EXTRA_SKIP`` is set, when
+        ``GSD_TEST_MODE`` is 1/true/yes/on, or when pytest is running
+        (``PYTEST_CURRENT_TEST``, which tests/test_88_rlm_port_safety.py needs
+        because it deletes ``GSD_TEST_MODE`` before importing the daemon).
+        False in every other case, including ``GSD_TEST_MODE=0``.
+    """
+    for _name in _DOTENV_EXTRA_SKIP:
+        if os.environ.get(_name):
+            return True
+    if os.environ.get("GSD_TEST_MODE", "").strip().lower() in ("1", "true", "yes", "on"):
+        return True
+    return bool(os.environ.get("PYTEST_CURRENT_TEST"))
+
+
 def _load_dotenv():
-    """Load .env file into os.environ (simple parser, no dependency).
-    Skipped during test runs (NODE_TEST=1 or pytest) to avoid polluting test env."""
-    if os.environ.get("GSD_AMAUTA_NO_AUTO_START") or os.environ.get("PYTEST_CURRENT_TEST"):
-        return  # Skip in test environments
-    for candidate in [
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"),
-        "/srv/amauta/.env",
-    ]:
+    """Load a .env file into os.environ (simple parser, no dependency).
+
+    A variable that is already set always wins; comments, blank lines and
+    lines without ``=`` are skipped; one layer of quotes comes off; the first
+    candidate that exists is the only one read. Outside test mode the
+    candidates are ``<root>/.env`` then ``/srv/amauta/.env``, exactly as the
+    installed daemon has always read them. Under :func:`_dotenv_suppressed`
+    nothing is read at all, unless ``GSD_DOTENV_PATH`` names one file — the
+    single opt-in, which exists so the loader's own tests can drive the parser
+    without an ambient file.
+    """
+    if _dotenv_suppressed():
+        explicit = os.environ.get("GSD_DOTENV_PATH", "")
+        if not explicit:
+            return
+        candidates = [explicit]
+    else:
+        candidates = [os.path.join(_DOTENV_ROOT, ".env"), "/srv/amauta/.env"]
+    for candidate in candidates:
         if os.path.isfile(candidate):
             with open(candidate, encoding="utf-8") as f:
                 for line in f:
@@ -42,6 +89,7 @@ def _load_dotenv():
                     if key and key not in os.environ:  # Don't override existing env
                         os.environ[key] = val
             break
+
 
 _load_dotenv()
 
@@ -685,13 +733,23 @@ def _mem_append(row: dict):
     with open(MEMORY_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(row, ensure_ascii=True) + "\n")
 
+# The deployment's own .env, read as the LAST resort for the memory DSN and
+# backend. Named here so a test can point it somewhere harmless; the loader at
+# the top of this file keeps its own literal because that block is
+# byte-identical across four entry points.
+_MEM_ENV_FILE = "/srv/amauta/.env"
+
+
 def _mem_db_url() -> str:
     # Priority: AMAUTA_MEMORY_DATABASE_URL > GSD_POSTGRES_URL > /srv/amauta/.env
     dsn = os.environ.get("AMAUTA_MEMORY_DATABASE_URL", "").strip()
     if not dsn:
         dsn = os.environ.get("GSD_POSTGRES_URL", "").strip()
-    if not dsn:
-        env_file = Path("/srv/amauta/.env")
+    if not dsn and not _dotenv_suppressed():
+        # Plan 88-11 task 04: inside a test session the environment is the only
+        # source of a DSN. A deployment file would reintroduce exactly what
+        # tests/conftest.py scrubs.
+        env_file = Path(_MEM_ENV_FILE)
         if env_file.exists():
             for ln in env_file.read_text(errors="ignore", encoding="utf-8").splitlines():
                 if ln.startswith("AMAUTA_MEMORY_DATABASE_URL="):
@@ -744,7 +802,9 @@ def _mem_backend() -> str:
     # If GSD_POSTGRES_URL is set, infer postgres backend automatically
     if os.environ.get("GSD_POSTGRES_URL", "").strip():
         return "postgres"
-    env_file = Path("/srv/amauta/.env")
+    if _dotenv_suppressed():  # plan 88-11 task 04, as in _mem_db_url
+        return ""
+    env_file = Path(_MEM_ENV_FILE)
     if env_file.exists():
         for ln in env_file.read_text(errors="ignore", encoding="utf-8").splitlines():
             if ln.startswith("AMAUTA_MEMORY_BACKEND="):

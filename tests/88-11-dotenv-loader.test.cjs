@@ -198,3 +198,138 @@ for (const rel of LOADERS) {
     assert.deepEqual(env, { GSD_AMAUTA_NO_AUTO_START: '1' });
   });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// INSIDE TEST MODE — the guard
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Truthy spellings of GSD_TEST_MODE, as gsd-amauta.cjs has always read them. */
+const TEST_MODE_ON = ['1', 'true', 'TRUE', 'yes', 'on'];
+
+/** Spellings that are not test mode: the loader must still read the file. */
+const TEST_MODE_OFF = ['0', 'false', 'off', ''];
+
+for (const rel of LOADERS) {
+  test(`in test mode ${rel} reads nothing`, (t) => {
+    const { env, root } = runLoader(rel, { t, env: { GSD_TEST_MODE: '1' } });
+    assert.ok(fs.existsSync(path.join(root, '.env')), 'the sentinel file must exist');
+    assert.deepEqual(env, { GSD_TEST_MODE: '1' });
+  });
+
+  for (const spelling of TEST_MODE_ON) {
+    test(`in test mode ${rel} reads nothing with GSD_TEST_MODE=${spelling}`, (t) => {
+      const { env } = runLoader(rel, { t, env: { GSD_TEST_MODE: spelling } });
+      assert.equal(env.GSD_DOTENV_SENTINEL, undefined);
+    });
+  }
+
+  for (const spelling of TEST_MODE_OFF) {
+    test(`GSD_TEST_MODE=${JSON.stringify(spelling)} is not test mode for ${rel}`, (t) => {
+      const { env } = runLoader(rel, { t, env: { GSD_TEST_MODE: spelling } });
+      assert.equal(env.GSD_DOTENV_SENTINEL, 'leaked-from-dotenv');
+    });
+  }
+
+  test(`in test mode ${rel} reads only the file GSD_DOTENV_PATH names`, (t) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gsd-dotenv-explicit-'));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const explicit = path.join(root, 'explicit.env');
+    fs.writeFileSync(explicit, 'GSD_DOTENV_EXPLICIT=from-the-explicit-file\n');
+    const { env } = runLoader(rel, {
+      t,
+      env: { GSD_TEST_MODE: '1', GSD_DOTENV_PATH: explicit },
+    });
+    assert.equal(env.GSD_DOTENV_EXPLICIT, 'from-the-explicit-file');
+    assert.equal(env.GSD_DOTENV_SENTINEL, undefined, 'the ambient .env must stay unread');
+  });
+
+  test(`in test mode ${rel} survives a GSD_DOTENV_PATH that does not exist`, (t) => {
+    const { env, root } = runLoader(rel, {
+      t,
+      env: { GSD_TEST_MODE: '1', GSD_DOTENV_PATH: path.join(os.tmpdir(), 'no-such-file.env') },
+    });
+    assert.ok(fs.existsSync(path.join(root, '.env')));
+    assert.equal(env.GSD_DOTENV_SENTINEL, undefined);
+  });
+
+  test(`outside test mode ${rel} ignores GSD_DOTENV_PATH`, (t) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gsd-dotenv-explicit-'));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const explicit = path.join(root, 'explicit.env');
+    fs.writeFileSync(explicit, 'GSD_DOTENV_EXPLICIT=from-the-explicit-file\n');
+    const { env } = runLoader(rel, { t, env: { GSD_DOTENV_PATH: explicit } });
+    assert.equal(env.GSD_DOTENV_EXPLICIT, undefined, 'production must not gain a new input');
+    assert.equal(env.GSD_DOTENV_SENTINEL, 'leaked-from-dotenv');
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The harness: this very process proves the runner set test mode
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('scripts/run-tests.cjs hands every test process GSD_TEST_MODE=1', () => {
+  // This file is run by scripts/run-tests.cjs, so its own environment is the
+  // evidence: if the runner stopped setting the name, the loaders in every
+  // product child spawned by a Node test would be back on the ambient .env.
+  assert.equal(
+    process.env.GSD_TEST_MODE,
+    '1',
+    'run this file through scripts/run-tests.cjs, which is what sets GSD_TEST_MODE',
+  );
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Drift: the guard is spelled the same way in all four, and the three loaders
+// that were byte-identical before this plan still are.
+//
+// These are source assertions, and they are NOT the proof — the behavioural
+// cases above are. They exist so a fifth spelling of the guard, or a copy that
+// quietly loses it, shows up as a failure here rather than as a leak on the one
+// machine that has a .env.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const GUARD = [
+  "  const testMode = /^(1|true|yes|on)$/i.test(String(process.env.GSD_TEST_MODE || ''))",
+  '    || Boolean(process.env.PYTEST_CURRENT_TEST);',
+  "  const explicit = testMode ? String(process.env.GSD_DOTENV_PATH || '') : '';",
+  '  if (testMode && !explicit) return;',
+].join('\n');
+
+test('all four Node loaders spell the guard identically, above the candidates', () => {
+  for (const rel of LOADERS) {
+    const { block } = extractLoader(rel);
+    assert.ok(block.includes(GUARD), `${rel} does not carry the guard verbatim`);
+    assert.ok(
+      block.indexOf(GUARD) < block.indexOf('candidates'),
+      `${rel} builds its candidate list before the guard`,
+    );
+  }
+});
+
+test('gsd-amauta, gsd-memory and gsd-rlm still share one byte-identical loader', () => {
+  const shared = [
+    'get-shit-done/bin/gsd-amauta.cjs',
+    'get-shit-done/bin/gsd-memory.cjs',
+    'get-shit-done/bin/gsd-rlm.cjs',
+  ].map((rel) => ({ rel, block: extractLoader(rel).block }));
+  for (const { rel, block } of shared) {
+    assert.equal(block, shared[0].block, `${rel} has drifted from ${shared[0].rel}`);
+  }
+  // gsd-research.cjs says the same thing in its own words (different variable
+  // names, a multi-line candidate list); its behaviour is pinned by every case
+  // above, which is why it is not required to match byte for byte.
+  assert.notEqual(extractLoader('get-shit-done/bin/gsd-research.cjs').block, shared[0].block);
+});
+
+for (const rel of LOADERS) {
+  test(`a CLI spawned from a pytest test reads nothing: ${rel}`, (t) => {
+    // PYTEST_CURRENT_TEST is inherited by every child a pytest test spawns, and
+    // tests/test_88_rlm_port_safety.py deletes GSD_TEST_MODE, so this is the
+    // marker that covers a Node CLI called from such a test.
+    const { env } = runLoader(rel, {
+      t,
+      env: { PYTEST_CURRENT_TEST: 'tests/test_x.py::test_y (call)' },
+    });
+    assert.equal(env.GSD_DOTENV_SENTINEL, undefined);
+  });
+}
