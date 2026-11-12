@@ -157,7 +157,7 @@ describe('88-17 runtime-llm: the host runtime CLI is the first backend', () => {
   test('a fake `claude` found on PATH is resolved and used (no override variable at all)', () => {
     const bin = tmp('gsd-88-17-path-');
     const log = path.join(bin, 'calls.jsonl');
-    writeFakeExe(bin, 'claude', { node: fakeCliBody(log) });
+    const fakePath = writeFakeExe(bin, 'claude', { node: fakeCliBody(log) });
 
     const env = { ...process.env };
     delete env.GSD_LLM_CLI_BIN;
@@ -168,14 +168,20 @@ describe('88-17 runtime-llm: the host runtime CLI is the first backend', () => {
 
     const resolved = runtimeLlm.resolveBackend(env);
     assert.equal(resolved.backend, 'cli');
-    // Compared through realpath and case-folded: on Windows `os.tmpdir()` can hand back
-    // the 8.3 short form (C:\Users\RUNNE~1\...) while `where` prints the long one, so a
-    // plain startsWith on the raw strings is a false red that says nothing about the
-    // product (measured on the windows-latest runner, run 43171508229).
-    const norm = (p) => fs.realpathSync(p).toLowerCase();
-    assert.equal(norm(path.dirname(resolved.cli.command)), norm(bin),
-      `the resolved binary must be the fake, got ${resolved.cli.command}`);
+    // "The resolved binary IS the fake" is asserted on the CONTENT, not the path string.
+    // On the windows-latest runner `os.tmpdir()` hands back the 8.3 short form
+    // (C:\Users\RUNNER~1\…) while `where` prints the long one, and `fs.realpathSync`
+    // does not reconcile them — measured on runs 43171508229 and 43173121136. Comparing
+    // the bytes is unambiguous and says exactly what the rule requires: this is our
+    // fake, not the operator's real `claude`.
+    assert.equal(
+      fs.readFileSync(resolved.cli.command, 'utf8'),
+      fs.readFileSync(fakePath, 'utf8'),
+      `the resolved binary must be the fake, got ${resolved.cli.command}`,
+    );
     assert.match(path.basename(resolved.cli.command), /^claude(\.cmd)?$/i);
+    assert.equal(path.basename(path.dirname(resolved.cli.command)).toLowerCase(),
+      path.basename(bin).toLowerCase(), 'and it must come from this test\'s temp dir');
 
     const res = runtimeLlm.callModel(
       { prompt: 'PATH-PROMPT-MARKER', system: 'SYSTEM-MARKER', model: 'haiku' },
