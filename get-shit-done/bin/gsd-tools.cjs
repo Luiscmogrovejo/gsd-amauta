@@ -1765,19 +1765,219 @@ function extractDedupId(stdout) {
   return m ? m[1].toUpperCase() : null;
 }
 
+// ─── Plan registration scope (plan 89-00) ────────────────────────────────────
+// The task store is SHARED by every project on the machine. Before 89-00 the
+// registration lookup was global: a task of another project tagged
+// `task:89-01-01` was accepted as "89-01-01 is already registered", five Phase 89
+// tasks were skipped in favour of unrelated rows, and Pass 2 wrote dependency
+// links onto them. A plan id of `null` made it worse — 319 pre-existing tasks
+// carry the tag `plan:null`, so the "story of this plan" fallback adopted a
+// story from another phase and parented 65 tasks under it.
+//
+// The rule now: an item may match this registration only when it CLAIMS THIS
+// PLAN (tag `plan:<id>` or metadata plan id) AND belongs to the SAME PROJECT as
+// the caller. Both halves are applied in exactly one place —
+// `_scopePlanItems`, called only from `_loadRegisteredTasks`.
+
+const _PROJECT_ID_MAX_LEN = 128;        // mirrors amauta.py PROJECT_ID_MAX_LEN
+const _DEFAULT_PROJECT_ID = 'default';  // mirrors amauta.py DEFAULT_PROJECT_ID
+
+/**
+ * Normalise a candidate project id. Mirrors amauta.py `_sanitize_project_id` (amauta.py:344).
+ * @param {*} value raw candidate
+ * @returns {string|null} trimmed value capped at 128 chars, or null when unusable
+ */
+function _sanitizeProjectId(value) {
+  if (typeof value !== 'string') return null;
+  const v = value.trim();
+  if (!v) return null;
+  return v.slice(0, _PROJECT_ID_MAX_LEN);
+}
+
+/**
+ * Nearest ancestor of `startDir` holding `.git` (a .git FILE counts: worktrees, submodules).
+ * Mirrors amauta.py `_repo_root` (amauta.py:362).
+ * @param {string} startDir
+ * @returns {string|null} absolute repository root, or null outside a git tree
+ */
+function _planRepoRoot(startDir) {
+  let cur;
+  try {
+    cur = path.resolve(startDir);
+  } catch (_e) {
+    return null;
+  }
+  for (;;) {
+    if (fs.existsSync(path.join(cur, '.git'))) return cur;
+    const parent = path.dirname(cur);
+    if (parent === cur) return null;
+    cur = parent;
+  }
+}
+
+/**
+ * Read an EXPLICITLY configured project id from .planning/config.json, searched from
+ * `startDir` up to `repoRoot` (inclusive); with no repository root the walk does not climb.
+ * Mirrors amauta.py `_project_id_from_config` (amauta.py:386).
+ * @param {string} startDir
+ * @param {string|null} repoRoot
+ * @returns {string|null} the configured id, or null when no config declares one
+ */
+function _projectIdFromConfig(startDir, repoRoot) {
+  let cur;
+  try {
+    cur = path.resolve(startDir);
+  } catch (_e) {
+    return null;
+  }
+  const root = repoRoot ? path.resolve(repoRoot) : null;
+  for (;;) {
+    const cfgPath = path.join(cur, '.planning', 'config.json');
+    try {
+      const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) || {};
+      let declared = cfg.project_id;
+      if (declared === undefined || declared === null) {
+        declared = (cfg.project && typeof cfg.project === 'object') ? cfg.project.id : null;
+      }
+      const sanitized = _sanitizeProjectId(declared);
+      if (sanitized) return sanitized;
+    } catch (_e) {
+      // missing/unreadable/malformed config must never block registration
+    }
+    // No git tree bounds the walk: an unrelated ancestor's config is not this directory's project.
+    if (root === null) return null;
+    if (path.normalize(cur) === path.normalize(root)) return null;
+    const parent = path.dirname(cur);
+    if (parent === cur) return null;
+    cur = parent;
+  }
+}
+
+/**
+ * Project the CALLER belongs to — the same answer `amauta add` will stamp on the items this
+ * registration creates. Mirrors amauta.py `_resolve_project_id` (amauta.py:435) for the case
+ * this code is in: no --project flag of our own, and a caller directory we know.
+ * Precedence: AMAUTA_PROJECT_ID, then .planning/config.json, then repository-root basename,
+ * then the caller directory's basename, then 'default'. The daemon-seam branch of the Python
+ * rule (no start_dir under AMAUTA_INVOKED_BY_DAEMON) cannot apply here: the caller directory
+ * is always known, and it is passed on to `add` as --project so no second inference runs.
+ *
+ * @param {string} startDir the caller's working directory
+ * @returns {string} a non-empty project id
+ * @example
+ *   _callerProjectId('/Users/me/Code/gsd-amauta') // 'gsd-amauta'
+ */
+function _callerProjectId(startDir) {
+  const env = _sanitizeProjectId(process.env.AMAUTA_PROJECT_ID);
+  if (env) return env;
+  let base;
+  try {
+    base = path.resolve(startDir || process.cwd());
+  } catch (_e) {
+    return _DEFAULT_PROJECT_ID;
+  }
+  const root = _planRepoRoot(base);
+  const configured = _projectIdFromConfig(base, root);
+  if (configured) return configured;
+  if (root) {
+    const fromRoot = _sanitizeProjectId(path.basename(root));
+    if (fromRoot) return fromRoot;
+  }
+  return _sanitizeProjectId(path.basename(base)) || _DEFAULT_PROJECT_ID;
+}
+
+/**
+ * Project of a STORED item, absent/blank reading as 'default'.
+ * Mirrors amauta.py `_item_project` (amauta.py:513) so a row written before TK-2229 and one
+ * written after answer identically.
+ * @param {object} item
+ * @returns {string} never empty
+ */
+function _itemProjectId(item) {
+  return _sanitizeProjectId(item && item.project_id) || _DEFAULT_PROJECT_ID;
+}
+
+/**
+ * Does this stored item claim THIS plan? Tag `plan:<id>` or a metadata plan id equal to it.
+ * A `task:<local id>` tag alone is NOT a claim — that tag is what collided across projects.
+ * @param {object} item
+ * @param {string} planId
+ * @returns {boolean}
+ */
+function _itemClaimsPlan(item, planId) {
+  if (!planId || !item) return false;
+  const md = item.metadata || {};
+  if (md.plan_id === planId || md.plan_local_id === planId) return true;
+  const tags = Array.isArray(item.tags) ? item.tags : [];
+  return tags.includes(`plan:${planId}`);
+}
+
+/**
+ * THE scope filter: the only items a registration of `planId` in `projectId` may see.
+ *
+ * Returns the items that claim this plan in this project, plus the story that PARENTS one of
+ * them in the same project (a story carries no plan tag — `add story` takes no --from-plan —
+ * so the parent link is how an interrupted run finds its own story again; because the parent
+ * is reached only through an item that already claims this plan, the `plan:null` class can
+ * never lead here). An empty/falsy planId scopes to NOTHING: no plan id, no match.
+ *
+ * @param {object[]} items every stored item
+ * @param {object} scope
+ * @param {string} scope.planId plan being registered
+ * @param {string} scope.projectId caller's project (see _callerProjectId)
+ * @returns {object[]} the in-scope items
+ */
+function _scopePlanItems(items, { planId, projectId } = {}) {
+  if (!planId) return [];
+  const project = _sanitizeProjectId(projectId) || _DEFAULT_PROJECT_ID;
+  const inProject = (Array.isArray(items) ? items : []).filter(it => it && _itemProjectId(it) === project);
+  const claimed = inProject.filter(it => _itemClaimsPlan(it, planId));
+  const parentIds = new Set(claimed.map(it => it.parent).filter(Boolean));
+  const parentStories = inProject.filter(it =>
+    it.type === 'story' && parentIds.has(it.id) && !claimed.includes(it));
+  return [...claimed, ...parentStories];
+}
+
+/**
+ * Plan id from the plan's FRONTMATTER only — `plan_id:` first, else `plan:` (the spelling every
+ * Phase 88/89 plan uses). The body is never searched: a `plan_id:` inside prose is prose.
+ *
+ * A literal `null`/`undefined` is treated as absent, because that string is exactly what used to
+ * reach the store as the tag `plan:null`.
+ *
+ * @param {string} planContent the plan file's text
+ * @returns {string|null} the id, or null when the frontmatter declares none
+ * @example
+ *   _planIdFromFrontmatter('---\nplan: 89-01\n---\n') // '89-01'
+ */
+function _planIdFromFrontmatter(planContent) {
+  const text = String(planContent || '').replace(/\r\n/g, '\n');
+  const fm = text.match(/^---\n([\s\S]*?)\n---/);
+  if (!fm) return null;
+  const block = fm[1];
+  const m = block.match(/^plan_id:[ \t]*(.*)$/m) || block.match(/^plan:[ \t]*(.*)$/m);
+  if (!m) return null;
+  const value = m[1].trim().replace(/^["']|["']$/g, '').trim();
+  if (!value || value === 'null' || value === 'undefined') return null;
+  return value;
+}
+
 // Phase 91 (SRV-03) repoints this at the daemon/database. It is the ONLY place planToTasks learns what is already registered.
 /**
- * Load every registered item planToTasks needs for its idempotency check.
+ * Load the registered items planToTasks may use for its idempotency check — SCOPED to
+ * `planId` + `projectId` (plan 89-00). Scoping happens here, in one place, so no caller can
+ * see an item of another plan or another project; that is what let a foreign `task:89-01-01`
+ * be mistaken for this plan's task.
  *
  * @param {object} args
  * @param {string} args.dataDir directory holding tasks.json
- * @param {string} [args.planId] the plan being registered (unused by the file source; reserved for a database source that filters server-side)
+ * @param {string} [args.planId] the plan being registered; absent/empty scopes to nothing
+ * @param {string} [args.projectId] the caller's project (see _callerProjectId)
  * @returns {Promise<{source: 'tasks.json'|'daemon', tasks: object[]}>} a missing file yields an empty list; a corrupt file warns on stderr and yields an empty list (never throws)
  * @example
- *   const { tasks } = await _loadRegisteredTasks({ dataDir: process.env.AMAUTA_DATA_DIR, planId: '14-03' });
+ *   const { tasks } = await _loadRegisteredTasks({ dataDir: process.env.AMAUTA_DATA_DIR, planId: '14-03', projectId: 'gsd-amauta' });
  */
-async function _loadRegisteredTasks({ dataDir, planId } = {}) {
-  void planId;
+async function _loadRegisteredTasks({ dataDir, planId, projectId } = {}) {
   const tasksFile = path.join(dataDir, 'tasks.json');
   let raw;
   try {
@@ -1788,7 +1988,8 @@ async function _loadRegisteredTasks({ dataDir, planId } = {}) {
   }
   try {
     const parsed = JSON.parse(raw);
-    return { source: 'tasks.json', tasks: Array.isArray(parsed.items) ? parsed.items : [] };
+    const items = Array.isArray(parsed.items) ? parsed.items : [];
+    return { source: 'tasks.json', tasks: _scopePlanItems(items, { planId, projectId }) };
   } catch (e) {
     process.stderr.write(`[plan-to-tasks] could not parse ${tasksFile}: ${e.message} — treating as empty.\n`);
     return { source: 'tasks.json', tasks: [] };
@@ -1814,9 +2015,18 @@ async function planToTasks(planFilePath, opts) {
   const resolved = path.isAbsolute(planFilePath) ? planFilePath : path.join(cwd, planFilePath);
   const planContent = fs.readFileSync(resolved, 'utf-8');
 
-  // Extract plan_id from frontmatter
-  const planIdMatch = planContent.match(/^plan_id:\s*(.+)$/m);
-  const planId = planIdMatch ? planIdMatch[1].trim() : null;
+  // Extract the plan id from the FRONTMATTER (`plan_id:`, else `plan:`). No id is a hard stop:
+  // nothing is created, because the alternative — the string "null" in every tag, note and
+  // --from-plan — is what joined 65 tasks of thirteen plans to one unrelated story (89-00).
+  const planId = _planIdFromFrontmatter(planContent);
+  if (!planId) {
+    return {
+      error: 'plan_id_missing',
+      message: 'plan-to-tasks: the plan frontmatter declares no plan_id (or plan). ' +
+        'Zero stories, tasks and links created. Add `plan_id: <id>` to the frontmatter and re-run.',
+      plan_file: resolved,
+    };
+  }
 
   // Run _validatePlanShape — hard error if invalid
   const shapeResult = _validatePlanShape(planContent);
@@ -1922,7 +2132,11 @@ async function planToTasks(planFilePath, opts) {
   // dataDir is resolved once here; no other site in planToTasks computes it.
   const pluginRoot = path.resolve(__dirname, '..', '..');
   const dataDir = opts.dataDir || process.env.AMAUTA_DATA_DIR || path.join(pluginRoot, 'data');
-  const registered = await _loadRegisteredTasks({ dataDir, planId });
+  // 89-00: the caller's project, resolved by the same rule amauta.py uses, is BOTH the scope of
+  // every lookup below and the --project stamped on everything created. allItems therefore holds
+  // only items of this plan in this project (plus this plan's own story) — see _scopePlanItems.
+  const projectId = _callerProjectId(cwd);
+  const registered = await _loadRegisteredTasks({ dataDir, planId, projectId });
   const allItems = registered.tasks;
 
   // Build plan-local-id -> amauta task mapping.
@@ -2008,6 +2222,9 @@ async function planToTasks(planFilePath, opts) {
       amautaCjs, 'add', 'story', storyTitle,
       '--agent', 'operator',
       '--criteria', storyCriteriaJson,
+      // 89-00: record the project, or the story is invisible to every project-scoped lookup
+      // (including this plan's own next run) and belongs to no repository.
+      '--project', projectId,
     ], _spawnOpts);
     storyId = extractId(_storyRaw.stdout, 'ST');
     const _dedupId = storyId ? null : extractDedupId(_storyRaw.stdout);
@@ -2064,6 +2281,8 @@ async function planToTasks(planFilePath, opts) {
       '--source', 'plan-to-tasks',
       '--from-plan', planId,
       '--tags', _tags,
+      // 89-00: same project as the story above — this is what makes the next run's scope work.
+      '--project', projectId,
     ]);
 
     // Check for DEDUP BLOCKED in stdout
@@ -2091,6 +2310,10 @@ async function planToTasks(planFilePath, opts) {
   }
 
   // ── Pass 2: Dependency linking ───────────────────────────────────────────
+  // Every endpoint comes from taskIdMap, and taskIdMap is written in exactly two places above:
+  // an id this run CREATED, or an id `existingByPlanLocalId` scope-matched (this plan, this
+  // project). A link can therefore not land on a foreign project's task, which is what the
+  // global `task:<local id>` lookup made it do for five Phase 89 tasks (89-00).
   const createdLinks = [];
   const skippedLinks = [];
   const failedLinks = [];
@@ -2187,6 +2410,7 @@ async function planToTasks(planFilePath, opts) {
     success: failedTasks.length === 0 && failedLinks.length === 0,
     pass0: 'complete',
     plan_id: planId,
+    project_id: projectId,  // 89-00: the scope this run used and stamped
     story_id: storyId,
     tasks_created: createdTaskIds,
     tasks_skipped: skippedTaskIds,
@@ -3162,6 +3386,12 @@ if (require.main !== module) {
     _renderDagText,
     _diffPlanVsAmauta,
     _loadRegisteredTasks,
+    // Plan 89-00: plan id + project scope of a registration
+    _planIdFromFrontmatter,
+    _callerProjectId,
+    _itemProjectId,
+    _itemClaimsPlan,
+    _scopePlanItems,
     extractId,
     extractDedupId,
     stripAnsi,
