@@ -7,6 +7,7 @@ installed. HOME is not modified (replacing it hides user-site packages).
 """
 import os
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -114,6 +115,44 @@ class FixtureDaemon:
         self.proc = proc
 
 
+def _daemon_not_ready_report(proc, out_path, err_path, port, started, timeout):
+    """Describe a fixture daemon that did not become ready, with enough to diagnose it.
+
+    A bare "did not become ready" with an empty stderr (the macOS CI cell, 88-13) says
+    nothing. This reports whether the process exited (and how), the port it announced, how
+    long it ran, and both output tails. When the process is still alive on a POSIX system
+    it is sent SIGABRT first: ``PYTHONFAULTHANDLER=1`` makes it print every thread's
+    traceback to stderr, which names the line it is stuck on.
+
+    Args:
+        proc: the ``subprocess.Popen`` of the daemon.
+        out_path: path of the file holding its stdout.
+        err_path: path of the file holding its stderr.
+        port: the announced port, or None.
+        started: ``time.time()`` when it was spawned.
+        timeout: the readiness budget in seconds.
+
+    Returns:
+        str: the multi-line report used as the RuntimeError message.
+    """
+    exit_code = proc.poll()
+    still_alive = exit_code is None
+    if still_alive and hasattr(signal, "SIGABRT") and sys.platform != "win32":
+        try:
+            proc.send_signal(signal.SIGABRT)
+            proc.wait(timeout=5)
+        except Exception:  # best effort: the teardown terminates it anyway
+            pass
+    out_tail = out_path.read_text(encoding="utf-8", errors="replace")[-2000:]
+    err_tail = err_path.read_text(encoding="utf-8", errors="replace")[-4000:]
+    return (
+        "fixture daemon did not become ready: "
+        "exit_code=%r still_alive_at_deadline=%r announced_port=%r elapsed=%.1fs budget=%.0fs\n"
+        "--- stdout tail ---\n%s\n--- stderr tail ---\n%s"
+        % (exit_code, still_alive, port, time.time() - started, timeout, out_tail, err_tail)
+    )
+
+
 @pytest.fixture
 def fixture_daemon(tmp_path):
     """Start services/amauta-daemon.py on an ephemeral port with the SQLite backend.
@@ -147,8 +186,12 @@ def fixture_daemon(tmp_path):
     )
     out_path = tmp_path / "fixture-daemon.out"
     err_path = tmp_path / "fixture-daemon.err"
-    out_f = open(out_path, "w")
-    err_f = open(err_path, "w")
+    out_f = open(out_path, "w", encoding="utf-8")
+    err_f = open(err_path, "w", encoding="utf-8")
+    # PYTHONFAULTHANDLER lets the stuck-daemon diagnostic below (SIGABRT) print every
+    # thread's traceback to the daemon's stderr instead of dying silently.
+    env["PYTHONFAULTHANDLER"] = "1"
+    started = time.time()
     proc = subprocess.Popen(
         [sys.executable, str(_REPO / "services" / "amauta-daemon.py"), "run"],
         stdout=out_f,
@@ -157,11 +200,12 @@ def fixture_daemon(tmp_path):
     )
     try:
         port = None
-        deadline = time.time() + 20
+        timeout = float(os.environ.get("GSD_FIXTURE_DAEMON_READY_TIMEOUT", "20"))
+        deadline = started + timeout
         ready = False
         while time.time() < deadline and proc.poll() is None:
             if port is None:
-                for line in out_path.read_text().splitlines():
+                for line in out_path.read_text(encoding="utf-8", errors="replace").splitlines():
                     if line.startswith("DAEMON_PORT="):
                         port = int(line.split("=", 1)[1])
                         break
@@ -175,7 +219,7 @@ def fixture_daemon(tmp_path):
                     pass
             time.sleep(0.1)
         if not ready:
-            raise RuntimeError("fixture daemon did not become ready: " + err_path.read_text()[-2000:])
+            raise RuntimeError(_daemon_not_ready_report(proc, out_path, err_path, port, started, timeout))
         yield FixtureDaemon(
             port,
             data_dir,
