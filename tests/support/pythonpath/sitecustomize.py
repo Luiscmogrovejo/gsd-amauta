@@ -6,7 +6,7 @@ Node tests (amauta.py, services/amauta-daemon.py) are guarded too.
 It MUST run the interpreter's own ``sitecustomize`` first: Homebrew Python uses one
 to add its site-packages, and shadowing it makes pytest/numpy disappear.
 
-Fail-loud (plan 88-18): arming the guard used to end in ``except Exception: pass``, so
+Fail-loud (plan 88-18): arming the guard used to end in a catch-all that passed silently, so
 a child whose guard failed to arm said nothing and ran unguarded. When
 ``GSD_HERMETIC_GUARD_REQUIRED=1`` is set (``scripts/run-tests.cjs`` sets it for every
 Node-spawned child) a guard that did not arm now prints one line to stderr and ends the
