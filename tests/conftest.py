@@ -684,17 +684,24 @@ def _start_rlm(data_dir, dsn=None, ready_timeout=60.0):
     else:
         env.pop("GSD_POSTGRES_URL", None)
 
-    # Plan 88-11: the graph leg. services/rlm_graph.py:_get_cache_client reads
-    # REDIS_HOST/REDIS_PORT, so the disposable Valkey is handed to THIS CHILD and
-    # to nothing else — the rest of the suite keeps the product default and
-    # therefore keeps degrading by design (RETR-05). The names are scrubbed when
-    # CI gave us no Valkey, so an inherited value can never reach the service.
+    # Plan 88-11: the graph leg. The disposable Valkey is handed to THIS CHILD
+    # and to nothing else — the rest of the suite keeps the product default and
+    # therefore keeps degrading by design (RETR-05).
+    #
+    # Plan 89-09 task 06: handed over CANONICALLY, as GSD_REDIS_URL. It used to be
+    # REDIS_HOST/REDIS_PORT, because services/rlm_graph.py and
+    # services/rlm_reranker.py read exactly those two names and nothing else. They
+    # now go through services/cache_url.py, whose chain puts GSD_REDIS_URL FIRST —
+    # and the session fixture above already exports GSD_REDIS_URL pointing at a
+    # free port with nothing behind it, so a REDIS_HOST/REDIS_PORT handover would
+    # be outranked and silently ignored. The three legacy names are removed from
+    # the child either way, so an inherited value can never reach the service.
     _valkey = valkey_host_port()
+    env.pop("REDIS_HOST", None)
+    env.pop("REDIS_PORT", None)
+    env.pop("VALKEY_URL", None)
     if _valkey:
-        env["REDIS_HOST"], env["REDIS_PORT"] = _valkey[0], str(_valkey[1])
-    else:
-        env.pop("REDIS_HOST", None)
-        env.pop("REDIS_PORT", None)
+        env["GSD_REDIS_URL"] = "redis://%s:%d/0" % (_valkey[0], _valkey[1])
 
     out_path = Path(data_dir) / "fixture-rlm.out"
     err_path = Path(data_dir) / "fixture-rlm.err"

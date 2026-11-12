@@ -189,6 +189,45 @@ def test_every_converted_consumer_calls_the_resolver():
         assert call in source, "%s no longer calls %s" % (rel, call)
 
 
+def test_the_fixture_rlm_hands_the_valkey_over_canonically():
+    """tests/conftest.py's _start_rlm must use GSD_REDIS_URL, not the host/port pair.
+
+    The session fixture exports GSD_REDIS_URL pointing at a free port with nothing
+    behind it. Since the chain puts GSD_REDIS_URL FIRST, a REDIS_HOST/REDIS_PORT
+    handover is now outranked and silently ignored — the disposable Valkey would
+    never reach the RLM service and the RETR-05 graph test would degrade for the
+    wrong reason. This is the assertion that keeps the move in place.
+    """
+    conftest = (_REPO / "tests" / "conftest.py").read_text(encoding="utf-8")
+    start = conftest.index("def _start_rlm(")
+    end = conftest.index("\ndef ", start + 1)
+    body = conftest[start:end]
+    assert 'env["GSD_REDIS_URL"] = "redis://%s:%d/0"' in body
+    assert 'env["REDIS_HOST"]' not in body, "the host/port handover is outranked; it must be gone"
+    assert 'env.pop("REDIS_HOST", None)' in body
+    assert 'env.pop("REDIS_PORT", None)' in body
+    # and the precedence that makes it necessary, asserted rather than assumed
+    assert cache_url.redis_url_source(
+        {"GSD_REDIS_URL": "redis://free-port:1/0", "REDIS_HOST": "valkey", "REDIS_PORT": "2"}
+    ) == "GSD_REDIS_URL"
+
+
+def test_both_scrub_lists_carry_all_five_legacy_names_and_not_the_canonical_one():
+    """The two runners agree, name for name (plan 89-09 task 06)."""
+    runner = (_REPO / "scripts" / "run-tests.cjs").read_text(encoding="utf-8")
+    conftest = (_REPO / "tests" / "conftest.py").read_text(encoding="utf-8")
+    runner_list = runner.split("const DELETED_KEYS = [")[1].split("]")[0]
+    conftest_list = conftest.split("_DELETED_KEYS = (")[1].split(")")[0]
+    for name in cache_url.LEGACY_NAMES:
+        assert "'%s'" % name in runner_list, "scripts/run-tests.cjs does not scrub %s" % name
+        assert '"%s"' % name in conftest_list, "tests/conftest.py does not scrub %s" % name
+    # the canonical name is SET by both runners, not scrubbed — one decision, both files
+    assert "'%s'" % cache_url.CANONICAL not in runner_list
+    assert '"%s"' % cache_url.CANONICAL not in conftest_list
+    assert "env.GSD_REDIS_URL = 'redis://127.0.0.1:' + redisPort + '/0'" in runner
+    assert 'os.environ["GSD_REDIS_URL"] = "redis://127.0.0.1:%d/0" % redis_port' in conftest
+
+
 def test_the_mcp_server_still_opens_nothing_when_nothing_is_configured():
     """An unconfigured MCP server must not dial the operator's own 6379.
 
