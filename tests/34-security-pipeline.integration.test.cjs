@@ -18,7 +18,7 @@
  */
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { spawnSync, execFileSync } = require('node:child_process');
+const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const { existsSync, readFileSync } = fs;
 const os = require('node:os');
@@ -31,28 +31,48 @@ const PROJECT_ROOT = path.resolve(__dirname, '..');
 
 /**
  * Is an external tool on PATH?
+ *
+ * Through the shared resolver, which uses `where` on Windows and `which`
+ * elsewhere. The previous implementation ran `command -v <bin>` with
+ * `shell: true`: on Windows that shell is `cmd.exe`, which has no `command`
+ * builtin, so EVERY scanner read as absent there no matter what was installed
+ * (measured, run 43189642396 — gitleaks and trivy were installed and verified
+ * on both Windows cells and six assertions still skipped).
+ *
  * @param {string} bin Executable name.
- * @returns {boolean} true when `command -v <bin>` finds it.
+ * @returns {boolean} true when the resolver finds it on PATH.
  */
 function haveTool(bin) {
-  try {
-    execFileSync('command', ['-v', bin], { shell: true, stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
+  return platformHelper.which(bin) !== null;
+}
+
+/**
+ * Path of a locally installed scanner binary, extension included.
+ *
+ * The installers write `node_modules/.bin/<tool>.exe` on Windows. A check for
+ * the extension-less name is false there even when the binary is present.
+ *
+ * @param {string} tool `gitleaks` or `trivy`
+ * @returns {string|null} the path that exists, or null
+ */
+function localScanner(tool) {
+  const base = path.join(PROJECT_ROOT, 'node_modules', '.bin', tool);
+  for (const candidate of [base, base + '.exe', base + '.cmd']) {
+    if (existsSync(candidate)) return candidate;
   }
+  return null;
 }
 
 // The installers (scripts/install-gitleaks.cjs, install-trivy.cjs) skip only when the binary already sits at
 // node_modules/.bin/<tool>; a copy elsewhere on PATH does not stop them downloading. A test that runs an
 // installer for real must therefore be gated on that exact path, not on PATH, or it reaches the network.
-const LOCAL_GITLEAKS = path.join(PROJECT_ROOT, 'node_modules', '.bin', 'gitleaks');
-const LOCAL_TRIVY = path.join(PROJECT_ROOT, 'node_modules', '.bin', 'trivy');
-const HAVE_GITLEAKS = haveTool('gitleaks') || existsSync(LOCAL_GITLEAKS);
-const GITLEAKS_INSTALLER_SKIP = existsSync(LOCAL_GITLEAKS)
+const LOCAL_GITLEAKS = localScanner('gitleaks');
+const LOCAL_TRIVY = localScanner('trivy');
+const HAVE_GITLEAKS = haveTool('gitleaks') || LOCAL_GITLEAKS !== null;
+const GITLEAKS_INSTALLER_SKIP = LOCAL_GITLEAKS
   ? false
   : 'gitleaks is not installed and this test must not download a binary from the network';
-const TRIVY_INSTALLER_SKIP = existsSync(LOCAL_TRIVY)
+const TRIVY_INSTALLER_SKIP = LOCAL_TRIVY
   ? false
   : 'trivy is not installed and this test must not download a binary from the network';
 
@@ -81,7 +101,12 @@ describe('[SEC-01][SEC-02][SEC-03][SEC-06] security-scan.cjs: graceful degradati
   const result = spawnSync('node', ['scripts/security-scan.cjs'], {
     cwd: PROJECT_ROOT,
     encoding: 'utf-8',
-    timeout: 60000,
+    // 180 s, not 60: with the scanners installed this really runs semgrep,
+    // gitleaks and trivy. The runner's hermetic environment stops trivy
+    // downloading a vulnerability database and semgrep fetching a registry
+    // ruleset, so the degradation path is fast — but a scanner that decides to
+    // retry should fail the assertion, not the clock.
+    timeout: 180000,
     env: { ...process.env, npm_config_offline: 'true' },
   });
 
@@ -455,9 +480,11 @@ describe('[SEC-01] Semgrep rule file: parse and rule ID assertions', () => {
       // If results present they should have >= 1 finding (gsd-hardcoded-localhost is JS-compatible)
       // If 0 results, this is still valid since gsd-raw-sql-injection targets Python only
       assert.ok(Array.isArray(output.results), 'semgrep output.results is not an array');
-    } else {
-      console.log('  [skip] semgrep not installed — fixture detection test skipped');
     }
+    // Plan 88-16-02: the `else` here logged "[skip] semgrep not installed" and
+    // was DEAD — the enclosing it() already carries `{ skip: haveTool('semgrep') … }`,
+    // so the branch could never execute. Removed rather than left to read as a
+    // skip nobody counts.
   });
 });
 
@@ -486,7 +513,10 @@ describe('[SEC-02] Gitleaks: config allowlist + fixture detection (conditional)'
     }
 
     if (gitleaksBin) {
-      const reportPath = path.join(require('os').tmpdir(), '34-gitleaks-fixture-test.json');
+      // A unique path per run: a fixed name in the shared temp directory is a
+      // collision waiting for two test files to want it at once.
+      const reportDir = require('fs').mkdtempSync(path.join(require('os').tmpdir(), 'gitleaks-fixture-'));
+      const reportPath = path.join(reportDir, 'report.json');
       // Use --no-git to scan directory without git context (bypasses repo-level allowlist)
       const scan = spawnSync(gitleaksBin, [
         'detect',
@@ -497,21 +527,31 @@ describe('[SEC-02] Gitleaks: config allowlist + fixture detection (conditional)'
         '--no-banner',
       ], { cwd: PROJECT_ROOT, encoding: 'utf-8', timeout: 30000 });
 
-      // gitleaks exits 1 when secrets found — that's expected here
-      if (existsSync(reportPath)) {
-        const report = JSON.parse(readFileSync(reportPath, 'utf-8'));
+      // gitleaks exits 1 when secrets found — that's expected here.
+      //
+      // Plan 88-16-07: the "no report file" branch below used to log a note and
+      // pass, so a gitleaks that found nothing — or crashed — read as success.
+      // Now an absent or empty report is a FAILURE carrying gitleaks' own exit
+      // status and output, because "the scanner detects the seeded secret" is
+      // the whole assertion and there is no weaker true version of it.
+      const raw = existsSync(reportPath) ? readFileSync(reportPath, 'utf-8').trim() : '';
+      const diag =
+        `status=${scan.status} signal=${scan.signal}\n` +
+        `stdout: ${(scan.stdout || '').slice(-1500)}\n` +
+        `stderr: ${(scan.stderr || '').slice(-1500)}`;
+      try {
+        assert.ok(raw, `gitleaks wrote no report for tests/fixtures.\n${diag}`);
+        const report = JSON.parse(raw);
         assert.ok(
           Array.isArray(report) && report.length >= 1,
-          `Expected >= 1 gitleaks finding in test fixtures. Got: ${JSON.stringify(report)}`
+          `Expected >= 1 gitleaks finding in test fixtures. Got: ${raw.slice(0, 500)}\n${diag}`
         );
         console.log(`  [info] gitleaks found ${report.length} findings in test fixtures (expected)`);
-      } else {
-        // No report file written when 0 findings — if gitleaks exited 0 with no report, fixtures weren't detected
-        // Log as info rather than failure since --no-git behavior may vary by gitleaks version
-        console.log('  [note] gitleaks ran but produced no report file (may indicate 0 findings or version difference)');
+      } finally {
+        require('fs').rmSync(reportDir, { recursive: true, force: true });
       }
-    } else {
-      console.log('  [skip] gitleaks not installed — fixture detection test skipped');
     }
+    // Plan 88-16-02: the `else` here logged "[skip] gitleaks not installed" and
+    // was DEAD — `{ skip: HAVE_GITLEAKS … }` on the it() already decides.
   });
 });

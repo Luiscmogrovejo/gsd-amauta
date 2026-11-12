@@ -13,7 +13,7 @@ Tests:
   - payload_invalid NOT retried
 
 No live PG required for structural tests.
-PG integration tests gated behind GSD_PG_INTEGRATION=true.
+PG integration tests gated behind the one Postgres fixture (tests/conftest.py).
 """
 
 import os
@@ -44,6 +44,17 @@ from services.a2a_client import (
     _send_retried_row,
     _validate_payload,
 )
+
+# Phase 88 plan 88-16-03: a third PG opt-in variable used to gate these classes,
+# beside GSD_TEST_POSTGRES_URL and GSD_POSTGRES_URL — three names for the one
+# question "is there a disposable PostgreSQL?". There is one answer now:
+# tests/conftest.py's fixture. The product's own clients
+# (services/pg_store.py, services/a2a_client.py) read GSD_POSTGRES_URL, which
+# the session scrub deletes, so `product_pg_dsn` restores it for the duration
+# of these classes and takes it away again.
+from conftest import PG_SKIP_REASON, postgres_dsn_or_none, product_pg_dsn  # noqa: E402
+
+_PG_DSN = postgres_dsn_or_none()
 
 
 class TestRetryConstants(unittest.TestCase):
@@ -332,9 +343,15 @@ class TestSendRetriedRowStructure(unittest.TestCase):
             "_send_retried_row SQL must use kind='retried' and status='retried'")
 
 
-@unittest.skipUnless(os.environ.get("GSD_PG_INTEGRATION"), "GSD_PG_INTEGRATION not set")
+@unittest.skipUnless(_PG_DSN, PG_SKIP_REASON)
 class TestRetryPGIntegration(unittest.TestCase):
-    """PG integration tests for retry. Require live DB and GSD_PG_INTEGRATION=true."""
+    """Retry PG integration tests, against the disposable database only."""
+
+    def setUp(self):
+        """Point the product's PG client at the disposable database for this test."""
+        self._pg_env = product_pg_dsn()
+        self._pg_env.__enter__()
+        self.addCleanup(self._pg_env.__exit__, None, None, None)
 
     def test_retried_rows_visible_in_a2a_messages(self):
         """After send_request_with_retry with 1 retry, a2a_messages has retried row."""

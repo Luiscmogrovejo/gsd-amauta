@@ -50,6 +50,13 @@ function run(args, name) {
       ...homeEnv(path.join(tmp, 'home-' + name)),
       GSD_INSTALL_FILES_ONLY: '',
       GSD_TEST_MODE: '', // the runner's GSD_TEST_MODE=1 makes install.js skip its main block
+      // ...and clearing it also clears the test-mode default for the one file
+      // the installer writes into the PROJECT rather than the config dir.
+      // Without this the spawn inherits cwd = the repository root and rewrites
+      // the TRACKED .mcp.json — invisible on a machine whose resolved Python is
+      // the committed one, caught on CI where GSD_PYTHON is an absolute path
+      // (plan 88-15 found it on Windows; plan 88-16-07 found the writer).
+      GSD_INSTALL_PROJECT_ROOT: configDir,
       GSD_SHUNT: '', GSD_COMPRESS: '',
     }),
   });

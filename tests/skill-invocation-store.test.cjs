@@ -18,7 +18,7 @@
  * Run: node --test tests/skill-invocation-store.test.cjs
  * CI:  exits 0 even when daemon/PG are unavailable (tests skip gracefully)
  */
-const { test } = require('node:test');
+const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { execFileSync, spawnSync } = require('node:child_process');
 const http = require('node:http');
@@ -26,7 +26,33 @@ const path = require('node:path');
 
 const ROOT = path.resolve(__dirname, '..');
 const TOOLS_PATH = path.join(ROOT, 'get-shit-done', 'bin', 'gsd-tools.cjs');
-const DAEMON_PORT = parseInt(process.env.GSD_AMAUTA_PORT || process.env.AMAUTA_PORT || '18799');
+// Phase 88 plan 88-16-06: the three live round-trips below used to probe the
+// OPERATOR'S daemon and skip themselves when it did not answer — which, under
+// the hermetic guard, it never could. They start their own fixture daemon in
+// POSTGRES MODE (opt-in per call; the runner's SQLite default is untouched)
+// and skip only when there is no disposable database to point it at.
+const { startFixtureDaemon, stopFixtureDaemon } = require('./support/fixture-daemon.cjs');
+const pg = require('./support/pg-fixture.cjs');
+
+let daemon = null;
+
+/** @returns {number} the fixture daemon's port */
+function daemonPort() {
+  if (!daemon) throw new Error('the fixture daemon has not started yet');
+  return daemon.port;
+}
+
+const SKIP_PG = pg.postgresDsn() ? false : pg.SKIP_REASON;
+
+before(async () => {
+  if (SKIP_PG) return; // nothing to point a Postgres-mode daemon at
+  daemon = await startFixtureDaemon({ postgres: true });
+});
+
+after(async () => {
+  await stopFixtureDaemon(daemon);
+  daemon = null;
+});
 const DAEMON_HOST = '127.0.0.1';
 
 // ─── HTTP helper ───────────────────────────────────────────────────────────────
@@ -36,7 +62,7 @@ function httpPost(path, body) {
     const bodyStr = JSON.stringify(body);
     const options = {
       hostname: DAEMON_HOST,
-      port: DAEMON_PORT,
+      port: daemonPort(),
       path,
       method: 'POST',
       headers: {
@@ -55,20 +81,6 @@ function httpPost(path, body) {
     });
     req.on('error', reject);
     req.write(bodyStr);
-    req.end();
-  });
-}
-
-async function checkDaemonUp() {
-  return new Promise((resolve) => {
-    const req = http.request(
-      { hostname: DAEMON_HOST, port: DAEMON_PORT, path: '/health', method: 'GET' },
-      (res) => {
-        res.resume();
-        resolve(res.statusCode < 500);
-      }
-    );
-    req.on('error', () => resolve(false));
     req.end();
   });
 }
@@ -142,30 +154,14 @@ test('skills complete rejects invalid outcome', () => {
   assert.ok(hasValidOutcome, `expected mention of valid outcomes in output: ${output}`);
 });
 
-test('daemon /api/skills/invoke round-trip (skip if daemon down)', async (t) => {
-  const up = await checkDaemonUp();
-  if (!up) {
-    t.skip('daemon not running');
-    return;
-  }
-  let res;
-  try {
-    res = await httpPost('/api/skills/invoke', {
-      skill_name: 'plan-phase',
-      prompt: 'test invocation for node test round-trip',
-    });
-  } catch (err) {
-    if (err.code === 'ECONNREFUSED') {
-      t.skip('daemon not running (ECONNREFUSED)');
-      return;
-    }
-    throw err;
-  }
-  // 404 = daemon running pre-Phase-43 code (route not yet loaded); skip gracefully
-  if (res.status === 404 && res.body && typeof res.body.error === 'string' && res.body.error.includes('Unknown POST route')) {
-    t.skip('daemon running pre-Phase-43 code — /api/skills/invoke route not loaded; restart daemon to activate');
-    return;
-  }
+test('daemon /api/skills/invoke round-trip', { skip: SKIP_PG }, async () => {
+  // The fixture daemon runs THIS tree's code, so the old "pre-Phase-43 daemon"
+  // and "daemon not running" escape hatches cannot apply and are gone: a 404 on
+  // this route is now a failure, which is what it always should have been.
+  const res = await httpPost('/api/skills/invoke', {
+    skill_name: 'plan-phase',
+    prompt: 'test invocation for node test round-trip',
+  });
   assert.strictEqual(res.status, 200, `expected 200 from /api/skills/invoke, got ${res.status}: ${JSON.stringify(res.body)}`);
   assert.ok(typeof res.body === 'object' && res.body !== null, 'response should be a JSON object');
   assert.ok('invocation_id' in res.body, `response should have invocation_id key: ${JSON.stringify(res.body)}`);
@@ -173,82 +169,36 @@ test('daemon /api/skills/invoke round-trip (skip if daemon down)', async (t) => 
   assert.ok(Array.isArray(res.body.neighbors), `neighbors should be an array: ${JSON.stringify(res.body)}`);
 });
 
-test('daemon /api/skills/complete round-trip (skip if daemon down OR no PG)', async (t) => {
-  const up = await checkDaemonUp();
-  if (!up) {
-    t.skip('daemon not running');
-    return;
-  }
-  // First invoke to get an id
-  let invokeRes;
-  try {
-    invokeRes = await httpPost('/api/skills/invoke', {
-      skill_name: 'plan-phase',
-      prompt: 'test invocation for complete round-trip',
-    });
-  } catch (err) {
-    if (err.code === 'ECONNREFUSED') {
-      t.skip('daemon not running (ECONNREFUSED)');
-      return;
-    }
-    throw err;
-  }
-  if (invokeRes.status === 404 && invokeRes.body && typeof invokeRes.body.error === 'string' && invokeRes.body.error.includes('Unknown POST route')) {
-    t.skip('daemon running pre-Phase-43 code — restart daemon to activate /api/skills/* routes');
-    return;
-  }
-  if (invokeRes.status !== 200 || !invokeRes.body.invocation_id) {
-    t.skip('PG not available — /api/skills/invoke returned no invocation_id');
-    return;
-  }
+test('daemon /api/skills/complete round-trip', { skip: SKIP_PG }, async () => {
+  const invokeRes = await httpPost('/api/skills/invoke', {
+    skill_name: 'plan-phase',
+    prompt: 'test invocation for complete round-trip',
+  });
+  assert.strictEqual(invokeRes.status, 200,
+    `expected 200 from /api/skills/invoke, got ${invokeRes.status}: ${JSON.stringify(invokeRes.body)}`);
+  assert.ok(invokeRes.body.invocation_id,
+    `/api/skills/invoke returned no invocation_id: ${JSON.stringify(invokeRes.body)}`);
   const invocationId = invokeRes.body.invocation_id;
-  let completeRes;
-  try {
-    completeRes = await httpPost('/api/skills/complete', {
-      invocation_id: invocationId,
-      outcome_class: 'success',
-    });
-  } catch (err) {
-    if (err.code === 'ECONNREFUSED') {
-      t.skip('daemon not running (ECONNREFUSED)');
-      return;
-    }
-    throw err;
-  }
+  const completeRes = await httpPost('/api/skills/complete', {
+    invocation_id: invocationId,
+    outcome_class: 'success',
+  });
   assert.strictEqual(completeRes.status, 200, `expected 200 from /api/skills/complete, got ${completeRes.status}: ${JSON.stringify(completeRes.body)}`);
   assert.strictEqual(completeRes.body.ok, true, `expected {ok: true} from /api/skills/complete: ${JSON.stringify(completeRes.body)}`);
 });
 
-test('retrieve_similar p95 < 200ms over 1000-row table (skip if daemon/PG down)', async (t) => {
-  const up = await checkDaemonUp();
-  if (!up) {
-    t.skip('daemon not running — skipping perf test');
-    return;
-  }
-
-  // Warm-up: send 1 invoke to confirm PG is available
-  let warmup;
-  try {
-    warmup = await httpPost('/api/skills/invoke', {
-      skill_name: 'perf-test-skill',
-      prompt: 'warmup invocation',
-    });
-  } catch (err) {
-    if (err.code === 'ECONNREFUSED') {
-      t.skip('daemon not running (ECONNREFUSED)');
-      return;
-    }
-    throw err;
-  }
-  if (warmup.status === 404 && warmup.body && typeof warmup.body.error === 'string' && warmup.body.error.includes('Unknown POST route')) {
-    t.skip('daemon running pre-Phase-43 code — restart daemon to activate /api/skills/* routes');
-    return;
-  }
-  if (warmup.status !== 200 || !warmup.body.invocation_id) {
-    // PG unavailable — graceful skip
-    t.skip('PG not available — skipping perf test (no invocation_id returned)');
-    return;
-  }
+test('retrieve_similar p95 < 200ms over 1000-row table', { skip: SKIP_PG }, async () => {
+  // Warm-up, and a real assertion rather than an escape hatch: the fixture
+  // daemon runs this tree's code against the disposable database, so a missing
+  // route or a missing invocation_id is a failure, not a reason to skip.
+  const warmup = await httpPost('/api/skills/invoke', {
+    skill_name: 'perf-test-skill',
+    prompt: 'warmup invocation',
+  });
+  assert.strictEqual(warmup.status, 200,
+    `warm-up /api/skills/invoke returned ${warmup.status}: ${JSON.stringify(warmup.body)}`);
+  assert.ok(warmup.body.invocation_id,
+    `warm-up returned no invocation_id: ${JSON.stringify(warmup.body)}`);
 
   // Run 20 /api/skills/invoke round-trips and measure wall-clock latency
   const SAMPLE_SIZE = 20;
@@ -275,10 +225,10 @@ test('retrieve_similar p95 < 200ms over 1000-row table (skip if daemon/PG down)'
     latencies.push(Date.now() - t0);
   }
 
-  if (latencies.length < 5) {
-    t.skip('insufficient samples for p95 — skipping perf assertion');
-    return;
-  }
+  assert.ok(
+    latencies.length >= 5,
+    `only ${latencies.length} of ${SAMPLE_SIZE} samples completed; the p95 assertion needs at least 5`
+  );
 
   // Compute p95
   latencies.sort((a, b) => a - b);

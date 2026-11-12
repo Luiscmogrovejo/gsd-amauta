@@ -33,6 +33,46 @@ const DELETED_KEYS = [
 const LIVE_PORTS = new Set([18799, 18798, 6379, 5433]);
 
 /**
+ * Validate the disposable-Postgres DSN CI hands the runner and return its port.
+ *
+ * `GSD_TEST_POSTGRES_URL` is the ONE opt-in (plan 88-16-03). It is passed to
+ * children under that name only — `GSD_POSTGRES_URL` stays in `DELETED_KEYS`
+ * so no test can inherit a live DSN by accident — and the port is allowed
+ * through the hermetic guard for that run and nothing else.
+ *
+ * libpq is a C extension: the in-process socket guard cannot see its connect.
+ * This check is the control that DOES bind it, which is why it fails the run
+ * rather than warning.
+ *
+ * @param {string|undefined} dsn the raw value of `GSD_TEST_POSTGRES_URL`
+ * @returns {number|null} the port, or null when no DSN was supplied
+ * @throws {Error} when the DSN names one of the operator's live service ports
+ * @example
+ *   testPostgresPort('postgresql://u:p@127.0.0.1:5434/db') // 5434
+ */
+function testPostgresPort(dsn) {
+  const raw = String(dsn || '').trim();
+  if (!raw) return null;
+  let port = null;
+  try {
+    const u = new URL(raw);
+    if (u.port) port = Number(u.port);
+  } catch (_e) {
+    const m = /:(\d{2,5})\//.exec(raw);
+    if (m) port = Number(m[1]);
+  }
+  if (port !== null && LIVE_PORTS.has(port)) {
+    throw new Error(
+      'run-tests: GSD_TEST_POSTGRES_URL points at live service port ' + port + '. ' +
+        '18799 (daemon), 18798 (RLM), 6379 (Redis) and 5433 (the operator\'s ' +
+        'PostgreSQL) are never test ports. Give the disposable database a ' +
+        'different port and try again.'
+    );
+  }
+  return port;
+}
+
+/**
  * Pick a free TCP port on 127.0.0.1.
  *
  * The runner needs the port synchronously (the environment is built before the
@@ -84,6 +124,32 @@ function buildHermeticEnv(baseEnv) {
     // 88-18: a Python child whose socket guard fails to arm must exit non-zero
     // instead of running unguarded (tests/support/pythonpath/sitecustomize.py).
     GSD_HERMETIC_GUARD_REQUIRED: '1',
+    // 88-16-03: npm must not reach the registry from a test.
+    // `get-shit-done/bin/gsd-tools.cjs` `_detectLinter()` probes with
+    // `npx eslint --version`, and eslint is not a dependency of this
+    // repository, so npm went to the network — on CI it downloaded eslint
+    // mid-suite, and under the default-deny guard it retried and HUNG. Offline
+    // mode makes the probe fail in milliseconds, which is the answer the
+    // detection ladder is written for ("fall back to node --check").
+    npm_config_offline: 'true',
+    npm_config_audit: 'false',
+    npm_config_fund: 'false',
+    npm_config_update_notifier: 'false',
+    // 88-16-07: the scanners are INSTALLED in CI now, so `scripts/security-scan.cjs`
+    // really invokes them — and `trivy image` pulls three container images and a
+    // vulnerability database. That is not something a unit-test suite may do: the
+    // 60 s budget in tests/34-security-pipeline.integration.test.cjs was exceeded on
+    // the first run that had trivy (43178758984, macOS, status null = killed).
+    // With no cache and updates off, trivy fails in milliseconds, which is the
+    // degradation path those tests are about. That the binary installs and runs is
+    // proven in the workflow step (`trivy --version`), outside the suite.
+    TRIVY_SKIP_DB_UPDATE: 'true',
+    TRIVY_SKIP_JAVA_DB_UPDATE: 'true',
+    TRIVY_NO_PROGRESS: 'true',
+    TRIVY_CACHE_DIR: path.join(os.tmpdir(), 'gsd-trivy-cache-empty'),
+    // semgrep must not phone its registry either (`--config auto`) or send metrics.
+    SEMGREP_SEND_METRICS: 'off',
+    SEMGREP_ENABLE_VERSION_CHECK: '0',
   });
 
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gsd-tests-'));
@@ -107,6 +173,29 @@ function buildHermeticEnv(baseEnv) {
   // Every fixture daemon records the pid it starts and stops here; main() reads it
   // back after the run and fails the run on anything left alive (plan 88-12).
   env.GSD_PROCESS_LEDGER = path.join(root, 'process-ledger.jsonl');
+
+  // Plan 88-16-03: the guard is default-deny for non-loopback destinations and
+  // writes one line per refusal here. Nothing set this variable before, so the
+  // Node guard's log branch was dead and the Python guard had no log at all.
+  // main() prints the file after the run, which is how the network-reach
+  // inventory is collected from a log-only CI run.
+  env.GSD_HERMETIC_GUARD_LOG = path.join(root, 'hermetic-guard-refusals.tsv');
+
+  // The ONE disposable-Postgres opt-in. Validated here (a live port fails the
+  // run) and threaded to children under GSD_TEST_POSTGRES_URL only; the port is
+  // allowed through the guard, nothing else is.
+  const pgPort = testPostgresPort(baseEnv.GSD_TEST_POSTGRES_URL);
+  if (pgPort !== null) {
+    env.GSD_TEST_POSTGRES_URL = String(baseEnv.GSD_TEST_POSTGRES_URL).trim();
+    const allow = String(baseEnv.GSD_HERMETIC_GUARD_ALLOW_PORTS || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (!allow.includes(String(pgPort))) allow.push(String(pgPort));
+    env.GSD_HERMETIC_GUARD_ALLOW_PORTS = allow.join(',');
+  } else {
+    delete env.GSD_TEST_POSTGRES_URL;
+  }
 
   const supportDir = path.join(__dirname, '..', 'tests', 'support');
   env.NODE_OPTIONS = [baseEnv.NODE_OPTIONS, '--require ' + path.join(supportDir, 'hermetic-guard.cjs')]
@@ -202,11 +291,22 @@ function main() {
     process.exit(1);
   }
 
-  const env = buildHermeticEnv(process.env);
+  let env;
+  try {
+    env = buildHermeticEnv(process.env);
+  } catch (err) {
+    // A DSN on a live port is a refusal, not a crash: say so in one line and stop.
+    console.error(err.message);
+    process.exit(3);
+  }
   console.error(
     'hermetic: data=' + env.AMAUTA_DATA_DIR +
       ' ports=' + env.GSD_AMAUTA_PORT + '/' + env.GSD_RLM_PORT +
-      ' guard=on files=' + files.length + (explicit ? ' (explicit)' : '')
+      ' guard=' + (String(process.env.GSD_HERMETIC_GUARD_MODE || '').toLowerCase() === 'log'
+        ? 'log-only'
+        : 'enforce') +
+      (env.GSD_TEST_POSTGRES_URL ? ' pg=on' : ' pg=off') +
+      ' files=' + files.length + (explicit ? ' (explicit)' : '')
   );
 
   // Independent file-level alarm: the socket guard cannot see a write that goes
@@ -253,6 +353,26 @@ function main() {
       status = 5; // 4 is the live-store canary's; a leaked process fails the run too
       killStrays(strays);
     }
+    // Plan 88-16-03: print whatever the guard refused. In log-only mode this IS
+    // the network-reach inventory; in enforcing mode it is the diagnosis for a
+    // test that died on EHERMETIC. The file is inside the temp root that is
+    // removed below, so it has to be read here.
+    try {
+      if (fs.existsSync(env.GSD_HERMETIC_GUARD_LOG)) {
+        const log = fs.readFileSync(env.GSD_HERMETIC_GUARD_LOG, 'utf-8').trimEnd();
+        if (log) {
+          console.error('--- hermetic guard refusals (time pid mode runtime host port reason argv) ---');
+          console.error(log);
+          console.error('--- end hermetic guard refusals (' + log.split('\n').length + ' line(s)) ---');
+        } else {
+          console.error('hermetic guard: no refusals');
+        }
+      } else {
+        console.error('hermetic guard: no refusals');
+      }
+    } catch (err) {
+      console.error('run-tests: could not read the guard log: ' + err.message);
+    }
   }
   try {
     fs.rmSync(path.dirname(env.AMAUTA_DATA_DIR), { recursive: true, force: true });
@@ -262,6 +382,6 @@ function main() {
   process.exit(status);
 }
 
-module.exports = { buildHermeticEnv, freePort, selectFiles, killStrays };
+module.exports = { buildHermeticEnv, freePort, selectFiles, killStrays, testPostgresPort };
 
 if (require.main === module) main();

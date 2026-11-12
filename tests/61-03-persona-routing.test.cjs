@@ -159,14 +159,15 @@ test('6. multi-base persona: systems-architect over .py and .tsx both zero confl
   assert.equal(_checkAgentConflicts([tsxTask]).conflicts.length, 0);
 });
 
-test('6b. multi-base persona: systems-architect over a file routed OUTSIDE its base_executor set yields persona_base_executor_mismatch', () => {
+// Phase 88 plan 88-16-02: this search used to run INSIDE test 6b and `return`
+// with a console note when it found nothing, so the test reported a PASS having
+// asserted nothing. The search is hoisted here, and the test now carries a
+// counted `{ skip: … }` instead — registry evolution is still tolerated, it is
+// simply no longer invisible.
+const OUTSIDE_CANDIDATE = (() => {
   const entry = _resolvePersona('persona-systems-architect');
-  assert.ok(entry, 'persona-systems-architect must resolve against the live registry');
+  if (!entry) return { path: null, executor: null, entry: null };
   const baseShort = (entry.base_executor || []).map((b) => String(b).replace(/^gsd-/, ''));
-
-  // Iterate candidate paths and pick the first whose routed executor is
-  // outside the persona's base_executor set (registry-evolution-safe, no
-  // hardcoded expected executor).
   const candidates = [
     'app/src/main/java/A.kt',
     'ios/App/AppDelegate.swift',
@@ -174,24 +175,24 @@ test('6b. multi-base persona: systems-architect over a file routed OUTSIDE its b
     'wear/src/Watch.kt',
     'prompts/system.md',
   ];
-  let outsidePath = null;
-  let outsideExecutor = null;
   for (const candidate of candidates) {
     const computed = routeExecutor(candidate);
-    if (!baseShort.includes(computed)) {
-      outsidePath = candidate;
-      outsideExecutor = computed;
-      break;
-    }
+    if (!baseShort.includes(computed)) return { path: candidate, executor: computed, entry };
   }
+  return { path: null, executor: null, entry };
+})();
 
-  if (!outsidePath) {
-    // No candidate outside the base set was found (registry may have grown
-    // the base_executor list to cover everything) — skip with a logged note
-    // per the plan's fallback instruction, rather than asserting a false negative.
-    console.log('6b. SKIPPED — no candidate path found outside persona-systems-architect base_executor set');
-    return;
-  }
+const OUTSIDE_SKIP = OUTSIDE_CANDIDATE.path
+  ? false
+  : 'no candidate path routes outside persona-systems-architect base_executor set: ' +
+    'the registry has grown its base_executor list to cover every probe path, so ' +
+    'the mismatch this test asserts cannot be produced';
+
+test('6b. multi-base persona: systems-architect over a file routed OUTSIDE its base_executor set yields persona_base_executor_mismatch', { skip: OUTSIDE_SKIP }, () => {
+  const entry = OUTSIDE_CANDIDATE.entry;
+  assert.ok(entry, 'persona-systems-architect must resolve against the live registry');
+  const outsidePath = OUTSIDE_CANDIDATE.path;
+  const outsideExecutor = OUTSIDE_CANDIDATE.executor;
 
   const task = makeConflictTask({
     id: 'z', agentValue: 'persona-systems-architect', persona: 'persona-systems-architect', filePath: outsidePath,

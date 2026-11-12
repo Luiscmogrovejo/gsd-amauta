@@ -20,8 +20,14 @@ const path = require('path');
 // touches the operator's live daemon or <repo>/data. The memory tests (section 4) need the
 // PostgreSQL-backed memory store, which the SQLite fixture does not have; they are named skips.
 const { startFixtureDaemon, stopFixtureDaemon } = require('./support/fixture-daemon.cjs');
+const pg = require('./support/pg-fixture.cjs');
 let fixture = null;
-const MEMORY_SKIP = 'PostgreSQL-backed memory is not available under the hermetic environment (SQLite fixture daemon); covered by the Phase 89 memory integration suite';
+// Plan 88-16-06: the five memory tests in section 4 were named skips because
+// the fixture daemon only ever ran on SQLite. The fixture takes a POSTGRES
+// MODE now — opt-in per call, and the runner's SQLite default is unchanged —
+// so when CI supplies a disposable database the whole file runs against it and
+// the five run with it. Without one they carry the single standard reason.
+const MEMORY_SKIP = pg.postgresDsn() ? false : pg.SKIP_REASON;
 
 const AMAUTA_CLI = path.join(__dirname, '..', 'get-shit-done', 'bin', 'gsd-amauta.cjs');
 const MEMORY_CLI = path.join(__dirname, '..', 'get-shit-done', 'bin', 'gsd-memory.cjs');
@@ -83,7 +89,7 @@ describe('E2E Lifecycle', () => {
   before(async () => {
     // A fixture daemon that does not come up throws here and fails the suite loudly (with the
     // daemon's stderr) instead of turning every test into a silent skip.
-    fixture = await startFixtureDaemon();
+    fixture = await startFixtureDaemon({ postgres: Boolean(pg.postgresDsn()) });
     daemonOk = true;
   });
 

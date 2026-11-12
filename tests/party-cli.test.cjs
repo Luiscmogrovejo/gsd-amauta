@@ -37,6 +37,36 @@ const CLI_ENTRY = path.join(ROOT, 'bin', 'cli.cjs');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+// Phase 88 plan 88-16-09: the party CLI reads its DSN from GSD_POSTGRES_URL /
+// DATABASE_URL, which scripts/run-tests.cjs deletes from every child so that no
+// test can inherit the operator's live database. `pgChildEnv()` puts the
+// DISPOSABLE one back for these spawns, and only after refusing a DSN whose
+// port is one of the live services. With no disposable database the probe
+// reports PG down and the PG tests skip with the one standard reason, exactly
+// as before.
+const pg = require('./support/pg-fixture.cjs');
+
+// Plan 88-16-09, isolation BY CONSTRUCTION: `node --test` runs files in
+// parallel processes, so the four party suites were writing party_sessions
+// rows into one database at the same time and
+// `e2e-status-sorted-by-updated-at-desc` read a SIBLING FILE's session at the
+// top of "most recently updated" (measured, run 43181201335: idx=5). Each file
+// gets its own database, created from the disposable server with every
+// migration applied, and drops it when the file ends.
+const _ISOLATED_DSN = pg.createIsolatedDatabase('party_cli');
+
+/** @returns {NodeJS.ProcessEnv} the child environment for a party CLI spawn */
+function partyEnv() {
+  if (!_ISOLATED_DSN) return process.env;
+  const env = pg.pgChildEnv();
+  env.GSD_POSTGRES_URL = _ISOLATED_DSN;
+  env.DATABASE_URL = _ISOLATED_DSN;
+  env.GSD_TEST_POSTGRES_URL = _ISOLATED_DSN;
+  return env;
+}
+
+process.on('exit', () => pg.dropIsolatedDatabase(_ISOLATED_DSN));
+
 /**
  * Run `node gsd-tools.cjs party <subArgs>` and return { stdout, stderr, status }.
  */
@@ -48,6 +78,7 @@ function runParty(subArgs = []) {
       encoding: 'utf8',
       timeout: 20000,
       cwd: ROOT,
+      env: partyEnv(),
     }
   );
 }
@@ -63,6 +94,7 @@ function runCliParty(subArgs = []) {
       encoding: 'utf8',
       timeout: 20000,
       cwd: ROOT,
+      env: partyEnv(),
     }
   );
 }
@@ -130,7 +162,7 @@ describe('party-state-machine (PG required)', (suite) => {
 
   test('party-create-roundtrip', (t) => {
     if (!pgUp) {
-      t.skip('PG unavailable — skipping state-machine tests');
+      t.skip(pg.SKIP_REASON);
       return;
     }
     const r = runParty(['create', '--participants', 'gsd-planner,gsd-checker', '--json']);
@@ -153,7 +185,7 @@ describe('party-state-machine (PG required)', (suite) => {
 
   test('party-start-transitions', (t) => {
     if (!pgUp || sessionId === null) {
-      t.skip('PG unavailable or session not created — skipping');
+      t.skip(pg.SKIP_REASON);
       return;
     }
     const r = runParty(['start', sessionId, '--json']);
@@ -168,7 +200,7 @@ describe('party-state-machine (PG required)', (suite) => {
 
   test('party-pause-transitions', (t) => {
     if (!pgUp || sessionId === null) {
-      t.skip('PG unavailable or session not created — skipping');
+      t.skip(pg.SKIP_REASON);
       return;
     }
     const r = runParty(['pause', sessionId, '--json']);
@@ -183,7 +215,7 @@ describe('party-state-machine (PG required)', (suite) => {
 
   test('party-resume-transitions', (t) => {
     if (!pgUp || sessionId === null) {
-      t.skip('PG unavailable or session not created — skipping');
+      t.skip(pg.SKIP_REASON);
       return;
     }
     const r = runParty(['resume', sessionId, '--json']);
@@ -202,7 +234,7 @@ describe('party-state-machine (PG required)', (suite) => {
 
   test('party-terminate-transitions', (t) => {
     if (!pgUp || sessionId === null) {
-      t.skip('PG unavailable or session not created — skipping');
+      t.skip(pg.SKIP_REASON);
       return;
     }
     const r = runParty(['terminate', sessionId, '--json']);
@@ -220,7 +252,7 @@ describe('party-state-machine (PG required)', (suite) => {
 
   test('party-invalid-transition-exit-1', (t) => {
     if (!pgUp) {
-      t.skip('PG unavailable — skipping');
+      t.skip(pg.SKIP_REASON);
       return;
     }
     // Create a fresh session then try to terminate it directly from 'created'
@@ -256,7 +288,7 @@ describe('party-state-machine (PG required)', (suite) => {
 
 test('party-cli-shortcut-mirrors-tools', (t) => {
   if (!pgAvailable()) {
-    t.skip('PG unavailable — skipping shortcut comparison test');
+    t.skip(pg.SKIP_REASON);
     return;
   }
   // Create via gsd-tools directly

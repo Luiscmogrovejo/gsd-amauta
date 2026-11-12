@@ -7,7 +7,7 @@ Structural tests (no PG needed):
   TestGetThreadSignature — function signature and return contract
   TestGetThreadSQLStructure — CTE SQL present in source
 
-PG integration tests (GSD_PG_INTEGRATION=1 required):
+PG integration tests (a disposable PostgreSQL required, see tests/conftest.py):
   TestGetThreadPGIntegration — 3-turn dialogue, depth limit, empty on stale ID
 """
 
@@ -29,7 +29,16 @@ from services.a2a_client import (
     get_thread,
 )
 
-GSD_PG_INTEGRATION = os.environ.get("GSD_PG_INTEGRATION") == "1"
+# Phase 88 plan 88-16-03: a third PG opt-in variable used to gate these classes,
+# beside GSD_TEST_POSTGRES_URL and GSD_POSTGRES_URL — three names for the one
+# question "is there a disposable PostgreSQL?". There is one answer now:
+# tests/conftest.py's fixture. The product's own clients
+# (services/pg_store.py, services/a2a_client.py) read GSD_POSTGRES_URL, which
+# the session scrub deletes, so `product_pg_dsn` restores it for the duration
+# of these classes and takes it away again.
+from conftest import PG_SKIP_REASON, postgres_dsn_or_none, product_pg_dsn  # noqa: E402
+
+_PG_DSN = postgres_dsn_or_none()
 
 
 # ── TestThreadingConstants ────────────────────────────────────────────────────
@@ -102,9 +111,9 @@ class TestGetThreadSQLStructure(unittest.TestCase):
 
 # ── TestGetThreadPGIntegration ────────────────────────────────────────────────
 
-@unittest.skipUnless(GSD_PG_INTEGRATION, "GSD_PG_INTEGRATION=1 required for PG tests")
+@unittest.skipUnless(_PG_DSN, PG_SKIP_REASON)
 class TestGetThreadPGIntegration(unittest.TestCase):
-    """Live PG integration tests — require GSD_PG_INTEGRATION=1.
+    """Live PG integration tests — require the disposable PostgreSQL.
 
     Inserts rows directly via psycopg2 cursor (no a2a_client send_* helpers)
     to avoid test coupling. Cleans up inserted rows in tearDown.
@@ -113,8 +122,18 @@ class TestGetThreadPGIntegration(unittest.TestCase):
     def setUp(self):
         """Establish PG connection and track inserted IDs for cleanup."""
         from services.pg_store import PGStore
+        self._pg_env = product_pg_dsn()
+        self._pg_env.__enter__()
+        self.addCleanup(self._pg_env.__exit__, None, None, None)
         self._store = PGStore()
-        self._conn = self._store._get_conn().__enter__()
+        # Plan 88-16-09: keep the context manager that was ENTERED. tearDown used
+        # to call `self._store._get_conn().__exit__(...)` on a BRAND NEW
+        # generator that had never started, which raises
+        # `RuntimeError: generator didn't stop`. Invisible for as long as the
+        # class skipped itself; the first run against a real database failed all
+        # five of its tests on it.
+        self._conn_ctx = self._store._get_conn()
+        self._conn = self._conn_ctx.__enter__()
         self._inserted_ids = []
 
     def tearDown(self):
@@ -127,7 +146,7 @@ class TestGetThreadPGIntegration(unittest.TestCase):
                         (rid,),
                     )
         self._conn.commit()
-        self._store._get_conn().__exit__(None, None, None)
+        self._conn_ctx.__exit__(None, None, None)
 
     def _insert_row(self, *, from_agent, to_agent, capability, payload,
                     kind, status, parent_id=None):

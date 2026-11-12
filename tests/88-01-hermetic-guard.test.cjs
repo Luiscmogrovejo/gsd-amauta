@@ -29,7 +29,17 @@ const { freePort } = require(path.join(ROOT, 'scripts', 'run-tests.cjs'));
  * @returns {import('child_process').SpawnSyncReturns<string>}
  */
 function runGuarded(code, extraEnv = {}) {
-  const env = { ...process.env, NODE_OPTIONS: '--require ' + GUARD, ...extraEnv };
+  const env = {
+    ...process.env,
+    NODE_OPTIONS: '--require ' + GUARD,
+    // Plan 88-16-03: these assertions are ABOUT the refusal, so they state
+    // their own premise instead of inheriting the rollout's log-only mode.
+    // In log-only mode the child really connects; on a CI runner that drops
+    // rather than refuses, every case here sat at the 15 s spawn timeout with
+    // an empty stderr, which is how the first rollout run failed.
+    GSD_HERMETIC_GUARD_MODE: 'enforce',
+    ...extraEnv,
+  };
   return spawnSync(process.execPath, ['-e', code], { env, encoding: 'utf-8', timeout: 15000 });
 }
 
@@ -102,6 +112,7 @@ describe('hermetic guard (Node)', () => {
           env: {
             ...process.env,
             NODE_OPTIONS: '--require ' + GUARD,
+            GSD_HERMETIC_GUARD_MODE: 'enforce',
             GSD_HERMETIC_GUARD_BLOCK_PORTS: String(P),
             GSD_HERMETIC_GUARD_ALLOW_PORTS: String(P),
           },
@@ -126,6 +137,7 @@ describe('hermetic guard (Node)', () => {
             ...process.env,
             NODE_OPTIONS: '--require ' + GUARD,
             GSD_HERMETIC_GUARD: 'off',
+            GSD_HERMETIC_GUARD_MODE: 'enforce',
             GSD_HERMETIC_GUARD_BLOCK_PORTS: String(P),
           },
           stdio: 'ignore',
@@ -147,8 +159,19 @@ describe('hermetic guard (Node)', () => {
     const log = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'guard-log-')), 'guard.log');
     runGuarded("require('net').connect(18799,'127.0.0.1')", { GSD_HERMETIC_GUARD_LOG: log });
     const line = fs.readFileSync(log, 'utf-8').split('\n')[0].split('\t');
-    assert.strictEqual(line.length, 4);
-    assert.strictEqual(line[2], '18799');
+    // Plan 88-16-03 widened the line from 4 columns (time, pid, port, argv) to
+    // 8: the guard is default-deny for non-loopback destinations now, so a
+    // reader of the log needs the MODE it was running in, which RUNTIME wrote
+    // the line (the Python guard writes the same shape, and had no log at all
+    // before), the HOST and the machine-readable REASON. Deliberate format
+    // change, recorded in 88-16-RECORD.md; the property the old assertion
+    // guarded — "the refused port is in the line" — is kept and strengthened.
+    assert.strictEqual(line.length, 8, 'line: ' + JSON.stringify(line));
+    assert.strictEqual(line[2], 'enforce');
+    assert.strictEqual(line[3], 'node');
+    assert.strictEqual(line[4], '127.0.0.1');
+    assert.strictEqual(line[5], '18799');
+    assert.strictEqual(line[6], 'live-port');
     fs.rmSync(path.dirname(log), { recursive: true, force: true });
   });
 });

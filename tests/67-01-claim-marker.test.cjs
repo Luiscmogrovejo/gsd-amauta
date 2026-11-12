@@ -152,12 +152,74 @@ test('67-01-03: claim writes a marker with the plan-resolved manifest; status-to
   }
 });
 
-test('67-01-03: marker-write failure (read-only data dir) does not change claim exit code', async (t) => {
-  if (process.platform === 'win32') {
-    t.skip('chmod read-only semantics differ on win32');
-    return;
-  }
+// Phase 88 plan 88-16-02. 67-01-03 used to `t.skip('chmod read-only semantics
+// differ on win32')`, so the invariant it guards — "a marker the CLI cannot
+// write never changes claim's exit code" — was unproven on Windows, the one
+// platform where a surprising filesystem error is most likely.
+//
+// The fix is to make the marker path unwritable by SHAPE rather than by
+// permission: the data directory is placed under a path whose parent is a
+// REGULAR FILE, so every create beneath it fails on every operating system.
+// The assertion is on BEHAVIOUR (exit code unchanged, no marker written), never
+// on the errno: POSIX raises ENOTDIR, Windows raises ENOTDIR or ENOENT
+// depending on the call, and pinning either would be pinning the platform
+// rather than the contract.
+test('67-01-03: marker-write failure (data dir under a regular file) does not change claim exit code', async () => {
+  const { server, port } = await startMockDaemon();
+  const { tmpData, tmpRoot } = setupFixtures();
 
+  // A regular file standing where a directory would have to be.
+  const blockerDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claim-marker-blocked-'));
+  const blockerFile = path.join(blockerDir, 'this-is-a-file');
+  fs.writeFileSync(blockerFile, 'not a directory\n');
+  const unwritableData = path.join(blockerFile, 'data');
+
+  const baseEnv = {
+    ...process.env,
+    GSD_AMAUTA_HOST: '127.0.0.1',
+    GSD_AMAUTA_PORT: String(port),
+    GSD_AMAUTA_NO_AUTO_START: '1',
+    AMAUTA_DATA_DIR: tmpData,
+    CLAUDE_PROJECT_DIR: tmpRoot,
+  };
+
+  try {
+    const baselineResult = await runCli(['claim', 'TK-9001', '--agent', 'executor-backend'], baseEnv);
+    assert.equal(baselineResult.code, 0, `baseline claim failed: ${baselineResult.stderr}`);
+    assert.ok(
+      fs.existsSync(path.join(tmpData, 'hook-active-tasks.json')),
+      'baseline run must have written a marker, otherwise the negative case proves nothing'
+    );
+
+    const blockedResult = await runCli(
+      ['claim', 'TK-9001', '--agent', 'executor-backend'],
+      { ...baseEnv, AMAUTA_DATA_DIR: unwritableData }
+    );
+    assert.equal(
+      blockedResult.code,
+      baselineResult.code,
+      'claim exit code changed when the marker could not be written: ' +
+        `baseline=${baselineResult.code} blocked=${blockedResult.code} stderr=${blockedResult.stderr}`
+    );
+    // State is not corrupted: nothing was created under the blocked path, and
+    // the blocker is still the regular file it was.
+    assert.ok(fs.statSync(blockerFile).isFile(), 'the blocking path stopped being a regular file');
+    assert.ok(!fs.existsSync(unwritableData), 'a data directory appeared under a regular file');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(tmpData, { recursive: true, force: true });
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+    fs.rmSync(blockerDir, { recursive: true, force: true });
+  }
+});
+
+// The POSIX permission case is KEPT — it covers something the shape variant
+// does not: a data directory that exists and is readable but cannot be written
+// to. It no longer skips anywhere. Where the platform does not honour a
+// directory's write bit (NTFS ignores `chmod` on directories), the test says so
+// and asserts the invariant that still holds there, rather than reporting a
+// pass that measured nothing.
+test('67-01-04: marker-write failure (permission-denied data dir) does not change claim exit code', async () => {
   const { server, port } = await startMockDaemon();
   const { tmpData, tmpRoot } = setupFixtures();
 
@@ -175,6 +237,16 @@ test('67-01-03: marker-write failure (read-only data dir) does not change claim 
     assert.equal(baselineResult.code, 0, `baseline claim failed: ${baselineResult.stderr}`);
 
     fs.chmodSync(tmpData, 0o555);
+    // Measure whether the platform actually honours it, instead of assuming.
+    let writeBitHonoured = false;
+    const probe = path.join(tmpData, 'write-bit-probe');
+    try {
+      fs.writeFileSync(probe, 'x');
+      fs.rmSync(probe, { force: true });
+    } catch (_e) {
+      writeBitHonoured = true;
+    }
+
     try {
       const readonlyResult = await runCli(['claim', 'TK-9001', '--agent', 'executor-backend'], baseEnv);
       assert.equal(
@@ -182,6 +254,12 @@ test('67-01-03: marker-write failure (read-only data dir) does not change claim 
         baselineResult.code,
         `claim exit code changed under a read-only data dir: baseline=${baselineResult.code} readonly=${readonlyResult.code}`
       );
+      if (writeBitHonoured) {
+        // The write genuinely failed, so the marker must still hold the value
+        // the baseline run wrote and nothing new may have appeared.
+        const marker = JSON.parse(fs.readFileSync(path.join(tmpData, 'hook-active-tasks.json'), 'utf-8'));
+        assert.ok(marker.tasks['TK-9001'], 'the marker from the baseline run was lost');
+      }
     } finally {
       fs.chmodSync(tmpData, 0o755);
     }

@@ -100,11 +100,11 @@ class TestProbeStoreIsAProbe(unittest.TestCase):
                          "the probe's own error must be passed through, not swallowed")
 
     def test_a_healthy_store_is_live(self):
-        store = _Store({"status": "ok", "dsn_host": "127.0.0.1:5433/gsd_amauta"})
+        store = _Store({"status": "ok", "dsn_host": "127.0.0.1:65432/gsd_amauta"})
         probe, live = _probe_store(store)
         self.assertEqual(store.calls, 1)
         self.assertTrue(live, "a store answering SELECT 1 must report as live")
-        self.assertEqual(probe["dsn_host"], "127.0.0.1:5433/gsd_amauta")
+        self.assertEqual(probe["dsn_host"], "127.0.0.1:65432/gsd_amauta")
 
     def test_no_store_is_not_live(self):
         probe, live = _probe_store(None)
