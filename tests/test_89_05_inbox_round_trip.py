@@ -586,11 +586,18 @@ class TestTheArmRunsOnTheBackendItNames:
         if inbox.backend == "postgres":
             assert health.get("pg_available") is True, health
             assert "pg_health" in health, health
-            # A PostgreSQL daemon must publish no degraded feature list at all.
-            assert "features_off" not in health, health
+            # A PostgreSQL daemon publishes an EMPTY degraded list, not an absent
+            # one (services/amauta-daemon.py:2304) — a consumer graphing
+            # "features off" sees a real zero rather than a gap. Measured on the
+            # ubuntu cell: my first assertion said the key would be absent and
+            # was simply wrong about the contract.
+            assert health.get("features_off") == [], health
+            assert health.get("backend_selection", {}).get("mode") == "auto", health
         else:
             assert "sqlite_health" in health, health
-            assert isinstance(health.get("features_off"), list), health
+            off = health.get("features_off")
+            assert isinstance(off, list) and off, health
+            assert "a2a" not in off, "the removed feature must not be reported as off"
 
 
 # ═════════════════════════════════════════════════════════════════════════════
