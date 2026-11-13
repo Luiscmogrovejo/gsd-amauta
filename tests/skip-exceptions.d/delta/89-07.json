@@ -2,7 +2,7 @@
   "plan": "89-07",
   "shard": "tests/skip-exceptions.d/89-07.json",
   "shard_is_all_added": true,
-  "note": "Plan 89-07 gave the macOS and Windows cells a disposable PostgreSQL, so the 386 pg-no-disposable-database entries plan 89-09 migrated into this shard excuse nothing on any cell and are removed. What this shard holds now is this plan own additions: one entry per test for the DEVELOPER machine, which has no disposable database (platform all, context local, owner Phase 100). The gate refuses a context local entry when CI is set, so none of them can ever excuse a CI cell. | Plan 89-12 closed 29 of the entries this plan had added: the darwin half of paradedb-engine-unavailable. The macOS cells now load the real ParadeDB pg_search (pinned v0.26.6 package, SHA-256 verified), so those 29 tests RUN there and their entries excused nothing. They moved from \"added\" to \"closed\" for the reason stated above for every closed tuple: added after the shard migration, deleted later, net zero against the pre-shard ledger. The 29 win32 entries stay: ParadeDB publishes no Windows build of pg_search.",
+  "note": "Plan 89-07 gave the macOS and Windows cells a disposable PostgreSQL, so the 386 pg-no-disposable-database entries plan 89-09 migrated into this shard excuse nothing on any cell and are removed. What this shard holds now is this plan own additions: one entry per test for the DEVELOPER machine, which has no disposable database (platform all, context local, owner Phase 100). The gate refuses a context local entry when CI is set, so none of them can ever excuse a CI cell. | Plan 89-12 closed 29 of the entries this plan had added: the darwin half of paradedb-engine-unavailable. The macOS cells now load the real ParadeDB pg_search (pinned v0.26.6 package, SHA-256 verified), so those 29 tests RUN there and their entries excused nothing. They moved from \"added\" to \"closed\" for the reason stated above for every closed tuple: added after the shard migration, deleted later, net zero against the pre-shard ledger. The 29 win32 entries stay: ParadeDB publishes no Windows build of pg_search. Plan 89-13 (ORC-02 part 2) converted the party state-machine, resume and kill tests into decision-trail tests and renamed 23 of them; their 23 entries left this shard for `closed`, and the entries for the renamed tests are plan 89-13's own (tests/skip-exceptions.d/89-13.json).",
   "added": [
     [
       "test_bm25_description_outranks_content_live",
@@ -522,39 +522,6 @@
       "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
     ],
     [
-      "party-invalid-transition-exit-1",
-      "tests/party-cli.test.cjs",
-      "all",
-      "local",
-      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
-      "pg-no-disposable-database-local",
-      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
-      100,
-      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
-    ],
-    [
-      "party-pause-transitions",
-      "tests/party-cli.test.cjs",
-      "all",
-      "local",
-      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
-      "pg-no-disposable-database-local",
-      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
-      100,
-      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
-    ],
-    [
-      "party-resume-transitions",
-      "tests/party-cli.test.cjs",
-      "all",
-      "local",
-      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
-      "pg-no-disposable-database-local",
-      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
-      100,
-      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
-    ],
-    [
       "party-start-transitions",
       "tests/party-cli.test.cjs",
       "all",
@@ -577,17 +544,6 @@
       "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
     ],
     [
-      "party-cli-kill-shortcut-mirrors-tools",
-      "tests/party-decisions-cli.test.cjs",
-      "all",
-      "local",
-      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
-      "pg-no-disposable-database-local",
-      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
-      100,
-      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
-    ],
-    [
       "party-inspect-frozen-shape",
       "tests/party-decisions-cli.test.cjs",
       "all",
@@ -600,28 +556,6 @@
     ],
     [
       "party-inspect-not-found-exit-1",
-      "tests/party-decisions-cli.test.cjs",
-      "all",
-      "local",
-      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
-      "pg-no-disposable-database-local",
-      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
-      100,
-      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
-    ],
-    [
-      "party-kill-already-terminated-exit-1",
-      "tests/party-decisions-cli.test.cjs",
-      "all",
-      "local",
-      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
-      "pg-no-disposable-database-local",
-      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
-      100,
-      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
-    ],
-    [
-      "party-kill-terminates-and-audits",
       "tests/party-decisions-cli.test.cjs",
       "all",
       "local",
@@ -698,28 +632,6 @@
       "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
     ],
     [
-      "e2e-kill-already-terminated-exit-1",
-      "tests/party-decisions-e2e.test.cjs",
-      "all",
-      "local",
-      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
-      "pg-no-disposable-database-local",
-      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
-      100,
-      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
-    ],
-    [
-      "e2e-kill-records-audit-and-terminates",
-      "tests/party-decisions-e2e.test.cjs",
-      "all",
-      "local",
-      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
-      "pg-no-disposable-database-local",
-      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
-      100,
-      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
-    ],
-    [
       "e2e-post-four-decisions-via-subprocess",
       "tests/party-decisions-e2e.test.cjs",
       "all",
@@ -764,17 +676,6 @@
       "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
     ],
     [
-      "e2e-pause",
-      "tests/party-e2e.test.cjs",
-      "all",
-      "local",
-      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
-      "pg-no-disposable-database-local",
-      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
-      100,
-      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
-    ],
-    [
       "e2e-post-three-findings",
       "tests/party-e2e.test.cjs",
       "all",
@@ -797,29 +698,7 @@
       "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
     ],
     [
-      "e2e-simulated-daemon-restart-resume",
-      "tests/party-e2e.test.cjs",
-      "all",
-      "local",
-      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
-      "pg-no-disposable-database-local",
-      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
-      100,
-      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
-    ],
-    [
       "e2e-terminate",
-      "tests/party-e2e.test.cjs",
-      "all",
-      "local",
-      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
-      "pg-no-disposable-database-local",
-      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
-      100,
-      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
-    ],
-    [
-      "e2e-terminated-cannot-resume",
       "tests/party-e2e.test.cjs",
       "all",
       "local",
@@ -3415,83 +3294,6 @@
       "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
     ],
     [
-      "test_resume_after_simulated_daemon_restart",
-      "tests/test_party_session_resume.py",
-      "all",
-      "local",
-      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
-      "pg-no-disposable-database-local",
-      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
-      100,
-      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
-    ],
-    [
-      "test_resume_findings_field_pydantic_compat",
-      "tests/test_party_session_resume.py",
-      "all",
-      "local",
-      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
-      "pg-no-disposable-database-local",
-      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
-      100,
-      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
-    ],
-    [
-      "test_resume_invalid_transition_does_not_replay",
-      "tests/test_party_session_resume.py",
-      "all",
-      "local",
-      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
-      "pg-no-disposable-database-local",
-      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
-      100,
-      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
-    ],
-    [
-      "test_resume_replays_only_session_scoped_findings",
-      "tests/test_party_session_resume.py",
-      "all",
-      "local",
-      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
-      "pg-no-disposable-database-local",
-      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
-      100,
-      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
-    ],
-    [
-      "test_resume_returns_findings_in_order",
-      "tests/test_party_session_resume.py",
-      "all",
-      "local",
-      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
-      "pg-no-disposable-database-local",
-      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
-      100,
-      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
-    ],
-    [
-      "test_resume_terminated_session_fails",
-      "tests/test_party_session_resume.py",
-      "all",
-      "local",
-      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
-      "pg-no-disposable-database-local",
-      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
-      100,
-      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
-    ],
-    [
-      "test_active_to_paused",
-      "tests/test_party_session_state_machine.py",
-      "all",
-      "local",
-      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
-      "pg-no-disposable-database-local",
-      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
-      100,
-      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
-    ],
-    [
       "test_active_to_terminated",
       "tests/test_party_session_state_machine.py",
       "all",
@@ -3514,17 +3316,6 @@
       "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
     ],
     [
-      "test_created_to_paused",
-      "tests/test_party_session_state_machine.py",
-      "all",
-      "local",
-      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
-      "pg-no-disposable-database-local",
-      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
-      100,
-      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
-    ],
-    [
       "test_created_to_terminated",
       "tests/test_party_session_state_machine.py",
       "all",
@@ -3537,39 +3328,6 @@
     ],
     [
       "test_partysession_schema_version_locked",
-      "tests/test_party_session_state_machine.py",
-      "all",
-      "local",
-      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
-      "pg-no-disposable-database-local",
-      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
-      100,
-      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
-    ],
-    [
-      "test_paused_to_active",
-      "tests/test_party_session_state_machine.py",
-      "all",
-      "local",
-      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
-      "pg-no-disposable-database-local",
-      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
-      100,
-      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
-    ],
-    [
-      "test_paused_to_created",
-      "tests/test_party_session_state_machine.py",
-      "all",
-      "local",
-      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
-      "pg-no-disposable-database-local",
-      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
-      100,
-      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
-    ],
-    [
-      "test_paused_to_terminated",
       "tests/test_party_session_state_machine.py",
       "all",
       "local",
@@ -3603,17 +3361,6 @@
     ],
     [
       "test_terminated_to_active",
-      "tests/test_party_session_state_machine.py",
-      "all",
-      "local",
-      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
-      "pg-no-disposable-database-local",
-      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
-      100,
-      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
-    ],
-    [
-      "test_terminated_to_paused",
       "tests/test_party_session_state_machine.py",
       "all",
       "local",
@@ -8279,6 +8026,259 @@
       "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
       100,
       "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    ],
+    [
+      "party-invalid-transition-exit-1",
+      "tests/party-cli.test.cjs",
+      "all",
+      "local",
+      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
+      "pg-no-disposable-database-local",
+      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
+      100,
+      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
+    ],
+    [
+      "party-pause-transitions",
+      "tests/party-cli.test.cjs",
+      "all",
+      "local",
+      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
+      "pg-no-disposable-database-local",
+      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
+      100,
+      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
+    ],
+    [
+      "party-resume-transitions",
+      "tests/party-cli.test.cjs",
+      "all",
+      "local",
+      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
+      "pg-no-disposable-database-local",
+      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
+      100,
+      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
+    ],
+    [
+      "party-cli-kill-shortcut-mirrors-tools",
+      "tests/party-decisions-cli.test.cjs",
+      "all",
+      "local",
+      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
+      "pg-no-disposable-database-local",
+      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
+      100,
+      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
+    ],
+    [
+      "party-kill-already-terminated-exit-1",
+      "tests/party-decisions-cli.test.cjs",
+      "all",
+      "local",
+      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
+      "pg-no-disposable-database-local",
+      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
+      100,
+      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
+    ],
+    [
+      "party-kill-terminates-and-audits",
+      "tests/party-decisions-cli.test.cjs",
+      "all",
+      "local",
+      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
+      "pg-no-disposable-database-local",
+      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
+      100,
+      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
+    ],
+    [
+      "e2e-kill-already-terminated-exit-1",
+      "tests/party-decisions-e2e.test.cjs",
+      "all",
+      "local",
+      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
+      "pg-no-disposable-database-local",
+      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
+      100,
+      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
+    ],
+    [
+      "e2e-kill-records-audit-and-terminates",
+      "tests/party-decisions-e2e.test.cjs",
+      "all",
+      "local",
+      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
+      "pg-no-disposable-database-local",
+      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
+      100,
+      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
+    ],
+    [
+      "e2e-pause",
+      "tests/party-e2e.test.cjs",
+      "all",
+      "local",
+      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
+      "pg-no-disposable-database-local",
+      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
+      100,
+      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
+    ],
+    [
+      "e2e-simulated-daemon-restart-resume",
+      "tests/party-e2e.test.cjs",
+      "all",
+      "local",
+      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
+      "pg-no-disposable-database-local",
+      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
+      100,
+      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
+    ],
+    [
+      "e2e-terminated-cannot-resume",
+      "tests/party-e2e.test.cjs",
+      "all",
+      "local",
+      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
+      "pg-no-disposable-database-local",
+      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
+      100,
+      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
+    ],
+    [
+      "test_resume_after_simulated_daemon_restart",
+      "tests/test_party_session_resume.py",
+      "all",
+      "local",
+      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
+      "pg-no-disposable-database-local",
+      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
+      100,
+      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
+    ],
+    [
+      "test_resume_findings_field_pydantic_compat",
+      "tests/test_party_session_resume.py",
+      "all",
+      "local",
+      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
+      "pg-no-disposable-database-local",
+      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
+      100,
+      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
+    ],
+    [
+      "test_resume_invalid_transition_does_not_replay",
+      "tests/test_party_session_resume.py",
+      "all",
+      "local",
+      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
+      "pg-no-disposable-database-local",
+      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
+      100,
+      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
+    ],
+    [
+      "test_resume_replays_only_session_scoped_findings",
+      "tests/test_party_session_resume.py",
+      "all",
+      "local",
+      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
+      "pg-no-disposable-database-local",
+      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
+      100,
+      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
+    ],
+    [
+      "test_resume_returns_findings_in_order",
+      "tests/test_party_session_resume.py",
+      "all",
+      "local",
+      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
+      "pg-no-disposable-database-local",
+      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
+      100,
+      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
+    ],
+    [
+      "test_resume_terminated_session_fails",
+      "tests/test_party_session_resume.py",
+      "all",
+      "local",
+      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
+      "pg-no-disposable-database-local",
+      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
+      100,
+      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
+    ],
+    [
+      "test_active_to_paused",
+      "tests/test_party_session_state_machine.py",
+      "all",
+      "local",
+      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
+      "pg-no-disposable-database-local",
+      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
+      100,
+      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
+    ],
+    [
+      "test_created_to_paused",
+      "tests/test_party_session_state_machine.py",
+      "all",
+      "local",
+      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
+      "pg-no-disposable-database-local",
+      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
+      100,
+      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
+    ],
+    [
+      "test_paused_to_active",
+      "tests/test_party_session_state_machine.py",
+      "all",
+      "local",
+      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
+      "pg-no-disposable-database-local",
+      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
+      100,
+      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
+    ],
+    [
+      "test_paused_to_created",
+      "tests/test_party_session_state_machine.py",
+      "all",
+      "local",
+      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
+      "pg-no-disposable-database-local",
+      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
+      100,
+      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
+    ],
+    [
+      "test_paused_to_terminated",
+      "tests/test_party_session_state_machine.py",
+      "all",
+      "local",
+      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
+      "pg-no-disposable-database-local",
+      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
+      100,
+      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
+    ],
+    [
+      "test_terminated_to_paused",
+      "tests/test_party_session_state_machine.py",
+      "all",
+      "local",
+      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
+      "pg-no-disposable-database-local",
+      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
+      100,
+      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
     ]
   ]
 }

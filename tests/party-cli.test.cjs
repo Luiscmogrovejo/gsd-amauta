@@ -1,25 +1,27 @@
 'use strict';
 /**
- * Plan 50-03-04: party CLI integration tests.
- *
- * Tests the `gsd-tools party` subcommand shell layer and `bin/cli.cjs party`
- * shortcut. State-machine round-trip tests run in dependency order sharing
- * session state.
+ * Plan 50-03-04: party CLI integration tests — converted by plan 89-13
+ * (Phase 89 ORC-02 part 2) from state-machine round trips into container and
+ * removed-verb tests. A party session is a container for recorded decisions:
+ * `pause`, `resume` and `kill` are gone and nothing is refused because of a
+ * status label. Each converted subtest says what it used to assert.
  *
  * Tests:
- *   1. party-help-emits-usage      — no args exits 2 + stderr Usage:
+ *   1. party-help-emits-usage      — no args exits 2 + stderr Usage:, removed verbs not offered
  *   2. party-unknown-action        — bogusaction exits 2 + Unknown party action
- *   3. party-create-roundtrip      — --json exits 0 + schema_version 1.0 + status created
- *   4. party-start-transitions     — created → active via start
- *   5. party-pause-transitions     — active → paused via pause
- *   6. party-resume-transitions    — paused → active via resume + findings array
- *   7. party-terminate-transitions — active → terminated via terminate
- *   8. party-invalid-transition-exit-1 — created → terminate forbidden → exit 1
- *   9. party-cli-shortcut-mirrors-tools — bin/cli.cjs party create matches gsd-tools shape
- *  10. phase-48-module-case-untouched-canary — gsd-tools.cjs has exactly 1 'module' case + 1 'party' case
+ *   3. party-removed-verbs-answer-typed — pause/resume/kill: typed message, exit 2, both surfaces
+ *   4. party-no-postgres-answers-requires-postgres — typed requires_postgres with no DSN
+ *   5. party-create-roundtrip      — --json exits 0 + schema_version 1.0 + status created
+ *   6. party-start-transitions     — start labels the session active
+ *   7. party-pause-removed-session-untouched     — was party-pause-transitions
+ *   8. party-resume-removed-findings-via-get     — was party-resume-transitions
+ *   9. party-terminate-transitions — terminate labels the session terminated
+ *  10. party-terminate-from-created-is-not-refused — was party-invalid-transition-exit-1
+ *  11. party-cli-shortcut-mirrors-tools — bin/cli.cjs party create matches gsd-tools shape
+ *  12. phase-48-module-case-untouched-canary — gsd-tools.cjs has exactly 1 'module' case + 1 'party' case
  *
- * PG-down resilience: state-machine tests (3–9) are skipped when PG is
- * unavailable. Tests 1, 2, 10 run unconditionally (no PG required).
+ * PG-down resilience: tests 5–11 are skipped when PG is unavailable (developer
+ * machines); they run on all CI cells. Tests 1–4 and 12 need no database.
  *
  * Run: node --test tests/party-cli.test.cjs
  */
@@ -31,9 +33,14 @@ const { spawnSync } = require('child_process');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 
+// Phase 88 plan 88-15: spawn Python through the shared resolver, never a literal name.
+const platform = require('../get-shit-done/bin/lib/platform.cjs');
+
 const ROOT = path.resolve(__dirname, '..');
 const TOOLS = path.join(ROOT, 'get-shit-done', 'bin', 'gsd-tools.cjs');
 const CLI_ENTRY = path.join(ROOT, 'bin', 'cli.cjs');
+const PARTY_CLI_PY = path.join(ROOT, 'services', 'party_session_cli.py');
+const REMOVED_VERBS = ['pause', 'resume', 'kill'];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -127,7 +134,53 @@ function pgAvailable() {
   return r.status === 1;
 }
 
-// ─── Tests 1 + 2: unconditional (no PG required) ─────────────────────────────
+/**
+ * A child environment with NO PostgreSQL configured, whatever the cell provides.
+ * @returns {NodeJS.ProcessEnv}
+ */
+function noPostgresEnv() {
+  return {
+    ...process.env,
+    GSD_POSTGRES_URL: '',
+    DATABASE_URL: '',
+    GSD_TEST_POSTGRES_URL: '',
+    GSD_FORCE_SQLITE: '1',
+  };
+}
+
+/**
+ * Assert `r` is the typed answer for the removed verb `verb`.
+ * @param {{status: number|null, stdout: string, stderr: string}} r spawn result
+ * @param {string} verb one of REMOVED_VERBS
+ * @param {boolean} json whether --json was passed
+ * @returns {object|null} the parsed payload when `json`
+ */
+function assertRemovedVerbAnswer(r, verb, json) {
+  assert.strictEqual(r.status, 2, `party ${verb} must exit 2 (removed); got: ${r.status}\nstdout: ${r.stdout}\nstderr: ${r.stderr}`);
+  assert.match(r.stderr, new RegExp(`\`party ${verb}\` was removed`), `stderr must name the removed verb; got: ${r.stderr}`);
+  assert.match(r.stderr, /ORC-02/, 'the message must name the requirement');
+  assert.match(r.stderr, /recorded decisions/i, 'the message must say what a party session is now');
+  for (const replacement of ['party status', 'party inspect', 'party terminate']) {
+    assert.ok(r.stderr.includes(replacement), `the message must name ${replacement}; got: ${r.stderr}`);
+  }
+  assert.ok(!/Traceback|at Object\.|Unknown party action|invalid choice/.test(r.stdout + r.stderr),
+    `a removed verb must not answer with a stack trace or an unknown-verb error; got: ${r.stdout}${r.stderr}`);
+  if (!json) {
+    assert.strictEqual(r.stdout, '', `without --json nothing goes to stdout; got: ${r.stdout}`);
+    return null;
+  }
+  const parsed = JSON.parse(r.stdout);
+  assert.strictEqual(parsed.error, 'party_verb_removed');
+  assert.strictEqual(parsed.action, verb);
+  assert.strictEqual(parsed.schema_version, '1.0');
+  assert.match(parsed.detail, /recorded decisions/);
+  assert.deepStrictEqual(parsed.replacement, [
+    'party status', 'party inspect <session_id>', 'party get <session_id> --with-findings', 'party terminate <session_id>',
+  ]);
+  return parsed;
+}
+
+// ─── Tests 1–4: unconditional (no PG required) ───────────────────────────────
 
 test('party-help-emits-usage', (t) => {
   const r = runParty([]);
@@ -136,6 +189,11 @@ test('party-help-emits-usage', (t) => {
     r.stderr.includes('Usage:'),
     `stderr must contain "Usage:"; got: ${r.stderr.slice(0, 300)}`
   );
+  // Plan 89-13: the usage text offers exactly the surviving verbs.
+  for (const verb of REMOVED_VERBS) {
+    assert.ok(!new RegExp(`party ${verb}\\b`).test(r.stderr),
+      `the usage text still offers the removed verb "${verb}": ${r.stderr}`);
+  }
 });
 
 test('party-unknown-action', (t) => {
@@ -147,12 +205,55 @@ test('party-unknown-action', (t) => {
   );
 });
 
-// ─── Tests 3–9: PG-gated state-machine round-trips ───────────────────────────
+// Plan 89-13: a removed verb answers, it does not crash. Needs no database: the
+// answer is given before anything is spawned or connected, on every cell.
+test('party-removed-verbs-answer-typed', () => {
+  for (const verb of REMOVED_VERBS) {
+    const env = noPostgresEnv();
+    const spawnTools = (args) => spawnSync(process.execPath, [TOOLS, 'party', ...args],
+      { encoding: 'utf8', timeout: 20000, cwd: ROOT, env });
+    assertRemovedVerbAnswer(spawnTools([verb, 'some-session-id']), verb, false);
+    const nodeJson = assertRemovedVerbAnswer(spawnTools([verb, 'some-session-id', '--json']), verb, true);
+
+    // The bin/cli.cjs shortcut forwards to the same dispatch.
+    const viaCli = spawnSync(process.execPath, [CLI_ENTRY, 'party', verb, 'some-session-id'],
+      { encoding: 'utf8', timeout: 20000, cwd: ROOT, env });
+    assert.strictEqual(viaCli.status, 2, `bin/cli.cjs party ${verb} must exit 2; got: ${viaCli.status}`);
+
+    // The Python CLI, called directly, gives the SAME payload: two surfaces,
+    // one answer. A drift between the two copies of the message fails here.
+    const py = platform.spawnPython([PARTY_CLI_PY, verb, 'some-session-id', '--json'],
+      { encoding: 'utf8', timeout: 20000, cwd: ROOT, env });
+    const pyJson = assertRemovedVerbAnswer(py, verb, true);
+    assert.deepStrictEqual(pyJson, nodeJson, `the Node and Python answers for "${verb}" differ`);
+    const pyText = platform.spawnPython([PARTY_CLI_PY, verb, 'some-session-id'],
+      { encoding: 'utf8', timeout: 20000, cwd: ROOT, env });
+    const nodeText = spawnTools([verb, 'some-session-id']);
+    assert.strictEqual(pyText.stderr.trim(), nodeText.stderr.trim(),
+      `the Node and Python text answers for "${verb}" differ`);
+  }
+});
+
+// Plan 89-13: party_sessions is PostgreSQL-only. With none configured the CLI
+// answers a typed requires_postgres, as the daemon does for the same feature.
+test('party-no-postgres-answers-requires-postgres', () => {
+  const r = spawnSync(process.execPath, [TOOLS, 'party', 'status', '--json'],
+    { encoding: 'utf8', timeout: 20000, cwd: ROOT, env: noPostgresEnv() });
+  assert.strictEqual(r.status, 2, `party status with no PostgreSQL must exit 2; got: ${r.status}\nstderr: ${r.stderr}`);
+  const parsed = JSON.parse(r.stdout);
+  assert.strictEqual(parsed.error, 'requires_postgres');
+  assert.strictEqual(parsed.feature, 'party_sessions');
+  assert.strictEqual(parsed.schema_version, '1.0');
+  assert.match(parsed.detail, /GSD_POSTGRES_URL/, 'the answer must still name the variable to set');
+  assert.ok(!/Traceback/.test(r.stdout + r.stderr), 'no stack trace');
+});
+
+// ─── Tests 5–10: PG-gated container round-trips ──────────────────────────────
 //
 // State is threaded through a shared `sessionId` variable. Tests run in
 // declared order because node:test describe() runs subtests sequentially.
 
-describe('party-state-machine (PG required)', (suite) => {
+describe('party-container (PG required)', (suite) => {
   let sessionId = null;
   let pgUp = false;
 
@@ -198,38 +299,40 @@ describe('party-state-machine (PG required)', (suite) => {
     assert.strictEqual(parsed.session_id, sessionId, 'session_id must match');
   });
 
-  test('party-pause-transitions', (t) => {
+  // Was `party-pause-transitions`.
+  // used to assert: `pause` exits 0, status becomes "paused", paused_at is set.
+  // asserts now: `pause` answers the typed removal and the session it named is
+  // untouched — still "active", paused_at still null.
+  test('party-pause-removed-session-untouched', (t) => {
     if (!pgUp || sessionId === null) {
       t.skip(pg.SKIP_REASON);
       return;
     }
-    const r = runParty(['pause', sessionId, '--json']);
-    assert.strictEqual(r.status, 0, `pause must exit 0; got: ${r.status}\nstderr: ${r.stderr}`);
-    let parsed;
-    try { parsed = JSON.parse(r.stdout); } catch (e) {
-      assert.fail(`stdout must be valid JSON; got: ${r.stdout}`);
-    }
-    assert.strictEqual(parsed.status, 'paused', `status must be "paused" after pause; got: ${parsed.status}`);
-    assert.ok(parsed.paused_at !== null && parsed.paused_at !== undefined, 'paused_at must not be null');
+    assertRemovedVerbAnswer(runParty(['pause', sessionId, '--json']), 'pause', true);
+    const getR = runParty(['get', sessionId, '--json']);
+    assert.strictEqual(getR.status, 0, `get must exit 0; got: ${getR.status}\nstderr: ${getR.stderr}`);
+    const parsed = JSON.parse(getR.stdout);
+    assert.strictEqual(parsed.status, 'active', `the session must still be "active"; got: ${parsed.status}`);
+    assert.ok(parsed.paused_at === null || parsed.paused_at === undefined,
+      `paused_at must still be null; got: ${parsed.paused_at}`);
   });
 
-  test('party-resume-transitions', (t) => {
+  // Was `party-resume-transitions`.
+  // used to assert: `resume` exits 0, status "active", paused_at null and a
+  // `findings` array in the answer (the replay).
+  // asserts now: `resume` answers the typed removal, and the findings array it
+  // used to return is read with `get --with-findings`, with no transition.
+  test('party-resume-removed-findings-via-get', (t) => {
     if (!pgUp || sessionId === null) {
       t.skip(pg.SKIP_REASON);
       return;
     }
-    const r = runParty(['resume', sessionId, '--json']);
-    assert.strictEqual(r.status, 0, `resume must exit 0; got: ${r.status}\nstderr: ${r.stderr}`);
-    let parsed;
-    try { parsed = JSON.parse(r.stdout); } catch (e) {
-      assert.fail(`stdout must be valid JSON; got: ${r.stdout}`);
-    }
-    assert.strictEqual(parsed.status, 'active', `status must be "active" after resume; got: ${parsed.status}`);
-    assert.ok(
-      parsed.paused_at === null || parsed.paused_at === undefined || parsed.paused_at === 'None',
-      `paused_at must be null after resume; got: ${parsed.paused_at}`
-    );
-    assert.ok(Array.isArray(parsed.findings), `findings must be an array after resume; got: ${typeof parsed.findings}`);
+    assertRemovedVerbAnswer(runParty(['resume', sessionId, '--json']), 'resume', true);
+    const r = runParty(['get', sessionId, '--json', '--with-findings']);
+    assert.strictEqual(r.status, 0, `get --with-findings must exit 0; got: ${r.status}\nstderr: ${r.stderr}`);
+    const parsed = JSON.parse(r.stdout);
+    assert.strictEqual(parsed.status, 'active', `status must be "active"; got: ${parsed.status}`);
+    assert.ok(Array.isArray(parsed.findings), `findings must be an array; got: ${typeof parsed.findings}`);
   });
 
   test('party-terminate-transitions', (t) => {
@@ -250,41 +353,41 @@ describe('party-state-machine (PG required)', (suite) => {
     );
   });
 
-  test('party-invalid-transition-exit-1', (t) => {
+  // Was `party-invalid-transition-exit-1`.
+  // used to assert: `terminate` on a session still "created" exits 1 with
+  // InvalidTransitionError (created -> terminated was forbidden).
+  // asserts now: nothing is refused because of the label. The session closes,
+  // and closing it a second time is idempotent and keeps the closing time.
+  test('party-terminate-from-created-is-not-refused', (t) => {
     if (!pgUp) {
       t.skip(pg.SKIP_REASON);
       return;
     }
-    // Create a fresh session then try to terminate it directly from 'created'
-    // (created → terminated is FORBIDDEN per CONTEXT §Area 2)
     const createR = runParty(['create', '--participants', 'agent-a,agent-b', '--json']);
-    if (createR.status !== 0) {
-      t.skip(`Could not create test session (exit ${createR.status}); skipping`);
-      return;
-    }
-    let newSessionId;
-    try {
-      newSessionId = JSON.parse(createR.stdout).session_id;
-    } catch (e) {
-      t.skip('Could not parse session_id from create output; skipping');
-      return;
-    }
+    assert.strictEqual(createR.status, 0, `create must exit 0; got: ${createR.status}\nstderr: ${createR.stderr}`);
+    const newSessionId = JSON.parse(createR.stdout).session_id;
+
     const r = runParty(['terminate', newSessionId, '--json']);
-    assert.strictEqual(r.status, 1, `created→terminate must exit 1; got: ${r.status}\nstdout: ${r.stdout}`);
-    let parsed;
-    try { parsed = JSON.parse(r.stdout); } catch (e) {
-      assert.fail(`stdout must be valid JSON on exit 1; got: ${r.stdout}`);
-    }
-    assert.strictEqual(parsed.error, 'InvalidTransitionError', `error must be InvalidTransitionError; got: ${parsed.error}`);
-    assert.ok(
-      typeof parsed.detail === 'string' && parsed.detail.length > 0,
-      'detail must be a non-empty string'
-    );
+    assert.strictEqual(r.status, 0, `created→terminate must exit 0; got: ${r.status}\nstdout: ${r.stdout}\nstderr: ${r.stderr}`);
+    const parsed = JSON.parse(r.stdout);
+    assert.strictEqual(parsed.status, 'terminated', `status must be "terminated"; got: ${parsed.status}`);
+    assert.ok(parsed.terminated_at, 'terminated_at must be set');
     assert.strictEqual(parsed.schema_version, '1.0');
+    assert.ok(!/InvalidTransitionError/.test(r.stdout + r.stderr), 'the transition error no longer exists');
+
+    const again = runParty(['terminate', newSessionId, '--json']);
+    assert.strictEqual(again.status, 0, `a second terminate must exit 0; got: ${again.status}\nstderr: ${again.stderr}`);
+    assert.strictEqual(JSON.parse(again.stdout).terminated_at, parsed.terminated_at,
+      'closing twice must not move the closing time');
+
+    // A session id nobody created is still an error, typed and exit 1.
+    const missing = runParty(['terminate', crypto.randomUUID(), '--json']);
+    assert.strictEqual(missing.status, 1, `terminate on an unknown session must exit 1; got: ${missing.status}`);
+    assert.strictEqual(JSON.parse(missing.stdout).error, 'SessionNotFoundError');
   });
 });
 
-// ─── Test 9: bin/cli.cjs party shortcut mirrors gsd-tools shape ──────────────
+// ─── Test 11: bin/cli.cjs party shortcut mirrors gsd-tools shape ──────────────
 
 test('party-cli-shortcut-mirrors-tools', (t) => {
   if (!pgAvailable()) {
@@ -323,7 +426,7 @@ test('party-cli-shortcut-mirrors-tools', (t) => {
   );
 });
 
-// ─── Test 10: Phase 48 module case untouched canary ──────────────────────────
+// ─── Test 12: Phase 48 module case untouched canary ──────────────────────────
 
 test('phase-48-module-case-untouched-canary', () => {
   const src = fs.readFileSync(TOOLS, 'utf8');

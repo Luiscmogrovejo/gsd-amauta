@@ -1,23 +1,31 @@
 #!/usr/bin/env python3
 """
-services/party_session_cli.py — Phase 50 PARTY-01 / PARTY-02
+services/party_session_cli.py — the party session CLI (container + recorded decisions)
 
 Subprocess entry-point invoked by the Node-side `gsd-tools party <action>`
 subcommands. Mirrors services/module_lifecycle_cli.py argparse + exit-code
 discipline.
 
-Usage:
+Phase 89 ORC-02 part 2 (plan 89-13): a party session is a container for
+recorded decisions. The actions are exactly:
+
     python3 services/party_session_cli.py create --participants "gsd-planner,gsd-checker" [--json]
     python3 services/party_session_cli.py start <session_id> [--json]
-    python3 services/party_session_cli.py pause <session_id> [--json]
-    python3 services/party_session_cli.py resume <session_id> [--json]
     python3 services/party_session_cli.py terminate <session_id> [--json]
     python3 services/party_session_cli.py get <session_id> [--json] [--with-findings]
+    python3 services/party_session_cli.py status [--json]
+    python3 services/party_session_cli.py inspect <session_id> [--json]
 
-Exit codes (frozen — Phase 50 CONTEXT §Area 5):
+`pause`, `resume` and `kill` were REMOVED. They are not unknown verbs: each one
+answers a typed `party_verb_removed` message that says what replaced it, and
+exits 2.
+
+Exit codes:
     0 — success
-    1 — InvalidTransitionError OR SessionNotFoundError OR validation error
-    2 — psycopg2.OperationalError, psycopg2.Error, IOError, or any other unexpected exception
+    1 — SessionNotFoundError OR validation error
+    2 — a removed verb, no PostgreSQL configured (typed `requires_postgres`),
+        psycopg2.OperationalError, psycopg2.Error, IOError, or any other
+        unexpected exception
 """
 
 import argparse
@@ -39,16 +47,11 @@ try:
     from services.party_session import (  # type: ignore
         create,
         start,
-        pause,
-        resume,
         terminate,
         get,
         list_findings,
-        post_decision,
         list_decisions,
         summarize_decisions,
-        post_finding,
-        InvalidTransitionError,
         SessionNotFoundError,
     )
 except Exception:
@@ -56,16 +59,11 @@ except Exception:
         from party_session import (  # type: ignore
             create,
             start,
-            pause,
-            resume,
             terminate,
             get,
             list_findings,
-            post_decision,
             list_decisions,
             summarize_decisions,
-            post_finding,
-            InvalidTransitionError,
             SessionNotFoundError,
         )
     except Exception as _exc:
@@ -77,14 +75,139 @@ except Exception:
         sys.exit(2)
 
 
+# ── The surface, and what was removed from it ─────────────────────────────────
+
+#: The actions this CLI answers, in help order. `gsd-tools.cjs`'s KNOWN_ACTIONS
+#: and its usage text carry the same list; tests/party-decisions-cli.test.cjs
+#: proves the three agree.
+ACTIONS = ("create", "start", "terminate", "get", "status", "inspect")
+
+#: Verbs removed by Phase 89 ORC-02 part 2 (plan 89-13), each with the one line
+#: that says what to do instead. A removed verb is not an unknown verb: it used
+#: to work, so it answers with what replaced it instead of an argparse error.
+REMOVED_ACTIONS = {
+    "pause": (
+        "There is nothing to pause: a session is a container, and its recorded "
+        "decisions and findings persist whether or not anyone is working in it."
+    ),
+    "resume": (
+        "There is nothing to resume, and no finding replay: read a session's "
+        "findings with `party get <session_id> --with-findings` and its "
+        "decision trail with `party inspect <session_id>`."
+    ),
+    "kill": (
+        "Close a session with `party terminate <session_id>`. A reason is "
+        "recorded as a decision (services/party_session.post_decision, type "
+        "`block`), so it is part of the decision trail."
+    ),
+}
+
+#: What every removed verb points at. Kept in one tuple so the text answer and
+#: the JSON answer cannot disagree.
+REMOVED_REPLACEMENTS = (
+    "party status",
+    "party inspect <session_id>",
+    "party get <session_id> --with-findings",
+    "party terminate <session_id>",
+)
+
+#: The `feature` key of the daemon's typed 503 for the same table
+#: (services/amauta-daemon.py PG_ONLY_FEATURE_DETAIL).
+PG_ONLY_FEATURE = "party_sessions"
+
+
+def removed_verb_payload(action):
+    """The typed answer for a removed verb.
+
+    Args:
+        action: one of the keys of REMOVED_ACTIONS.
+
+    Returns:
+        A dict with `error` = "party_verb_removed", the `action`, a `detail`
+        sentence naming ORC-02 and the reason, and the `replacement` verbs.
+
+    Raises:
+        KeyError: `action` is not a removed verb.
+    """
+    return {
+        "error": "party_verb_removed",
+        "action": action,
+        "detail": (
+            f"`party {action}` was removed in v3.7 (ORC-02): a party session "
+            "keeps only recorded decisions. It is a container row plus the "
+            "decisions posted into it, not a lifecycle with transitions. "
+            + REMOVED_ACTIONS[action]
+        ),
+        "replacement": list(REMOVED_REPLACEMENTS),
+        "schema_version": "1.0",
+    }
+
+
+def requires_postgres_payload(exc):
+    """The typed answer when no PostgreSQL is configured.
+
+    Shaped like the daemon's `_requires_postgres_payload("party_sessions")` so a
+    caller can branch on one `error` value on either path. The DSN resolver's
+    own message is kept verbatim in `detail`: it names the variable to export
+    and the contained DSN for tests, and dropping it would make the refusal
+    less actionable, not more.
+
+    Args:
+        exc: the UnconfiguredPostgresDSN raised by services/pg_dsn.py.
+
+    Returns:
+        A dict with `error` = "requires_postgres" and `feature` =
+        "party_sessions".
+    """
+    return {
+        "error": "requires_postgres",
+        "feature": PG_ONLY_FEATURE,
+        "detail": (
+            "Party sessions live in the party_sessions table (PostgreSQL "
+            "migration 021) and have no SQLite implementation. Configure "
+            "PostgreSQL to use them.\n\n" + str(exc)
+        ),
+        "cause": type(exc).__name__,
+        "schema_version": "1.0",
+    }
+
+
+def answer_removed_verb(argv):
+    """Answer a removed verb, if `argv` names one, and exit 2.
+
+    Runs BEFORE argparse, which would otherwise report the verb as an invalid
+    choice — true, and useless to someone whose script called it last week.
+
+    Args:
+        argv: the argument list without the program name.
+
+    Returns:
+        None when `argv` does not start with a removed verb. Does not return
+        otherwise.
+    """
+    if not argv or argv[0] not in REMOVED_ACTIONS:
+        return None
+    payload = removed_verb_payload(argv[0])
+    if "--json" in argv[1:]:
+        print(json.dumps(payload))
+    print(
+        "ERROR: " + payload["detail"] + " Use instead: "
+        + "; ".join(payload["replacement"]) + ".",
+        file=sys.stderr,
+    )
+    sys.exit(2)
+
+
 # ── Argparse layout ───────────────────────────────────────────────────────────
 
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="party_session_cli",
         description=(
-            "Phase 50 PARTY-01/PARTY-02: party session lifecycle CLI. "
-            "Exit 0=success, 1=invalid transition/not found/validation, 2=PG/IO error."
+            "Party sessions: a container row plus its recorded decisions "
+            "(Phase 89 ORC-02). "
+            "Exit 0=success, 1=not found/validation, "
+            "2=removed verb/no PostgreSQL/PG or IO error."
         ),
     )
     sub = parser.add_subparsers(dest="action", required=True)
@@ -99,22 +222,12 @@ def build_parser():
     p_create.add_argument("--json", action="store_true", dest="json_mode")
 
     # start
-    p_start = sub.add_parser("start", help="Transition session from created to active")
+    p_start = sub.add_parser("start", help="Label a session active (never refused; idempotent)")
     p_start.add_argument("session_id", help="UUID of the party session")
     p_start.add_argument("--json", action="store_true", dest="json_mode")
 
-    # pause
-    p_pause = sub.add_parser("pause", help="Transition session from active to paused")
-    p_pause.add_argument("session_id", help="UUID of the party session")
-    p_pause.add_argument("--json", action="store_true", dest="json_mode")
-
-    # resume
-    p_resume = sub.add_parser("resume", help="Transition session from paused to active; replays findings")
-    p_resume.add_argument("session_id", help="UUID of the party session")
-    p_resume.add_argument("--json", action="store_true", dest="json_mode")
-
     # terminate
-    p_terminate = sub.add_parser("terminate", help="Transition session from active/paused to terminated")
+    p_terminate = sub.add_parser("terminate", help="Close a session (never refused; idempotent); its decisions stay readable")
     p_terminate.add_argument("session_id", help="UUID of the party session")
     p_terminate.add_argument("--json", action="store_true", dest="json_mode")
 
@@ -138,18 +251,13 @@ def build_parser():
     p_inspect.add_argument("session_id", help="UUID of the party session")
     p_inspect.add_argument("--json", action="store_true", dest="json_mode")
 
-    # Phase 51 PARTY-04: party kill
-    p_kill = sub.add_parser("kill", help="Terminate a session with an audit-trail row (Phase 51)")
-    p_kill.add_argument("session_id", help="UUID of the party session")
-    p_kill.add_argument("-r", "--reason", default="no reason given", help="Operator-supplied reason for termination")
-    p_kill.add_argument("--json", action="store_true", dest="json_mode")
-
     return parser
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
+    answer_removed_verb(sys.argv[1:])
     parser = build_parser()
     args = parser.parse_args()
 
@@ -182,23 +290,6 @@ def main():
                 print(json.dumps(result, default=str))
             else:
                 print(f"session {args.session_id} started")
-            sys.exit(0)
-
-        elif args.action == "pause":
-            result = pause(args.session_id)
-            if args.json_mode:
-                print(json.dumps(result, default=str))
-            else:
-                print(f"session {args.session_id} paused")
-            sys.exit(0)
-
-        elif args.action == "resume":
-            result = resume(args.session_id)
-            n = len(result.get("findings") or [])
-            if args.json_mode:
-                print(json.dumps(result, default=str))
-            else:
-                print(f"session {args.session_id} resumed ({n} findings replayed)")
             sys.exit(0)
 
         elif args.action == "terminate":
@@ -301,44 +392,8 @@ def main():
                     print(f"  [{entry['decision_type']}] {entry['agent_name']}: {entry['content']}")
             sys.exit(0)
 
-        elif args.action == "kill":
-            # Phase 51 PARTY-04 — terminate + audit row. Exit 1 when session not found
-            # or already-terminated (InvalidTransitionError); exit 2 on PG/IO failure.
-            reason = args.reason or "no reason given"
-            terminated = terminate(args.session_id)   # may raise InvalidTransitionError / SessionNotFoundError
-            audit_id = post_finding(
-                session_id=args.session_id,
-                agent_name="operator",
-                finding_type="kill",
-                content=f"Session killed by operator. Reason: {reason}",
-                confidence=1.0,
-                severity="info",
-            )
-            result = {
-                "schema_version": "1.0",
-                "session": terminated,
-                "audit_finding_id": audit_id,
-                "reason": reason,
-            }
-            if args.json_mode:
-                print(json.dumps(result, default=str))
-            else:
-                print(f"session {args.session_id} killed  audit_finding_id={audit_id}  reason={reason!r}")
-            sys.exit(0)
-
         else:
             parser.error(f"unknown action: {args.action}")
-
-    except InvalidTransitionError as exc:
-        if args.json_mode:
-            print(json.dumps({
-                "error": "InvalidTransitionError",
-                "detail": str(exc),
-                "schema_version": "1.0",
-            }))
-        else:
-            print(f"ERROR: {exc}", file=sys.stderr)
-        sys.exit(1)
 
     except SessionNotFoundError as exc:
         if args.json_mode:
@@ -355,6 +410,15 @@ def main():
         # Catch psycopg2.OperationalError, psycopg2.Error, IOError and any unexpected error.
         # Check if it is a PG/IO class for better error naming.
         err_class = type(exc).__name__
+        if err_class == "UnconfiguredPostgresDSN":
+            # No PostgreSQL configured (the SQLite fallback): a typed answer a
+            # caller can branch on, with the resolver's own guidance kept.
+            payload = requires_postgres_payload(exc)
+            if args.json_mode:
+                print(json.dumps(payload))
+            else:
+                print(f"ERROR: {payload['detail']}", file=sys.stderr)
+            sys.exit(2)
         is_pg = "psycopg2" in type(exc).__module__ if hasattr(type(exc), "__module__") else False
         is_io = isinstance(exc, (IOError, OSError))
         error_key = "pg_io_error" if (is_pg or is_io) else err_class

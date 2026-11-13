@@ -1,21 +1,35 @@
 #!/usr/bin/env python3
 """
-services/party_session.py — Phase 50 PARTY-01 / PARTY-02
+services/party_session.py — a party session is a CONTAINER for recorded decisions.
 
-Multi-agent collaboration session state machine + Pydantic PartySession model.
+Phase 89 ORC-02 part 2 (plan 89-13, decision D2): the four-state transition
+machine, ``pause``, ``resume`` (with its finding replay) and the CLI's ``kill``
+are gone. What is left is:
+
+  * a ``party_sessions`` container row — ``create`` / ``start`` / ``terminate``
+    / ``get``. ``status`` is a descriptive LABEL, not a state machine: ``start``
+    writes ``active`` and ``terminate`` writes ``terminated``, neither is ever
+    refused because of the label the row carries, and both are idempotent.
+    Nothing reads the label to allow or forbid anything — a decision can be
+    recorded in a session whatever its label is.
+  * the session-scoped blackboard rows — ``post_finding`` / ``list_findings``
+    write and read ``agent_findings``, the single agent channel ORC-02 keeps.
+  * the recorded decisions — ``DECISION_TYPES`` / ``post_decision`` /
+    ``list_decisions`` / ``summarize_decisions``, unchanged.
+
+The "finding replay" that was removed is ``resume()``'s atomic
+"flip paused->active and return the session's findings": a caller that wants a
+session's findings calls ``list_findings`` (or ``party get --with-findings`` /
+``party inspect``), with no transition attached.
+
+PostgreSQL only: ``party_sessions`` is migration 021 and has no SQLite half.
+With no PostgreSQL configured the CLI answers a typed ``requires_postgres``.
 
 References:
-  - 50-CONTEXT.md §Area 2 (state machine FROZEN transitions)
   - 50-CONTEXT.md §Area 6 (FROZEN PartySession dict shape, schema_version "1.0")
   - services/pg_store.py _get_conn() (Phase 47 connection pattern)
   - services/agent_hydrator.py _HAS_PG import-safety (Phase 47)
   - services/step-orchestrator.py _HAS_PYDANTIC import-safety (Phase 41)
-
-Wave 1 scope: state machine create/start/pause/resume/terminate/get.
-Wave 2 (plan 50-02) adds:
-  - post_finding(session_id, agent_name, finding_type, content, ...) — Phase 50 PARTY-01
-  - list_findings(session_id) — Phase 50 PARTY-02
-  - resume() extended with findings replay via list_findings — Phase 50 PARTY-02
 """
 
 import json
@@ -73,16 +87,13 @@ except Exception:
 
 SCHEMA_VERSION = "1.0"
 
+# A descriptive vocabulary, NOT a state machine (Phase 89 ORC-02, plan 89-13).
+# It mirrors migration 021's CHECK constraint, which is why "paused" is still
+# listed: the column accepts it and a row written before plan 89-13 may carry
+# it. Nothing writes "paused" any more; create() writes "created", start()
+# writes "active", terminate() writes "terminated", and start() is the way out
+# of a legacy "paused" label.
 ALLOWED_STATUSES = ("created", "active", "paused", "terminated")
-
-# Each tuple is (from_status, to_status). 5 allowed transitions per CONTEXT §Area 2.
-VALID_TRANSITIONS = frozenset({
-    ("created", "active"),
-    ("active", "paused"),
-    ("paused", "active"),
-    ("active", "terminated"),
-    ("paused", "terminated"),
-})
 
 # Phase 51 PARTY-03 — FROZEN decision vocabulary. CHECK constraint deliberately
 # omitted at DB level (migration 023); enforced at write site in post_decision().
@@ -90,14 +101,6 @@ DECISION_TYPES = ("propose", "agree", "dissent", "block")
 
 
 # ── Exception classes ─────────────────────────────────────────────────────────
-
-class InvalidTransitionError(Exception):
-    """Raised when a requested state transition is not in VALID_TRANSITIONS.
-
-    The session row is NOT mutated on this error.
-    """
-    pass
-
 
 class SessionNotFoundError(Exception):
     """Raised when a session_id is not found in party_sessions.
@@ -113,7 +116,9 @@ class PartySession(BaseModel):
     """Pydantic v2 model for a party session dict.
 
     Matches the FROZEN dict shape from 50-CONTEXT.md §Area 6.
-    schema_version is locked to "1.0" and must not change in Wave 1/2.
+    schema_version is locked to "1.0". ``paused_at`` stays in the shape because
+    the column exists (migration 021) and a legacy row may carry a value; no
+    code writes it since plan 89-13.
     """
     if _HAS_PYDANTIC:
         model_config = {"extra": "forbid"}
@@ -126,7 +131,7 @@ class PartySession(BaseModel):
     updated_at: str
     paused_at: Optional[str] = None
     terminated_at: Optional[str] = None
-    findings: Optional[list] = None  # None in Wave 1; Wave 2 resume() populates this
+    findings: Optional[list] = None  # None unless a reader asks for them (get --with-findings, inspect)
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
@@ -140,7 +145,7 @@ def _row_to_dict(row) -> dict:
     """Map a psycopg2 RealDictRow (or plain row) to the FROZEN PartySession dict shape.
 
     Converts UUID and datetime fields to strings; sets schema_version "1.0".
-    findings is always None in Wave 1 — Wave 2 extends resume() to populate it.
+    findings is always None here; a reader that wants them calls list_findings().
     """
     def _iso(val) -> Optional[str]:
         if val is None:
@@ -165,7 +170,7 @@ def _row_to_dict(row) -> dict:
         "updated_at": _iso(row["updated_at"]),
         "paused_at": _iso(row["paused_at"]),
         "terminated_at": _iso(row["terminated_at"]),
-        "findings": None,  # Wave 2 populates this in resume(); Wave 1 always None
+        "findings": None,  # populated by the reader (list_findings), never here
     }
 
 
@@ -176,7 +181,7 @@ def _get_store():
     return PGStore()
 
 
-# ── State-machine functions ───────────────────────────────────────────────────
+# ── Container functions (create / start / terminate / get) ────────────────────
 
 def create(participants: list, conn=None) -> dict:
     """INSERT a new party session with status='created'.
@@ -225,7 +230,13 @@ def create(participants: list, conn=None) -> dict:
 
 
 def start(session_id: str, conn=None) -> dict:
-    """Transition a session from 'created' to 'active'.
+    """Label a session 'active'. Never refused because of the current label.
+
+    Phase 89 ORC-02: there is no transition table. start() writes the label
+    whatever the row carried before — 'created', 'active' (idempotent), a
+    legacy 'paused', or 'terminated' (the container is reopened) — and clears
+    paused_at and terminated_at so the row cannot read "active" with a
+    termination time. The recorded decisions are not touched by any of this.
 
     Args:
         session_id: UUID string of the party session.
@@ -236,148 +247,24 @@ def start(session_id: str, conn=None) -> dict:
 
     Raises:
         SessionNotFoundError: session_id not found.
-        InvalidTransitionError: current status -> 'active' not allowed.
     """
     def _run(c):
         import psycopg2.extras
         with c.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
-                "SELECT * FROM party_sessions WHERE session_id = %s FOR UPDATE",
-                (session_id,),
-            )
-            row = cur.fetchone()
-        if row is None:
-            raise SessionNotFoundError(f"Session not found: {session_id}")
-        current_status = row["status"]
-        target_status = "active"
-        if (current_status, target_status) not in VALID_TRANSITIONS:
-            raise InvalidTransitionError(
-                f"Cannot transition from {current_status} to {target_status}"
-            )
-        with c.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
                 """
                 UPDATE party_sessions
-                SET status = %s, updated_at = NOW()
+                SET status = 'active', paused_at = NULL, terminated_at = NULL,
+                    updated_at = NOW()
                 WHERE session_id = %s
                 RETURNING *
                 """,
-                (target_status, session_id),
+                (session_id,),
             )
             updated = cur.fetchone()
+        if updated is None:
+            raise SessionNotFoundError(f"Session not found: {session_id}")
         return _row_to_dict(updated)
-
-    if conn is not None:
-        return _run(conn)
-    store = _get_store()
-    with store._get_conn() as c:
-        return _run(c)
-
-
-def pause(session_id: str, conn=None) -> dict:
-    """Transition a session from 'active' to 'paused'. Sets paused_at + updated_at.
-
-    Args:
-        session_id: UUID string of the party session.
-        conn: optional psycopg2 connection.
-
-    Returns:
-        Updated PartySession dict.
-
-    Raises:
-        SessionNotFoundError: session_id not found.
-        InvalidTransitionError: current status -> 'paused' not allowed.
-    """
-    def _run(c):
-        import psycopg2.extras
-        with c.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                "SELECT * FROM party_sessions WHERE session_id = %s FOR UPDATE",
-                (session_id,),
-            )
-            row = cur.fetchone()
-        if row is None:
-            raise SessionNotFoundError(f"Session not found: {session_id}")
-        current_status = row["status"]
-        target_status = "paused"
-        if (current_status, target_status) not in VALID_TRANSITIONS:
-            raise InvalidTransitionError(
-                f"Cannot transition from {current_status} to {target_status}"
-            )
-        with c.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                """
-                UPDATE party_sessions
-                SET status = %s, paused_at = NOW(), updated_at = NOW()
-                WHERE session_id = %s
-                RETURNING *
-                """,
-                (target_status, session_id),
-            )
-            updated = cur.fetchone()
-        return _row_to_dict(updated)
-
-    if conn is not None:
-        return _run(conn)
-    store = _get_store()
-    with store._get_conn() as c:
-        return _run(c)
-
-
-def resume(session_id: str, conn=None) -> dict:
-    """Transition a session from 'paused' to 'active'. Clears paused_at; sets updated_at.
-
-    Wave 2 (plan 50-02): Returns session row with findings populated via list_findings().
-    The UPDATE and findings SELECT share the same connection/transaction so that resume
-    + replay is atomic — no findings can be lost between the state transition and the
-    findings query.
-
-    Args:
-        session_id: UUID string of the party session.
-        conn: optional psycopg2 connection.
-
-    Returns:
-        Updated PartySession dict with findings populated (list[dict] ordered by
-        created_at ASC). findings is NOT populated when InvalidTransitionError or
-        SessionNotFoundError is raised.
-
-    Raises:
-        SessionNotFoundError: session_id not found.
-        InvalidTransitionError: current status -> 'active' not allowed.
-    """
-    def _run(c):
-        import psycopg2.extras
-        with c.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                "SELECT * FROM party_sessions WHERE session_id = %s FOR UPDATE",
-                (session_id,),
-            )
-            row = cur.fetchone()
-        if row is None:
-            raise SessionNotFoundError(f"Session not found: {session_id}")
-        current_status = row["status"]
-        # resume() is the ONLY function that triggers paused->active.
-        # Enforce strict source state to prevent created->active bypass via resume().
-        if current_status != "paused":
-            raise InvalidTransitionError(
-                f"resume() requires status='paused'; current status is '{current_status}'"
-            )
-        target_status = "active"
-        with c.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                """
-                UPDATE party_sessions
-                SET status = %s, paused_at = NULL, updated_at = NOW()
-                WHERE session_id = %s
-                RETURNING *
-                """,
-                (target_status, session_id),
-            )
-            updated = cur.fetchone()
-        result = _row_to_dict(updated)
-        # Phase 50 PARTY-02: resume includes findings replay
-        result["findings"] = list_findings(session_id, conn=c)
-        return result
 
     if conn is not None:
         return _run(conn)
@@ -387,8 +274,13 @@ def resume(session_id: str, conn=None) -> dict:
 
 
 def terminate(session_id: str, conn=None) -> dict:
-    """Transition a session from 'active' or 'paused' to 'terminated'.
-    Sets terminated_at + updated_at.
+    """Label a session 'terminated' (close the container). Never refused
+    because of the current label, and idempotent.
+
+    Phase 89 ORC-02: there is no transition table. terminated_at is set the
+    first time and KEPT on a repeated call, so closing twice does not move the
+    closing time. The recorded decisions stay readable afterwards — closing a
+    container deletes nothing.
 
     Args:
         session_id: UUID string of the party session.
@@ -399,35 +291,24 @@ def terminate(session_id: str, conn=None) -> dict:
 
     Raises:
         SessionNotFoundError: session_id not found.
-        InvalidTransitionError: current status -> 'terminated' not allowed.
     """
     def _run(c):
         import psycopg2.extras
         with c.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
-                "SELECT * FROM party_sessions WHERE session_id = %s FOR UPDATE",
-                (session_id,),
-            )
-            row = cur.fetchone()
-        if row is None:
-            raise SessionNotFoundError(f"Session not found: {session_id}")
-        current_status = row["status"]
-        target_status = "terminated"
-        if (current_status, target_status) not in VALID_TRANSITIONS:
-            raise InvalidTransitionError(
-                f"Cannot transition from {current_status} to {target_status}"
-            )
-        with c.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
                 """
                 UPDATE party_sessions
-                SET status = %s, terminated_at = NOW(), updated_at = NOW()
+                SET status = 'terminated',
+                    terminated_at = COALESCE(terminated_at, NOW()),
+                    updated_at = NOW()
                 WHERE session_id = %s
                 RETURNING *
                 """,
-                (target_status, session_id),
+                (session_id,),
             )
             updated = cur.fetchone()
+        if updated is None:
+            raise SessionNotFoundError(f"Session not found: {session_id}")
         return _row_to_dict(updated)
 
     if conn is not None:
@@ -540,7 +421,7 @@ def post_finding(
 def list_findings(session_id: str, conn=None) -> list:
     """Return all findings for a session in ascending creation order.
 
-    Phase 50 PARTY-02: stable ordering required for replay. Returns dicts
+    Phase 50 PARTY-02: stable ordering. Returns dicts
     with the agent_findings column shape (id, agent_name, task_id,
     finding_type, content, confidence, created_at, recipient_agent,
     severity, session_id). Empty list if no findings for the given session_id.

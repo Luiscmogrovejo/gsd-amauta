@@ -184,12 +184,32 @@ What was lost with the protocol, and what replaces it:
 | the request/response client with threading and retry | the blackboard's typed messages. There is no correlation-id thread and no automatic retry — a caller that needs one asks again |
 | the `GET /a2a/exchanges` audit endpoint | `GET /api/findings` and `GET /api/messages/:agent`, both of which the audit log already covers |
 
-Party sessions are still experimental and are being reduced to recorded
-decisions:
+**A party session keeps only recorded decisions** (v3.7, Phase 89, ORC-02). It
+is a container row plus the decisions agents post into it — `propose`, `agree`,
+`dissent`, `block` — which are posted, listed and summarised, attributable to
+the agent that posted them and returned in the order they were made. It is no
+longer a lifecycle: the four-state transition machine, `party pause`,
+`party resume` (with its finding replay) and `party kill` were removed. A
+session's `status` is a label that gates nothing, and a removed verb answers
+with what replaced it instead of failing silently.
+
+A party session is **not a second agent channel**. Its decisions are rows on
+the blackboard (`agent_findings` with a `session_id`), so the blackboard inbox
+above stays the single agent-to-agent channel. Party sessions need PostgreSQL;
+on the SQLite fallback the verbs answer a typed `requires_postgres`.
 
 ```bash
-gsd-amauta party create --participants a,b   # Party sessions (experimental)
+gsd-amauta party create --participants a,b   # open a container
+gsd-amauta party start <session_id>          # label it active (never refused)
+gsd-amauta party status                      # every session with its decision counts
+gsd-amauta party inspect <session_id>        # the ordered, attributed decision trail
+gsd-amauta party get <session_id> --with-findings
+gsd-amauta party terminate <session_id>      # close it; its decisions stay readable
 ```
+
+Decisions are recorded from Python with `services/party_session.py`
+`post_decision()` and read back with `list_decisions()` and
+`summarize_decisions()`; there is no CLI verb that posts one.
 
 ---
 
@@ -200,7 +220,7 @@ gsd-amauta init [--upgrade | --uninstall] [--yes] [--verbose] [--dry-run]
 gsd-amauta doctor [--json] [--strict] [--config-dir <path>]
 gsd-amauta module search <query>
 gsd-amauta module install <name>
-gsd-amauta party status              # experimental
+gsd-amauta party status | inspect <session_id>   # recorded decisions
 amauta board
 amauta show <task-id>
 ```
