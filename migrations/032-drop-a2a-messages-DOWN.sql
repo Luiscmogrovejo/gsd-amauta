@@ -7,8 +7,8 @@
 -- original, and the difference only shows up in whatever reads it next.
 --
 -- Running this DOWN does NOT bring the feature back: the client, the breaker, the
--- registry, the CLI verbs and GET /a2a/exchanges were deleted in the same plan.
--- It restores the SCHEMA, which is what a DOWN owes its UP.
+-- registry, the CLI verbs and the exchange-audit endpoint were deleted in the
+-- same plan. It restores the SCHEMA, which is what a DOWN owes its UP.
 
 BEGIN;
 

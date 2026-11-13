@@ -1,11 +1,11 @@
 -- GSD-Amauta Migration 032: drop a2a_messages (Phase 89 plan 89-05, ORC-02)
 --
--- The bespoke A2A request/response protocol is removed: services/a2a_client.py,
--- a2a_breaker.py, a2a_registry.py, a2a_registry_cli.py, the `gsd-amauta a2a` and
--- `gsd-tools a2a` verbs and GET /a2a/exchanges are all gone, and the blackboard
--- (agent_findings / agent_messages, migrations 014/015/020/021/023/027) is the
--- single agent-to-agent channel on BOTH backends. No production code path ever
--- sent an A2A message.
+-- The bespoke A2A request/response protocol is removed: its four service modules
+-- (client, per-agent-pair breaker, capability registry and that registry's CLI),
+-- the `gsd-amauta a2a` and `gsd-tools a2a` verbs and the exchange-audit endpoint
+-- are all gone, and the blackboard (agent_findings / agent_messages, migrations
+-- 014/015/020/021/023/027) is the single agent-to-agent channel on BOTH backends.
+-- No production code path ever sent an A2A message.
 --
 -- WHY MIGRATION 024 STAYS ON DISK. Deleting an applied migration breaks two
 -- things in services/migrate_runner.py: `schema_migrations` reconciliation (a
