@@ -55,14 +55,34 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 MANIFEST_NAME = "gsd-file-manifest.json"
 DRIFT_LIST_CAP = 10
 
-# Features that only exist on the PostgreSQL backend. Used when /health does
-# not publish its own `features_off` list.
+# Features that only exist on the PostgreSQL backend. Used when /health does not
+# publish its own `features_off` list.
+#
+# This is the operator-facing PROSE of the typed vocabulary in
+# `services/sqlite_store.py` `SQLiteStore.PG_ONLY_FEATURES`, which is the
+# authority: it is the store that knows what it cannot do. The mapping between the
+# two is explicit in `tests/89-05-a2a-absent.test.cjs`, which fails when a row here
+# names something that is not in the typed list.
+#
+# Plan 89-05 (ORC-02) removed TWO rows, both measured false:
+#   * "A2A exchange log" — the feature is gone. The a2a_messages table is dropped
+#     by migration 032 and the exchange endpoint no longer exists.
+#   * "blackboard (agent_findings / agent_messages)" — the blackboard works on
+#     SQLite and always did. Both tables are in the SQLite schema
+#     (services/sqlite_store.py), all seven store methods exist, every route
+#     branches on `_is_sqlite`, and tests/test_89_05_inbox_round_trip.py drives
+#     post -> read -> answer -> read-the-answer over HTTP on BOTH backends. Telling
+#     the operator the one agent-to-agent channel is off on their own backend was
+#     the opposite of the truth.
+#
+# `bin/init.cjs` carries the same two false rows. That file is pinned by a
+# whole-file canary diff and every Phase 89 edit to it lands in plan 89-11
+# (decision D8), so the rows are handed over there and the agreement test carries
+# a documented, stale-checked PENDING_89_11 allowance for exactly those two.
 PG_ONLY_FEATURES = [
-    "vector/semantic memory search (pgvector)",
-    "RLM code index (rlm_chunks)",
-    "blackboard (agent_findings / agent_messages)",
-    "semantic cache",
-    "A2A exchange log",
+    "vector/semantic memory search (pgvector)",  # vector_search
+    "RLM code index (rlm_chunks)",               # rlm_index
+    "semantic cache",                            # semantic_cache
 ]
 
 # ── Status symbols ────────────────────────────────────────────────────────────

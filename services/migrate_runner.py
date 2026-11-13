@@ -91,10 +91,15 @@ LEGACY_SENTINELS = ("gsd_memory", "gsd_tasks", "gsd_shared_kb")
 #
 # Sentinel kinds:
 #   ("relation", name)                  -- table/index/view exists
+#   ("norelation", name)                -- table/index/view does NOT exist
 #   ("column", table, column)           -- column exists
 #   ("extension", name)                 -- extension installed
 #   ("coltype", table, column, type)    -- column has exactly this format_type
 #   ("unbounded", table, column)        -- column has no length limit (TEXT)
+#
+# "norelation" exists for a DROP migration (Phase 89 plan 89-05, migration 032).
+# Every other kind asserts that something the file CREATED is there; a file whose
+# whole job is a DROP is detectable only by the absence of what it dropped.
 MIGRATION_SENTINELS = {
     "001-init.sql": [
         ("relation", "gsd_memory"), ("relation", "gsd_shared_kb"),
@@ -148,7 +153,24 @@ MIGRATION_SENTINELS = {
     ],
     "022-module-installs.sql": [("relation", "module_installs")],
     "023-party-decisions.sql": [("column", "agent_findings", "decision_type")],
-    "024-a2a-messages.sql": [("relation", "a2a_messages")],
+    # Phase 89 plan 89-05 (ORC-02). 024 CREATED a2a_messages and 032 DROPS it, so
+    # the pair shares ONE sentinel: "the table is absent". 024's old
+    # ("relation", "a2a_messages") was only correct while nothing dropped the
+    # table -- after 032, a database at the intended end state would have read
+    # 024 as NOT applied, which is the hazard this change removes. The key stays
+    # (024 is still on disk, and tests/test_docker_pg_migration.py's
+    # TestSentinelsUnit requires an entry for every file on disk); only its
+    # meaning moves to the post-032 state.
+    #
+    # Correct in all three database shapes, which
+    # tests/test_89_05_inbox_round_trip.py asserts against a real server:
+    #   * table present (a pre-089 database): both pending -> 024's
+    #     CREATE TABLE IF NOT EXISTS is a no-op, 032 drops it. Converges.
+    #   * table absent, both already run: both applied. Nothing to do.
+    #   * table absent, neither ever run (a database baselined before 024
+    #     existed): both recorded as applied without running, and the end state
+    #     is identical to running them.
+    "024-a2a-messages.sql": [("norelation", "a2a_messages")],
     "025-memory-hybrid-index.sql": [
         ("extension", "pg_trgm"), ("relation", "idx_gsd_memory_bm25"),
     ],
@@ -179,6 +201,10 @@ MIGRATION_SENTINELS = {
         ("coltype", "step_handoffs", "phase_number", "numeric(10,3)"),
         ("coltype", "task_completions", "phase_number", "numeric(10,3)"),
     ],
+    # Phase 89 plan 89-05 (ORC-02): the same sentinel as 024, for the reason
+    # written there. A DROP migration is detectable only by the absence of what
+    # it dropped.
+    "032-drop-a2a-messages.sql": [("norelation", "a2a_messages")],
 }
 
 
@@ -187,6 +213,10 @@ def _sentinel_satisfied(cur, sentinel):
     kind = sentinel[0]
     if kind == "relation":
         cur.execute("SELECT to_regclass(%s) IS NOT NULL", (sentinel[1],))
+        return bool(cur.fetchone()[0])
+    if kind == "norelation":
+        # The inverse, for a migration whose job is a DROP (plan 89-05's 032).
+        cur.execute("SELECT to_regclass(%s) IS NULL", (sentinel[1],))
         return bool(cur.fetchone()[0])
     if kind == "column":
         cur.execute("""

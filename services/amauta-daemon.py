@@ -1614,11 +1614,6 @@ def _is_sqlite(store):
 #: 503 body; values are the operator-facing explanation. Kept beside the
 #: handlers that raise them so the list cannot drift from reality.
 PG_ONLY_FEATURE_DETAIL = {
-    "a2a": (
-        "A2A exchange auditing reads the a2a_messages table, which exists only "
-        "as a PostgreSQL migration (024). Start PostgreSQL "
-        "(docker compose -f docker/docker-compose.yml up -d) and restart the daemon."
-    ),
     "semantic_cache": (
         "The semantic cache matches queries by pgvector similarity; SQLite has "
         "no vector index. Start PostgreSQL to enable it."
@@ -1746,6 +1741,48 @@ def _phase_out(value):
         return _normalize_phase(value)
     except (TypeError, ValueError):
         return value
+
+
+#: Every status an ``agent_messages`` row can carry (migration 015's own comment,
+#: and the SQLite mirror's DEFAULT 'pending'). ``PATCH /api/messages/:id`` accepts
+#: the last three as transitions; 'pending' is what an insert starts at.
+MESSAGE_STATUSES = ("pending", "approved", "denied", "responded")
+
+#: What ``GET /api/messages/:agent`` returns when the caller names no status —
+#: the inbox as it behaved before plan 89-05 added the filter.
+MESSAGE_STATUS_DEFAULT = ("pending", "approved")
+
+
+def _message_status_filter(raw_path):
+    """Statuses ``GET /api/messages/:agent`` should return, from ``?status=``.
+
+    Args:
+        raw_path: ``self.path``, query string included.
+
+    Returns:
+        tuple[tuple[str, ...], str | None]: the statuses to filter on and an error
+        sentence, exactly one of which is meaningful. The default is
+        :data:`MESSAGE_STATUS_DEFAULT`; an empty ``?status=`` is the default too,
+        never "no statuses" (which would silently answer an empty inbox).
+
+    Example:
+        >>> _message_status_filter("/api/messages/b?status=responded")
+        (('responded',), None)
+    """
+    raw = parse_qs(urlparse(raw_path).query).get("status", [None])[0]
+    if raw is None or not raw.strip():
+        return MESSAGE_STATUS_DEFAULT, None
+    wanted = [piece.strip() for piece in raw.split(",") if piece.strip()]
+    unknown = [piece for piece in wanted if piece not in MESSAGE_STATUSES]
+    if unknown:
+        return (), (
+            "status must be a comma-separated subset of: "
+            + ", ".join(MESSAGE_STATUSES)
+            + f" (unknown: {', '.join(unknown)})"
+        )
+    # De-duplicated, and in the vocabulary's own order so the SQL and the
+    # response order do not depend on how the caller spelled the query.
+    return tuple(s for s in MESSAGE_STATUSES if s in wanted), None
 
 
 def _requires_postgres_payload(feature, detail=None):
@@ -2240,7 +2277,6 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     "embeddings",        # no embedding column, no backfill
                     "rlm_index",         # rlm_chunks is PG-only
                     "semantic_cache",    # similarity lookup needs pgvector
-                    "a2a",               # a2a_messages is PG-only (migration 024)
                     "party_sessions",    # party_sessions is PG-only (migration 021)
                     "skill_invocations", # skill_invocation_store is PG-only
                     "task_completions",  # complexity_scorer.store_completion is PG-only
@@ -2979,26 +3015,44 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
             if not agent_name:
                 self._send_json({"error": "agent_name required in path"}, 400)
                 return
+            # ?status=<csv> — which statuses the inbox returns. Default
+            # "pending,approved": the pre-89-05 behaviour, byte for byte, so no
+            # existing caller changes.
+            #
+            # Plan 89-05 (ORC-02) measured the gap this closes: `PATCH
+            # /api/messages/:id {"status": "responded", "response": "..."}` is the
+            # documented way to ANSWER a question, and it moved the row out of the
+            # only route that returns `response`. The answer was write-only on BOTH
+            # backends — tests/38-blackboard-communication.integration.test.cjs
+            # asserts only `updated: true` and never reads the text back. With the
+            # blackboard the single agent-to-agent channel, an unreadable answer is
+            # a broken channel, so the filter is explicit and both branches share
+            # the vocabulary.
+            statuses, status_error = _message_status_filter(self.path)
+            if status_error:
+                self._send_json({"error": status_error}, 400)
+                return
             store = _get_store()
             if not store:
                 self._send_json({"error": "No database available"}, 503)
                 return
             if _is_sqlite(store):
                 try:
-                    messages = store.messages_for_agent(agent_name)
+                    messages = store.messages_for_agent(agent_name, statuses=statuses)
                     self._send_json({"messages": messages, "count": len(messages)})
                 except Exception as e:
                     self._internal_error(e)
                 return
             try:
                 with store._get_conn() as conn, conn.cursor() as cur:
+                    placeholders = ", ".join(["%s"] * len(statuses))
                     cur.execute(
                         "SELECT id, from_agent, to_agent, task_id, message_type, content,"
                         " response, status, operator_approved, created_at, responded_at"
                         " FROM agent_messages"
-                        " WHERE to_agent = %s AND status IN ('pending', 'approved')"
+                        f" WHERE to_agent = %s AND status IN ({placeholders})"
                         " ORDER BY created_at ASC",
-                        (agent_name,),
+                        (agent_name, *statuses),
                     )
                     rows = cur.fetchall()
                 messages = [
@@ -3128,110 +3182,6 @@ class AmautaHandler(http.server.BaseHTTPRequestHandler):
                     self._send_json(result)
                 else:
                     self._send_json({"step_id": None, "message": "No handoff found"})
-            except Exception as e:
-                self._internal_error(e)
-            return
-
-        # ── GET /a2a/exchanges — A2A audit endpoint (Phase 56 A2A-07) ────────────
-        # Returns all a2a_messages rows matching optional ?from=&to=&since= filters.
-        # Phase 55 already writes every exchange row before delivery — this is a
-        # pure READ on a2a_messages. No new rows written here.
-        #
-        # Query params:
-        #   from   — filter by from_agent (optional)
-        #   to     — filter by to_agent (optional)
-        #   since  — ISO8601 timestamp cursor (optional; default = NOW() - 24h)
-        #
-        # Response: {"schema_version": "1.0", "exchanges": [...], "next_cursor": <iso>}
-        # next_cursor = max(created_at) + 1ms (ISO string) for the next poll window.
-        # Returns empty exchanges list (not 404) when no matches.
-        if path == "/a2a/exchanges":
-            store = _get_store()
-            if not store:
-                self._send_json({"error": "No database available"}, 503)
-                return
-            if _is_sqlite(store):
-                # a2a_messages is a PostgreSQL-only table (migration 024) and
-                # this handler needs RealDictCursor besides. Typed 503, not a
-                # dialect-error 500.
-                self._send_json(_requires_postgres_payload("a2a"), 503)
-                return
-            try:
-                qs = parse_qs(urlparse(self.path).query)
-                from_filter = qs.get("from", [None])[0]
-                to_filter   = qs.get("to",   [None])[0]
-                since_raw   = qs.get("since", [None])[0]
-
-                import datetime as _dt
-                if since_raw:
-                    # Parse ISO8601 — accept both Z and +00:00 suffixes
-                    since_ts = _dt.datetime.fromisoformat(
-                        since_raw.replace("Z", "+00:00")
-                    )
-                else:
-                    since_ts = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(hours=24)
-
-                # Build WHERE clauses
-                conditions = ["created_at >= %s"]
-                params = [since_ts]
-                if from_filter:
-                    conditions.append("from_agent = %s")
-                    params.append(from_filter)
-                if to_filter:
-                    conditions.append("to_agent = %s")
-                    params.append(to_filter)
-
-                where_clause = " AND ".join(conditions)
-                sql = (
-                    "SELECT correlation_id::text, parent_correlation_id::text, "
-                    "from_agent, to_agent, capability, payload, kind, status, "
-                    "created_at, responded_at "
-                    "FROM a2a_messages "
-                    f"WHERE {where_clause} "
-                    "ORDER BY created_at ASC"
-                )
-
-                import psycopg2.extras as _pg_extras
-                with store._get_conn() as conn, conn.cursor(cursor_factory=_pg_extras.RealDictCursor) as cur:
-                    cur.execute(sql, params)
-                    rows = cur.fetchall()
-
-                exchanges = []
-                max_created_at = None
-                for r in rows:
-                    created_at_iso = r["created_at"].isoformat() if r["created_at"] else None
-                    if r["created_at"] and (max_created_at is None or r["created_at"] > max_created_at):
-                        max_created_at = r["created_at"]
-                    payload_val = r["payload"]
-                    if isinstance(payload_val, str):
-                        import json as _json
-                        payload_val = _json.loads(payload_val)
-                    exchanges.append({
-                        "correlation_id": r["correlation_id"],
-                        "parent_correlation_id": r["parent_correlation_id"],
-                        "from_agent": r["from_agent"],
-                        "to_agent": r["to_agent"],
-                        "capability": r["capability"],
-                        "payload": payload_val,
-                        "kind": r["kind"],
-                        "status": r["status"],
-                        "created_at": created_at_iso,
-                        "responded_at": r["responded_at"].isoformat() if r["responded_at"] else None,
-                    })
-
-                # next_cursor = max(created_at) + 1ms
-                if max_created_at:
-                    next_cursor = (
-                        max_created_at + _dt.timedelta(milliseconds=1)
-                    ).isoformat()
-                else:
-                    next_cursor = _dt.datetime.now(_dt.timezone.utc).isoformat()
-
-                self._send_json({
-                    "schema_version": "1.0",
-                    "exchanges": exchanges,
-                    "next_cursor": next_cursor,
-                })
             except Exception as e:
                 self._internal_error(e)
             return

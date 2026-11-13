@@ -40,8 +40,8 @@ import os
 import sys
 from datetime import datetime, timezone
 
-# ── sys.path: ensure repo root is importable from any cwd (a2a_registry.py /
-#    agent_hydrate_cli.py precedent) ─────────────────────────────────────────
+# ── sys.path: ensure repo root is importable from any cwd
+#    (agent_hydrate_cli.py precedent) ───────────────────────────────────────
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO_ROOT = os.path.dirname(_HERE)
@@ -310,16 +310,18 @@ def flush_buffer(store, max_lines=1000):
 
 
 # ─── audit_diff() declared-vs-actual engine ─────────────────────────────────
-# Dynamic gsd-executor-* enumeration (a2a_registry.py pattern) — NEVER a
-# hardcoded roster. The roster is 10 today (backend/frontend/infra/general/
+# Dynamic gsd-executor-* enumeration — NEVER a hardcoded roster. (The pattern
+# was shared with the capability registry plan 89-05 removed; this module is now
+# its only implementation, so the discipline is stated here rather than cited.)
+# The roster is 10 today (backend/frontend/infra/general/
 # ai/data/mobile-android/mobile-cross/mobile-ios/wearables) and is explicitly
 # expected to grow; this module must not name any of them.
 
 def _executor_agents(agents_root=None):
     """Return sorted directory basenames matching gsd-executor-* under
-    agents_root (default: <repo_root>/get-shit-done/agents, derived the same
-    way a2a_registry.py's _agents_root() does). agents_root param exists for
-    test injection (avoids repo pollution)."""
+    agents_root (default: <repo_root>/get-shit-done/agents, derived from this
+    file's own location so any cwd works). agents_root param exists for test
+    injection (avoids repo pollution)."""
     root = agents_root or os.path.join(_REPO_ROOT, "get-shit-done", "agents")
     pattern = os.path.join(root, "gsd-executor-*")
     return sorted(
@@ -356,7 +358,7 @@ def _agent_declared_grants(agent_name, agents_root=None):
 
     On ANY failure (missing file, parse error, agent_schema unavailable),
     print a stderr warning and return an empty set — never raise to the
-    caller (a2a_registry.py all_capabilities discipline).
+    caller: an unreadable AGENT.yaml must not break an audit of the others.
     """
     root = agents_root or os.path.join(_REPO_ROOT, "get-shit-done", "agents")
     yaml_path = os.path.join(root, agent_name, "AGENT.yaml")

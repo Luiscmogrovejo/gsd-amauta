@@ -16,9 +16,48 @@ removes that constraint entirely.
 
 1. **One shard per owning plan**, named `<plan>.json` — `89-01.json`, `89-05.json`,
    `89-07.json` — or `carried.json` for entries no Phase 89 plan owns.
-2. **A plan edits only its own shard.** The exception is a plan that *closes* an entry
-   another plan created: that is allowed, and the closing plan must name the entry and
-   the shard it came out of in its own record.
+2. **A plan edits only its own shard and its own delta file.** The exception is a plan
+   that *closes* an entry another plan created: that is allowed, and the closing plan
+   must name the entry and the shard it came out of in its own record.
+
+   Every entry added or removed since the shard migration is declared in
+   `tests/skip-exceptions.d/delta/<plan>.json` — one file per owning plan:
+
+   ```json
+   {
+     "plan": "89-05",
+     "shard": "tests/skip-exceptions.d/89-05.json",
+     "shard_is_all_added": false,
+     "note": "why these entries exist and what closes them",
+     "added":   [ ["name", "file", "platform", "context", "reason", "reason_class", "owner", owner_phase, "exit_criterion"] ],
+     "removed": [ ... ]
+   }
+   ```
+
+   `added` and `removed` hold **full nine-field tuples** in `FIELDS` order.
+   `shard_is_all_added` is required and must be declared, never guessed: `true`
+   when the plan OPENED its shard, so every entry in it is one of that plan's
+   additions and the two counts must match (89-01, 89-02, 89-04); `false` when
+   plan 89-09's migration filled the shard from the pre-shard ledger, so the
+   plan's additions are a subset of it (89-05, 89-07, `carried`).
+   `tests/89-09-skip-shards.test.cjs` loads the union of these files and proves that
+   the pre-shard 467-entry set, plus every `added`, minus every `removed`, is still
+   exactly the live union — so an entry cannot change without a declaration. It also
+   proves that a plan's `added` is **exactly** what its own shard holds and that its
+   `removed` is in no shard.
+
+   `delta/` is **not** a shard directory: all four readers enumerate
+   `tests/skip-exceptions.d/` non-recursively and keep only `*.json` names, and
+   `delta` has no such suffix. Nothing in it is ever read as a skip exception.
+
+   A malformed delta file — not a JSON object, a missing or non-array `added`/
+   `removed`, a row that is not a nine-element tuple, the same tuple twice in one file
+   or across two, a `plan` that disagrees with the file name, an empty or absent
+   directory — **fails closed**: the loader reports it by name and the test is red.
+
+   Plan 89-05 introduced this layout (addendum A). Before it, both lists were shared
+   arrays inside `tests/89-09-skip-shards.test.cjs`, which made that one file conflict
+   in three of wave 2's four parallel PRs.
 3. **The union is what is read.** Every reader loads the union of
    `tests/skip-exceptions.d/*.json` (sorted by name) plus `tests/skip-exceptions.json`
    when that legacy file still exists:
@@ -59,3 +98,17 @@ and the fixtures are untouched. The repository root has no such file.
 
 `11 + 26 + 386 + 44 = 467`, set-equal to the pre-shard array on the full nine-field
 tuple — the proof is in `tests/89-09-skip-shards.test.cjs`.
+
+## What the shards hold now
+
+Every change since is declared in `delta/`, so this table is derivable rather than
+authoritative. New shards appear as their plans open them.
+
+| Shard | Change since 89-09 | Who removes what is left |
+|---|---|---|
+| `89-01.json` | plan 89-01 removed its 11 and added 16 | task 89-07-04 |
+| `89-02.json` | plan 89-02 opened it with 56 | task 89-07-04 |
+| `89-04.json` | plan 89-04 opened it with 51 | task 89-07-04 (46) and plan 89-07 (5) |
+| `89-05.json` | plan 89-05 removed the 26 `test_a2a_*` entries with the feature and added 24 for `tests/test_89_05_inbox_round_trip.py` | task 89-07-04 |
+| `89-07.json` | unchanged | plan 89-07 |
+| `carried.json` | unchanged | their own phases |

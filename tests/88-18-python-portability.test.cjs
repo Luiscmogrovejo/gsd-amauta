@@ -84,13 +84,58 @@ function evaluate(commits, manifest) {
 
 const manifest = JSON.parse(fs.readFileSync(MANIFEST_PATH, 'utf-8'));
 
+/**
+ * Paths a later plan deleted, exempt from the existence check only.
+ *
+ * Added by plan 89-05, which deleted the eight tests/test_a2a_*.py files with the
+ * feature they tested. The names STAY under their task: the per-task gate below
+ * judges the Phase 88 commits that are still reachable on every branch, so
+ * removing a name turns commit b1d4a491 into a retroactive violation. A task's
+ * manifest entry records what that task was ALLOWED to touch, which does not
+ * change when a file is deleted a phase later.
+ *
+ * @returns {Set<string>} the exempt paths, each asserted to really be gone
+ */
+function deletedSincePaths() {
+  const out = new Set();
+  for (const record of Object.values(manifest.deleted_since || {})) {
+    for (const f of record.files || []) out.add(f);
+  }
+  return out;
+}
+
 describe('88-18 manifest gate: structure', () => {
   test('the manifest is valid and no file is under two tasks', () => {
     assert.strictEqual(manifest.schema, 1);
     const all = Object.values(manifest.tasks).flat();
     assert.ok(all.length > 0);
     assert.strictEqual(new Set(all).size, all.length, 'a file appears under more than one task');
-    for (const f of all) assert.ok(fs.existsSync(path.join(ROOT, f)), 'manifest names a file that does not exist: ' + f);
+    const deleted = deletedSincePaths();
+    for (const f of all) {
+      if (deleted.has(f)) continue; // recorded as deleted, and checked below
+      assert.ok(fs.existsSync(path.join(ROOT, f)), 'manifest names a file that does not exist: ' + f);
+    }
+  });
+
+  test('deleted_since names a plan, a reason, and files that really are gone', () => {
+    const deleted = manifest.deleted_since;
+    if (!deleted) return; // nothing deleted yet: the manifest is as 88-18 froze it
+    const names = new Set(Object.values(manifest.tasks).flat());
+    for (const [plan, record] of Object.entries(deleted)) {
+      assert.match(plan, /^\d\d-\d\d$/, `deleted_since key is not a plan id: ${plan}`);
+      assert.ok(typeof record.note === 'string' && record.note.length > 60,
+        `${plan}: deleted_since needs a reason, not just a list`);
+      assert.ok(Array.isArray(record.files) && record.files.length > 0,
+        `${plan}: deleted_since.files must be a non-empty array`);
+      for (const f of record.files) {
+        // STALE CHECK: an exemption for a file that exists is an exemption that
+        // hides a real existence failure.
+        assert.ok(!fs.existsSync(path.join(ROOT, f)),
+          `${plan} records ${f} as deleted, but it exists — remove it from deleted_since`);
+        assert.ok(names.has(f),
+          `${f} is recorded as deleted but is under no task: the exemption excuses nothing`);
+      }
+    }
   });
 });
 

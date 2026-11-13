@@ -2,7 +2,7 @@
 /**
  * tests/audit-reindex-a2a-truth.test.cjs
  *
- * Three "reported success while failing" defects in get-shit-done/bin:
+ * "Reported success while failing" defects in get-shit-done/bin:
  *
  *   audit    — a 500 from the findings endpoint was parsed into
  *              `open_findings: []` and exited 0, so a failed audit read as
@@ -10,8 +10,19 @@
  *   reindex  — the HTTP status was never checked (a 503 exited 0) and the
  *              path was sent verbatim, defaulting to '.', which the service
  *              resolved against its OWN cwd.
- *   a2a tail — a 5xx was indistinguishable from "no exchanges", so the loop
- *              polled forever.
+ *
+ * THIS FILE IS EDITED, NOT DELETED (plan 89-05, ORC-02). It covered a third
+ * defect class, `a2a tail` — a 5xx was indistinguishable from "no exchanges", so
+ * the loop polled forever. That verb is removed with the rest of the A2A
+ * surface, so its two tests go with it. The seven audit and reindex tests are
+ * about `audit` and `reindex` truth and have nothing to do with A2A; the
+ * assertion that decided it is
+ *
+ *     assert.notStrictEqual(sentPath, '.',
+ *       'a relative path resolves against the SERVICE cwd');
+ *
+ * which pins a reindex defect. The file keeps its name so the history of all
+ * three stays findable from one place; what it proves is named above.
  *
  * Every HTTP endpoint here is a local stub on an ephemeral port; nothing
  * contacts a real daemon or RLM service.
@@ -185,21 +196,21 @@ test('reindex: sends an ABSOLUTE path, never a bare "."', async () => {
   assert.ok(path.isAbsolute(sentPath), `expected an absolute path, got ${sentPath}`);
 });
 
-// ─── a2a tail ───────────────────────────────────────────────────────────────
+// ─── the removed a2a tail ───────────────────────────────────────────────────
+//
+// Two tests stood here, pinning that `a2a tail` stopped on a 5xx and on an
+// unparseable body instead of polling forever. Plan 89-05 removed the verb, so
+// they are removed with it — that is a removal, not a weakening. What replaces
+// them is the one assertion that still has content: the verb must be REFUSED
+// rather than silently accepted, and it must not reach a port.
 
-test('a2a tail: a 5xx stops the loop with an error instead of polling forever', async () => {
+test('a2a tail: the verb is refused by name and contacts nothing', async () => {
   const res = await withStub(
-    () => [500, { error: 'exchange store down' }],
+    () => [500, { error: 'nothing should ask' }],
     (port) => runTools(['a2a', 'tail'], { AMAUTA_PORT: String(port) }));
-  assert.strictEqual(res.status, 1, 'a 5xx must stop the tail non-zero');
-  assert.match(res.stderr, /HTTP 500/);
-  assert.match(res.stderr, /NOT "no exchanges"/);
-});
-
-test('a2a tail: an unparseable body stops the loop', async () => {
-  const res = await withStub(
-    () => [200, '<html>not json</html>'],
-    (port) => runTools(['a2a', 'tail'], { AMAUTA_PORT: String(port) }));
-  assert.strictEqual(res.status, 1);
-  assert.match(res.stderr, /unparseable/);
+  assert.strictEqual(res.status, 1, 'an unknown verb must exit non-zero');
+  assert.match(res.stdout + res.stderr, /Unknown command: a2a/,
+    'gsd-tools must refuse the removed verb by name, not poll a daemon');
+  assert.ok(!/HTTP 500/.test(res.stderr),
+    'the refused verb must not have reached the stub at all');
 });

@@ -473,8 +473,8 @@ def _postgres_dsn_or_skip():
     """Return ``GSD_TEST_POSTGRES_URL`` or skip the calling test with a named reason.
 
     Kept as a plain function so a test can exercise the skip contract directly,
-    and so the ``unittest.TestCase`` suites (``test_a2a_*``) can call it from
-    ``setUpClass`` where a pytest fixture is not available.
+    and so a ``unittest.TestCase`` suite can call it from ``setUpClass`` where a
+    pytest fixture is not available.
 
     Returns:
         The DSN string.
@@ -524,8 +524,9 @@ class product_pg_dsn:  # noqa: N801 - used as a context manager, reads like one
 
     The session scrub deletes ``GSD_POSTGRES_URL`` and ``DATABASE_URL`` from the
     environment so that no test can inherit the operator's live DSN. A test that
-    drives ``services/pg_store.py`` or ``services/a2a_client.py`` against the
-    disposable database therefore has to put one back — deliberately, for the
+    drives a PostgreSQL client of the product's own (``services/pg_store.py``,
+    the daemon) against the disposable database therefore has to put one back —
+    deliberately, for the
     duration of one block, and only after the DSN has been checked against the
     live ports.
 

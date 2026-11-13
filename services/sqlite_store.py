@@ -1026,14 +1026,31 @@ class SQLiteStore:
             return None
         return {"id": row["id"], "status": row["status"], "ticket_id": row["ticket_id"]}
 
-    def messages_for_agent(self, agent_name):
-        """Inbox: pending/approved messages addressed to one agent."""
+    def messages_for_agent(self, agent_name, statuses=None):
+        """Inbox: messages addressed to one agent, by status.
+
+        Args:
+            agent_name: the recipient (``to_agent``).
+            statuses: statuses to return. Default ``("pending", "approved")`` —
+                the behaviour before plan 89-05, so no existing caller changes.
+                The daemon validates the vocabulary against its own
+                ``MESSAGE_STATUSES`` before calling; an empty or None sequence
+                means the default, never "no statuses".
+
+        Returns:
+            list[dict]: one dict per message, ``response`` included. A message
+            answered with ``status='responded'`` is readable with
+            ``statuses=("responded",)`` — on PostgreSQL the same call shape
+            returns the same fields.
+        """
+        wanted = tuple(statuses) if statuses else ("pending", "approved")
+        placeholders = ", ".join(["?"] * len(wanted))
         with self._get_conn() as conn:
             rows = conn.execute(
                 "SELECT * FROM agent_messages WHERE to_agent = ?"
-                " AND status IN ('pending', 'approved')"
+                f" AND status IN ({placeholders})"
                 " ORDER BY created_at ASC, rowid ASC",
-                (agent_name,),
+                (agent_name, *wanted),
             ).fetchall()
         return [
             {
@@ -1250,7 +1267,6 @@ class SQLiteStore:
         "vector_search",
         "rlm_index",
         "semantic_cache",
-        "a2a",
         "party_sessions",
         "skill_invocations",
         "task_completions",

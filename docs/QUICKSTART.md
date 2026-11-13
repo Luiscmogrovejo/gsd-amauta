@@ -2,7 +2,7 @@
 
 This guide takes you from zero to your first shipped feature phase in about 15 minutes.
 
-**Prerequisites:** Node.js >= 20, Python 3.11+, Claude Code or any MCP-compatible AI coding agent. Docker (for PostgreSQL + Valkey) is **recommended**: without it the install completes on a SQLite fallback with semantic memory search, the RLM code index, the blackboard, the semantic cache and the A2A exchange log switched off. `gsd-amauta doctor` reports which backend you are on — see the README's "SQLite fallback: what actually works".
+**Prerequisites:** Node.js >= 20, Python 3.11+, Claude Code or any MCP-compatible AI coding agent. Docker (for PostgreSQL + Valkey) is **recommended**: without it the install completes on a SQLite fallback with semantic memory search, the RLM code index and the semantic cache switched off (the blackboard works on both backends). `gsd-amauta doctor` reports which backend you are on — see the README's "SQLite fallback: what actually works".
 
 ---
 
@@ -222,14 +222,16 @@ gsd-amauta module search payments        # Search the registry
 gsd-amauta module install registry:stripe-integration@1.0.0
 ```
 
-**Monitor A2A agent-to-agent activity (v3.3+) — EXPERIMENTAL:**
+**Read agent-to-agent traffic:**
 
-A2A and party sessions are a preview surface: nothing in the RPETD pipeline
-sends A2A messages yet, the per-pair circuit breaker is never armed (no Redis
-client is injected into it), and the exchange log requires PostgreSQL.
+The bespoke A2A protocol was removed in v3.7 (Phase 89) — no production code
+path used it. The blackboard is the one agent-to-agent channel, and it works on
+PostgreSQL **and** on SQLite.
 
 ```bash
-gsd-amauta a2a tail                      # Stream agent-to-agent exchanges (daemon required)
+curl -s localhost:18799/api/messages/gsd-executor-backend        # the inbox
+curl -s "localhost:18799/api/messages/gsd-executor-backend?status=responded"
+curl -s "localhost:18799/api/findings?status=open"              # the audit sweep
 ```
 
 **Run a full system health check:**
