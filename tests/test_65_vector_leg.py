@@ -480,16 +480,35 @@ def test_embedding_provider_returns_a_normalised_1024_vector(allow_host):
         allow_host(VOYAGE_API_HOST)  # scoped to THIS test; restored at teardown
         rlm_embeddings.set_provider_override(None)
         result = rlm_embeddings.embed_code(text)
-        assert result is not None, (
-            "VOYAGE_API_KEY is set but the provider returned nothing; the real call failed"
-        )
-        vector, model = result
-        assert model == rlm_embeddings.VOYAGE_MODEL, model
-        assert vector != stub_embeddings.deterministic_embedding(text), (
-            "the real path returned the stand-in's vector: the call did not reach Voyage"
-        )
-        path_taken = "real"
+        failure = rlm_embeddings.LAST_VOYAGE_FAILURE
+        if result is None and failure and failure.get("kind") == "rate_limited":
+            # Plan 89-08, fact F1: the account has no payment method (3 requests
+            # per minute), so the provider can DECLINE a healthy call. That is
+            # reported, not a red cell -- and ONLY that: the product classifies
+            # the failure (rlm_embeddings.LAST_VOYAGE_FAILURE), and any other
+            # kind still fails the assertion below. The shared assertions then
+            # run on the stand-in, so the cell never goes green on nothing.
+            import warnings
+            warnings.warn(
+                "REPORTED, NOT RED: the real embedding provider declined the call "
+                "(%s); the provider contract is asserted on the stand-in instead"
+                % failure.get("error"))
+            use_stand_in = True
+        else:
+            use_stand_in = False
+            assert result is not None, (
+                "VOYAGE_API_KEY is set but the provider returned nothing; the real "
+                "call failed (%r)" % (failure,)
+            )
+            vector, model = result
+            assert model == rlm_embeddings.VOYAGE_MODEL, model
+            assert vector != stub_embeddings.deterministic_embedding(text), (
+                "the real path returned the stand-in's vector: the call did not reach Voyage"
+            )
+            path_taken = "real"
     else:
+        use_stand_in = True
+    if use_stand_in:
         rlm_embeddings_module, previous = _install_stub()
         try:
             result = rlm_embeddings_module.embed_code(text)

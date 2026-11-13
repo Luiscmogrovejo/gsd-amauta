@@ -5,6 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const { output, error } = require('./core.cjs');
+const platform = require('./platform.cjs');
 
 const VALID_CONFIG_KEYS = new Set([
   // TK-2229: the EXPLICIT project id for this repository. Read by
@@ -19,6 +20,82 @@ const VALID_CONFIG_KEYS = new Set([
   'planning.commit_docs', 'planning.search_gitignored',
   'telemetry.enabled', 'telemetry.sink_url',
 ]);
+
+/**
+ * HARNESS-level keys (Phase 89 plan 89-08, RET-05, decision D6).
+ *
+ * Every key above is per PROJECT and lives in `<cwd>/.planning/config.json`.
+ * These six govern ONE shared PostgreSQL store that every project's memories
+ * and code chunks live in, so they live in `~/.amauta/config.json`: two projects
+ * with different embedding models would be exactly the mixed-vector store the
+ * product refuses to query.
+ *
+ * This set is only the ROUTING decision. Types, defaults, the model enum
+ * (derived from get-shit-done/config/embedding-models.json), validation, the
+ * backup and the audit line are all in services/harness_config.py, which this
+ * module spawns — there is deliberately no second implementation here, so the
+ * Python services and this CLI cannot disagree about a key.
+ */
+const HARNESS_CONFIG_KEYS = new Set([
+  'retrieval.embedding_model.memory',
+  'retrieval.embedding_model.code_index',
+  'retrieval.rerank_model',
+  'retrieval.embedding_provider',
+  'retrieval.embedding_dimensions',
+  'retrieval.rerank_enabled',
+]);
+
+/**
+ * Where services/harness_config.py is: the repository layout first, then the
+ * installed one.
+ *
+ * @returns {string} absolute path of the script
+ * @throws {Error} when neither location has it
+ */
+function harnessConfigScript() {
+  const candidates = [
+    path.resolve(__dirname, '..', '..', '..', 'services', 'harness_config.py'),
+    path.resolve(__dirname, '..', '..', 'services', 'harness_config.py'),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  throw new Error('services/harness_config.py not found (looked in ' + candidates.join(', ') + ')');
+}
+
+/**
+ * Run the harness resolver and return its one JSON document.
+ *
+ * @param {string[]} args - `get <key>`, `get --all`, `set <key> <value>`
+ * @returns {{status: number, payload: object}} exit status and parsed stdout
+ * @throws {Error} when the resolver cannot be started or prints no JSON
+ * @example
+ *   harnessConfig(['get', 'retrieval.rerank_model']).payload.value  // the configured model id
+ */
+function harnessConfig(args) {
+  const script = harnessConfigScript();
+  const result = platform.spawnPython([script, ...args], {
+    encoding: 'utf-8',
+    cwd: path.dirname(path.dirname(script)),
+  });
+  if (result.error) {
+    throw new Error('cannot run the harness config resolver: ' + result.error.message);
+  }
+  const lines = String(result.stdout || '').trim().split(/\r?\n/).filter(Boolean);
+  let payload;
+  try {
+    payload = JSON.parse(lines[lines.length - 1]);
+  } catch (_err) {
+    throw new Error('the harness config resolver printed no JSON (exit ' + result.status + ')');
+  }
+  return { status: result.status, payload };
+}
+
+/** `a, b (project); x, y (harness, ~/.amauta/config.json)` for the unknown-key error. */
+function validKeyList() {
+  return `${[...VALID_CONFIG_KEYS].sort().join(', ')} (project scope, .planning/config.json); `
+    + `${[...HARNESS_CONFIG_KEYS].sort().join(', ')} (harness scope, ~/.amauta/config.json)`;
+}
 
 function cmdConfigEnsureSection(cwd, raw) {
   const configPath = path.join(cwd, '.planning', 'config.json');
@@ -102,8 +179,33 @@ function cmdConfigSet(cwd, keyPath, value, raw) {
     error('Usage: config-set <key.path> <value>');
   }
 
+  // Phase 89 plan 89-08: a harness-level key resolves to ~/.amauta/config.json
+  // through services/harness_config.py. Nothing below this block runs for it,
+  // and nothing in this block runs for a project key.
+  if (HARNESS_CONFIG_KEYS.has(keyPath)) {
+    if (value === undefined) {
+      error('Usage: config-set <key.path> <value>');
+    }
+    let answer;
+    try {
+      answer = harnessConfig(['set', keyPath, String(value)]);
+    } catch (err) {
+      error(err.message);
+    }
+    if (answer.status !== 0) {
+      error(answer.payload.message || `config-set ${keyPath} was refused`);
+    }
+    const saved = answer.payload;
+    output({
+      updated: true, key: keyPath, value: saved.value, scope: 'harness',
+      path: saved.path, previous: saved.previous, backup: saved.backup,
+      reembed: saved.reembed,
+    }, raw, `${keyPath}=${saved.value}`);
+    return;
+  }
+
   if (!VALID_CONFIG_KEYS.has(keyPath)) {
-    error(`Unknown config key: "${keyPath}". Valid keys: ${[...VALID_CONFIG_KEYS].sort().join(', ')}`);
+    error(`Unknown config key: "${keyPath}". Valid keys: ${validKeyList()}`);
   }
 
   // Parse value (handle booleans and numbers)
@@ -153,6 +255,67 @@ function cmdConfigGet(cwd, keyPath, raw) {
     error('Usage: config-get <key.path>');
   }
 
+  // Phase 89 plan 89-08: `config-get --all` prints, per key, the effective
+  // value, its default, its SOURCE (env / harness / project / default) and
+  // whether a re-embed is pending. The six harness keys come from the resolver;
+  // every project key is reported from this project's file.
+  if (keyPath === '--all') {
+    let answer;
+    try {
+      answer = harnessConfig(['get', '--all']);
+    } catch (err) {
+      error(err.message);
+    }
+    if (answer.status !== 0) {
+      error(answer.payload.message || 'config-get --all failed');
+    }
+    let project = {};
+    try {
+      if (fs.existsSync(configPath)) project = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    } catch (err) {
+      error('Failed to read config.json: ' + err.message);
+    }
+    const dig = (obj, dotted) => dotted.split('.').reduce(
+      (cur, k) => (cur && typeof cur === 'object' ? cur[k] : undefined), obj);
+    const rows = answer.payload.keys.map((k) => ({
+      key: k.key, value: k.value, default: k.default, source: k.source, scope: 'harness',
+      pending_reembed: k.pending_reembed, active_model: k.active_model, phase: k.phase,
+      store: k.store, restart_required: k.restart_required,
+    }));
+    for (const key of [...VALID_CONFIG_KEYS].sort()) {
+      const found = dig(project, key);
+      rows.push({
+        key, value: found === undefined ? null : found, default: null,
+        source: found === undefined ? 'unset' : 'project', scope: 'project',
+        pending_reembed: false,
+      });
+    }
+    const text = rows.map((r) => `${r.key}=${JSON.stringify(r.value)} `
+      + `default=${JSON.stringify(r.default)} source=${r.source} scope=${r.scope} `
+      + `pending_reembed=${r.pending_reembed}`).join('\n');
+    output({ keys: rows }, raw, text);
+    return;
+  }
+
+  if (HARNESS_CONFIG_KEYS.has(keyPath)) {
+    let answer;
+    try {
+      answer = harnessConfig(['get', keyPath]);
+    } catch (err) {
+      error(err.message);
+    }
+    if (answer.status !== 0) {
+      error(answer.payload.message || `config-get ${keyPath} failed`);
+    }
+    const k = answer.payload;
+    output({
+      key: k.key, value: k.value, default: k.default, source: k.source, scope: 'harness',
+      pending_reembed: k.pending_reembed, active_model: k.active_model, phase: k.phase,
+      store: k.store, path: k.path,
+    }, raw, String(k.value));
+    return;
+  }
+
   let config = {};
   try {
     if (fs.existsSync(configPath)) {
@@ -183,6 +346,8 @@ function cmdConfigGet(cwd, keyPath, raw) {
 }
 
 module.exports = {
+  HARNESS_CONFIG_KEYS,
+  VALID_CONFIG_KEYS,
   cmdConfigEnsureSection,
   cmdConfigSet,
   cmdConfigGet,

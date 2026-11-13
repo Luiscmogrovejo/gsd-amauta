@@ -435,8 +435,10 @@ describe('88-19 tests/skip-exceptions.d/ itself', () => {
       // store-through-a-PostgreSQL-daemon acceptance
       // (tests/test_89_10_managed_env.py), which runs on every CI cell,
       // + 1 measured by plan 89-13 (the PostgreSQL arm of
-      // test_decision_trail_on_both_backends; its 23 renames net to zero).
-      'pg-no-disposable-database-local': 306,
+      // test_decision_trail_on_both_backends; its 23 renames net to zero),
+      // + 26 measured by plan 89-08 from the same SKIP_UNLISTED list: the
+      // PostgreSQL-backed tests of tests/test_89_08_blue_green_backfill.py.
+      'pg-no-disposable-database-local': 332,
     }, 'a local-only class changed size without being re-measured');
 
     for (const e of local) {

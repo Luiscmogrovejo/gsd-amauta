@@ -3,16 +3,30 @@
 Code embedding pipeline for GSD-Amauta RLM -- Phase 27 / RLM-03.
 
 Priority order:
-  1. Voyage Code 3 API (voyage-code-3, VOYAGE_API_KEY env var)
+  1. The configured Voyage model (``retrieval.embedding_model.code_index``,
+     default voyage-code-4; VOYAGE_API_KEY env var)
   2. Qodo-Embed-1-1.5B via Ollama (local, http://localhost:11434)
   3. None -- BM25-only graceful degradation
+
+Phase 89 plan 89-08 (RET-05): the model is a SETTING, not a constant.
+``VOYAGE_MODEL`` is resolved from the harness configuration through
+``services/harness_config.py`` and validated against the model catalogue
+(``get-shit-done/config/embedding-models.json``); the name survives so every
+importer keeps working. It is read once at import, which is why the setting's
+restart column says "the RLM service". An invalid configured value raises here
+rather than being replaced by a default: embedding a corpus with a model nobody
+chose is worse than not starting.
+
+On a store that has ``embedding_state`` (migration 034) the model a vector is
+written and queried with is that store's ACTIVE model, passed in as ``model=``;
+an explicitly requested model is never silently substituted by the fallback.
 
 Three defects fixed here:
 
 * **Query vectors were embedded as documents.** Every call hard-coded
   ``input_type="document"``, including the one from
   ``services/rlm_search.py:hybrid_search`` that embeds the user's QUERY.
-  voyage-code-3 is an asymmetric model: query and document prompts put the
+  The Voyage code models are asymmetric: query and document prompts put the
   two sides in deliberately different places, so embedding a query as a
   document costs recall for nothing. ``input_type`` is now a parameter and
   the search path passes ``"query"``.
@@ -45,11 +59,17 @@ import logging
 import os
 from typing import Optional, Tuple
 
+try:
+    from services import harness_config
+except ImportError:  # pragma: no cover - script-launched from services/
+    import harness_config
+
 log = logging.getLogger("amauta.rlm_embeddings")
 
-# Voyage Code 3 model name
-VOYAGE_MODEL = "voyage-code-3"
-VOYAGE_OUTPUT_DIMENSION = 1024
+#: The code-index embedder: a catalogue lookup seeded by the config resolver
+#: (``retrieval.embedding_model.code_index``), no longer a literal.
+VOYAGE_MODEL = harness_config.configured_model(harness_config.USE_CODE_INDEX)
+VOYAGE_OUTPUT_DIMENSION = harness_config.COLUMN_DIMENSION
 
 # Qodo-Embed model (local Ollama)
 QODO_MODEL = "qodo-embed-1-1.5b"
@@ -58,6 +78,24 @@ QODO_OLLAMA_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 #: Valid input_type values. "document" for indexed chunks, "query" for searches.
 INPUT_TYPE_DOCUMENT = "document"
 INPUT_TYPE_QUERY = "query"
+
+#: Why the last Voyage call returned nothing: ``{"kind": "rate_limited" | "error",
+#: "error": <exception class name>}``, or None after a success. The provider
+#: path answers None for every failure (the documented graceful degradation), so
+#: without this a caller cannot tell "the account's rate limit declined the
+#: call" from "the call is broken" — and those two need different handling.
+LAST_VOYAGE_FAILURE = None
+
+
+def _classify_voyage_failure(exc) -> dict:
+    """``rate_limited`` for an HTTP 429 / the client's RateLimitError, else ``error``."""
+    name = type(exc).__name__
+    text = str(exc)
+    limited = ("RateLimit" in name or getattr(exc, "http_status", None) == 429
+               or getattr(exc, "status_code", None) == 429
+               or "429" in text or "rate limit" in text.lower())
+    return {"kind": "rate_limited" if limited else "error", "error": name}
+
 
 # In-memory embedding cache: (model, input_type, sha256(full text)) -> embedding
 _EMBED_CACHE: dict = {}
@@ -135,17 +173,22 @@ def get_provider_override():
     return _PROVIDER_OVERRIDE
 
 
-def embed_code(text: str, input_type: str = INPUT_TYPE_DOCUMENT
-               ) -> Optional[Tuple[list, str]]:
+def embed_code(text: str, input_type: str = INPUT_TYPE_DOCUMENT,
+               model: Optional[str] = None) -> Optional[Tuple[list, str]]:
     """Embed *text* and report WHICH model produced the vector.
 
     Args:
         text: the content to embed.
         input_type: "document" when indexing a chunk, "query" when embedding
-            a search query. voyage-code-3 is asymmetric; this matters.
+            a search query. The Voyage code models are asymmetric; this matters.
+        model: the model the caller needs (a store's ACTIVE model). None keeps
+            the configured model with the local fallback. An explicit model is
+            never substituted: asking for a Voyage model and getting a Qodo
+            vector back would put two embedding spaces in one column.
 
     Returns:
-        ``(embedding, model_name)`` or None when no provider is available.
+        ``(embedding, model_name)`` or None when no provider is available. The
+        caller compares ``model_name`` with what it asked for.
     """
     if not text or not text.strip():
         return None
@@ -159,22 +202,35 @@ def embed_code(text: str, input_type: str = INPUT_TYPE_DOCUMENT
     if _PROVIDER_OVERRIDE is not None:
         return _PROVIDER_OVERRIDE(text, input_type)
 
-    voyage_key = _cache_key(text, VOYAGE_MODEL, input_type)
-    if voyage_key in _EMBED_CACHE:
-        return _EMBED_CACHE[voyage_key], VOYAGE_MODEL
+    voyage_model, allow_qodo = VOYAGE_MODEL, True
+    if model is not None:
+        if model == QODO_MODEL:
+            voyage_model = None
+        else:
+            voyage_model, allow_qodo = model, False
+
+    if voyage_model is not None:
+        voyage_key = _cache_key(text, voyage_model, input_type)
+        if voyage_key in _EMBED_CACHE:
+            return _EMBED_CACHE[voyage_key], voyage_model
     qodo_key = _cache_key(text, QODO_MODEL, input_type)
-    if qodo_key in _EMBED_CACHE:
+    if allow_qodo and qodo_key in _EMBED_CACHE:
         return _EMBED_CACHE[qodo_key], QODO_MODEL
 
-    embedding = _try_voyage(text, input_type)
-    if embedding is not None:
-        _cache_put(voyage_key, embedding)
-        return embedding, VOYAGE_MODEL
+    if voyage_model is not None:
+        if voyage_model == VOYAGE_MODEL:
+            embedding = _try_voyage(text, input_type)
+        else:
+            embedding = _try_voyage_model(text, input_type, voyage_model)
+        if embedding is not None:
+            _cache_put(voyage_key, embedding)
+            return embedding, voyage_model
 
-    embedding = _try_qodo(text)
-    if embedding is not None:
-        _cache_put(qodo_key, embedding)
-        return embedding, QODO_MODEL
+    if allow_qodo:
+        embedding = _try_qodo(text)
+        if embedding is not None:
+            _cache_put(qodo_key, embedding)
+            return embedding, QODO_MODEL
 
     return None
 
@@ -208,11 +264,21 @@ def embed_for_query(text: str) -> Optional[list]:
 
 
 def _try_voyage(text: str, input_type: str = INPUT_TYPE_DOCUMENT) -> Optional[list]:
-    """Attempt embedding via Voyage Code 3 API.
+    """Attempt embedding with the CONFIGURED Voyage model (``VOYAGE_MODEL``).
+
+    The two-argument signature is kept: it is the seam existing tests replace.
+    """
+    return _try_voyage_model(text, input_type, VOYAGE_MODEL)
+
+
+def _try_voyage_model(text: str, input_type: str, model: str) -> Optional[list]:
+    """Attempt embedding via the Voyage API with an explicit *model*.
 
     Supports both voyageai>=0.3.0 (output_dimension kwarg) and 0.2.x (no output_dimension).
-    voyage-code-3 default output is 1024-dim, so both paths produce the same dimensionality.
+    Every catalogue Voyage embedding model returns 1024 dimensions by default, so
+    both paths produce the same dimensionality.
     """
+    global LAST_VOYAGE_FAILURE
     api_key = os.environ.get("VOYAGE_API_KEY", "")
     if not api_key:
         return None
@@ -223,15 +289,15 @@ def _try_voyage(text: str, input_type: str = INPUT_TYPE_DOCUMENT) -> Optional[li
         try:
             result = client.embed(
                 [text[:8192]],
-                model=VOYAGE_MODEL,
+                model=model,
                 input_type=input_type,
                 output_dimension=VOYAGE_OUTPUT_DIMENSION,
             )
         except TypeError:
-            # output_dimension not supported (voyageai<0.3.0) — voyage-code-3 default = 1024
+            # output_dimension not supported (voyageai<0.3.0) — the default is 1024
             result = client.embed(
                 [text[:8192]],
-                model=VOYAGE_MODEL,
+                model=model,
                 input_type=input_type,
             )
         embedding = result.embeddings[0]
@@ -242,9 +308,12 @@ def _try_voyage(text: str, input_type: str = INPUT_TYPE_DOCUMENT) -> Optional[li
         else:
             embedding = embedding[:VOYAGE_OUTPUT_DIMENSION]
         log.debug("voyage_embed_ok dims=%d input_type=%s", len(embedding), input_type)
+        LAST_VOYAGE_FAILURE = None
         return embedding
     except Exception as e:
-        log.warning("voyage_embed_failed error=%s", str(e))
+        LAST_VOYAGE_FAILURE = _classify_voyage_failure(e)
+        log.warning("voyage_embed_failed kind=%s error=%s",
+                    LAST_VOYAGE_FAILURE["kind"], str(e))
         return None
 
 
