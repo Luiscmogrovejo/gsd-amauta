@@ -49,6 +49,24 @@ CREATE INDEX IF NOT EXISTS idx_gsd_memory_embedding_next_hnsw
   WHERE embedding_next IS NOT NULL;
 
 -- gsd_memory_archive.embedding
+-- The table is declared by migration 029, but a database whose 029 was
+-- BASELINED from its schema sentinels (services/migrate_runner.py
+-- auto_baseline: 029's sentinels do not include this table) never ran that
+-- CREATE. Declared here with 029's exact column list, so this migration applies
+-- on such a database too; a no-op everywhere else.
+CREATE TABLE IF NOT EXISTS gsd_memory_archive (
+    id          VARCHAR(64) PRIMARY KEY,
+    text        TEXT NOT NULL,
+    agent_id    VARCHAR(64),
+    source      VARCHAR(64),
+    tags        JSONB DEFAULT '[]'::jsonb,
+    metadata    JSONB DEFAULT '{}'::jsonb,
+    project_id  VARCHAR(128),
+    embedding   vector(1024),
+    created_at  TIMESTAMPTZ,
+    updated_at  TIMESTAMPTZ,
+    archived_at TIMESTAMPTZ DEFAULT NOW()
+);
 ALTER TABLE gsd_memory_archive ADD COLUMN IF NOT EXISTS embedding_next vector(1024);
 ALTER TABLE gsd_memory_archive ADD COLUMN IF NOT EXISTS embedding_model TEXT;
 ALTER TABLE gsd_memory_archive ADD COLUMN IF NOT EXISTS embedding_model_next TEXT;

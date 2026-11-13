@@ -266,7 +266,10 @@ def _is_setup_call(stmt):
 # new `__main__` cannot ship without the UTF-8 prelude, and so one cannot quietly
 # disappear. A plan that adds or removes an entry point updates this number and
 # says so in its record — this one does.
-EXPECTED_ENTRY_POINTS = 17
+# Plan 89-08 added three: `services/embedding_backfill.py` (the re-embed and
+# cutover verbs), `services/rlm_ingestion.py` (the budgeted ingest CLI) and
+# `services/harness_config.py` (the resolver `config-get`/`config-set` spawn).
+EXPECTED_ENTRY_POINTS = 20
 
 
 def test_every_entry_point_sets_up_stdio():

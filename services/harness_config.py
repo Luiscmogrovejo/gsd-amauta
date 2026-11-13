@@ -715,5 +715,14 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
+    # Phase 88-13: UTF-8 stdio when the console code page is not (Windows cp1252); a no-op otherwise.
+    import os as _os, sys as _sys
+    _sys.path.append(_os.path.dirname(_os.path.abspath(__file__)))
+    try:
+        from _platform import setup_stdio
+    except ImportError:  # pragma: no cover - a tree without services/ on sys.path
+        def setup_stdio():  # type: ignore[misc]
+            return False
+    setup_stdio()
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
     sys.exit(main())

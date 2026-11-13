@@ -188,6 +188,16 @@ class StateTableAbsent(BackfillError):
             exit_code=EXIT_REFUSED)
 
 
+class DatabaseUnreachable(BackfillError):
+    """The configured PostgreSQL did not accept a connection."""
+
+    def __init__(self, reason):
+        super().__init__(
+            "database_unreachable",
+            "the configured PostgreSQL did not accept a connection (%s); nothing "
+            "was read or written" % reason, exit_code=EXIT_REFUSED)
+
+
 class EmbeddingModelMixedError(Exception):
     """A vector query was REFUSED because the table holds another model's vectors.
 
@@ -238,8 +248,12 @@ class ProviderError(Exception):
 def _connect(dsn, autocommit=False, connect_timeout=None):
     import psycopg2
 
-    conn = psycopg2.connect(dsn, connect_timeout=int(connect_timeout or os.environ.get(
-        "GSD_PG_CONNECT_TIMEOUT_SECONDS", "10")))
+    try:
+        conn = psycopg2.connect(dsn, connect_timeout=int(connect_timeout or os.environ.get(
+            "GSD_PG_CONNECT_TIMEOUT_SECONDS", "10")))
+    except psycopg2.OperationalError as exc:
+        # Typed, and without the DSN: the driver's message can carry a host.
+        raise DatabaseUnreachable(type(exc).__name__)
     conn.autocommit = autocommit
     return conn
 
@@ -728,11 +742,17 @@ def _corpus_count(paths):
     return rlm_ingestion.count_corpus_tokens(paths)
 
 
-def _plan(conn, use, env=None):
-    """Mode, model and state for a run, from the configuration and the state."""
+def _plan(conn, use, env=None, write=True):
+    """Mode, model and state for a run, from the configuration and the state.
+
+    With ``write=False`` (``--count-only``) the state is only READ: counting
+    never records a target, so it changes nothing at all.
+    """
     state = _state(conn, use)
     configured = harness_config.configured_model(use, env=env)
     active = state["active_model"]
+    if not write:
+        return (MODE_FILL if configured == active else MODE_BLUE_GREEN), configured, state
     if configured == active:
         if state["phase"] != PHASE_STEADY or state["target_model"]:
             mark_target(conn, use, configured)
@@ -787,7 +807,7 @@ def run_backfill(dsn=None, use=None, budget_tokens=None, count_only=False,
     conn = _connect(dsn)
     lock_conn = None
     try:
-        mode, model, state = _plan(conn, use, env=env)
+        mode, model, state = _plan(conn, use, env=env, write=not count_only)
         pending = count_pending(conn, use, mode, model)
         record = harness_config.model_record(model) or {}
         count_event = {
@@ -1471,4 +1491,13 @@ def main(argv=None, emit=None):
 
 
 if __name__ == "__main__":
+    # Phase 88-13: UTF-8 stdio when the console code page is not (Windows cp1252); a no-op otherwise.
+    import os as _os, sys as _sys
+    _sys.path.append(_os.path.dirname(_os.path.abspath(__file__)))
+    try:
+        from _platform import setup_stdio
+    except ImportError:  # pragma: no cover - a tree without services/ on sys.path
+        def setup_stdio():  # type: ignore[misc]
+            return False
+    setup_stdio()
     sys.exit(main())
