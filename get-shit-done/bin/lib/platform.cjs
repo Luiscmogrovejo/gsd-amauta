@@ -88,6 +88,28 @@ function _candidates(platform, env) {
 }
 
 /**
+ * Whether a probe result failed to CONCLUDE anything about the candidate.
+ *
+ * A timeout or a kill-by-signal says nothing about the interpreter: the machine
+ * was busy. An ENOENT, a non-zero exit or a wrong version number are answers.
+ * The distinction is load-bearing for an EXPLICIT `GSD_PYTHON` (see
+ * {@link resolvePython}).
+ *
+ * @param {object|undefined} probe - the spawnSync-shaped result.
+ * @returns {boolean} true when the probe concluded nothing.
+ * @example
+ *   _probeInconclusive({ error: Object.assign(new Error('x'), { code: 'ETIMEDOUT' }) }); // true
+ *   _probeInconclusive({ status: 9009, stdout: '' });                                   // false
+ */
+function _probeInconclusive(probe) {
+  if (!probe) return true;
+  const code = probe.error && probe.error.code;
+  if (code === 'ETIMEDOUT' || code === 'EAGAIN' || code === 'ENOMEM') return true;
+  if (probe.signal) return true;
+  return false;
+}
+
+/**
  * Resolve the Python interpreter to spawn.
  *
  * A candidate is VERIFIED, not merely located: it is run with
@@ -96,6 +118,24 @@ function _candidates(platform, env) {
  * `python3.exe` stub, which exits non-zero and opens the Store. The result is
  * cached per process (keyed on GSD_PYTHON, PATH and platform), because a
  * thirty-site codebase must not probe thirty times.
+ *
+ * **An explicit `GSD_PYTHON` is a declaration, not a hint** (Phase 89, plan
+ * 89-07). Measured on `test (windows-latest, node 20)`, runs 43223847244,
+ * 43319162316 and 43354540890: the workflow pins
+ * `GSD_PYTHON=…\Python\3.12.10\x64\python.exe`, and the daemon that survived
+ * the job had been spawned by `…\Python\3.15.2\x64\python.exe` — the newest
+ * Python in the tool cache, which is what `py -3` selects. The only way the
+ * resolver reaches `py -3` with GSD_PYTHON set is for the pin's probe to have
+ * failed, and under a `node --test` fan-out on a Windows runner a Python
+ * start-up really can exceed the probe timeout. Falling through then replaces
+ * the operator's interpreter with a different one, silently, and the process
+ * started through the `py.exe` LAUNCHER is also the one plan 88-11 had to teach
+ * `stopFixtureDaemon` to reap by pid file.
+ *
+ * So an INCONCLUSIVE probe of the explicit pin (a timeout, or a kill by signal)
+ * is retried once with a longer budget and then TRUSTED, with one line on
+ * stderr. A CONCLUSIVE rejection — ENOENT, a non-zero exit, a version that is
+ * not 3 — still falls through, so a wrong `GSD_PYTHON` is still caught.
  *
  * @param {object} [opts]
  * @param {string} [opts.platform] - platform override for tests.
@@ -114,21 +154,48 @@ function _candidates(platform, env) {
 function resolvePython(opts = {}) {
   const env = opts.env || process.env;
   const platform = opts.platform;
+  const explicit = (env.GSD_PYTHON || '').trim();
   const key = [env.GSD_PYTHON || '', env.PATH || '', platform === undefined ? process.platform : platform].join('\u0000');
   if (!opts.noCache && _resolved && _resolvedKey === key) return _resolved;
-  let found = null;
-  for (const candidate of _candidates(platform, env)) {
-    let probe;
+  const run = opts.probe || spawnSync;
+  /**
+   * Run the version probe against one candidate.
+   *
+   * @param {{command: string, args: string[]}} candidate
+   * @param {number} timeout
+   * @returns {object|undefined} the spawnSync-shaped result, or undefined when it threw.
+   */
+  const probeOnce = (candidate, timeout) => {
     try {
-      const run = opts.probe || spawnSync;
-      probe = run(candidate.command, [...candidate.args, '-c', VERSION_PROBE], {
+      return run(candidate.command, [...candidate.args, '-c', VERSION_PROBE], {
         encoding: 'utf-8',
-        timeout: PROBE_TIMEOUT_MS,
+        timeout,
         windowsHide: true,
         env,
       });
     } catch {
-      continue;
+      return undefined;
+    }
+  };
+  let found = null;
+  for (const candidate of _candidates(platform, env)) {
+    const isPinned = explicit !== '' && candidate.command === explicit;
+    let probe = probeOnce(candidate, PROBE_TIMEOUT_MS);
+    if (isPinned && _probeInconclusive(probe)) {
+      probe = probeOnce(candidate, PROBE_TIMEOUT_MS * 3);
+    }
+    if (isPinned && _probeInconclusive(probe)) {
+      try {
+        process.stderr.write(
+          'platform.resolvePython: GSD_PYTHON=' + explicit + ' could not be verified '
+          + '(the probe concluded nothing: '
+          + ((probe && ((probe.error && probe.error.code) || probe.signal)) || 'no result')
+          + '). Using it anyway: an explicit pin is never silently replaced by a '
+          + 'different interpreter.\n',
+        );
+      } catch { /* a closed stderr must not change the resolution */ }
+      found = { command: candidate.command, args: [...candidate.args] };
+      break;
     }
     if (!probe || probe.error || probe.status !== 0) continue;
     if (String(probe.stdout || '').trim() !== '3') continue;
