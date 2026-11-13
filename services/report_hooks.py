@@ -71,7 +71,12 @@ DEGRADED_KEY = "_degraded"
 #: plan 89-06 registered `_89_06_reporting` here (the lexical-engine row,
 #: decision D3) -- one line, in the file the contract above names, and NOT in
 #: services/doctor.py or services/amauta-daemon.py.
-PROVIDER_MODULES = ("_89_06_reporting",)
+#: plan 89-10 registered `_89_10_reporting` (the key-presence row, decision 11:
+#: presence and source only, never a value) the same way.
+PROVIDER_MODULES = (
+    "_89_06_reporting",
+    "_89_10_reporting",
+)
 
 
 def _import_providers():
