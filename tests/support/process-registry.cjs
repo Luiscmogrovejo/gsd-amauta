@@ -825,8 +825,27 @@ async function reapFixture(o) {
       /* already gone */
     }
   };
-  if (o.hard) {
+  // WHEN the others are signalled is a matter of how long a pid number stays
+  // theirs. The table above is the only proof that a pid is a process of this
+  // fixture, and on Windows a freed pid is handed to the next process within
+  // moments — so there, every member is signalled ONCE, in the same tick as the
+  // root, and never again: a second signal after a wait could land on whatever
+  // has the number by then. (Windows has no graceful signal to wait for anyway:
+  // SIGTERM is TerminateProcess.) On POSIX pids are handed out in sequence, so
+  // the root gets its SIGTERM and its grace first — a daemon stops its own RLM
+  // child on the way out — and the others are stopped after it.
+  const atOnce = Boolean(table) && table.platform === 'win32';
+  if (o.hard || atOnce) {
     signalRoot('SIGKILL');
+    if (atOnce) {
+      for (const m of members.values()) {
+        try {
+          process.kill(m.pid, 'SIGKILL');
+        } catch (_e) {
+          /* already gone */
+        }
+      }
+    }
     await bounded();
   } else {
     signalRoot('SIGTERM');
@@ -841,7 +860,8 @@ async function reapFixture(o) {
   // 3. Everything else, each by exact pid, each bounded.
   const stillAnswering = [];
   for (const m of members.values()) {
-    if (!(await killPid(m.pid, o.graceMs, Boolean(o.hard)))) stillAnswering.push(m);
+    const gone = atOnce ? await waitForExit(m.pid, o.graceMs) : await killPid(m.pid, o.graceMs, Boolean(o.hard));
+    if (!gone) stillAnswering.push(m);
   }
 
   // 4. What survived. A reaped handle is authoritative for the root: the child

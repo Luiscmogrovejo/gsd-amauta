@@ -422,6 +422,52 @@ describe('[89-15] 2. teardown reaps the tree under the recorded pid', () => {
     });
   });
 
+  it('on Windows every process of the tree is signalled once, in the same tick as the root, and never again', async () => {
+    // The process table is the only proof that a pid is a process of this
+    // fixture, and a Windows pid outlives its process by moments. The reaper is
+    // driven here with a win32-shaped table over real processes, and every
+    // signal it sends is recorded.
+    await withRegistry(async (dataDir) => {
+      const { top, mid, leaf } = await spawnTree();
+      const sent = [];
+      const realKill = process.kill;
+      try {
+        const t0 = Date.now() - 500;
+        const table = tableOf('win32', [
+          { pid: top.pid, ppid: process.pid, createdMs: t0 },
+          { pid: mid, ppid: top.pid, createdMs: t0 + 10 },
+          { pid: leaf, ppid: mid, createdMs: t0 + 20 },
+        ]);
+        let handleKilledAt = null;
+        const realHandleKill = top.kill.bind(top);
+        top.kill = (sig) => {
+          handleKilledAt = sent.length;
+          return realHandleKill(sig);
+        };
+        process.kill = (pid, sig) => {
+          if (sig !== 0) sent.push([pid, sig]);
+          return realKill.call(process, pid, sig);
+        };
+        let r;
+        try {
+          r = await registry.reapFixture({
+            proc: top, kind: 'daemon', fixture: 'startFixtureDaemon', dataDir, spawnedAt: t0, graceMs: 2000,
+            readTable: async () => table,
+          });
+        } finally {
+          process.kill = realKill;
+        }
+        assert.strictEqual(r.allGone, true, JSON.stringify(r));
+        assert.strictEqual(handleKilledAt, 0, 'the root goes first, through its handle');
+        assert.deepStrictEqual(sent, [[mid, 'SIGKILL'], [leaf, 'SIGKILL']], 'one signal per process, none after a wait');
+        assert.strictEqual(alive(mid) || alive(leaf), false);
+      } finally {
+        process.kill = realKill;
+        kill(leaf, mid, top.pid);
+      }
+    });
+  });
+
   it('stopFixtureRlm reaps the tree too', async () => {
     await withRegistry(async (dataDir) => {
       const spawnedAt = Date.now();
@@ -822,8 +868,13 @@ describe('[89-15] attribution of a process nobody registered', () => {
   it('the preload records this very test file in the run timeline', () => {
     const file = process.env.GSD_RUN_TIMELINE;
     assert.ok(file, 'scripts/run-tests.cjs sets GSD_RUN_TIMELINE');
-    const mine = registry.readTimeline(file).filter((w) => w.pid === process.pid);
-    assert.deepStrictEqual(mine.map((w) => [w.file, w.end]), [[SELF, null]]);
+    // "Still running", not merely "this pid": on its first Windows run this
+    // assertion met an EARLIER test file that had held this process's pid number
+    // and finished (tests/11-evidence-advisory.test.cjs, run 43451338707) — the
+    // recycling this whole plan is about, inside one run.
+    const mine = registry.readTimeline(file).filter((w) => w.pid === process.pid && w.end === null);
+    assert.deepStrictEqual(mine.map((w) => w.file), [SELF]);
+    assert.ok(Math.abs(mine[0].start - registry.PROCESS_STARTED_AT) < 60000, 'and the window opens when this process started');
   });
 
   it('ancestry is read from everything the watcher saw, through parents that have exited', () => {
