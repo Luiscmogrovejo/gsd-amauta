@@ -26,12 +26,14 @@
  *      the cluster, waits for a real connection, and proves
  *      `CREATE EXTENSION pg_search` works and reports the pinned version.
  *
- * The pins below were MEASURED on hosted runners before this file was written:
- * pull request #49, workflow runs 43432557908 and 43433158637 (macos-26-arm64,
- * image 20261102.0473.1, six independent runners) for the `tahoe` package, and
- * the run named beside the `sequoia` entry for that one. On every runner the
- * downloaded bytes hashed to the value below, which is also the digest the
- * GitHub release API records for the asset — two independent records.
+ * The pins below were MEASURED on hosted runners: pull request #49, workflow
+ * runs 43432557908 and 43433158637 (macos-26-arm64, image 20261102.0473.1, six
+ * independent runners, before this file was written) for the `tahoe` package,
+ * and run 43434578219 (macos-15-arm64, image 20261104.0514.1, this file itself,
+ * twice) for the `sequoia` one. On every runner the downloaded bytes hashed to
+ * the value below, which is also the digest the GitHub release API records for
+ * the asset — two independent records. On the six macos-26 runners the sigstore
+ * bundle was verified with cosign as well ("Verified OK").
  *
  * Usage:
  *   node scripts/ci-install-pg-search-macos.cjs --port <n> [--data-dir <d>]
@@ -119,9 +121,10 @@ class InstallError extends Error {
  * Refuse to do anything outside CI.
  *
  * The same rule as `scripts/ci-postgres-cell.cjs`, through the same function,
- * so there is one definition of "this is a CI cell". This script runs the
- * system installer with elevated rights; on a developer machine it must be
- * impossible to reach that line.
+ * so there is one definition of "this is a CI cell" -- minus that helper's
+ * local escape hatch, which is not passed through. This script runs the system
+ * installer with elevated rights; on a developer machine it must be impossible
+ * to reach that line, by any variable.
  *
  * @param {object} env - the environment to read.
  * @returns {void}
@@ -129,7 +132,10 @@ class InstallError extends Error {
  */
 function assertCi(env) {
   try {
-    cell.assertCi(env);
+    // ONLY the CI variable is handed over. The bring-up helper has a deliberate
+    // local escape hatch for creating a throwaway cluster by hand; a script
+    // that runs the system installer with elevated rights has none.
+    cell.assertCi({ CI: env && env.CI });
   } catch (_e) {
     throw new InstallError(
       'not_ci',
