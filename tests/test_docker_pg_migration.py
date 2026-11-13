@@ -1159,40 +1159,63 @@ class TestBaselineDetectionIntegration:
                 cur.execute(pathlib.Path(path).read_text(encoding="utf-8"))
         conn.close()
 
+    # Phase 89 plan 89-05 (ORC-02) changed what these two tests see, and the
+    # change is the POINT rather than a casualty. Migration 032 drops
+    # a2a_messages, so 024 and 032 share one sentinel — ("norelation",
+    # "a2a_messages"), "the table is absent". This fixture applies 001..026 the
+    # old way, so the table IS present, which means:
+    #   * 024 is correctly NOT detected (25 of 26, not 26) — on this database it
+    #     has not reached its end state;
+    #   * 024 and 032 are both PENDING, and applying them CONVERGES: 024's
+    #     CREATE TABLE IF NOT EXISTS is a no-op, then 032 drops the table.
+    # tests/test_89_05_inbox_round_trip.py asserts that convergence directly, in
+    # both database shapes. The counts and the ordered lists below stay EXACT —
+    # a set or a bare length would stop catching an ordering bug in
+    # discover_migrations().
+
+    #: Pending on a database carrying 001..026 applied the old way: 024 (its
+    #: sentinel is the post-032 state) and everything after 026.
+    PENDING_AFTER_OLD_WAY_26 = [
+        "024-a2a-messages.sql",
+        "027-audit-findings.sql",
+        "028-task-project-backfill.sql",
+        "029-sqlite-import-compat.sql",
+        "030-rlm-chunk-provenance.sql",
+        "031-decimal-phase-number.sql",
+        "032-drop-a2a-messages.sql",
+    ]
+
     def test_status_infers_what_is_applied_without_writing(self, scratch_dsn):
         self._apply_the_old_way(scratch_dsn, 26)
         report = migrate_runner.status(dsn=scratch_dsn)
         assert report["tracking_table"] is False
         assert report["pre_migrated_detected"] is True
-        assert len(report["detected_by_schema"]) == 26
-        # Phase 89 plan 89-02 appended 031-decimal-phase-number.sql. This list is
-        # "every migration after 026", so every new migration extends it; the
-        # assertion stays exact and ordered on purpose — a set or a length would stop
-        # catching an ordering bug in discover_migrations().
-        assert report["pending"] == [
-            "027-audit-findings.sql",
-            "028-task-project-backfill.sql",
-            "029-sqlite-import-compat.sql",
-            "030-rlm-chunk-provenance.sql",
-            "031-decimal-phase-number.sql",
-        ]
+        # 25, not 26: 024 shares 032's sentinel and the table is still here.
+        assert len(report["detected_by_schema"]) == 25
+        assert "024-a2a-messages.sql" not in report["detected_by_schema"]
+        assert report["pending"] == self.PENDING_AFTER_OLD_WAY_26
 
     def test_only_the_missing_migrations_are_applied(self, scratch_dsn):
         self._apply_the_old_way(scratch_dsn, 26)
         result = migrate_runner.apply_migrations(dsn=scratch_dsn,
                                                  log=lambda *_: None)
-        assert len(result["baselined"]) == 26
-        # Phase 89 plan 89-02 appended 031-decimal-phase-number.sql — see the note in
-        # test_status_infers_what_is_applied_without_writing above.
-        assert result["applied"] == [
-            "027-audit-findings.sql",
-            "028-task-project-backfill.sql",
-            "029-sqlite-import-compat.sql",
-            "030-rlm-chunk-provenance.sql",
-            "031-decimal-phase-number.sql",
-        ]
+        assert len(result["baselined"]) == 25
+        assert result["applied"] == self.PENDING_AFTER_OLD_WAY_26
         again = migrate_runner.apply_migrations(dsn=scratch_dsn, log=lambda *_: None)
         assert again["applied"] == []
+        # And the convergence actually happened: 024 re-created nothing and 032
+        # dropped the table, so the end state is the table being gone.
+        import psycopg2
+
+        conn = psycopg2.connect(scratch_dsn)
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT to_regclass('a2a_messages') IS NULL")
+                assert cur.fetchone()[0] is True, (
+                    "024 then 032 must converge on a2a_messages being absent"
+                )
+        finally:
+            conn.close()
 
     def test_a_gap_in_the_middle_is_found_not_assumed_away(self, scratch_dsn):
         """Baseline is per-migration, not 'everything through N'.

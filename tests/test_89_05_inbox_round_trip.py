@@ -227,8 +227,17 @@ def _postgres_daemon(tmp_path, dsn):
     data_dir = tmp_path / "pg-data"
     data_dir.mkdir()
     env = _base_env(data_dir)
+    # EMPTY, not absent. `tests/support/pythonpath/sitecustomize.py`
+    # `_arm_test_mode()` runs in every Python child on the test PYTHONPATH and
+    # does `os.environ.setdefault("GSD_TEST_MODE", "1")`, so REMOVING the name
+    # hands the child test mode anyway — measured: the first CI run of this file
+    # reported `backend_selection.reason = "sqlite selected by operator"` on the
+    # PostgreSQL arm, and this test's own /health assertion is what caught it.
+    # An empty value is the escape hatch that file documents ("a test that hands
+    # a child GSD_TEST_MODE='' to exercise a non-test-mode path keeps its empty
+    # value"), and `_test_mode()` reads "" as False.
     for key in ("GSD_TEST_MODE", "GSD_FORCE_SQLITE", "GSD_BACKEND"):
-        env.pop(key, None)
+        env[key] = ""
     env["GSD_POSTGRES_URL"] = dsn
     proc, port, out_f, err_f = _spawn(env, tmp_path, "daemon-postgres")
     return InboxDaemon("postgres", port, data_dir, dsn=dsn), proc, out_f, err_f
