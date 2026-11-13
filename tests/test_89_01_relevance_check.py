@@ -171,6 +171,37 @@ def pg_conn():
         conn.close()
 
 
+#: Plan 89-07. The floor above and every `rank_at_most` in `queries.json` were
+#: measured on the **ParadeDB BM25** lexical leg, and 89-01 measured that the
+#: deterministic arm's stand-in vectors carry no semantics, so the LEXICAL leg
+#: does the ranking. On a plain PostgreSQL that leg is `to_tsvector` /
+#: `ts_rank_cd`, which ranks differently by design — the divergence plan 89-06
+#: documents rather than hides. Measured on the macOS cell, run 43357540296:
+#: query 'psycopg connection pooling exhaustion' returned
+#: ['mem-89rel-14', 'mem-89rel-16', 'mem-89rel-04', 'mem-89rel-24',
+#: 'mem-89rel-17'] and not its expected 'mem-89rel-01' at all.
+#:
+#: A second floor for the plain leg is a RETRIEVAL decision with its own
+#: measurement, not something a CI plan may invent, so this arm asks for the
+#: engine its numbers belong to and the gap is routed.
+PLAIN_ENGINE_SKIP_REASON = (
+    "the RET-02 relevance floor and every per-query rank_at_most were measured "
+    "on the ParadeDB BM25 lexical leg; this server's leg is plain-PostgreSQL "
+    "full-text, which ranks differently by design, and a floor for it is an "
+    "unmeasured retrieval decision rather than a CI one"
+)
+
+
+@pytest.fixture()
+def paradedb_lexical_leg(pg_conn):
+    """Skip unless the lexical leg is the one the floors were measured on."""
+    from services import rlm_search
+
+    if not rlm_search._has_pg_search(pg_conn):
+        pytest.skip(PLAIN_ENGINE_SKIP_REASON)
+    return "pg_search_bm25"
+
+
 class ProviderDeclined(Exception):
     """The embedding provider answered None, so this arm cannot be measured.
 
@@ -345,7 +376,7 @@ def _assert_ranks(per_query, arm):
         )
 
 
-def test_relevance_mrr_at_k_on_the_deterministic_provider(pg_conn, capsys):
+def test_relevance_mrr_at_k_on_the_deterministic_provider(pg_conn, paradedb_lexical_leg, capsys):
     """MRR@k over the whole tracked corpus, on vectors any cell can reproduce.
 
     No API key, no network, no provider drift: both sides of the comparison come
@@ -397,7 +428,7 @@ def test_relevance_mrr_at_k_on_the_deterministic_provider(pg_conn, capsys):
         rlm_embeddings.set_provider_override(previous)
 
 
-def test_relevance_mrr_with_the_real_embedding_provider(pg_conn, allow_host, capsys):
+def test_relevance_mrr_with_the_real_embedding_provider(pg_conn, paradedb_lexical_leg, allow_host, capsys):
     """The same measurement through whichever provider this environment has.
 
     On the one key-bearing CI step this is REAL Voyage, and the vector leg is

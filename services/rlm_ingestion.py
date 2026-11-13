@@ -32,6 +32,11 @@ log = logging.getLogger("amauta.rlm_ingestion")
 # own `from services.ast_chunker import ...` (below, at call time) is already
 # broken and must fail loudly, not silently degrade (Phase 60/65 learning).
 from services.ast_chunker import AST_CODE_EXTENSIONS as AST_EXTENSIONS
+# One owner for the directory-prefix LIKE pattern (plan 89-07): on Windows
+# `os.sep` IS the LIKE escape character, so `prefix + os.sep + "%"` bound a
+# pattern that matched nothing. rlm_search imports nothing from here, so this
+# direction is acyclic.
+from services.rlm_search import beneath_patterns
 
 # Extensions that get BM25 only (no embeddings, no dependency graph edges)
 LEGACY_EXTENSIONS = {
@@ -394,15 +399,15 @@ def prune_missing_files(dir_path: str, pg_conn, seen_paths=None) -> int:
     deletion. Returns the number of rows deleted.
     """
     dir_path = str(os.path.abspath(dir_path))
-    prefix = dir_path.rstrip(os.sep)
+    prefix = dir_path.rstrip("/\\")
     try:
         with pg_conn.cursor() as cur:
             # Exact match OR a child path. A bare `LIKE prefix%` would also
             # match a sibling directory whose name starts with this one.
             cur.execute(
                 "SELECT DISTINCT file_path FROM rlm_chunks "
-                "WHERE file_path = %s OR file_path LIKE %s",
-                (prefix, prefix + os.sep + "%"),
+                "WHERE file_path = %s OR file_path LIKE %s OR file_path LIKE %s",
+                tuple([prefix] + beneath_patterns(prefix)),
             )
             indexed = [row[0] for row in cur.fetchall()]
             missing = [p for p in indexed if not os.path.isfile(p)]

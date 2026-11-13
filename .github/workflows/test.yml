@@ -33,7 +33,16 @@ jobs:
   test:
     name: test (${{ matrix.os }}, node ${{ matrix.node-version }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 25
+    # 25 -> 45 (plan 89-07). The budget was set when the macOS and Windows cells
+    # SKIPPED every Postgres-backed test; they now run ~206 of them each, and the
+    # measured wall clock is 15.6 min (windows node 22) and 12.6 min (macos node
+    # 20) on run 43363239147 against the old 25. That is still inside 25, but the
+    # margin is gone and the spread between two identical macOS rows was ten
+    # minutes in one run, so the next slow runner would cancel a REQUIRED cell
+    # and report it as a test failure. The time is in tests that used to be
+    # skipped, which is the point of the plan, so the budget moves rather than
+    # the suite.
+    timeout-minutes: 45
     continue-on-error: ${{ !matrix.required }}
 
     strategy:
@@ -226,6 +235,111 @@ jobs:
             echo "--- docker info OSType";          docker info --format '{{.OSType}}' 2>&1 || echo "(absent)"
           fi
           echo "=== end capability probe"
+      # ── A disposable PostgreSQL on the macOS and Windows cells (plan 89-07) ──
+      # Measured in runs 43354540890 and 43356197600, this plan's own throwaway
+      # probe, before any of this was written:
+      #
+      #   macOS  (macos-15 arm64): no PostgreSQL in the image, Homebrew present.
+      #          `brew install postgresql@17 pgvector` -> PostgreSQL 17.11 and
+      #          pgvector 0.8.7, with `vector.dylib` in
+      #          /opt/homebrew/lib/postgresql@17 and vector.control in
+      #          /opt/homebrew/share/postgresql@17/extension -- the SAME prefix
+      #          `pg_config --pkglibdir` reports, because the Homebrew
+      #          postgresql@N formulae are configured with
+      #          --libdir=$HOMEBREW_PREFIX/lib/postgresql@N for exactly this.
+      #          Total 13 s, bring-up included.
+      #   Windows (windows-2025): PostgreSQL 17.11 preinstalled but STOPPED and
+      #          off PATH, with include/server/postgres.h and lib/postgres.lib
+      #          both present. pgvector has NO Windows binary asset on any
+      #          release, so there is no artefact whose digest could be
+      #          recorded and none was used; it is built from the pinned source
+      #          with `nmake /F Makefile.win` and the MSVC toolchain reached
+      #          through vcvars64.bat, located with vswhere.
+      #
+      # The pgvector source is pinned to v0.8.7 and verified against the
+      # SHA-256 Homebrew core publishes for the SAME archive
+      # (Formula/p/pgvector.rb `url` + `sha256`) -- an INDEPENDENT record of the
+      # digest, not one computed from the download being verified.
+      #
+      # PostgreSQL 17 on both, deliberately: it is what the Windows image
+      # already carries, and it makes the host pg_dump/pg_restore major EQUAL
+      # the disposable server's, which is what services/backup_snapshot.py
+      # requires for a restore round trip (plan 89-04).
+      - name: Provision PostgreSQL 17 and pgvector (macOS and Windows)
+        if: runner.os != 'Linux'
+        shell: bash
+        env:
+          PGV_VER: '0.8.7'
+          PGV_SHA: 'cac0b10c360f05b2d521200105ba3697e773d4cd3731f5a915a7e37ebe0bea85'
+        run: |
+          set -euo pipefail
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            export HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 HOMEBREW_NO_ENV_HINTS=1
+            brew install postgresql@17 pgvector
+            BIN="$(brew --prefix postgresql@17)/bin"
+            "$BIN/pg_config" --version
+            test -f "$("$BIN/pg_config" --pkglibdir)/vector.dylib"
+            test -f "$("$BIN/pg_config" --sharedir)/extension/vector.control"
+            echo "pgvector $(brew list --versions pgvector) for $("$BIN/pg_config" --version)"
+          else
+            # cygpath: RUNNER_TEMP is a NATIVE path (D:\a\_temp) and GNU tar in
+            # Git bash reads `D:\a/...` as the remote host `D:` -- measured in
+            # run 43354540890: "tar (child): Cannot connect to D: resolve failed".
+            WORK="$(cygpath -u "$RUNNER_TEMP")/pgvector-build"
+            rm -rf "$WORK"; mkdir -p "$WORK"
+            curl -fsSL --retry 3 --retry-all-errors -o "$WORK/pgvector.tar.gz" \
+              "https://github.com/pgvector/pgvector/archive/refs/tags/v${PGV_VER}.tar.gz"
+            printf '%s  %s\n' "$PGV_SHA" "$WORK/pgvector.tar.gz" | sha256sum -c -
+            tar -xzf "$WORK/pgvector.tar.gz" -C "$WORK"
+            VSWHERE='/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe'
+            VSPATH="$("$VSWHERE" -latest -products '*' \
+              -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 \
+              -property installationPath | tr -d '\r')"
+            test -n "$VSPATH"
+            {
+              printf '@echo off\r\n'
+              printf 'call "%%VSPATH%%\\VC\\Auxiliary\\Build\\vcvars64.bat" >nul\r\n'
+              printf 'if errorlevel 1 exit /b 1\r\n'
+              printf 'set "PGROOT=C:\\Program Files\\PostgreSQL\\17"\r\n'
+              printf 'cd /d "%%SRCWIN%%"\r\n'
+              printf 'nmake /F Makefile.win\r\n'
+              printf 'if errorlevel 1 exit /b 1\r\n'
+              printf 'nmake /F Makefile.win install\r\n'
+              printf 'if errorlevel 1 exit /b 1\r\n'
+            } > "$WORK/build.bat"
+            VSPATH="$VSPATH" SRCWIN="$(cygpath -w "$WORK/pgvector-${PGV_VER}")" \
+              cmd //d //s //c "$(cygpath -w "$WORK/build.bat")"
+            test -f '/c/Program Files/PostgreSQL/17/lib/vector.dll'
+            test -f '/c/Program Files/PostgreSQL/17/share/extension/vector.control'
+            echo "pgvector ${PGV_VER} built and installed for $('/c/Program Files/PostgreSQL/17/bin/pg_config.exe' --version)"
+          fi
+
+      - name: Start the disposable PostgreSQL (macOS and Windows)
+        if: runner.os != 'Linux'
+        # BLOCKING, deliberately (plan 89-07 task 05). It was PERMISSIVE for
+        # exactly one baseline round, as plan 88-15 did for a new cell, and the
+        # allowance is gone. A step that may fail silently is not a cell with a
+        # database; it is a cell that SOMETIMES has one, which is worse than
+        # none, because the skip arithmetic then depends on the weather: the 304
+        # `pg-no-disposable-database-local` rows cannot excuse a CI cell, so a
+        # cell that quietly lost its database would report ~300 unlisted skips
+        # on one run and none on the next.
+        shell: bash
+        # One helper for both jobs and both systems, so the setup is not six
+        # blocks of shell (three of them bash on a Windows runner). It refuses
+        # to run outside CI and refuses any port in run-tests.cjs's LIVE_PORTS,
+        # so it can never start a PostgreSQL on a developer machine, and it
+        # prints the Linux step's DSN shape byte for byte -- which is why the
+        # "Apply the schema" step below needs no change at all.
+        #
+        # `node` here is the actions/setup-node one and is correct in a workflow;
+        # a command an executor runs by hand pins /opt/homebrew/bin/node.
+        run: |
+          set -euo pipefail
+          OUT="$(node scripts/ci-postgres-cell.cjs --up --port "$PG_TEST_PORT")"
+          printf '%s\n' "$OUT"
+          printf '%s\n' "$OUT" | grep '^GSD_TEST_POSTGRES_URL=' >> "$GITHUB_ENV"
+
 
       - name: Start the disposable PostgreSQL (Linux)
         if: runner.os == 'Linux'
@@ -234,13 +348,29 @@ jobs:
         # the macOS and Windows rows of this matrix, so the container is started
         # as a step instead.
         #
-        # The image is the one docker/docker-compose.yml already pins BY DIGEST:
-        # migration 011 does `CREATE EXTENSION pg_search`, which only ParadeDB
-        # ships (and which needs shared_preload_libraries, already set in that
-        # image — hence no `command:` override). `pgvector/pgvector:pg16` fails
-        # 011 with `extension "pg_search" is not available`, measured on run
-        # 43173591322. ParadeDB carries pgvector 0.8.1 too, so the vector
-        # columns are covered. macOS and Windows are plan 88-16-04.
+        # The image is the one docker/docker-compose.yml already pins BY DIGEST,
+        # and the LINUX cell runs it so that the ParadeDB BM25 leg is exercised
+        # somewhere. `pg_search` needs shared_preload_libraries, which this image
+        # already sets — hence no `command:` override — and it carries pgvector
+        # 0.8.1, so the vector columns are covered.
+        #
+        # `pgvector/pgvector:pg16` no longer fails migration 011: since plan
+        # 89-06 the pg_search objects are guarded and migration 033 creates
+        # plain-PostgreSQL full-text substitutes, so a cell on plain PostgreSQL
+        # applies the WHOLE schema and runs the fallback lexical leg. Measured on
+        # this plan's run 43354540890, macOS cell: `pg_available_extensions` has
+        # no `pg_search` row at all, `apply_migrations` still reports 33 of 33
+        # applied, and the capability report names `postgres_fts` as the engine.
+        # The old claim that the suite needs ParadeDB — and that `pg_search`
+        # ships only as a Linux container — was true before 89-06 and is false
+        # now: ParadeDB v0.26.6 also ships signed Apple-silicon macOS packages,
+        # and it has no Windows build at all, which is why the FALLBACK, not the
+        # container, is what makes the Postgres suite runnable on all three
+        # systems.
+        #
+        # macOS and Windows get a disposable PostgreSQL 17 + pgvector from the
+        # two steps above (plan 89-07), not a container: neither runner has a
+        # Linux Docker daemon.
         run: |
           set -euo pipefail
           docker run -d --name gsd-test-pg \
@@ -267,6 +397,66 @@ jobs:
           docker exec gsd-test-pg psql -U gsd -d gsd_test -v ON_ERROR_STOP=1 \
             -c "CREATE EXTENSION IF NOT EXISTS vector"
           echo "GSD_TEST_POSTGRES_URL=postgresql://gsd:gsd@127.0.0.1:${PG_TEST_PORT}/gsd_test" >> "$GITHUB_ENV"
+      # ── A PostgreSQL client of the disposable server's major (plan 89-04's
+      # routed must-have, measured and corrected here) ─────────────────────────
+      # 89-04 expected `apt-get install postgresql-client-16` to work from a
+      # PGDG repository the image was thought to carry. Measured on this plan's
+      # own run 43356197600: it does NOT.
+      #
+      #   ubuntu-latest is ubuntu 26.04 "resolute"
+      #   /etc/apt/sources.list.d  ->  microsoft-prod.list, ubuntu.sources only
+      #   grep apt.postgresql.org  ->  nothing: the PGDG packages were baked
+      #                                into the image and the source list
+      #                                removed, which is why `pg_restore
+      #                                --version` reports 18.6-1.pgdg26.04+2
+      #                                while apt knows nothing about PGDG
+      #   apt-cache madison postgresql-client-16 -> only postgresql-client-18
+      #   apt.postgresql.org dists -> noble and jammy exist; resolute, plucky
+      #                               and questing do NOT
+      #
+      # So the matching client cannot come from this image's sources, and
+      # registering a noble repository on a resolute userland would pull a whole
+      # foreign dependency set. Instead the ONE package is fetched by its exact
+      # pool URL, verified against the SHA-256 apt.postgresql.org publishes in
+      # its own signed Packages index, unpacked WITHOUT being installed, and
+      # only `pg_dump` and `pg_restore` are placed in the versioned directory
+      # services/backup_snapshot.py already searches
+      # (`versioned_tool_dirs`: /usr/lib/postgresql/<major>/bin). Neither binary
+      # links readline, so the readline soname change between noble and resolute
+      # cannot reach them; libpq.so.5, liblz4, libzstd and zlib are all present
+      # and ABI-stable.
+      #
+      # That is resolution STEP 2 -- a host tool whose major EQUALS the
+      # server's -- the same step the operator's own cutover takes. No
+      # GSD_BACKUP_ALLOW_DOCKER, no container client.
+      - name: Install a PostgreSQL client of the disposable server's major (Linux)
+        if: runner.os == 'Linux'
+        # BLOCKING for the same reason: five restore round-trip tests are gated
+        # on the MEASUREMENT `backup_snapshot.restore_client_available(dsn)`, so
+        # a silent failure here would turn them back into skips with no entry
+        # and the gate would report them unlisted rather than this step red.
+        shell: bash
+        env:
+          PGC_DEB: 'postgresql-client-16_16.16-1.pgdg24.04+1_amd64.deb'
+          PGC_URL: 'https://apt.postgresql.org/pub/repos/apt/pool/main/p/postgresql-16/postgresql-client-16_16.16-1.pgdg24.04+1_amd64.deb'
+          PGC_SHA: '58f55da2cb47892b233c15dd1837b3153ab29f448f5634829d08ed1834c1d805'
+        run: |
+          set -euo pipefail
+          WORK="$RUNNER_TEMP/pg16client"
+          rm -rf "$WORK"; mkdir -p "$WORK"
+          curl -fsSL --retry 3 --retry-all-errors -o "$WORK/$PGC_DEB" "$PGC_URL"
+          printf '%s  %s\n' "$PGC_SHA" "$WORK/$PGC_DEB" | sha256sum -c -
+          dpkg -x "$WORK/$PGC_DEB" "$WORK/root"
+          SRC="$WORK/root/usr/lib/postgresql/16/bin"
+          "$SRC/pg_restore" --version
+          "$SRC/pg_dump" --version
+          sudo install -d /usr/lib/postgresql/16/bin
+          sudo install -m 0755 "$SRC/pg_dump" "$SRC/pg_restore" /usr/lib/postgresql/16/bin/
+          /usr/lib/postgresql/16/bin/pg_restore --version
+          echo "the client the resolver will now find for a major-16 server:"
+          echo "  /usr/lib/postgresql/16/bin/pg_restore  $(/usr/lib/postgresql/16/bin/pg_restore --version)"
+          echo "  on PATH (unchanged)                    $(pg_restore --version)"
+
 
       - name: Apply the schema to the disposable PostgreSQL
         if: env.GSD_TEST_POSTGRES_URL != ''
@@ -309,6 +499,10 @@ jobs:
           foreach ($p in $procs) { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue }
           Write-Host ("reaped {0} python process(es)" -f $procs.Count)
 
+      - name: Stop the disposable PostgreSQL (macOS and Windows)
+        if: always() && runner.os != 'Linux'
+        shell: bash
+        run: node scripts/ci-postgres-cell.cjs --stop
       - name: Stop the disposable PostgreSQL (Linux)
         if: always() && runner.os == 'Linux'
         shell: bash
@@ -317,7 +511,17 @@ jobs:
   pytest:
     name: pytest (${{ matrix.os }}, python ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 25
+    # 25 -> 60 (plan 89-07), and this one is not precautionary: measured on run
+    # 43363239147, `pytest (windows-latest)` was CANCELLED at the 25-minute
+    # timeout having reached 39% of the suite. The Python suite creates a SCRATCH
+    # DATABASE per Postgres test and runs all 33 migrations into each one, which
+    # is hundreds of small write transactions, and on Windows that is far slower
+    # than on the Linux container. The disposable cluster now starts with
+    # `fsync=off full_page_writes=off synchronous_commit=off` (see
+    # scripts/ci-postgres-cell.cjs SERVER_OPTIONS) because a cluster that is
+    # initdb'd per job and deleted after it has no durability requirement; the
+    # budget covers what remains.
+    timeout-minutes: 60
     # Operator decision 2026-11-11 ("All needs to pass even windows ... this is
     # a universal tool"): the Python suite must run and pass on Linux, macOS
     # and Windows. Plan 88-15 flipped the macOS and Windows rows to required,
@@ -406,10 +610,120 @@ jobs:
             echo "--- docker info OSType";          docker info --format '{{.OSType}}' 2>&1 || echo "(absent)"
           fi
           echo "=== end capability probe"
+      # ── A disposable PostgreSQL on the macOS and Windows cells (plan 89-07) ──
+      # Measured in runs 43354540890 and 43356197600, this plan's own throwaway
+      # probe, before any of this was written:
+      #
+      #   macOS  (macos-15 arm64): no PostgreSQL in the image, Homebrew present.
+      #          `brew install postgresql@17 pgvector` -> PostgreSQL 17.11 and
+      #          pgvector 0.8.7, with `vector.dylib` in
+      #          /opt/homebrew/lib/postgresql@17 and vector.control in
+      #          /opt/homebrew/share/postgresql@17/extension -- the SAME prefix
+      #          `pg_config --pkglibdir` reports, because the Homebrew
+      #          postgresql@N formulae are configured with
+      #          --libdir=$HOMEBREW_PREFIX/lib/postgresql@N for exactly this.
+      #          Total 13 s, bring-up included.
+      #   Windows (windows-2025): PostgreSQL 17.11 preinstalled but STOPPED and
+      #          off PATH, with include/server/postgres.h and lib/postgres.lib
+      #          both present. pgvector has NO Windows binary asset on any
+      #          release, so there is no artefact whose digest could be
+      #          recorded and none was used; it is built from the pinned source
+      #          with `nmake /F Makefile.win` and the MSVC toolchain reached
+      #          through vcvars64.bat, located with vswhere.
+      #
+      # The pgvector source is pinned to v0.8.7 and verified against the
+      # SHA-256 Homebrew core publishes for the SAME archive
+      # (Formula/p/pgvector.rb `url` + `sha256`) -- an INDEPENDENT record of the
+      # digest, not one computed from the download being verified.
+      #
+      # PostgreSQL 17 on both, deliberately: it is what the Windows image
+      # already carries, and it makes the host pg_dump/pg_restore major EQUAL
+      # the disposable server's, which is what services/backup_snapshot.py
+      # requires for a restore round trip (plan 89-04).
+      - name: Provision PostgreSQL 17 and pgvector (macOS and Windows)
+        if: runner.os != 'Linux'
+        shell: bash
+        env:
+          PGV_VER: '0.8.7'
+          PGV_SHA: 'cac0b10c360f05b2d521200105ba3697e773d4cd3731f5a915a7e37ebe0bea85'
+        run: |
+          set -euo pipefail
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            export HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 HOMEBREW_NO_ENV_HINTS=1
+            brew install postgresql@17 pgvector
+            BIN="$(brew --prefix postgresql@17)/bin"
+            "$BIN/pg_config" --version
+            test -f "$("$BIN/pg_config" --pkglibdir)/vector.dylib"
+            test -f "$("$BIN/pg_config" --sharedir)/extension/vector.control"
+            echo "pgvector $(brew list --versions pgvector) for $("$BIN/pg_config" --version)"
+          else
+            # cygpath: RUNNER_TEMP is a NATIVE path (D:\a\_temp) and GNU tar in
+            # Git bash reads `D:\a/...` as the remote host `D:` -- measured in
+            # run 43354540890: "tar (child): Cannot connect to D: resolve failed".
+            WORK="$(cygpath -u "$RUNNER_TEMP")/pgvector-build"
+            rm -rf "$WORK"; mkdir -p "$WORK"
+            curl -fsSL --retry 3 --retry-all-errors -o "$WORK/pgvector.tar.gz" \
+              "https://github.com/pgvector/pgvector/archive/refs/tags/v${PGV_VER}.tar.gz"
+            printf '%s  %s\n' "$PGV_SHA" "$WORK/pgvector.tar.gz" | sha256sum -c -
+            tar -xzf "$WORK/pgvector.tar.gz" -C "$WORK"
+            VSWHERE='/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe'
+            VSPATH="$("$VSWHERE" -latest -products '*' \
+              -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 \
+              -property installationPath | tr -d '\r')"
+            test -n "$VSPATH"
+            {
+              printf '@echo off\r\n'
+              printf 'call "%%VSPATH%%\\VC\\Auxiliary\\Build\\vcvars64.bat" >nul\r\n'
+              printf 'if errorlevel 1 exit /b 1\r\n'
+              printf 'set "PGROOT=C:\\Program Files\\PostgreSQL\\17"\r\n'
+              printf 'cd /d "%%SRCWIN%%"\r\n'
+              printf 'nmake /F Makefile.win\r\n'
+              printf 'if errorlevel 1 exit /b 1\r\n'
+              printf 'nmake /F Makefile.win install\r\n'
+              printf 'if errorlevel 1 exit /b 1\r\n'
+            } > "$WORK/build.bat"
+            VSPATH="$VSPATH" SRCWIN="$(cygpath -w "$WORK/pgvector-${PGV_VER}")" \
+              cmd //d //s //c "$(cygpath -w "$WORK/build.bat")"
+            test -f '/c/Program Files/PostgreSQL/17/lib/vector.dll'
+            test -f '/c/Program Files/PostgreSQL/17/share/extension/vector.control'
+            echo "pgvector ${PGV_VER} built and installed for $('/c/Program Files/PostgreSQL/17/bin/pg_config.exe' --version)"
+          fi
+
+      - name: Start the disposable PostgreSQL (macOS and Windows)
+        if: runner.os != 'Linux'
+        # BLOCKING, deliberately (plan 89-07 task 05). It was PERMISSIVE for
+        # exactly one baseline round, as plan 88-15 did for a new cell, and the
+        # allowance is gone. A step that may fail silently is not a cell with a
+        # database; it is a cell that SOMETIMES has one, which is worse than
+        # none, because the skip arithmetic then depends on the weather: the 304
+        # `pg-no-disposable-database-local` rows cannot excuse a CI cell, so a
+        # cell that quietly lost its database would report ~300 unlisted skips
+        # on one run and none on the next.
+        shell: bash
+        # One helper for both jobs and both systems, so the setup is not six
+        # blocks of shell (three of them bash on a Windows runner). It refuses
+        # to run outside CI and refuses any port in run-tests.cjs's LIVE_PORTS,
+        # so it can never start a PostgreSQL on a developer machine, and it
+        # prints the Linux step's DSN shape byte for byte -- which is why the
+        # "Apply the schema" step below needs no change at all.
+        #
+        # `node` here is the actions/setup-node one and is correct in a workflow;
+        # a command an executor runs by hand pins /opt/homebrew/bin/node.
+        run: |
+          set -euo pipefail
+          OUT="$(node scripts/ci-postgres-cell.cjs --up --port "$PG_TEST_PORT")"
+          printf '%s\n' "$OUT"
+          printf '%s\n' "$OUT" | grep '^GSD_TEST_POSTGRES_URL=' >> "$GITHUB_ENV"
+
+
 
       - name: Start the disposable PostgreSQL (Linux)
         if: runner.os == 'Linux'
         shell: bash
+        # Same image, same reasons as the `test` job's step above, including the
+        # correction plan 89-06 made true: the schema no longer needs pg_search,
+        # and the macOS and Windows cells apply it in full against the
+        # plain-PostgreSQL fallback leg.
         run: |
           set -euo pipefail
           docker run -d --name gsd-test-pg \
@@ -436,6 +750,66 @@ jobs:
           docker exec gsd-test-pg psql -U gsd -d gsd_test -v ON_ERROR_STOP=1 \
             -c "CREATE EXTENSION IF NOT EXISTS vector"
           echo "GSD_TEST_POSTGRES_URL=postgresql://gsd:gsd@127.0.0.1:${PG_TEST_PORT}/gsd_test" >> "$GITHUB_ENV"
+      # ── A PostgreSQL client of the disposable server's major (plan 89-04's
+      # routed must-have, measured and corrected here) ─────────────────────────
+      # 89-04 expected `apt-get install postgresql-client-16` to work from a
+      # PGDG repository the image was thought to carry. Measured on this plan's
+      # own run 43356197600: it does NOT.
+      #
+      #   ubuntu-latest is ubuntu 26.04 "resolute"
+      #   /etc/apt/sources.list.d  ->  microsoft-prod.list, ubuntu.sources only
+      #   grep apt.postgresql.org  ->  nothing: the PGDG packages were baked
+      #                                into the image and the source list
+      #                                removed, which is why `pg_restore
+      #                                --version` reports 18.6-1.pgdg26.04+2
+      #                                while apt knows nothing about PGDG
+      #   apt-cache madison postgresql-client-16 -> only postgresql-client-18
+      #   apt.postgresql.org dists -> noble and jammy exist; resolute, plucky
+      #                               and questing do NOT
+      #
+      # So the matching client cannot come from this image's sources, and
+      # registering a noble repository on a resolute userland would pull a whole
+      # foreign dependency set. Instead the ONE package is fetched by its exact
+      # pool URL, verified against the SHA-256 apt.postgresql.org publishes in
+      # its own signed Packages index, unpacked WITHOUT being installed, and
+      # only `pg_dump` and `pg_restore` are placed in the versioned directory
+      # services/backup_snapshot.py already searches
+      # (`versioned_tool_dirs`: /usr/lib/postgresql/<major>/bin). Neither binary
+      # links readline, so the readline soname change between noble and resolute
+      # cannot reach them; libpq.so.5, liblz4, libzstd and zlib are all present
+      # and ABI-stable.
+      #
+      # That is resolution STEP 2 -- a host tool whose major EQUALS the
+      # server's -- the same step the operator's own cutover takes. No
+      # GSD_BACKUP_ALLOW_DOCKER, no container client.
+      - name: Install a PostgreSQL client of the disposable server's major (Linux)
+        if: runner.os == 'Linux'
+        # BLOCKING for the same reason: five restore round-trip tests are gated
+        # on the MEASUREMENT `backup_snapshot.restore_client_available(dsn)`, so
+        # a silent failure here would turn them back into skips with no entry
+        # and the gate would report them unlisted rather than this step red.
+        shell: bash
+        env:
+          PGC_DEB: 'postgresql-client-16_16.16-1.pgdg24.04+1_amd64.deb'
+          PGC_URL: 'https://apt.postgresql.org/pub/repos/apt/pool/main/p/postgresql-16/postgresql-client-16_16.16-1.pgdg24.04+1_amd64.deb'
+          PGC_SHA: '58f55da2cb47892b233c15dd1837b3153ab29f448f5634829d08ed1834c1d805'
+        run: |
+          set -euo pipefail
+          WORK="$RUNNER_TEMP/pg16client"
+          rm -rf "$WORK"; mkdir -p "$WORK"
+          curl -fsSL --retry 3 --retry-all-errors -o "$WORK/$PGC_DEB" "$PGC_URL"
+          printf '%s  %s\n' "$PGC_SHA" "$WORK/$PGC_DEB" | sha256sum -c -
+          dpkg -x "$WORK/$PGC_DEB" "$WORK/root"
+          SRC="$WORK/root/usr/lib/postgresql/16/bin"
+          "$SRC/pg_restore" --version
+          "$SRC/pg_dump" --version
+          sudo install -d /usr/lib/postgresql/16/bin
+          sudo install -m 0755 "$SRC/pg_dump" "$SRC/pg_restore" /usr/lib/postgresql/16/bin/
+          /usr/lib/postgresql/16/bin/pg_restore --version
+          echo "the client the resolver will now find for a major-16 server:"
+          echo "  /usr/lib/postgresql/16/bin/pg_restore  $(/usr/lib/postgresql/16/bin/pg_restore --version)"
+          echo "  on PATH (unchanged)                    $(pg_restore --version)"
+
 
       - name: Start the disposable Valkey (Linux)
         if: runner.os == 'Linux'
@@ -505,6 +879,24 @@ jobs:
           exit $rc
 
       - name: Run the embedding-provider test against the real Voyage API
+        # LINUX ONLY as of plan 89-07, and the reason is measured. This step used
+        # to be a no-op on macOS and Windows for an accidental reason -- its tests
+        # need a database and those cells had none, so they skipped "before any
+        # call is made", which the comment below still says. Now every cell has
+        # one, so the step made THREE concurrent real calls per run, and fact F1
+        # of 89-CONTEXT.md is that the operator's Voyage account has no payment
+        # method and is limited to 3 requests per minute. Measured on run
+        # 43366250606, `pytest (macos-latest)`: the main suite was green (2138
+        # passed, 28 skipped) and this step failed with
+        #   AssertionError: VOYAGE_API_KEY is set but the provider returned
+        #   nothing; the real call failed
+        # One real call per RUN is what the account can serve, and the ubuntu
+        # cell is where plan 89-01 measured the provider. Nothing is lost on the
+        # other two cells: the main suite runs the same tests WITHOUT a key, so
+        # they exercise the deterministic stand-in there, which is the path the
+        # comment below calls "BOTH paths run on every cell of every run" -- and
+        # that remains true, with the real path on one cell instead of three.
+        if: runner.os == 'Linux'
         shell: bash
         # Plan 88-16-08, operator decision 2026-11-11 "there is a key, use it".
         #
@@ -551,6 +943,10 @@ jobs:
           name: pytest-report-${{ matrix.os }}
           path: pytest-report.xml
 
+      - name: Stop the disposable PostgreSQL (macOS and Windows)
+        if: always() && runner.os != 'Linux'
+        shell: bash
+        run: node scripts/ci-postgres-cell.cjs --stop
       - name: Stop the disposable PostgreSQL (Linux)
         if: always() && runner.os == 'Linux'
         shell: bash

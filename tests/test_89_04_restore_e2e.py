@@ -110,11 +110,83 @@ def _evidence(title, lines):
     print(report)
     warnings.warn(UserWarning(report), stacklevel=2)
 
-#: The two tables whose vectors the must-have is about.
+#: The two tables whose vectors the must-have is about, and which ``seed`` fills
+#: with fixtures it keeps, so the byte-identity assertions can compare against
+#: the ORIGINAL vector rather than against whatever came back.
 VECTOR_TABLES = (
     ("gsd_memory", "embedding", "id"),
     ("rlm_chunks", "embedding_code", "id"),
 )
+
+
+def _vector_tables(cur):
+    """Every public table with a ``vector`` column, and its single-column key.
+
+    Plan 89-07. ``census`` used to inspect only ``VECTOR_TABLES``, while the
+    manifest discovers its vector columns from the catalog -- so the manifest
+    claimed ``semantic_cache.with_embedding = 4`` (``seed`` really does insert
+    four cached rows with embeddings) and the census had no
+    ``semantic_cache`` key at all, which made the
+    "a table the manifest says had embeddings still has vectors" check
+    unsatisfiable on the FIRST cell that ever ran this test
+    (`pytest (ubuntu-latest)`, run 43357540296, after plan 89-07's client
+    install made it executable):
+
+        assert len(after["vectors"].get(table, {})) or claim["with_embedding"] == 0
+        AssertionError: assert (0 or 4 == 0)   # table = semantic_cache
+
+    Discovering the same way the manifest does makes the check compare like
+    with like, and it checks MORE than it did: every embedding-bearing table's
+    vectors, not two of them.
+
+    Args:
+        cur: an open cursor on the database to inspect.
+
+    Returns:
+        list[tuple[str, str, str]]: ``(table, vector_column, key_column)``.
+
+    Raises:
+        AssertionError: when a vector-bearing table has no single-column
+            primary key, which would make its rows unorderable and the
+            comparison meaningless rather than merely absent.
+    """
+    cur.execute(
+        "SELECT c.relname, a.attname "
+        "FROM pg_attribute a "
+        "JOIN pg_class c ON c.oid = a.attrelid "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "WHERE n.nspname = 'public' AND c.relkind = 'r' AND a.attnum > 0 "
+        "AND NOT a.attisdropped "
+        "AND format_type(a.atttypid, a.atttypmod) LIKE 'vector%' "
+        "ORDER BY c.relname, a.attnum")
+    columns = {}
+    for relname, attname in cur.fetchall():
+        columns.setdefault(relname, attname)  # the FIRST vector column, as the manifest does
+    out = []
+    for table, column in sorted(columns.items()):
+        cur.execute(
+            "SELECT a.attname FROM pg_index i "
+            "JOIN pg_class c ON c.oid = i.indrelid "
+            "JOIN pg_namespace n ON n.oid = c.relnamespace "
+            "JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = ANY(i.indkey) "
+            "WHERE n.nspname = 'public' AND c.relname = %s AND i.indisprimary",
+            (table,))
+        keys = [row[0] for row in cur.fetchall()]
+        assert len(keys) == 1, (
+            "%s carries a vector column but has %d primary-key column(s); the "
+            "census needs exactly one to order and key its rows" % (table, len(keys)))
+        out.append((table, column, keys[0]))
+    # The discovery must still find the two tables the must-have is ABOUT with
+    # the column and key names `seed` writes. A rename in a later migration
+    # would otherwise make this census quietly stop covering them.
+    found_tables = {table for (table, _c, _k) in out}
+    for want in VECTOR_TABLES:
+        if want[0] in found_tables:
+            assert want in out, (
+                "the catalog reports %s differently from what seed() writes: "
+                "expected %r, discovered %r"
+                % (want[0], want, [row for row in out if row[0] == want[0]]))
+    return out
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -336,10 +408,12 @@ def census(dsn):
             for (table,) in list(cur.fetchall()):
                 cur.execute('SELECT COUNT(*) FROM "%s"' % table)
                 out["rows"][table] = int(cur.fetchone()[0])
-            for table, column, pk in VECTOR_TABLES:
-                # A dropped-and-recreated database has none of these yet, and
-                # "the target is empty" is exactly what one caller asserts, so
-                # an absent table is a legitimate state rather than an error.
+            # Plan 89-07: discovered from the catalog, the same way
+            # services/backup_snapshot.py builds the manifest's census, so the
+            # two can be compared key for key. A dropped-and-recreated database
+            # has no such table at all, which is exactly what one caller
+            # asserts, and the query then returns nothing.
+            for table, column, pk in _vector_tables(cur):
                 if table not in out["rows"]:
                     continue
                 cur.execute('SELECT "%s", "%s"::text FROM "%s" ORDER BY "%s"'

@@ -94,8 +94,18 @@ const DELTA_DIR = path.join(DIR, 'delta');
 /**
  * Load every per-plan delta declaration, failing CLOSED on a malformed one.
  *
- * A delta file is `{plan, shard, note, added: [tuple...], removed: [tuple...]}`
- * where a tuple is the nine fields of `FIELDS`, in that order. Anything else is
+ * A delta file is
+ * `{plan, shard, note, added: [tuple...], removed: [tuple...], closed?: [tuple...]}`
+ * where a tuple is the nine fields of `FIELDS`, in that order.
+ *
+ * `closed` (plan 89-07) is the THIRD list and it is optional. It carries a
+ * tuple this plan ADDED after the shard migration and a later plan then
+ * DELETED. Such a tuple nets to zero against the pre-shard ledger, so it may
+ * appear in neither `added` (it is no longer live) nor `removed` (`removed`
+ * reconstructs the pre-shard 467 and would double-count it) — and without a
+ * third list the declaration would simply vanish, taking with it every
+ * assertion about what the plan had owned. It is excluded from the digest
+ * reconstruction by construction and, like `removed`, must be in no shard. Anything else is
  * a problem string naming the file: an unreadable or non-JSON file, a document
  * that is not an object, a missing or non-array `added`/`removed`, a row that is
  * not a nine-element array, or the same tuple twice — inside one file or across
@@ -150,7 +160,10 @@ function loadDeltas(dir) {
     }
     const lists = {};
     let shapeOk = true;
-    for (const list of ['added', 'removed']) {
+    // `closed` (plan 89-07) is OPTIONAL and defaults to empty, so every delta
+    // file written before it existed stays valid.
+    if (doc.closed === undefined) doc.closed = [];
+    for (const list of ['added', 'removed', 'closed']) {
       const rows = doc[list];
       if (!Array.isArray(rows)) {
         problems.push(`${source}: "${list}" must be an array of nine-field tuples`);
@@ -183,6 +196,7 @@ function loadDeltas(dir) {
       allAdded: doc.shard_is_all_added,
       added: lists.added,
       removed: lists.removed,
+      closed: lists.closed,
     });
   }
   return { deltas, problems };
@@ -209,6 +223,27 @@ function declaredAdded(plan) {
 
 /** Plan 89-04's 51: 23 PostgreSQL-gated tests x darwin + win32, plus 5 on linux. */
 const ADDED_EXPECTED = 51;
+
+/**
+ * Every tuple a plan has ever DECLARED — still live in its shard, or closed.
+ *
+ * Plan 89-07. A declaration is permanent; which list it sits in is not. When
+ * 89-07 closed the 46 `pg-no-disposable-database` entries plan 89-04 had added,
+ * those tuples left `added` for `closed`, and an assertion that read `added`
+ * alone would have had to be deleted. Reading the UNION keeps every property
+ * plan 89-09 pinned about 89-04's declaration and adds the one this plan
+ * establishes: which of them are closed, and that nothing still open is owned
+ * by Phase 89.
+ *
+ * @param {string} plan the plan id, e.g. `89-04`
+ * @returns {{all: Array<Array<unknown>>, live: Array<Array<unknown>>, closed: Array<Array<unknown>>}}
+ */
+function declaration(plan) {
+  const hit = DELTA.deltas.find((d) => d.plan === plan);
+  assert.ok(hit, `tests/skip-exceptions.d/delta/${plan}.json is missing`);
+  return { all: [...hit.added, ...hit.closed], live: hit.added, closed: hit.closed };
+}
+
 
 const TMP_DIRS = [];
 
@@ -307,19 +342,27 @@ describe('89-09 the shard migration lost nothing', () => {
     }
     const liveAll = new Set([...liveByShard.values()].flatMap((s) => [...s]));
     for (const d of DELTA.deltas) {
-      const own = liveByShard.get(`${d.plan}.json`);
-      assert.ok(own, `${d.source} names plan ${d.plan}, which has no shard ${d.plan}.json`);
-      for (const row of d.added) {
+      // Plan 89-07: a plan that has closed every entry it owned has no shard
+      // left — an empty `[]` array is deliberately not kept, and the plan's
+      // declaration lives on in `closed`. A missing shard is allowed ONLY when
+      // the plan declares no live addition, so it can never hide one.
+      const own = liveByShard.get(`${d.plan}.json`) || null;
+      if (!own) {
+        assert.deepStrictEqual(d.added, [],
+          `${d.source} declares live additions but there is no shard ${d.plan}.json `
+          + 'to hold them');
+      }
+      for (const row of own ? d.added : []) {
         assert.ok(own.has(JSON.stringify(row)),
           `${d.source} declares an addition its own shard does not hold: ${JSON.stringify(row)}`);
       }
-      if (d.allAdded) {
+      if (d.allAdded && own) {
         // The shard was opened by this plan, so it holds nothing else. This is
         // the count assertion plan 89-09 made for 89-01, 89-02 and 89-04, kept.
         assert.strictEqual(d.added.length, own.size,
           `${d.source} declares ${d.added.length} additions but ${d.plan}.json holds ${own.size}, `
           + 'and shard_is_all_added says the plan created that shard');
-      } else {
+      } else if (own) {
         // A shard plan 89-09 filled from the pre-shard ledger: this plan's
         // additions are a subset, and the remainder is covered by the frozen
         // digest check below.
@@ -329,6 +372,10 @@ describe('89-09 the shard migration lost nothing', () => {
       for (const row of d.removed) {
         assert.ok(!liveAll.has(JSON.stringify(row)),
           `${d.source} declares a removal that is still live in the ledger: ${JSON.stringify(row)}`);
+      }
+      for (const row of d.closed) {
+        assert.ok(!liveAll.has(JSON.stringify(row)),
+          `${d.source} declares a CLOSED tuple that is still live in the ledger: ${JSON.stringify(row)}`);
       }
     }
   });
@@ -348,10 +395,11 @@ describe('89-09 the shard migration lost nothing', () => {
       'the union holds entries no shard holds — a delta file reached the ledger');
   });
 
-  test('the declared additions are exactly plan 89-04\'s 51, all in its own shard', () => {
-    const ADDED_BY_89_04 = declaredAdded('89-04');
+  test('plan 89-04\'s 51 are all declared, and plan 89-07 closed exactly 46 of them', () => {
+    const decl = declaration('89-04');
+    const ADDED_BY_89_04 = decl.all;
     assert.strictEqual(ADDED_BY_89_04.length, ADDED_EXPECTED,
-      'tests/skip-exceptions.d/delta/89-04.json changed size without updating ADDED_EXPECTED');
+      'plan 89-04\'s declaration changed size without updating ADDED_EXPECTED');
     const at = (t, f) => t[FIELDS.indexOf(f)];
     const platforms = new Set(ADDED_BY_89_04.map((t) => at(t, 'platform')));
     assert.deepStrictEqual([...platforms].sort(), ['darwin', 'linux', 'win32']);
@@ -383,6 +431,16 @@ describe('89-09 the shard migration lost nothing', () => {
       assert.strictEqual(at(tuple, 'owner_phase'), 89);
       assert.strictEqual(at(tuple, 'context'), 'any');
     }
+
+    // Plan 89-07's half of the same fact: the 46 that needed a database are
+    // CLOSED, and the 5 that need a client of the server's major are not — and
+    // they are not closed for a measured reason, not for want of trying.
+    assert.strictEqual(decl.closed.length, ADDED_EXPECTED,
+      "plan 89-07 closed ALL of plan 89-04's entries: the 46 that needed a "
+      + 'database, because the macOS and Windows cells now have one, and the 5 '
+      + "that needed a pg_restore of the server's own major, because the Linux "
+      + 'cell now carries one');
+    assert.deepStrictEqual(decl.live, [], 'and none of them is still live');
   });
 
   test('the union is SET-EQUAL to the pre-shard ledger on the full nine-field tuple', () => {

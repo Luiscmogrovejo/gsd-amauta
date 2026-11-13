@@ -121,6 +121,35 @@ function healthOk(port) {
 }
 
 /**
+ * GET /health and return the parsed body, or null when it cannot be read.
+ *
+ * @param {number} port
+ * @returns {Promise<object|null>}
+ */
+function fetchHealth(port) {
+  return new Promise((resolve) => {
+    const req = http.get({ host: '127.0.0.1', port, path: '/health', timeout: 5000 }, (res) => {
+      let body = '';
+      res.on('data', (c) => {
+        body += c.toString();
+      });
+      res.on('end', () => {
+        try {
+          resolve(JSON.parse(body));
+        } catch (_e) {
+          resolve(null);
+        }
+      });
+    });
+    req.on('error', () => resolve(null));
+    req.on('timeout', () => {
+      req.destroy();
+      resolve(null);
+    });
+  });
+}
+
+/**
  * Start a fixture daemon.
  *
  * @param {object} [opts]
@@ -157,19 +186,51 @@ async function startFixtureDaemon(opts = {}) {
   // runner's scrub: `scripts/run-tests.cjs` still deletes GSD_POSTGRES_URL
   // from every child, and this is the only place that puts one back, for one
   // process, after `pgChildEnv()` has refused a DSN on a live port.
+  //
+  // Plan 89-07, the defect plan 89-02 routed here: the block above sets
+  // GSD_TEST_MODE=1, and `services/amauta-daemon.py` `_force_sqlite()` answers
+  // TRUE for test mode before it looks at anything else (:1490) — so every
+  // "Postgres mode" fixture daemon served SQLITE, on the Linux cells too, and
+  // the seven live `step-handoff-daemon` tests asserted PostgreSQL behaviour
+  // against a SQLite store. The fix is the shape plan 89-05 proved for the
+  // Python fixture (`tests/test_89_05_inbox_round_trip.py` `_postgres_daemon`):
+  //
+  //   * test mode OFF, and set to the EMPTY STRING rather than removed —
+  //     `tests/support/pythonpath/sitecustomize.py` `_arm_test_mode()` does
+  //     `os.environ.setdefault("GSD_TEST_MODE", "1")` in every Python child on
+  //     the test PYTHONPATH, so DELETING the name hands test mode back;
+  //   * everything test mode would otherwise suppress, suppressed BY NAME
+  //     (RLM, Redis, the auto-backup, container auto-start) — those are already
+  //     in the base environment above;
+  //   * the SQLite fallback path pinned INSIDE the temp data dir, so a failed
+  //     PostgreSQL connection lands there and never in ~/.amauta/data;
+  //   * `/health` asserted below before the handle is returned, so a daemon
+  //     that silently fell back to SQLite is a loud failure instead of a green,
+  //     vacuous test.
+  //
+  // This path is reachable only where a disposable DSN exists, which is CI:
+  // with no DSN the call throws, which is why a developer machine never starts
+  // a daemon outside test mode (its pid file would then sit beside the script
+  // instead of in the data dir — `amauta-daemon.py:232-237`).
   if (opts.postgres) {
     const pg = require('./pg-fixture.cjs');
     const dsn = pg.postgresDsn();
     if (!dsn) throw new Error('startFixtureDaemon({postgres:true}): ' + pg.SKIP_REASON);
     const pgEnv = pg.pgChildEnv(env); // throws EHERMETICDSN on a live port
     Object.assign(env, pgEnv);
-    delete env.GSD_FORCE_SQLITE;
-    env.GSD_BACKEND = 'postgresql';
+    env.GSD_TEST_MODE = '';
+    env.GSD_FORCE_SQLITE = '';
+    env.GSD_BACKEND = '';
+    env.GSD_AMAUTA_NO_AUTO_START = '1';
+    env.AMAUTA_MEMORY_DATABASE_URL = '';
+    env.GSD_SQLITE_PATH = path.join(dataDir, 'gsd_amauta.db');
+    delete env.GSD_DATA_DIR;
+  } else {
+    // Never inherit a SQLite path that points somewhere else; the daemon pins it
+    // under the data dir in test mode.
+    delete env.GSD_SQLITE_PATH;
+    delete env.GSD_DATA_DIR;
   }
-  // Never inherit a SQLite path that points somewhere else; the daemon pins it
-  // under the data dir in test mode.
-  delete env.GSD_SQLITE_PATH;
-  delete env.GSD_DATA_DIR;
 
   const py = pythonLauncher();
   const proc = spawn(py.command, [...py.args, path.join(REPO, 'services', 'amauta-daemon.py'), 'run'], {
@@ -224,19 +285,54 @@ async function startFixtureDaemon(opts = {}) {
 
   appendLedger(dataDir, { event: 'started', kind: 'daemon', pid: proc.pid, port, dataDir, at: Date.now() });
 
+  // Plan 89-07: a Postgres fixture must prove it IS on PostgreSQL before any
+  // test asserts PostgreSQL behaviour through it. /health is the daemon's own
+  // answer, and plan 89-05 measured that without this assertion the arm passes
+  // green and vacuous on SQLite.
+  if (opts.postgres) {
+    const health = await fetchHealth(port);
+    if (!health || health.pg_configured !== true || health.backend !== 'postgresql') {
+      try {
+        proc.kill('SIGKILL');
+      } catch (_e) { /* already gone */ }
+      if (!opts.dataDir) fs.rmSync(dataDir, { recursive: true, force: true });
+      throw new Error(
+        'startFixtureDaemon({postgres:true}): the daemon is serving '
+        + (health ? String(health.backend) : 'an unreadable /health')
+        + ', not postgresql — a PostgreSQL assertion through this handle would be '
+        + 'vacuous. /health: ' + JSON.stringify(health)
+      );
+    }
+  }
+
+  const childEnv = {
+    GSD_AMAUTA_PORT: String(port),
+    GSD_DAEMON_PORT: String(port),
+    AMAUTA_PORT: String(port),
+    AMAUTA_DATA_DIR: dataDir,
+  };
+  if (opts.postgres) {
+    // The CLI children of a Postgres fixture must reach the SAME store the
+    // daemon does. Claiming GSD_FORCE_SQLITE=1 here, as this object used to for
+    // every mode, pointed them at a different backend from the daemon's.
+    childEnv.GSD_TEST_MODE = '';
+    childEnv.GSD_FORCE_SQLITE = '';
+    childEnv.GSD_POSTGRES_URL = env.GSD_POSTGRES_URL;
+    childEnv.DATABASE_URL = env.DATABASE_URL;
+    childEnv.GSD_SQLITE_PATH = env.GSD_SQLITE_PATH;
+    childEnv.GSD_HERMETIC_GUARD_ALLOW_PORTS = env.GSD_HERMETIC_GUARD_ALLOW_PORTS;
+  } else {
+    childEnv.GSD_TEST_MODE = '1';
+    childEnv.GSD_FORCE_SQLITE = '1';
+  }
+
   return {
     port,
     dataDir,
     proc,
     keep: Boolean(opts.dataDir),
-    env: {
-      GSD_AMAUTA_PORT: String(port),
-      GSD_DAEMON_PORT: String(port),
-      AMAUTA_PORT: String(port),
-      AMAUTA_DATA_DIR: dataDir,
-      GSD_TEST_MODE: '1',
-      GSD_FORCE_SQLITE: '1',
-    },
+    postgres: Boolean(opts.postgres),
+    env: childEnv,
   };
 }
 

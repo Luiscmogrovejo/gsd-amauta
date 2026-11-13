@@ -39,7 +39,21 @@ removes that constraint entirely.
    when the plan OPENED its shard, so every entry in it is one of that plan's
    additions and the two counts must match (89-01, 89-02, 89-04); `false` when
    plan 89-09's migration filled the shard from the pre-shard ledger, so the
-   plan's additions are a subset of it (89-05, 89-07, `carried`).
+   plan's additions are a subset of it (89-05, `carried`).
+
+   **`closed` is a THIRD, optional list** (plan 89-07). It carries a tuple a
+   plan ADDED after the shard migration and a later plan then DELETED. Such a
+   tuple nets to zero against the pre-shard ledger, so it belongs in neither
+   `added` (it is no longer live) nor `removed` (`removed` reconstructs the
+   pre-shard 467 and would double-count it) — and without a third list the
+   declaration would simply vanish, taking every assertion about what the plan
+   had owned with it. Like `removed`, a `closed` tuple must be in no shard.
+
+   **A plan that has closed every entry it owned has NO shard.** An empty `[]`
+   array is deliberately not kept: the shard file is deleted and the plan's
+   delta file, which still declares everything, is what remains. The loader
+   allows a delta whose plan has no shard **only when its `added` is empty**, so
+   a missing shard can never hide a live entry.
    `tests/89-09-skip-shards.test.cjs` loads the union of these files and proves that
    the pre-shard 467-entry set, plus every `added`, minus every `removed`, is still
    exactly the live union — so an entry cannot change without a declaration. It also
@@ -106,9 +120,35 @@ authoritative. New shards appear as their plans open them.
 
 | Shard | Change since 89-09 | Who removes what is left |
 |---|---|---|
-| `89-01.json` | plan 89-01 removed its 11 and added 16 | task 89-07-04 |
-| `89-02.json` | plan 89-02 opened it with 56 | task 89-07-04 |
-| `89-04.json` | plan 89-04 opened it with 51 | task 89-07-04 (46) and plan 89-07 (5) |
-| `89-05.json` | plan 89-05 removed the 26 `test_a2a_*` entries with the feature and added 24 for `tests/test_89_05_inbox_round_trip.py` | task 89-07-04 |
-| `89-07.json` | unchanged | plan 89-07 |
+| `89-01.json` | removed its 11, added 16, and plan 89-07 closed all 16 — **shard deleted** | — |
+| `89-02.json` | opened with 56, all 56 closed by plan 89-07 — **shard deleted** | — |
+| `89-04.json` | opened with 51, all 51 closed by plan 89-07 (46 with a database, 5 with a major-16 client) — **shard deleted** | — |
+| `89-05.json` | removed the 26 `test_a2a_*` entries with the feature, added 24, all 24 closed by plan 89-07 — **shard deleted** | — |
+| `89-06.json` | opened with 70, all 70 closed by plan 89-07 — **shard deleted** | — |
+| `89-07.json` | the 386 entries 89-09 migrated in are gone; the shard now holds plan 89-07's own 334 additions in two classes (see below) | Phase 100 |
 | `carried.json` | unchanged | their own phases |
+
+### What `89-07.json` holds, and why its entries are not owned by Phase 89
+
+Plan 89-07 gave the macOS and Windows cells a disposable PostgreSQL, so the whole
+`pg-no-disposable-database` class — **598 entries across six shards** — excuses
+nothing on any CI cell and is gone. **No entry anywhere is owned by Phase 89 any
+more**, which is what lets the phase close. What plan 89-07 WROTE, measured
+rather than estimated, is:
+
+| Class | Entries | Platform / context | Owner |
+|---|---|---|---|
+| `pg-no-disposable-database-local` | 304 (239 python + 65 node) | `all` / `local` | Phase 100 |
+| `paradedb-engine-unavailable` | 30 (15 tests × `darwin` + `win32`) | per-platform / `any` | Phase 100 |
+
+The 304 came from the gate's own `SKIP_UNLISTED` list on a local full run with
+`CI` unset and `GSD_TEST_POSTGRES_URL` unset — one row per test rather than one
+per test per system, which is why the count is about half of 598 and not 598.
+The gate REFUSES a `context: "local"` entry when `CI` is set, so none of them can
+ever excuse a CI cell.
+
+The 30 are the tests that need the **ParadeDB** lexical engine on the two cells
+whose PostgreSQL has no `pg_search` control file at all. Fifteen of them carry
+BOTH a local row and a per-platform row, because the two obstacles are different
+(no database at all, versus a database with no `pg_search`) and neither excuses
+the other's cell.

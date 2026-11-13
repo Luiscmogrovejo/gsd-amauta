@@ -416,16 +416,43 @@ describe('88-19 tests/skip-exceptions.d/ itself', () => {
     assert.deepStrictEqual(phases, [96]);
   });
 
-  test('every context "local" entry is a scanner entry, and none is also a CI excuse', () => {
+  test('every context "local" entry names a known local-only class, and none shadows a CI excuse', () => {
     const local = all.filter((e) => e.context === 'local');
-    // Measured in plan 89-09 task 01: all ten `context: "local"` entries are
-    // `scanner-not-installed-locally` and all ten land in `carried.json`, so the
-    // count is known and asserted exactly rather than as "more than none".
-    assert.strictEqual(local.length, 10, 'the ten scanner entries exist, in carried.json');
+    // Measured, never guessed. Plan 89-09 task 01 measured the first class (ten
+    // scanner entries in carried.json); plan 89-07 measured the second from the
+    // gate's own SKIP_UNLISTED list on a local full run with CI unset and no
+    // GSD_TEST_POSTGRES_URL -- 239 python + 65 node = 304 tests that RUN on all
+    // nine CI cells and cannot run on a machine with no disposable PostgreSQL.
+    const byClass = {};
+    for (const e of local) byClass[e.reason_class] = (byClass[e.reason_class] || 0) + 1;
+    assert.deepStrictEqual(byClass, {
+      'scanner-not-installed-locally': 10,
+      'pg-no-disposable-database-local': 304,
+    }, 'a local-only class changed size without being re-measured');
+
     for (const e of local) {
-      assert.strictEqual(e.reason_class, 'scanner-not-installed-locally', `${e.file} :: ${e.name}`);
-      const twin = all.find((o) => o !== e && o.file === e.file && o.name === e.name);
-      assert.strictEqual(twin, undefined, 'a local entry must not shadow a context "any" one for the same test');
+      assert.notStrictEqual(e.owner_phase, 89,
+        'a phase cannot close with an open entry it owns, and a local-only entry '
+        + `is open by construction: ${e.file} :: ${e.name}`);
+      // "Shadowing" means an entry that excuses the SAME skip for the SAME
+      // reason twice, which hides a change. Two entries for one test are
+      // legitimate only when they describe two DIFFERENT obstacles -- plan
+      // 89-07's measured case: `pg-no-disposable-database-local` (a developer
+      // machine has no database at all) alongside
+      // `paradedb-engine-unavailable` on darwin and win32 (the CI cells HAVE a
+      // database, and it has no pg_search). Neither can excuse the other's
+      // cell: the gate refuses a local entry when CI is set, and the darwin
+      // entry does not apply to linux.
+      for (const other of all) {
+        if (other === e || other.file !== e.file || other.name !== e.name) continue;
+        assert.notStrictEqual(other.reason_class, e.reason_class,
+          `${e.file} :: ${e.name} carries two entries of the same class`);
+        assert.notStrictEqual(other.context, 'local',
+          `${e.file} :: ${e.name} carries two local entries`);
+        assert.notStrictEqual(other.platform, 'all',
+          `${e.file} :: ${e.name} has a context "any" entry for EVERY platform, `
+          + 'that already excuses the skip everywhere, so the local entry adds nothing');
+      }
     }
   });
 });

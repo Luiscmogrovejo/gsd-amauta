@@ -904,8 +904,24 @@ class TestRlmSearchUnit:
             (REPO_ROOT / "services" / "rlm_search.py").read_text(encoding="utf-8"))
         # Neither the hybrid leg nor the BM25-only leg may use a bare prefix LIKE.
         assert 'f"{file_filter}%"' not in src
-        assert "AND (c.file_path = %s OR c.file_path LIKE %s)" in src
-        assert "AND (file_path = %s OR file_path LIKE %s)" in src
+        # Plan 89-07 widened both clauses to bind ONE PATTERN PER SEPARATOR, so
+        # the clause text no longer fits on one line and the assertion is on the
+        # PROPERTY rather than on the old literal: each leg still matches the
+        # directory itself by equality, and everything beneath it through
+        # `beneath_patterns`, which is what makes a sibling impossible. The
+        # boundary is explicit there, so `/a/b` cannot match `/a/bc`.
+        assert "c.file_path = %s" in src, "the hybrid leg's exact match"
+        assert "file_path = %s" in src, "the bm25-only leg's exact match"
+        assert src.count("beneath_patterns(prefix)") == 2, (
+            "both legs must bind the per-separator pair, got "
+            + str(src.count("beneath_patterns(prefix)")))
+        from services.rlm_search import beneath_patterns
+        # Two patterns, and NEITHER is a bare prefix wildcard: each carries the
+        # separator that makes "beneath" mean beneath.
+        patterns = beneath_patterns("/a/b")
+        assert len(patterns) == 2, patterns
+        assert all(p.startswith("/a/b") and p[4] in "/\\" for p in patterns), patterns
+        assert "/a/b%" not in patterns, patterns
 
     def test_the_vector_leg_can_be_filtered_independently(self):
         import inspect
@@ -1004,8 +1020,11 @@ class TestRlmIntegration:
             with conn.cursor() as cur:
                 cur.execute("SELECT DISTINCT file_path FROM rlm_chunks")
                 paths = [r[0] for r in cur.fetchall()]
-            assert any(p.endswith("keep/a.py") for p in paths)
-            assert not any(p.endswith("gone.py") for p in paths)
+            # The ingested row carries the HOST's separator, so the suffix
+            # asserted here must be built with it: on a Windows cell the row
+            # reads `...\keep\a.py`, which no `"keep/a.py"` literal ends with.
+            assert any(p.endswith(os.path.join("keep", "a.py")) for p in paths), paths
+            assert not any(p.endswith("gone.py") for p in paths), paths
         finally:
             conn.close()
 
@@ -1070,7 +1089,10 @@ class TestRlmIntegration:
             narrow = hybrid_search("kumquat", conn, top_k=10,
                                    file_filter=str(root / "b"))
             paths = {r["file_path"] for r in narrow}
-            assert paths and all("/bc/" not in p for p in paths)
+            # Host separator: with a `/` literal this is vacuously true on a
+            # Windows cell, where the sibling row reads `...\bc\y.py`.
+            sibling = os.sep + "bc" + os.sep
+            assert paths and all(sibling not in p for p in paths), paths
 
             wide = hybrid_search("kumquat", conn, top_k=10, file_filter=str(root))
             assert len({r["file_path"] for r in wide}) == 2
@@ -1086,7 +1108,7 @@ class TestRlmIntegration:
         monkeypatch.setattr(emb, "_try_voyage",
                             lambda text, input_type: [0.02] * 1024)
         from services.rlm_ingestion import ingest_directory
-        from services.rlm_search import hybrid_search, RRF_CANDIDATE_K
+        from services.rlm_search import hybrid_search, like_escape, RRF_CANDIDATE_K
 
         root = tmp_path / "v"
         root.mkdir()
@@ -1096,9 +1118,17 @@ class TestRlmIntegration:
         try:
             ingest_directory(str(root), conn)
             with conn.cursor() as cur:
+                # `str(root)` is a raw path, and on Windows every separator in
+                # it is LIKE's own escape character -- pasted in unescaped the
+                # pattern matched NOTHING, the UPDATE touched no row, and this
+                # test then failed on its last line with a misleading message.
                 cur.execute(
                     "UPDATE rlm_chunks SET embedding_model='qodo-embed-1-1.5b' "
-                    "WHERE file_path LIKE %s", (str(root) + "%two.py",))
+                    "WHERE file_path LIKE %s",
+                    (like_escape(str(root)) + "%two.py",))
+                assert cur.rowcount >= 1, (
+                    "the foreign-model UPDATE matched no row, so the rest of "
+                    "this test would assert nothing")
             conn.commit()
             results = {r["file_path"]: r for r in
                        hybrid_search("plumbus", conn, top_k=10,
@@ -1234,19 +1264,69 @@ class TestBaselineDetectionIntegration:
         "032-drop-a2a-messages.sql",
     ]
 
-    def _expected_detected(self):
-        """Every file on disk, minus the ones still pending.
+    #: Also pending when the server has NO `pg_search` (plan 89-07, measured on
+    #: the macOS cell in run 43360624446, where this file ran against a plain
+    #: PostgreSQL for the first time: 23 detected where 26 was expected).
+    #:
+    #: It is not a divergence to paper over -- it is `detect_applied_by_schema`
+    #: being RIGHT. Plan 89-06 made 012's and 025's lexical sentinels
+    #: engine-conditional: with `pg_search` they name the ParadeDB BM25 index,
+    #: without it they name migration **033**'s plain full-text substitute. This
+    #: fixture stops at 026, so on a plain engine 033 has not run, those two
+    #: substitutes do not exist, and 012, 025 and 033 itself are all genuinely
+    #: not-yet-applied. On a ParadeDB database 033 is a no-op, so -- exactly like
+    #: 024 and 032 -- its only observable is the ABSENCE of what it would have
+    #: created, and all three read as applied.
+    PENDING_AFTER_OLD_WAY_26_PLAIN_ENGINE = [
+        "012-rlm-chunks.sql",
+        "025-memory-hybrid-index.sql",
+        "033-plain-fts-fallback.sql",
+    ]
+
+    @staticmethod
+    def _server_has_pg_search(dsn):
+        """Whether this scratch database carries the `pg_search` extension."""
+        import psycopg2
+
+        conn = psycopg2.connect(dsn, connect_timeout=10)
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1 FROM pg_extension WHERE extname = 'pg_search'")
+                return cur.fetchone() is not None
+        finally:
+            conn.close()
+
+    def _pending_after_old_way(self, dsn):
+        """The ORDERED pending list this fixture leaves, for this engine.
+
+        Args:
+            dsn: the scratch database, which decides the lexical sentinels.
+
+        Returns:
+            list[str]: filenames, in `discover_migrations` order.
+        """
+        pending = set(self.PENDING_AFTER_OLD_WAY_26)
+        if not self._server_has_pg_search(dsn):
+            pending |= set(self.PENDING_AFTER_OLD_WAY_26_PLAIN_ENGINE)
+        ordered = [n for n, _, _ in migrate_runner.discover_migrations(MIGRATIONS_DIR)
+                   if n in pending]
+        assert len(ordered) == len(pending), (
+            "a name in the pending list is not a migration on disk: %r"
+            % (pending - set(ordered),))
+        return ordered
+
+    def _expected_detected(self, dsn):
+        """Every file on disk, minus the ones still pending on THIS engine.
 
         DERIVED, not written down -- the same reasoning plan 89-02 gives in
         test_a_gap_in_the_middle_is_found_not_assumed_away below: a hard-coded
         count turns every new migration into a failure in a test whose subject
-        is something else. It was `25` until plan 89-06 added migration 033,
-        whose effect on a ParadeDB database is NIL -- so, exactly like 024 and
-        032, its only observable is the ABSENCE of what it would have created,
-        and it reads as applied on an engine where it had nothing to do.
+        is something else. It was `25` until plan 89-06 added migration 033, and
+        it is engine-dependent since plan 89-07 gave the macOS and Windows cells
+        a plain PostgreSQL.
         """
         discovered = {n for n, _, _ in migrate_runner.discover_migrations(MIGRATIONS_DIR)}
-        return len(discovered) - len(self.PENDING_AFTER_OLD_WAY_26)
+        return len(discovered) - len(self._pending_after_old_way(dsn))
 
     def test_status_infers_what_is_applied_without_writing(self, scratch_dsn):
         self._apply_the_old_way(scratch_dsn, 26)
@@ -1254,17 +1334,21 @@ class TestBaselineDetectionIntegration:
         assert report["tracking_table"] is False
         assert report["pre_migrated_detected"] is True
         # One per file on disk except the pending list: 024 shares 032's
-        # sentinel and the table is still here, 027..032 have not run.
-        assert len(report["detected_by_schema"]) == self._expected_detected()
+        # sentinel and the table is still here, 027..032 have not run, and on a
+        # plain engine 012/025/033 have not reached their end state either.
+        assert len(report["detected_by_schema"]) == self._expected_detected(scratch_dsn)
         assert "024-a2a-messages.sql" not in report["detected_by_schema"]
-        assert report["pending"] == self.PENDING_AFTER_OLD_WAY_26
+        assert report["pending"] == self._pending_after_old_way(scratch_dsn)
 
     def test_only_the_missing_migrations_are_applied(self, scratch_dsn):
         self._apply_the_old_way(scratch_dsn, 26)
         result = migrate_runner.apply_migrations(dsn=scratch_dsn,
                                                  log=lambda *_: None)
-        assert len(result["baselined"]) == self._expected_detected()
-        assert result["applied"] == self.PENDING_AFTER_OLD_WAY_26
+        expected_pending = self._pending_after_old_way(scratch_dsn)
+        assert len(result["baselined"]) == len(
+            {n for n, _, _ in migrate_runner.discover_migrations(MIGRATIONS_DIR)}
+        ) - len(expected_pending)
+        assert result["applied"] == expected_pending
         again = migrate_runner.apply_migrations(dsn=scratch_dsn, log=lambda *_: None)
         assert again["applied"] == []
         # And the convergence actually happened: 024 re-created nothing and 032

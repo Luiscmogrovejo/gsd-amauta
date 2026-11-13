@@ -2,8 +2,10 @@
   "plan": "89-02",
   "shard": "tests/skip-exceptions.d/89-02.json",
   "shard_is_all_added": true,
-  "note": "Plan 89-02 (FND-11) added 56 entries: 28 PostgreSQL-gated tests in tests/test_89_02_decimal_phase.py times the two cells with no disposable database (darwin, win32). Task 89-07-04 removes them. Migrated out of ADDED_BY_MASTER_LANES by plan 89-05 (addendum A), by content, count-preserving.",
-  "added": [
+  "note": "Plan 89-02 (FND-11) added 56 entries: 28 PostgreSQL-gated tests in tests/test_89_02_decimal_phase.py times the two cells with no disposable database (darwin, win32). Task 89-07-04 removes them. Migrated out of ADDED_BY_MASTER_LANES by plan 89-05 (addendum A), by content, count-preserving. | Plan 89-07 (task 89-07-04) closed the entries this plan had added: the macOS and Windows cells now have a disposable PostgreSQL, so they excuse nothing on any cell. A tuple a plan ADDED after the shard migration and that 89-07 then deleted nets to ZERO against the pre-shard ledger, so it moves to the THIRD list, \"closed\", and is NOT declared in \"removed\" -- \"removed\" carries PRE-SHARD entries only, which is exactly what tests/89-09-skip-shards.test.cjs reconstructs. The entries themselves are listed, test by test, in plan 89-07 record under \"## Foreign shards opened\".",
+  "added": [],
+  "removed": [],
+  "closed": [
     [
       "test_72_and_72_0_do_read_each_other_back[postgres]",
       "tests/test_89_02_decimal_phase.py",
@@ -620,6 +622,5 @@
       89,
       "a PostgreSQL carrying this repository's schema exists on this cell, so plan 89-02's migration-031 and both-backends arms run here instead of skipping. The schema needs ParadeDB's pg_search (migrations 011, 012, 025), which ships only as a Linux container, so the Linux cells have it and macOS and Windows do not. REMOVED BY TASK 89-07-04, together with the other pg-no-disposable-database entries, when that plan provides the database on these cells or removes the dependency."
     ]
-  ],
-  "removed": []
+  ]
 }

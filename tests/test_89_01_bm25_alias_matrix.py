@@ -91,8 +91,17 @@ def _query_embedding():
 
 
 def _filter_params(prefix):
-    """The (exact, beneath) pair both filter shapes bind."""
-    return (prefix, prefix + os.sep + "%")
+    """The (exact, beneath) pair both filter shapes bind.
+
+    Plan 89-07: the pattern comes from the PRODUCT's own `like_beneath`, not
+    from a second copy of the expression here. The copy is how this file hid a
+    Windows defect for two phases -- it built `prefix + os.sep + "%"`, exactly
+    as the product did, so test and product were wrong together and the matrix
+    could not see it until a Windows cell got a database.
+    """
+    from services.rlm_search import like_beneath
+
+    return (prefix, like_beneath(prefix))
 
 
 @pytest.fixture()
@@ -174,6 +183,23 @@ def _run_cell(pg_conn, prefix, filter_sql, query_embedding, caplog):
     The warnings matter: both swallowing branches log before returning ``[]``,
     so a cell that comes back empty can say WHY in its own failure message
     instead of leaving the reader to guess.
+
+    Phase 89 / plan 89-07: the call passes ``fts_columns``, ``fts_weights`` and
+    ``fts_query`` because ``rlm_search.hybrid_search`` -- the production caller
+    this matrix exists to model (`rlm_search.py:781-791`) -- passes them, and
+    because without them the matrix was ENGINE-SPECIFIC without saying so. On
+    the macOS and Windows cells, which have no ``pg_search`` at all, the leg
+    correctly reported ``generic_bm25_only_no_lexical_leg table=rlm_chunks --
+    pg_search absent and no fts_columns declared`` and returned no rows, so
+    cells 2 and 4 failed the first time they ever ran anywhere (run
+    43357540296). That is a gap in THIS file's coverage, not in plan 89-06's
+    product change: the fallback leg exists and the production caller feeds it.
+
+    Passing them makes the matrix stronger rather than merely green: the alias
+    splice is now proven on BOTH lexical engines, and the plain-PostgreSQL
+    branch is the one where ``filter_sql`` sits textually BETWEEN two binds
+    (``ts_rank_cd``'s and the predicate's), which is exactly the kind of
+    splicing the 42P01 defect was.
     """
     from services import rlm_search
 
@@ -185,6 +211,9 @@ def _run_cell(pg_conn, prefix, filter_sql, query_embedding, caplog):
             bm25_query=_bm25_query(),
             filter_sql=filter_sql, filter_params=_filter_params(prefix),
             top_k=5,
+            fts_columns=rlm_search.RLM_FTS_COLUMNS,
+            fts_weights=rlm_search.RLM_FTS_WEIGHTS,
+            fts_query=rlm_search._sanitize_query(TOKEN),
         )
     return rows, [r.getMessage() for r in caplog.records]
 
@@ -302,6 +331,57 @@ _UNALIASED_BM25_SQL = """
     LIMIT %s
 """
 
+#: The same UNALIASED shape on a server with no `pg_search` (plan 89-07). The
+#: defect this reproduces is a SPLICE defect, not a ParadeDB one: the statement
+#: names its table bare while `hybrid_search` hands it an `c.`-qualified
+#: fragment. On a plain PostgreSQL the lexical clauses are the fallback leg's
+#: own `to_tsvector`/`ts_rank_cd` ones, and the answer is the SAME 42P01 naming
+#: table "c" — which is why the assertions below are unchanged by engine. The
+#: ParadeDB literal `@@@` would answer 42883 (`operator does not exist`) there,
+#: measured on the macOS cell in run 43357540296, and that would be a test
+#: about the extension rather than about the splice.
+_UNALIASED_FTS_SQL = """
+    SELECT
+        id, file_path, symbol_name,
+        NULL::float AS rrf_score,
+        1 AS rank_bm25,
+        NULL::int AS rank_vector
+    FROM rlm_chunks
+    WHERE {where}
+    {filter_sql}
+    ORDER BY {order} DESC
+    LIMIT %s
+"""
+
+
+def _unaliased_shape(pg_conn, prefix):
+    """The pre-89-01 statement and its parameters, for the engine in front of us.
+
+    Args:
+        pg_conn: the connection, whose engine decides the lexical clauses.
+        prefix: the seeded file-path prefix the filter binds.
+
+    Returns:
+        tuple[str, list]: the SQL and its bound parameters, in order.
+    """
+    from services import rlm_search
+
+    if rlm_search._has_pg_search(pg_conn):
+        return (
+            _UNALIASED_BM25_SQL.format(filter_sql=ALIAS_QUALIFIED_FILTER),
+            [_bm25_query()] + list(_filter_params(prefix)) + [5],
+        )
+    fts_query = rlm_search._sanitize_query(TOKEN)
+    sql = _UNALIASED_FTS_SQL.format(
+        where=rlm_search._fts_match_sql(rlm_search.RLM_FTS_COLUMNS),
+        order=rlm_search._fts_rank_sql(
+            rlm_search.RLM_FTS_COLUMNS, rlm_search.RLM_FTS_WEIGHTS),
+        filter_sql=ALIAS_QUALIFIED_FILTER,
+    )
+    # One bind for the WHERE's tsquery, the filter's two, one for ORDER BY's
+    # tsquery, then LIMIT — the textual order of the statement above.
+    return sql, [fts_query] + list(_filter_params(prefix)) + [fts_query, 5]
+
 
 @needs_postgres
 def test_the_pre_fix_unaliased_shape_answers_sqlstate_42p01(
@@ -321,8 +401,7 @@ def test_the_pre_fix_unaliased_shape_answers_sqlstate_42p01(
     """
     import psycopg2
 
-    sql = _UNALIASED_BM25_SQL.format(filter_sql=ALIAS_QUALIFIED_FILTER)
-    params = [_bm25_query()] + list(_filter_params(seeded)) + [5]
+    sql, params = _unaliased_shape(pg_conn, seeded)
     try:
         with pytest.raises(psycopg2.ProgrammingError) as caught:
             with pg_conn.cursor() as cur:
@@ -382,6 +461,16 @@ def test_sql_programming_error_raises_typed_and_never_returns_empty(
             filter_sql="AND c.no_such_column_8901 = %s",
             filter_params=(seeded,),
             top_k=5,
+            # Plan 89-07: without the FTS declaration the leg on a plain
+            # PostgreSQL returns [] from its "no lexical engine and no lower
+            # rung" branch BEFORE building any SQL, so the malformed fragment
+            # never reaches the server and nothing raises — measured on the
+            # macOS cell, run 43357540296 ("DID NOT RAISE"). Declaring the same
+            # shape the production caller declares puts the fault back on the
+            # statement, where this test is aiming it, on BOTH engines.
+            fts_columns=rlm_search.RLM_FTS_COLUMNS,
+            fts_weights=rlm_search.RLM_FTS_WEIGHTS,
+            fts_query=rlm_search._sanitize_query(TOKEN),
         )
 
     err = caught.value

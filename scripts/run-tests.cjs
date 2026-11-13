@@ -492,6 +492,9 @@ function main() {
   process.exit(status);
 }
 
-module.exports = { buildHermeticEnv, freePort, selectFiles, killStrays, testPostgresPort };
+// LIVE_PORTS is exported (plan 89-07) so scripts/ci-postgres-cell.cjs can refuse
+// a cluster on one of the operator's live ports by reading THIS list rather than
+// keeping a second copy of it.
+module.exports = { LIVE_PORTS, buildHermeticEnv, freePort, selectFiles, killStrays, testPostgresPort };
 
 if (require.main === module) main();

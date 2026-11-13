@@ -2,185 +2,8 @@
   "plan": "89-01",
   "shard": "tests/skip-exceptions.d/89-01.json",
   "shard_is_all_added": true,
-  "note": "Plan 89-01 (RET-02) removed the 11 retrieval-leg-routed-89 entries its pipeline work made unnecessary and added 16 pg-no-disposable-database entries for the PostgreSQL arms of its own two test files. Migrated out of REMOVED_SINCE_SHARDING / ADDED_BY_MASTER_LANES in tests/89-09-skip-shards.test.cjs by plan 89-05 (addendum A), by content, count-preserving.",
-  "added": [
-    [
-      "test_cell1_alias_qualified_filter_with_embedding_returns_rows",
-      "tests/test_89_01_bm25_alias_matrix.py",
-      "darwin",
-      "any",
-      "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
-      "pg-no-disposable-database",
-      "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
-      89,
-      "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
-    ],
-    [
-      "test_cell1_alias_qualified_filter_with_embedding_returns_rows",
-      "tests/test_89_01_bm25_alias_matrix.py",
-      "win32",
-      "any",
-      "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
-      "pg-no-disposable-database",
-      "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
-      89,
-      "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
-    ],
-    [
-      "test_cell2_alias_qualified_filter_without_embedding_returns_rows",
-      "tests/test_89_01_bm25_alias_matrix.py",
-      "darwin",
-      "any",
-      "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
-      "pg-no-disposable-database",
-      "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
-      89,
-      "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
-    ],
-    [
-      "test_cell2_alias_qualified_filter_without_embedding_returns_rows",
-      "tests/test_89_01_bm25_alias_matrix.py",
-      "win32",
-      "any",
-      "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
-      "pg-no-disposable-database",
-      "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
-      89,
-      "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
-    ],
-    [
-      "test_cell3_unqualified_filter_with_embedding_returns_rows",
-      "tests/test_89_01_bm25_alias_matrix.py",
-      "darwin",
-      "any",
-      "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
-      "pg-no-disposable-database",
-      "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
-      89,
-      "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
-    ],
-    [
-      "test_cell3_unqualified_filter_with_embedding_returns_rows",
-      "tests/test_89_01_bm25_alias_matrix.py",
-      "win32",
-      "any",
-      "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
-      "pg-no-disposable-database",
-      "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
-      89,
-      "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
-    ],
-    [
-      "test_cell4_unqualified_filter_without_embedding_returns_rows",
-      "tests/test_89_01_bm25_alias_matrix.py",
-      "darwin",
-      "any",
-      "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
-      "pg-no-disposable-database",
-      "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
-      89,
-      "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
-    ],
-    [
-      "test_cell4_unqualified_filter_without_embedding_returns_rows",
-      "tests/test_89_01_bm25_alias_matrix.py",
-      "win32",
-      "any",
-      "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
-      "pg-no-disposable-database",
-      "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
-      89,
-      "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
-    ],
-    [
-      "test_sql_programming_error_raises_typed_and_never_returns_empty",
-      "tests/test_89_01_bm25_alias_matrix.py",
-      "darwin",
-      "any",
-      "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
-      "pg-no-disposable-database",
-      "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
-      89,
-      "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
-    ],
-    [
-      "test_sql_programming_error_raises_typed_and_never_returns_empty",
-      "tests/test_89_01_bm25_alias_matrix.py",
-      "win32",
-      "any",
-      "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
-      "pg-no-disposable-database",
-      "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
-      89,
-      "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
-    ],
-    [
-      "test_the_pre_fix_unaliased_shape_answers_sqlstate_42p01",
-      "tests/test_89_01_bm25_alias_matrix.py",
-      "darwin",
-      "any",
-      "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
-      "pg-no-disposable-database",
-      "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
-      89,
-      "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
-    ],
-    [
-      "test_the_pre_fix_unaliased_shape_answers_sqlstate_42p01",
-      "tests/test_89_01_bm25_alias_matrix.py",
-      "win32",
-      "any",
-      "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
-      "pg-no-disposable-database",
-      "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
-      89,
-      "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
-    ],
-    [
-      "test_relevance_mrr_at_k_on_the_deterministic_provider",
-      "tests/test_89_01_relevance_check.py",
-      "darwin",
-      "any",
-      "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
-      "pg-no-disposable-database",
-      "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
-      89,
-      "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
-    ],
-    [
-      "test_relevance_mrr_at_k_on_the_deterministic_provider",
-      "tests/test_89_01_relevance_check.py",
-      "win32",
-      "any",
-      "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
-      "pg-no-disposable-database",
-      "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
-      89,
-      "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
-    ],
-    [
-      "test_relevance_mrr_with_the_real_embedding_provider",
-      "tests/test_89_01_relevance_check.py",
-      "darwin",
-      "any",
-      "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
-      "pg-no-disposable-database",
-      "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
-      89,
-      "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
-    ],
-    [
-      "test_relevance_mrr_with_the_real_embedding_provider",
-      "tests/test_89_01_relevance_check.py",
-      "win32",
-      "any",
-      "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
-      "pg-no-disposable-database",
-      "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
-      89,
-      "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
-    ]
-  ],
+  "note": "Plan 89-01 (RET-02) removed the 11 retrieval-leg-routed-89 entries its pipeline work made unnecessary and added 16 pg-no-disposable-database entries for the PostgreSQL arms of its own two test files. Migrated out of REMOVED_SINCE_SHARDING / ADDED_BY_MASTER_LANES in tests/89-09-skip-shards.test.cjs by plan 89-05 (addendum A), by content, count-preserving. | Plan 89-07 (task 89-07-04) closed the entries this plan had added: the macOS and Windows cells now have a disposable PostgreSQL, so they excuse nothing on any cell. A tuple a plan ADDED after the shard migration and that 89-07 then deleted nets to ZERO against the pre-shard ledger, so it moves to the THIRD list, \"closed\", and is NOT declared in \"removed\" -- \"removed\" carries PRE-SHARD entries only, which is exactly what tests/89-09-skip-shards.test.cjs reconstructs. The entries themselves are listed, test by test, in plan 89-07 record under \"## Foreign shards opened\".",
+  "added": [],
   "removed": [
     [
       "test_rlm_mrr_validation",
@@ -302,6 +125,184 @@
       "Phase 89 (the retrieval pipeline rewrite)",
       89,
       "the hybrid retrieval engine answers for a freshly ingested fixture project against a real PostgreSQL on the Linux cell, instead of falling back to legacy_in_memory. These are NON-strict xfails: they turn into passes the moment the pipeline works, and plan 88-16 made them visible by giving the suite a real database for the first time."
+    ]
+  ],
+  "closed": [
+    [
+      "test_cell1_alias_qualified_filter_with_embedding_returns_rows",
+      "tests/test_89_01_bm25_alias_matrix.py",
+      "darwin",
+      "any",
+      "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+      "pg-no-disposable-database",
+      "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+      89,
+      "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
+    ],
+    [
+      "test_cell1_alias_qualified_filter_with_embedding_returns_rows",
+      "tests/test_89_01_bm25_alias_matrix.py",
+      "win32",
+      "any",
+      "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+      "pg-no-disposable-database",
+      "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+      89,
+      "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
+    ],
+    [
+      "test_cell2_alias_qualified_filter_without_embedding_returns_rows",
+      "tests/test_89_01_bm25_alias_matrix.py",
+      "darwin",
+      "any",
+      "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+      "pg-no-disposable-database",
+      "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+      89,
+      "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
+    ],
+    [
+      "test_cell2_alias_qualified_filter_without_embedding_returns_rows",
+      "tests/test_89_01_bm25_alias_matrix.py",
+      "win32",
+      "any",
+      "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+      "pg-no-disposable-database",
+      "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+      89,
+      "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
+    ],
+    [
+      "test_cell3_unqualified_filter_with_embedding_returns_rows",
+      "tests/test_89_01_bm25_alias_matrix.py",
+      "darwin",
+      "any",
+      "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+      "pg-no-disposable-database",
+      "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+      89,
+      "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
+    ],
+    [
+      "test_cell3_unqualified_filter_with_embedding_returns_rows",
+      "tests/test_89_01_bm25_alias_matrix.py",
+      "win32",
+      "any",
+      "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+      "pg-no-disposable-database",
+      "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+      89,
+      "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
+    ],
+    [
+      "test_cell4_unqualified_filter_without_embedding_returns_rows",
+      "tests/test_89_01_bm25_alias_matrix.py",
+      "darwin",
+      "any",
+      "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+      "pg-no-disposable-database",
+      "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+      89,
+      "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
+    ],
+    [
+      "test_cell4_unqualified_filter_without_embedding_returns_rows",
+      "tests/test_89_01_bm25_alias_matrix.py",
+      "win32",
+      "any",
+      "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+      "pg-no-disposable-database",
+      "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+      89,
+      "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
+    ],
+    [
+      "test_sql_programming_error_raises_typed_and_never_returns_empty",
+      "tests/test_89_01_bm25_alias_matrix.py",
+      "darwin",
+      "any",
+      "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+      "pg-no-disposable-database",
+      "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+      89,
+      "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
+    ],
+    [
+      "test_sql_programming_error_raises_typed_and_never_returns_empty",
+      "tests/test_89_01_bm25_alias_matrix.py",
+      "win32",
+      "any",
+      "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+      "pg-no-disposable-database",
+      "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+      89,
+      "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
+    ],
+    [
+      "test_the_pre_fix_unaliased_shape_answers_sqlstate_42p01",
+      "tests/test_89_01_bm25_alias_matrix.py",
+      "darwin",
+      "any",
+      "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+      "pg-no-disposable-database",
+      "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+      89,
+      "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
+    ],
+    [
+      "test_the_pre_fix_unaliased_shape_answers_sqlstate_42p01",
+      "tests/test_89_01_bm25_alias_matrix.py",
+      "win32",
+      "any",
+      "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+      "pg-no-disposable-database",
+      "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+      89,
+      "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
+    ],
+    [
+      "test_relevance_mrr_at_k_on_the_deterministic_provider",
+      "tests/test_89_01_relevance_check.py",
+      "darwin",
+      "any",
+      "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+      "pg-no-disposable-database",
+      "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+      89,
+      "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
+    ],
+    [
+      "test_relevance_mrr_at_k_on_the_deterministic_provider",
+      "tests/test_89_01_relevance_check.py",
+      "win32",
+      "any",
+      "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+      "pg-no-disposable-database",
+      "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+      89,
+      "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
+    ],
+    [
+      "test_relevance_mrr_with_the_real_embedding_provider",
+      "tests/test_89_01_relevance_check.py",
+      "darwin",
+      "any",
+      "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+      "pg-no-disposable-database",
+      "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+      89,
+      "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
+    ],
+    [
+      "test_relevance_mrr_with_the_real_embedding_provider",
+      "tests/test_89_01_relevance_check.py",
+      "win32",
+      "any",
+      "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+      "pg-no-disposable-database",
+      "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+      89,
+      "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database."
     ]
   ]
 }
