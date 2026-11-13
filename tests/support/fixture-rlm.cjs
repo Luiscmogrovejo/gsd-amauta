@@ -39,6 +39,7 @@ const { spawn } = require('child_process');
 // Plan 88-15's shared, VERIFIED Python launcher. Never a literal interpreter
 // name: `python3` is a Microsoft Store stub on Windows and the lint rejects it.
 const platform = require('../../get-shit-done/bin/lib/platform.cjs');
+const registry = require('./process-registry.cjs');
 
 const REPO = path.resolve(__dirname, '..', '..');
 const SERVICE = path.join(REPO, 'services', 'rlm-service.py');
@@ -53,30 +54,8 @@ const READY_TIMEOUT_MS = Number(process.env.GSD_FIXTURE_RLM_READY_TIMEOUT_MS) ||
 const POLL_INTERVAL_MS = 100;
 const STOP_GRACE_MS = Number(process.env.GSD_FIXTURE_STOP_GRACE_MS) || 5000;
 
-/**
- * Where ledger lines go: `GSD_PROCESS_LEDGER` (set by scripts/run-tests.cjs) or,
- * for a standalone run, `process-ledger.jsonl` under the service's data dir.
- * @param {string} dataDir
- * @returns {string}
- */
-function ledgerPath(dataDir) {
-  return process.env.GSD_PROCESS_LEDGER || path.join(dataDir, 'process-ledger.jsonl');
-}
-
-/**
- * Append one JSON line to the process ledger. Never throws: a ledger that
- * cannot be written must not break the test that is starting a service.
- * @param {string} dataDir
- * @param {object} record
- * @returns {void}
- */
-function appendLedger(dataDir, record) {
-  try {
-    fs.appendFileSync(ledgerPath(dataDir), JSON.stringify(record) + '\n');
-  } catch (e) {
-    console.error('fixture-rlm: could not write the process ledger: ' + e.message);
-  }
-}
+/** This fixture's name in the run registry. */
+const FIXTURE = 'startFixtureRlm';
 
 /**
  * Bind port 0 on loopback, read the port the OS chose, release it.
@@ -151,11 +130,19 @@ async function startFixtureRlm(opts = {}) {
   });
 
   const py = platform.resolvePython();
+  const spawnedAt = Date.now();
   const proc = spawn(py.command, [...py.args, SERVICE, 'run'], {
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: Boolean(opts.detached),
     env: platform.pythonEnv(env),
   });
+
+  // Plan 89-15: registered the moment it exists (see fixture-daemon.cjs), with
+  // the test file that owns it.
+  const entry = proc.pid
+    ? registry.register({ kind: 'rlm', pid: proc.pid, port, spawnedAt, fixture: FIXTURE, dataDir })
+    : null;
+  const fx = { proc, kind: 'rlm', fixture: FIXTURE, dataDir, port, spawnedAt, entry, members: [], stopping: false };
 
   let stdoutBuf = '';
   let stderrBuf = '';
@@ -168,6 +155,9 @@ async function startFixtureRlm(opts = {}) {
   });
   proc.on('exit', () => {
     exited = true;
+    // Exited without going through stopFixtureRlm: the handle saw it, so the
+    // line is closed here rather than left for a recycled pid to be matched to.
+    if (entry && !fx.stopping) registry.close(entry, 'exited');
   });
 
   const deadline = Date.now() + READY_TIMEOUT_MS;
@@ -182,12 +172,8 @@ async function startFixtureRlm(opts = {}) {
   }
 
   if (!ready) {
-    try {
-      proc.kill('SIGKILL');
-    } catch (_e) {
-      /* already gone */
-    }
-    if (!opts.dataDir) fs.rmSync(dataDir, { recursive: true, force: true });
+    const r = await reap(fx, true);
+    if (!opts.dataDir && r.allGone) fs.rmSync(dataDir, { recursive: true, force: true });
     throw new Error(
       'fixture RLM did not become ready on 127.0.0.1:' + port +
         ' (exited=' + exited + ', budget=' + READY_TIMEOUT_MS + ' ms)\n' +
@@ -196,13 +182,22 @@ async function startFixtureRlm(opts = {}) {
     );
   }
 
-  appendLedger(dataDir, { event: 'started', kind: 'rlm', pid: proc.pid, port, dataDir, at: Date.now() });
+  // The process that IS the service, when `proc` is only its launcher: the
+  // service wrote its own pid into its own data directory.
+  const realPid = registry.readPidFile(path.join(dataDir, 'rlm-service.pid'));
+  if (realPid && realPid !== proc.pid) {
+    fx.members.push(registry.register({
+      kind: 'rlm', role: 'pidfile', pid: realPid, rootPid: proc.pid, port, spawnedAt, fixture: FIXTURE, dataDir,
+    }));
+  }
 
   return {
     port,
     baseUrl: 'http://127.0.0.1:' + port,
     dataDir,
     proc,
+    spawnedAt,
+    fx,
     keep: Boolean(opts.dataDir),
     env: {
       GSD_RLM_PORT: String(port),
@@ -214,41 +209,63 @@ async function startFixtureRlm(opts = {}) {
 }
 
 /**
+ * Run the shared reaper over one fixture RLM.
+ *
+ * @param {object} fx the fixture record built by `startFixtureRlm`
+ * @param {boolean} hard SIGKILL at once (a start that never became ready)
+ * @returns {Promise<{rootGone: boolean, survivors: object[], allGone: boolean}>}
+ */
+function reap(fx, hard) {
+  fx.stopping = true; // the 'exit' handler must not write a second closing line
+  return registry.reapFixture({
+    proc: fx.proc,
+    kind: 'rlm',
+    fixture: fx.fixture,
+    dataDir: fx.dataDir,
+    port: fx.port || null,
+    spawnedAt: fx.spawnedAt,
+    entry: fx.entry,
+    members: fx.members,
+    pidFiles: [{ file: path.join(fx.dataDir, 'rlm-service.pid'), kind: 'rlm', port: fx.port || null }],
+    graceMs: STOP_GRACE_MS,
+    hard,
+  });
+}
+
+/**
  * Stop a fixture RLM: SIGTERM, up to 5 s, then SIGKILL; then remove the data
- * directory unless `handle.keep`. Only the process this module spawned is
- * signalled — never a name pattern, never a pid this module did not start.
+ * directory unless `handle.keep`. The process this module spawned is signalled
+ * through its handle, and the processes under it (plan 89-15: behind a `py`
+ * launcher the service is a CHILD of what was spawned) by exact pid, each
+ * verified against the process table first — never a name pattern, never a pid
+ * this fixture did not start.
+ *
+ * The registry line follows the measurement: `stopped` only for a process
+ * observed gone. A survivor stays `started` and this function THROWS, so the
+ * test that owns the service fails by name.
  *
  * @param {{proc: import('child_process').ChildProcess, dataDir: string, keep?: boolean, pid?: number}} handle
  * @returns {Promise<void>}
+ * @throws {Error} `EFIXTURESURVIVOR` when a process of the fixture outlived SIGTERM and SIGKILL
  */
 async function stopFixtureRlm(handle) {
   if (!handle || !handle.proc) return;
-  const { proc } = handle;
-  const done = new Promise((resolve) => {
-    if (proc.exitCode !== null || proc.signalCode !== null) return resolve();
-    proc.once('exit', () => resolve());
-  });
-  try {
-    proc.kill('SIGTERM');
-  } catch (_e) {
-    /* already gone */
+  const fx = handle.fx || {
+    proc: handle.proc,
+    kind: 'rlm',
+    fixture: FIXTURE,
+    dataDir: handle.dataDir,
+    port: handle.port || null,
+    spawnedAt: handle.spawnedAt,
+    entry: null,
+    members: [],
+  };
+  const r = await reap(fx, false);
+  for (const s of r.survivors) {
+    console.error('fixture-rlm: pid ' + s.pid + ' (' + s.role + ') outlived SIGTERM and SIGKILL; recorded as RUNNING');
   }
-  let timer;
-  const timedOut = new Promise((resolve) => {
-    timer = setTimeout(() => resolve('timeout'), STOP_GRACE_MS);
-  });
-  const r = await Promise.race([done, timedOut]);
-  clearTimeout(timer);
-  if (r === 'timeout') {
-    try {
-      proc.kill('SIGKILL');
-    } catch (_e) {
-      /* already gone */
-    }
-    await done;
-  }
-  appendLedger(handle.dataDir, { event: 'stopped', kind: 'rlm', pid: proc.pid });
-  if (!handle.keep) fs.rmSync(handle.dataDir, { recursive: true, force: true });
+  if (!handle.keep && r.allGone) fs.rmSync(handle.dataDir, { recursive: true, force: true });
+  if (!r.allGone) throw registry.survivorError('fixture-rlm', r.survivors, handle.dataDir);
 }
 
 module.exports = { freePort, startFixtureRlm, stopFixtureRlm };

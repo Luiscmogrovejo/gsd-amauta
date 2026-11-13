@@ -44,7 +44,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
 
-const { startFixtureDaemon } = require('./support/fixture-daemon.cjs');
+const { startFixtureDaemon, killFixtureDaemon } = require('./support/fixture-daemon.cjs');
 const canary = require('./support/live-store-canary.cjs');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -95,20 +95,24 @@ function spawnDaemon(dataDir) {
 
 /**
  * Hard-kill a daemon (SIGKILL, to simulate a crash) and wait until it has exited.
+ *
+ * Through the fixture's own `killFixtureDaemon` (plan 89-15), not a bare
+ * `proc.kill('SIGKILL')`. The bare kill left this file's daemons as the only
+ * registry lines of the whole suite that nobody ever closed — ten per run — and
+ * a line nobody closes is matched, at the end of the run, against whatever
+ * process the pid NUMBER has been handed to since. On Windows, where a freed pid
+ * is reused within seconds, that is how run 43437354734 failed a cell with 5465
+ * passing tests: `pid 3296 (daemon, port 64281): NOT signalled: not an amauta
+ * daemon/rlm process`. The fixture's kill is still a SIGKILL with no SIGTERM
+ * first — the crash this file simulates is unchanged — but it reaches the whole
+ * process tree and it records the exit.
+ *
  * @param {object|null} handle
  * @returns {Promise<void>}
  */
 async function killDaemon(handle) {
   if (!handle || !handle.proc) return;
-  const { proc } = handle;
-  if (proc.exitCode !== null || proc.signalCode !== null) return;
-  const exited = new Promise((resolve) => proc.once('exit', () => resolve()));
-  try {
-    proc.kill('SIGKILL');
-  } catch (_e) {
-    /* already gone */
-  }
-  await exited;
+  await killFixtureDaemon(handle);
 }
 
 /**

@@ -29,6 +29,13 @@
   },
   {
     "rule": "POSIX_PS",
+    "file": "tests/support/process-registry.cjs",
+    "count": 2,
+    "reason": "The POSIX branch of processTable() and processTableAsync() (plan 89-15): one ps call that reads pid, parent pid and elapsed time for the whole table, beside a Windows branch that reads the same three facts through Get-CimInstance. It is the platform-switched helper the rule tells every other test to use, the same shape as the live-store-canary entry above. Permanent.",
+    "owner_plan": "none"
+  },
+  {
+    "rule": "POSIX_PS",
     "file": "tests/test_88_15_process_control.py",
     "count": 3,
     "reason": "The GOLDEN POSIX PINS of plan 88-15: the expected argv the daemon builds today (ps -ww -o command= -p <pid>, and lsof -t -iTCP:<port> -sTCP:LISTEN). The strings are the expected values of an assertion, not a spawn. Permanent.",

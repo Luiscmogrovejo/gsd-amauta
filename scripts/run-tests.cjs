@@ -19,6 +19,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const { pathToFileURL } = require('url');
 const canary = require('../tests/support/live-store-canary.cjs');
+const registry = require('../tests/support/process-registry.cjs');
 const skipGate = require('./skip-gate.cjs');
 
 /**
@@ -193,6 +194,16 @@ function buildHermeticEnv(baseEnv) {
   // Every fixture daemon records the pid it starts and stops here; main() reads it
   // back after the run and fails the run on anything left alive (plan 88-12).
   env.GSD_PROCESS_LEDGER = path.join(root, 'process-ledger.jsonl');
+  // Plan 89-15: the registry names the test file behind every process, and that
+  // name is the entry script of the process that registered it. An owner or a
+  // watcher switch inherited from an ENCLOSING run (a test that drives this
+  // runner) would attribute this run's processes to the wrong file.
+  delete env.GSD_TEST_OWNER;
+  env.GSD_PROCESS_WATCH = '0';
+  // Which test file was running when: tests/support/run-timeline.cjs, preloaded
+  // below, writes one line per test-file process. It is what lets the stray
+  // report attribute a process that NOBODY registered.
+  env.GSD_RUN_TIMELINE = path.join(root, 'timeline.jsonl');
 
   // Plan 88-16-03: the guard is default-deny for non-loopback destinations and
   // writes one line per refusal here. Nothing set this variable before, so the
@@ -218,7 +229,11 @@ function buildHermeticEnv(baseEnv) {
   }
 
   const supportDir = path.join(__dirname, '..', 'tests', 'support');
-  env.NODE_OPTIONS = [baseEnv.NODE_OPTIONS, '--require ' + path.join(supportDir, 'hermetic-guard.cjs')]
+  env.NODE_OPTIONS = [
+    baseEnv.NODE_OPTIONS,
+    '--require ' + path.join(supportDir, 'hermetic-guard.cjs'),
+    '--require ' + path.join(supportDir, 'run-timeline.cjs'),
+  ]
     .filter(Boolean)
     .join(' ');
   env.PYTHONPATH = [path.join(supportDir, 'pythonpath'), baseEnv.PYTHONPATH]
@@ -269,38 +284,86 @@ function sleepMs(ms) {
 }
 
 /**
- * Stop the strays this run identified as its own daemon or RLM: SIGTERM by pid,
- * re-check after 2 s, SIGKILL what remains. Entries that are not `identified`
- * are never signalled (no name pattern, no process group, never this process,
- * its parent or the live daemon's pids).
+ * Stop the strays the registry identified as this run's own: SIGTERM by exact
+ * pid, re-check after 2 s, SIGKILL what remains, wait for it to be gone.
+ *
+ * What may be signalled (plan 89-15), and nothing else:
+ *   - a pid whose registry line the process table CONFIRMS — the process
+ *     holding it was created inside the window the registry recorded — checked
+ *     again here, immediately before the first signal;
+ *   - the processes under such a pid (a launcher's interpreter, a daemon's RLM
+ *     child), each remembered with its own creation time and checked against it
+ *     again before the harder signal.
+ * Never a name pattern, never a process group, never an entry that is not
+ * `identified`, never this process, its parent or the live daemon's pids — and
+ * nothing at all when the process table cannot be read, because then nothing
+ * can be verified.
  *
  * @param {ReturnType<typeof canary.strayProcesses>} strays
  * @returns {number[]} pids that were signalled
  */
 function killStrays(strays) {
   const mine = strays.filter((s) => s.identified && !canary.isProtectedPid(s.pid));
-  const signalled = [];
+  if (mine.length === 0) return [];
+  const table = registry.processTable();
+  if (!table) return [];
+  /** @type {{pid: number, createdMs: number}[]} */
+  const targets = [];
   for (const s of mine) {
+    const c = registry.classify(s, table);
+    if (c.state !== 'ours') continue;
+    targets.push({ pid: s.pid, createdMs: c.holder.createdMs });
+    for (const d of registry.descendants(table, s.pid)) {
+      if (canary.isProtectedPid(d.pid) || targets.some((t) => t.pid === d.pid)) continue;
+      targets.push({ pid: d.pid, createdMs: d.createdMs });
+    }
+  }
+  const signalled = [];
+  for (const t of targets) {
     try {
-      process.kill(s.pid, 'SIGTERM');
-      signalled.push(s.pid);
+      process.kill(t.pid, 'SIGTERM');
+      signalled.push(t.pid);
     } catch (_e) {
       /* already gone */
     }
   }
   if (signalled.length === 0) return signalled;
   sleepMs(2000);
-  for (const s of mine) {
-    // Re-identify immediately before the harder signal: the pid must still be ours.
-    if (!canary.identify(s).identified) continue;
+  // Re-verify immediately before the harder signal: the pid must still be the
+  // SAME process, which is a statement about its creation time, not its number.
+  const again = registry.processTable();
+  const tol = registry.toleranceFor();
+  const stillOurs = (t) => {
+    const holder = again && again.byPid.get(t.pid);
+    return Boolean(holder && holder.createdMs && Math.abs(holder.createdMs - t.createdMs) <= tol);
+  };
+  const remaining = targets.filter(stillOurs);
+  for (const t of remaining) {
     try {
-      process.kill(s.pid, 0);
-      process.kill(s.pid, 'SIGKILL');
+      process.kill(t.pid, 'SIGKILL');
     } catch (_e) {
       /* exited after SIGTERM */
     }
   }
+  // A signal is a request the kernel completes asynchronously: wait, bounded,
+  // so the caller does not read a process in the act of dying as a survivor.
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline && remaining.some((t) => registry.pidAlive(t.pid))) sleepMs(100);
   return signalled;
+}
+
+/**
+ * Whether to run the diagnostic process watcher for this run.
+ *
+ * `GSD_PROCESS_WATCH=1` turns it on; it is off otherwise. It costs a process
+ * that polls the process table twice a second, and the runner sets `0` for its
+ * children, so a run that is itself a child of another run never starts one.
+ *
+ * @param {NodeJS.ProcessEnv} baseEnv the environment the runner was started with
+ * @returns {boolean}
+ */
+function watchWanted(baseEnv) {
+  return baseEnv.GSD_PROCESS_WATCH === '1';
 }
 
 /** Entry point: run the selected files under the hermetic environment. */
@@ -378,6 +441,16 @@ function main() {
     ...files,
   ];
 
+  // Plan 89-15: this run's registry is announced so that another run in
+  // progress (a nested runner inside a test, a second run beside this one) does
+  // not report THIS run's registered fixtures as processes nobody registered.
+  const runStartedAt = Date.now();
+  const registryMarker = registry.announce(env.GSD_PROCESS_LEDGER);
+  // Diagnostic and opt-in: a watcher that logs every process it sees, so the
+  // ancestry of an unregistered daemon can be read after its parents are gone.
+  const watchLog = path.join(path.dirname(env.AMAUTA_DATA_DIR), 'process-watch.tsv');
+  const watcher = watchWanted(process.env) ? registry.startWatcher(watchLog) : null;
+
   let status = 0;
   try {
     execFileSync(process.execPath, childArgs, { stdio: 'inherit', env });
@@ -412,19 +485,47 @@ function main() {
       }
     }
     // Process leaks: a daemon or RLM the run started and nobody stopped. Reported
-    // even when the canary already set a status; the kill pass touches only entries
-    // identified as this run's own daemon/RLM.
-    let strays = [];
+    // even when the canary already set a status; the kill pass touches only
+    // entries the REGISTRY identifies as this run's own (plan 89-15: pid and
+    // start time, never a command line).
+    if (watcher) {
+      try {
+        watcher.kill(); // by its own handle: the one process this runner started
+      } catch (_e) {
+        /* already gone */
+      }
+    }
+    let audit = { strays: [], recycled: [], unclosed: [], unregistered: [], preexisting: [], table: null };
     try {
-      strays = canary.strayProcesses(env.GSD_PROCESS_LEDGER);
+      audit = canary.processAudit(env.GSD_PROCESS_LEDGER, { runStartedAt, repoRoot: path.join(__dirname, '..') });
     } catch (err) {
       console.error('run-tests: process ledger could not be read: ' + err.message);
     }
+    const strays = audit.strays;
     if (strays.length > 0) {
       console.error(canary.formatStrays(strays));
       status = 5; // 4 is the live-store canary's; a leaked process fails the run too
       killStrays(strays);
     }
+    // What is NOT in the registry is not this run's, and is never signalled and
+    // never fails the run: it is listed below, with the test files that were
+    // running when it appeared. A daemon or RLM started under this run's
+    // environment through a PRODUCT path is not in that list — it registers
+    // itself (tests/support/pythonpath/sitecustomize.py), so it is a stray
+    // above, attributed and stopped like a fixture's. What remains unregistered
+    // is another run's (a pytest session beside this one), the operator's own,
+    // or a start whose environment was scrubbed; nothing but its command line
+    // says it is ours, and a command line is exactly what the live daemon has.
+    try {
+      const report = canary.formatAudit(audit, {
+        timeline: registry.readTimeline(env.GSD_RUN_TIMELINE),
+        watched: watcher ? registry.readWatchLog(watchLog) : [],
+      });
+      if (report) console.error(report);
+    } catch (err) {
+      console.error('run-tests: the process audit could not be rendered: ' + err.message);
+    }
+    registry.withdraw(registryMarker);
     // Plan 88-19: the skip gate. A test that skipped without an entry in
     // tests/skip-exceptions.d/ (sharded one file per owner by plan 89-09) fails
     // the run with status 6 (4 is the live-store
@@ -495,6 +596,6 @@ function main() {
 // LIVE_PORTS is exported (plan 89-07) so scripts/ci-postgres-cell.cjs can refuse
 // a cluster on one of the operator's live ports by reading THIS list rather than
 // keeping a second copy of it.
-module.exports = { LIVE_PORTS, buildHermeticEnv, freePort, selectFiles, killStrays, testPostgresPort };
+module.exports = { LIVE_PORTS, buildHermeticEnv, freePort, selectFiles, killStrays, testPostgresPort, watchWanted };
 
 if (require.main === module) main();
