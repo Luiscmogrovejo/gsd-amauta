@@ -2,17 +2,6 @@
   {
     "name": "test_bm25_description_outranks_content_live",
     "file": "tests/test_65_hybrid_generic.py",
-    "platform": "darwin",
-    "context": "any",
-    "reason": "the ParadeDB BM25 boost is what this test measures, and its corpus TIES on the plain-PostgreSQL substitute: row A carries the token ONCE in `description` (tsvector weight 0.8 in RLM_FTS_WEIGHTS) and row B TWICE in `content` (0.4), and ts_rank_cd sums per-occurrence weights -- so 1x0.8 == 2x0.4 EXACTLY and the order is arbitrary. Measured as a flake, which is how a tie shows up: the macOS cell passed it on run 43366250606 and failed it on 43370212942 with ['rowB_zx65','rowA_zx65'], same code and same corpus. Plan 89-06's own test asserts the SAME property on BOTH engines and passes, because its corpus does not tie; this older test is the gap 89-06 left.",
-    "reason_class": "paradedb-engine-unavailable",
-    "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
-    "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search (plan 89-12 on darwin), or this test's corpus is changed so the two rows do not tie on the plain engine -- which is a change to plan 89-01's own fixture and not a CI-plan decision, and is unnecessary while tests/test_89_06_lexical_fallback.py::test_a_description_match_outranks_a_content_match_on_both_engines covers the property on both engines."
-  },
-  {
-    "name": "test_bm25_description_outranks_content_live",
-    "file": "tests/test_65_hybrid_generic.py",
     "platform": "win32",
     "context": "any",
     "reason": "the ParadeDB BM25 boost is what this test measures, and its corpus TIES on the plain-PostgreSQL substitute: row A carries the token ONCE in `description` (tsvector weight 0.8 in RLM_FTS_WEIGHTS) and row B TWICE in `content` (0.4), and ts_rank_cd sums per-occurrence weights -- so 1x0.8 == 2x0.4 EXACTLY and the order is arbitrary. Measured as a flake, which is how a tie shows up: the macOS cell passed it on run 43366250606 and failed it on 43370212942 with ['rowB_zx65','rowA_zx65'], same code and same corpus. Plan 89-06's own test asserts the SAME property on BOTH engines and passes, because its corpus does not tie; this older test is the gap 89-06 left.",
@@ -24,29 +13,7 @@
   {
     "name": "test_relevance_mrr_at_k_on_the_deterministic_provider",
     "file": "tests/test_89_01_relevance_check.py",
-    "platform": "darwin",
-    "context": "any",
-    "reason": "the RET-02 relevance floor and every per-query rank_at_most were measured on the ParadeDB BM25 lexical leg; this cell's leg is plain-PostgreSQL full-text, which ranks differently by design (measured on the macOS cell, run 43357540296: query 'psycopg connection pooling exhaustion' returned none of its expected ids in the top 5). A floor for the plain leg is an unmeasured RETRIEVAL decision, not a CI one.",
-    "reason_class": "paradedb-engine-unavailable",
-    "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
-    "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
-  },
-  {
-    "name": "test_relevance_mrr_at_k_on_the_deterministic_provider",
-    "file": "tests/test_89_01_relevance_check.py",
     "platform": "win32",
-    "context": "any",
-    "reason": "the RET-02 relevance floor and every per-query rank_at_most were measured on the ParadeDB BM25 lexical leg; this cell's leg is plain-PostgreSQL full-text, which ranks differently by design (measured on the macOS cell, run 43357540296: query 'psycopg connection pooling exhaustion' returned none of its expected ids in the top 5). A floor for the plain leg is an unmeasured RETRIEVAL decision, not a CI one.",
-    "reason_class": "paradedb-engine-unavailable",
-    "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
-    "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
-  },
-  {
-    "name": "test_relevance_mrr_with_the_real_embedding_provider",
-    "file": "tests/test_89_01_relevance_check.py",
-    "platform": "darwin",
     "context": "any",
     "reason": "the RET-02 relevance floor and every per-query rank_at_most were measured on the ParadeDB BM25 lexical leg; this cell's leg is plain-PostgreSQL full-text, which ranks differently by design (measured on the macOS cell, run 43357540296: query 'psycopg connection pooling exhaustion' returned none of its expected ids in the top 5). A floor for the plain leg is an unmeasured RETRIEVAL decision, not a CI one.",
     "reason_class": "paradedb-engine-unavailable",
@@ -68,29 +35,7 @@
   {
     "name": "test_a_description_match_outranks_a_content_match_on_both_engines",
     "file": "tests/test_89_06_lexical_fallback.py",
-    "platform": "darwin",
-    "context": "any",
-    "reason": "no pg_search on this server, so the `corpus` fixture cannot build the ParadeDB half of its pair: every test here compares the two lexical engines AGAINST EACH OTHER, which needs both of them. The plain-engine half runs on all nine cells through the same file's engine-agnostic tests. Measured on the macOS cell, run 43360624446: `pg_available_extensions` has no pg_search row at all.",
-    "reason_class": "paradedb-engine-unavailable",
-    "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
-    "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
-  },
-  {
-    "name": "test_a_description_match_outranks_a_content_match_on_both_engines",
-    "file": "tests/test_89_06_lexical_fallback.py",
     "platform": "win32",
-    "context": "any",
-    "reason": "no pg_search on this server, so the `corpus` fixture cannot build the ParadeDB half of its pair: every test here compares the two lexical engines AGAINST EACH OTHER, which needs both of them. The plain-engine half runs on all nine cells through the same file's engine-agnostic tests. Measured on the macOS cell, run 43360624446: `pg_available_extensions` has no pg_search row at all.",
-    "reason_class": "paradedb-engine-unavailable",
-    "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
-    "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
-  },
-  {
-    "name": "test_a_file_filter_works_on_both_engines",
-    "file": "tests/test_89_06_lexical_fallback.py",
-    "platform": "darwin",
     "context": "any",
     "reason": "no pg_search on this server, so the `corpus` fixture cannot build the ParadeDB half of its pair: every test here compares the two lexical engines AGAINST EACH OTHER, which needs both of them. The plain-engine half runs on all nine cells through the same file's engine-agnostic tests. Measured on the macOS cell, run 43360624446: `pg_available_extensions` has no pg_search row at all.",
     "reason_class": "paradedb-engine-unavailable",
@@ -112,29 +57,7 @@
   {
     "name": "test_a_multi_word_query_ORs_its_terms_on_both_engines",
     "file": "tests/test_89_06_lexical_fallback.py",
-    "platform": "darwin",
-    "context": "any",
-    "reason": "no pg_search on this server, so the `corpus` fixture cannot build the ParadeDB half of its pair: every test here compares the two lexical engines AGAINST EACH OTHER, which needs both of them. The plain-engine half runs on all nine cells through the same file's engine-agnostic tests. Measured on the macOS cell, run 43360624446: `pg_available_extensions` has no pg_search row at all.",
-    "reason_class": "paradedb-engine-unavailable",
-    "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
-    "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
-  },
-  {
-    "name": "test_a_multi_word_query_ORs_its_terms_on_both_engines",
-    "file": "tests/test_89_06_lexical_fallback.py",
     "platform": "win32",
-    "context": "any",
-    "reason": "no pg_search on this server, so the `corpus` fixture cannot build the ParadeDB half of its pair: every test here compares the two lexical engines AGAINST EACH OTHER, which needs both of them. The plain-engine half runs on all nine cells through the same file's engine-agnostic tests. Measured on the macOS cell, run 43360624446: `pg_available_extensions` has no pg_search row at all.",
-    "reason_class": "paradedb-engine-unavailable",
-    "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
-    "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
-  },
-  {
-    "name": "test_a_second_connection_gets_its_own_probe",
-    "file": "tests/test_89_06_lexical_fallback.py",
-    "platform": "darwin",
     "context": "any",
     "reason": "no pg_search on this server, so the `corpus` fixture cannot build the ParadeDB half of its pair: every test here compares the two lexical engines AGAINST EACH OTHER, which needs both of them. The plain-engine half runs on all nine cells through the same file's engine-agnostic tests. Measured on the macOS cell, run 43360624446: `pg_available_extensions` has no pg_search row at all.",
     "reason_class": "paradedb-engine-unavailable",
@@ -156,29 +79,7 @@
   {
     "name": "test_a_stopword_only_query_returns_nothing_on_both_engines",
     "file": "tests/test_89_06_lexical_fallback.py",
-    "platform": "darwin",
-    "context": "any",
-    "reason": "no pg_search on this server, so the `corpus` fixture cannot build the ParadeDB half of its pair: every test here compares the two lexical engines AGAINST EACH OTHER, which needs both of them. The plain-engine half runs on all nine cells through the same file's engine-agnostic tests. Measured on the macOS cell, run 43360624446: `pg_available_extensions` has no pg_search row at all.",
-    "reason_class": "paradedb-engine-unavailable",
-    "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
-    "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
-  },
-  {
-    "name": "test_a_stopword_only_query_returns_nothing_on_both_engines",
-    "file": "tests/test_89_06_lexical_fallback.py",
     "platform": "win32",
-    "context": "any",
-    "reason": "no pg_search on this server, so the `corpus` fixture cannot build the ParadeDB half of its pair: every test here compares the two lexical engines AGAINST EACH OTHER, which needs both of them. The plain-engine half runs on all nine cells through the same file's engine-agnostic tests. Measured on the macOS cell, run 43360624446: `pg_available_extensions` has no pg_search row at all.",
-    "reason_class": "paradedb-engine-unavailable",
-    "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
-    "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
-  },
-  {
-    "name": "test_each_database_runs_the_engine_it_is_supposed_to",
-    "file": "tests/test_89_06_lexical_fallback.py",
-    "platform": "darwin",
     "context": "any",
     "reason": "no pg_search on this server, so the `corpus` fixture cannot build the ParadeDB half of its pair: every test here compares the two lexical engines AGAINST EACH OTHER, which needs both of them. The plain-engine half runs on all nine cells through the same file's engine-agnostic tests. Measured on the macOS cell, run 43360624446: `pg_available_extensions` has no pg_search row at all.",
     "reason_class": "paradedb-engine-unavailable",
@@ -200,29 +101,7 @@
   {
     "name": "test_memory_search_rung1_answers_on_both_engines",
     "file": "tests/test_89_06_lexical_fallback.py",
-    "platform": "darwin",
-    "context": "any",
-    "reason": "no pg_search on this server, so the `corpus` fixture cannot build the ParadeDB half of its pair: every test here compares the two lexical engines AGAINST EACH OTHER, which needs both of them. The plain-engine half runs on all nine cells through the same file's engine-agnostic tests. Measured on the macOS cell, run 43360624446: `pg_available_extensions` has no pg_search row at all.",
-    "reason_class": "paradedb-engine-unavailable",
-    "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
-    "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
-  },
-  {
-    "name": "test_memory_search_rung1_answers_on_both_engines",
-    "file": "tests/test_89_06_lexical_fallback.py",
     "platform": "win32",
-    "context": "any",
-    "reason": "no pg_search on this server, so the `corpus` fixture cannot build the ParadeDB half of its pair: every test here compares the two lexical engines AGAINST EACH OTHER, which needs both of them. The plain-engine half runs on all nine cells through the same file's engine-agnostic tests. Measured on the macOS cell, run 43360624446: `pg_available_extensions` has no pg_search row at all.",
-    "reason_class": "paradedb-engine-unavailable",
-    "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
-    "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
-  },
-  {
-    "name": "test_the_degraded_branch_reports_the_same_null_fusion_values_on_both",
-    "file": "tests/test_89_06_lexical_fallback.py",
-    "platform": "darwin",
     "context": "any",
     "reason": "no pg_search on this server, so the `corpus` fixture cannot build the ParadeDB half of its pair: every test here compares the two lexical engines AGAINST EACH OTHER, which needs both of them. The plain-engine half runs on all nine cells through the same file's engine-agnostic tests. Measured on the macOS cell, run 43360624446: `pg_available_extensions` has no pg_search row at all.",
     "reason_class": "paradedb-engine-unavailable",
@@ -244,29 +123,7 @@
   {
     "name": "test_the_lexical_leg_finds_the_same_rows_on_both_engines",
     "file": "tests/test_89_06_lexical_fallback.py",
-    "platform": "darwin",
-    "context": "any",
-    "reason": "no pg_search on this server, so the `corpus` fixture cannot build the ParadeDB half of its pair: every test here compares the two lexical engines AGAINST EACH OTHER, which needs both of them. The plain-engine half runs on all nine cells through the same file's engine-agnostic tests. Measured on the macOS cell, run 43360624446: `pg_available_extensions` has no pg_search row at all.",
-    "reason_class": "paradedb-engine-unavailable",
-    "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
-    "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
-  },
-  {
-    "name": "test_the_lexical_leg_finds_the_same_rows_on_both_engines",
-    "file": "tests/test_89_06_lexical_fallback.py",
     "platform": "win32",
-    "context": "any",
-    "reason": "no pg_search on this server, so the `corpus` fixture cannot build the ParadeDB half of its pair: every test here compares the two lexical engines AGAINST EACH OTHER, which needs both of them. The plain-engine half runs on all nine cells through the same file's engine-agnostic tests. Measured on the macOS cell, run 43360624446: `pg_available_extensions` has no pg_search row at all.",
-    "reason_class": "paradedb-engine-unavailable",
-    "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
-    "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
-  },
-  {
-    "name": "test_the_probe_runs_once_per_connection_not_once_per_search",
-    "file": "tests/test_89_06_lexical_fallback.py",
-    "platform": "darwin",
     "context": "any",
     "reason": "no pg_search on this server, so the `corpus` fixture cannot build the ParadeDB half of its pair: every test here compares the two lexical engines AGAINST EACH OTHER, which needs both of them. The plain-engine half runs on all nine cells through the same file's engine-agnostic tests. Measured on the macOS cell, run 43360624446: `pg_available_extensions` has no pg_search row at all.",
     "reason_class": "paradedb-engine-unavailable",
@@ -288,29 +145,7 @@
   {
     "name": "test_the_result_shape_is_key_for_key_identical_across_engines",
     "file": "tests/test_89_06_lexical_fallback.py",
-    "platform": "darwin",
-    "context": "any",
-    "reason": "no pg_search on this server, so the `corpus` fixture cannot build the ParadeDB half of its pair: every test here compares the two lexical engines AGAINST EACH OTHER, which needs both of them. The plain-engine half runs on all nine cells through the same file's engine-agnostic tests. Measured on the macOS cell, run 43360624446: `pg_available_extensions` has no pg_search row at all.",
-    "reason_class": "paradedb-engine-unavailable",
-    "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
-    "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
-  },
-  {
-    "name": "test_the_result_shape_is_key_for_key_identical_across_engines",
-    "file": "tests/test_89_06_lexical_fallback.py",
     "platform": "win32",
-    "context": "any",
-    "reason": "no pg_search on this server, so the `corpus` fixture cannot build the ParadeDB half of its pair: every test here compares the two lexical engines AGAINST EACH OTHER, which needs both of them. The plain-engine half runs on all nine cells through the same file's engine-agnostic tests. Measured on the macOS cell, run 43360624446: `pg_available_extensions` has no pg_search row at all.",
-    "reason_class": "paradedb-engine-unavailable",
-    "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
-    "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
-  },
-  {
-    "name": "test_the_types_match_too_not_only_the_keys",
-    "file": "tests/test_89_06_lexical_fallback.py",
-    "platform": "darwin",
     "context": "any",
     "reason": "no pg_search on this server, so the `corpus` fixture cannot build the ParadeDB half of its pair: every test here compares the two lexical engines AGAINST EACH OTHER, which needs both of them. The plain-engine half runs on all nine cells through the same file's engine-agnostic tests. Measured on the macOS cell, run 43360624446: `pg_available_extensions` has no pg_search row at all.",
     "reason_class": "paradedb-engine-unavailable",
@@ -332,17 +167,6 @@
   {
     "name": "test_the_vector_leg_and_the_fusion_are_the_same_on_both_engines",
     "file": "tests/test_89_06_lexical_fallback.py",
-    "platform": "darwin",
-    "context": "any",
-    "reason": "no pg_search on this server, so the `corpus` fixture cannot build the ParadeDB half of its pair: every test here compares the two lexical engines AGAINST EACH OTHER, which needs both of them. The plain-engine half runs on all nine cells through the same file's engine-agnostic tests. Measured on the macOS cell, run 43360624446: `pg_available_extensions` has no pg_search row at all.",
-    "reason_class": "paradedb-engine-unavailable",
-    "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
-    "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
-  },
-  {
-    "name": "test_the_vector_leg_and_the_fusion_are_the_same_on_both_engines",
-    "file": "tests/test_89_06_lexical_fallback.py",
     "platform": "win32",
     "context": "any",
     "reason": "no pg_search on this server, so the `corpus` fixture cannot build the ParadeDB half of its pair: every test here compares the two lexical engines AGAINST EACH OTHER, which needs both of them. The plain-engine half runs on all nine cells through the same file's engine-agnostic tests. Measured on the macOS cell, run 43360624446: `pg_available_extensions` has no pg_search row at all.",
@@ -354,29 +178,7 @@
   {
     "name": "test_033_down_is_a_noop_on_a_paradedb_database",
     "file": "tests/test_89_06_pg_search_optional.py",
-    "platform": "darwin",
-    "context": "any",
-    "reason": "no pg_search on this server, so a ParadeDB-engine database cannot be built here: this test asserts ParadeDB BM25 behaviour, not engine-agnostic behaviour (measured on the macOS and Windows cells, run 43354540890: pg_available_extensions has no pg_search row at all). The engine-agnostic half of the same file RUNS on all nine cells.",
-    "reason_class": "paradedb-engine-unavailable",
-    "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
-    "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
-  },
-  {
-    "name": "test_033_down_is_a_noop_on_a_paradedb_database",
-    "file": "tests/test_89_06_pg_search_optional.py",
     "platform": "win32",
-    "context": "any",
-    "reason": "no pg_search on this server, so a ParadeDB-engine database cannot be built here: this test asserts ParadeDB BM25 behaviour, not engine-agnostic behaviour (measured on the macOS and Windows cells, run 43354540890: pg_available_extensions has no pg_search row at all). The engine-agnostic half of the same file RUNS on all nine cells.",
-    "reason_class": "paradedb-engine-unavailable",
-    "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
-    "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
-  },
-  {
-    "name": "test_a_paradedb_database_is_unchanged_by_migration_033",
-    "file": "tests/test_89_06_pg_search_optional.py",
-    "platform": "darwin",
     "context": "any",
     "reason": "no pg_search on this server, so a ParadeDB-engine database cannot be built here: this test asserts ParadeDB BM25 behaviour, not engine-agnostic behaviour (measured on the macOS and Windows cells, run 43354540890: pg_available_extensions has no pg_search row at all). The engine-agnostic half of the same file RUNS on all nine cells.",
     "reason_class": "paradedb-engine-unavailable",
@@ -398,29 +200,7 @@
   {
     "name": "test_a_paradedb_server_reports_the_bm25_engine_and_no_degradation",
     "file": "tests/test_89_06_pg_search_optional.py",
-    "platform": "darwin",
-    "context": "any",
-    "reason": "no pg_search on this server, so a ParadeDB-engine database cannot be built here: this test asserts ParadeDB BM25 behaviour, not engine-agnostic behaviour (measured on the macOS and Windows cells, run 43354540890: pg_available_extensions has no pg_search row at all). The engine-agnostic half of the same file RUNS on all nine cells.",
-    "reason_class": "paradedb-engine-unavailable",
-    "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
-    "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
-  },
-  {
-    "name": "test_a_paradedb_server_reports_the_bm25_engine_and_no_degradation",
-    "file": "tests/test_89_06_pg_search_optional.py",
     "platform": "win32",
-    "context": "any",
-    "reason": "no pg_search on this server, so a ParadeDB-engine database cannot be built here: this test asserts ParadeDB BM25 behaviour, not engine-agnostic behaviour (measured on the macOS and Windows cells, run 43354540890: pg_available_extensions has no pg_search row at all). The engine-agnostic half of the same file RUNS on all nine cells.",
-    "reason_class": "paradedb-engine-unavailable",
-    "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
-    "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
-  },
-  {
-    "name": "test_detect_applied_by_schema_is_right_on_both_engines",
-    "file": "tests/test_89_06_pg_search_optional.py",
-    "platform": "darwin",
     "context": "any",
     "reason": "no pg_search on this server, so a ParadeDB-engine database cannot be built here: this test asserts ParadeDB BM25 behaviour, not engine-agnostic behaviour (measured on the macOS and Windows cells, run 43354540890: pg_available_extensions has no pg_search row at all). The engine-agnostic half of the same file RUNS on all nine cells.",
     "reason_class": "paradedb-engine-unavailable",
@@ -442,29 +222,7 @@
   {
     "name": "test_doctor_warns_on_the_plain_engine_and_is_ok_on_paradedb",
     "file": "tests/test_89_06_pg_search_optional.py",
-    "platform": "darwin",
-    "context": "any",
-    "reason": "no pg_search on this server, so a ParadeDB-engine database cannot be built here: this test asserts ParadeDB BM25 behaviour, not engine-agnostic behaviour (measured on the macOS and Windows cells, run 43354540890: pg_available_extensions has no pg_search row at all). The engine-agnostic half of the same file RUNS on all nine cells.",
-    "reason_class": "paradedb-engine-unavailable",
-    "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
-    "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
-  },
-  {
-    "name": "test_doctor_warns_on_the_plain_engine_and_is_ok_on_paradedb",
-    "file": "tests/test_89_06_pg_search_optional.py",
     "platform": "win32",
-    "context": "any",
-    "reason": "no pg_search on this server, so a ParadeDB-engine database cannot be built here: this test asserts ParadeDB BM25 behaviour, not engine-agnostic behaviour (measured on the macOS and Windows cells, run 43354540890: pg_available_extensions has no pg_search row at all). The engine-agnostic half of the same file RUNS on all nine cells.",
-    "reason_class": "paradedb-engine-unavailable",
-    "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
-    "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
-  },
-  {
-    "name": "test_every_migration_applies_on_both_engines_with_the_same_count",
-    "file": "tests/test_89_06_pg_search_optional.py",
-    "platform": "darwin",
     "context": "any",
     "reason": "no pg_search on this server, so a ParadeDB-engine database cannot be built here: this test asserts ParadeDB BM25 behaviour, not engine-agnostic behaviour (measured on the macOS and Windows cells, run 43354540890: pg_available_extensions has no pg_search row at all). The engine-agnostic half of the same file RUNS on all nine cells.",
     "reason_class": "paradedb-engine-unavailable",
@@ -486,29 +244,7 @@
   {
     "name": "test_health_carries_the_same_answer_under_a_stable_key",
     "file": "tests/test_89_06_pg_search_optional.py",
-    "platform": "darwin",
-    "context": "any",
-    "reason": "no pg_search on this server, so a ParadeDB-engine database cannot be built here: this test asserts ParadeDB BM25 behaviour, not engine-agnostic behaviour (measured on the macOS and Windows cells, run 43354540890: pg_available_extensions has no pg_search row at all). The engine-agnostic half of the same file RUNS on all nine cells.",
-    "reason_class": "paradedb-engine-unavailable",
-    "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
-    "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
-  },
-  {
-    "name": "test_health_carries_the_same_answer_under_a_stable_key",
-    "file": "tests/test_89_06_pg_search_optional.py",
     "platform": "win32",
-    "context": "any",
-    "reason": "no pg_search on this server, so a ParadeDB-engine database cannot be built here: this test asserts ParadeDB BM25 behaviour, not engine-agnostic behaviour (measured on the macOS and Windows cells, run 43354540890: pg_available_extensions has no pg_search row at all). The engine-agnostic half of the same file RUNS on all nine cells.",
-    "reason_class": "paradedb-engine-unavailable",
-    "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
-    "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
-  },
-  {
-    "name": "test_masters_sentinels_are_right_on_a_paradedb_database",
-    "file": "tests/test_89_06_pg_search_optional.py",
-    "platform": "darwin",
     "context": "any",
     "reason": "no pg_search on this server, so a ParadeDB-engine database cannot be built here: this test asserts ParadeDB BM25 behaviour, not engine-agnostic behaviour (measured on the macOS and Windows cells, run 43354540890: pg_available_extensions has no pg_search row at all). The engine-agnostic half of the same file RUNS on all nine cells.",
     "reason_class": "paradedb-engine-unavailable",
@@ -530,29 +266,7 @@
   {
     "name": "test_the_paradedb_database_really_has_pg_search",
     "file": "tests/test_89_06_pg_search_optional.py",
-    "platform": "darwin",
-    "context": "any",
-    "reason": "no pg_search on this server, so a ParadeDB-engine database cannot be built here: this test asserts ParadeDB BM25 behaviour, not engine-agnostic behaviour (measured on the macOS and Windows cells, run 43354540890: pg_available_extensions has no pg_search row at all). The engine-agnostic half of the same file RUNS on all nine cells.",
-    "reason_class": "paradedb-engine-unavailable",
-    "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
-    "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
-  },
-  {
-    "name": "test_the_paradedb_database_really_has_pg_search",
-    "file": "tests/test_89_06_pg_search_optional.py",
     "platform": "win32",
-    "context": "any",
-    "reason": "no pg_search on this server, so a ParadeDB-engine database cannot be built here: this test asserts ParadeDB BM25 behaviour, not engine-agnostic behaviour (measured on the macOS and Windows cells, run 43354540890: pg_available_extensions has no pg_search row at all). The engine-agnostic half of the same file RUNS on all nine cells.",
-    "reason_class": "paradedb-engine-unavailable",
-    "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
-    "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
-  },
-  {
-    "name": "test_the_paradedb_server_reports_pg_search_as_available_and_not_degraded",
-    "file": "tests/test_89_06_pg_search_optional.py",
-    "platform": "darwin",
     "context": "any",
     "reason": "no pg_search on this server, so a ParadeDB-engine database cannot be built here: this test asserts ParadeDB BM25 behaviour, not engine-agnostic behaviour (measured on the macOS and Windows cells, run 43354540890: pg_available_extensions has no pg_search row at all). The engine-agnostic half of the same file RUNS on all nine cells.",
     "reason_class": "paradedb-engine-unavailable",
@@ -574,17 +288,6 @@
   {
     "name": "test_the_report_never_carries_a_dsn_or_a_password",
     "file": "tests/test_89_06_pg_search_optional.py",
-    "platform": "darwin",
-    "context": "any",
-    "reason": "no pg_search on this server, so a ParadeDB-engine database cannot be built here: this test asserts ParadeDB BM25 behaviour, not engine-agnostic behaviour (measured on the macOS and Windows cells, run 43354540890: pg_available_extensions has no pg_search row at all). The engine-agnostic half of the same file RUNS on all nine cells.",
-    "reason_class": "paradedb-engine-unavailable",
-    "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
-    "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
-  },
-  {
-    "name": "test_the_report_never_carries_a_dsn_or_a_password",
-    "file": "tests/test_89_06_pg_search_optional.py",
     "platform": "win32",
     "context": "any",
     "reason": "no pg_search on this server, so a ParadeDB-engine database cannot be built here: this test asserts ParadeDB BM25 behaviour, not engine-agnostic behaviour (measured on the macOS and Windows cells, run 43354540890: pg_available_extensions has no pg_search row at all). The engine-agnostic half of the same file RUNS on all nine cells.",
@@ -596,29 +299,7 @@
   {
     "name": "test_the_resolver_names_the_right_engine_on_each_database",
     "file": "tests/test_89_06_pg_search_optional.py",
-    "platform": "darwin",
-    "context": "any",
-    "reason": "no pg_search on this server, so a ParadeDB-engine database cannot be built here: this test asserts ParadeDB BM25 behaviour, not engine-agnostic behaviour (measured on the macOS and Windows cells, run 43354540890: pg_available_extensions has no pg_search row at all). The engine-agnostic half of the same file RUNS on all nine cells.",
-    "reason_class": "paradedb-engine-unavailable",
-    "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
-    "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
-  },
-  {
-    "name": "test_the_resolver_names_the_right_engine_on_each_database",
-    "file": "tests/test_89_06_pg_search_optional.py",
     "platform": "win32",
-    "context": "any",
-    "reason": "no pg_search on this server, so a ParadeDB-engine database cannot be built here: this test asserts ParadeDB BM25 behaviour, not engine-agnostic behaviour (measured on the macOS and Windows cells, run 43354540890: pg_available_extensions has no pg_search row at all). The engine-agnostic half of the same file RUNS on all nine cells.",
-    "reason_class": "paradedb-engine-unavailable",
-    "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
-    "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
-  },
-  {
-    "name": "test_the_substitutes_exist_exactly_where_the_bm25_indexes_do_not",
-    "file": "tests/test_89_06_pg_search_optional.py",
-    "platform": "darwin",
     "context": "any",
     "reason": "no pg_search on this server, so a ParadeDB-engine database cannot be built here: this test asserts ParadeDB BM25 behaviour, not engine-agnostic behaviour (measured on the macOS and Windows cells, run 43354540890: pg_available_extensions has no pg_search row at all). The engine-agnostic half of the same file RUNS on all nine cells.",
     "reason_class": "paradedb-engine-unavailable",

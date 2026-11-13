@@ -125,7 +125,7 @@ authoritative. New shards appear as their plans open them.
 | `89-04.json` | opened with 51, all 51 closed by plan 89-07 (46 with a database, 5 with a major-16 client) — **shard deleted** | — |
 | `89-05.json` | removed the 26 `test_a2a_*` entries with the feature, added 24, all 24 closed by plan 89-07 — **shard deleted** | — |
 | `89-06.json` | opened with 70, all 70 closed by plan 89-07 — **shard deleted** | — |
-| `89-07.json` | the 386 entries 89-09 migrated in are gone; the shard now holds plan 89-07's own 334 additions in two classes (see below) | Phase 100 |
+| `89-07.json` | the 386 entries 89-09 migrated in are gone; plan 89-07 added 366 of its own, and plan 89-12 closed 29 of those (see below), leaving 337 | Phase 100 |
 | `89-08.json` | opened with 26 `pg-no-disposable-database-local` entries (`all` / `local`): the PostgreSQL-backed tests of `tests/test_89_08_blue_green_backfill.py` (migration 034, the re-embed job, the cutover, the mixed-model refusal) | Phase 100 |
 | `89-10.json` | opened with 1 `pg-no-disposable-database-local` entry (`all` / `local`): the store-through-a-PostgreSQL-daemon acceptance of the managed keys file | Phase 100 |
 | `carried.json` | unchanged | their own phases |
@@ -141,7 +141,7 @@ rather than estimated, is:
 | Class | Entries | Platform / context | Owner |
 |---|---|---|---|
 | `pg-no-disposable-database-local` | 304 (239 python + 65 node) | `all` / `local` | Phase 100 |
-| `paradedb-engine-unavailable` | 30 (15 tests × `darwin` + `win32`) | per-platform / `any` | Phase 100 |
+| `paradedb-engine-unavailable` | 29 (29 tests × `win32`; plan 89-07 wrote 58, and plan 89-12 closed the 29 `darwin` ones) | `win32` / `any` | Phase 100 |
 
 The 304 came from the gate's own `SKIP_UNLISTED` list on a local full run with
 `CI` unset and `GSD_TEST_POSTGRES_URL` unset — one row per test rather than one
@@ -149,8 +149,16 @@ per test per system, which is why the count is about half of 598 and not 598.
 The gate REFUSES a `context: "local"` entry when `CI` is set, so none of them can
 ever excuse a CI cell.
 
-The 30 are the tests that need the **ParadeDB** lexical engine on the two cells
-whose PostgreSQL has no `pg_search` control file at all. Fifteen of them carry
-BOTH a local row and a per-platform row, because the two obstacles are different
+The 29 are the tests that need the **ParadeDB** lexical engine, on the one cell
+whose PostgreSQL has no `pg_search` control file at all: Windows. They carry
+BOTH a local row and a `win32` row, because the two obstacles are different
 (no database at all, versus a database with no `pg_search`) and neither excuses
 the other's cell.
+
+Plan 89-07 wrote this class for `darwin` as well. **Plan 89-12 closed those 29
+`darwin` entries**: the macOS cells now install the pinned, SHA-256-verified
+ParadeDB `pg_search` package, so the 29 tests RUN there. The tuples moved from
+`added` to `closed` in `delta/89-07.json` (the delta of the plan that added
+them), and `delta/89-12.json` names them by key. The `win32` half has no such
+exit: `pg_search` has no Windows build, which `docs/CI-POSTGRES-CELLS.md` states
+as a capability limit.

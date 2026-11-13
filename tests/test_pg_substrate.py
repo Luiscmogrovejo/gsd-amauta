@@ -18,8 +18,45 @@ on a ParadeDB database and the correct answer on a plain PostgreSQL, so they
 pass on every cell and need no skip entry. The pgvector one is unchanged:
 pgvector is still required.
 """
+import os
 import pathlib
+import re
+import sys
+
 import pytest
+
+#: Plan 89-12 (decision D4): the lexical engine each CI cell is DOCUMENTED to
+#: run, keyed by ``sys.platform``. The Linux cell gets ParadeDB from the pinned
+#: container image, the macOS cell from the pinned, SHA-256-verified
+#: ``pg_search`` installer package, and the Windows cell runs plain PostgreSQL
+#: because ParadeDB publishes no Windows build at all. ``docs/CI-POSTGRES-CELLS.md``
+#: carries the same table for people, and a test below holds the two together.
+#:
+#: This is what turns "the engine present" into "the engine this cell is MEANT
+#: to have": without it, a macOS cell whose package silently failed to load
+#: would fall back to full-text search, every engine-conditional test would
+#: take its other branch, and the run would be green on the wrong engine.
+CI_CELL_LEXICAL_ENGINE = {
+    'linux': 'pg_search_bm25',
+    'darwin': 'pg_search_bm25',
+    'win32': 'postgres_fts',
+}
+
+#: The runner label of each platform's cell, as the workflow matrix spells it.
+CI_CELL_RUNNER = {
+    'linux': 'ubuntu-latest',
+    'darwin': 'macos-latest',
+    'win32': 'windows-latest',
+}
+
+_CELLS_DOC = pathlib.Path(__file__).resolve().parent.parent / 'docs' / 'CI-POSTGRES-CELLS.md'
+
+
+def _on_a_ci_cell():
+    """Whether this run is a CI cell — the skip gate's own rule for ``CI``."""
+    value = os.environ.get('CI', '').strip().lower()
+    return value not in ('', 'false', '0')
+
 
 # 88-08-04: the three LIVE integration tests below used to fall back to the default DSN
 # on 127.0.0.1:5433, i.e. the operator's live Postgres whenever its container was up
@@ -183,6 +220,33 @@ def test_infra03_pg_search_installed(postgres_dsn):
         assert 'idx_gsd_memory_fts_fallback' in indexes, \
             'pg_search is absent and migration 033 created no memory substitute'
 
+    # Plan 89-12: the two index sets, BOTH directions, by name. A database is on
+    # exactly one lexical engine: every index of its own set exists and none of
+    # the other's does. (A leftover substitute beside a BM25 index would mean
+    # migration 033 ran its plain branch on a ParadeDB database.)
+    import pg_engines  # tests/support is on sys.path -- see tests/conftest.py
+    bm25 = set(pg_engines.BM25_INDEXES)
+    substitutes = set(pg_engines.FTS_SUBSTITUTE_INDEXES)
+    if row is not None:
+        assert bm25 <= indexes, sorted(bm25 - indexes)
+        assert not (substitutes & indexes), sorted(substitutes & indexes)
+    else:
+        assert substitutes <= indexes, sorted(substitutes - indexes)
+        assert not (bm25 & indexes), sorted(bm25 & indexes)
+
+    # Plan 89-12: and on a CI cell the engine is not "whichever one is there",
+    # it is the one that cell is documented to run. Everything above passes on
+    # EITHER engine by design, so without this line a macOS cell whose pinned
+    # package failed to load would be green on the fallback and nobody would
+    # know. A developer machine is not a cell and may run either.
+    if _on_a_ci_cell():
+        assert sys.platform in CI_CELL_LEXICAL_ENGINE, sys.platform
+        assert engine['lexical_engine'] == CI_CELL_LEXICAL_ENGINE[sys.platform], (
+            'the %s cell is documented (docs/CI-POSTGRES-CELLS.md) to run %s and '
+            'this database runs %s: %s' % (
+                CI_CELL_RUNNER[sys.platform], CI_CELL_LEXICAL_ENGINE[sys.platform],
+                engine['lexical_engine'], engine.get('reason')))
+
     # Plan 89-07: the same answer must reach the two places an operator looks,
     # ON THE CELL'S OWN DATABASE. Plan 89-06's doctor and /health tests take
     # both engines in one test, so they are ParadeDB-gated and never execute on
@@ -222,6 +286,34 @@ def test_infra03_pg_search_installed(postgres_dsn):
     assert state['pending'] == [], state['pending']
     assert state['drifted'] == [], state['drifted']
     assert len(state['applied']) == state['total'] > 0, state
+
+
+def test_the_documented_engine_of_every_cell_is_the_asserted_one():
+    """docs/CI-POSTGRES-CELLS.md and ``CI_CELL_LEXICAL_ENGINE`` say the same thing.
+
+    Plan 89-12. The table people read and the map the live test above enforces
+    are two statements of one fact, and a statement that is only written down
+    drifts. This needs no database, so it runs on every cell and locally: each
+    of the nine cells has a row, and each row names the engine the live
+    assertion requires of that platform.
+    """
+    text = _CELLS_DOC.read_text(encoding='utf-8')
+    rows = [line for line in text.splitlines()
+            if line.startswith('|') and re.search(r'`(test|pytest) \(', line)]
+    assert len(rows) == 9, 'the table must have one row per required cell: %r' % rows
+    engines = set(CI_CELL_LEXICAL_ENGINE.values())
+    seen = {}
+    for line in rows:
+        runners = [r for r in CI_CELL_RUNNER.values() if r in line]
+        assert len(runners) == 1, line
+        named = [e for e in engines if '`%s`' % e in line]
+        assert len(named) == 1, 'a row names exactly one engine: %s' % line
+        platform = next(p for p, r in CI_CELL_RUNNER.items() if r == runners[0])
+        assert named[0] == CI_CELL_LEXICAL_ENGINE[platform], line
+        seen[platform] = seen.get(platform, 0) + 1
+    assert seen == {'linux': 3, 'darwin': 3, 'win32': 3}, seen
+    # The Windows limit is stated as a capability, in the words the plan fixed.
+    assert 'no Windows target' in text
 
 
 @pytest.mark.integration
