@@ -126,6 +126,7 @@ authoritative. New shards appear as their plans open them.
 | `89-05.json` | removed the 26 `test_a2a_*` entries with the feature, added 24, all 24 closed by plan 89-07 — **shard deleted** | — |
 | `89-06.json` | opened with 70, all 70 closed by plan 89-07 — **shard deleted** | — |
 | `89-07.json` | the 386 entries 89-09 migrated in are gone; plan 89-07 added 366 of its own, and plan 89-12 closed 29 of those (see below), leaving 337 | Phase 100 |
+| `89-10.json` | opened with 1 `pg-no-disposable-database-local` entry (`all` / `local`): the store-through-a-PostgreSQL-daemon acceptance of the managed keys file | Phase 100 |
 | `carried.json` | unchanged | their own phases |
 
 ### What `89-07.json` holds, and why its entries are not owned by Phase 89

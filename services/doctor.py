@@ -854,6 +854,32 @@ def check_embeddings(health):
 
 
 # ══ Check 11: API keys ════════════════════════════════════════════════════════
+def _key_is_present(name):
+    """True when an API key is present for this install's entry points (plan 89-10).
+
+    ``doctor`` does not run the ``.env`` loader, so reading its own environment
+    alone answered "off" for a key the daemon and the CLIs DO load from the
+    managed keys file (``~/.amauta/env``) or from a ``.env``. This asks the same
+    resolver the ``keys`` row uses. Presence only: no value, prefix or length is
+    read out of it.
+
+    Args:
+        name: the variable name.
+
+    Returns:
+        bool: presence. Falls back to this process's environment when the
+        resolver is not importable (a partial install).
+    """
+    try:
+        try:
+            from services import _89_10_reporting as _keys
+        except ImportError:  # pragma: no cover - script-launched from services/
+            import _89_10_reporting as _keys
+        return _keys.is_present(name)
+    except Exception:  # noqa: BLE001 - a reporter must not take doctor down
+        return bool(os.environ.get(name, ""))
+
+
 def check_api_keys():
     """Report the model backend and the two OPTIONAL feature keys (ORC-05, plan 88-17).
 
@@ -885,7 +911,7 @@ def check_api_keys():
         optional = []
         for name, feature in (("VOYAGE_API_KEY", "embeddings"),
                               ("PERPLEXITY_API_KEY", "research-chain web leg")):
-            state = "on" if os.environ.get(name, "") else "off"
+            state = "on" if _key_is_present(name) else "off"
             optional.append(f"{feature} {state}")
         optional_text = "; ".join(optional)
 
