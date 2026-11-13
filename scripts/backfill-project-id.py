@@ -67,6 +67,7 @@ sys.path.insert(0, str(ROOT))
 # exactly the lost-update race the lock exists to prevent.
 sys.path.append(str(ROOT / "services"))
 from _platform import file_lock as _platform_file_lock  # noqa: E402
+import _dotenv  # noqa: E402  (plan 89-10: the one .env loader, not a fifth copy)
 
 ALIAS_FILE = ROOT / "scripts" / "project-aliases.json"
 DEFAULT_PROJECT_ID = "default"
@@ -294,22 +295,6 @@ def classify(items, ctx):
 
 # ── PG side ───────────────────────────────────────────────────────────────────
 
-def _dotenv_suppressed():
-    """True when this process must not read the repository's .env file.
-
-    Plan 88-11 task 04: the same answer the four entry points give. Inside a
-    test session the environment is the only source of a DSN, because a .env
-    would reintroduce the live one that tests/conftest.py scrubs.
-
-    Returns:
-        bool: True under ``GSD_TEST_MODE`` (1/true/yes/on) or under pytest
-        (``PYTEST_CURRENT_TEST``); False otherwise, including ``=0``.
-    """
-    if os.environ.get("GSD_TEST_MODE", "").strip().lower() in ("1", "true", "yes", "on"):
-        return True
-    return bool(os.environ.get("PYTEST_CURRENT_TEST"))
-
-
 def _pg_url():
     """Resolve the PG DSN from the environment. Never printed.
 
@@ -320,11 +305,14 @@ def _pg_url():
         v = os.environ.get(key)
         if v:
             return v
+    # Plan 89-10: the suppression rule and the parser are the ONE loader's
+    # (services/_dotenv.py), not a fifth copy of them. Nothing is put into the
+    # environment here; only the DSN line is looked up.
     env_file = ROOT / ".env"
-    if env_file.is_file() and not _dotenv_suppressed():
-        for line in env_file.read_text(encoding="utf-8").splitlines():
-            if line.startswith("GSD_POSTGRES_URL="):
-                return line.split("=", 1)[1].strip()
+    if env_file.is_file() and not _dotenv.dotenv_suppressed():
+        for key, value in _dotenv.read_env_file(str(env_file)):
+            if key == "GSD_POSTGRES_URL":
+                return value
     return None
 
 

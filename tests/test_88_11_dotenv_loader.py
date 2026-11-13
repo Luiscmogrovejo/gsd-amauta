@@ -294,8 +294,10 @@ def test_an_explicit_file_is_the_one_opt_in(tmp_path, rel):
     still ignored.
     """
     target = dotenv_probe.build_tree(tmp_path, rel)
-    explicit = tmp_path / "explicit.env"
-    explicit.write_text("GSD_DOTENV_EXPLICIT=from-the-explicit-file\n", encoding="utf-8")
+    # Plan 89-10: the named file is the managed keys file, so it is written
+    # owner-only -- a group- or world-accessible one is refused.
+    explicit = dotenv_probe.write_owner_only(
+        tmp_path / "explicit.env", "GSD_DOTENV_EXPLICIT=from-the-explicit-file\n")
     env = dotenv_probe.child_env(GSD_TEST_MODE="1", GSD_DOTENV_PATH=str(explicit))
     env.pop("GSD_DOTENV_EXPLICIT", None)
     got = dotenv_probe.probe(
@@ -319,23 +321,35 @@ def test_an_explicit_file_that_does_not_exist_is_not_an_error(tmp_path, rel):
 
 
 @pytest.mark.parametrize("rel", ENTRY_POINTS)
-def test_the_opt_in_is_ignored_outside_test_mode(tmp_path, rel):
-    """Outside test mode ``GSD_DOTENV_PATH`` changes nothing.
+def test_the_explicit_file_wins_outside_test_mode_too(tmp_path, rel):
+    """Outside test mode ``GSD_DOTENV_PATH`` is read FIRST, and wins.
 
-    The production path stays exactly what the characterisation half pinned:
-    the ambient candidates, in order, and nothing else.
+    PLAN 89-10 CHANGED THIS ON PURPOSE. Until then this case was
+    ``test_the_opt_in_is_ignored_outside_test_mode`` and asserted the opposite:
+    the variable was a test hook only. The launchd daemon is now given its keys
+    by naming one owner-only file in ``GSD_DOTENV_PATH``, so the variable has to
+    work in production -- "an explicit path always wins".
+
+    What did NOT change, and is still asserted: the legacy candidate is read
+    exactly as the characterisation half pinned it. The explicit file is a layer
+    in front of ``<root>/.env``, so a name only the tree's ``.env`` defines still
+    arrives, and a name both define comes from the explicit file.
     """
     target = dotenv_probe.build_tree(tmp_path, rel)
-    explicit = tmp_path / "explicit.env"
-    explicit.write_text("GSD_DOTENV_EXPLICIT=from-the-explicit-file\n", encoding="utf-8")
+    explicit = dotenv_probe.write_owner_only(
+        tmp_path / "explicit.env",
+        "GSD_DOTENV_EXPLICIT=from-the-explicit-file\n"
+        "VOYAGE_API_KEY=explicit-not-a-real-key\n",
+    )
     env = dotenv_probe.child_env(GSD_DOTENV_PATH=str(explicit))
     env.pop("GSD_DOTENV_EXPLICIT", None)
     got = dotenv_probe.probe(
-        target, keys=("GSD_DOTENV_EXPLICIT", "GSD_DOTENV_SENTINEL"), env=env
+        target, keys=("GSD_DOTENV_EXPLICIT", "GSD_DOTENV_SENTINEL", "VOYAGE_API_KEY"), env=env
     )
     assert got == {
-        "GSD_DOTENV_EXPLICIT": None,
+        "GSD_DOTENV_EXPLICIT": "from-the-explicit-file",
         "GSD_DOTENV_SENTINEL": "leaked-from-dotenv",
+        "VOYAGE_API_KEY": "explicit-not-a-real-key",
     }
 
 
