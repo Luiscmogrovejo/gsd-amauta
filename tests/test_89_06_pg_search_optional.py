@@ -204,6 +204,11 @@ def test_every_migration_applies_on_both_engines_with_the_same_count(both):
         "%d of %d migrations applied on the pg_search-less database"
         % (counts["postgres_fts"], on_disk)
     )
+    for engine, db in both.items():
+        assert db["report"]["drifted"] == [], (engine, db["report"]["drifted"])
+        assert db["total"] == on_disk, engine
+    print("MEASURED (89-06, applied count): %r of %d on disk"
+          % (counts, on_disk))
 
 
 @pytest.mark.integration
@@ -423,16 +428,55 @@ def test_the_fallback_sentence_is_decision_d3s_words():
     )
 
 
+#: An extension name no PostgreSQL has. `check_pg_capabilities` asks
+#: `pg_available_extensions` — "can this SERVER run our schema" — and on a
+#: ParadeDB server `pg_search` IS available however this plan's stand-in
+#: database is built, so the accept/reject split has to be proven with a name
+#: that is genuinely absent from the cluster. Plan 89-07's first plain cell can
+#: then run the same two assertions against `pg_search` itself.
+ABSENT_EXTENSION = "definitely_not_an_extension"
+
+
 @pytest.mark.integration
 def test_a_plain_postgresql_is_accepted_with_a_named_degradation(plain):
+    """A database whose lexical engine is the plain one is ACCEPTED."""
     ok, report = infra_detect.check_pg_capabilities(plain["dsn"])
     assert ok is True, report["reason"]
-    assert report["degradations"] == [infra_detect.DEGRADATION_PG_SEARCH_ABSENT]
-    assert report["preferred_missing"] == ["pg_search"]
+    assert report["reason"] is None, "a degradation is not a rejection"
     assert report["lexical_engine"] == infra_detect.LEXICAL_POSTGRES_FTS
     assert report["lexical_engine_reason"] == infra_detect.LEXICAL_FALLBACK_SENTENCE
-    assert report["reason"] is None, "a degradation is not a rejection"
     assert "***" in report["url"] or "@" not in report["url"], "the DSN must be masked"
+    print("MEASURED (89-06, capability report, plain engine): %r" % report)
+
+
+@pytest.mark.integration
+def test_a_missing_preferred_extension_is_a_degradation_not_a_rejection(plain):
+    ok, report = infra_detect.check_pg_capabilities(
+        plain["dsn"], preferred_extensions=(ABSENT_EXTENSION,))
+    assert ok is True, report["reason"]
+    assert report["preferred_missing"] == [ABSENT_EXTENSION]
+    assert report["degradations"] == [
+        infra_detect.degradation_key(ABSENT_EXTENSION)]
+    assert infra_detect.degradation_key("pg_search") == \
+        infra_detect.DEGRADATION_PG_SEARCH_ABSENT
+
+
+@pytest.mark.integration
+def test_the_paradedb_server_reports_pg_search_as_available_and_not_degraded(both):
+    """Why the `pg_search_absent` key cannot be produced on this cluster.
+
+    `check_pg_capabilities` reads `pg_available_extensions`, so BOTH of this
+    plan's databases report pg_search as available — the plain one has it
+    dropped from `pg_extension`, not removed from the server. Asserted here so
+    the previous test's synthetic name is understood as a deliberate stand-in
+    rather than an oversight, and so plan 89-07's first genuinely plain cell
+    will see this assertion FAIL and know to invert it.
+    """
+    for engine, db in both.items():
+        ok, report = infra_detect.check_pg_capabilities(db["dsn"])
+        assert ok is True, report["reason"]
+        assert report["preferred_missing"] == [], (engine, report)
+        assert report["degradations"] == [], (engine, report)
 
 
 @pytest.mark.integration
@@ -455,14 +499,35 @@ def test_a_server_without_vector_is_still_rejected(plain):
 
 @pytest.mark.integration
 def test_the_mutation_proves_the_split_is_load_bearing(plain):
-    """Put pg_search back in REQUIRED_EXTENSIONS: the plain database is refused again."""
-    ok, report = infra_detect.check_pg_capabilities(
-        plain["dsn"], required_extensions=("vector", "pg_search"))
-    assert ok is False, (
-        "the plain database passed even with pg_search required — the accept "
-        "above proves nothing"
+    """The SAME missing extension: preferred -> accepted, required -> refused.
+
+    This is the mutation the plan asks for, run on the only axis this cluster
+    can move. `pg_search` itself cannot be made unavailable here (see
+    test_the_paradedb_server_reports_pg_search_as_available_and_not_degraded),
+    so the proof uses a name that is genuinely absent and moves it between the
+    two lists — which exercises exactly the code path the constant split
+    created: `extensions_missing` rejects, `preferred_missing` degrades.
+    """
+    accepted, accepted_report = infra_detect.check_pg_capabilities(
+        plain["dsn"], required_extensions=("vector",),
+        preferred_extensions=(ABSENT_EXTENSION,))
+    refused, refused_report = infra_detect.check_pg_capabilities(
+        plain["dsn"], required_extensions=("vector", ABSENT_EXTENSION),
+        preferred_extensions=())
+
+    assert accepted is True, accepted_report["reason"]
+    assert refused is False, (
+        "the same missing extension was accepted in BOTH lists — the split is "
+        "not load-bearing: %r" % refused_report
     )
-    assert "pg_search" in report["reason"]
+    assert ABSENT_EXTENSION in refused_report["reason"]
+    assert accepted_report["degradations"] == [
+        infra_detect.degradation_key(ABSENT_EXTENSION)]
+    assert refused_report["degradations"] == []
+    print("MEASURED (89-06, mutation): preferred -> ok=%s degradations=%r ; "
+          "required -> ok=%s reason=%r"
+          % (accepted, accepted_report["degradations"], refused,
+             refused_report["reason"]))
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -492,10 +557,51 @@ def test_the_row_arrives_through_the_hook_not_through_an_edit():
     """Plan 89-09 built the hooks so this plan edits neither reader."""
     from services import report_hooks
 
-    assert "_89_06_reporting" in report_hooks.PROVIDER_MODULES
+    assert "_89_06_reporting" in report_hooks.PROVIDER_MODULES, (
+        "the provider is not registered, so the row reaches neither reader"
+    )
+    # The provider IMPORTS and does not raise: report_hooks turns a provider
+    # exception into a row that says "reporter failed", so its absence is the
+    # assertion.
     rows = report_hooks.extra_doctor_rows({"GSD_FORCE_SQLITE": "1"})
-    assert report_hooks.DEGRADED_KEY not in dict(
-        (r[1], r) for r in rows), "the provider raised"
+    assert not [r for r in rows if "reporter failed" in r[2]], rows
+    section = report_hooks.extra_health_rows({"GSD_FORCE_SQLITE": "1"})
+    assert report_hooks.DEGRADED_KEY not in section, section
+    # And neither reader was edited to get it there.
+    for path in ("services/doctor.py", "services/amauta-daemon.py"):
+        source = (_REPO / path).read_text(encoding="utf-8")
+        assert "_89_06" not in source, f"{path} names this plan's module"
+
+
+def test_a_provider_may_declare_its_health_key_and_the_default_is_unchanged():
+    """Plan 89-06 added `HEALTH_KEY` to 89-09's hook — one line, additive.
+
+    Without it `/health` would publish this plan's fragment under the MODULE
+    name `_89_06_reporting`, putting a plan number into a payload the Phase
+    92/96 console has to read. A module that declares nothing still gets the
+    module name, so no existing provider moved.
+    """
+    import types
+
+    from services import _89_06_reporting as reporting
+    from services import report_hooks
+
+    assert reporting.HEALTH_KEY == "lexical"
+    assert reporting.HEALTH_KEY == reporting.DOCTOR_CATEGORY, (
+        "the two readers must name the same thing the same way"
+    )
+
+    saved = report_hooks.PROVIDER_MODULES
+    quiet = types.ModuleType("quiet_provider")
+    quiet.health_fragment = lambda env=None: {"ok": True}
+    sys.modules["quiet_provider"] = quiet
+    try:
+        report_hooks.PROVIDER_MODULES = ("quiet_provider",)
+        section = report_hooks.extra_health_rows({})
+        assert "quiet_provider" in section, section
+    finally:
+        report_hooks.PROVIDER_MODULES = saved
+        del sys.modules["quiet_provider"]
 
 
 def test_the_provider_reports_nothing_rather_than_guessing():

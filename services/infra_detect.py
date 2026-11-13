@@ -96,7 +96,15 @@ LEXICAL_POSTGRES_FTS = "postgres_fts"
 #: and SAY that you could not tell".
 LEXICAL_UNKNOWN = "unknown"
 
-#: The capability report's stable degradation key for "no pg_search here".
+#: The capability report's degradation key for a missing PREFERRED extension:
+#: ``<name>_absent``, one per name, so the key is stable and mechanical rather
+#: than a special case for one extension. :data:`DEGRADATION_PG_SEARCH_ABSENT`
+#: is the one this phase cares about, by name, for callers to compare against.
+def degradation_key(extension):
+    """``"pg_search"`` -> ``"pg_search_absent"``."""
+    return "%s_absent" % extension
+
+
 DEGRADATION_PG_SEARCH_ABSENT = "pg_search_absent"
 
 #: Database-scoped opt-out, read by migration 011 at create time and by
@@ -373,8 +381,8 @@ def check_pg_capabilities(url, min_pgvector=MIN_PGVECTOR,
         )
         report["lexical_engine"] = engine["lexical_engine"]
         report["lexical_engine_reason"] = engine["reason"]
-        if "pg_search" in report["preferred_missing"]:
-            report["degradations"].append(DEGRADATION_PG_SEARCH_ABSENT)
+        report["degradations"] = [degradation_key(name)
+                                  for name in report["preferred_missing"]]
         if "vector" in found:
             report["pgvector_version"] = found["vector"]
     except Exception as exc:  # noqa: BLE001 - any failure means "not usable"

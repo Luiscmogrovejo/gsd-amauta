@@ -1234,13 +1234,28 @@ class TestBaselineDetectionIntegration:
         "032-drop-a2a-messages.sql",
     ]
 
+    def _expected_detected(self):
+        """Every file on disk, minus the ones still pending.
+
+        DERIVED, not written down -- the same reasoning plan 89-02 gives in
+        test_a_gap_in_the_middle_is_found_not_assumed_away below: a hard-coded
+        count turns every new migration into a failure in a test whose subject
+        is something else. It was `25` until plan 89-06 added migration 033,
+        whose effect on a ParadeDB database is NIL -- so, exactly like 024 and
+        032, its only observable is the ABSENCE of what it would have created,
+        and it reads as applied on an engine where it had nothing to do.
+        """
+        discovered = {n for n, _, _ in migrate_runner.discover_migrations(MIGRATIONS_DIR)}
+        return len(discovered) - len(self.PENDING_AFTER_OLD_WAY_26)
+
     def test_status_infers_what_is_applied_without_writing(self, scratch_dsn):
         self._apply_the_old_way(scratch_dsn, 26)
         report = migrate_runner.status(dsn=scratch_dsn)
         assert report["tracking_table"] is False
         assert report["pre_migrated_detected"] is True
-        # 25, not 26: 024 shares 032's sentinel and the table is still here.
-        assert len(report["detected_by_schema"]) == 25
+        # One per file on disk except the pending list: 024 shares 032's
+        # sentinel and the table is still here, 027..032 have not run.
+        assert len(report["detected_by_schema"]) == self._expected_detected()
         assert "024-a2a-messages.sql" not in report["detected_by_schema"]
         assert report["pending"] == self.PENDING_AFTER_OLD_WAY_26
 
@@ -1248,7 +1263,7 @@ class TestBaselineDetectionIntegration:
         self._apply_the_old_way(scratch_dsn, 26)
         result = migrate_runner.apply_migrations(dsn=scratch_dsn,
                                                  log=lambda *_: None)
-        assert len(result["baselined"]) == 25
+        assert len(result["baselined"]) == self._expected_detected()
         assert result["applied"] == self.PENDING_AFTER_OLD_WAY_26
         again = migrate_runner.apply_migrations(dsn=scratch_dsn, log=lambda *_: None)
         assert again["applied"] == []

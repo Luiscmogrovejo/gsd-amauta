@@ -54,9 +54,12 @@ except ImportError:  # pragma: no cover - script-launched from services/
 
 log = logging.getLogger(__name__)
 
-#: The ``/health`` key this row lands under, inside ``report_hooks``'
-#: ``extra`` section — so the full path is ``health["extra"]["lexical"]``.
-#: Phase 92/96's console renders it without shelling out to ``doctor``.
+#: The ``/health`` key this row lands under, inside ``report_hooks``' ``extra``
+#: section — so the full path is ``health["extra"]["lexical"]``, which Phase
+#: 92/96's console reads without shelling out to ``doctor``. ``report_hooks``
+#: publishes a provider's fragment under its MODULE name unless the module
+#: declares this; `_89_06_reporting` would have put a plan number into a public
+#: payload. Same word as :data:`DOCTOR_CATEGORY`, so the two readers agree.
 HEALTH_KEY = "lexical"
 
 #: ``doctor``'s category column for this row.

@@ -5,12 +5,26 @@ provable on BOTH engines. No CI cell has a PostgreSQL without ParadeDB today
 (plan 89-07 brings the macOS and Windows databases up), so this module makes
 the second engine out of the cluster that IS there.
 
+MEASURED, 2026-11-13, CI run 43346801628: THE IMAGE PRE-INSTALLS THE EXTENSION
+──────────────────────────────────────────────────────────────────────────────
+``paradedb/paradedb:latest-pg16`` carries ``pg_search`` (and ``vector``) in
+**template1**, so a plain ``CREATE DATABASE`` INHERITS them — which is also why
+no migration in this repository ever creates ``vector`` and 011's pgvector
+assertion still passes. Setting ``gsd.lexical_engine`` alone was therefore not
+enough: 011 correctly skipped its own ``CREATE EXTENSION`` and its BM25 index,
+and 012 then found the INHERITED extension in ``pg_extension`` and built
+``idx_rlm_chunks_bm25`` anyway. :func:`scratch_database` now does both halves —
+``DROP EXTENSION IF EXISTS pg_search CASCADE`` on the new database and the
+setting so 011 does not put it back — and VERIFIES both before yielding, so a
+stand-in that stops standing in fails loudly instead of quietly testing the
+engine it was meant to exclude.
+
 WHAT THE STAND-IN PROVES, AND WHAT IT DOES NOT
 ──────────────────────────────────────────────
-:func:`plain_database` creates a database on the ParadeDB cluster and sets
-``gsd.lexical_engine = 'postgres_fts'`` on it BEFORE the first migration runs.
-Migration 011's guard then skips ``CREATE EXTENSION pg_search``, so
-``pg_extension`` carries no ``pg_search`` row and every consumer — the
+:func:`scratch_database` with ``force_plain=True`` produces a database on the
+ParadeDB cluster in which ``pg_search`` is NOT installed and migration 011 will
+not install it. So ``pg_extension`` carries no ``pg_search`` row and every
+consumer — the
 migrations' own guards, ``migrate_runner``'s sentinels,
 ``infra_detect.lexical_engine``, ``rlm_search._has_pg_search``, ``doctor`` and
 ``/health`` — takes exactly the branch it would take on a plain PostgreSQL,
@@ -21,7 +35,12 @@ NOT prove:
 
 * that ``pg_available_extensions`` lacks the control file (the first condition
   of 011's guard; only a cluster without the ParadeDB binaries shows that, and
-  the first one arrives with plan 89-07);
+  the first one arrives with plan 89-07). This is also why
+  ``check_pg_capabilities``' ``pg_search_absent`` degradation cannot be
+  produced here: that function asks ``pg_available_extensions``, i.e. "can this
+  SERVER run our schema", and on a ParadeDB server the honest answer is yes.
+  The accept/reject split is proven instead with an extension name that is
+  genuinely absent from the cluster, moved between the two lists;
 * anything about ParadeDB's RANKING, which is a property of the engine, not of
   the catalogue. The two engines score differently on purpose — that is the
   divergence this plan documents rather than hides.
@@ -66,6 +85,41 @@ def _autocommit(dsn):
     return conn
 
 
+def _make_plain(db_dsn):
+    """Drop the inherited ``pg_search`` and prove the database is now plain.
+
+    Two conditions, both verified, because either one alone is not enough:
+    the extension must be gone from ``pg_extension`` (``template1`` put it
+    there), and ``gsd.lexical_engine`` must be visible to a NEW session (or
+    migration 011 installs it again on the first apply).
+    """
+    conn = _autocommit(db_dsn)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DROP EXTENSION IF EXISTS pg_search CASCADE")
+    finally:
+        conn.close()
+
+    conn = _autocommit(db_dsn)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM pg_extension WHERE extname = 'pg_search'")
+            still_there = cur.fetchone() is not None
+            cur.execute("SELECT coalesce(current_setting(%s, true), '')",
+                        ("gsd.lexical_engine",))
+            setting = cur.fetchone()[0]
+    finally:
+        conn.close()
+    if still_there:
+        raise RuntimeError(
+            "pg_engines: pg_search is still installed after DROP EXTENSION, so "
+            "this database is NOT a plain-engine stand-in")
+    if setting != FORCE_PLAIN:
+        raise RuntimeError(
+            "pg_engines: gsd.lexical_engine reads %r, not %r, so migration 011 "
+            "would reinstall pg_search on the first apply" % (setting, FORCE_PLAIN))
+
+
 @contextlib.contextmanager
 def scratch_database(dsn, force_plain=False):
     """A fresh, empty database on the test server; dropped afterwards.
@@ -76,11 +130,18 @@ def scratch_database(dsn, force_plain=False):
 
     Args:
         dsn: the disposable cluster's DSN (``GSD_TEST_POSTGRES_URL``).
-        force_plain: set ``gsd.lexical_engine = 'postgres_fts'`` on the new
-            database, so migration 011 never installs ``pg_search`` in it.
+        force_plain: make the new database genuinely ``pg_search``-less — drop
+            the extension it inherited from ``template1`` AND set
+            ``gsd.lexical_engine = 'postgres_fts'`` so migration 011 does not
+            put it back. Verified before yielding.
 
     Yields:
         str: a DSN for the new database.
+
+    Raises:
+        RuntimeError: when ``force_plain`` could not be established. A silent
+            half-success here would mean every "plain engine" assertion in this
+            plan silently tested ParadeDB instead.
     """
     name = "gsd_89_06_" + uuid.uuid4().hex[:12]
     admin = _admin_dsn(dsn)
@@ -97,8 +158,11 @@ def scratch_database(dsn, force_plain=False):
                 )
     finally:
         conn.close()
+    db_dsn = pg_dsn.dsn_with_database(dsn, name)
+    if force_plain:
+        _make_plain(db_dsn)
     try:
-        yield pg_dsn.dsn_with_database(dsn, name)
+        yield db_dsn
     finally:
         conn = _autocommit(admin)
         try:
@@ -117,12 +181,13 @@ def migrated_database(dsn, force_plain=False):
     """:func:`scratch_database` with every migration applied.
 
     Yields:
-        tuple: ``(db_dsn, applied_count)`` — the count is what the "same number
-        on both engines" assertion reads.
+        tuple: ``(db_dsn, report)`` — ``report`` is ``apply_migrations``' own
+        dict (it returns a report, not an int), whose ``applied`` list and
+        ``total`` are what the "same number on both engines" assertion reads.
     """
     with scratch_database(dsn, force_plain=force_plain) as db_dsn:
-        applied = migrate_runner.apply_migrations(dsn=db_dsn, log=lambda *_: None)
-        yield db_dsn, applied
+        report = migrate_runner.apply_migrations(dsn=db_dsn, log=lambda *_: None)
+        yield db_dsn, report
 
 
 def index_names(db_dsn, schema="public"):
@@ -180,18 +245,23 @@ def has_pg_search(db_dsn):
 # databases costs real seconds, and four would cost them twice. A test module
 # takes them with `from pg_engines import paradedb, plain, both  # noqa: F401`.
 
+def _engine_entry(dsn, report, engine):
+    return {"dsn": dsn, "report": report, "engine": engine,
+            "applied": len(report["applied"]), "total": report["total"]}
+
+
 @pytest.fixture(scope="session")
 def paradedb(postgres_dsn):
     """A fully migrated database WITH pg_search."""
-    with migrated_database(postgres_dsn) as (dsn, applied):
-        yield {"dsn": dsn, "applied": applied, "engine": "pg_search_bm25"}
+    with migrated_database(postgres_dsn) as (dsn, report):
+        yield _engine_entry(dsn, report, "pg_search_bm25")
 
 
 @pytest.fixture(scope="session")
 def plain(postgres_dsn):
     """A fully migrated database WITHOUT pg_search (see this module's header)."""
-    with migrated_database(postgres_dsn, force_plain=True) as (dsn, applied):
-        yield {"dsn": dsn, "applied": applied, "engine": "postgres_fts"}
+    with migrated_database(postgres_dsn, force_plain=True) as (dsn, report):
+        yield _engine_entry(dsn, report, "postgres_fts")
 
 
 @pytest.fixture
