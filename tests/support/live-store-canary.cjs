@@ -560,11 +560,12 @@ function formatAudit(audit, ctx = {}) {
   const watched = ctx.watched || [];
   if (audit.unregistered.length > 0) {
     out.push(
-      'UNREGISTERED PROCESS: a daemon or RLM service was started during the run by something that is ' +
-        'not a fixture (no registry line). Reported, NEVER signalled.'
+      'UNREGISTERED PROCESS: a daemon or RLM service appeared during the run and no registry line accounts ' +
+        'for it — not this run\'s fixture, and not a service started under this run\'s environment ' +
+        '(another run on this machine, or a start with a scrubbed environment). Reported, NEVER signalled.'
     );
     for (const p of audit.unregistered) {
-      out.push('  ' + registry.holderText(p) + (p.inCheckout ? '  [script of this checkout]' : '  [script of ANOTHER checkout]'));
+      out.push('  ' + registry.holderText(p) + (p.inCheckout ? '  [script of this checkout]' : '  [script outside this checkout]'));
       const running = registry.filesRunningAt(timeline, p.createdMs);
       out.push('      test files running when it was created: ' + (running.length ? running.join(', ') : 'unknown (no timeline)'));
       const chain = registry.ancestry(p, watched);
@@ -572,6 +573,13 @@ function formatAudit(audit, ctx = {}) {
       const owner = chain.map((a) => timeline.find((w) => w.pid === a.pid && Math.abs(w.start - a.createdMs) < 10000)).find(Boolean);
       if (owner) out.push('      STARTED UNDER: ' + owner.file);
     }
+  }
+  if ((audit.preexisting || []).length > 0) {
+    out.push(
+      'process registry: ' + audit.preexisting.length + ' daemon/RLM process(es) of this checkout were already running ' +
+        'when the run began (not started by this run, never signalled):'
+    );
+    for (const p of audit.preexisting) out.push('  ' + registry.holderText(p));
   }
   if (audit.recycled.length > 0) {
     out.push('process registry: ' + audit.recycled.length + ' registered pid(s) now belong to another process (not strays, not signalled):');

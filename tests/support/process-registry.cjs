@@ -218,13 +218,29 @@ function annotate(entry, fields) {
 }
 
 /**
+ * How long before its registry line a self-registered service may have been
+ * created: the time an interpreter takes from process creation to running
+ * `sitecustomize`, on a loaded CI runner, with room to spare.
+ */
+const SELF_REGISTER_SLACK_MS = 60000;
+
+/**
  * Read a registry file into entries.
  *
- * One entry per (pid, spawnedAt): a pid number that two fixtures of one run
- * were given in turn is two entries, and the late `exited` of the first cannot
- * close the second. A line without `spawnedAt` (written by hand, or by a
- * pre-89-15 writer) keys on the pid alone, and a closing line without it closes
- * every entry of that pid — the old semantics, preserved.
+ * One entry per PROCESS, not per pid number. A pid that two fixtures of one
+ * run were given in turn is two entries, and the late `exited` of the first
+ * cannot close the second: a closing line names the `spawnedAt` of the entry it
+ * closes. A line without `spawnedAt` (written by hand, or by a pre-89-15
+ * writer) keys on the pid alone, and a closing line without it closes every
+ * entry of that pid — the old semantics, preserved.
+ *
+ * A `self` line (in `<registry>.self`) is a daemon or RLM service registering
+ * ITSELF as it starts (`tests/support/pythonpath/sitecustomize.py`): it holds
+ * this run's registry path in its environment, which is the proof that it
+ * belongs to this run. When a fixture registered that pid the two are one
+ * process and the entry is only marked; otherwise the service was started
+ * through a product path, not a fixture, and the `self` line is its whole
+ * registration.
  *
  * A missing file is the normal "nothing started" case. A malformed line is
  * skipped with a warning. Never throws.
@@ -238,11 +254,12 @@ function readEntries(file) {
     text = fs.readFileSync(file, 'utf8');
   } catch (e) {
     if (e.code !== 'ENOENT') console.error('live-store-canary: cannot read process ledger ' + file + ': ' + e.message);
-    return { open: [], closed: [] };
+    text = ''; // no fixture wrote a line; a service may still have registered itself
   }
-  /** @type {Map<string, {rec: object, open: boolean}>} */
-  const byKey = new Map();
-  const keyOf = (rec) => rec.pid + ':' + (rec.spawnedAt === undefined ? '' : rec.spawnedAt);
+  /** @type {{rec: object, open: boolean, closedAt: number|null}[]} */
+  const slots = [];
+  const keyOf = (rec) => (rec.spawnedAt === undefined ? '' : String(rec.spawnedAt));
+  const find = (rec) => slots.filter((s) => s.rec.pid === rec.pid && keyOf(s.rec) === keyOf(rec)).pop();
   for (const line of text.split('\n')) {
     if (!line.trim()) continue;
     let rec;
@@ -254,28 +271,89 @@ function readEntries(file) {
     }
     if (!rec || !Number.isInteger(rec.pid) || rec.pid <= 0) continue;
     if (rec.event === 'started') {
-      const prev = byKey.get(keyOf(rec));
+      const slot = find(rec);
       // A re-written `started` (a survivor) keeps what the first line knew.
-      byKey.set(keyOf(rec), { rec: prev ? { ...prev.rec, ...rec } : rec, open: true });
+      if (slot) Object.assign(slot, { rec: { ...slot.rec, ...rec }, open: true, closedAt: null });
+      else slots.push({ rec, open: true, closedAt: null });
     } else if (rec.event === 'ready') {
-      const slot = byKey.get(keyOf(rec));
+      const slot = find(rec);
       if (slot) {
         const { event: _event, ...fields } = rec;
         Object.assign(slot.rec, fields);
       }
     } else if (rec.event === 'stopped' || rec.event === 'exited') {
-      if (rec.spawnedAt === undefined) {
-        for (const slot of byKey.values()) if (slot.rec.pid === rec.pid) slot.open = false;
-      } else {
-        const slot = byKey.get(keyOf(rec));
-        if (slot) slot.open = false;
-      }
+      const closing = rec.spawnedAt === undefined ? slots.filter((s) => s.rec.pid === rec.pid) : [find(rec)].filter(Boolean);
+      for (const slot of closing) Object.assign(slot, { open: false, closedAt: Number.isFinite(rec.at) ? rec.at : Date.now() });
     }
+  }
+  // The services that registered THEMSELVES. A fixture registers the process it
+  // spawns before that process has run a line of Python, so a `self` line that
+  // falls inside the lifetime of an entry with the same pid is that same
+  // process speaking; one that does not is a service no fixture started.
+  for (const self of readSelfLines(file)) {
+    const tol = toleranceFor();
+    const same = slots.find((s) => s.rec.pid === self.pid && s.rec.role !== 'self' &&
+      (!Number.isFinite(s.rec.spawnedAt) || self.at >= s.rec.spawnedAt - tol) &&
+      (s.open || self.at <= s.closedAt + tol));
+    if (same) {
+      same.rec.selfRegistered = true;
+      continue;
+    }
+    slots.push({
+      rec: {
+        ...self,
+        event: 'started',
+        role: 'self',
+        fixture: null,
+        port: null,
+        spawnedAt: self.at - SELF_REGISTER_SLACK_MS,
+        selfRegistered: true,
+      },
+      open: true,
+      closedAt: null,
+    });
   }
   const open = [];
   const closed = [];
-  for (const slot of byKey.values()) (slot.open ? open : closed).push(slot.rec);
+  for (const slot of slots) (slot.open ? open : closed).push(slot.rec);
   return { open, closed };
+}
+
+/**
+ * Where services register themselves: beside the registry, in a file of their
+ * own, so the fixtures' `started`/`stopped` pairs stay pairs.
+ *
+ * @param {string} registryFile the run's registry
+ * @returns {string}
+ */
+function selfRegistryPath(registryFile) {
+  return registryFile + '.self';
+}
+
+/**
+ * The `self` lines of a run (see `readEntries`). Never throws.
+ *
+ * @param {string} registryFile the run's registry
+ * @returns {{pid: number, ppid?: number, kind: string, at: number, owner: string|null, dataDir: string|null}[]}
+ */
+function readSelfLines(registryFile) {
+  let text;
+  try {
+    text = fs.readFileSync(selfRegistryPath(registryFile), 'utf8');
+  } catch (_e) {
+    return [];
+  }
+  const out = [];
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    try {
+      const rec = JSON.parse(line);
+      if (rec && rec.event === 'self' && Number.isInteger(rec.pid) && rec.pid > 0 && Number.isFinite(rec.at)) out.push(rec);
+    } catch (_e) {
+      /* a line being written right now */
+    }
+  }
+  return out;
 }
 
 // ── the process table ────────────────────────────────────────────────────────
@@ -533,6 +611,303 @@ function pidAlive(pid) {
   }
 }
 
+// ── fixture teardown ─────────────────────────────────────────────────────────
+
+/** When this process started: the earliest a process of one of its fixtures can have been created. */
+const PROCESS_STARTED_AT = Date.now() - Math.round(process.uptime() * 1000);
+const POLL_INTERVAL_MS = 100;
+
+/**
+ * The pid written in a pid file, or null when the file is absent or unusable.
+ *
+ * The files read through this are written BY a fixture's own service INTO the
+ * fixture's own temporary data directory. That makes the pid a CANDIDATE, not
+ * a target: `reapFixture` signals it only after the process table has shown it
+ * was created during the fixture's lifetime.
+ *
+ * @param {string} file absolute path of the pid file
+ * @returns {number|null}
+ * @example
+ *   readPidFile('/tmp/d/amauta-daemon.pid') // 1076
+ */
+function readPidFile(file) {
+  try {
+    const pid = parseInt(fs.readFileSync(file, 'utf8').trim(), 10);
+    return Number.isInteger(pid) && pid > 0 ? pid : null;
+  } catch (_e) {
+    return null;
+  }
+}
+
+/**
+ * Wait until `pid` stops answering signal 0, or the budget runs out.
+ *
+ * @param {number} pid the pid to watch
+ * @param {number} ms how long to wait in total
+ * @returns {Promise<boolean>} true when the process is gone
+ */
+async function waitForExit(pid, ms) {
+  const deadline = Date.now() + ms;
+  while (pidAlive(pid) && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+  }
+  return !pidAlive(pid);
+}
+
+/**
+ * Kill one exact pid: SIGTERM, bounded wait, SIGKILL, bounded wait.
+ *
+ * @param {number} pid the exact pid to stop
+ * @param {number} graceMs budget for EACH of the two waits
+ * @param {boolean} [hard=false] skip the SIGTERM (a simulated crash)
+ * @returns {Promise<boolean>} true when the pid has stopped answering
+ * @example
+ *   await killPid(1076, 5000) // true
+ */
+async function killPid(pid, graceMs, hard = false) {
+  if (!pidAlive(pid)) return true;
+  if (!hard) {
+    try {
+      process.kill(pid, 'SIGTERM');
+    } catch (_e) {
+      /* exited between the probe and the signal */
+    }
+    if (await waitForExit(pid, graceMs)) return true;
+  }
+  try {
+    process.kill(pid, 'SIGKILL');
+  } catch (_e) {
+    /* exited after SIGTERM */
+  }
+  return waitForExit(pid, graceMs);
+}
+
+/**
+ * Stop every process of ONE fixture and report what survived.
+ *
+ * The fixture is the process node spawned (`proc`) plus:
+ *   - the processes UNDER it in the process table — on Windows a terminated
+ *     parent leaves its children running, and `py.exe` is a launcher whose
+ *     child is the real interpreter, so killing `proc` alone is how a daemon
+ *     and its RLM child outlived run 43223847244;
+ *   - the pids the fixture's own service wrote into the fixture's own data
+ *     directory (`pidFiles`), and the ones the fixture registered when it
+ *     became ready (`members`).
+ *
+ * Nothing outside that set is signalled, and a pid-file pid is signalled only
+ * when the process table shows its process was created during the fixture's
+ * lifetime: a stale file whose number has since been handed to another process
+ * names a stranger, and a stranger is left alone.
+ *
+ * The registry line of every process follows the MEASUREMENT: `stopped` for one
+ * observed gone, `started` for a survivor, which therefore stays visible to the
+ * runner's stray check, attributed to its owner.
+ *
+ * @param {object} o
+ * @param {import('child_process').ChildProcess} o.proc the process the fixture spawned
+ * @param {'daemon'|'rlm'} o.kind
+ * @param {string} o.fixture the fixture function's name, for the registry
+ * @param {string} o.dataDir the fixture's data directory
+ * @param {number|null} [o.port]
+ * @param {number} [o.spawnedAt] `Date.now()` before the spawn; this process's own start when absent
+ * @param {object} [o.entry] the root's registry entry, when the fixture registered it
+ * @param {object[]} [o.members] entries the fixture registered besides the root
+ * @param {{file: string, kind: 'daemon'|'rlm', port?: number|null}[]} [o.pidFiles]
+ * @param {number} o.graceMs budget for each wait
+ * @param {boolean} [o.hard=false] SIGKILL at once (a simulated crash)
+ * @param {function(): Promise<object|null>} [o.readTable=processTableAsync] injectable process-table reader
+ * @returns {Promise<{rootGone: boolean, survivors: {pid: number, kind: string, role: string}[], allGone: boolean}>}
+ */
+async function reapFixture(o) {
+  const { proc } = o;
+  const readTable = o.readTable || processTableAsync;
+  const lower = Number.isFinite(o.spawnedAt) ? o.spawnedAt : PROCESS_STARTED_AT;
+  const reaped = () => proc.exitCode !== null || proc.signalCode !== null;
+  const rootEntry = o.entry || {
+    kind: o.kind,
+    role: 'spawned',
+    pid: proc.pid,
+    port: o.port || null,
+    dataDir: o.dataDir,
+    fixture: o.fixture,
+    ...(Number.isFinite(o.spawnedAt) ? { spawnedAt: o.spawnedAt } : {}),
+  };
+  if (o.port && !rootEntry.port) rootEntry.port = o.port;
+
+  // 1. Who is in this fixture. Pid files are read BEFORE anything is signalled:
+  //    a service that exits cleanly unlinks its own.
+  /** @type {Map<number, {pid: number, kind: string, role: string, port: number|null, entry: object|null, createdMs: number|null, source: string}>} */
+  const members = new Map();
+  const candidate = (c) => {
+    if (!c.pid || c.pid === proc.pid || c.pid === process.pid || members.has(c.pid)) return;
+    members.set(c.pid, { port: null, entry: null, createdMs: null, ...c });
+  };
+  for (const e of o.members || []) {
+    candidate({ pid: e.pid, kind: e.kind, role: e.role || 'pidfile', port: e.port || null, entry: e, source: 'the registry' });
+  }
+  for (const pf of o.pidFiles || []) {
+    candidate({ pid: readPidFile(pf.file), kind: pf.kind, role: 'pidfile', port: pf.port || null, source: pf.file });
+  }
+  const table = await readTable();
+  if (table) {
+    const tol = toleranceFor(table.platform);
+    for (const m of [...members.values()]) {
+      const holder = table.byPid.get(m.pid);
+      const ours = holder && (m.entry
+        ? classify(m.entry, table).state === 'ours'
+        : Boolean(holder.createdMs) && holder.createdMs >= lower - tol && holder.createdMs <= table.at + tol);
+      if (ours) {
+        m.createdMs = holder.createdMs;
+        continue;
+      }
+      members.delete(m.pid);
+      if (m.entry) close(m.entry, 'exited'); // the registered process is gone, whoever holds the number now
+      if (holder) {
+        console.error(
+          'process-registry: pid ' + m.pid + ' named in ' + m.source + ' is not a process of this fixture ' +
+            '(created ' + iso(holder.createdMs) + ', fixture started ' + iso(lower) + '): NOT signalled'
+        );
+      }
+    }
+    // The tree under every process verified so far (the root while its handle is
+    // unreaped, and each verified member): launcher -> interpreter -> children.
+    const roots = [...members.keys()];
+    if (!reaped() && table.byPid.has(proc.pid)) roots.unshift(proc.pid);
+    for (const r of roots) {
+      for (const d of descendants(table, r)) {
+        if (members.has(d.pid) || d.pid === proc.pid || d.pid === process.pid) continue;
+        members.set(d.pid, {
+          pid: d.pid,
+          kind: /rlm-service\.py/.test(d.command) ? 'rlm' : o.kind,
+          role: 'descendant',
+          port: null,
+          entry: null,
+          createdMs: d.createdMs,
+          source: 'the process tree under pid ' + r,
+        });
+      }
+    }
+  } else {
+    // No process table: nothing can be verified and the tree cannot be walked.
+    // A pid the fixture REGISTERED while its service was starting is still
+    // stopped — it is in the run's registry. A pid known only from a pid file is
+    // not: with no creation time to check, it could be anybody's, so it is left
+    // alone and said so. If it really is this fixture's, the end-of-run check
+    // finds it as a service of this checkout that no registry line accounts for.
+    for (const m of [...members.values()]) {
+      if (m.entry) continue;
+      members.delete(m.pid);
+      if (pidAlive(m.pid)) {
+        console.error(
+          'process-registry: no process table, so pid ' + m.pid + ' named in ' + m.source +
+            ' cannot be verified as a process of this fixture: NOT signalled'
+        );
+      }
+    }
+  }
+
+  // 2. The root, through its own handle (never by number: the handle IS the process).
+  const done = new Promise((resolve) => {
+    if (reaped()) return resolve();
+    proc.once('exit', () => resolve());
+  });
+  const bounded = () => {
+    let timer;
+    const timedOut = new Promise((resolve) => {
+      timer = setTimeout(() => resolve('timeout'), o.graceMs);
+    });
+    return Promise.race([done, timedOut]).finally(() => clearTimeout(timer));
+  };
+  const signalRoot = (sig) => {
+    try {
+      proc.kill(sig);
+    } catch (_e) {
+      /* already gone */
+    }
+  };
+  if (o.hard) {
+    signalRoot('SIGKILL');
+    await bounded();
+  } else {
+    signalRoot('SIGTERM');
+    if (await bounded() === 'timeout') {
+      signalRoot('SIGKILL');
+      // Bounded: an `await done` here hangs forever when the child never exits,
+      // which is precisely the case this code exists to report.
+      await bounded();
+    }
+  }
+
+  // 3. Everything else, each by exact pid, each bounded.
+  const stillAnswering = [];
+  for (const m of members.values()) {
+    if (!(await killPid(m.pid, o.graceMs, Boolean(o.hard)))) stillAnswering.push(m);
+  }
+
+  // 4. What survived. A reaped handle is authoritative for the root: the child
+  //    is dead and a pid that still answers is somebody else's (the 88-11 false
+  //    alarm). For the others a pid that still answers is checked against the
+  //    creation time remembered for it, so a recycled number is not a survivor.
+  const rootGone = reaped() || (await waitForExit(proc.pid, o.graceMs));
+  let survivors = stillAnswering;
+  if (stillAnswering.length > 0) {
+    const again = await readTable();
+    if (again) {
+      const tol = toleranceFor(again.platform);
+      survivors = stillAnswering.filter((m) => {
+        const holder = again.byPid.get(m.pid);
+        if (!holder) return false;
+        if (!m.createdMs || !holder.createdMs) return true;
+        return Math.abs(holder.createdMs - m.createdMs) <= tol;
+      });
+    }
+  }
+
+  // 5. The registry follows the measurement.
+  for (const m of members.values()) {
+    const survived = survivors.includes(m);
+    const entry = m.entry || {
+      kind: m.kind,
+      role: m.role,
+      pid: m.pid,
+      port: m.port || (m.kind === o.kind ? rootEntry.port : null),
+      dataDir: o.dataDir,
+      fixture: o.fixture,
+      rootPid: proc.pid,
+      spawnedAt: lower,
+      at: Date.now(),
+      ...(m.createdMs ? { createdMs: m.createdMs } : {}),
+    };
+    close(entry, survived ? 'started' : 'stopped');
+  }
+  close(rootEntry, rootGone ? 'stopped' : 'started');
+
+  const out = survivors.map((m) => ({ pid: m.pid, kind: m.kind, role: m.role }));
+  if (!rootGone) out.unshift({ pid: proc.pid, kind: o.kind, role: 'spawned' });
+  return { rootGone, survivors: out, allGone: out.length === 0 };
+}
+
+/**
+ * The error a fixture teardown throws when a process of the fixture survived,
+ * so the OWNING test fails — not the whole run, eleven minutes later, with a
+ * pid and a port and no name.
+ *
+ * @param {string} label e.g. 'fixture-daemon'
+ * @param {{pid: number, kind: string, role: string}[]} survivors
+ * @param {string} dataDir
+ * @returns {Error}
+ */
+function survivorError(label, survivors, dataDir) {
+  const err = new Error(
+    label + ': ' + survivors.length + ' process(es) of this fixture survived teardown (SIGTERM, then SIGKILL, each ' +
+      'with a bounded wait): ' + survivors.map((s) => 'pid ' + s.pid + ' (' + s.kind + ', ' + s.role + ')').join(', ') +
+      '. Owner: ' + ownerOf() + '. Data dir kept: ' + dataDir + '. Each is recorded as RUNNING in the run registry.'
+  );
+  err.code = 'EFIXTURESURVIVOR';
+  err.survivors = survivors;
+  return err;
+}
+
 // ── the diagnostic watcher ───────────────────────────────────────────────────
 
 /**
@@ -766,33 +1141,49 @@ function foreignOpenEntries(ownRegistry) {
  * Daemon and RLM processes that ARE NOT in the registry. Reported, never
  * signalled: this is the list the operator's own live daemon would be on.
  *
- * A process is listed when its command line names `amauta-daemon.py` or
- * `rlm-service.py`, it was created after the run began, and no registry of
- * this or any other run in progress accounts for it.
+ * A process is listed when its command line runs `amauta-daemon.py` or
+ * `rlm-service.py` and no registry of this or any other run in progress
+ * accounts for it. Each carries `preexisting`: whether it was created before
+ * this run began.
  *
  * @param {object} o
  * @param {{platform: string, byPid: Map<number, object>}} o.table
  * @param {object[]} o.registered every entry (open and closed) of this run and open ones of other runs
  * @param {number} o.runStartedAt
  * @param {function(number): boolean} [o.isProtectedPid]
- * @param {string} [o.repoRoot]
- * @returns {{pid: number, ppid: number, createdMs: number, command: string, inCheckout: boolean}[]}
+ * @param {string} [o.repoRoot] the checkout whose `services/` scripts are labelled as this checkout's
+ * @returns {{pid: number, ppid: number, createdMs: number, command: string, inCheckout: boolean, preexisting: boolean}[]}
  */
 function unregisteredServices(o) {
   const tol = toleranceFor(o.table.platform);
-  const root = (o.repoRoot || REPO).split(path.sep).join('/').toLowerCase();
+  const norm = (d) => String(d).split('\\').join('/').replace(/\/+$/, '').toLowerCase();
+  const roots = [o.repoRoot || REPO].map(norm);
+  // Accounted for: every process a registry line identifies, and everything
+  // under one (the interpreter behind a registered launcher, a registered
+  // daemon's RLM child).
+  const known = new Set();
+  for (const e of o.registered) {
+    if (known.has(e.pid) || classify(e, o.table).state !== 'ours') continue;
+    known.add(e.pid);
+    for (const d of descendants(o.table, e.pid)) known.add(d.pid);
+  }
   const out = [];
   for (const p of o.table.byPid.values()) {
     // A process that merely MENTIONS a script (inline Python source that imports
     // the daemon module, a grep, an editor) is not a service: the script has to
     // be followed by the verb a service is started with.
     if (!SERVICE_CMD_RE.test(p.command)) continue;
-    if (!p.createdMs || p.createdMs + tol < o.runStartedAt) continue;
+    if (!p.createdMs) continue;
     if (o.isProtectedPid && o.isProtectedPid(p.pid)) continue;
-    const known = o.registered.some((e) => e.pid === p.pid && classify(e, o.table).state === 'ours');
-    if (known) continue;
+    if (known.has(p.pid)) continue;
     const cmd = p.command.split('\\').join('/').toLowerCase();
-    out.push({ ...p, inCheckout: cmd.includes(root + '/services/') });
+    out.push({
+      ...p,
+      inCheckout: roots.some((r) => cmd.includes(r + '/services/')),
+      // Created before the run began: it was already there (the operator's live
+      // daemon; on a CI runner, the daemon the package's install script starts).
+      preexisting: p.createdMs + tol < o.runStartedAt,
+    });
   }
   return out;
 }
@@ -806,23 +1197,31 @@ function unregisteredServices(o) {
  * @param {number} [o.runStartedAt] when the run began; without it no unregistered census is taken
  * @param {ReturnType<typeof processTable>} [o.table] a table to use instead of reading one
  * @param {string} [o.repoRoot]
- * @returns {{strays: object[], recycled: object[], unclosed: object[], unregistered: object[], table: object|null}}
+ * @returns {{strays: object[], recycled: object[], unclosed: object[], unregistered: object[], preexisting: object[], table: object|null}}
  *   `strays` are registered processes still alive (or alive and unverifiable);
  *   `recycled` are entries whose pid now belongs to another process;
  *   `unclosed` are entries nobody closed whose process is gone;
- *   `unregistered` are service-like processes no registry accounts for.
+ *   `unregistered` are service-like processes created during the run that no registry accounts for;
+ *   `preexisting` are services of this checkout that were already running when the run began.
  */
 function audit(registryFile, o = {}) {
   const isProtected = o.isProtectedPid || (() => false);
   const { open, closed } = readEntries(registryFile);
-  const result = { strays: [], recycled: [], unclosed: [], unregistered: [], table: null };
+  const result = { strays: [], recycled: [], unclosed: [], unregistered: [], preexisting: [], table: null };
   const answering = open.filter((e) => pidAlive(e.pid));
-  for (const e of open) if (!answering.includes(e)) result.unclosed.push(e);
+  // A fixture owes its line a closing one. A service that registered ITSELF
+  // through a product path owes nothing: when it is gone, it is simply gone.
+  const owesClosing = (e) => e.role !== 'self';
+  for (const e of open) if (!answering.includes(e) && owesClosing(e)) result.unclosed.push(e);
   const needTable = answering.length > 0 || Number.isFinite(o.runStartedAt);
-  const table = needTable ? (o.table !== undefined ? o.table : processTable()) : null;
+  // One retry: a table that cannot be read leaves every live entry UNVERIFIED,
+  // which fails the run, and a cold PowerShell on a loaded runner can time out once.
+  const table = needTable ? (o.table !== undefined ? o.table : (processTable() || processTable())) : null;
   result.table = table;
   for (const e of answering) {
     const base = {
+      selfRegistered: Boolean(e.selfRegistered),
+      ppid: e.ppid,
       pid: e.pid,
       kind: e.kind || 'daemon',
       port: e.port || null,
@@ -840,7 +1239,7 @@ function audit(registryFile, o = {}) {
     }
     const c = table ? classify(e, table) : { state: 'unverified', holder: null };
     if (c.state === 'gone') {
-      result.unclosed.push(e); // it exited between the probe and the table
+      if (owesClosing(e)) result.unclosed.push(e); // it exited between the probe and the table
     } else if (c.state === 'recycled') {
       result.recycled.push({ ...base, holder: c.holder });
     } else if (c.state === 'ours') {
@@ -863,13 +1262,15 @@ function audit(registryFile, o = {}) {
     }
   }
   if (table && Number.isFinite(o.runStartedAt)) {
-    result.unregistered = unregisteredServices({
+    const outside = unregisteredServices({
       table,
       registered: [...open, ...closed, ...foreignOpenEntries(registryFile)],
       runStartedAt: o.runStartedAt,
       isProtectedPid: isProtected,
       repoRoot: o.repoRoot,
     });
+    result.unregistered = outside.filter((p) => !p.preexisting);
+    result.preexisting = outside.filter((p) => p.preexisting && p.inCheckout);
   }
   return result;
 }
@@ -888,6 +1289,10 @@ function iso(ms) {
  * @returns {string}
  */
 function provenance(e) {
+  if (e.role === 'self') {
+    return 'started by ' + (e.owner || 'an unknown test file') + ' through a PRODUCT path, not a fixture ' +
+      '(the service registered itself at ' + iso(e.at) + ')';
+  }
   if (!e.owner && !e.fixture) return 'started by: unknown (the registry line names no owner)';
   return 'started by ' + (e.owner || 'unknown') + (e.fixture ? ' through ' + e.fixture : '') +
     (e.role && e.role !== 'spawned' ? ' [' + e.role + ']' : '') +
@@ -915,6 +1320,9 @@ module.exports = {
   register,
   close,
   annotate,
+  SELF_REGISTER_SLACK_MS,
+  selfRegistryPath,
+  readSelfLines,
   readEntries,
   elapsedSeconds,
   parsePosixTable,
@@ -925,6 +1333,12 @@ module.exports = {
   classify,
   descendants,
   pidAlive,
+  PROCESS_STARTED_AT,
+  readPidFile,
+  waitForExit,
+  killPid,
+  reapFixture,
+  survivorError,
   startWatcher,
   readWatchLog,
   ancestry,

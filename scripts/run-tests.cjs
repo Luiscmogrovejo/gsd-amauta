@@ -355,20 +355,15 @@ function killStrays(strays) {
 /**
  * Whether to run the diagnostic process watcher for this run.
  *
- * `GSD_PROCESS_WATCH=1` turns it on and `0` turns it off. It costs a process
- * that polls the process table twice a second, so it is never on by default
- * for a run that is itself a child of another run (the runner sets `0` for its
- * children).
+ * `GSD_PROCESS_WATCH=1` turns it on; it is off otherwise. It costs a process
+ * that polls the process table twice a second, and the runner sets `0` for its
+ * children, so a run that is itself a child of another run never starts one.
  *
  * @param {NodeJS.ProcessEnv} baseEnv the environment the runner was started with
  * @returns {boolean}
  */
 function watchWanted(baseEnv) {
-  if (baseEnv.GSD_PROCESS_WATCH === '1') return true;
-  if (baseEnv.GSD_PROCESS_WATCH === '0') return false;
-  // DIAGNOSTIC ROUNDS of plan 89-15 only: on by default on the Windows CI cells
-  // until the unregistered daemon they leave behind has been attributed.
-  return process.platform === 'win32' && Boolean(baseEnv.CI);
+  return baseEnv.GSD_PROCESS_WATCH === '1';
 }
 
 /** Entry point: run the selected files under the hermetic environment. */
@@ -500,7 +495,7 @@ function main() {
         /* already gone */
       }
     }
-    let audit = { strays: [], recycled: [], unclosed: [], unregistered: [], table: null };
+    let audit = { strays: [], recycled: [], unclosed: [], unregistered: [], preexisting: [], table: null };
     try {
       audit = canary.processAudit(env.GSD_PROCESS_LEDGER, { runStartedAt, repoRoot: path.join(__dirname, '..') });
     } catch (err) {
@@ -512,6 +507,15 @@ function main() {
       status = 5; // 4 is the live-store canary's; a leaked process fails the run too
       killStrays(strays);
     }
+    // What is NOT in the registry is not this run's, and is never signalled and
+    // never fails the run: it is listed below, with the test files that were
+    // running when it appeared. A daemon or RLM started under this run's
+    // environment through a PRODUCT path is not in that list — it registers
+    // itself (tests/support/pythonpath/sitecustomize.py), so it is a stray
+    // above, attributed and stopped like a fixture's. What remains unregistered
+    // is another run's (a pytest session beside this one), the operator's own,
+    // or a start whose environment was scrubbed; nothing but its command line
+    // says it is ours, and a command line is exactly what the live daemon has.
     try {
       const report = canary.formatAudit(audit, {
         timeline: registry.readTimeline(env.GSD_RUN_TIMELINE),

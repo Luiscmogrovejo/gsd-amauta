@@ -30,6 +30,7 @@ const ROOT = path.resolve(__dirname, '..');
 const pg = require(path.join(ROOT, 'tests', 'support', 'pg-fixture.cjs'));
 const platform = require(path.join(ROOT, 'get-shit-done', 'bin', 'lib', 'platform.cjs'));
 const { startFixtureDaemon, stopFixtureDaemon } = require(path.join(ROOT, 'tests', 'support', 'fixture-daemon.cjs'));
+const registry = require(path.join(ROOT, 'tests', 'support', 'process-registry.cjs'));
 
 const SKIP = pg.postgresDsn() ? false : pg.SKIP_REASON;
 const READY_TIMEOUT_MS = Number(process.env.GSD_FIXTURE_READY_TIMEOUT_MS) || 60000;
@@ -92,9 +93,23 @@ async function rawDaemon(extra) {
     GSD_SQLITE_PATH: path.join(dataDir, 'gsd_amauta.db'),
   }, extra);
   const py = platform.resolvePython();
+  const spawnedAt = Date.now();
   const proc = spawn(py.command, [...py.args, path.join(ROOT, 'services', 'amauta-daemon.py'), 'run'], {
     stdio: ['ignore', 'pipe', 'pipe'], env,
   });
+  // Plan 89-15: a daemon started outside `startFixtureDaemon` is still a
+  // process of this run, so it goes into the run registry with its owner like
+  // any other, and is stopped through the same tree-aware reaper.
+  const fx = {
+    proc,
+    kind: 'daemon',
+    fixture: 'rawDaemon',
+    dataDir,
+    spawnedAt,
+    entry: proc.pid ? registry.register({ kind: 'daemon', pid: proc.pid, spawnedAt, fixture: 'rawDaemon', dataDir }) : null,
+    members: [],
+    graceMs: 5000,
+  };
   let out = '';
   let port = null;
   let exited = false;
@@ -114,12 +129,13 @@ async function rawDaemon(extra) {
   });
   const deadline = Date.now() + READY_TIMEOUT_MS;
   while (Date.now() < deadline && !exited) {
-    if (port !== null && (await health(port))) return { port, proc, dataDir };
+    if (port !== null && (await health(port))) {
+      if (fx.entry) registry.annotate(fx.entry, { port });
+      return { port, proc, dataDir, fx };
+    }
     await sleep(100);
   }
-  try {
-    proc.kill('SIGKILL');
-  } catch (_e) { /* gone */ }
+  await registry.reapFixture({ ...fx, hard: true });
   throw new Error('rawDaemon did not become ready (port=' + port + '): ' + errBuf);
 }
 
@@ -131,13 +147,8 @@ async function rawDaemon(extra) {
  */
 async function stopRaw(h) {
   if (!h) return;
-  try {
-    h.proc.kill('SIGTERM');
-  } catch (_e) { /* gone */ }
-  for (let i = 0; i < 50 && h.proc.exitCode === null; i += 1) await sleep(100);
-  try {
-    h.proc.kill('SIGKILL');
-  } catch (_e) { /* gone */ }
+  const r = await registry.reapFixture({ ...h.fx, port: h.port });
+  if (!r.allGone) throw registry.survivorError('rawDaemon', r.survivors, h.dataDir);
   fs.rmSync(h.dataDir, { recursive: true, force: true });
 }
 

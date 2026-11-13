@@ -130,7 +130,17 @@ describe('[88-11] stopFixtureDaemon records what it measured', () => {
         once() { /* 'exit' never fires */ },
       };
       try {
-        await stopFixtureDaemon({ proc: deafProc, dataDir, port: 51235 });
+        // Plan 89-15: a survivor is no longer only RECORDED — the stop REJECTS,
+        // so the test that owns the daemon fails by name instead of the whole run
+        // failing later on a pid and a port. Everything this case asserted about
+        // the ledger still has to hold after the rejection.
+        await assert.rejects(
+          stopFixtureDaemon({ proc: deafProc, dataDir, port: 51235 }),
+          (err) => err.code === 'EFIXTURESURVIVOR'
+            && err.survivors.some((s) => s.pid === survivor.pid)
+            && err.message.includes('tests/88-11-fixture-daemon-verifies-exit.test.cjs'),
+          'a daemon that outlives SIGTERM and SIGKILL must fail its own test, naming the pid and the owning file',
+        );
 
         assert.ok(alive(survivor.pid), 'the fixture must still be alive for this case to mean anything');
         const records = recordsFor(ledger, survivor.pid);

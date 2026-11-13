@@ -29,42 +29,9 @@ const platform = require('../../get-shit-done/bin/lib/platform.cjs');
 const registry = require('./process-registry.cjs');
 
 const REPO = path.resolve(__dirname, '..', '..');
+/** This fixture's name in the run registry. */
+const FIXTURE = 'startFixtureDaemon';
 
-/**
- * Where process-ledger lines go: GSD_PROCESS_LEDGER (set by scripts/run-tests.cjs)
- * or, for a standalone run, process-ledger.jsonl in the daemon's data dir.
- * @param {string} dataDir
- * @returns {string}
- */
-function ledgerPath(dataDir) {
-  return process.env.GSD_PROCESS_LEDGER || path.join(dataDir, 'process-ledger.jsonl');
-}
-
-/**
- * Append one JSON line to the process ledger. Never throws: a ledger that cannot
- * be written must not break the test that is starting a daemon.
- * @param {string} dataDir
- * @param {object} record
- * @returns {void}
- */
-function appendLedger(dataDir, record) {
-  // Plan 89-15: every line names the test file and the fixture behind the pid.
-  registry.append(dataDir, { ...record, owner: registry.ownerOf(), fixture: 'startFixtureDaemon' });
-}
-
-/**
- * Whether a pid answers signal 0 (EPERM counts as alive).
- * @param {number} pid
- * @returns {boolean}
- */
-function pidAlive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e) {
-    return e.code === 'EPERM';
-  }
-}
 // 60 s: on a loaded macOS CI runner (node --test runs many files at once) the daemon needed more
 // than the earlier 20 s before it printed DAEMON_PORT (88-03 first full matrix run).
 const READY_TIMEOUT_MS = Number(process.env.GSD_FIXTURE_READY_TIMEOUT_MS) || 60000;
@@ -241,6 +208,15 @@ async function startFixtureDaemon(opts = {}) {
     env,
   });
 
+  // Plan 89-15: registered the moment it exists, not when it becomes ready — a
+  // test process that dies while the daemon is still starting leaves a line the
+  // stray check can read, with the test file that owns it.
+  const entry = proc.pid
+    ? registry.register({ kind: 'daemon', pid: proc.pid, spawnedAt, fixture: FIXTURE, dataDir })
+    : null;
+  /** Everything teardown needs; shared by the failure paths below and the handle. */
+  const fx = { proc, kind: 'daemon', fixture: FIXTURE, dataDir, spawnedAt, entry, members: [], stopping: false };
+
   let stdoutBuf = '';
   let stderrBuf = '';
   let exited = false;
@@ -249,6 +225,11 @@ async function startFixtureDaemon(opts = {}) {
   });
   proc.on('exit', () => {
     exited = true;
+    // A daemon that exits without going through stopFixtureDaemon (a test that
+    // kills it to simulate a crash, a daemon that dies on its own) closes its
+    // own line: the handle saw the exit, so the process is gone, and a line left
+    // open would be matched against whatever the pid number is handed to next.
+    if (entry && !fx.stopping) registry.close(entry, 'exited');
   });
 
   let port = null;
@@ -273,16 +254,25 @@ async function startFixtureDaemon(opts = {}) {
 
   if (!ready) {
     const tail = stderrBuf.slice(-2000) + (stdoutBuf ? '\n[stdout] ' + stdoutBuf.slice(-1000) : '');
-    try {
-      proc.kill('SIGKILL');
-    } catch (_e) {
-      /* already gone */
-    }
-    if (!opts.dataDir) fs.rmSync(dataDir, { recursive: true, force: true });
+    // The same reaper as a normal stop: a daemon behind a launcher that never
+    // became ready is still a process tree, not one pid.
+    const r = await reap(fx, { hard: true });
+    if (!opts.dataDir && r.allGone) fs.rmSync(dataDir, { recursive: true, force: true });
     throw new Error('fixture daemon did not become ready (port=' + port + ', exited=' + exited + '): ' + tail);
   }
 
-  appendLedger(dataDir, { event: 'started', kind: 'daemon', role: 'spawned', pid: proc.pid, port, dataDir, spawnedAt, at: Date.now() });
+  fx.port = port;
+  if (entry) registry.annotate(entry, { port });
+  // The process that IS the daemon, when `proc` is only its launcher (`py -3`
+  // starts the real interpreter as a child): the daemon wrote its own pid into
+  // its own data directory. Registered now, while the launcher is alive, so it
+  // has a line of its own whatever happens to the launcher.
+  const realPid = registry.readPidFile(path.join(dataDir, 'amauta-daemon.pid'));
+  if (realPid && realPid !== proc.pid) {
+    fx.members.push(registry.register({
+      kind: 'daemon', role: 'pidfile', pid: realPid, rootPid: proc.pid, port, spawnedAt, fixture: FIXTURE, dataDir,
+    }));
+  }
 
   // Plan 89-07: a Postgres fixture must prove it IS on PostgreSQL before any
   // test asserts PostgreSQL behaviour through it. /health is the daemon's own
@@ -291,10 +281,8 @@ async function startFixtureDaemon(opts = {}) {
   if (opts.postgres) {
     const health = await fetchHealth(port);
     if (!health || health.pg_configured !== true || health.backend !== 'postgresql') {
-      try {
-        proc.kill('SIGKILL');
-      } catch (_e) { /* already gone */ }
-      if (!opts.dataDir) fs.rmSync(dataDir, { recursive: true, force: true });
+      const r = await reap(fx, { hard: true });
+      if (!opts.dataDir && r.allGone) fs.rmSync(dataDir, { recursive: true, force: true });
       throw new Error(
         'startFixtureDaemon({postgres:true}): the daemon is serving '
         + (health ? String(health.backend) : 'an unreadable /health')
@@ -330,74 +318,11 @@ async function startFixtureDaemon(opts = {}) {
     dataDir,
     proc,
     spawnedAt,
+    fx,
     keep: Boolean(opts.dataDir),
     postgres: Boolean(opts.postgres),
     env: childEnv,
   };
-}
-
-/**
- * The pid written in a pid file, or null when the file is absent or unusable.
- *
- * The files read here are written BY the fixture's own daemon INTO the
- * fixture's own temporary data directory (`_test_mode()` moves
- * `amauta-daemon.pid` there precisely so a fixture can never touch the live
- * daemon's). A pid obtained this way is a pid this harness started — which is
- * what makes killing it by exact pid legitimate, and why no name pattern is
- * ever used.
- *
- * @param {string} file absolute path of the pid file
- * @returns {number|null}
- * @example
- *   readPidFile('/tmp/d/amauta-daemon.pid') // 1076
- */
-function readPidFile(file) {
-  try {
-    const pid = parseInt(fs.readFileSync(file, 'utf8').trim(), 10);
-    return Number.isInteger(pid) && pid > 0 ? pid : null;
-  } catch (_e) {
-    return null;
-  }
-}
-
-/**
- * Kill one exact pid: SIGTERM, bounded wait, SIGKILL, bounded wait.
- *
- * @param {number} pid the exact pid to stop
- * @param {number} graceMs budget for EACH of the two waits
- * @returns {Promise<boolean>} true when the pid has stopped answering
- * @example
- *   await killPid(1076, 5000) // true
- */
-async function killPid(pid, graceMs) {
-  if (!pidAlive(pid)) return true;
-  try {
-    process.kill(pid, 'SIGTERM');
-  } catch (_e) {
-    /* exited between the probe and the signal */
-  }
-  if (await waitForExit(pid, graceMs)) return true;
-  try {
-    process.kill(pid, 'SIGKILL');
-  } catch (_e) {
-    /* exited after SIGTERM */
-  }
-  return waitForExit(pid, graceMs);
-}
-
-/**
- * Wait until `pid` stops answering signal 0, or the budget runs out.
- *
- * @param {number} pid the pid to watch
- * @param {number} ms how long to wait in total
- * @returns {Promise<boolean>} true when the process is gone
- */
-async function waitForExit(pid, ms) {
-  const deadline = Date.now() + ms;
-  while (pidAlive(pid) && Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-  }
-  return !pidAlive(pid);
 }
 
 /**
@@ -436,113 +361,127 @@ async function waitForExit(pid, ms) {
  * answering. Each pid gets its own ledger line, so a survivor can never again be
  * a process no ledger line accounts for.
  *
+ * **And the whole tree, verified, with the owning test failing on a survivor**
+ * (plan 89-15, the third occurrence of this class). The pass is now
+ * `process-registry.reapFixture`: the spawned process through its handle, the
+ * processes under it in the process table (launcher, interpreter, children),
+ * and the pid-file pids — each of those signalled only after the process table
+ * has shown it was created during this fixture's lifetime, so a stale pid file
+ * whose number went to another process names a stranger and the stranger is
+ * left alone. When anything survives, this function THROWS: the test that owns
+ * the daemon fails, by name, instead of the whole run failing eleven minutes
+ * later on a pid and a port.
+ *
  * @param {{proc: import('child_process').ChildProcess, dataDir: string, port?: number, keep?: boolean}} handle
  * @returns {Promise<void>}
+ * @throws {Error} `EFIXTURESURVIVOR` when a process of the fixture outlived SIGTERM and SIGKILL
  */
 async function stopFixtureDaemon(handle) {
   if (!handle || !handle.proc) return;
-  const { proc } = handle;
-  // Read BEFORE signalling: a daemon that exits cleanly unlinks its own pid
-  // file, and the pid of the process that must die would go with it.
-  const realPid = readPidFile(path.join(handle.dataDir, 'amauta-daemon.pid'));
-  const done = new Promise((resolve) => {
-    if (proc.exitCode !== null || proc.signalCode !== null) return resolve();
-    proc.once('exit', () => resolve());
-  });
-  const withTimeout = () => {
-    let timer;
-    const timedOut = new Promise((resolve) => {
-      timer = setTimeout(() => resolve('timeout'), STOP_GRACE_MS);
-    });
-    return Promise.race([done, timedOut]).finally(() => clearTimeout(timer));
-  };
-  proc.kill('SIGTERM');
-  if (await withTimeout() === 'timeout') {
-    proc.kill('SIGKILL');
-    // Bounded: an `await done` here hangs forever when the child never exits,
-    // which is precisely the case this code exists to report.
-    await withTimeout();
-  }
-  // Verify by pid rather than by the child handle: the 'exit' event can only
-  // speak for a direct child this process is still parenting.
-  //
-  // One exception, and it is the whole of the false-alarm half of this defect:
-  // when libuv has REAPED the child (exitCode or signalCode is set) the child is
-  // definitively dead, and a pid that still answers is a DIFFERENT process that
-  // Windows handed the recycled number to. Probing it reported a stray with no
-  // identity evidence — `pid 4604 (daemon, port 63355): NOT signalled: not ours
-  // (EPERM)` in run 43223847244, a pid the post-job census did not find among
-  // the live python processes at all. The handle outranks the number.
-  const reaped = proc.exitCode !== null || proc.signalCode !== null;
-  const launcherGone = reaped || (await waitForExit(proc.pid, STOP_GRACE_MS));
-  // The real daemon, when `proc` was only its launcher. Killing by exact pid,
-  // bounded, SIGTERM then SIGKILL — the same pass the launcher got.
-  let realGone = true;
-  if (realPid && realPid !== proc.pid) {
-    realGone = await killPid(realPid, STOP_GRACE_MS);
-    appendLedger(handle.dataDir, {
-      event: realGone ? 'stopped' : 'started',
-      kind: 'daemon',
-      pid: realPid,
-      port: handle.port || null,
-      dataDir: handle.dataDir,
-      at: Date.now(),
-    });
-    if (!realGone) {
-      console.error(
-        'fixture-daemon: the daemon pid ' + realPid + ' named in ' + handle.dataDir
-        + '/amauta-daemon.pid outlived SIGTERM and SIGKILL; recorded as RUNNING',
-      );
-    }
-  }
-  const gone = launcherGone && realGone;
-  appendLedger(handle.dataDir, {
-    event: launcherGone ? 'stopped' : 'started',
-    kind: 'daemon',
-    pid: proc.pid,
-    port: handle.port || null,
-    dataDir: handle.dataDir,
-    ...(handle.spawnedAt === undefined ? {} : { spawnedAt: handle.spawnedAt }),
-    at: Date.now(),
-  });
-  if (!launcherGone) {
-    console.error(
-      'fixture-daemon: pid ' + proc.pid + ' is still alive after SIGTERM and SIGKILL; '
-      + 'recorded as RUNNING so the stray detector can see it',
-    );
-  }
-  // An RLM service the daemon started. Killing the daemon does NOT kill it on
-  // Windows — a terminated parent leaves its children running — and plan 88-16
-  // measured exactly that: `test (windows-latest, node 20)`, run 43189642396,
-  // ended with `SURVIVING PYTHON pid=6044 … services\amauta-daemon.py run` and
-  // `pid=7936 ppid=6044 … services\rlm-service.py run`. The pid comes from this
-  // fixture's OWN data directory, so it is a process this harness started.
-  //
-  // The wait AFTER SIGKILL is load-bearing: a signal is a request the kernel
-  // completes asynchronously, so the old code — which read `pidAlive` on the
-  // line after `process.kill(..., 'SIGKILL')` — recorded `started` for an RLM
-  // that was in the act of dying, and the ledger then carried a stray that no
-  // longer existed. `killPid` waits for the pid to stop answering, bounded, and
-  // reports what it measured.
-  let rlmGone = true;
-  const rlmPid = readPidFile(path.join(handle.dataDir, 'rlm-service.pid'));
-  if (rlmPid) {
-    rlmGone = await killPid(rlmPid, STOP_GRACE_MS);
-    appendLedger(handle.dataDir, {
-      event: rlmGone ? 'stopped' : 'started',
-      kind: 'rlm',
-      pid: rlmPid,
-      port: Number(process.env.GSD_RLM_PORT) || null,
-      dataDir: handle.dataDir,
-      at: Date.now(),
-    });
-    if (!rlmGone) {
-      console.error('fixture-daemon: RLM pid ' + rlmPid + ' outlived SIGTERM and SIGKILL; recorded as RUNNING');
-    }
-  }
-  // Never delete the data directory of a process that is still running: the
-  // stray detector identifies a pid by the data directory on its command line.
-  if (!handle.keep && gone && rlmGone) fs.rmSync(handle.dataDir, { recursive: true, force: true });
+  const r = await reap(fixtureOf(handle), { hard: false });
+  finish(handle, r);
 }
 
-module.exports = { startFixtureDaemon, stopFixtureDaemon, killPid, readPidFile };
+/**
+ * Kill a fixture daemon at once, as a crash would: SIGKILL with no SIGTERM
+ * first, to the daemon AND the process tree under it, with the registry closed
+ * for every process observed gone. The data directory is left in place — a test
+ * that simulates a crash goes on to start a new daemon over the same data.
+ *
+ * Use this instead of `handle.proc.kill('SIGKILL')` in a test: a bare kill
+ * reaches one process (behind a launcher, the wrong one) and leaves a registry
+ * line nobody closes.
+ *
+ * @param {{proc: import('child_process').ChildProcess, dataDir: string, port?: number}} handle
+ * @returns {Promise<void>}
+ * @throws {Error} `EFIXTURESURVIVOR` when a process of the fixture outlived the kill
+ * @example
+ *   await killFixtureDaemon(h); // then: h = await startFixtureDaemon({ dataDir: h.dataDir })
+ */
+async function killFixtureDaemon(handle) {
+  if (!handle || !handle.proc) return;
+  const r = await reap(fixtureOf(handle), { hard: true });
+  finish({ ...handle, keep: true }, r);
+}
+
+/**
+ * The fixture record behind a handle. A handle built by `startFixtureDaemon`
+ * carries one; a hand-built `{proc, dataDir, port}` (the unit tests of this
+ * module) gets one made for it, with no registration and no start time.
+ *
+ * @param {object} handle
+ * @returns {object} what `reap()` takes
+ */
+function fixtureOf(handle) {
+  const fx = handle.fx || {
+    proc: handle.proc,
+    kind: 'daemon',
+    fixture: FIXTURE,
+    dataDir: handle.dataDir,
+    spawnedAt: handle.spawnedAt,
+    entry: null,
+    members: [],
+  };
+  if (handle.port && !fx.port) fx.port = handle.port;
+  return fx;
+}
+
+/**
+ * Run the shared reaper over one fixture daemon.
+ *
+ * @param {object} fx the fixture record (`fixtureOf`)
+ * @param {{hard: boolean}} how SIGKILL at once, or SIGTERM first
+ * @returns {Promise<{rootGone: boolean, survivors: object[], allGone: boolean}>}
+ */
+function reap(fx, how) {
+  fx.stopping = true; // the 'exit' handler must not write a second closing line
+  return registry.reapFixture({
+    proc: fx.proc,
+    kind: 'daemon',
+    fixture: fx.fixture,
+    dataDir: fx.dataDir,
+    port: fx.port || null,
+    spawnedAt: fx.spawnedAt,
+    entry: fx.entry,
+    members: fx.members,
+    // Written by the fixture's OWN daemon into the fixture's OWN data directory
+    // (test mode moves both there, precisely so a fixture can never touch the
+    // live daemon's). An RLM the daemon started is not killed with it on
+    // Windows, where a terminated parent leaves its children running.
+    pidFiles: [
+      { file: path.join(fx.dataDir, 'amauta-daemon.pid'), kind: 'daemon', port: fx.port || null },
+      { file: path.join(fx.dataDir, 'rlm-service.pid'), kind: 'rlm', port: Number(process.env.GSD_RLM_PORT) || null },
+    ],
+    graceMs: STOP_GRACE_MS,
+    hard: how.hard,
+  });
+}
+
+/**
+ * After a reap: say what survived, remove the data directory when nothing did,
+ * and FAIL THE CALLER when something did.
+ *
+ * @param {{dataDir: string, keep?: boolean, proc: object}} handle
+ * @param {{rootGone: boolean, survivors: {pid: number, kind: string, role: string}[], allGone: boolean}} r
+ * @returns {void}
+ * @throws {Error} `EFIXTURESURVIVOR` naming every surviving pid and the owning test file
+ */
+function finish(handle, r) {
+  for (const s of r.survivors) {
+    console.error(
+      s.role === 'spawned'
+        ? 'fixture-daemon: pid ' + s.pid + ' is still alive after SIGTERM and SIGKILL; '
+          + 'recorded as RUNNING so the stray detector can see it'
+        : 'fixture-daemon: the ' + s.kind + ' pid ' + s.pid + ' (' + s.role + ') of the fixture in ' + handle.dataDir
+          + ' outlived SIGTERM and SIGKILL; recorded as RUNNING',
+    );
+  }
+  // Never delete the data directory of a process that is still running.
+  if (!handle.keep && r.allGone) fs.rmSync(handle.dataDir, { recursive: true, force: true });
+  if (!r.allGone) throw registry.survivorError('fixture-daemon', r.survivors, handle.dataDir);
+}
+
+/** Re-exported: the one bounded kill helper and the pid-file reader live in the registry. */
+const { killPid, readPidFile } = registry;
+
+module.exports = { startFixtureDaemon, stopFixtureDaemon, killFixtureDaemon, killPid, readPidFile };

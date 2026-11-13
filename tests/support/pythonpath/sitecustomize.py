@@ -71,6 +71,57 @@ def _arm_guard():
         return False, "%s: %s" % (type(exc).__name__, exc)
 
 
+_SERVICES = {"amauta-daemon.py": "daemon", "rlm-service.py": "rlm"}
+
+
+def _register_service():
+    """Write this process into the run's process registry when it IS a service.
+
+    Plan 89-15. A fixture registers the daemon it spawns, but a daemon can also be
+    started through a PRODUCT path (a CLI that auto-starts one, the installer's
+    daemon step, the daemon's own ``start`` verb) and then no fixture knows it
+    exists: left alive, it was invisible to the runner's stray-process check.
+    Here the service speaks for itself. ``GSD_PROCESS_LEDGER`` in its environment
+    is the proof that it belongs to this run, which is why the line is written
+    only when that variable is set and why nothing is inferred from a command
+    line anywhere else.
+
+    Only the long-running ``run`` verb registers; ``start``, ``stop`` and
+    ``status`` are controllers that exit by themselves. One ``self`` line is
+    appended to ``<registry>.self``, never a closing one:
+    ``tests/support/process-registry.cjs`` merges it into the fixture's entry
+    when a fixture registered the same pid.
+
+    Never raises: a registry that cannot be written must not stop a service.
+    """
+    try:
+        ledger = os.environ.get("GSD_PROCESS_LEDGER", "").strip()
+        argv = getattr(sys, "argv", None) or []
+        if not ledger or len(argv) < 2 or argv[1] != "run":
+            return
+        kind = _SERVICES.get(os.path.basename(argv[0]))
+        if kind is None:
+            return
+        import json
+        import time
+
+        line = {
+            "event": "self",
+            "kind": kind,
+            "pid": os.getpid(),
+            "ppid": os.getppid(),
+            "at": int(time.time() * 1000),
+            "owner": os.environ.get("GSD_TEST_OWNER") or None,
+            "dataDir": os.environ.get("AMAUTA_DATA_DIR") or None,
+        }
+        # Beside the registry, in a file of its own (process-registry.cjs
+        # `selfRegistryPath`): the fixtures' started/stopped pairs stay pairs.
+        with open(ledger + ".self", "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(line) + "\n")
+    except Exception:  # noqa: BLE001 - see the docstring: never stop a service
+        pass
+
+
 def _chain_and_guard():
     # 0. Test mode, before anything this interpreter goes on to import.
     _arm_test_mode()
@@ -102,6 +153,9 @@ def _chain_and_guard():
         )
         sys.stderr.flush()
         os._exit(_REQUIRED_EXIT)
+
+    # 3. A daemon or RLM service puts itself in the run's process registry.
+    _register_service()
 
 
 _chain_and_guard()
