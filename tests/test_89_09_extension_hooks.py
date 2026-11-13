@@ -129,6 +129,10 @@ def test_a_registered_provider_reaches_health_and_doctor():
         return [(report_hooks.STATUS_OK, "lexical", "engine=fallback", {"engine": "fallback"})]
 
     report_hooks._BUILTIN_PROVIDERS = (("lexical", health_fragment, doctor_rows),)
+    # Plan 89-10: only the provider this case installs. The module providers
+    # (PROVIDER_MODULES) are real reporters with rows of their own -- the
+    # key-presence row always has one -- and this case is about the hook.
+    report_hooks.PROVIDER_MODULES = ()
     assert report_hooks.extra_health_rows({}) == {"lexical": {"engine": "fallback", "measured": True}}
     assert report_hooks.extra_doctor_rows({}) == [
         (report_hooks.STATUS_OK, "lexical", "engine=fallback", {"engine": "fallback"})
@@ -144,6 +148,10 @@ def test_a_provider_that_raises_is_named_and_breaks_nothing(caplog):
         return {"ok": True}
 
     report_hooks._BUILTIN_PROVIDERS = (("broken", boom, boom), ("fine", good, None))
+    # Plan 89-10: only the provider this case installs. The module providers
+    # (PROVIDER_MODULES) are real reporters with rows of their own -- the
+    # key-presence row always has one -- and this case is about the hook.
+    report_hooks.PROVIDER_MODULES = ()
     with caplog.at_level(logging.WARNING, logger="services.report_hooks"):
         section = report_hooks.extra_health_rows({})
         rows = report_hooks.extra_doctor_rows({})
@@ -158,6 +166,10 @@ def test_a_provider_that_raises_is_named_and_breaks_nothing(caplog):
 def test_a_provider_that_returns_the_wrong_shape_is_a_degraded_entry():
     """A dict is the contract; anything else is named, not merged."""
     report_hooks._BUILTIN_PROVIDERS = (("wrong", lambda env=None: ["not", "a", "dict"], None),)
+    # Plan 89-10: only the provider this case installs. The module providers
+    # (PROVIDER_MODULES) are real reporters with rows of their own -- the
+    # key-presence row always has one -- and this case is about the hook.
+    report_hooks.PROVIDER_MODULES = ()
     section = report_hooks.extra_health_rows({})
     assert section[report_hooks.DEGRADED_KEY] == ["wrong: health_fragment must return a dict, got list"]
 
@@ -165,6 +177,10 @@ def test_a_provider_that_returns_the_wrong_shape_is_a_degraded_entry():
 def test_a_provider_that_returns_none_contributes_nothing_and_is_not_degraded():
     """"Nothing to report" is a legal answer, and is not a failure."""
     report_hooks._BUILTIN_PROVIDERS = (("quiet", lambda env=None: None, lambda env=None: None),)
+    # Plan 89-10: only the provider this case installs. The module providers
+    # (PROVIDER_MODULES) are real reporters with rows of their own -- the
+    # key-presence row always has one -- and this case is about the hook.
+    report_hooks.PROVIDER_MODULES = ()
     assert report_hooks.extra_health_rows({}) == {}
     assert report_hooks.extra_doctor_rows({}) == []
 
@@ -191,7 +207,9 @@ def test_the_cache_row_names_the_supplying_variable_with_the_url_masked():
     }
     assert "s3cr3t" not in json.dumps(fragment)
 
-    rows = report_hooks.extra_doctor_rows(env)
+    # Plan 89-10: the cache provider's rows, by category. Other providers
+    # (the key-presence row) report beside it and are not this case's subject.
+    rows = [r for r in report_hooks.extra_doctor_rows(env) if r[1] == "cache"]
     assert len(rows) == 1
     status, category, detail, data = rows[0]
     assert (status, category) == (report_hooks.STATUS_OK, "cache")

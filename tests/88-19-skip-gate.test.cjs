@@ -427,7 +427,10 @@ describe('88-19 tests/skip-exceptions.d/ itself', () => {
     for (const e of local) byClass[e.reason_class] = (byClass[e.reason_class] || 0) + 1;
     assert.deepStrictEqual(byClass, {
       'scanner-not-installed-locally': 10,
-      'pg-no-disposable-database-local': 304,
+      // 304 measured by plan 89-07, + 1 measured by plan 89-10: its
+      // store-through-a-PostgreSQL-daemon acceptance
+      // (tests/test_89_10_managed_env.py), which runs on every CI cell.
+      'pg-no-disposable-database-local': 305,
     }, 'a local-only class changed size without being re-measured');
 
     for (const e of local) {

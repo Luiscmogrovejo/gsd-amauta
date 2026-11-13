@@ -1,0 +1,13 @@
+[
+  {
+    "name": "test_a_memory_stored_through_the_daemon_comes_back_embedded",
+    "file": "tests/test_89_10_managed_env.py",
+    "platform": "all",
+    "context": "local",
+    "reason": "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
+    "reason_class": "pg-no-disposable-database-local",
+    "owner": "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
+    "owner_phase": 100,
+    "exit_criterion": "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
+  }
+]
