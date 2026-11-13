@@ -2,8 +2,10 @@
   "plan": "89-04",
   "shard": "tests/skip-exceptions.d/89-04.json",
   "shard_is_all_added": true,
-  "note": "Plan 89-04 (backup/restore) added 51 entries: 46 pg-no-disposable-database (23 tests times darwin + win32, removed by task 89-07-04) and 5 pg-client-major-mismatch on linux (removed by plan 89-07, which installs postgresql-client-16). 89-09 derived these from the shard and pinned the count; plan 89-05 (addendum A) writes them out as literal nine-field tuples so every delta file has one shape.",
-  "added": [
+  "note": "Plan 89-04 (backup/restore) added 51 entries: 46 pg-no-disposable-database (23 tests times darwin + win32, removed by task 89-07-04) and 5 pg-client-major-mismatch on linux (removed by plan 89-07, which installs postgresql-client-16). 89-09 derived these from the shard and pinned the count; plan 89-05 (addendum A) writes them out as literal nine-field tuples so every delta file has one shape. | Plan 89-07 (task 89-07-04) closed the entries this plan had added: the macOS and Windows cells now have a disposable PostgreSQL, so they excuse nothing on any cell. A tuple a plan ADDED after the shard migration and that 89-07 then deleted nets to ZERO against the pre-shard ledger, so it leaves the \"added\" list and is NOT declared in \"removed\" -- \"removed\" carries PRE-SHARD entries only, which is exactly what tests/89-09-skip-shards.test.cjs reconstructs. The entries themselves are listed, test by test, in plan 89-07 record under \"## Foreign shards opened\".",
+  "added": [],
+  "removed": [],
+  "closed": [
     [
       "test_apply_migrations_proceeds_with_a_fresh_verified_snapshot",
       "tests/test_89_04_backup_guard.py",
@@ -565,6 +567,5 @@
       89,
       "the Linux cell carries a pg_restore of the disposable server's own major. Plan 89-07 adds one install step to .github/workflows/test.yml before the pytest step — `sudo apt-get install -y postgresql-client-16` (the PGDG repo the runner already uses carries it) — or pins a container image whose major matches the runner's client. Task 89-07-04 removes these five entries; see 89-04-RECORD.md ## Handoff for the exact step and the measurement behind it."
     ]
-  ],
-  "removed": []
+  ]
 }
