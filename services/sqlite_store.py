@@ -1267,7 +1267,6 @@ class SQLiteStore:
         "vector_search",
         "rlm_index",
         "semantic_cache",
-        "a2a",
         "party_sessions",
         "skill_invocations",
         "task_completions",

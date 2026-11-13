@@ -383,13 +383,19 @@ class TestStepHandoffEndpoints(_DaemonCase):
 
 class TestPGOnlyFeaturesAreTyped(_DaemonCase):
 
-    def test_a2a_exchanges_is_a_typed_503(self):
+    def test_the_removed_a2a_endpoint_is_a_404_not_a_500(self):
+        """Plan 89-05 removed GET /a2a/exchanges with the rest of the A2A surface.
+
+        This used to assert the typed 503 that route answered on SQLite. The
+        route is gone, so the assertion is INVERTED rather than deleted: an
+        unknown route must be the daemon's own 404, never a 500 from a
+        half-removed handler, and never a 503 that suggests PostgreSQL would
+        answer it.
+        """
         status, body = _request("GET", "/a2a/exchanges")
         self.assertNot500(status, body, "GET /a2a/exchanges")
-        self.assertEqual(status, 503, body)
-        self.assertEqual(body.get("error"), "requires_postgres")
-        self.assertEqual(body.get("feature"), "a2a")
-        self.assertTrue(body.get("detail"), "a typed refusal must say what to do")
+        self.assertEqual(status, 404, body)
+        self.assertIn("Unknown GET route", str(body.get("error")), body)
 
     def test_semantic_cache_degrades_without_erroring(self):
         status, body = _request("POST", "/api/semantic-cache/search", {"query": "anything"})
@@ -471,8 +477,10 @@ class TestHealthDegradedSection(_DaemonCase):
         self.assertIs(health.get("degraded"), True)
         features_off = health.get("features_off")
         self.assertIsInstance(features_off, list)
-        for feature in ("vector_search", "rlm_index", "semantic_cache", "a2a", "party_sessions"):
+        # "a2a" left this list with the feature (plan 89-05).
+        for feature in ("vector_search", "rlm_index", "semantic_cache", "party_sessions"):
             self.assertIn(feature, features_off, health)
+        self.assertNotIn("a2a", features_off, health)
 
     def test_degraded_counts_are_real(self):
         _request("POST", "/api/memory/store",
@@ -613,13 +621,18 @@ class TestPhaseParsingAgainstEachBackend(unittest.TestCase):
         self.assertFalse(self.mod._is_sqlite(None))
 
     def test_requires_postgres_payload_is_typed_and_explains_itself(self):
-        payload = self.mod._requires_postgres_payload("a2a")
+        payload = self.mod._requires_postgres_payload("party_sessions")
         self.assertEqual(payload["error"], "requires_postgres")
-        self.assertEqual(payload["feature"], "a2a")
+        self.assertEqual(payload["feature"], "party_sessions")
         self.assertEqual(payload["backend"], "sqlite")
         self.assertTrue(payload["detail"])
+        self.assertIn("party_sessions", self.mod.PG_ONLY_FEATURE_DETAIL)
         # An unlisted feature still gets a usable sentence, not a KeyError.
         self.assertIn("unlisted", self.mod._requires_postgres_payload("unlisted")["detail"])
+        # And "a2a" is now exactly that: unlisted, because plan 89-05 removed the
+        # feature. It gets the generic sentence, not a bespoke one.
+        self.assertNotIn("a2a", self.mod.PG_ONLY_FEATURE_DETAIL)
+        self.assertIn("a2a", self.mod._requires_postgres_payload("a2a")["detail"])
 
     @pytest.mark.usefixtures("backend_selection_env")
     def test_force_sqlite_reads_the_env_flag(self):
