@@ -451,7 +451,7 @@ describe('88-19 tests/skip-exceptions.d/ itself', () => {
           `${e.file} :: ${e.name} carries two local entries`);
         assert.notStrictEqual(other.platform, 'all',
           `${e.file} :: ${e.name} has a context "any" entry for EVERY platform, `
-          + 'which already excuses the skip everywhere; the local entry adds nothing');
+          + 'that already excuses the skip everywhere, so the local entry adds nothing');
       }
     }
   });
