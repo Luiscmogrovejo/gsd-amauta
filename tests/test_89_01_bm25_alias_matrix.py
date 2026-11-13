@@ -526,8 +526,20 @@ class _HybridFailsThenBm25Succeeds:
          1, 9, "body", "description", [], []] + [None, 1, None]
     )
 
+    #: Phase 89 plan 89-06 (decision D3): `hybrid_search_generic` now asks the
+    #: catalogue which engine answers the lexical leg before it builds its SQL.
+    #: A CAPABILITY PROBE is not a retrieval statement, and this fake counts
+    #: retrieval statements -- "the first one is unplannable" is the whole
+    #: fixture. Letting the probe consume that budget would mean the hybrid SQL
+    #: succeeded and the test measured nothing, so probes are excluded from the
+    #: count (and still raise, which is what a double with no catalogue should
+    #: do: `_has_pg_search` reads an unreadable catalogue as "unknown" and keeps
+    #: the `@@@` statement, which is the leg this test is about).
+    PROBE_MARKERS = ("pg_extension", "information_schema")
+
     def __init__(self):
         self.executed = 0
+        self.probed = 0
         self.rollback_calls = 0
 
     def cursor(self):
@@ -547,6 +559,10 @@ class _HybridFailsThenBm25Succeeds:
             return False
 
         def execute(self, sql, params=None):
+            if any(marker in sql
+                   for marker in _HybridFailsThenBm25Succeeds.PROBE_MARKERS):
+                self._conn.probed += 1
+                raise _undefined_column_42703()
             self._conn.executed += 1
             if self._conn.executed == 1:
                 raise _undefined_column_42703()

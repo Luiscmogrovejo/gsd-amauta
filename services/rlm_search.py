@@ -57,6 +57,22 @@ BM25 tuning (Phase 65 / RETR-06, RETR-07):
     (hybrid pipeline vs. legacy in-memory scan are mutually exclusive per
     query per RETR-01 routing), so the divergence is aligned-or-documented
     rather than reconciled — this comment is that documentation.
+  - RETR-08 (Phase 89 / decision D3, plan 89-06 — documented divergence, not
+    reconciled and not reconcilable): `pg_search` is OPTIONAL. Where the
+    extension is absent the lexical leg of all three statements in this module
+    runs PostgreSQL's own full-text search over migration 033's GIN indexes.
+    That leg is not BM25: `ts_rank_cd` is a cover-density score over tsvector
+    lexemes, Tantivy's BM25 is a saturating tf-idf over its own term
+    statistics, and the two will not rank the same corpus identically: the
+    ranking differs from the ParadeDB BM25 leg, which `doctor` and `/health`
+    say in those words wherever the fallback is active. What IS
+    identical is everything around it — the vector leg, the RRF formula and k,
+    the candidate pools, the top-k contract, the degradation ladder and the
+    returned field set. The boosts survive the translation (description rides
+    at tsvector weight A against content's B, which is the same 2x), the
+    ordering within one engine is stable, and `doctor` and `/health` name the
+    engine that answered. See the block above `_has_pg_search` for the whole
+    translation rule.
   - position_decay=0.05: applied as post-score penalty in Python (WHERE start_line > N -> reduce score)
 """
 
@@ -121,6 +137,184 @@ def _has_embedding_model_column(pg_conn) -> bool:
     return present
 
 
+# ───────────────────────────────────────────────────────────────────────────────
+# Phase 89 / RETR-08, decision D3 (plan 89-06): the lexical leg has two engines
+#
+# `pg_search` is OPTIONAL as of this phase -- it has no Windows build, and
+# migration 011's unguarded CREATE EXTENSION used to take the whole schema with
+# it on any plain PostgreSQL. When the extension is absent, the lexical leg runs
+# PostgreSQL's own full-text search (`to_tsvector`/`ts_rank_cd`) over migration
+# 033's GIN indexes instead of ParadeDB's BM25.
+#
+# WHAT IS IDENTICAL: the vector leg, the RRF fusion formula and its k, the
+# candidate pool sizes, the top-k contract, the position_decay post-pass, the
+# degradation ladder, and the returned field set -- key for key, including
+# `bm25_score` in `bm25_only_search`'s rows. Only the lexical leg's SQL differs.
+#
+# WHAT IS NOT: the SCORES, and therefore the ordering of two documents the two
+# engines disagree about. Tantivy BM25 and ts_rank_cd are different functions of
+# different statistics; no amount of tuning makes them agree. This is a
+# DOCUMENTED DIVERGENCE of exactly the kind RETR-07 records above -- the plain
+# PostgreSQL leg is NOT BM25 and this module never claims the two rank a corpus
+# alike. `doctor` and `/health` name the engine that answered (one resolver,
+# services/infra_detect.py `lexical_engine`), so a reader can always tell which
+# of the two produced a given ranking.
+# ───────────────────────────────────────────────────────────────────────────────
+
+#: Per-connection cache for the pg_search probe, the same shape and the same
+#: failure behaviour as _HAS_EMBEDDING_MODEL_COLUMN above. The ANSWER is
+#: computed and cached by services/infra_detect.py `lexical_engine()`, which is
+#: also what the capability report, `doctor` and `/health` read -- one probe,
+#: one cache, four routed call sites, no two of which can disagree.
+_LEXICAL_WEIGHT_LABELS = ("A", "B", "C", "D")
+
+#: ts_rank_cd's weight array is {D, C, B, A}. This one reproduces
+#: `_boosted_rlm_query`'s boosts exactly: description (A, 0.8) counts twice
+#: content (B, 0.4), and symbol_name (C, 0.4) counts the same as content -- the
+#: `content:T OR description:T^2.0 OR symbol_name:T` weighting, in the only
+#: vocabulary a tsquery has.
+RLM_FTS_COLUMNS = (("description", "A"), ("content", "B"), ("symbol_name", "C"))
+RLM_FTS_WEIGHTS = (0.1, 0.4, 0.4, 0.8)
+
+#: PostgreSQL's own default weights, for a caller with a single text column.
+DEFAULT_FTS_WEIGHTS = (0.1, 0.2, 0.4, 1.0)
+
+#: The text-search configuration both the query expressions and migration 033's
+#: index expressions use. They must be the same string or the index is not used.
+FTS_CONFIG = "english"
+
+
+def _has_pg_search(pg_conn) -> bool:
+    """True when this connection's lexical leg should be ParadeDB BM25.
+
+    Written like `_has_embedding_model_column`: one probe per connection,
+    cached, and a failure degrades instead of raising. The caching and the
+    probe statement live in services/infra_detect.py `lexical_engine()` so that
+    this module, the capability report, `doctor` and `/health` all read ONE
+    answer -- see that function for why `pg_extension` is the ground truth and
+    how `gsd.lexical_engine` pins the plain leg.
+
+    ONLY a measured `postgres_fts` routes to the full-text leg. An UNKNOWN
+    answer -- a connection that is a test double, in an aborted transaction, or
+    dead -- keeps the `@@@` statement this module has always run, for two
+    reasons: a failed catalogue read is not evidence that the extension is
+    absent, and if it really is absent the `@@@` surfaces as plan 89-01's typed
+    EngineProgrammingError rather than as a quietly different ranking. The
+    cheapest statement in the system failing is a condition to report, not to
+    silently reinterpret.
+    """
+    try:
+        try:
+            from services.infra_detect import lexical_engine, LEXICAL_POSTGRES_FTS
+        except ImportError:  # pragma: no cover - script-launched from services/
+            from infra_detect import lexical_engine, LEXICAL_POSTGRES_FTS
+        return lexical_engine(pg_conn)["lexical_engine"] != LEXICAL_POSTGRES_FTS
+    except Exception as e:  # noqa: BLE001 - never raise out of a probe
+        log.debug("pg_search_probe_failed error=%s", str(e))
+        return True
+
+
+def _check_weight(label) -> None:
+    """Raise ValueError unless `label` is one of tsvector's four weights."""
+    if label not in _LEXICAL_WEIGHT_LABELS:
+        raise ValueError(f"unsafe tsvector weight: {label!r}")
+
+
+def fts_vector_sql(fts_columns, alias: Optional[str] = None) -> str:
+    """The weighted `tsvector` expression for a column list.
+
+    THE one place this expression is spelled. Migration
+    033-plain-fts-fallback.sql carries the same text for `rlm_chunks` and
+    `gsd_memory` (an expression index is only used when the query's expression
+    parses to the same tree), and
+    tests/test_89_06_lexical_fallback.py pins the two against each other so the
+    pair cannot drift into a silent sequential scan.
+
+    Args:
+        fts_columns: sequence of ``(column, weight_label)``. Column names are
+            validated with `_check_ident` and weights against tsvector's four
+            labels, exactly like every other identifier this module
+            interpolates -- neither can be a bound parameter.
+        alias: table alias to qualify the columns with, or None for the bare
+            column names a CREATE INDEX expression uses.
+
+    Returns:
+        str: ``(setweight(to_tsvector('english', coalesce(c.x, '')), 'A') || ...)``
+
+    Raises:
+        ValueError: on an unsafe column name or weight label.
+    """
+    parts = []
+    for column, label in fts_columns:
+        _check_ident(column)
+        _check_weight(label)
+        ref = f"{alias}.{column}" if alias else column
+        parts.append(
+            f"setweight(to_tsvector('{FTS_CONFIG}', coalesce({ref}, '')), '{label}')"
+        )
+    if not parts:
+        raise ValueError("fts_columns is empty")
+    return "(" + " || ".join(parts) + ")"
+
+
+def fts_query_sql() -> str:
+    """The `tsquery` expression, with ONE bound parameter for the query text.
+
+    ## The @@@-to-tsquery translation rule, in one place
+    1. **Fields.** The tsvector covers exactly the columns the caller declares
+       in `fts_columns` -- for `rlm_chunks` the same three `_boosted_rlm_query`
+       names, and deliberately NOT `file_path`, which rides in the BM25 index
+       but in neither engine's QUERY.
+    2. **Boosts.** `description^2.0` becomes tsvector weight A against
+       content's B, scored with `ts_rank_cd({0.1,0.4,0.4,0.8})`: description
+       twice content, symbol_name equal to content. The boosts are PRESERVED,
+       not dropped.
+    3. **Multi-word.** `_boosted_rlm_query` emits one boost group per term and
+       pg_search combines space-separated groups with implicit OR, so the
+       tsquery must OR too. `websearch_to_tsquery` ANDs with `&`; this
+       expression re-spells those `&` as `|` on the tsquery's own text, which
+       keeps ALL parsing of untrusted input inside PostgreSQL behind a bound
+       parameter -- unlike `to_tsquery`, which would need the terms escaped in
+       Python.
+    4. **Stray syntax.** `_sanitize_query` has already stripped
+       ``! ^ ~ @ ( ) [ ] { } "`` for pg_search's parser, which also removes
+       every tsquery operator and every phrase quote -- so `&` is the only
+       operator `websearch_to_tsquery` can emit here, and the substitution
+       cannot corrupt a phrase. A hyphenated token keeps websearch's phrase
+       semantics (`'a-b' <-> 'a' <-> 'b'`), the one place the two engines read a
+       token differently.
+    5. **Empty.** A stopword-only query yields the empty tsquery, which matches
+       nothing -- the same answer pg_search gives, reached without a round trip
+       to a parse error.
+
+    Returns:
+        str: the expression, consuming exactly one `%s`.
+    """
+    return (
+        f"replace(websearch_to_tsquery('{FTS_CONFIG}', %s)::text, '&', '|')::tsquery"
+    )
+
+
+def _fts_rank_sql(fts_columns, weights, alias: Optional[str] = None) -> str:
+    """`ts_rank_cd(weights, vector, query)` -- the FTS leg's score expression.
+
+    Consumes one `%s` (the query text), via :func:`fts_query_sql`.
+    """
+    weights = tuple(weights or DEFAULT_FTS_WEIGHTS)
+    if len(weights) != 4:
+        raise ValueError("ts_rank_cd needs exactly four weights {D,C,B,A}")
+    weight_sql = "'{" + ",".join(f"{float(w):.4f}" for w in weights) + "}'::float4[]"
+    return (
+        f"ts_rank_cd({weight_sql}, {fts_vector_sql(fts_columns, alias)}, "
+        f"{fts_query_sql()})"
+    )
+
+
+def _fts_match_sql(fts_columns, alias: Optional[str] = None) -> str:
+    """`vector @@ query` -- the FTS leg's WHERE predicate. Consumes one `%s`."""
+    return f"{fts_vector_sql(fts_columns, alias)} @@ {fts_query_sql()}"
+
+
 def hybrid_search_generic(query: str, pg_conn, *, table: str, id_column: str,
                            select_columns, vector_column: Optional[str] = None,
                            query_embedding: Optional[list] = None,
@@ -129,7 +323,9 @@ def hybrid_search_generic(query: str, pg_conn, *, table: str, id_column: str,
                            vector_filter_sql: str = "", vector_filter_params=(),
                            top_k: int = DEFAULT_TOP_K,
                            candidate_k: int = RRF_CANDIDATE_K,
-                           rrf_k: int = RRF_K) -> list:
+                           rrf_k: int = RRF_K,
+                           fts_columns=None, fts_weights=None,
+                           fts_query: Optional[str] = None) -> list:
     """
     Table/column-agnostic RRF fusion of a pg_search BM25 leg and a pgvector
     cosine-similarity leg (Phase 66 shared-primitive contract, CONTEXT.md).
@@ -161,6 +357,18 @@ def hybrid_search_generic(query: str, pg_conn, *, table: str, id_column: str,
         top_k: rows returned after RRF fusion
         candidate_k: candidate pool size per leg before fusion
         rrf_k: RRF k constant
+        fts_columns: Phase 89 / D3 — the caller's table shape for the
+            plain-PostgreSQL lexical leg, as ``(column, weight_label)`` pairs
+            (see :func:`fts_vector_sql`). Consulted ONLY where pg_search is
+            absent. A caller that does not declare it keeps a working search on
+            such a database but with NO lexical leg: the vector leg answers
+            alone, which the log names, because inventing a text column set
+            from `select_columns` would guess at types.
+        fts_weights: ts_rank_cd's ``{D,C,B,A}`` array; PostgreSQL's own default
+            when omitted.
+        fts_query: plain query text for the tsquery; ``_sanitize_query(query)``
+            when omitted. Never the pg_search match string — `bm25_query`'s
+            field qualifiers and boosts are not tsquery syntax.
 
     Returns a list of row dicts: select_columns plus rrf_score, rank_bm25,
     rank_vector. On any SQL failure, falls back to the BM25-only branch
@@ -176,7 +384,16 @@ def hybrid_search_generic(query: str, pg_conn, *, table: str, id_column: str,
 
     if bm25_query is None:
         bm25_query = _sanitize_query(query)
-    if not bm25_query:
+    if fts_query is None:
+        fts_query = _sanitize_query(query)
+
+    # Phase 89 / D3: which engine answers the lexical leg. ONE probe, cached
+    # per connection (services/infra_detect.py `lexical_engine`), consulted
+    # here and passed down to _generic_bm25_only rather than probed again.
+    use_bm25 = _has_pg_search(pg_conn)
+    if use_bm25 and not bm25_query:
+        return []
+    if not use_bm25 and not fts_query:
         return []
 
     filter_params = list(filter_params)
@@ -186,7 +403,9 @@ def hybrid_search_generic(query: str, pg_conn, *, table: str, id_column: str,
         log.debug("hybrid_search_generic_bm25_only_mode table=%s reason=no_query_embedding", table)
         return _generic_bm25_only(bm25_query, pg_conn, table=table, id_column=id_column,
                                    select_columns=select_columns, filter_sql=filter_sql,
-                                   filter_params=filter_params, top_k=top_k)
+                                   filter_params=filter_params, top_k=top_k,
+                                   fts_columns=fts_columns, fts_weights=fts_weights,
+                                   fts_query=fts_query)
 
     select_cols_sql = ", ".join(f"c.{col}" for col in select_columns)
 
@@ -205,13 +424,41 @@ def hybrid_search_generic(query: str, pg_conn, *, table: str, id_column: str,
     # the caller supplied -- no silent truncation, no modifier mismatch.
     vec_literal = "[" + ",".join(f"{v:.6f}" for v in query_embedding) + "]"
 
+    # ── Routed site 1 of 4 (Phase 89 / D3): the lexical CTE ────────────────
+    # Same CTE name, same two output columns, same RANK() window, same
+    # candidate_k, same position in the FULL OUTER JOIN below — so the fusion
+    # that reads it cannot tell the two engines apart. Only the score
+    # expression and the match predicate differ.
+    if use_bm25:
+        lexical_rank_sql = f"paradedb.score(c.{id_column})"
+        lexical_where_sql = "c @@@ %s"
+        lexical_params = [bm25_query]
+    elif fts_columns:
+        lexical_rank_sql = _fts_rank_sql(fts_columns, fts_weights, alias="c")
+        lexical_where_sql = _fts_match_sql(fts_columns, alias="c")
+        # Two binds, in the order the two expressions appear in the text:
+        # the RANK() window first, then the WHERE predicate.
+        lexical_params = [fts_query, fts_query]
+    else:
+        # No pg_search and no declared text columns: run the vector leg alone
+        # rather than guess. `FALSE` keeps the CTE's shape, so the fusion SQL
+        # below is untouched and every row arrives with the same
+        # COALESCE(rank_bm25, candidate_k + 1) a genuine lexical miss gets.
+        log.warning(
+            "hybrid_search_generic_no_lexical_leg table=%s — pg_search absent and "
+            "no fts_columns declared; the vector leg answers alone", table,
+        )
+        lexical_rank_sql = "0"
+        lexical_where_sql = "FALSE"
+        lexical_params = []
+
     sql = f"""
         WITH bm25_leg AS (
             SELECT
                 c.{id_column} AS id,
-                RANK() OVER (ORDER BY paradedb.score(c.{id_column}) DESC) AS rank_bm25
+                RANK() OVER (ORDER BY {lexical_rank_sql} DESC) AS rank_bm25
             FROM {table} c
-            WHERE c @@@ %s
+            WHERE {lexical_where_sql}
             {filter_sql}
             LIMIT {candidate_k}
         ),
@@ -244,7 +491,7 @@ def hybrid_search_generic(query: str, pg_conn, *, table: str, id_column: str,
         LIMIT %s
     """
 
-    params = ([bm25_query] + filter_params + [vec_literal] + filter_params
+    params = (lexical_params + filter_params + [vec_literal] + filter_params
               + vector_filter_params + [top_k])
 
     # Output column order is deterministic from the SELECT list we just built
@@ -288,12 +535,16 @@ def hybrid_search_generic(query: str, pg_conn, *, table: str, id_column: str,
             log.warning("hybrid_search_generic_failed table=%s error=%s — falling back to BM25", table, str(e))
         return _generic_bm25_only(bm25_query, pg_conn, table=table, id_column=id_column,
                                    select_columns=select_columns, filter_sql=filter_sql,
-                                   filter_params=filter_params, top_k=top_k)
+                                   filter_params=filter_params, top_k=top_k,
+                                   fts_columns=fts_columns, fts_weights=fts_weights,
+                                   fts_query=fts_query)
 
 
 def _generic_bm25_only(bm25_query: str, pg_conn, *, table: str, id_column: str,
                         select_columns, filter_sql: str = "", filter_params=(),
-                        top_k: int = DEFAULT_TOP_K) -> list:
+                        top_k: int = DEFAULT_TOP_K,
+                        fts_columns=None, fts_weights=None,
+                        fts_query: Optional[str] = None) -> list:
     """
     BM25-only branch shared by hybrid_search_generic's graceful-degradation path
     (no query_embedding) and its exception fallback (hybrid SQL failed). Same
@@ -322,14 +573,42 @@ def _generic_bm25_only(bm25_query: str, pg_conn, *, table: str, id_column: str,
 
     The result SHAPE, the ordering contract and the degradation semantics are
     untouched; the only change is which name the statement gives its one table.
+
+    Phase 89 / D3, routed site 2 of 4: without pg_search this is the same
+    statement over `to_tsvector`/`ts_rank_cd`. The three fusion aliases keep
+    their literal values (`rrf_score` NULL, `rank_bm25` 1, `rank_vector` NULL),
+    so `pg_store._score_fused_memories`' NULL-rrf_score branch and
+    `hybrid_search`'s None-score sort key behave identically on both engines.
     """
     _check_ident(table)
     _check_ident(id_column)
     for col in select_columns:
         _check_ident(col)
 
-    if not bm25_query:
-        return []
+    use_bm25 = _has_pg_search(pg_conn)
+    if use_bm25:
+        if not bm25_query:
+            return []
+        lexical_where_sql = "c @@@ %s"
+        lexical_order_sql = f"paradedb.score(c.{id_column})"
+        # `paradedb.score()` takes the key column, not the query: one bind.
+        where_params, order_params = [bm25_query], []
+    else:
+        if not fts_query or not fts_columns:
+            # No lexical engine and no lower rung: an empty result is the whole
+            # answer this branch can give, and the caller's own ladder decides
+            # what to do with it (pg_store's rung 2, hybrid_search's caller).
+            if not fts_columns:
+                log.warning(
+                    "generic_bm25_only_no_lexical_leg table=%s — pg_search absent and "
+                    "no fts_columns declared", table,
+                )
+            return []
+        lexical_where_sql = _fts_match_sql(fts_columns, alias="c")
+        lexical_order_sql = _fts_rank_sql(fts_columns, fts_weights, alias="c")
+        # ts_rank_cd scores the same tsquery the predicate matched: one bind
+        # each, and `filter_sql` sits textually between them.
+        where_params, order_params = [fts_query], [fts_query]
 
     select_cols_sql = ", ".join(f"c.{col}" for col in select_columns)
     filter_params = list(filter_params)
@@ -341,12 +620,12 @@ def _generic_bm25_only(bm25_query: str, pg_conn, *, table: str, id_column: str,
             1 AS rank_bm25,
             NULL::int AS rank_vector
         FROM {table} c
-        WHERE c @@@ %s
+        WHERE {lexical_where_sql}
         {filter_sql}
-        ORDER BY paradedb.score(c.{id_column}) DESC
+        ORDER BY {lexical_order_sql} DESC
         LIMIT %s
     """
-    params = [bm25_query] + filter_params + [top_k]
+    params = where_params + filter_params + order_params + [top_k]
 
     # Same deterministic-column-order approach as hybrid_search_generic — no
     # cursor metadata round-trip needed to name the result dict keys.
@@ -495,6 +774,10 @@ def hybrid_search(query: str, pg_conn, top_k: int = DEFAULT_TOP_K,
         )
         vector_filter_params = (active_model,)
 
+    # Phase 89 / D3: declare rlm_chunks' shape for the plain-PostgreSQL lexical
+    # leg. RLM_FTS_COLUMNS and RLM_FTS_WEIGHTS reproduce `_boosted_rlm_query`'s
+    # description^2.0 boost as tsvector weights; migration 033's
+    # idx_rlm_chunks_fts is built on exactly the expression they generate.
     results = hybrid_search_generic(
         query, pg_conn,
         table="rlm_chunks", id_column="id", select_columns=select_columns,
@@ -503,6 +786,8 @@ def hybrid_search(query: str, pg_conn, top_k: int = DEFAULT_TOP_K,
         vector_filter_sql=vector_filter_sql,
         vector_filter_params=vector_filter_params,
         top_k=top_k,
+        fts_columns=RLM_FTS_COLUMNS, fts_weights=RLM_FTS_WEIGHTS,
+        fts_query=_sanitize_query(query),
     )
 
     # Apply position_decay=0.05 penalty (replicate rlm-service.py BM25 tuning)
@@ -537,37 +822,62 @@ def bm25_only_search(query: str, pg_conn, top_k: int = DEFAULT_TOP_K,
     hybrid_search's bm25 leg (Phase 65 / RETR-06 _boosted_rlm_query) — a boost
     on only one of the two `@@@` call sites would rank the same corpus two
     different ways within this module.
+
+    Phase 89 / D3, routed site 3 of 4: without pg_search the same statement
+    runs on `to_tsvector`/`ts_rank_cd`. `bm25_score` KEEPS ITS NAME and its
+    position in the row — every caller's field set is unchanged key for key —
+    but it then carries a ts_rank_cd value, which is a different function of
+    different statistics and is comparable only within one engine's results.
     """
-    # Sanitize + field-qualify/boost query for pg_search @@@ operator
-    safe_query = _boosted_rlm_query(_sanitize_query(query))
-    if not safe_query:
-        return []
+    plain_query = _sanitize_query(query)
+    use_bm25 = _has_pg_search(pg_conn)
+
+    if use_bm25:
+        # Sanitize + field-qualify/boost query for pg_search @@@ operator
+        safe_query = _boosted_rlm_query(plain_query)
+        if not safe_query:
+            return []
+        score_sql = "paradedb.score(id)"
+        where_sql = "rlm_chunks @@@ %s"
+        # SELECT's paradedb.score() takes the key column: the match string
+        # binds once, in the WHERE.
+        select_params, where_params, order_params = [], [safe_query], []
+    else:
+        if not plain_query:
+            return []
+        # Unaliased, like the rest of this statement (it takes no caller
+        # fragment, so there is no alias to agree with).
+        score_sql = _fts_rank_sql(RLM_FTS_COLUMNS, RLM_FTS_WEIGHTS)
+        where_sql = _fts_match_sql(RLM_FTS_COLUMNS)
+        select_params, where_params, order_params = (
+            [plain_query], [plain_query], [plain_query])
 
     # Same sibling-directory fix as hybrid_search: `LIKE '/a/b%'` also matched
     # /a/bc and /a/b-old. Match the directory itself or a path beneath it.
     if file_filter:
         prefix = str(file_filter).rstrip(os.sep)
         file_clause = "AND (file_path = %s OR file_path LIKE %s)"
-        params = [safe_query, prefix, prefix + os.sep + "%"]
+        file_params = [prefix, prefix + os.sep + "%"]
     else:
         file_clause = ""
-        params = [safe_query]
+        file_params = []
 
     sql = f"""
         SELECT
             id, file_path, symbol_name, symbol_type, start_line, end_line,
             content, description, dependencies, dependents,
-            paradedb.score(id) AS bm25_score,
+            {score_sql} AS bm25_score,
             NULL::float AS rrf_score,
             1 AS rank_bm25,
             NULL::int AS rank_vector
         FROM rlm_chunks
-        WHERE rlm_chunks @@@ %s
+        WHERE {where_sql}
         {file_clause}
-        ORDER BY paradedb.score(id) DESC
+        ORDER BY {score_sql} DESC
         LIMIT %s
     """
-    params.append(top_k)
+    params = (select_params + where_params + file_params + order_params
+              + [top_k])
 
     try:
         with pg_conn.cursor() as cur:

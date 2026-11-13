@@ -56,12 +56,24 @@ except ImportError:
 # services/ itself on sys.path) are tried before giving up. On total failure,
 # _HYBRID_GENERIC_AVAILABLE is set False and memory_search's router degrades
 # straight to its rung-2 legacy FTS path -- loud stderr warning, never silent.
+#
+# Phase 89 / D3 (plan 89-06) adds `_has_pg_search` to the same import: this
+# module has no `@@@` SQL of its own -- memory_search's BM25 rung IS
+# hybrid_search_generic, which routes the lexical leg itself -- but the rung's
+# own diagnostics have to name the engine that answered, because "memory search
+# found nothing" has two different follow-up questions depending on it.
 try:
-    from services.rlm_search import hybrid_search_generic, _sanitize_query as _rlm_sanitize_query
+    from services.rlm_search import (
+        hybrid_search_generic, _has_pg_search,
+        _sanitize_query as _rlm_sanitize_query,
+    )
     _HYBRID_GENERIC_AVAILABLE = True
 except ImportError:
     try:
-        from rlm_search import hybrid_search_generic, _sanitize_query as _rlm_sanitize_query
+        from rlm_search import (
+            hybrid_search_generic, _has_pg_search,
+            _sanitize_query as _rlm_sanitize_query,
+        )
         _HYBRID_GENERIC_AVAILABLE = True
     except ImportError as _hybrid_import_err:
         import sys as _sys
@@ -82,6 +94,10 @@ except ImportError:
         def _rlm_sanitize_query(q):  # pragma: no cover
             """Stub sanitizer — never called; _HYBRID_GENERIC_AVAILABLE gates rung 1."""
             return q
+
+        def _has_pg_search(_conn):  # pragma: no cover
+            """Stub probe — never called; _HYBRID_GENERIC_AVAILABLE gates rung 1."""
+            return False
 
 # Phase 66 MEMR-08: dual-import of services/memory_classifier.py's
 # classify_memory_op (fail-open write-time ADD/UPDATE/DELETE/NOOP
@@ -318,6 +334,16 @@ def _memory_bm25_query(safe_query):
     if not terms:
         return ""
     return " ".join(f"text:{term}" for term in terms)
+
+
+#: Phase 89 / D3 (plan 89-06): gsd_memory's shape for the plain-PostgreSQL
+#: lexical leg, the counterpart of `_memory_bm25_query` above. gsd_memory's BM25
+#: index covers (id, text) and `_memory_bm25_query` field-qualifies against
+#: `text` with no boost, so there is exactly one weighted column here and
+#: ts_rank_cd keeps PostgreSQL's default weights. Migration 033's
+#: idx_gsd_memory_fts_fallback is built on exactly the expression this list
+#: generates through services/rlm_search.py `fts_vector_sql`.
+MEMORY_FTS_COLUMNS = (("text", "A"),)
 
 
 def _memory_filter_sql(project_id=None, source=None,
@@ -1173,7 +1199,8 @@ class PGStore:
         if _HYBRID_GENERIC_AVAILABLE:
             try:
                 query_embedding = self.generate_embedding(query, input_type="query")
-                bm25_query = _memory_bm25_query(_rlm_sanitize_query(query))
+                safe_query = _rlm_sanitize_query(query)
+                bm25_query = _memory_bm25_query(safe_query)
                 with self._get_conn() as conn:
                     rows = hybrid_search_generic(
                         query, conn,
@@ -1186,12 +1213,23 @@ class PGStore:
                         bm25_query=bm25_query,
                         filter_sql=filter_sql, filter_params=filter_params,
                         top_k=limit * 4, candidate_k=max(40, limit * 8),
+                        # Phase 89 / D3: the plain-PostgreSQL lexical leg's
+                        # shape. The primitive decides which engine runs -- one
+                        # probe, cached on `conn` -- so this is a declaration,
+                        # never a branch.
+                        fts_columns=MEMORY_FTS_COLUMNS, fts_query=safe_query,
                     )
+                    # Same connection, so this reads the probe's CACHED answer
+                    # (no second round trip) and the diagnostic can say which
+                    # engine produced the zero.
+                    lexical = ("pg_search_bm25" if _has_pg_search(conn)
+                               else "postgres_fts")
                 if rows:
                     return self._score_fused_memories(rows)[:limit]
                 print(
                     f"[pg_store] memory_search rung1->rung2: hybrid_search_generic "
-                    f"returned 0 rows for query={query!r}", file=sys.stderr,
+                    f"returned 0 rows for query={query!r} "
+                    f"(lexical engine={lexical})", file=sys.stderr,
                 )
             except Exception as e:
                 print(
@@ -1282,7 +1320,8 @@ class PGStore:
         own comment for the scale rationale. `_generic_bm25_only`'s
         degradation SQL (no query embedding, or the hybrid SQL raised) returns
         `rrf_score=NULL` for every row -- it has no numeric RRF value to
-        report, only a paradedb.score-ordered row position -- treated as
+        report, only a lexically-ordered row position (paradedb.score with
+        pg_search, ts_rank_cd without it -- Phase 89 / D3) -- treated as
         relevance=0.0 rather than raising: those rows still rank on source
         bonus/citation/recency (the shared _score_core terms), never crash.
         Every Decimal rrf_score is float()-cast before arithmetic (STATE
