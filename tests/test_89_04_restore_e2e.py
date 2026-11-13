@@ -586,13 +586,38 @@ def test_services_backup_py_carries_the_honest_label():
     assert "not a restorable snapshot" in doc
     assert "backup_snapshot" in doc
     assert "6 of" in doc and "22" in doc
-    # Plan 89-06 moved all three down (services/pg_store.py gained the D3
-    # lexical-leg declaration and its comment): 456->482, 2982->3021,
-    # 3281->3320. The numbers are re-measured, not re-guessed -- this pin and
-    # the test below are exactly the mechanism that forced the label in
-    # services/backup.py to be corrected in the same commit.
-    for site in ("482", "3021", "3320"):
-        assert site in doc, site
+    # Plan 89-08 replaced the LINE-NUMBER pin (482 / 3021 / 3320, which plans
+    # 89-06 and 89-07 each had to re-measure after an unrelated edit) with the
+    # three FUNCTION names: a claim that survives any edit that does not move
+    # the stripping to another function.
+    for site in STRIPPING_SITES:
+        assert site.split(".")[-1] in doc, site
+    assert "_strip_vectors" in doc
+
+
+#: The functions of services/pg_store.py that strip vectors from a row.
+STRIPPING_SITES = ("PGStore._rows_to_dicts", "PGStore._score_semantic_results",
+                   "_score_core")
+
+
+def _functions_calling(source, callee):
+    """Qualified names of every function in *source* that calls *callee*."""
+    import ast
+
+    found = set()
+
+    def visit(node, stack):
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                visit(child, stack + [child.name])
+                continue
+            if (isinstance(child, ast.Call) and isinstance(child.func, ast.Name)
+                    and child.func.id == callee):
+                found.add(".".join(stack))
+            visit(child, stack)
+
+    visit(ast.parse(source), [])
+    return found
 
 
 def test_the_embedding_stripping_is_pinned_at_all_three_sites():
@@ -600,17 +625,22 @@ def test_the_embedding_stripping_is_pinned_at_all_three_sites():
 
     If a future change stops stripping, this fails — which forces the label in
     ``services/backup.py`` to be updated in the same commit rather than rotting
-    into a false claim.  ``services/pg_store.py`` itself is NOT edited here: it
-    belongs to plans 89-06 and 89-08.
+    into a false claim. The pin is the set of FUNCTIONS that call
+    ``pg_store._strip_vectors`` (plan 89-08), measured from the syntax tree: a
+    comment or a docstring that merely mentions the call cannot satisfy it, and
+    no edit elsewhere in the file can break it.
     """
     from services import pg_store
 
     source = (REPO_ROOT / "services" / "pg_store.py").read_text(encoding="utf-8")
-    lines = source.splitlines()
-    sites = [i + 1 for i, line in enumerate(lines)
-             if 'd.pop("embedding", None)' in line]
-    # Plan 89-06's pg_store.py edit moved all three; see the note above.
-    assert sites == [482, 3021, 3320], sites
+    assert _functions_calling(source, "_strip_vectors") == set(STRIPPING_SITES)
+    # ...and nothing strips a vector any OTHER way, or the set above would be
+    # true while a fourth site went unpinned.
+    assert 'pop("embedding"' not in source and "pop('embedding'" not in source
+    # The helper removes the live vector AND the one migration 034 builds
+    # beside it; without the second a `SELECT *` export would carry 1024 floats
+    # per row for as long as a re-embed is in progress.
+    assert pg_store.VECTOR_ROW_KEYS == ("embedding", "embedding_next")
 
     # Site 1 is the module-level scorer, and it is exercised directly.
     scored = pg_store._score_core(
@@ -622,7 +652,8 @@ def test_the_embedding_stripping_is_pinned_at_all_three_sites():
     # Site 3 is the export path BackupManager depends on, exercised without a
     # database by calling the unbound method with a stand-in `self`.
     converted = pg_store.PGStore._rows_to_dicts(
-        object(), [{"id": "m1", "embedding": [0.2] * 1024, "text": "t"}])
+        object(), [{"id": "m1", "embedding": [0.2] * 1024,
+                    "embedding_next": [0.3] * 1024, "text": "t"}])
     assert converted == [{"id": "m1", "text": "t"}], converted
 
 

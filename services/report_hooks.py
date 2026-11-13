@@ -73,8 +73,11 @@ DEGRADED_KEY = "_degraded"
 #: services/doctor.py or services/amauta-daemon.py.
 #: plan 89-10 registered `_89_10_reporting` (the key-presence row, decision 11:
 #: presence and source only, never a value) the same way.
+#: plan 89-08 registered `_89_08_reporting` the same way (the
+#: embedding-catalogue rows and the embedding_state phase per use).
 PROVIDER_MODULES = (
     "_89_06_reporting",
+    "_89_08_reporting",
     "_89_10_reporting",
 )
 

@@ -271,6 +271,16 @@ MIGRATION_SENTINELS = {
          ("norelation", "idx_gsd_memory_fts_fallback"),
          ("relation", "idx_gsd_memory_fts_fallback")),
     ],
+    # Phase 89 plan 89-08 (RET-05). The state table, plus one staging column on
+    # each of the two tables that are searched by vector: a database that has
+    # embedding_state but lost a *_next column is not at 034's end state.
+    "034-embedding-blue-green.sql": [
+        ("relation", "embedding_state"),
+        ("column", "gsd_memory", "embedding_next"),
+        ("column", "gsd_memory", "embedding_model"),
+        ("column", "rlm_chunks", "embedding_code_next"),
+        ("column", "rlm_chunks", "embedding_model_next"),
+    ],
 }
 
 

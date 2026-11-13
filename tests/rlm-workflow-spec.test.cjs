@@ -477,7 +477,7 @@ describe('PG Store & Daemon — structural tests', () => {
   test('5.2 pg_store.py supports Voyage API embeddings', () => {
     const content = fs.readFileSync(pgStore, 'utf-8');
     assert.ok(content.includes('VOYAGE_API_KEY'), 'Should check for Voyage API key');
-    assert.ok(content.includes('voyage-code-3') || content.includes('voyage'), 'Should use Voyage model');
+    assert.strictEqual(resolvedVoyageModel(content), 'voyage-code-4', 'pg_store.py must resolve its Voyage model from embedding-models.json (default voyage-code-4), not name one');
     assert.ok(content.includes('voyageai.com') || content.includes('voyage'), 'Should call Voyage API');
   });
 
@@ -694,3 +694,28 @@ describe('Auto-Learning — deep integration tests', () => {
       'Should have dedup logic');
   });
 });
+
+// ─── Phase 89 plan 89-08 (RET-05) ────────────────────────────────────────────
+// Test 5.2's "Should use Voyage model" assertion used to be
+//   content.includes('voyage-code-3') || content.includes('voyage')
+// whose right-hand branch is true for ANY Voyage model name, the API host and
+// the env-var name alike, so it could never fail and would not have noticed the
+// model being renamed. The model is a setting now: this helper returns the
+// model pg_store.py actually resolves — the catalogue's default for the memory
+// use — and returns a labelled non-answer when pg_store.py names a literal
+// instead of resolving one, or when the catalogue's default is not a Voyage
+// embedding record. It is declared here, at the end of the file, so the line
+// numbers of the tests above do not move.
+function resolvedVoyageModel(pgStoreSource, cataloguePath) {
+  const literal = pgStoreSource.match(/"default_model":\s*"(voyage-[^"]+)"/);
+  if (literal) return `literal:${literal[1]}`;
+  if (!pgStoreSource.includes('_catalogue_default_model("voyage")')) return 'unresolved';
+  const catalogue = JSON.parse(fs.readFileSync(cataloguePath || path.join(
+    __dirname, '..', 'get-shit-done', 'config', 'embedding-models.json'), 'utf-8'));
+  const id = catalogue.uses.memory.default;
+  const record = catalogue.models.find((m) => m.id === id);
+  if (!record || record.provider !== 'voyage' || record.kind !== 'embed') {
+    return `not-a-voyage-embedding-model:${id}`;
+  }
+  return id;
+}
