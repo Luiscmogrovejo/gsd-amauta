@@ -248,7 +248,14 @@ jobs:
         run: |
           set -uo pipefail
           echo "=== 89-07-01 measurement on ${{ runner.os }} / ${{ runner.arch }}"
-          WORK="$RUNNER_TEMP/pg8907"
+          # cygpath: RUNNER_TEMP on Windows is a NATIVE path (D:\a\_temp), and GNU tar
+          # in Git bash reads `D:\a/...` as the remote host `D:` — measured in run
+          # 43354540890: `tar (child): Cannot connect to D: resolve failed`.
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            WORK="$(cygpath -u "$RUNNER_TEMP")/pg8907"
+          else
+            WORK="$RUNNER_TEMP/pg8907"
+          fi
           rm -rf "$WORK"; mkdir -p "$WORK"
           t0=$SECONDS
           EXE=""
@@ -409,11 +416,31 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
+          . /etc/os-release
+          echo "MEASURE linux distro=$ID $VERSION_ID codename=${VERSION_CODENAME:-?}"
+          echo "MEASURE linux apt_sources=$(ls /etc/apt/sources.list.d 2>/dev/null | tr '\n' ' ')"
+          echo "--- every apt.postgresql.org line the image carries"
+          grep -rhs "apt.postgresql.org" /etc/apt/sources.list /etc/apt/sources.list.d/ || echo "(none)"
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends postgresql-client-16
-          echo "MEASURE linux pg_restore16=$(/usr/lib/postgresql/16/bin/pg_restore --version)"
-          echo "MEASURE linux pg_dump16=$(/usr/lib/postgresql/16/bin/pg_dump --version)"
+          echo "--- apt-cache madison postgresql-client-16"
+          apt-cache madison postgresql-client-16 || echo "(no candidate)"
+          echo "--- every postgresql-client-N the sources offer"
+          apt-cache search '^postgresql-client-[0-9]' | sort || true
+          echo "--- which codenames apt.postgresql.org publishes a repo for"
+          for cn in questing plucky noble jammy; do
+            if curl -fsS --max-time 20 -o /dev/null "https://apt.postgresql.org/pub/repos/apt/dists/${cn}-pgdg/Release"; then
+              echo "MEASURE linux pgdg_repo_${cn}=exists"
+            else
+              echo "MEASURE linux pgdg_repo_${cn}=absent"
+            fi
+          done
+          if sudo apt-get install -y --no-install-recommends postgresql-client-16; then
+            echo "MEASURE linux client16=INSTALLED $(/usr/lib/postgresql/16/bin/pg_restore --version)"
+          else
+            echo "MEASURE linux client16=UNAVAILABLE from this image's sources"
+          fi
           echo "MEASURE linux pg_restore_on_path=$(pg_restore --version)"
+          echo "MEASURE linux docker_available=$(docker --version 2>&1 | head -1)"
 
       - name: Start the disposable PostgreSQL (Linux)
         if: runner.os == 'Linux'
@@ -615,7 +642,14 @@ jobs:
         run: |
           set -uo pipefail
           echo "=== 89-07-01 measurement on ${{ runner.os }} / ${{ runner.arch }}"
-          WORK="$RUNNER_TEMP/pg8907"
+          # cygpath: RUNNER_TEMP on Windows is a NATIVE path (D:\a\_temp), and GNU tar
+          # in Git bash reads `D:\a/...` as the remote host `D:` — measured in run
+          # 43354540890: `tar (child): Cannot connect to D: resolve failed`.
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            WORK="$(cygpath -u "$RUNNER_TEMP")/pg8907"
+          else
+            WORK="$RUNNER_TEMP/pg8907"
+          fi
           rm -rf "$WORK"; mkdir -p "$WORK"
           t0=$SECONDS
           EXE=""
@@ -774,7 +808,7 @@ jobs:
           ")"
           echo "MEASURE ${{ runner.os }} subset_py_files=$(printf '%s\n' "$SUBSET" | grep -c .)"
           GSD_TEST_POSTGRES_URL="$DSN" python3 -m pytest $SUBSET \
-            -q -rs -p no:cacheprovider 2>&1 | tail -45
+            -q -rf -p no:cacheprovider 2>&1 | tail -90
           echo "MEASURE ${{ runner.os }} subset_exit=${PIPESTATUS[0]}"
 
           "$BIN/pg_ctl$EXE" -D "$DATA" -m immediate stop || true
@@ -794,11 +828,31 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
+          . /etc/os-release
+          echo "MEASURE linux distro=$ID $VERSION_ID codename=${VERSION_CODENAME:-?}"
+          echo "MEASURE linux apt_sources=$(ls /etc/apt/sources.list.d 2>/dev/null | tr '\n' ' ')"
+          echo "--- every apt.postgresql.org line the image carries"
+          grep -rhs "apt.postgresql.org" /etc/apt/sources.list /etc/apt/sources.list.d/ || echo "(none)"
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends postgresql-client-16
-          echo "MEASURE linux pg_restore16=$(/usr/lib/postgresql/16/bin/pg_restore --version)"
-          echo "MEASURE linux pg_dump16=$(/usr/lib/postgresql/16/bin/pg_dump --version)"
+          echo "--- apt-cache madison postgresql-client-16"
+          apt-cache madison postgresql-client-16 || echo "(no candidate)"
+          echo "--- every postgresql-client-N the sources offer"
+          apt-cache search '^postgresql-client-[0-9]' | sort || true
+          echo "--- which codenames apt.postgresql.org publishes a repo for"
+          for cn in questing plucky noble jammy; do
+            if curl -fsS --max-time 20 -o /dev/null "https://apt.postgresql.org/pub/repos/apt/dists/${cn}-pgdg/Release"; then
+              echo "MEASURE linux pgdg_repo_${cn}=exists"
+            else
+              echo "MEASURE linux pgdg_repo_${cn}=absent"
+            fi
+          done
+          if sudo apt-get install -y --no-install-recommends postgresql-client-16; then
+            echo "MEASURE linux client16=INSTALLED $(/usr/lib/postgresql/16/bin/pg_restore --version)"
+          else
+            echo "MEASURE linux client16=UNAVAILABLE from this image's sources"
+          fi
           echo "MEASURE linux pg_restore_on_path=$(pg_restore --version)"
+          echo "MEASURE linux docker_available=$(docker --version 2>&1 | head -1)"
 
 
       - name: Start the disposable PostgreSQL (Linux)
