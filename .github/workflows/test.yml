@@ -340,6 +340,38 @@ jobs:
           printf '%s\n' "$OUT"
           printf '%s\n' "$OUT" | grep '^GSD_TEST_POSTGRES_URL=' >> "$GITHUB_ENV"
 
+      # ── Real ParadeDB on the macOS cell (plan 89-12, decision D4) ────────────
+      # Until this step the macOS cell ran the plain-PostgreSQL full-text leg,
+      # a documented divergence from the BM25 leg Linux and production use.
+      # ParadeDB publishes signed Apple-silicon installer packages since
+      # v0.26.6, and this plan MEASURED, on six hosted runners (pull request
+      # #49, runs 43432557908 and 43433158637, image macos-26-arm64), that the
+      # `pg_search@17` package matches the Homebrew `postgresql@17` this cell
+      # installs: its payload goes to /opt/homebrew/opt/paradedb and its
+      # postinstall links the library into /opt/homebrew/lib/postgresql@17 and
+      # the control file into /opt/homebrew/share/postgresql@17/extension --
+      # exactly what `pg_config --pkglibdir` and `--sharedir` report. Cost,
+      # measured: download 1-3 s, installer 2-3 s, restart under 1 s.
+      #
+      # The helper pins the release tag and the SHA-256 of the package (per
+      # macOS major, because the asset name carries the code name and
+      # `macos-latest` moved from 15 to 26 between plan 89-07 and this one),
+      # refuses on any mismatch, checks the Apple signature, and fails the
+      # step unless the restarted server reports `pg_search` preloaded and
+      # `CREATE EXTENSION` yields the pinned version. It runs AFTER the
+      # bring-up because `shared_preload_libraries` lives in a file `initdb`
+      # creates, and BEFORE "Apply the schema" so that migration 011 finds the
+      # extension loadable and takes its BM25 branch. A server where the
+      # package is present but NOT preloaded makes 011 fall back silently
+      # (measured: "pg_search must be loaded via shared_preload_libraries"),
+      # which is why this step proves the load itself instead of trusting it.
+      #
+      # Windows has no such step and never will from this route: ParadeDB
+      # publishes no Windows asset of any kind. See docs/CI-POSTGRES-CELLS.md.
+      - name: Load ParadeDB pg_search into the disposable PostgreSQL (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: node scripts/ci-install-pg-search-macos.cjs --port "$PG_TEST_PORT"
 
       - name: Start the disposable PostgreSQL (Linux)
         if: runner.os == 'Linux'
@@ -366,7 +398,9 @@ jobs:
         # now: ParadeDB v0.26.6 also ships signed Apple-silicon macOS packages,
         # and it has no Windows build at all, which is why the FALLBACK, not the
         # container, is what makes the Postgres suite runnable on all three
-        # systems.
+        # systems. Since plan 89-12 the macOS cells install that package (the
+        # step above), so the fallback leg is what the WINDOWS cells run and
+        # the macOS cells run BM25 like this one.
         #
         # macOS and Windows get a disposable PostgreSQL 17 + pgvector from the
         # two steps above (plan 89-07), not a container: neither runner has a
@@ -715,15 +749,21 @@ jobs:
           printf '%s\n' "$OUT"
           printf '%s\n' "$OUT" | grep '^GSD_TEST_POSTGRES_URL=' >> "$GITHUB_ENV"
 
-
+      # Real ParadeDB on the macOS cell (plan 89-12): the same step, for the
+      # same measured reasons, as the `test` job's above.
+      - name: Load ParadeDB pg_search into the disposable PostgreSQL (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: node scripts/ci-install-pg-search-macos.cjs --port "$PG_TEST_PORT"
 
       - name: Start the disposable PostgreSQL (Linux)
         if: runner.os == 'Linux'
         shell: bash
         # Same image, same reasons as the `test` job's step above, including the
         # correction plan 89-06 made true: the schema no longer needs pg_search,
-        # and the macOS and Windows cells apply it in full against the
-        # plain-PostgreSQL fallback leg.
+        # so the Windows cells apply it in full against the plain-PostgreSQL
+        # fallback leg (and the macOS cells did, until plan 89-12 gave them the
+        # real extension).
         run: |
           set -euo pipefail
           docker run -d --name gsd-test-pg \
