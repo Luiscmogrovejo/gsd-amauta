@@ -233,10 +233,23 @@ describe('89-12 pg_search on macOS: the refusals', () => {
     assert.deepStrictEqual(dl.urls, [], 'nothing may be downloaded outside CI');
   });
 
+  test('CI is the ONLY variable the guard reads: no other switch can open it', () => {
+    const read = [];
+    const env = new Proxy({ CI: 'true' }, {
+      get(target, key) {
+        if (typeof key === 'string') read.push(key);
+        return target[key];
+      },
+    });
+    assert.doesNotThrow(() => pgs.assertCi(env));
+    assert.deepStrictEqual([...new Set(read)], ['CI']);
+  });
+
   test('the command line itself exits non-zero outside CI, before reading its arguments', () => {
-    const env = { ...process.env };
-    delete env.CI;
-    delete env.GSD_CI_PG_ALLOW_LOCAL;
+    // Everything the cell has, minus CI and minus every GSD_CI_* switch.
+    const env = Object.fromEntries(
+      Object.entries(process.env).filter(([k]) => k !== 'CI' && !k.startsWith('GSD_CI_')),
+    );
     for (const argv of [[], ['--port', String(SAFE_PORT)], ['--no-such-flag']]) {
       const r = spawnSync(process.execPath, [SCRIPT, ...argv], { env, encoding: 'utf8' });
       assert.strictEqual(r.status, 1, 'argv ' + JSON.stringify(argv) + ' -> ' + r.stderr);
@@ -599,5 +612,47 @@ describe('89-12 pg_search on macOS: the download', () => {
     const dest = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'gsd-8912-dl-')), 'f');
     await assert.rejects(pgs.httpsDownload('http://example.invalid/f', dest), /non-https/);
     assert.strictEqual(fs.existsSync(dest), false);
+  });
+});
+
+describe('89-12 pg_search on macOS: the workflow really runs it', () => {
+  const WORKFLOW = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'test.yml'), 'utf8');
+
+  /**
+   * Split one job's text into its steps, by the `      - ` list marker.
+   *
+   * @param {string} job - `test` or `pytest`.
+   * @returns {string[]} one string per step.
+   */
+  function stepsOf(job) {
+    const start = WORKFLOW.indexOf('\n  ' + job + ':\n');
+    assert.ok(start >= 0, 'job ' + job + ' exists');
+    const rest = WORKFLOW.slice(start + 1);
+    const next = rest.slice(1).search(/\n {2}[A-Za-z0-9_-]+:\n/);
+    const body = next === -1 ? rest : rest.slice(0, next + 1);
+    return body.split(/\n(?= {6}- )/).slice(1);
+  }
+
+  for (const job of ['test', 'pytest']) {
+    test('job `' + job + '`: one blocking macOS-only step, after the bring-up and before the schema', () => {
+      const steps = stepsOf(job);
+      const mine = steps.filter((s) => s.includes('ci-install-pg-search-macos.cjs'));
+      assert.strictEqual(mine.length, 1, 'exactly one step invokes the installer');
+      const step = mine[0];
+      assert.match(step, /\n {8}if: runner\.os == 'macOS'\n/);
+      assert.doesNotMatch(step, /continue-on-error/, 'the step must be blocking');
+      assert.match(step, /node scripts\/ci-install-pg-search-macos\.cjs --port "\$PG_TEST_PORT"/);
+      const at = steps.indexOf(step);
+      const bringUp = steps.findIndex((s) => s.includes('ci-postgres-cell.cjs --up'));
+      const schema = steps.findIndex((s) => s.includes('migrate_runner.apply_migrations'));
+      assert.ok(bringUp >= 0 && schema >= 0);
+      assert.ok(bringUp < at, 'the cluster must exist before its postgresql.conf is edited');
+      assert.ok(at < schema, 'the extension must be loadable before migration 011 looks for it');
+    });
+  }
+
+  test('the script is named on exactly two lines of the workflow, one per job', () => {
+    const lines = WORKFLOW.split('\n').filter((l) => l.includes('ci-install-pg-search-macos.cjs'));
+    assert.strictEqual(lines.length, 2);
   });
 });

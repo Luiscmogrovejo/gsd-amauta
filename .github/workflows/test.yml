@@ -370,7 +370,6 @@ jobs:
       # publishes no Windows asset of any kind. See docs/CI-POSTGRES-CELLS.md.
       - name: Load ParadeDB pg_search into the disposable PostgreSQL (macOS)
         if: runner.os == 'macOS'
-        continue-on-error: true
         shell: bash
         run: node scripts/ci-install-pg-search-macos.cjs --port "$PG_TEST_PORT"
 
@@ -399,7 +398,9 @@ jobs:
         # now: ParadeDB v0.26.6 also ships signed Apple-silicon macOS packages,
         # and it has no Windows build at all, which is why the FALLBACK, not the
         # container, is what makes the Postgres suite runnable on all three
-        # systems.
+        # systems. Since plan 89-12 the macOS cells install that package (the
+        # step above), so the fallback leg is what the WINDOWS cells run and
+        # the macOS cells run BM25 like this one.
         #
         # macOS and Windows get a disposable PostgreSQL 17 + pgvector from the
         # two steps above (plan 89-07), not a container: neither runner has a
@@ -752,7 +753,6 @@ jobs:
       # same measured reasons, as the `test` job's above.
       - name: Load ParadeDB pg_search into the disposable PostgreSQL (macOS)
         if: runner.os == 'macOS'
-        continue-on-error: true
         shell: bash
         run: node scripts/ci-install-pg-search-macos.cjs --port "$PG_TEST_PORT"
 
@@ -761,8 +761,9 @@ jobs:
         shell: bash
         # Same image, same reasons as the `test` job's step above, including the
         # correction plan 89-06 made true: the schema no longer needs pg_search,
-        # and the macOS and Windows cells apply it in full against the
-        # plain-PostgreSQL fallback leg.
+        # so the Windows cells apply it in full against the plain-PostgreSQL
+        # fallback leg (and the macOS cells did, until plan 89-12 gave them the
+        # real extension).
         run: |
           set -euo pipefail
           docker run -d --name gsd-test-pg \
@@ -995,67 +996,3 @@ jobs:
         if: always() && runner.os == 'Linux'
         shell: bash
         run: docker rm -f gsd-test-valkey || true
-
-  # ── TEMPORARY, plan 89-12: the throwaway measurement, second half ──────────
-  # Removed again before the pull request is marked ready. `macos-latest` is
-  # macos-26 today and was macos-15 when plan 89-07 measured it, so the pinned
-  # `sequoia` package is exercised here on a macos-15 runner with the REAL
-  # helper, twice over (the second pass proves the helper is idempotent on a
-  # real cluster), and once more on macos-latest for the same end-to-end shape.
-  measure-pg-search-macos:
-    name: measure pg_search (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 25
-    continue-on-error: true
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-15, macos-latest]
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 20
-          cache: 'npm'
-      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5
-        with:
-          python-version: '3.12'
-      - name: Install what the bring-up and the migration runner import
-        continue-on-error: true
-        shell: bash
-        env:
-          GSD_INSTALL_FILES_ONLY: '1'
-        run: |
-          npm ci
-          python -m pip install --disable-pip-version-check -r requirements.txt -r requirements-dev.txt
-      - name: The real helper, end to end, twice
-        continue-on-error: true
-        shell: bash
-        run: |
-          set +e; set -uo pipefail
-          sw_vers
-          export HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 HOMEBREW_NO_ENV_HINTS=1
-          T0=$(date +%s)
-          brew install postgresql@17 pgvector >/dev/null 2>&1; echo "brew install exit=$?"
-          echo "BREW_SECONDS=$(( $(date +%s) - T0 ))"
-          BIN="$(brew --prefix postgresql@17)/bin"
-          echo "pg_config --version:   $("$BIN/pg_config" --version)"
-          echo "pg_config --pkglibdir: $("$BIN/pg_config" --pkglibdir)"
-          echo "pg_config --sharedir:  $("$BIN/pg_config" --sharedir)"
-          PORT=$(node -e "process.stdout.write(String(require('./scripts/run-tests.cjs').freePort()))")
-          export PGPASSWORD=gsd
-          Q() { "$BIN/psql" -h 127.0.0.1 -p "$PORT" -U gsd -d gsd_test -w -v ON_ERROR_STOP=1 -tAc "$1"; }
-          node scripts/ci-postgres-cell.cjs --up --port "$PORT" | grep -v '^GSD_TEST_POSTGRES_URL='; echo "bring-up exit=${PIPESTATUS[0]}"
-          T1=$(date +%s)
-          node scripts/ci-install-pg-search-macos.cjs --port "$PORT"; echo "helper pass 1 exit=$?"
-          echo "HELPER_PASS1_SECONDS=$(( $(date +%s) - T1 ))"
-          T2=$(date +%s)
-          node scripts/ci-install-pg-search-macos.cjs --port "$PORT"; echo "helper pass 2 exit=$?"
-          echo "HELPER_PASS2_SECONDS=$(( $(date +%s) - T2 ))"
-          echo "active preload lines: $(grep -c '^[[:space:]]*shared_preload_libraries' "${TMPDIR%/}/gsd-ci-pg/postgresql.conf")"
-          DSN="postgresql://gsd:gsd@127.0.0.1:${PORT}/gsd_test"
-          python -c "import sys; sys.path.insert(0, '.'); from services import migrate_runner; r = migrate_runner.apply_migrations(dsn='${DSN}'); print('migrations: total', r.get('total'), 'pending_left', r.get('pending_left'))"; echo "migrations exit=$?"
-          python -c "import sys; sys.path.insert(0, '.'); from services import infra_detect; print('lexical_engine_for_dsn:', infra_detect.lexical_engine_for_dsn('${DSN}'))"
-          echo "--- every index of the two lexical sets, by name"
-          Q "SELECT indexname FROM pg_indexes WHERE schemaname='public' AND indexname IN ('bm25_test_idx','idx_rlm_chunks_bm25','idx_gsd_memory_bm25','idx_rlm_chunks_fts','idx_gsd_memory_fts_fallback') ORDER BY 1"
-          node scripts/ci-postgres-cell.cjs --stop
