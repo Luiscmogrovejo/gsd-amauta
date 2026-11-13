@@ -5610,7 +5610,8 @@ Options:
     }
 
     case 'party': {
-      // Phase 50 PARTY-01 + PARTY-02: party session lifecycle + persistence.
+      // Party sessions: a container row plus its recorded decisions (Phase 89
+      // ORC-02; the transition machine, pause, resume and kill are removed).
       // Mirrors Phase 49 module dispatch convention. args[1] is the action;
       // args.slice(2) is the rest forwarded verbatim to argparse on the Python side.
       const action = args[1];
@@ -5619,22 +5620,40 @@ Options:
           'Usage:\n' +
           '  gsd-tools party create --participants <comma-separated> [--json]\n' +
           '  gsd-tools party start <session_id> [--json]\n' +
-          '  gsd-tools party pause <session_id> [--json]\n' +
-          '  gsd-tools party resume <session_id> [--json]\n' +
           '  gsd-tools party terminate <session_id> [--json]\n' +
           '  gsd-tools party get <session_id> [--json] [--with-findings]\n' +
           '  gsd-tools party status [--json]\n' +
-          '  gsd-tools party inspect <session_id> [--json]\n' +
-          '  gsd-tools party kill <session_id> [--reason "..."] [--json]\n'
+          '  gsd-tools party inspect <session_id> [--json]\n'
         );
         process.exit(2);
       }
-      const KNOWN_ACTIONS = new Set(['create', 'start', 'pause', 'resume', 'terminate', 'get', 'status', 'inspect', 'kill']);
+      // A removed verb is not an unknown verb: it used to work, so it says what
+      // replaced it. The same payload as services/party_session_cli.py.
+      const REMOVED_ACTIONS = {
+        pause: 'There is nothing to pause: a session is a container, and its recorded decisions and findings persist whether or not anyone is working in it.',
+        resume: 'There is nothing to resume, and no finding replay: read a session\'s findings with `party get <session_id> --with-findings` and its decision trail with `party inspect <session_id>`.',
+        kill: 'Close a session with `party terminate <session_id>`. A reason is recorded as a decision (services/party_session.post_decision, type `block`), so it is part of the decision trail.',
+      };
+      if (Object.prototype.hasOwnProperty.call(REMOVED_ACTIONS, action)) {
+        const payload = {
+          error: 'party_verb_removed',
+          action,
+          detail: `\`party ${action}\` was removed in v3.7 (ORC-02): a party session keeps only recorded decisions. ` +
+            'It is a container row plus the decisions posted into it, not a lifecycle with transitions. ' +
+            REMOVED_ACTIONS[action],
+          replacement: ['party status', 'party inspect <session_id>', 'party get <session_id> --with-findings', 'party terminate <session_id>'],
+          schema_version: '1.0',
+        };
+        if (args.slice(2).includes('--json')) process.stdout.write(JSON.stringify(payload) + '\n');
+        process.stderr.write(`ERROR: ${payload.detail} Use instead: ${payload.replacement.join('; ')}.\n`);
+        process.exit(2);
+      }
+      const KNOWN_ACTIONS = new Set(['create', 'start', 'terminate', 'get', 'status', 'inspect']);
       if (!KNOWN_ACTIONS.has(action)) {
         process.stderr.write(
           `Unknown party action: ${action}\n` +
           'Usage:\n' +
-          '  gsd-tools party create|start|pause|resume|terminate|get|status|inspect|kill <args...>\n'
+          '  gsd-tools party create|start|terminate|get|status|inspect <args...>\n'
         );
         process.exit(2);
       }
