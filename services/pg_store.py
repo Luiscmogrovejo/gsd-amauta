@@ -111,6 +111,68 @@ except ImportError:
 # _MEMORY_CLASSIFIER_AVAILABLE is False and both store methods skip
 # classification entirely (plain ADD path only) -- loud stderr warning,
 # never silent.
+# Phase 89 plan 89-08 (RET-05): the embedding and rerank models are SETTINGS,
+# resolved through services/harness_config.py and validated against the model
+# catalogue; the live model of a store is its embedding_state.active_model.
+try:
+    from services import embedding_backfill as _embedding_backfill
+    from services import harness_config as _harness_config
+    from services.embedding_backfill import EmbeddingModelMixedError
+except ImportError:  # pragma: no cover - depends on caller's sys.path
+    import embedding_backfill as _embedding_backfill  # type: ignore
+    import harness_config as _harness_config  # type: ignore
+    from embedding_backfill import EmbeddingModelMixedError  # type: ignore
+
+
+#: Row keys that carry a vector and never leave the store in a result or an
+#: export: the live column and (migration 034) the one being built beside it.
+VECTOR_ROW_KEYS = ("embedding", "embedding_next")
+
+
+def _strip_vectors(d):
+    """Remove every vector from a result row, in place (large, not portable).
+
+    services/backup.py's label depends on this being the ONE way a row loses its
+    vectors: tests/test_89_04_restore_e2e.py finds its call sites by FUNCTION,
+    not by line number, so an edit above them cannot rot the claim.
+    """
+    for key in VECTOR_ROW_KEYS:
+        d.pop(key, None)
+    return d
+
+
+def _catalogue_default_model(provider, kind="embed"):
+    """The catalogue's model for *provider*: a ``current`` one first, else any.
+
+    Returns None when the catalogue is unreadable or lists none — never a
+    literal guessed here.
+    """
+    try:
+        models = [m for m in _harness_config.load_catalogue()["models"]
+                  if m.get("provider") == provider and m.get("kind") == kind]
+    except Exception:  # noqa: BLE001 - reported by doctor's embedding_catalogue row
+        return None
+    for record in models:
+        if record.get("status") == "current":
+            return record["id"]
+    return models[0]["id"] if models else None
+
+
+def _configured_model_for_provider(provider, use, kind="embed"):
+    """The CONFIGURED model for *use* when it belongs to *provider*, else that
+    provider's catalogue model.
+
+    Raises:
+        harness_config.HarnessConfigError: when the configured value is invalid
+            (never replaced by a default).
+    """
+    configured = _harness_config.configured_model(use)
+    record = _harness_config.model_record(configured)
+    if record is not None and record.get("provider") == provider:
+        return configured
+    return _catalogue_default_model(provider, kind)
+
+
 try:
     from services.memory_classifier import classify_memory_op
     _MEMORY_CLASSIFIER_AVAILABLE = True
@@ -479,7 +541,7 @@ def _score_core(d, relevance, now):
     for key, val in list(d.items()):
         if isinstance(val, Decimal):
             d[key] = float(val)
-    d.pop("embedding", None)
+    _strip_vectors(d)
     return d
 
 
@@ -790,6 +852,11 @@ class PGStore:
         self.max_conn = max_conn
         self._pool = None
         self._lock = threading.Lock()
+        # Plan 89-08: only a store built through __init__ consults
+        # embedding_state. A stand-in built with __new__ (the unit suites' mock
+        # stores) has no such attribute and keeps the pre-034 statements, so no
+        # probe consumes one of its scripted cursors.
+        self._blue_green_enabled = True
         self._connect()
 
     def _connect(self):
@@ -916,6 +983,68 @@ class PGStore:
         except Exception:
             self._bitemporal_cache = False
         return self._bitemporal_cache
+
+    def _has_blue_green(self):
+        """Plan 89-08: cached (per-instance) check that migration 034 is applied.
+
+        True when gsd_memory, gsd_memory_archive and semantic_cache all carry
+        ``embedding_model`` and ``embedding_state`` exists. False on an
+        un-migrated database and on a stand-in store, where every statement
+        keeps its pre-034 text.
+        """
+        if not getattr(self, "_blue_green_enabled", False):
+            return False
+        if hasattr(self, "_blue_green_cache"):
+            return self._blue_green_cache
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT COUNT(*), to_regclass('embedding_state') IS NOT NULL "
+                        "FROM information_schema.columns "
+                        "WHERE table_schema = current_schema() "
+                        "AND column_name = 'embedding_model' AND table_name IN "
+                        "('gsd_memory', 'gsd_memory_archive', 'semantic_cache')"
+                    )
+                    count, has_state = cur.fetchone()
+            self._blue_green_cache = bool(count == 3 and has_state)
+        except Exception:
+            self._blue_green_cache = False
+        return self._blue_green_cache
+
+    def _memory_active_model(self, conn):
+        """The LIVE memory model of this store, or None before migration 034.
+
+        It is ``embedding_state.active_model`` — during a blue/green re-embed
+        deliberately NOT the configured model: vectors keep being written and
+        queried with the model the live column holds until the cutover.
+        """
+        if not self._has_blue_green():
+            return None
+        return _embedding_backfill.active_model_for(conn, _harness_config.USE_MEMORY)
+
+    def _embed_for_memory(self, text, input_type, conn=None):
+        """``(embedding, model)`` for a memory read or write on this store.
+
+        On a migrated store the embedding is requested from the store's ACTIVE
+        model, and ``model`` is what the caller records beside the vector. On an
+        un-migrated or stand-in store this is exactly the old call.
+        """
+        if not self._has_blue_green():
+            return self.generate_embedding(text, input_type=input_type), None
+        if conn is not None:
+            model = self._memory_active_model(conn)
+        else:
+            with self._get_conn() as own:
+                model = self._memory_active_model(own)
+        if not model:
+            return self.generate_embedding(text, input_type=input_type), None
+        return self.generate_embedding(text, model=model, input_type=input_type), model
+
+    def _refuse_mixed_memory(self, conn, model):
+        """Raise ``EmbeddingModelMixedError`` when gsd_memory holds another model's vectors."""
+        _embedding_backfill.assert_single_model(
+            conn, _harness_config.USE_MEMORY, "gsd_memory", "embedding", model)
 
     def health(self):
         """Check PG connection health."""
@@ -1198,10 +1327,20 @@ class PGStore:
         # Rung 1: hybrid RRF fusion via Phase 65's table-agnostic primitive.
         if _HYBRID_GENERIC_AVAILABLE:
             try:
-                query_embedding = self.generate_embedding(query, input_type="query")
+                query_embedding, query_model = self._embed_for_memory(query, "query")
                 safe_query = _rlm_sanitize_query(query)
                 bm25_query = _memory_bm25_query(safe_query)
                 with self._get_conn() as conn:
+                    # Plan 89-08, criterion 6: a store that holds another
+                    # model's vectors -- or vectors of UNKNOWN provenance -- is
+                    # REFUSED before the vector leg runs, never narrowed. A
+                    # query with no vector leg (no provider) consults no vector
+                    # and is answered lexically.
+                    vector_filter_sql, vector_filter_params = "", ()
+                    if query_embedding is not None and query_model:
+                        self._refuse_mixed_memory(conn, query_model)
+                        vector_filter_sql = "AND c.embedding_model = %s"
+                        vector_filter_params = (query_model,)
                     rows = hybrid_search_generic(
                         query, conn,
                         table="gsd_memory", id_column="id",
@@ -1212,6 +1351,8 @@ class PGStore:
                         query_embedding=query_embedding,
                         bm25_query=bm25_query,
                         filter_sql=filter_sql, filter_params=filter_params,
+                        vector_filter_sql=vector_filter_sql,
+                        vector_filter_params=vector_filter_params,
                         top_k=limit * 4, candidate_k=max(40, limit * 8),
                         # Phase 89 / D3: the plain-PostgreSQL lexical leg's
                         # shape. The primitive decides which engine runs -- one
@@ -1231,6 +1372,11 @@ class PGStore:
                     f"returned 0 rows for query={query!r} "
                     f"(lexical engine={lexical})", file=sys.stderr,
                 )
+            except EmbeddingModelMixedError:
+                # The one failure that must NOT degrade to the next rung: a
+                # lexical answer here would hide that the store is mixed, and
+                # the caller would never learn it has to be rebuilt.
+                raise
             except Exception as e:
                 print(
                     f"[pg_store] memory_search rung1->rung2: hybrid_search_generic "
@@ -1522,6 +1668,7 @@ class PGStore:
                     """,
                     (mem_id,),
                 )
+                self._copy_archive_provenance(cur, "a.id = %s", (mem_id,))
                 archived = cur.rowcount
 
                 # Read-back inside the same transaction: prove the content is
@@ -2502,17 +2649,21 @@ class PGStore:
         "voyage": {
             "env_key": "VOYAGE_API_KEY",
             "url": "https://api.voyageai.com/v1/embeddings",
-            "default_model": "voyage-code-3",  # Best for code retrieval (beats OpenAI by 13.8%)
+            # Plan 89-08: a catalogue lookup, no longer a literal. This is the
+            # catalogue's model for the provider; the CONFIGURED model
+            # (retrieval.embedding_model.memory) is resolved per call in
+            # _detect_embedding_provider, so a config change needs no restart.
+            "default_model": _catalogue_default_model("voyage"),
             "dimensions": 1024,               # Matryoshka: can truncate from 2048 to 1024/512/256
             "max_chars": 32000,               # 32K token context window
             "supports_input_type": True,      # "query" vs "document" improves retrieval
-            "rerank_model": "rerank-2.5",     # Post-retrieval reranking (200M free tokens)
+            "rerank_model": _catalogue_default_model("voyage", "rerank"),
             "rerank_url": "https://api.voyageai.com/v1/rerank",
         },
         "openai": {
             "env_key": "OPENAI_API_KEY",
             "url": "https://api.openai.com/v1/embeddings",
-            "default_model": "text-embedding-3-small",
+            "default_model": _catalogue_default_model("openai"),
             "dimensions": 1024,  # request 1024 dims (model supports flexible dims)
             "max_chars": 32000,
             "supports_input_type": False,
@@ -2526,20 +2677,44 @@ class PGStore:
         Priority: GSD_EMBEDDING_PROVIDER env var > auto-detect (voyage > openai).
         Returns (provider_name, config_dict) or (None, None) if no API key available.
         """
-        explicit = os.environ.get("GSD_EMBEDDING_PROVIDER", "").lower().strip()
-        if explicit and explicit in PGStore.EMBEDDING_PROVIDERS:
-            cfg = PGStore.EMBEDDING_PROVIDERS[explicit]
-            if os.environ.get(cfg["env_key"]):
-                return explicit, cfg
-            # Explicit provider set but no API key — fall through to auto-detect
+        # Plan 89-08: the provider and the models are settings. An INVALID
+        # configured value is reported and yields NO provider (lexical-only
+        # search) -- it is never replaced by a default model nobody chose.
+        try:
+            setting = _harness_config.resolve("retrieval.embedding_provider")
+            explicit = setting["value"] if setting["source"] != "default" else ""
+            if explicit and explicit in PGStore.EMBEDDING_PROVIDERS:
+                cfg = PGStore._with_configured_models(explicit)
+                if os.environ.get(cfg["env_key"]):
+                    return explicit, cfg
+                # Explicit provider set but no API key — fall through to auto-detect
 
-        # Auto-detect: prefer Voyage (Anthropic-recommended), fall back to OpenAI
-        for name in ("voyage", "openai"):
-            cfg = PGStore.EMBEDDING_PROVIDERS[name]
-            if os.environ.get(cfg["env_key"]):
-                return name, cfg
+            # Auto-detect: prefer Voyage (Anthropic-recommended), fall back to OpenAI
+            for name in ("voyage", "openai"):
+                cfg = PGStore.EMBEDDING_PROVIDERS[name]
+                if os.environ.get(cfg["env_key"]):
+                    return name, PGStore._with_configured_models(name)
+        except _harness_config.HarnessConfigError as exc:
+            import sys
+            print(f"[pg_store] embedding configuration rejected ({exc.code}): "
+                  f"{exc.message}", file=sys.stderr)
 
         return None, None
+
+    @staticmethod
+    def _with_configured_models(name):
+        """A copy of the provider's config carrying the CONFIGURED models.
+
+        Raises:
+            harness_config.HarnessConfigError: an invalid configured model.
+        """
+        cfg = dict(PGStore.EMBEDDING_PROVIDERS[name])
+        cfg["default_model"] = _configured_model_for_provider(
+            name, _harness_config.USE_MEMORY)
+        if cfg.get("rerank_url"):
+            cfg["rerank_model"] = _configured_model_for_provider(
+                name, _harness_config.USE_RERANK, kind="rerank")
+        return cfg
 
     @staticmethod
     def generate_embedding(text, model=None, input_type=None):
@@ -2569,6 +2744,14 @@ class PGStore:
 
         # use_model must be resolved before cache key computation
         use_model = model or cfg["default_model"]
+        if not use_model:
+            return None
+        # Plan 89-08: an explicitly requested model (a store's ACTIVE model) is
+        # never sent to a provider that does not serve it -- that would either
+        # fail or, worse, answer with another model's vector under this name.
+        requested = _harness_config.model_record(use_model) if model else None
+        if requested is not None and requested.get("provider") != provider_name:
+            return None
 
         # MEM-04: Check query embedding cache (query-only -- document embeddings are write-path)
         cache_key = None
@@ -2638,13 +2821,24 @@ class PGStore:
 
     @staticmethod
     def rerank(query, documents, top_k=10):
-        """Re-rank documents using Voyage rerank-2.5 for improved precision.
+        """Re-rank documents using the configured rerank model
+        (``retrieval.rerank_model``, default from the catalogue) for improved precision.
+
+        ``retrieval.rerank_enabled false`` turns reranking off: None is returned,
+        which every caller already treats as "keep the composite order".
 
         Uses cross-encoder scoring to re-order initial retrieval results.
         Returns list of {index, relevance_score} sorted by relevance, or None if unavailable.
         """
         provider_name, cfg = PGStore._detect_embedding_provider()
         if provider_name != "voyage" or not cfg.get("rerank_url"):
+            return None
+        try:
+            if not _harness_config.resolve("retrieval.rerank_enabled")["value"]:
+                return None
+        except _harness_config.HarnessConfigError:
+            return None
+        if not cfg.get("rerank_model"):
             return None
 
         api_key = os.environ.get(cfg["env_key"])
@@ -2654,7 +2848,7 @@ class PGStore:
         payload = json.dumps({
             "query": query,
             "documents": documents[:100],  # API limit
-            "model": cfg.get("rerank_model", "rerank-2.5"),
+            "model": cfg["rerank_model"],
             "top_k": min(top_k, len(documents)),
         }).encode("utf-8")
 
@@ -2730,7 +2924,9 @@ class PGStore:
             tags = []
 
         # MEM-03 AUDIT (2026-04-06): input_type="document" correct for storage path
-        embedding = self.generate_embedding(text, input_type="document")
+        # Plan 89-08: embedded with the store's ACTIVE model, whose name is
+        # written beside the vector by the INSERT below.
+        embedding, embedding_model = self._embed_for_memory(text, "document")
 
         if embedding is None:
             # No API key or embedding failed — store without embedding.
@@ -2815,7 +3011,26 @@ class PGStore:
 
             # Sub-block 2: insert (same conn, no nested _get_conn)
             with conn.cursor() as cur:
-                cur.execute("""
+                if embedding_model:
+                    # Plan 89-08: the vector and the model that produced it, in
+                    # ONE statement -- a vector never exists without provenance.
+                    cur.execute("""
+                        INSERT INTO gsd_memory (text, source, agent_id, tags, metadata, project_id, embedding, applied_count, embedding_model)
+                        VALUES (%s, %s, %s, %s::jsonb, %s::jsonb, %s, %s::vector, %s, %s)
+                        RETURNING id
+                    """, (
+                        text,
+                        source,
+                        agent_id,
+                        json.dumps(tags or []),
+                        json.dumps(metadata or {}),
+                        project_id,
+                        str(embedding),
+                        applied_count,
+                        embedding_model,
+                    ))
+                else:
+                    cur.execute("""
                     INSERT INTO gsd_memory (text, source, agent_id, tags, metadata, project_id, embedding, applied_count)
                     VALUES (%s, %s, %s, %s::jsonb, %s::jsonb, %s, %s::vector, %s)
                     RETURNING id
@@ -2863,16 +3078,23 @@ class PGStore:
         """
         # MEM-03 AUDIT (2026-04-06): input_type="query" correct for search path
         # Generate query embedding (input_type="query" improves Voyage retrieval)
-        query_embedding = self.generate_embedding(query, input_type="query")
+        query_embedding, query_model = self._embed_for_memory(query, "query")
         if query_embedding is None:
             # No API key — fall back to text search
             return self.memory_search(query, project_id, source, limit,
                                       exclude_sources=exclude_sources), "text_fallback"
 
         with self._get_conn() as conn:
+            if query_model:
+                # Plan 89-08, criterion 6: refuse a mixed store (typed
+                # EmbeddingModelMixedError) rather than rank across two models.
+                self._refuse_mixed_memory(conn, query_model)
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 conditions = ["embedding IS NOT NULL"]
                 params = []
+                if query_model:
+                    conditions.append("embedding_model = %s")
+                    params.append(query_model)
 
                 # DATA-06: Exclude test entries from default search
                 if project_id != '__test__':
@@ -2933,7 +3155,7 @@ class PGStore:
                 # cost cap).
                 rerank_window = scored[:limit * 2]
 
-                # Post-retrieval reranking via Voyage rerank-2.5 (free tier: 200M tokens)
+                # Post-retrieval reranking via the configured Voyage rerank model
                 # Improves precision by cross-encoder scoring on top-K candidates.
                 # MEMR-07: rerank BLENDS with composite score, it does not
                 # replace ordering wholesale — every entry in rerank_window
@@ -3018,7 +3240,7 @@ class PGStore:
                 if isinstance(val, Decimal):
                     d[key] = float(val)
             # Remove embedding from output (large binary)
-            d.pop("embedding", None)
+            _strip_vectors(d)
             scored.append(d)
         scored.sort(key=lambda x: x["score"], reverse=True)
         return scored
@@ -3082,6 +3304,10 @@ class PGStore:
     def memory_backfill_embeddings(self, batch_size=50):
         """Backfill embeddings for memories that don't have one yet.
 
+        The small in-daemon top-up (one call per row, no budget). The counted,
+        budgeted, batched job is services/embedding_backfill.py (plan 89-08);
+        this path now records the model beside each vector it writes.
+
         Requires VOYAGE_API_KEY or OPENAI_API_KEY.
         Returns dict with counts of processed, succeeded, failed.
         """
@@ -3106,12 +3332,20 @@ class PGStore:
         failed = 0
         for row in rows:
             # MEM-03 AUDIT (2026-04-06): input_type="document" correct for backfill path
-            embedding = self.generate_embedding(row["text"], input_type="document")
+            embedding, embedding_model = self._embed_for_memory(row["text"], "document")
             if embedding:
                 try:
                     with self._get_conn() as conn:
                         with conn.cursor() as cur:
-                            cur.execute("""
+                            if embedding_model:
+                                # Plan 89-08: vector and provenance together.
+                                cur.execute("""
+                                    UPDATE gsd_memory
+                                    SET embedding = %s::vector, embedding_model = %s
+                                    WHERE id = %s
+                                """, (str(embedding), embedding_model, row["id"]))
+                            else:
+                                cur.execute("""
                                 UPDATE gsd_memory SET embedding = %s::vector
                                 WHERE id = %s
                             """, (str(embedding), row["id"]))
@@ -3162,6 +3396,21 @@ class PGStore:
     # Memory Retention (MEM-02: Tiered archival)
     # ═══════════════════════════════════════════════════════
 
+    def _copy_archive_provenance(self, cur, where_sql, params):
+        """Plan 89-08: an archived row keeps the model that produced its vector.
+
+        Runs in the archiving transaction, right after the copy and before the
+        source row is deleted, so an archived vector is never left without
+        provenance. A no-op before migration 034 and on a stand-in store.
+        """
+        if not self._has_blue_green():
+            return
+        cur.execute(
+            "UPDATE gsd_memory_archive a SET embedding_model = m.embedding_model "
+            "FROM gsd_memory m WHERE a.id = m.id AND a.embedding IS NOT NULL "
+            "AND a.embedding_model IS DISTINCT FROM m.embedding_model AND " + where_sql,
+            params)
+
     def _ensure_archive_table(self):
         """Create gsd_memory_archive table if it doesn't exist (lazy init)."""
         with self._get_conn() as conn:
@@ -3210,6 +3459,9 @@ class PGStore:
                         ON CONFLICT (id) DO NOTHING
                     """, (source, days))
                     moved = cur.rowcount
+                    self._copy_archive_provenance(
+                        cur, "m.source = %s AND m.created_at < NOW() - "
+                             "make_interval(days => %s)", (source, days))
                     # Remove from active table
                     cur.execute("""
                         DELETE FROM gsd_memory
@@ -3317,7 +3569,7 @@ class PGStore:
                 elif isinstance(val, Decimal):
                     d[key] = float(val)
             # Remove embedding from exports (large binary, not portable)
-            d.pop("embedding", None)
+            _strip_vectors(d)
             results.append(d)
         return results
 
@@ -3595,7 +3847,8 @@ class PGStore:
             dict with {id, query_text, response, response_tokens, similarity, source_file_hashes}
             or None if no match above threshold.
         """
-        query_embedding = self.generate_embedding(query_text, input_type="query")
+        # Plan 89-08: the same (active) model the store path embeds with.
+        query_embedding, _cache_model = self._embed_for_memory(query_text, "query")
         if query_embedding is None:
             return None
 
@@ -3641,12 +3894,25 @@ class PGStore:
             The new cache entry ID, or None on failure.
         """
         # Must match lookup's input_type for cosine parity (SEMANTIC-01 checker note)
-        query_embedding = self.generate_embedding(query_text, input_type="query")
+        query_embedding, cache_model = self._embed_for_memory(query_text, "query")
         if query_embedding is None:
             return None
 
         with self._get_conn() as conn:
             with conn.cursor() as cur:
+                if cache_model:
+                    # Plan 89-08: vector and provenance in one statement.
+                    cur.execute("""
+                        INSERT INTO semantic_cache
+                            (query_text, query_embedding, response, response_tokens,
+                             source_file_hashes, provider, embedding_model)
+                        VALUES (%s, %s::vector, %s, %s, %s::jsonb, %s, %s)
+                        RETURNING id
+                    """, (
+                        query_text, str(query_embedding), response, response_tokens,
+                        json.dumps(source_file_hashes or {}), provider, cache_model,
+                    ))
+                    return cur.fetchone()[0]
                 cur.execute("""
                     INSERT INTO semantic_cache
                         (query_text, query_embedding, response, response_tokens,

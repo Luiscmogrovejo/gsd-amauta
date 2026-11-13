@@ -817,16 +817,34 @@ def hybrid_search(query: str, pg_conn, top_k: int = DEFAULT_TOP_K,
     # a cast-dimension mismatch. embed_for_query() has no other call sites
     # (only a callable-existence check in tests/test_27_ingestion.py) so this
     # redirect is scoped to this one call site.
-    # input_type="query", not "document". voyage-code-3 is asymmetric: the
-    # query side and the document side get different prompts, and embedding a
-    # query as a document throws away recall for nothing. The previous call
-    # took generate_code_embedding's hard-coded "document" default.
+    # input_type="query", not "document". The Voyage code models are
+    # asymmetric: the query side and the document side get different prompts,
+    # and embedding a query as a document throws away recall for nothing. The
+    # previous call took generate_code_embedding's hard-coded "document" default.
+    from services import embedding_backfill
     from services.rlm_embeddings import (
-        INPUT_TYPE_QUERY, active_embedding_model, generate_code_embedding,
+        INPUT_TYPE_QUERY, active_embedding_model, embed_code,
     )
-    query_embedding = generate_code_embedding(
-        query, input_type=INPUT_TYPE_QUERY
-    )  # full 1024-dim, or None
+    # Plan 89-08 (RET-05): the model this STORE's vectors were built with. On a
+    # store with embedding_state that is its active_model -- which, while a
+    # blue/green re-embed is running, is deliberately NOT the configured one:
+    # queries keep answering from the old vectors until the cutover. Without
+    # embedding_state (pre-034) it is the model that would embed right now.
+    store_model = embedding_backfill.active_model_for(pg_conn, "code_index")
+    active_model = store_model or active_embedding_model()
+    if store_model:
+        embedded = embed_code(query, input_type=INPUT_TYPE_QUERY, model=store_model)
+    else:
+        embedded = embed_code(query, input_type=INPUT_TYPE_QUERY)
+    query_embedding, query_model = embedded if embedded else (None, None)
+    if query_embedding is not None and active_model and query_model != active_model:
+        # The query was embedded by ANOTHER model than the stored vectors (the
+        # provider for the active model is unavailable and a fallback answered).
+        # Comparing the two would be noise, so the vector leg does not run.
+        log.warning(
+            "hybrid_search_vector_leg_skipped reason=query_model_differs "
+            "query_model=%s active_model=%s", query_model, active_model)
+        query_embedding = None  # full 1024-dim, or None
 
     select_columns = [
         "id", "file_path", "symbol_name", "symbol_type", "start_line", "end_line",
@@ -845,20 +863,33 @@ def hybrid_search(query: str, pg_conn, top_k: int = DEFAULT_TOP_K,
         filter_params = ()
     bm25_query = _boosted_rlm_query(_sanitize_query(query))
 
-    # Vector-leg-only filter: compare like with like. Voyage (1024-dim) and
-    # Qodo (1536-dim, truncated to 1024) vectors live in the same
-    # embedding_code column; cosine distance between the two spaces is noise.
-    # Rows embedded by another model still reach the results through BM25 —
-    # they just do not pollute the vector ranking. NULL embedding_model means
-    # "written before migration 030, provenance unknown" and is included so
-    # an existing index does not go dark the moment this ships.
+    # A MIXED STORE IS REFUSED, NOT NARROWED (plan 89-08, criterion 6).
+    # Vectors of two models are not comparable: cosine distance across two
+    # embedding spaces is noise that still looks like a ranking. Before the
+    # vector leg runs, the table is checked for any vector the active model did
+    # not produce, and the query is refused with a typed
+    # `embedding_model_mixed` error naming the models, the row count and the
+    # commands that repair it (services/embedding_backfill.py
+    # `assert_single_model`). The check's clean verdict is cached per
+    # connection, so it costs one statement per connection, not per query.
+    #
+    # A row whose provenance is unknown (no embedding_model recorded) counts as
+    # ANOTHER model. Migration 030 included such rows so an existing index did
+    # not go dark the day provenance shipped; that was right for the migration
+    # era and is wrong now, because "unknown, therefore acceptable" is exactly
+    # how a mixed store keeps answering. After the rebuild no legitimate such
+    # row exists: every writer records the model in the statement that writes
+    # the vector.
+    #
+    # A query with no vector leg (no provider, or the guard above) consults no
+    # vector, mixes nothing, and is answered lexically without this check.
     vector_filter_sql = ""
     vector_filter_params = ()
-    active_model = active_embedding_model()
-    if active_model and _has_embedding_model_column(pg_conn):
-        vector_filter_sql = (
-            "AND (c.embedding_model IS NULL OR c.embedding_model = %s)"
-        )
+    if (query_embedding is not None and active_model
+            and _has_embedding_model_column(pg_conn)):
+        embedding_backfill.assert_single_model(
+            pg_conn, "code_index", "rlm_chunks", "embedding_code", active_model)
+        vector_filter_sql = "AND c.embedding_model = %s"
         vector_filter_params = (active_model,)
 
     # Phase 89 / D3: declare rlm_chunks' shape for the plain-PostgreSQL lexical
