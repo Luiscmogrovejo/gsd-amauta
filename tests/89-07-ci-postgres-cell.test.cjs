@@ -216,6 +216,33 @@ describe('89-07 ci-postgres-cell: the argv, per platform', () => {
     }
   });
 
+  test('pg_ctl start is never given a PIPE, because the server inherits it', async () => {
+    // Measured on `windows-latest`, run 43357540296: with `encoding: 'utf8'`
+    // spawnSync waits for the stdio PIPES to reach EOF, and the server
+    // pg_ctl leaves behind holds them open for its whole life — so the call
+    // that had plainly started the cluster sat there until the job's 25-minute
+    // timeout. Every other spawn here is a short-lived client and may pipe.
+    for (const plat of ['darwin', 'win32', 'linux']) {
+      const { calls } = await driveUp(plat);
+      const start = calls.find((c) => /pg_ctl/.test(c.command) && c.args.includes('start'));
+      assert.ok(start, plat + ': pg_ctl start was spawned');
+      assert.ok(Array.isArray(start.options.stdio),
+        plat + ': pg_ctl start must be given explicit stdio, got '
+        + JSON.stringify(start.options.stdio));
+      assert.strictEqual(start.options.stdio[0], 'ignore', plat);
+      assert.strictEqual(typeof start.options.stdio[1], 'number',
+        plat + ': stdout must be a file descriptor, never a pipe');
+      assert.strictEqual(start.options.stdio[1], start.options.stdio[2], plat);
+      assert.strictEqual(start.options.encoding, undefined,
+        plat + ': an encoding implies a pipe');
+      for (const c of calls) {
+        if (c === start) continue;
+        assert.strictEqual(c.options.stdio, undefined,
+          plat + ': only pg_ctl start needs file stdio: ' + c.command);
+      }
+    }
+  });
+
   test('win32 falls back to the image default when PGBIN is unset', () => {
     const dir = cell.resolveBinDir({ platform: 'win32', env: ciEnv(), run: () => assert.fail('no spawn') });
     assert.strictEqual(dir, path.join('C:\\', 'Program Files', 'PostgreSQL', cell.PG_MAJOR, 'bin'));

@@ -431,16 +431,38 @@ async function up(opts) {
         stderr: String((initdb && initdb.stderr) || '').slice(-4000) });
   }
 
-  const start = run(
-    toolPath(binDir, 'pg_ctl', plat),
-    ['-D', dataDir, '-l', logFile,
-      '-o', '-p ' + port + ' -c listen_addresses=127.0.0.1', '-w', '-t', '90', 'start'],
-    { env, encoding: 'utf8' },
-  );
+  // `pg_ctl start` leaves a SERVER behind, and that server inherits the stdio
+  // handles its launcher was given. A PIPE therefore never reaches EOF, and
+  // `spawnSync` waits for the pipes rather than for the process — measured on
+  // `windows-latest`, run 43357540296: `pg_ctl` had plainly started the cluster
+  // and the step still sat in this one call until the job's 25-minute timeout.
+  // Its own two lines go to a FILE, which is read back for the diagnostic, so
+  // nothing is lost and no handle is shared with the server.
+  const ctlOut = dataDir + '.pg_ctl.out';
+  const ctlFd = fs.openSync(ctlOut, 'w');
+  let start;
+  try {
+    start = run(
+      toolPath(binDir, 'pg_ctl', plat),
+      ['-D', dataDir, '-l', logFile,
+        '-o', '-p ' + port + ' -c listen_addresses=127.0.0.1', '-w', '-t', '90', 'start'],
+      { env, stdio: ['ignore', ctlFd, ctlFd] },
+    );
+  } finally {
+    try {
+      fs.closeSync(ctlFd);
+    } catch (_e) { /* already closed */ }
+  }
+  let ctlText = '';
+  try {
+    ctlText = fs.readFileSync(ctlOut, 'utf8');
+  } catch (_e) { /* the injected runner in the unit tests writes nothing */ }
+  out('ci-postgres-cell: pg_ctl start -> status ' + (start && start.status)
+    + (ctlText.trim() ? ' | ' + ctlText.trim().replace(/\s+/g, ' ') : '') + '\n');
   if (!start || start.status !== 0) {
     throw new CellError('pg_ctl_start_failed',
       'ci-postgres-cell: pg_ctl start failed (status ' + (start && start.status) + ')',
-      { stderr: String((start && start.stderr) || '').slice(-4000), log: logTail(logFile) });
+      { stderr: ctlText.slice(-4000), log: logTail(logFile) });
   }
 
   if (!waitForRealConnection(ctx, opts.readyTimeoutS || READY_TIMEOUT_S)) {
