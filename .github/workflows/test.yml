@@ -227,6 +227,194 @@ jobs:
           fi
           echo "=== end capability probe"
 
+      # ── TEMPORARY, plan 89-07-01: MEASURE, never configure ──────────────────
+      # Task 89-07-03 DELETES this step and replaces it with the permanent
+      # `scripts/ci-postgres-cell.cjs` bring-up. Until then nothing here is
+      # exported to $GITHUB_ENV, so every later step of the cell behaves exactly
+      # as it does on master and this step only answers one question: can a
+      # disposable PostgreSQL with `vector` be had on this runner at all?
+      #
+      # pgvector is pinned to 0.8.7 and verified against the SHA-256 that
+      # Homebrew core publishes for the SAME tarball (Formula/p/pgvector.rb:
+      # url + sha256). That is an INDEPENDENT record of the digest, not one
+      # computed from the download being verified.
+      - name: MEASURE a disposable PostgreSQL + pgvector (TEMPORARY, 89-07-01)
+        if: runner.os != 'Linux'
+        continue-on-error: true
+        shell: bash
+        env:
+          PGV_VER: '0.8.7'
+          PGV_SHA: 'cac0b10c360f05b2d521200105ba3697e773d4cd3731f5a915a7e37ebe0bea85'
+        run: |
+          set -uo pipefail
+          echo "=== 89-07-01 measurement on ${{ runner.os }} / ${{ runner.arch }}"
+          WORK="$RUNNER_TEMP/pg8907"
+          rm -rf "$WORK"; mkdir -p "$WORK"
+          t0=$SECONDS
+          EXE=""
+
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            export HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 HOMEBREW_NO_ENV_HINTS=1
+            echo "--- route macOS-1: brew install postgresql@17 pgvector"
+            if ! brew install postgresql@17 pgvector; then
+              echo "MEASURE macos verdict=FAILS route=brew-install"; exit 0
+            fi
+            echo "MEASURE macos brew_seconds=$((SECONDS-t0))"
+            BIN="$(brew --prefix postgresql@17)/bin"
+            PKGLIB="$("$BIN/pg_config" --pkglibdir)"
+            SHARE="$("$BIN/pg_config" --sharedir)"
+            echo "MEASURE macos pg_config=$("$BIN/pg_config" --version)"
+            echo "MEASURE macos homebrew_prefix=$(brew --prefix)"
+            echo "MEASURE macos pkglibdir=$PKGLIB"
+            echo "MEASURE macos sharedir=$SHARE"
+            echo "MEASURE macos pgvector_brew=$(brew list --versions pgvector | tr '\n' ' ')"
+            echo "MEASURE macos vector_module=$(ls "$PKGLIB" 2>/dev/null | grep -i '^vector\.' | tr '\n' ' ')"
+            echo "MEASURE macos vector_control=$(ls "$SHARE/extension" 2>/dev/null | grep -i '^vector' | tr '\n' ' ')"
+            echo "MEASURE macos pg_restore=$("$BIN/pg_restore" --version)"
+          else
+            EXE=".exe"
+            PGROOT='C:\Program Files\PostgreSQL\17'
+            BIN='/c/Program Files/PostgreSQL/17/bin'
+            echo "--- route Windows-1: the PREINSTALLED PostgreSQL 17 binaries, a FRESH disposable cluster (NOT the stopped postgresql-x64-17 service: its cluster is not disposable and it would listen on 5432, not on the port freePort() chose)"
+            if ! "$BIN/initdb.exe" --version; then
+              echo "MEASURE windows verdict=FAILS route=1-initdb-absent"; exit 0
+            fi
+            for f in include/server/postgres.h lib/postgres.lib; do
+              if [ -f "/c/Program Files/PostgreSQL/17/$f" ]; then
+                echo "MEASURE windows devfile $f=present"
+              else
+                echo "MEASURE windows devfile $f=ABSENT"
+              fi
+            done
+            echo "--- route Windows-2a: a prebuilt, digest-pinned pgvector for PG17 x64"
+            echo "MEASURE windows route_2a=NOT USED -- github.com/pgvector/pgvector publishes source archives only; no release carries a Windows .zip or .dll asset, so NO artefact digest could be recorded, and an unverifiable artefact was not used"
+            echo "--- route Windows-2b: nmake /F Makefile.win through vcvars64.bat located with vswhere"
+            t1=$SECONDS
+            curl -fsSL --retry 3 --retry-all-errors -o "$WORK/pgvector.tar.gz" \
+              "https://github.com/pgvector/pgvector/archive/refs/tags/v${PGV_VER}.tar.gz"
+            echo "MEASURE windows pgvector_sha256_measured=$(sha256sum "$WORK/pgvector.tar.gz" | cut -d' ' -f1)"
+            echo "MEASURE windows pgvector_sha256_pinned=$PGV_SHA"
+            if ! printf '%s  %s\n' "$PGV_SHA" "$WORK/pgvector.tar.gz" | sha256sum -c -; then
+              echo "MEASURE windows verdict=FAILS route=2b-digest-mismatch"; exit 0
+            fi
+            tar -xzf "$WORK/pgvector.tar.gz" -C "$WORK"
+            SRC="$WORK/pgvector-${PGV_VER}"
+            VSWHERE='/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe'
+            VSPATH="$("$VSWHERE" -latest -products '*' \
+              -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 \
+              -property installationPath | tr -d '\r')"
+            echo "MEASURE windows vs_installationPath=$VSPATH"
+            {
+              printf '@echo off\r\n'
+              printf 'call "%%VSPATH%%\\VC\\Auxiliary\\Build\\vcvars64.bat" >nul\r\n'
+              printf 'if errorlevel 1 exit /b 1\r\n'
+              printf 'set "PGROOT=%s"\r\n' "$PGROOT"
+              printf 'cd /d "%%SRCWIN%%"\r\n'
+              printf 'nmake /F Makefile.win\r\n'
+              printf 'if errorlevel 1 exit /b 1\r\n'
+              printf 'nmake /F Makefile.win install\r\n'
+              printf 'if errorlevel 1 exit /b 1\r\n'
+            } > "$WORK/build.bat"
+            VSPATH="$VSPATH" SRCWIN="$(cygpath -w "$SRC")" \
+              cmd //d //s //c "$(cygpath -w "$WORK/build.bat")" 2>&1 | tail -40
+            rc=${PIPESTATUS[0]}
+            echo "MEASURE windows nmake_exit=$rc nmake_seconds=$((SECONDS-t1))"
+            if [ "$rc" != 0 ]; then
+              echo "MEASURE windows verdict=FAILS route=2b-nmake"; exit 0
+            fi
+            echo "MEASURE windows vector_module=$(ls '/c/Program Files/PostgreSQL/17/lib' 2>/dev/null | grep -i '^vector\.' | tr '\n' ' ')"
+            echo "MEASURE windows vector_control=$(ls '/c/Program Files/PostgreSQL/17/share/extension' 2>/dev/null | grep -i '^vector' | tr '\n' ' ')"
+            echo "MEASURE windows pg_restore=$("$BIN/pg_restore.exe" --version)"
+          fi
+
+          # ── the cluster: identical on both systems once BIN is known ────────
+          DATA="$WORK/data"
+          printf 'gsd' > "$WORK/pw"
+          if ! "$BIN/initdb$EXE" -D "$DATA" -U gsd \
+               --auth-local=trust --auth-host=scram-sha-256 --pwfile="$WORK/pw" \
+               --encoding=UTF8 --locale=C > "$WORK/initdb.log" 2>&1; then
+            tail -30 "$WORK/initdb.log"
+            echo "MEASURE ${{ runner.os }} verdict=FAILS route=initdb"; exit 0
+          fi
+          if ! "$BIN/pg_ctl$EXE" -D "$DATA" -l "$WORK/server.log" \
+               -o "-p $PG_TEST_PORT -c listen_addresses=127.0.0.1" -w -t 90 start; then
+            tail -30 "$WORK/server.log" || true
+            echo "MEASURE ${{ runner.os }} verdict=FAILS route=pg_ctl-start"; exit 0
+          fi
+          ready=
+          for _ in $(seq 1 45); do
+            if python -c "import psycopg2; psycopg2.connect('postgresql://gsd:gsd@127.0.0.1:${PG_TEST_PORT}/postgres', connect_timeout=3).close()" 2>/dev/null; then ready=1; break; fi
+            sleep 2
+          done
+          if [ -z "$ready" ]; then
+            tail -30 "$WORK/server.log" || true
+            echo "MEASURE ${{ runner.os }} verdict=FAILS route=readiness"; exit 0
+          fi
+          export PGPASSWORD=gsd
+          PSQL="$BIN/psql$EXE"
+          Q() { "$PSQL" -h 127.0.0.1 -p "$PG_TEST_PORT" -U gsd -d "$1" -tAc "$2"; }
+          "$PSQL" -h 127.0.0.1 -p "$PG_TEST_PORT" -U gsd -d postgres -v ON_ERROR_STOP=1 \
+            -c "CREATE DATABASE gsd_test OWNER gsd"
+          "$PSQL" -h 127.0.0.1 -p "$PG_TEST_PORT" -U gsd -d gsd_test -v ON_ERROR_STOP=1 \
+            -c "CREATE EXTENSION vector"
+          echo "MEASURE ${{ runner.os }} server_version=$(Q gsd_test 'SHOW server_version')"
+          echo "MEASURE ${{ runner.os }} SELECT extversion FROM pg_extension WHERE extname='vector' -> $(Q gsd_test "SELECT extversion FROM pg_extension WHERE extname='vector'")"
+          echo "MEASURE ${{ runner.os }} pg_search_in_pg_available_extensions=$(Q gsd_test "SELECT count(*) FROM pg_available_extensions WHERE name='pg_search'")"
+          echo "MEASURE ${{ runner.os }} verdict=WORKS total_seconds=$((SECONDS-t0))"
+          DSN="postgresql://gsd:gsd@127.0.0.1:${PG_TEST_PORT}/gsd_test"
+
+          # Does the product's OWN migration path bootstrap `vector` and apply in
+          # full on a server with no pg_search control file at all? Plan 89-06
+          # could not measure this on a ParadeDB cluster.
+          "$PSQL" -h 127.0.0.1 -p "$PG_TEST_PORT" -U gsd -d gsd_test -v ON_ERROR_STOP=1 \
+            -c "DROP EXTENSION vector"
+          echo "MEASURE ${{ runner.os }} vector_dropped_before_migrations=$(Q gsd_test "SELECT count(*) FROM pg_extension WHERE extname='vector'")"
+          python - "$DSN" <<'PY'
+          import sys
+          sys.path.insert(0, '.')
+          from services import infra_detect, migrate_runner
+          dsn = sys.argv[1]
+          ok, rep = infra_detect.check_pg_capabilities(dsn)
+          print("MEASURE capabilities ok=%s lexical_engine=%s degradations=%s missing=%s pgvector=%s"
+                % (ok, rep["lexical_engine"], rep["degradations"],
+                   rep["extensions_missing"], rep["pgvector_version"]))
+          r = migrate_runner.apply_migrations(dsn=dsn, log=lambda *a: None)
+          print("MEASURE migrations total=%d applied=%d pending_left=%d"
+                % (r["total"], len(r["applied"]), len(r["pending"]) - len(r["applied"])))
+          PY
+          echo "MEASURE ${{ runner.os }} vector_after_migrations=$(Q gsd_test "SELECT extversion FROM pg_extension WHERE extname='vector'")"
+          echo "MEASURE ${{ runner.os }} fallback_indexes=$(Q gsd_test "SELECT string_agg(indexname, ' ' ORDER BY indexname) FROM pg_indexes WHERE indexname IN ('idx_rlm_chunks_fts','idx_gsd_memory_fts_fallback')")"
+          echo "MEASURE ${{ runner.os }} bm25_indexes=$(Q gsd_test "SELECT count(*) FROM pg_indexes WHERE indexname IN ('bm25_test_idx','idx_rlm_chunks_bm25','idx_gsd_memory_bm25')")"
+          echo "--- the literal error class for CREATE EXTENSION pg_search on a genuinely plain server"
+          "$PSQL" -h 127.0.0.1 -p "$PG_TEST_PORT" -U gsd -d gsd_test -v ON_ERROR_STOP=1 \
+            -c "CREATE EXTENSION pg_search" 2>&1 | head -5 || true
+          echo "--- the literal error class for the bm25 access method"
+          "$PSQL" -h 127.0.0.1 -p "$PG_TEST_PORT" -U gsd -d gsd_test -v ON_ERROR_STOP=1 \
+            -c "CREATE INDEX m89 ON bm25_test_table USING bm25 (id, content) WITH (key_field='id')" 2>&1 | head -5 || true
+
+          "$BIN/pg_ctl$EXE" -D "$DATA" -m immediate stop || true
+          echo "=== end 89-07-01 measurement"
+
+      # ── TEMPORARY, plan 89-07-01: plan 89-04's routed install step, measured
+      # before it is made permanent in task 89-07-03. 89-04-RECORD.md:1291-1332:
+      # the runner's only pg_dump/pg_restore are 18.6 while the pinned
+      # paradedb/paradedb:latest-pg16 server is 16.14, and pg_restore 18 cannot
+      # load into a 16 server (`SET transaction_timeout = 0` in its fixed
+      # preamble is a PostgreSQL 17 GUC). Five restore round-trip tests of plan
+      # 89-04 therefore skip on every cell under reason_class
+      # pg-client-major-mismatch.
+      - name: MEASURE a major-16 PostgreSQL client (TEMPORARY, 89-07-01, Linux)
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -uo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends postgresql-client-16
+          echo "MEASURE linux pg_restore16=$(/usr/lib/postgresql/16/bin/pg_restore --version)"
+          echo "MEASURE linux pg_dump16=$(/usr/lib/postgresql/16/bin/pg_dump --version)"
+          echo "MEASURE linux pg_restore_on_path=$(pg_restore --version)"
+
       - name: Start the disposable PostgreSQL (Linux)
         if: runner.os == 'Linux'
         shell: bash
@@ -406,6 +594,212 @@ jobs:
             echo "--- docker info OSType";          docker info --format '{{.OSType}}' 2>&1 || echo "(absent)"
           fi
           echo "=== end capability probe"
+      # ── TEMPORARY, plan 89-07-01: MEASURE, never configure ──────────────────
+      # Task 89-07-03 DELETES this step and replaces it with the permanent
+      # `scripts/ci-postgres-cell.cjs` bring-up. Until then nothing here is
+      # exported to $GITHUB_ENV, so every later step of the cell behaves exactly
+      # as it does on master and this step only answers one question: can a
+      # disposable PostgreSQL with `vector` be had on this runner at all?
+      #
+      # pgvector is pinned to 0.8.7 and verified against the SHA-256 that
+      # Homebrew core publishes for the SAME tarball (Formula/p/pgvector.rb:
+      # url + sha256). That is an INDEPENDENT record of the digest, not one
+      # computed from the download being verified.
+      - name: MEASURE a disposable PostgreSQL + pgvector (TEMPORARY, 89-07-01)
+        if: runner.os != 'Linux'
+        continue-on-error: true
+        shell: bash
+        env:
+          PGV_VER: '0.8.7'
+          PGV_SHA: 'cac0b10c360f05b2d521200105ba3697e773d4cd3731f5a915a7e37ebe0bea85'
+        run: |
+          set -uo pipefail
+          echo "=== 89-07-01 measurement on ${{ runner.os }} / ${{ runner.arch }}"
+          WORK="$RUNNER_TEMP/pg8907"
+          rm -rf "$WORK"; mkdir -p "$WORK"
+          t0=$SECONDS
+          EXE=""
+
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            export HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 HOMEBREW_NO_ENV_HINTS=1
+            echo "--- route macOS-1: brew install postgresql@17 pgvector"
+            if ! brew install postgresql@17 pgvector; then
+              echo "MEASURE macos verdict=FAILS route=brew-install"; exit 0
+            fi
+            echo "MEASURE macos brew_seconds=$((SECONDS-t0))"
+            BIN="$(brew --prefix postgresql@17)/bin"
+            PKGLIB="$("$BIN/pg_config" --pkglibdir)"
+            SHARE="$("$BIN/pg_config" --sharedir)"
+            echo "MEASURE macos pg_config=$("$BIN/pg_config" --version)"
+            echo "MEASURE macos homebrew_prefix=$(brew --prefix)"
+            echo "MEASURE macos pkglibdir=$PKGLIB"
+            echo "MEASURE macos sharedir=$SHARE"
+            echo "MEASURE macos pgvector_brew=$(brew list --versions pgvector | tr '\n' ' ')"
+            echo "MEASURE macos vector_module=$(ls "$PKGLIB" 2>/dev/null | grep -i '^vector\.' | tr '\n' ' ')"
+            echo "MEASURE macos vector_control=$(ls "$SHARE/extension" 2>/dev/null | grep -i '^vector' | tr '\n' ' ')"
+            echo "MEASURE macos pg_restore=$("$BIN/pg_restore" --version)"
+          else
+            EXE=".exe"
+            PGROOT='C:\Program Files\PostgreSQL\17'
+            BIN='/c/Program Files/PostgreSQL/17/bin'
+            echo "--- route Windows-1: the PREINSTALLED PostgreSQL 17 binaries, a FRESH disposable cluster (NOT the stopped postgresql-x64-17 service: its cluster is not disposable and it would listen on 5432, not on the port freePort() chose)"
+            if ! "$BIN/initdb.exe" --version; then
+              echo "MEASURE windows verdict=FAILS route=1-initdb-absent"; exit 0
+            fi
+            for f in include/server/postgres.h lib/postgres.lib; do
+              if [ -f "/c/Program Files/PostgreSQL/17/$f" ]; then
+                echo "MEASURE windows devfile $f=present"
+              else
+                echo "MEASURE windows devfile $f=ABSENT"
+              fi
+            done
+            echo "--- route Windows-2a: a prebuilt, digest-pinned pgvector for PG17 x64"
+            echo "MEASURE windows route_2a=NOT USED -- github.com/pgvector/pgvector publishes source archives only; no release carries a Windows .zip or .dll asset, so NO artefact digest could be recorded, and an unverifiable artefact was not used"
+            echo "--- route Windows-2b: nmake /F Makefile.win through vcvars64.bat located with vswhere"
+            t1=$SECONDS
+            curl -fsSL --retry 3 --retry-all-errors -o "$WORK/pgvector.tar.gz" \
+              "https://github.com/pgvector/pgvector/archive/refs/tags/v${PGV_VER}.tar.gz"
+            echo "MEASURE windows pgvector_sha256_measured=$(sha256sum "$WORK/pgvector.tar.gz" | cut -d' ' -f1)"
+            echo "MEASURE windows pgvector_sha256_pinned=$PGV_SHA"
+            if ! printf '%s  %s\n' "$PGV_SHA" "$WORK/pgvector.tar.gz" | sha256sum -c -; then
+              echo "MEASURE windows verdict=FAILS route=2b-digest-mismatch"; exit 0
+            fi
+            tar -xzf "$WORK/pgvector.tar.gz" -C "$WORK"
+            SRC="$WORK/pgvector-${PGV_VER}"
+            VSWHERE='/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe'
+            VSPATH="$("$VSWHERE" -latest -products '*' \
+              -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 \
+              -property installationPath | tr -d '\r')"
+            echo "MEASURE windows vs_installationPath=$VSPATH"
+            {
+              printf '@echo off\r\n'
+              printf 'call "%%VSPATH%%\\VC\\Auxiliary\\Build\\vcvars64.bat" >nul\r\n'
+              printf 'if errorlevel 1 exit /b 1\r\n'
+              printf 'set "PGROOT=%s"\r\n' "$PGROOT"
+              printf 'cd /d "%%SRCWIN%%"\r\n'
+              printf 'nmake /F Makefile.win\r\n'
+              printf 'if errorlevel 1 exit /b 1\r\n'
+              printf 'nmake /F Makefile.win install\r\n'
+              printf 'if errorlevel 1 exit /b 1\r\n'
+            } > "$WORK/build.bat"
+            VSPATH="$VSPATH" SRCWIN="$(cygpath -w "$SRC")" \
+              cmd //d //s //c "$(cygpath -w "$WORK/build.bat")" 2>&1 | tail -40
+            rc=${PIPESTATUS[0]}
+            echo "MEASURE windows nmake_exit=$rc nmake_seconds=$((SECONDS-t1))"
+            if [ "$rc" != 0 ]; then
+              echo "MEASURE windows verdict=FAILS route=2b-nmake"; exit 0
+            fi
+            echo "MEASURE windows vector_module=$(ls '/c/Program Files/PostgreSQL/17/lib' 2>/dev/null | grep -i '^vector\.' | tr '\n' ' ')"
+            echo "MEASURE windows vector_control=$(ls '/c/Program Files/PostgreSQL/17/share/extension' 2>/dev/null | grep -i '^vector' | tr '\n' ' ')"
+            echo "MEASURE windows pg_restore=$("$BIN/pg_restore.exe" --version)"
+          fi
+
+          # ── the cluster: identical on both systems once BIN is known ────────
+          DATA="$WORK/data"
+          printf 'gsd' > "$WORK/pw"
+          if ! "$BIN/initdb$EXE" -D "$DATA" -U gsd \
+               --auth-local=trust --auth-host=scram-sha-256 --pwfile="$WORK/pw" \
+               --encoding=UTF8 --locale=C > "$WORK/initdb.log" 2>&1; then
+            tail -30 "$WORK/initdb.log"
+            echo "MEASURE ${{ runner.os }} verdict=FAILS route=initdb"; exit 0
+          fi
+          if ! "$BIN/pg_ctl$EXE" -D "$DATA" -l "$WORK/server.log" \
+               -o "-p $PG_TEST_PORT -c listen_addresses=127.0.0.1" -w -t 90 start; then
+            tail -30 "$WORK/server.log" || true
+            echo "MEASURE ${{ runner.os }} verdict=FAILS route=pg_ctl-start"; exit 0
+          fi
+          ready=
+          for _ in $(seq 1 45); do
+            if python -c "import psycopg2; psycopg2.connect('postgresql://gsd:gsd@127.0.0.1:${PG_TEST_PORT}/postgres', connect_timeout=3).close()" 2>/dev/null; then ready=1; break; fi
+            sleep 2
+          done
+          if [ -z "$ready" ]; then
+            tail -30 "$WORK/server.log" || true
+            echo "MEASURE ${{ runner.os }} verdict=FAILS route=readiness"; exit 0
+          fi
+          export PGPASSWORD=gsd
+          PSQL="$BIN/psql$EXE"
+          Q() { "$PSQL" -h 127.0.0.1 -p "$PG_TEST_PORT" -U gsd -d "$1" -tAc "$2"; }
+          "$PSQL" -h 127.0.0.1 -p "$PG_TEST_PORT" -U gsd -d postgres -v ON_ERROR_STOP=1 \
+            -c "CREATE DATABASE gsd_test OWNER gsd"
+          "$PSQL" -h 127.0.0.1 -p "$PG_TEST_PORT" -U gsd -d gsd_test -v ON_ERROR_STOP=1 \
+            -c "CREATE EXTENSION vector"
+          echo "MEASURE ${{ runner.os }} server_version=$(Q gsd_test 'SHOW server_version')"
+          echo "MEASURE ${{ runner.os }} SELECT extversion FROM pg_extension WHERE extname='vector' -> $(Q gsd_test "SELECT extversion FROM pg_extension WHERE extname='vector'")"
+          echo "MEASURE ${{ runner.os }} pg_search_in_pg_available_extensions=$(Q gsd_test "SELECT count(*) FROM pg_available_extensions WHERE name='pg_search'")"
+          echo "MEASURE ${{ runner.os }} verdict=WORKS total_seconds=$((SECONDS-t0))"
+          DSN="postgresql://gsd:gsd@127.0.0.1:${PG_TEST_PORT}/gsd_test"
+
+          # Does the product's OWN migration path bootstrap `vector` and apply in
+          # full on a server with no pg_search control file at all? Plan 89-06
+          # could not measure this on a ParadeDB cluster.
+          "$PSQL" -h 127.0.0.1 -p "$PG_TEST_PORT" -U gsd -d gsd_test -v ON_ERROR_STOP=1 \
+            -c "DROP EXTENSION vector"
+          echo "MEASURE ${{ runner.os }} vector_dropped_before_migrations=$(Q gsd_test "SELECT count(*) FROM pg_extension WHERE extname='vector'")"
+          python - "$DSN" <<'PY'
+          import sys
+          sys.path.insert(0, '.')
+          from services import infra_detect, migrate_runner
+          dsn = sys.argv[1]
+          ok, rep = infra_detect.check_pg_capabilities(dsn)
+          print("MEASURE capabilities ok=%s lexical_engine=%s degradations=%s missing=%s pgvector=%s"
+                % (ok, rep["lexical_engine"], rep["degradations"],
+                   rep["extensions_missing"], rep["pgvector_version"]))
+          r = migrate_runner.apply_migrations(dsn=dsn, log=lambda *a: None)
+          print("MEASURE migrations total=%d applied=%d pending_left=%d"
+                % (r["total"], len(r["applied"]), len(r["pending"]) - len(r["applied"])))
+          PY
+          echo "MEASURE ${{ runner.os }} vector_after_migrations=$(Q gsd_test "SELECT extversion FROM pg_extension WHERE extname='vector'")"
+          echo "MEASURE ${{ runner.os }} fallback_indexes=$(Q gsd_test "SELECT string_agg(indexname, ' ' ORDER BY indexname) FROM pg_indexes WHERE indexname IN ('idx_rlm_chunks_fts','idx_gsd_memory_fts_fallback')")"
+          echo "MEASURE ${{ runner.os }} bm25_indexes=$(Q gsd_test "SELECT count(*) FROM pg_indexes WHERE indexname IN ('bm25_test_idx','idx_rlm_chunks_bm25','idx_gsd_memory_bm25')")"
+          echo "--- the literal error class for CREATE EXTENSION pg_search on a genuinely plain server"
+          "$PSQL" -h 127.0.0.1 -p "$PG_TEST_PORT" -U gsd -d gsd_test -v ON_ERROR_STOP=1 \
+            -c "CREATE EXTENSION pg_search" 2>&1 | head -5 || true
+          echo "--- the literal error class for the bm25 access method"
+          "$PSQL" -h 127.0.0.1 -p "$PG_TEST_PORT" -U gsd -d gsd_test -v ON_ERROR_STOP=1 \
+            -c "CREATE INDEX m89 ON bm25_test_table USING bm25 (id, content) WITH (key_field='id')" 2>&1 | head -5 || true
+
+          # ── the counts the arithmetic of task 89-07-04 needs, FROM A CELL ───
+          # The subset is derived from the ledger itself, so it cannot drift:
+          # every distinct `file` in the union of tests/skip-exceptions.d/*.json
+          # whose reason_class is pg-no-disposable-database.
+          SUBSET="$(node -e "
+            const fs = require('fs'), d = 'tests/skip-exceptions.d';
+            const u = fs.readdirSync(d).filter((f) => f.endsWith('.json'))
+              .flatMap((f) => JSON.parse(fs.readFileSync(d + '/' + f, 'utf8')));
+            const files = [...new Set(u
+              .filter((x) => x.reason_class === 'pg-no-disposable-database')
+              .map((x) => x.file))].filter((f) => f.endsWith('.py')).sort();
+            process.stdout.write(files.join('\n'));
+          ")"
+          echo "MEASURE ${{ runner.os }} subset_py_files=$(printf '%s\n' "$SUBSET" | grep -c .)"
+          GSD_TEST_POSTGRES_URL="$DSN" python3 -m pytest $SUBSET \
+            -q -rs -p no:cacheprovider 2>&1 | tail -45
+          echo "MEASURE ${{ runner.os }} subset_exit=${PIPESTATUS[0]}"
+
+          "$BIN/pg_ctl$EXE" -D "$DATA" -m immediate stop || true
+          echo "=== end 89-07-01 measurement"
+
+      # ── TEMPORARY, plan 89-07-01: plan 89-04's routed install step, measured
+      # before it is made permanent in task 89-07-03. 89-04-RECORD.md:1291-1332:
+      # the runner's only pg_dump/pg_restore are 18.6 while the pinned
+      # paradedb/paradedb:latest-pg16 server is 16.14, and pg_restore 18 cannot
+      # load into a 16 server (`SET transaction_timeout = 0` in its fixed
+      # preamble is a PostgreSQL 17 GUC). Five restore round-trip tests of plan
+      # 89-04 therefore skip on every cell under reason_class
+      # pg-client-major-mismatch.
+      - name: MEASURE a major-16 PostgreSQL client (TEMPORARY, 89-07-01, Linux)
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -uo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends postgresql-client-16
+          echo "MEASURE linux pg_restore16=$(/usr/lib/postgresql/16/bin/pg_restore --version)"
+          echo "MEASURE linux pg_dump16=$(/usr/lib/postgresql/16/bin/pg_dump --version)"
+          echo "MEASURE linux pg_restore_on_path=$(pg_restore --version)"
+
 
       - name: Start the disposable PostgreSQL (Linux)
         if: runner.os == 'Linux'
