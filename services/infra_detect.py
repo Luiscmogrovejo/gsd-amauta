@@ -96,16 +96,27 @@ LEXICAL_POSTGRES_FTS = "postgres_fts"
 #: and SAY that you could not tell".
 LEXICAL_UNKNOWN = "unknown"
 
-#: The capability report's degradation key for a missing PREFERRED extension:
-#: ``<name>_absent``, one per name, so the key is stable and mechanical rather
-#: than a special case for one extension. :data:`DEGRADATION_PG_SEARCH_ABSENT`
-#: is the one this phase cares about, by name, for callers to compare against.
-def degradation_key(extension):
-    """``"pg_search"`` -> ``"pg_search_absent"``."""
-    return "%s_absent" % extension
-
-
+#: The capability report's degradation key for the extension this phase is
+#: about. The keys are mechanical (see :func:`degradation_key`) rather than a
+#: special case for one name; this constant exists so a caller can compare
+#: against it instead of spelling the suffix itself.
 DEGRADATION_PG_SEARCH_ABSENT = "pg_search_absent"
+
+
+def degradation_key(extension):
+    """The report's key for a missing PREFERRED extension.
+
+    Args:
+        extension: the extension name.
+
+    Returns:
+        str: ``"<extension>_absent"``.
+
+    Example:
+        >>> degradation_key("pg_search") == DEGRADATION_PG_SEARCH_ABSENT
+        True
+    """
+    return "%s_absent" % extension
 
 #: Database-scoped opt-out, read by migration 011 at create time and by
 #: :func:`lexical_engine` at query time. `ALTER DATABASE <db> SET

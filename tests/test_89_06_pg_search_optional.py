@@ -35,14 +35,20 @@ DOWN_033 = MIGRATIONS / "033-plain-fts-fallback-DOWN.sql"
 
 
 def _exec_file(dsn, path):
-    """Run one migration file's SQL, as the runner would, and return NOTICEs."""
+    """Run one migration file's SQL, as the runner would, and return its NOTICEs.
+
+    Autocommit, because every migration file carries its own BEGIN/COMMIT: under
+    psycopg2's implicit transaction those become "there is already a transaction
+    in progress" warnings that bury the NOTICE this helper exists to capture.
+    """
     import psycopg2
+    from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
     conn = psycopg2.connect(dsn, connect_timeout=10)
+    conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
     try:
         with conn.cursor() as cur:
             cur.execute(path.read_text(encoding="utf-8"))
-        conn.commit()
         return [n.strip() for n in conn.notices]
     finally:
         conn.close()
@@ -252,7 +258,7 @@ def test_the_unguarded_statement_master_runs_still_fails_here(plain):
 
     # And the guarded file runs clean on the same database.
     notices = _exec_file(plain["dsn"], MIGRATIONS / "011-paradedb-setup.sql")
-    assert any("pg_search" in n for n in notices), notices
+    assert any("pg_search skipped" in n for n in notices), notices
     pg_engines.measure("guarded-011-on-the-same-database", notices)
 
 
