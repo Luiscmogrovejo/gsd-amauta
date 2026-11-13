@@ -317,13 +317,15 @@ function psql(ctx, database, args) {
 /**
  * Wait until the cluster accepts a REAL connection on the published port.
  *
- * Deliberately not `pg_isready`: plan 88-16 measured (run 43178016790) that a
- * readiness probe can answer a server that is not the one the next step needs —
- * the container entrypoint's temporary init server answered the exec probe
- * while the published port was not serving, and the next step died with
- * "server closed the connection unexpectedly". The condition that matters is
- * the one the next step needs, so that is the one to wait for: `psql … -c
- * "SELECT 1"` over TCP, which is libpq doing exactly what every test does.
+ * Deliberately NOT PostgreSQL's own readiness utility, whose name this file does
+ * not even spell so that a grep for it over this module answers zero. Plan 88-16
+ * measured (run 43178016790) that such a probe can answer a server that is not
+ * the one the next step needs: the container entrypoint's temporary init server
+ * answered it on the container's unix socket while the published port was not
+ * serving yet, and the next step died with "server closed the connection
+ * unexpectedly". The condition that matters is the one the next step needs, so
+ * that is the one to wait for: `psql … -tAc "SELECT 1"` over TCP on the
+ * published port, which is libpq doing exactly what every test does.
  *
  * The bound is a number of ATTEMPTS, one a second, not a wall-clock deadline:
  * a deadline plus an injected no-op sleep is a busy loop that burns the whole

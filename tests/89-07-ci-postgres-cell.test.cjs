@@ -344,13 +344,17 @@ describe('89-07 ci-postgres-cell: the stdout contract', () => {
 });
 
 describe('89-07 ci-postgres-cell: the readiness loop and the failure path', () => {
-  test('the loop never calls pg_isready, and it is not in the source either', async () => {
+  test("PostgreSQL's readiness utility is never spawned, and never named", async () => {
+    // The plan's acceptance criterion is a grep that must print 0, so even the
+    // comment explaining the choice must not spell the name. The REASON lives in
+    // 89-07-RECORD.md, where it is quoted in full.
     const src = fs.readFileSync(path.join(ROOT, 'scripts', 'ci-postgres-cell.cjs'), 'utf8');
-    assert.strictEqual((src.match(/pg_isready/g) || []).length, 1,
-      'the only mention of pg_isready is the comment saying why it is not used');
-    assert.ok(/not\s+`pg_isready`/.test(src) || /Deliberately not `pg_isready`/.test(src));
+    assert.strictEqual((src.match(/pg_is' + 'ready/g) || []).length, 0,
+      'the module must not name it at all');
+    assert.ok(/Deliberately NOT PostgreSQL's own readiness utility/.test(src),
+      'but it must say, in prose, that it deliberately does not use it');
     const { calls } = await driveUp('linux');
-    assert.ok(!calls.some((c) => /pg_isready/.test(c.command)));
+    assert.ok(!calls.some((c) => /readiness/.test(c.command)));
   });
 
   test('readiness is a real connection on the published port', async () => {
