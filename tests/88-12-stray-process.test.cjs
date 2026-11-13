@@ -116,7 +116,10 @@ describe('88-12 stray process ledger', () => {
       const strays = canary.strayProcesses(ledger);
       assert.strictEqual(strays.length, 1);
       assert.strictEqual(strays[0].identified, false);
-      assert.match(strays[0].reason, /not an amauta daemon\/rlm process/);
+      // Plan 89-15: identity is the registry's (pid and start time), not the
+      // command line's. A line that carries no start time can be neither claimed
+      // nor dismissed, so it is reported and — the point of this test — never signalled.
+      assert.match(strays[0].reason, /cannot be proven to be the registered process/);
       const signalled = killStrays(strays);
       assert.deepStrictEqual(signalled, []);
       assert.ok(alive(imposter.pid), 'the runner kill pass signalled an unidentified process');

@@ -39,6 +39,7 @@ const { spawn } = require('child_process');
 // Plan 88-15's shared, VERIFIED Python launcher. Never a literal interpreter
 // name: `python3` is a Microsoft Store stub on Windows and the lint rejects it.
 const platform = require('../../get-shit-done/bin/lib/platform.cjs');
+const registry = require('./process-registry.cjs');
 
 const REPO = path.resolve(__dirname, '..', '..');
 const SERVICE = path.join(REPO, 'services', 'rlm-service.py');
@@ -71,11 +72,8 @@ function ledgerPath(dataDir) {
  * @returns {void}
  */
 function appendLedger(dataDir, record) {
-  try {
-    fs.appendFileSync(ledgerPath(dataDir), JSON.stringify(record) + '\n');
-  } catch (e) {
-    console.error('fixture-rlm: could not write the process ledger: ' + e.message);
-  }
+  // Plan 89-15: every line names the test file and the fixture behind the pid.
+  registry.append(dataDir, { ...record, owner: registry.ownerOf(), fixture: 'startFixtureRlm' });
 }
 
 /**
@@ -151,6 +149,7 @@ async function startFixtureRlm(opts = {}) {
   });
 
   const py = platform.resolvePython();
+  const spawnedAt = Date.now();
   const proc = spawn(py.command, [...py.args, SERVICE, 'run'], {
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: Boolean(opts.detached),
@@ -196,13 +195,14 @@ async function startFixtureRlm(opts = {}) {
     );
   }
 
-  appendLedger(dataDir, { event: 'started', kind: 'rlm', pid: proc.pid, port, dataDir, at: Date.now() });
+  appendLedger(dataDir, { event: 'started', kind: 'rlm', role: 'spawned', pid: proc.pid, port, dataDir, spawnedAt, at: Date.now() });
 
   return {
     port,
     baseUrl: 'http://127.0.0.1:' + port,
     dataDir,
     proc,
+    spawnedAt,
     keep: Boolean(opts.dataDir),
     env: {
       GSD_RLM_PORT: String(port),
@@ -247,7 +247,12 @@ async function stopFixtureRlm(handle) {
     }
     await done;
   }
-  appendLedger(handle.dataDir, { event: 'stopped', kind: 'rlm', pid: proc.pid });
+  appendLedger(handle.dataDir, {
+    event: 'stopped',
+    kind: 'rlm',
+    pid: proc.pid,
+    ...(handle.spawnedAt === undefined ? {} : { spawnedAt: handle.spawnedAt }),
+  });
   if (!handle.keep) fs.rmSync(handle.dataDir, { recursive: true, force: true });
 }
 

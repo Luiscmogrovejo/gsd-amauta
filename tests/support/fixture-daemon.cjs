@@ -26,6 +26,7 @@ const { spawn } = require('child_process');
 // Plan 88-15's shared, VERIFIED Python launcher — one resolver, not a second
 // copy of the candidate order (plan 88-16-06).
 const platform = require('../../get-shit-done/bin/lib/platform.cjs');
+const registry = require('./process-registry.cjs');
 
 const REPO = path.resolve(__dirname, '..', '..');
 
@@ -47,11 +48,8 @@ function ledgerPath(dataDir) {
  * @returns {void}
  */
 function appendLedger(dataDir, record) {
-  try {
-    fs.appendFileSync(ledgerPath(dataDir), JSON.stringify(record) + '\n');
-  } catch (e) {
-    console.error('fixture-daemon: could not write the process ledger: ' + e.message);
-  }
+  // Plan 89-15: every line names the test file and the fixture behind the pid.
+  registry.append(dataDir, { ...record, owner: registry.ownerOf(), fixture: 'startFixtureDaemon' });
 }
 
 /**
@@ -233,6 +231,7 @@ async function startFixtureDaemon(opts = {}) {
   }
 
   const py = pythonLauncher();
+  const spawnedAt = Date.now();
   const proc = spawn(py.command, [...py.args, path.join(REPO, 'services', 'amauta-daemon.py'), 'run'], {
     stdio: ['ignore', 'pipe', 'pipe'],
     // Default false. Windows: libuv puts every NON-detached child in a job object that is killed
@@ -283,7 +282,7 @@ async function startFixtureDaemon(opts = {}) {
     throw new Error('fixture daemon did not become ready (port=' + port + ', exited=' + exited + '): ' + tail);
   }
 
-  appendLedger(dataDir, { event: 'started', kind: 'daemon', pid: proc.pid, port, dataDir, at: Date.now() });
+  appendLedger(dataDir, { event: 'started', kind: 'daemon', role: 'spawned', pid: proc.pid, port, dataDir, spawnedAt, at: Date.now() });
 
   // Plan 89-07: a Postgres fixture must prove it IS on PostgreSQL before any
   // test asserts PostgreSQL behaviour through it. /health is the daemon's own
@@ -330,6 +329,7 @@ async function startFixtureDaemon(opts = {}) {
     port,
     dataDir,
     proc,
+    spawnedAt,
     keep: Boolean(opts.dataDir),
     postgres: Boolean(opts.postgres),
     env: childEnv,
@@ -502,6 +502,7 @@ async function stopFixtureDaemon(handle) {
     pid: proc.pid,
     port: handle.port || null,
     dataDir: handle.dataDir,
+    ...(handle.spawnedAt === undefined ? {} : { spawnedAt: handle.spawnedAt }),
     at: Date.now(),
   });
   if (!launcherGone) {

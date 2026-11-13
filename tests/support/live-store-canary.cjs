@@ -46,6 +46,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const registry = require('./process-registry.cjs');
 
 const OWN_REPO = path.resolve(__dirname, '..', '..');
 
@@ -483,50 +484,48 @@ function identify(entry, platform = process.platform) {
 }
 
 /**
- * Daemons and RLM services the ledger says were started and never stopped, that
- * are still alive. Signals nothing; identification is advisory input for the
- * runner's kill pass. A missing ledger is the normal "nothing started" case; a
- * malformed line is skipped with a warning. Never throws.
+ * Everything the registry and the process table say after a run (plan 89-15).
  *
- * @param {string} ledgerPath path of the JSONL ledger
- * @returns {{pid: number, kind: string, port: number|null, dataDir: string|null, identified: boolean, reason: string}[]}
+ * Thin wrapper over `process-registry.audit()` that supplies this module's
+ * protected pids, so the runner has one call to make.
+ *
+ * @param {string} ledgerPath path of the run's registry (the JSONL ledger)
+ * @param {object} [opts] forwarded to `process-registry.audit()` (`runStartedAt`, `table`, `repoRoot`)
+ * @returns {ReturnType<typeof registry.audit>}
  */
-function strayProcesses(ledgerPath) {
-  let text;
-  try {
-    text = fs.readFileSync(ledgerPath, 'utf8');
-  } catch (e) {
-    if (e.code !== 'ENOENT') console.error('live-store-canary: cannot read process ledger ' + ledgerPath + ': ' + e.message);
-    return [];
-  }
-  const latest = new Map();
-  for (const line of text.split('\n')) {
-    if (!line.trim()) continue;
-    let rec;
-    try {
-      rec = JSON.parse(line);
-    } catch (_e) {
-      console.error('live-store-canary: skipping malformed process-ledger line: ' + line.slice(0, 120));
-      continue;
-    }
-    if (!rec || !Number.isInteger(rec.pid) || rec.pid <= 0) continue;
-    if (rec.event === 'started') latest.set(rec.pid, rec);
-    else if (rec.event === 'stopped') latest.set(rec.pid, null);
-  }
-  const strays = [];
-  for (const [pid, rec] of latest) {
-    if (!rec) continue;
-    const alive = livenessOf(pid);
-    if (alive === 'dead') continue;
-    const entry = { pid, kind: rec.kind || 'daemon', port: rec.port || null, dataDir: rec.dataDir || null };
-    const id = alive === 'eperm' ? { identified: false, reason: 'not ours (EPERM)' } : identify(entry);
-    strays.push({ ...entry, ...id });
-  }
-  return strays;
+function processAudit(ledgerPath, opts = {}) {
+  return registry.audit(ledgerPath, { isProtectedPid, ...opts });
 }
 
 /**
- * Render strays for stderr.
+ * Daemons and RLM services the registry says were started and never stopped,
+ * that are still alive. Signals nothing.
+ *
+ * **Identity comes from the registry, not from the command line** (plan 89-15).
+ * An entry is `identified` when the process holding its pid was created inside
+ * the window the registry recorded for it; a `py` launcher, a venv shim or a
+ * renamed interpreter is therefore recognised, and a process that merely looks
+ * like a daemon is not. An entry whose pid now belongs to a process created
+ * OUTSIDE that window is not a stray at all: the registered process is gone
+ * and the number was handed to something else (run 43437354734 failed a green
+ * Windows cell on exactly that). An entry that cannot be verified either way —
+ * a line with no start time, or no readable process table — is still reported,
+ * and is never signalled.
+ *
+ * A missing ledger is the normal "nothing started" case; a malformed line is
+ * skipped with a warning. Never throws.
+ *
+ * @param {string} ledgerPath path of the JSONL ledger
+ * @returns {{pid: number, kind: string, port: number|null, dataDir: string|null, identified: boolean, reason: string, owner: string|null, fixture: string|null}[]}
+ */
+function strayProcesses(ledgerPath) {
+  return processAudit(ledgerPath).strays;
+}
+
+/**
+ * Render strays for stderr: one line per pid as before, and under it the test
+ * file and fixture that registered it and what holds the pid now.
+ *
  * @param {ReturnType<typeof strayProcesses>} strays
  * @returns {string}
  */
@@ -537,10 +536,57 @@ function formatStrays(strays) {
       .map(
         (s) =>
           '  pid ' + s.pid + ' (' + s.kind + (s.port ? ', port ' + s.port : '') + '): ' +
-          (s.identified ? 'identified, will be stopped by pid' : 'NOT signalled: ' + s.reason)
+          (s.identified ? 'identified, will be stopped by pid' : 'NOT signalled: ' + s.reason) +
+          '\n      ' + registry.provenance(s) +
+          (s.holder ? '\n      now: ' + registry.holderText(s.holder) : '')
       )
       .join('\n')
   );
+}
+
+/**
+ * Render the rest of the audit: processes nobody registered, registry lines
+ * whose pid now belongs to something else, and lines nobody closed.
+ *
+ * @param {ReturnType<typeof processAudit>} audit
+ * @param {object} [ctx]
+ * @param {ReturnType<typeof registry.readTimeline>} [ctx.timeline] which test file ran when
+ * @param {object[]} [ctx.watched] every process the diagnostic watcher saw
+ * @returns {string} '' when there is nothing to say
+ */
+function formatAudit(audit, ctx = {}) {
+  const out = [];
+  const timeline = ctx.timeline || [];
+  const watched = ctx.watched || [];
+  if (audit.unregistered.length > 0) {
+    out.push(
+      'UNREGISTERED PROCESS: a daemon or RLM service was started during the run by something that is ' +
+        'not a fixture (no registry line). Reported, NEVER signalled.'
+    );
+    for (const p of audit.unregistered) {
+      out.push('  ' + registry.holderText(p) + (p.inCheckout ? '  [script of this checkout]' : '  [script of ANOTHER checkout]'));
+      const running = registry.filesRunningAt(timeline, p.createdMs);
+      out.push('      test files running when it was created: ' + (running.length ? running.join(', ') : 'unknown (no timeline)'));
+      const chain = registry.ancestry(p, watched);
+      for (const a of chain) out.push('      <- ' + registry.holderText(a));
+      const owner = chain.map((a) => timeline.find((w) => w.pid === a.pid && Math.abs(w.start - a.createdMs) < 10000)).find(Boolean);
+      if (owner) out.push('      STARTED UNDER: ' + owner.file);
+    }
+  }
+  if (audit.recycled.length > 0) {
+    out.push('process registry: ' + audit.recycled.length + ' registered pid(s) now belong to another process (not strays, not signalled):');
+    for (const r of audit.recycled) {
+      out.push('  pid ' + r.pid + ' (' + r.kind + (r.port ? ', port ' + r.port : '') + '): ' + registry.provenance(r));
+      out.push('      now: ' + registry.holderText(r.holder));
+    }
+  }
+  if (audit.unclosed.length > 0) {
+    out.push('process registry: ' + audit.unclosed.length + ' line(s) were never closed by their owner (the processes are gone):');
+    for (const e of audit.unclosed) {
+      out.push('  pid ' + e.pid + ' (' + (e.kind || 'daemon') + (e.port ? ', port ' + e.port : '') + '): ' + registry.provenance(e));
+    }
+  }
+  return out.join('\n');
 }
 
 module.exports = {
@@ -553,7 +599,9 @@ module.exports = {
   trackedWatchFiles,
   TRACKED_WATCH,
   strayProcesses,
+  processAudit,
   formatStrays,
+  formatAudit,
   identify,
   commandOf,
   listeningPorts,
