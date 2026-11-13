@@ -207,8 +207,7 @@ def test_every_migration_applies_on_both_engines_with_the_same_count(both):
     for engine, db in both.items():
         assert db["report"]["drifted"] == [], (engine, db["report"]["drifted"])
         assert db["total"] == on_disk, engine
-    print("MEASURED (89-06, applied count): %r of %d on disk"
-          % (counts, on_disk))
+    pg_engines.measure("applied-count", "%r of %d files on disk" % (counts, on_disk))
 
 
 @pytest.mark.integration
@@ -217,7 +216,7 @@ def test_the_plain_database_really_has_no_pg_search(plain):
 
 
 @pytest.mark.integration
-def test_the_unguarded_statement_master_runs_still_fails_here(plain, record_property):
+def test_the_unguarded_statement_master_runs_still_fails_here(plain):
     """The failure this plan removes, MEASURED on this PR's own database.
 
     What can be re-measured on the cells that exist today is the SECOND
@@ -246,17 +245,15 @@ def test_the_unguarded_statement_master_runs_still_fails_here(plain, record_prop
     finally:
         conn.close()
     error = caught.value
-    record_property("measured_error", "%s: %s" % (
-        error.pgcode, str(error).strip().splitlines()[0]))
     assert error.pgcode, "an error with no sqlstate measures nothing"
-    print("MEASURED (89-06, unguarded 011 statement on a pg_search-less "
-          "database): sqlstate=%s %s" % (error.pgcode,
-                                         str(error).strip().splitlines()[0]))
+    pg_engines.measure(
+        "unguarded-011-bm25-index-on-a-pg_search-less-database",
+        "sqlstate=%s %s" % (error.pgcode, str(error).strip().splitlines()[0]))
 
     # And the guarded file runs clean on the same database.
     notices = _exec_file(plain["dsn"], MIGRATIONS / "011-paradedb-setup.sql")
     assert any("pg_search" in n for n in notices), notices
-    print("MEASURED (89-06, guarded 011 on the same database): %s" % notices)
+    pg_engines.measure("guarded-011-on-the-same-database", notices)
 
 
 @pytest.mark.integration
@@ -280,6 +277,11 @@ def test_the_substitutes_exist_exactly_where_the_bm25_indexes_do_not(both):
     assert "idx_gsd_memory_fts" in plain_names
     assert "idx_gsd_memory_fts" in bm25_names
 
+    pg_engines.measure("pg_indexes-symmetric-difference",
+                       sorted(set(plain_names) ^ set(bm25_names)))
+    pg_engines.measure("pg_indexes-plain-engine-count", len(plain_names))
+    pg_engines.measure("pg_indexes-paradedb-count", len(bm25_names))
+
 
 @pytest.mark.integration
 def test_a_paradedb_database_is_unchanged_by_migration_033(paradedb):
@@ -291,6 +293,13 @@ def test_a_paradedb_database_is_unchanged_by_migration_033(paradedb):
         {k: (before.get(k), after.get(k)) for k in set(before) ^ set(after)}
     )
     assert any("pg_search extension installed" in n for n in notices), notices
+    pg_engines.measure(
+        "033-on-paradedb-pg_indexes-diff",
+        "%d indexes before, %d after, differences: %r"
+        % (len(before), len(after),
+           {k: (before.get(k), after.get(k))
+            for k in set(before) | set(after) if before.get(k) != after.get(k)}))
+    pg_engines.measure("033-on-paradedb-notices", notices)
 
 
 @pytest.mark.integration
@@ -361,14 +370,22 @@ def test_masters_sentinels_are_wrong_on_a_pg_search_less_database(plain):
     So on this database — where 025 demonstrably RAN — master's entry answers
     "not applied", and auto_baseline would have re-run it forever.
     """
+    masters, ours = {}, {}
+    applied, _ = _applied_by_schema(plain["dsn"])
     for filename in MASTER_SENTINELS:
-        assert _master_entry_satisfied(plain["dsn"], filename) is False, (
+        masters[filename] = _master_entry_satisfied(plain["dsn"], filename)
+        ours[filename] = filename in applied
+    pg_engines.measure("masters-sentinels-on-a-pg_search-less-database", masters)
+    pg_engines.measure("this-plans-sentinels-on-the-same-database", ours)
+
+    for filename in MASTER_SENTINELS:
+        assert masters[filename] is False, (
             f"{filename}: master's sentinel was satisfied, so the defect proof "
             f"is vacuous — check MASTER_SENTINELS against 6bf57c0"
         )
-    applied, _ = _applied_by_schema(plain["dsn"])
-    for filename in MASTER_SENTINELS:
-        assert filename in applied, f"{filename}: this plan's sentinel is wrong too"
+        assert ours[filename] is True, (
+            f"{filename}: this plan's sentinel is wrong too"
+        )
 
 
 @pytest.mark.integration
@@ -446,7 +463,7 @@ def test_a_plain_postgresql_is_accepted_with_a_named_degradation(plain):
     assert report["lexical_engine"] == infra_detect.LEXICAL_POSTGRES_FTS
     assert report["lexical_engine_reason"] == infra_detect.LEXICAL_FALLBACK_SENTENCE
     assert "***" in report["url"] or "@" not in report["url"], "the DSN must be masked"
-    print("MEASURED (89-06, capability report, plain engine): %r" % report)
+    pg_engines.measure("capability-report-plain-engine", report)
 
 
 @pytest.mark.integration
@@ -524,10 +541,11 @@ def test_the_mutation_proves_the_split_is_load_bearing(plain):
     assert accepted_report["degradations"] == [
         infra_detect.degradation_key(ABSENT_EXTENSION)]
     assert refused_report["degradations"] == []
-    print("MEASURED (89-06, mutation): preferred -> ok=%s degradations=%r ; "
-          "required -> ok=%s reason=%r"
-          % (accepted, accepted_report["degradations"], refused,
-             refused_report["reason"]))
+    pg_engines.measure(
+        "mutation-preferred-vs-required",
+        "preferred -> ok=%s degradations=%r ; required -> ok=%s reason=%r"
+        % (accepted, accepted_report["degradations"], refused,
+           refused_report["reason"]))
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -633,6 +651,8 @@ def test_doctor_warns_on_the_plain_engine_and_is_ok_on_paradedb(both):
         assert data["lexical_engine"] == engine
         if engine == "postgres_fts":
             assert detail == infra_detect.LEXICAL_FALLBACK_SENTENCE, detail
+        pg_engines.measure("doctor-row-%s" % engine,
+                           "%s %s %s" % (status, category, detail))
 
 
 @pytest.mark.integration
@@ -651,6 +671,10 @@ def test_health_carries_the_same_answer_under_a_stable_key(both):
         doctor_detail = reporting.doctor_rows(
             {"GSD_POSTGRES_URL": db["dsn"]})[0][2]
         assert fragment["reason"] == doctor_detail
+        pg_engines.measure(
+            "health-fragment-%s" % engine,
+            'health["%s"]["%s"] = %r'
+            % (report_hooks.HEALTH_SECTION, reporting.HEALTH_KEY, fragment))
 
 
 @pytest.mark.integration

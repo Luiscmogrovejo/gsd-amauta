@@ -51,6 +51,7 @@ through ``tests/conftest.py``'s ``postgres_dsn`` fixture.
 import contextlib
 import sys
 import uuid
+import warnings
 from pathlib import Path
 
 import pytest
@@ -70,6 +71,24 @@ FTS_SUBSTITUTE_INDEXES = ("idx_rlm_chunks_fts", "idx_gsd_memory_fts_fallback")
 
 #: The BM25 indexes 011, 012 and 025 create only where pg_search is installed.
 BM25_INDEXES = ("bm25_test_idx", "idx_rlm_chunks_bm25", "idx_gsd_memory_bm25")
+
+
+class Measured(UserWarning):
+    """Carries a measured value into the CI log.
+
+    The same device plan 89-02 built (``tests/test_89_02_decimal_phase.py:70``):
+    ``pytest -q`` hides a PASSING test's stdout but always prints the warnings
+    summary, and plan 89-06's acceptance asks for applied counts, two
+    ``pg_indexes`` sets, a probe count and two field lists as **measured**
+    values rather than claims. A warning puts them in the log of the only cell
+    that has a disposable database.
+    """
+
+
+def measure(key, value):
+    """Emit one measured value into the warnings summary. Returns it unchanged."""
+    warnings.warn("[89-06 MEASURED] %s = %s" % (key, value), Measured, stacklevel=2)
+    return value
 
 
 def _admin_dsn(dsn):

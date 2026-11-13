@@ -11,9 +11,11 @@ Decision D3 / RETR-08. Where ``pg_search`` is absent the lexical leg runs
   all three statements;
 * that the probe runs ONCE PER CONNECTION, counted, not once per search;
 * ordering properties both engines must agree on, chosen so that the
-  engine-specific SCORES never decide an assertion. No test here asserts a
-  ``paradedb.score`` or a ``ts_rank_cd`` value — the two engines are not
-  claimed to rank alike, which is the whole point of the RETR-08 note.
+  engine-specific SCORES never decide an assertion. **No test in this file
+  asserts, or even names, either engine's score function** — ParadeDB's BM25
+  value and PostgreSQL's cover-density value are different functions of
+  different statistics, the two engines are not claimed to rank alike, and
+  that is the whole point of the RETR-08 note.
 
 Run:
     python3 -m pytest tests/test_89_06_lexical_fallback.py -q -rs -p no:cacheprovider
@@ -273,6 +275,7 @@ def test_a_description_match_outranks_a_content_match_on_both_engines(corpus):
     """
     for engine, db in corpus.items():
         rows = _bm25_only(db["dsn"], "alphaterm")
+        pg_engines.measure("boost-ordering-%s" % engine, _symbols(rows))
         assert set(_symbols(rows)) == {"one", "two"}, f"{engine}: {_symbols(rows)}"
         assert _symbols(rows)[0] == "two", (
             f"{engine}: the description boost did not survive: {_symbols(rows)}"
@@ -316,6 +319,9 @@ def test_the_result_shape_is_key_for_key_identical_across_engines(corpus):
             "bm25_only_search": sorted(only[0]),
         }
 
+    for engine, per_statement in sorted(shapes.items()):
+        for statement, fields in sorted(per_statement.items()):
+            pg_engines.measure("fields-%s-%s" % (engine, statement), fields)
     assert shapes["postgres_fts"] == shapes["pg_search_bm25"], (
         "the two engines returned different field sets: %r" % shapes
     )
@@ -406,6 +412,10 @@ def test_the_probe_runs_once_per_connection_not_once_per_search(corpus):
         finally:
             raw.close()
         probes = counting.matching("extname = 'pg_search'")
+        pg_engines.measure(
+            "probe-statements-per-connection-%s" % engine,
+            "%d probe statement(s) in %d total statements across 8 searches on "
+            "ONE connection" % (len(probes), len(counting.statements)))
         assert len(probes) == 1, (
             f"{engine}: the lexical probe ran {len(probes)} times across 8 "
             f"searches on one connection"
