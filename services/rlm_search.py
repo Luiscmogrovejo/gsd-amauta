@@ -220,6 +220,49 @@ def _check_weight(label) -> None:
         raise ValueError(f"unsafe tsvector weight: {label!r}")
 
 
+def like_beneath(prefix: str) -> str:
+    """The ``LIKE`` pattern that matches every path strictly beneath *prefix*.
+
+    **A directory-scoped search matched NOTHING on Windows before this.**
+    Three sites built their pattern as ``prefix + os.sep + "%"`` and bound it to
+    ``LIKE``. On Windows ``os.sep`` is a BACKSLASH, which is SQL ``LIKE``'s
+    default ESCAPE character, so ``...\\%`` stopped being "the wildcard" and
+    became "a literal per-cent sign" -- a pattern that matches one impossible
+    string. Measured on `pytest (windows-latest)`, run 43366250606, the first
+    run of these tests on any Windows cell: eleven tests failed, every one of
+    them a directory-filtered search or a prune, each returning an EMPTY result
+    with no error and no warning. Plan 89-07 found it by giving that cell a
+    database.
+
+    The same expression also left ``%`` and ``_`` in the CALLER's path
+    unescaped, so a directory literally named ``a_b`` matched ``axb`` too. Both
+    are fixed here, in ONE place the three sites now share.
+
+    PostgreSQL's default LIKE escape is the backslash, so a doubled backslash is
+    a literal one; nothing in the SQL changes and no ``ESCAPE`` clause is
+    needed. The value travels as a bound parameter, so it is never parsed as a
+    SQL literal.
+
+    Args:
+        prefix: a directory path, with or without a trailing separator.
+
+    Returns:
+        str: the pattern to bind beside the exact-match parameter.
+
+    Example:
+        >>> like_beneath('/a/b')          # doctest: +SKIP
+        '/a/b/%'
+        >>> like_beneath('C:\\a\\b')  # doctest: +SKIP
+        'C:\\\\a\\\\b\\\\%'
+    """
+    def _escape(text):
+        return (str(text).replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_"))
+
+    return _escape(str(prefix).rstrip(os.sep) + os.sep) + "%"
+
+
 def fts_vector_sql(fts_columns, alias: Optional[str] = None) -> str:
     """The weighted `tsvector` expression for a column list.
 
@@ -752,7 +795,7 @@ def hybrid_search(query: str, pg_conn, top_k: int = DEFAULT_TOP_K,
     if file_filter:
         prefix = str(file_filter).rstrip(os.sep)
         filter_sql = "AND (c.file_path = %s OR c.file_path LIKE %s)"
-        filter_params = (prefix, prefix + os.sep + "%")
+        filter_params = (prefix, like_beneath(prefix))
     else:
         filter_sql = ""
         filter_params = ()
@@ -857,7 +900,7 @@ def bm25_only_search(query: str, pg_conn, top_k: int = DEFAULT_TOP_K,
     if file_filter:
         prefix = str(file_filter).rstrip(os.sep)
         file_clause = "AND (file_path = %s OR file_path LIKE %s)"
-        file_params = [prefix, prefix + os.sep + "%"]
+        file_params = [prefix, like_beneath(prefix)]
     else:
         file_clause = ""
         file_params = []

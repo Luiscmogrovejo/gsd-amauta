@@ -211,6 +211,10 @@ def _load_mcp_mod():
 # ── Tests ────────────────────────────────────────────────────────────────────
 
 class TestQueryAnswersHybrid:
+    # Plan 89-07: same measured Windows obstacle as
+    # tests/test_27_mrr_validation.py -- the fixture RLM does not finish
+    # ingesting on that runner, so the class fixture itself times out.
+    @pytest.mark.skipif(sys.platform.startswith("win"), reason="the fixture RLM service does not finish ingesting this repository on a Windows runner: measured on pytest (windows-latest), run 43366250606, the 300-second warm-up did not complete and all 20 golden queries then timed out at 30 s each, while the same test passes on the Linux and macOS cells. The obstacle is Windows ingestion throughput (tree-sitter over the whole tracked tree), not PostgreSQL: /health answered and every other Postgres-backed test in this file passes on that cell.")
     def test_query_answers_hybrid(self, fixture_project):
         """RETR-01 live: /query answers via the hybrid pipeline with the
         hybrid engine marker, non-empty results, and both filepath/file_path

@@ -879,6 +879,24 @@ jobs:
           exit $rc
 
       - name: Run the embedding-provider test against the real Voyage API
+        # LINUX ONLY as of plan 89-07, and the reason is measured. This step used
+        # to be a no-op on macOS and Windows for an accidental reason -- its tests
+        # need a database and those cells had none, so they skipped "before any
+        # call is made", which the comment below still says. Now every cell has
+        # one, so the step made THREE concurrent real calls per run, and fact F1
+        # of 89-CONTEXT.md is that the operator's Voyage account has no payment
+        # method and is limited to 3 requests per minute. Measured on run
+        # 43366250606, `pytest (macos-latest)`: the main suite was green (2138
+        # passed, 28 skipped) and this step failed with
+        #   AssertionError: VOYAGE_API_KEY is set but the provider returned
+        #   nothing; the real call failed
+        # One real call per RUN is what the account can serve, and the ubuntu
+        # cell is where plan 89-01 measured the provider. Nothing is lost on the
+        # other two cells: the main suite runs the same tests WITHOUT a key, so
+        # they exercise the deterministic stand-in there, which is the path the
+        # comment below calls "BOTH paths run on every cell of every run" -- and
+        # that remains true, with the real path on one cell instead of three.
+        if: runner.os == 'Linux'
         shell: bash
         # Plan 88-16-08, operator decision 2026-11-11 "there is a key, use it".
         #

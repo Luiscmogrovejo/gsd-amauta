@@ -91,8 +91,17 @@ def _query_embedding():
 
 
 def _filter_params(prefix):
-    """The (exact, beneath) pair both filter shapes bind."""
-    return (prefix, prefix + os.sep + "%")
+    """The (exact, beneath) pair both filter shapes bind.
+
+    Plan 89-07: the pattern comes from the PRODUCT's own `like_beneath`, not
+    from a second copy of the expression here. The copy is how this file hid a
+    Windows defect for two phases -- it built `prefix + os.sep + "%"`, exactly
+    as the product did, so test and product were wrong together and the matrix
+    could not see it until a Windows cell got a database.
+    """
+    from services.rlm_search import like_beneath
+
+    return (prefix, like_beneath(prefix))
 
 
 @pytest.fixture()

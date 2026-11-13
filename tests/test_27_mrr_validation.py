@@ -251,6 +251,8 @@ def _compute_mrr(results: list, expected_top3: list) -> tuple:
     return 0.0, None
 
 
+# Plan 89-07: win32 only, and the reason is measured rather than assumed.
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="the fixture RLM service does not finish ingesting this repository on a Windows runner: measured on pytest (windows-latest), run 43366250606, the 300-second warm-up did not complete and all 20 golden queries then timed out at 30 s each, while the same test passes on the Linux and macOS cells. The obstacle is Windows ingestion throughput (tree-sitter over the whole tracked tree), not PostgreSQL: /health answered and every other Postgres-backed test in this file passes on that cell.")
 def test_rlm_mrr_validation():
     """
     Run all 20 golden queries and measure MRR.

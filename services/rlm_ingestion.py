@@ -32,6 +32,11 @@ log = logging.getLogger("amauta.rlm_ingestion")
 # own `from services.ast_chunker import ...` (below, at call time) is already
 # broken and must fail loudly, not silently degrade (Phase 60/65 learning).
 from services.ast_chunker import AST_CODE_EXTENSIONS as AST_EXTENSIONS
+# One owner for the directory-prefix LIKE pattern (plan 89-07): on Windows
+# `os.sep` IS the LIKE escape character, so `prefix + os.sep + "%"` bound a
+# pattern that matched nothing. rlm_search imports nothing from here, so this
+# direction is acyclic.
+from services.rlm_search import like_beneath
 
 # Extensions that get BM25 only (no embeddings, no dependency graph edges)
 LEGACY_EXTENSIONS = {
@@ -402,7 +407,7 @@ def prune_missing_files(dir_path: str, pg_conn, seen_paths=None) -> int:
             cur.execute(
                 "SELECT DISTINCT file_path FROM rlm_chunks "
                 "WHERE file_path = %s OR file_path LIKE %s",
-                (prefix, prefix + os.sep + "%"),
+                (prefix, like_beneath(prefix)),
             )
             indexed = [row[0] for row in cur.fetchall()]
             missing = [p for p in indexed if not os.path.isfile(p)]
