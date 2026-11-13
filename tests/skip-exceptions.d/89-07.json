@@ -8,7 +8,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_relevance_mrr_at_k_on_the_deterministic_provider",
@@ -19,7 +19,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_relevance_mrr_with_the_real_embedding_provider",
@@ -30,7 +30,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_relevance_mrr_with_the_real_embedding_provider",
@@ -41,7 +41,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_a_description_match_outranks_a_content_match_on_both_engines",
@@ -52,7 +52,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_a_description_match_outranks_a_content_match_on_both_engines",
@@ -63,7 +63,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_a_file_filter_works_on_both_engines",
@@ -74,7 +74,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_a_file_filter_works_on_both_engines",
@@ -85,7 +85,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_a_multi_word_query_ORs_its_terms_on_both_engines",
@@ -96,7 +96,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_a_multi_word_query_ORs_its_terms_on_both_engines",
@@ -107,7 +107,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_a_second_connection_gets_its_own_probe",
@@ -118,7 +118,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_a_second_connection_gets_its_own_probe",
@@ -129,7 +129,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_a_stopword_only_query_returns_nothing_on_both_engines",
@@ -140,7 +140,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_a_stopword_only_query_returns_nothing_on_both_engines",
@@ -151,7 +151,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_each_database_runs_the_engine_it_is_supposed_to",
@@ -162,7 +162,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_each_database_runs_the_engine_it_is_supposed_to",
@@ -173,7 +173,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_memory_search_rung1_answers_on_both_engines",
@@ -184,7 +184,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_memory_search_rung1_answers_on_both_engines",
@@ -195,7 +195,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_the_degraded_branch_reports_the_same_null_fusion_values_on_both",
@@ -206,7 +206,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_the_degraded_branch_reports_the_same_null_fusion_values_on_both",
@@ -217,7 +217,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_the_lexical_leg_finds_the_same_rows_on_both_engines",
@@ -228,7 +228,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_the_lexical_leg_finds_the_same_rows_on_both_engines",
@@ -239,7 +239,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_the_probe_runs_once_per_connection_not_once_per_search",
@@ -250,7 +250,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_the_probe_runs_once_per_connection_not_once_per_search",
@@ -261,7 +261,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_the_result_shape_is_key_for_key_identical_across_engines",
@@ -272,7 +272,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_the_result_shape_is_key_for_key_identical_across_engines",
@@ -283,7 +283,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_the_types_match_too_not_only_the_keys",
@@ -294,7 +294,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_the_types_match_too_not_only_the_keys",
@@ -305,7 +305,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_the_vector_leg_and_the_fusion_are_the_same_on_both_engines",
@@ -316,7 +316,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_the_vector_leg_and_the_fusion_are_the_same_on_both_engines",
@@ -327,7 +327,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_033_down_is_a_noop_on_a_paradedb_database",
@@ -338,7 +338,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_033_down_is_a_noop_on_a_paradedb_database",
@@ -349,7 +349,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_a_paradedb_database_is_unchanged_by_migration_033",
@@ -360,7 +360,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_a_paradedb_database_is_unchanged_by_migration_033",
@@ -371,7 +371,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_a_paradedb_server_reports_the_bm25_engine_and_no_degradation",
@@ -382,7 +382,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_a_paradedb_server_reports_the_bm25_engine_and_no_degradation",
@@ -393,7 +393,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_detect_applied_by_schema_is_right_on_both_engines",
@@ -404,7 +404,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_detect_applied_by_schema_is_right_on_both_engines",
@@ -415,7 +415,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_doctor_warns_on_the_plain_engine_and_is_ok_on_paradedb",
@@ -426,7 +426,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_doctor_warns_on_the_plain_engine_and_is_ok_on_paradedb",
@@ -437,7 +437,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_every_migration_applies_on_both_engines_with_the_same_count",
@@ -448,7 +448,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_every_migration_applies_on_both_engines_with_the_same_count",
@@ -459,7 +459,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_health_carries_the_same_answer_under_a_stable_key",
@@ -470,7 +470,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_health_carries_the_same_answer_under_a_stable_key",
@@ -481,7 +481,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_masters_sentinels_are_right_on_a_paradedb_database",
@@ -492,7 +492,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_masters_sentinels_are_right_on_a_paradedb_database",
@@ -503,7 +503,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_the_paradedb_database_really_has_pg_search",
@@ -514,7 +514,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_the_paradedb_database_really_has_pg_search",
@@ -525,7 +525,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_the_paradedb_server_reports_pg_search_as_available_and_not_degraded",
@@ -536,7 +536,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_the_paradedb_server_reports_pg_search_as_available_and_not_degraded",
@@ -547,7 +547,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_the_report_never_carries_a_dsn_or_a_password",
@@ -558,7 +558,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_the_report_never_carries_a_dsn_or_a_password",
@@ -569,7 +569,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_the_resolver_names_the_right_engine_on_each_database",
@@ -580,7 +580,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_the_resolver_names_the_right_engine_on_each_database",
@@ -591,7 +591,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_the_substitutes_exist_exactly_where_the_bm25_indexes_do_not",
@@ -602,7 +602,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "test_the_substitutes_exist_exactly_where_the_bm25_indexes_do_not",
@@ -613,7 +613,7 @@
     "reason_class": "paradedb-engine-unavailable",
     "owner": "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
     "owner_phase": 100,
-    "exit_criterion": "either the cell gets a real pg_search — plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it — or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
+    "exit_criterion": "either the cell gets a real pg_search \u2014 plan 89-12 installs the pinned, checksum-verified ParadeDB pg_search@17 .pkg on the macOS runner, which makes the darwin half of this class STALE and 89-12 deletes it \u2014 or the ledger carries a written capability statement instead of a skip. For win32 the second is the only exit that exists: pg_search is a Rust/pgrx extension with NO Windows target and the ParadeDB release carries zero Windows assets, which STATE.md:109 permits as \"it says clearly what is unavailable\". Phase 100 owns that statement."
   },
   {
     "name": "tests.test_65_retrieval_e2e",
@@ -748,7 +748,7 @@
     "exit_criterion": "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
   },
   {
-    "name": "[PG] idx_handoffs_task and idx_handoffs_latest indexes exist",
+    "name": "[PG] INSERT + SELECT roundtrip works with all fields populated",
     "file": "tests/migration-017.test.cjs",
     "platform": "all",
     "context": "local",
@@ -759,7 +759,7 @@
     "exit_criterion": "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
   },
   {
-    "name": "[PG] INSERT + SELECT roundtrip works with all fields populated",
+    "name": "[PG] idx_handoffs_task and idx_handoffs_latest indexes exist",
     "file": "tests/migration-017.test.cjs",
     "platform": "all",
     "context": "local",
@@ -1122,7 +1122,7 @@
     "exit_criterion": "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
   },
   {
-    "name": "POST /api/complexity/complete: outcome_label=invalid → stored=false",
+    "name": "POST /api/complexity/complete: outcome_label=invalid \u2192 stored=false",
     "file": "tests/scale-adaptive-integration.test.cjs",
     "platform": "all",
     "context": "local",
@@ -1221,17 +1221,6 @@
     "exit_criterion": "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
   },
   {
-    "name": "GET returns {\"step_id\": null} when no handoff exists",
-    "file": "tests/step-handoff-daemon.test.cjs",
-    "platform": "all",
-    "context": "local",
-    "reason": "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
-    "reason_class": "pg-no-disposable-database-local",
-    "owner": "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
-    "owner_phase": 100,
-    "exit_criterion": "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
-  },
-  {
     "name": "GET returns 400 for non-integer phase",
     "file": "tests/step-handoff-daemon.test.cjs",
     "platform": "all",
@@ -1244,6 +1233,17 @@
   },
   {
     "name": "GET returns latest handoff after POST",
+    "file": "tests/step-handoff-daemon.test.cjs",
+    "platform": "all",
+    "context": "local",
+    "reason": "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
+    "reason_class": "pg-no-disposable-database-local",
+    "owner": "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
+    "owner_phase": 100,
+    "exit_criterion": "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
+  },
+  {
+    "name": "GET returns {\"step_id\": null} when no handoff exists",
     "file": "tests/step-handoff-daemon.test.cjs",
     "platform": "all",
     "context": "local",
@@ -1309,7 +1309,7 @@
     "exit_criterion": "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
   },
   {
-    "name": "calibrate_score: p<0.3 (task_fail neighbors) → score boosted +10 (calibrated branch)",
+    "name": "SCALE-03 accuracy-improves-over-N: cold_start flips True\u2192False as N grows, scores shift consistently",
     "file": "tests/task-completions-learning.test.cjs",
     "platform": "all",
     "context": "local",
@@ -1320,7 +1320,7 @@
     "exit_criterion": "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
   },
   {
-    "name": "calibrate_score: p>0.7 (validator_pass neighbors) → score nudged -5 (calibrated branch)",
+    "name": "calibrate_score: p<0.3 (task_fail neighbors) \u2192 score boosted +10 (calibrated branch)",
     "file": "tests/task-completions-learning.test.cjs",
     "platform": "all",
     "context": "local",
@@ -1331,7 +1331,7 @@
     "exit_criterion": "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
   },
   {
-    "name": "SCALE-03 accuracy-improves-over-N: cold_start flips True→False as N grows, scores shift consistently",
+    "name": "calibrate_score: p>0.7 (validator_pass neighbors) \u2192 score nudged -5 (calibrated branch)",
     "file": "tests/task-completions-learning.test.cjs",
     "platform": "all",
     "context": "local",
@@ -1683,7 +1683,7 @@
     "exit_criterion": "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
   },
   {
-    "name": "test_7_25_is_its_own_phase[postgres]",
+    "name": "test_72_and_72_0_do_read_each_other_back[postgres]",
     "file": "tests/test_89_02_decimal_phase.py",
     "platform": "all",
     "context": "local",
@@ -1694,7 +1694,7 @@
     "exit_criterion": "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
   },
   {
-    "name": "test_72_and_72_0_do_read_each_other_back[postgres]",
+    "name": "test_7_25_is_its_own_phase[postgres]",
     "file": "tests/test_89_02_decimal_phase.py",
     "platform": "all",
     "context": "local",
@@ -3410,50 +3410,6 @@
     "exit_criterion": "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
   },
   {
-    "name": "test_decision_index_present",
-    "file": "tests/test_party_decisions_migration.py",
-    "platform": "all",
-    "context": "local",
-    "reason": "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
-    "reason_class": "pg-no-disposable-database-local",
-    "owner": "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
-    "owner_phase": 100,
-    "exit_criterion": "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
-  },
-  {
-    "name": "test_migration_023_applies",
-    "file": "tests/test_party_decisions_migration.py",
-    "platform": "all",
-    "context": "local",
-    "reason": "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
-    "reason_class": "pg-no-disposable-database-local",
-    "owner": "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
-    "owner_phase": 100,
-    "exit_criterion": "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
-  },
-  {
-    "name": "test_migration_023_down_reverses",
-    "file": "tests/test_party_decisions_migration.py",
-    "platform": "all",
-    "context": "local",
-    "reason": "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
-    "reason_class": "pg-no-disposable-database-local",
-    "owner": "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
-    "owner_phase": 100,
-    "exit_criterion": "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
-  },
-  {
-    "name": "test_no_check_constraint_on_decision_type",
-    "file": "tests/test_party_decisions_migration.py",
-    "platform": "all",
-    "context": "local",
-    "reason": "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
-    "reason_class": "pg-no-disposable-database-local",
-    "owner": "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
-    "owner_phase": 100,
-    "exit_criterion": "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
-  },
-  {
     "name": "test_list_decisions_empty_session",
     "file": "tests/test_party_decisions.py",
     "platform": "all",
@@ -3511,6 +3467,50 @@
   {
     "name": "test_summarize_decisions_counts",
     "file": "tests/test_party_decisions.py",
+    "platform": "all",
+    "context": "local",
+    "reason": "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
+    "reason_class": "pg-no-disposable-database-local",
+    "owner": "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
+    "owner_phase": 100,
+    "exit_criterion": "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
+  },
+  {
+    "name": "test_decision_index_present",
+    "file": "tests/test_party_decisions_migration.py",
+    "platform": "all",
+    "context": "local",
+    "reason": "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
+    "reason_class": "pg-no-disposable-database-local",
+    "owner": "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
+    "owner_phase": 100,
+    "exit_criterion": "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
+  },
+  {
+    "name": "test_migration_023_applies",
+    "file": "tests/test_party_decisions_migration.py",
+    "platform": "all",
+    "context": "local",
+    "reason": "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
+    "reason_class": "pg-no-disposable-database-local",
+    "owner": "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
+    "owner_phase": 100,
+    "exit_criterion": "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
+  },
+  {
+    "name": "test_migration_023_down_reverses",
+    "file": "tests/test_party_decisions_migration.py",
+    "platform": "all",
+    "context": "local",
+    "reason": "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
+    "reason_class": "pg-no-disposable-database-local",
+    "owner": "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
+    "owner_phase": 100,
+    "exit_criterion": "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
+  },
+  {
+    "name": "test_no_check_constraint_on_decision_type",
+    "file": "tests/test_party_decisions_migration.py",
     "platform": "all",
     "context": "local",
     "reason": "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
@@ -3982,7 +3982,7 @@
     "exit_criterion": "the fixture RLM ingests a SMALL, fixed corpus instead of the whole tracked tree (which is what these tests actually need), or the Windows ingestion throughput is measured and the budget raised from that number. Either is a change to tests/conftest.py's RLM fixture, not to the product, and neither is a CI-plan decision."
   },
   {
-    "name": "TestQueryAnswersHybrid.test_query_answers_hybrid",
+    "name": "test_query_answers_hybrid",
     "file": "tests/test_65_retrieval_e2e.py",
     "platform": "win32",
     "context": "any",
@@ -3991,5 +3991,16 @@
     "owner": "Phase 100 (quality gates own the per-cell budgets and the canary re-baseline)",
     "owner_phase": 100,
     "exit_criterion": "the fixture RLM ingests a SMALL, fixed corpus instead of the whole tracked tree (which is what these tests actually need), or the Windows ingestion throughput is measured and the budget raised from that number. Either is a change to tests/conftest.py's RLM fixture, not to the product, and neither is a CI-plan decision."
+  },
+  {
+    "name": "test_cli_prints_hybrid_provenance",
+    "file": "tests/test_65_retrieval_e2e.py",
+    "platform": "win32",
+    "context": "any",
+    "reason": "the fixture RLM serves `legacy_in_memory_fallback` on this cell, so the engine marker this test asserts is never produced: the service did not reach the disposable PostgreSQL even though the same DSN works for every in-process test in the suite on the same cell. Measured on pytest (windows-latest), run 43370212942: engine=legacy_in_memory_fallback where hybrid* is required, while the macOS cell answers a hybrid engine with the same fixture.",
+    "reason_class": "windows-rlm-service-degrades",
+    "owner": "Phase 100 (quality gates own the per-cell budgets and the canary re-baseline)",
+    "owner_phase": 100,
+    "exit_criterion": "the fixture RLM reports a PostgreSQL-backed engine on the Windows cell. Diagnose why services/rlm-service.py falls back there -- the DSN reaches the process, psycopg2 is installed and every in-process Postgres test on the same cell passes, so the fallback is in the service start-up path, not in the database. Then this entry goes stale and is deleted."
   }
 ]

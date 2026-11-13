@@ -162,10 +162,38 @@ def test_bm25_description_outranks_content_live():
     row B carries it only in `content`. bm25_only_search must rank row A
     above row B once the description boost is applied.
     """
-    from services.rlm_search import bm25_only_search
+    from services.rlm_search import _has_pg_search, bm25_only_search
 
     conn = _pg_conn_or_none()
     assert conn is not None, "PG must be reachable — skipif should have gated this test"
+
+    # Plan 89-07: this assertion is about the ParadeDB BM25 boost, and its
+    # corpus TIES under the plain-PostgreSQL substitute's arithmetic -- so the
+    # ordering there is whatever the plan happens to emit. Row A carries the
+    # token ONCE in `description` (tsvector weight A = 0.8 in RLM_FTS_WEIGHTS);
+    # row B carries it TWICE in `content` (weight B = 0.4). `ts_rank_cd` sums
+    # per-occurrence weights, so 1 x 0.8 == 2 x 0.4 EXACTLY, and the two rows
+    # score the same. Measured as a flake, which is how a tie shows up: the
+    # macOS cell passed this test on run 43366250606 and failed it on run
+    # 43370212942 with ['rowB_zx65', 'rowA_zx65'], same code, same corpus.
+    #
+    # Plan 89-06 made the PRODUCT engine-agnostic and its own equivalent test
+    # (tests/test_89_06_lexical_fallback.py
+    # ::test_a_description_match_outranks_a_content_match_on_both_engines)
+    # asserts the SAME property on BOTH engines and passes, because its corpus
+    # does not tie. The gap 89-06 left is this older test, which no cell could
+    # run on a plain engine until this plan gave macOS and Windows a database.
+    # Recorded as that gap rather than quietly patched: changing another plan's
+    # corpus to make a cell green is not a measurement.
+    if not _has_pg_search(conn):
+        pytest.skip(
+            "the ParadeDB BM25 boost is what this test measures, and its corpus "
+            "TIES on the plain-PostgreSQL substitute: row A has the token once "
+            "in `description` (tsvector weight 0.8) and row B twice in "
+            "`content` (0.4), so ts_rank_cd scores them identically (1x0.8 == "
+            "2x0.4) and the order is arbitrary. The same property IS asserted "
+            "on both engines by plan 89-06's own test, whose corpus does not tie."
+        )
 
     prefix = '__test65_boost__/'
     token = 'zx65boosttoken'

@@ -37,14 +37,29 @@ from services.rlm_search import like_beneath  # noqa: E402
 class TestTheSeparatorIsNotAnEscape:
     """The defect itself, stated as the property that was false on Windows."""
 
+    @staticmethod
+    def _wildcard_is_live(pattern):
+        """Whether the trailing `%` of a LIKE pattern is a WILDCARD.
+
+        `endswith("\\%")` is the wrong test and failed on the Windows cell
+        itself (run 43370212942): a CORRECTLY escaped separator ends the string
+        with two backslashes and a per-cent, whose last two characters are a
+        backslash and a per-cent. What decides it is the PARITY of the
+        backslash run immediately before the `%` -- an even run is escaped
+        backslashes and the `%` is live, an odd run escapes the `%` itself.
+        """
+        assert pattern.endswith("%"), pattern
+        run = len(pattern[:-1]) - len(pattern[:-1].rstrip("\\"))
+        return run % 2 == 0
+
     def test_a_windows_prefix_keeps_its_wildcard(self):
         """The trailing `%` must survive as a WILDCARD, not become a literal."""
-        pattern = like_beneath("C:\\a\\b")
-        assert pattern.endswith("%"), pattern
-        assert not pattern.endswith("\\%"), (
-            "the wildcard is escaped, so this pattern matches the literal string "
-            "'C:\\a\\b%%' and nothing else -- the Windows defect: %r" % (pattern,)
-        )
+        for sep in ("/", "\\"):
+            pattern = like_beneath("C:\\a\\b", sep)
+            assert self._wildcard_is_live(pattern), (
+                "the wildcard is escaped, so this pattern matches one literal "
+                "string and nothing else -- the Windows defect: %r" % (pattern,)
+            )
 
     def test_every_backslash_in_the_path_is_doubled(self):
         """A backslash must reach LIKE as a LITERAL backslash, not as an escape.
@@ -53,13 +68,11 @@ class TestTheSeparatorIsNotAnEscape:
         by cell; what must hold everywhere is that the backslashes already in
         the caller's path are doubled and the final `%` is live.
         """
+        assert like_beneath("C:\\a\\b", "\\") == "C:\\\\a\\\\b\\\\%"
+        assert like_beneath("C:\\a\\b", "/") == "C:\\\\a\\\\b/%"
         pattern = like_beneath("C:\\a\\b")
         assert pattern.startswith("C:\\\\a\\\\b"), pattern
-        assert pattern.endswith("%") and not pattern.endswith("\\%"), pattern
-        if os.sep == "\\":
-            assert pattern == "C:\\\\a\\\\b\\\\%"
-        else:
-            assert pattern == "C:\\\\a\\\\b" + os.sep + "%"
+        assert self._wildcard_is_live(pattern), pattern
 
     def test_a_posix_prefix_is_unchanged_by_the_fix(self):
         """The behaviour the Linux and macOS cells already had stays identical."""
@@ -75,6 +88,10 @@ class TestTheSeparatorIsNotAnEscape:
         """
         joined = os.path.join("srv", "a", "b")
         assert like_beneath(joined) == like_beneath(joined + os.sep)
+        # BOTH separators are stripped now, so a POSIX-style fixture prefix and
+        # a native one describe the same directory on every cell.
+        assert like_beneath("srv/a/b", "/") == like_beneath("srv/a/b/", "/")
+        assert like_beneath("srv\\a\\b", "\\") == like_beneath("srv\\a\\b\\", "\\")
 
 
 class TestTheCallersPathIsEscapedToo:
@@ -131,12 +148,54 @@ class TestTheProductHasNoSecondCopy:
     def test_both_modules_resolve_to_the_same_function(self):
         from services import rlm_ingestion, rlm_search
 
-        assert rlm_ingestion.like_beneath is rlm_search.like_beneath
+        assert rlm_ingestion.beneath_patterns is rlm_search.beneath_patterns
 
     def test_the_pattern_is_a_pure_function_of_the_platform_separator(self):
         """The function uses `os.sep`, so it is right on whatever cell runs it."""
         pattern = like_beneath(os.path.join("srv", "a", "b"))
-        assert pattern.endswith("%")
-        assert not pattern.endswith("\\%")
+        assert TestTheSeparatorIsNotAnEscape._wildcard_is_live(pattern), pattern
         expected_sep = "\\\\" if os.sep == "\\" else os.sep
         assert pattern.endswith(expected_sep + "%"), (pattern, os.sep)
+
+
+class TestBothSeparatorsAreCovered:
+    """A path filter must not care which separator the STORED path uses."""
+
+    def test_the_pair_is_one_pattern_per_separator(self):
+        from services.rlm_search import beneath_patterns
+
+        patterns = beneath_patterns("/srv/a")
+        assert len(patterns) == 2, patterns
+        assert patterns[0].endswith("/%"), patterns
+        assert patterns[1].endswith("\\\\%"), patterns
+        for pattern in patterns:
+            assert TestTheSeparatorIsNotAnEscape._wildcard_is_live(pattern), pattern
+
+    def test_a_posix_fixture_prefix_is_matched_on_a_windows_host(self):
+        """The case that was still empty on Windows after the escaping fix.
+
+        Several fixtures seed `file_path` as `prefix + "a.py"` with a literal
+        `/` in the prefix, while `os.sep` on that cell is a backslash. One
+        host-separator pattern matched none of them.
+        """
+        from services.rlm_search import beneath_patterns
+
+        patterns = beneath_patterns("__test65_boost__/")
+        assert "__test65_boost__/%".replace("_", "\\_") in patterns, patterns
+
+    def test_both_call_sites_bind_both_patterns(self):
+        """Three binds in the SQL, three parameters -- counted, not assumed."""
+        import ast as _ast
+
+        source = (Path(__file__).resolve().parent.parent
+                  / "services" / "rlm_search.py").read_text(encoding="utf-8")
+        # `hybrid_search`'s clause is split across two source lines, so the
+        # fragment appears twice in the file: once in the SQL and once in the
+        # docstring that quotes it. What must hold is that BOTH call sites pass
+        # `beneath_patterns`, which returns exactly two patterns.
+        assert source.count("beneath_patterns(prefix)") == 2, (
+            "both file-filter sites must bind the pair: "
+            + str(source.count("beneath_patterns(prefix)")))
+        from services.rlm_search import beneath_patterns
+        assert len(beneath_patterns("/x")) == 2
+        _ast.parse(source)

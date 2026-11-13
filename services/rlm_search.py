@@ -220,7 +220,7 @@ def _check_weight(label) -> None:
         raise ValueError(f"unsafe tsvector weight: {label!r}")
 
 
-def like_beneath(prefix: str) -> str:
+def like_beneath(prefix: str, sep: Optional[str] = None) -> str:
     """The ``LIKE`` pattern that matches every path strictly beneath *prefix*.
 
     **A directory-scoped search matched NOTHING on Windows before this.**
@@ -245,6 +245,7 @@ def like_beneath(prefix: str) -> str:
 
     Args:
         prefix: a directory path, with or without a trailing separator.
+        sep: the separator to treat as the boundary; the HOST's when omitted.
 
     Returns:
         str: the pattern to bind beside the exact-match parameter.
@@ -260,7 +261,28 @@ def like_beneath(prefix: str) -> str:
                 .replace("%", "\\%")
                 .replace("_", "\\_"))
 
-    return _escape(str(prefix).rstrip(os.sep) + os.sep) + "%"
+    boundary = os.sep if sep is None else sep
+    return _escape(str(prefix).rstrip("/\\") + boundary) + "%"
+
+
+def beneath_patterns(prefix: str):
+    """The patterns that match everything beneath *prefix*, either separator.
+
+    A path filter must not care which separator the STORED path uses. Windows
+    accepts both, a database can hold rows written by another host, and the
+    fixtures of several tests build their paths with a literal ``/`` while the
+    product's own ingestion uses ``os.path.abspath``. Measured on `pytest
+    (windows-latest)`, run 43370212942: with one host-separator pattern, five
+    tests still came back EMPTY on that cell after the escaping fix, every one
+    of them a filter whose seeded paths used ``/`` while ``os.sep`` was ``\\``.
+
+    Args:
+        prefix: a directory path.
+
+    Returns:
+        list[str]: one pattern per separator, in a stable order.
+    """
+    return [like_beneath(prefix, "/"), like_beneath(prefix, "\\")]
 
 
 def fts_vector_sql(fts_columns, alias: Optional[str] = None) -> str:
@@ -793,9 +815,10 @@ def hybrid_search(query: str, pg_conn, top_k: int = DEFAULT_TOP_K,
     # matched /a/bc/... and /a/b-old/... Match the directory itself or a path
     # genuinely beneath it.
     if file_filter:
-        prefix = str(file_filter).rstrip(os.sep)
-        filter_sql = "AND (c.file_path = %s OR c.file_path LIKE %s)"
-        filter_params = (prefix, like_beneath(prefix))
+        prefix = str(file_filter).rstrip("/\\")
+        filter_sql = ("AND (c.file_path = %s OR c.file_path LIKE %s "
+                      "OR c.file_path LIKE %s)")
+        filter_params = tuple([prefix] + beneath_patterns(prefix))
     else:
         filter_sql = ""
         filter_params = ()
@@ -898,9 +921,10 @@ def bm25_only_search(query: str, pg_conn, top_k: int = DEFAULT_TOP_K,
     # Same sibling-directory fix as hybrid_search: `LIKE '/a/b%'` also matched
     # /a/bc and /a/b-old. Match the directory itself or a path beneath it.
     if file_filter:
-        prefix = str(file_filter).rstrip(os.sep)
-        file_clause = "AND (file_path = %s OR file_path LIKE %s)"
-        file_params = [prefix, like_beneath(prefix)]
+        prefix = str(file_filter).rstrip("/\\")
+        file_clause = ("AND (file_path = %s OR file_path LIKE %s "
+                       "OR file_path LIKE %s)")
+        file_params = [prefix] + beneath_patterns(prefix)
     else:
         file_clause = ""
         file_params = []
