@@ -31,7 +31,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from services.rlm_search import like_beneath  # noqa: E402
+from services.rlm_search import like_beneath, like_escape  # noqa: E402
 
 
 class TestTheSeparatorIsNotAnEscape:
@@ -75,9 +75,17 @@ class TestTheSeparatorIsNotAnEscape:
         assert self._wildcard_is_live(pattern), pattern
 
     def test_a_posix_prefix_is_unchanged_by_the_fix(self):
-        """The behaviour the Linux and macOS cells already had stays identical."""
-        assert like_beneath("/a/b") == "/a/b/%"
-        assert like_beneath("/a/b/") == "/a/b/%"
+        """The behaviour the Linux and macOS cells already had stays identical.
+
+        The separator is named here, because an OMITTED one is the HOST's and
+        this file runs on all nine cells: on the Windows cell the default
+        boundary is a backslash, so `/a/b/%` is the POSIX LEG's tail, not a
+        platform-independent fact. The default is asserted on the line below,
+        against the host's own separator.
+        """
+        assert like_beneath("/a/b", "/") == "/a/b/%"
+        assert like_beneath("/a/b/", "/") == "/a/b/%"
+        assert like_beneath("/a/b") == "/a/b" + ("/%" if os.sep == "/" else "\\\\%")
 
     def test_a_trailing_separator_is_not_doubled(self):
         """`/a/b` and `/a/b/` describe the same directory.
@@ -105,15 +113,45 @@ class TestTheCallersPathIsEscapedToo:
 
     def test_a_per_cent_in_a_directory_name_is_escaped(self):
         """`%` is LIKE's any-string wildcard; only the one we append may be live."""
-        pattern = like_beneath("/srv/50%done")
+        pattern = like_beneath("/srv/50%done", "/")
         assert pattern.count("%") == 2, pattern          # the escaped one, and the wildcard
         assert "50\\%done" in pattern
         assert pattern.endswith("/%")
+        # The host-separator leg escapes the SAME per-cent; only its tail
+        # differs, so the `/%` literal above belongs to the POSIX leg alone.
+        native = like_beneath("/srv/50%done")
+        assert native.count("%") == 2, native
+        assert "50\\%done" in native
 
     def test_the_escape_character_itself_is_escaped_before_anything_else(self):
         """Order matters: escaping `%` first would then double its own backslash."""
-        pattern = like_beneath("/srv/a\\b%c")
-        assert pattern == "/srv/a\\\\b\\%c/%", pattern
+        assert like_beneath("/srv/a\\b%c", "/") == "/srv/a\\\\b\\%c/%"
+        assert like_beneath("/srv/a\\b%c", "\\") == "/srv/a\\\\b\\%c\\\\%"
+
+
+class TestEscapingIsPublicAndReusable:
+    """The escaping is a primitive, because callers outside the filter need it.
+
+    A test of its own built an ad-hoc pattern as `str(root) + "%two.py"` and so
+    carried the identical defect: on the Windows cell the UPDATE it ran matched
+    no row, silently, and the test failed three lines later for a reason that
+    was not the real one. The escaping is therefore exported, not nested.
+    """
+
+    def test_the_three_meaningful_characters_are_escaped(self):
+        assert like_escape("a\\b") == "a\\\\b"
+        assert like_escape("50%done") == "50\\%done"
+        assert like_escape("a_b") == "a\\_b"
+
+    def test_an_ordinary_path_is_left_alone(self):
+        assert like_escape("/srv/a/b.py") == "/srv/a/b.py"
+
+    def test_like_beneath_is_this_function_plus_a_boundary(self):
+        """One owner of the escaping, so the two cannot drift apart."""
+        for prefix in ("/srv/a_b", "C:\\srv\\50%done", "plain"):
+            for sep in ("/", "\\"):
+                assert like_beneath(prefix, sep) == (
+                    like_escape(prefix.rstrip("/\\") + sep) + "%")
 
 
 class TestTheProductHasNoSecondCopy:

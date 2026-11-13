@@ -25,11 +25,17 @@ Run: python3 -m pytest tests/test_69_ast_parity_e2e.py -v
 import json
 import os
 import shutil
+import sys
 import tempfile
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 import pytest
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 os.environ.setdefault("GSD_AMAUTA_NO_AUTO_START", "1")
 
@@ -82,6 +88,14 @@ if not _pg_reachable():
 
 import psycopg2  # noqa: E402
 
+# The fixture directory is a real path, and on a Windows cell every separator
+# in it is SQL LIKE's own escape character. Pasted into a pattern unescaped it
+# matched NOTHING: the preflight below counted 0 AST chunks and blamed a stale
+# daemon, and the teardown's DELETE removed no row while its verifying
+# SELECT -- built from the same broken pattern -- still read 0. Measured on
+# `pytest (windows-latest)`, run 43373240030. One owner for the escaping.
+from services.rlm_search import like_escape  # noqa: E402
+
 # Hard-import (never skip): if tree_sitter_kotlin is missing in THIS
 # interpreter, Wave-1's grammar install regressed — that is a real failure,
 # not an environment-unreachable condition.
@@ -110,12 +124,13 @@ def _verified_cleanup(prefix_dir):
     with the same predicate and assert 0 — verified cleanup, not attempted
     (65-05/pitfall-13 precedent)."""
     conn = psycopg2.connect(_PG_DSN)
+    under_prefix = like_escape(prefix_dir) + "%"
     try:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM rlm_chunks WHERE file_path LIKE %s", [f"{prefix_dir}%"])
+            cur.execute("DELETE FROM rlm_chunks WHERE file_path LIKE %s", [under_prefix])
         conn.commit()
         with conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) FROM rlm_chunks WHERE file_path LIKE %s", [f"{prefix_dir}%"])
+            cur.execute("SELECT COUNT(*) FROM rlm_chunks WHERE file_path LIKE %s", [under_prefix])
             remaining = cur.fetchone()[0]
         assert remaining == 0, f"gsd69e2e_ cleanup failed to verify for {prefix_dir}: {remaining} rows remain"
     finally:
@@ -203,7 +218,7 @@ def _pg_ast_chunk_count(fixture_dir, like_suffix):
             cur.execute(
                 "SELECT COUNT(*) FROM rlm_chunks "
                 "WHERE file_path LIKE %s AND symbol_type != 'legacy'",
-                [f"{fixture_dir}%{like_suffix}"],
+                [like_escape(fixture_dir) + "%" + like_escape(like_suffix)],
             )
             return cur.fetchone()[0]
     finally:
@@ -248,11 +263,19 @@ def _assert_parity(fixture_project, language):
     results = data.get("results", [])
     assert results, f"expected non-empty results for {language} query {symbol!r}: {data}"
 
+    # The fixture contract spells `rel_path` with a `/`, while an ingested
+    # `file_path` carries the HOST's separator: on a Windows cell the row reads
+    # `...\wear\FrobWear.kt`, which ends with no `"wear/FrobWear.kt"` literal.
+    # The subject is the PATH, not its spelling, so both sides are compared in
+    # one spelling.
+    def _slashes(value):
+        return str(value or "").replace("\\", "/")
+
     match = next(
         (
             r for r in results
             if symbol in (r.get("symbol_name") or r.get("label") or "")
-            and str(r.get("filepath") or r.get("file_path") or "").endswith(rel_path)
+            and _slashes(r.get("filepath") or r.get("file_path")).endswith(rel_path)
         ),
         None,
     )
@@ -262,7 +285,7 @@ def _assert_parity(fixture_project, language):
     )
 
     if language == "kotlin":
-        filepath = str(match.get("filepath") or match.get("file_path") or "")
+        filepath = _slashes(match.get("filepath") or match.get("file_path"))
         assert "/wear/" in filepath, (
             f"expected Kotlin fixture retrieved from a wear/ subdirectory, got: {filepath}"
         )

@@ -144,13 +144,20 @@ def _post(path, body, timeout=30):
 def _verified_cleanup(prefix_dir):
     """DELETE rlm_chunks rows under prefix_dir, commit, then re-SELECT COUNT(*)
     with the same predicate and assert 0 — verified cleanup, not attempted."""
+    # `prefix_dir` is a real temp path; on Windows its separators are LIKE's
+    # escape character, so an unescaped pattern deletes nothing and the
+    # verifying COUNT, built from the same pattern, still reads 0.
+    if _REPO_ROOT not in sys.path:
+        sys.path.insert(0, _REPO_ROOT)
+    from services.rlm_search import like_escape
+    under_prefix = like_escape(prefix_dir) + "%"
     conn = psycopg2.connect(_PG_DSN)
     try:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM rlm_chunks WHERE file_path LIKE %s", [f"{prefix_dir}%"])
+            cur.execute("DELETE FROM rlm_chunks WHERE file_path LIKE %s", [under_prefix])
         conn.commit()
         with conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) FROM rlm_chunks WHERE file_path LIKE %s", [f"{prefix_dir}%"])
+            cur.execute("SELECT COUNT(*) FROM rlm_chunks WHERE file_path LIKE %s", [under_prefix])
             remaining = cur.fetchone()[0]
         assert remaining == 0, f"gsd65e2e_ cleanup failed to verify for {prefix_dir}: {remaining} rows remain"
     finally:

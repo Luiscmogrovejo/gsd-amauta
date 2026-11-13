@@ -220,6 +220,32 @@ def _check_weight(label) -> None:
         raise ValueError(f"unsafe tsvector weight: {label!r}")
 
 
+def like_escape(text: str) -> str:
+    """Escape *text* so a ``LIKE`` pattern matches it LITERALLY.
+
+    PostgreSQL's default ``LIKE`` escape is the backslash, so three characters
+    carry meaning inside a pattern and must be doubled or escaped before a
+    caller's own path can be pasted into one: the backslash itself, ``%`` and
+    ``_``. A Windows path is made of backslashes, so a pattern built by
+    concatenating one is NOT the pattern its author meant -- see
+    :func:`like_beneath` for the defect this caused in three product sites, and
+    note that an ad-hoc pattern in a test is wrong in exactly the same way.
+
+    Args:
+        text: the literal to appear inside a ``LIKE`` pattern.
+
+    Returns:
+        str: the escaped literal; append ``"%"`` to make it a prefix pattern.
+
+    Example:
+        >>> like_escape('C:\\\\srv\\\\a_b')
+        'C:\\\\\\\\srv\\\\\\\\a\\\\_b'
+    """
+    return (str(text).replace("\\", "\\\\")
+            .replace("%", "\\%")
+            .replace("_", "\\_"))
+
+
 def like_beneath(prefix: str, sep: Optional[str] = None) -> str:
     """The ``LIKE`` pattern that matches every path strictly beneath *prefix*.
 
@@ -256,13 +282,8 @@ def like_beneath(prefix: str, sep: Optional[str] = None) -> str:
         >>> like_beneath('C:\\a\\b')  # doctest: +SKIP
         'C:\\\\a\\\\b\\\\%'
     """
-    def _escape(text):
-        return (str(text).replace("\\", "\\\\")
-                .replace("%", "\\%")
-                .replace("_", "\\_"))
-
     boundary = os.sep if sep is None else sep
-    return _escape(str(prefix).rstrip("/\\") + boundary) + "%"
+    return like_escape(str(prefix).rstrip("/\\") + boundary) + "%"
 
 
 def beneath_patterns(prefix: str):

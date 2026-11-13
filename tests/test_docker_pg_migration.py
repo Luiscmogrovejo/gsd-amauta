@@ -1020,8 +1020,11 @@ class TestRlmIntegration:
             with conn.cursor() as cur:
                 cur.execute("SELECT DISTINCT file_path FROM rlm_chunks")
                 paths = [r[0] for r in cur.fetchall()]
-            assert any(p.endswith("keep/a.py") for p in paths)
-            assert not any(p.endswith("gone.py") for p in paths)
+            # The ingested row carries the HOST's separator, so the suffix
+            # asserted here must be built with it: on a Windows cell the row
+            # reads `...\keep\a.py`, which no `"keep/a.py"` literal ends with.
+            assert any(p.endswith(os.path.join("keep", "a.py")) for p in paths), paths
+            assert not any(p.endswith("gone.py") for p in paths), paths
         finally:
             conn.close()
 
@@ -1086,7 +1089,10 @@ class TestRlmIntegration:
             narrow = hybrid_search("kumquat", conn, top_k=10,
                                    file_filter=str(root / "b"))
             paths = {r["file_path"] for r in narrow}
-            assert paths and all("/bc/" not in p for p in paths)
+            # Host separator: with a `/` literal this is vacuously true on a
+            # Windows cell, where the sibling row reads `...\bc\y.py`.
+            sibling = os.sep + "bc" + os.sep
+            assert paths and all(sibling not in p for p in paths), paths
 
             wide = hybrid_search("kumquat", conn, top_k=10, file_filter=str(root))
             assert len({r["file_path"] for r in wide}) == 2
@@ -1102,7 +1108,7 @@ class TestRlmIntegration:
         monkeypatch.setattr(emb, "_try_voyage",
                             lambda text, input_type: [0.02] * 1024)
         from services.rlm_ingestion import ingest_directory
-        from services.rlm_search import hybrid_search, RRF_CANDIDATE_K
+        from services.rlm_search import hybrid_search, like_escape, RRF_CANDIDATE_K
 
         root = tmp_path / "v"
         root.mkdir()
@@ -1112,9 +1118,17 @@ class TestRlmIntegration:
         try:
             ingest_directory(str(root), conn)
             with conn.cursor() as cur:
+                # `str(root)` is a raw path, and on Windows every separator in
+                # it is LIKE's own escape character -- pasted in unescaped the
+                # pattern matched NOTHING, the UPDATE touched no row, and this
+                # test then failed on its last line with a misleading message.
                 cur.execute(
                     "UPDATE rlm_chunks SET embedding_model='qodo-embed-1-1.5b' "
-                    "WHERE file_path LIKE %s", (str(root) + "%two.py",))
+                    "WHERE file_path LIKE %s",
+                    (like_escape(str(root)) + "%two.py",))
+                assert cur.rowcount >= 1, (
+                    "the foreign-model UPDATE matched no row, so the rest of "
+                    "this test would assert nothing")
             conn.commit()
             results = {r["file_path"]: r for r in
                        hybrid_search("plumbus", conn, top_k=10,
