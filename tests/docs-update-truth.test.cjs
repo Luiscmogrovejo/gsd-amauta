@@ -162,7 +162,7 @@ test('gsd-tools has no a2a case and refuses the verb', () => {
     'gsd-tools a2a must be refused by name, not poll a port');
 });
 
-test('the README says the A2A removal happened, and still marks party experimental', () => {
+test('the README says the A2A removal happened, and what a party session is now', () => {
   const md = read('README.md');
   assert.match(md, /The bespoke A2A request\/response protocol was removed in v3\.7/,
     'criterion 5: the README must SAY the removal happened, not merely stop mentioning it');
@@ -175,7 +175,37 @@ test('the README says the A2A removal happened, and still marks party experiment
   assert.ok(!/```[^`]*gsd-amauta a2a[^`]*```/s.test(md),
     'no code block may still offer a removed a2a verb');
   assert.ok(!/gsd-tools a2a tail/.test(md), 'no doc page may offer gsd-tools a2a tail');
-  assert.match(md, /party sessions/i, 'party sessions are still experimental, not this plan\'s');
+  // Plan 89-13 (ORC-02 part 2): the README says what a party session IS now,
+  // names the verbs that survive and the ones that were removed, and stays
+  // consistent with the single-channel statement above.
+  assert.match(md, /A party session keeps only recorded decisions/,
+    'the README must say what a party session is now');
+  assert.ok(!/Party sessions are still experimental/.test(md),
+    'the README still carries the pre-89-13 "being reduced" sentence');
+  for (const removed of ['party pause', 'party resume', 'party kill']) {
+    assert.ok(md.includes('`' + removed + '`'), `the removal statement must name ${removed}`);
+    assert.ok(!new RegExp('```[^`]*gsd-amauta ' + removed + '[^`]*```', 's').test(md),
+      `no code block may still offer the removed verb ${removed}`);
+  }
+  for (const verb of ['create', 'start', 'status', 'inspect', 'get', 'terminate']) {
+    assert.ok(md.includes(`gsd-amauta party ${verb}`), `the README must name the surviving verb party ${verb}`);
+  }
+  assert.match(md, /not a second agent channel/,
+    'the party paragraph must not contradict "the blackboard inbox is the single agent-to-agent channel"');
+  assert.match(md, /requires_postgres/, 'the README must say party sessions need PostgreSQL');
+});
+
+test('the party verbs the README offers are exactly the verbs the tool answers', () => {
+  // Read from the code: KNOWN_ACTIONS inside the `case 'party':` block.
+  const tools = read('get-shit-done/bin/gsd-tools.cjs');
+  const block = tools.slice(tools.indexOf("case 'party':"));
+  const known = /const KNOWN_ACTIONS = new Set\(\[([^\]]*)\]\)/.exec(block);
+  assert.ok(known, 'KNOWN_ACTIONS not found in the party block');
+  const actions = known[1].split(',').map((x) => x.trim().replace(/'/g, '')).sort();
+  const md = read('README.md');
+  const offered = [...new Set([...md.matchAll(/gsd-amauta party ([a-z]+)/g)].map((m) => m[1]))].sort();
+  assert.deepStrictEqual(offered, actions,
+    'the README offers a party verb the tool does not answer, or omits one it does');
 });
 
 test('README presents Docker as recommended with a documented SQLite fallback', () => {
