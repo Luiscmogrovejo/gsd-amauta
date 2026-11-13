@@ -212,6 +212,49 @@ def test_the_plain_database_really_has_no_pg_search(plain):
 
 
 @pytest.mark.integration
+def test_the_unguarded_statement_master_runs_still_fails_here(plain, record_property):
+    """The failure this plan removes, MEASURED on this PR's own database.
+
+    What can be re-measured on the cells that exist today is the SECOND
+    unguarded statement of master's 011, the BM25 index: without the extension
+    there is no `bm25` access method, so the statement cannot be planned, and
+    `apply_migrations` raising on its first failing FILE is what used to take
+    every table from 011 onward with it.
+
+    What CANNOT be re-measured here is master's FIRST unguarded statement,
+    `CREATE EXTENSION IF NOT EXISTS pg_search` -> sqlstate 0A000, "extension
+    pg_search is not available" (CI run 43173591322, 88-16-RECORD.md:570-598).
+    On a ParadeDB CLUSTER the extension IS available, so that statement
+    succeeds here; only a cluster without the ParadeDB binaries shows 0A000,
+    and plan 89-07 brings the first one. The record says so in those words.
+    """
+    import psycopg2
+
+    conn = psycopg2.connect(plain["dsn"], connect_timeout=10)
+    try:
+        with conn.cursor() as cur:
+            with pytest.raises(psycopg2.Error) as caught:
+                cur.execute(
+                    "CREATE INDEX bm25_test_idx ON bm25_test_table "
+                    "USING bm25 (id, content) WITH (key_field = 'id')")
+        conn.rollback()
+    finally:
+        conn.close()
+    error = caught.value
+    record_property("measured_error", "%s: %s" % (
+        error.pgcode, str(error).strip().splitlines()[0]))
+    assert error.pgcode, "an error with no sqlstate measures nothing"
+    print("MEASURED (89-06, unguarded 011 statement on a pg_search-less "
+          "database): sqlstate=%s %s" % (error.pgcode,
+                                         str(error).strip().splitlines()[0]))
+
+    # And the guarded file runs clean on the same database.
+    notices = _exec_file(plain["dsn"], MIGRATIONS / "011-paradedb-setup.sql")
+    assert any("pg_search" in n for n in notices), notices
+    print("MEASURED (89-06, guarded 011 on the same database): %s" % notices)
+
+
+@pytest.mark.integration
 def test_the_paradedb_database_really_has_pg_search(paradedb):
     assert pg_engines.has_pg_search(paradedb["dsn"]) is True
 

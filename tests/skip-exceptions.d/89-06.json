@@ -352,6 +352,17 @@
     "exit_criterion": "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database. These are plan 89-06's own proof of decision D3: the schema applies, the sentinels are right and the lexical leg answers on a PostgreSQL WITHOUT pg_search. Each test needs TWO databases on one disposable cluster, so it runs wherever GSD_TEST_POSTGRES_URL points at one and skips where nothing does. pg_search itself is no longer required anywhere: as of ParadeDB v0.26.6 (2026-11-08) it also ships signed Apple-silicon macOS packages, and where it is absent migration 033 creates plain-PostgreSQL full-text substitutes and the lexical leg routes to to_tsvector/ts_rank_cd."
   },
   {
+    "name": "test_the_unguarded_statement_master_runs_still_fails_here",
+    "file": "tests/test_89_06_pg_search_optional.py",
+    "platform": "darwin",
+    "context": "any",
+    "reason": "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "reason_class": "pg-no-disposable-database",
+    "owner": "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+    "owner_phase": 89,
+    "exit_criterion": "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database. These are plan 89-06's own proof of decision D3: the schema applies, the sentinels are right and the lexical leg answers on a PostgreSQL WITHOUT pg_search. Each test needs TWO databases on one disposable cluster, so it runs wherever GSD_TEST_POSTGRES_URL points at one and skips where nothing does. pg_search itself is no longer required anywhere: as of ParadeDB v0.26.6 (2026-11-08) it also ships signed Apple-silicon macOS packages, and where it is absent migration 033 creates plain-PostgreSQL full-text substitutes and the lexical leg routes to to_tsvector/ts_rank_cd."
+  },
+  {
     "name": "test_a_description_match_outranks_a_content_match_on_both_engines",
     "file": "tests/test_89_06_lexical_fallback.py",
     "platform": "win32",
@@ -694,6 +705,17 @@
   },
   {
     "name": "test_the_substitutes_exist_exactly_where_the_bm25_indexes_do_not",
+    "file": "tests/test_89_06_pg_search_optional.py",
+    "platform": "win32",
+    "context": "any",
+    "reason": "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "reason_class": "pg-no-disposable-database",
+    "owner": "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+    "owner_phase": 89,
+    "exit_criterion": "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database. These are plan 89-06's own proof of decision D3: the schema applies, the sentinels are right and the lexical leg answers on a PostgreSQL WITHOUT pg_search. Each test needs TWO databases on one disposable cluster, so it runs wherever GSD_TEST_POSTGRES_URL points at one and skips where nothing does. pg_search itself is no longer required anywhere: as of ParadeDB v0.26.6 (2026-11-08) it also ships signed Apple-silicon macOS packages, and where it is absent migration 033 creates plain-PostgreSQL full-text substitutes and the lexical leg routes to to_tsvector/ts_rank_cd."
+  },
+  {
+    "name": "test_the_unguarded_statement_master_runs_still_fails_here",
     "file": "tests/test_89_06_pg_search_optional.py",
     "platform": "win32",
     "context": "any",
