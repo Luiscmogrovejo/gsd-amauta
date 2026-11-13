@@ -673,3 +673,268 @@ class TestBothBackendsReturnTheSameShape:
         finally:
             _stop(pg_proc, pg_out, pg_err)
             _stop(sq_proc, sq_out, sq_err)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# MIGRATION 032: the table is dropped, 024 stays on disk, and auto_baseline is
+# correct in BOTH database shapes (task 89-05-04)
+# ═════════════════════════════════════════════════════════════════════════════
+
+MIGRATION_032_UP = MIGRATIONS_DIR / "032-drop-a2a-messages.sql"
+MIGRATION_032_DOWN = MIGRATIONS_DIR / "032-drop-a2a-messages-DOWN.sql"
+MIGRATION_024_UP = MIGRATIONS_DIR / "024-a2a-messages.sql"
+
+
+def _connect(dsn):
+    """A psycopg2 connection in autocommit, for catalogue reads and DDL."""
+    import psycopg2
+    from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+
+    conn = psycopg2.connect(dsn, connect_timeout=10)
+    conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+    return conn
+
+
+def _exec_file(dsn, path):
+    """Apply one SQL file exactly the way migrate_runner does.
+
+    One ``cur.execute`` of the whole text on a NON-autocommit connection, commit
+    on success. A file that raises therefore leaves the database untouched.
+    """
+    import psycopg2
+
+    sql = pathlib.Path(path).read_text(encoding="utf-8")
+    conn = psycopg2.connect(dsn, connect_timeout=10)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _table_exists(dsn, table):
+    """Whether *table* is in ``information_schema.tables`` of the current schema."""
+    conn = _connect(dsn)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*) FROM information_schema.tables "
+                "WHERE table_schema = current_schema() AND table_name = %s",
+                (table,),
+            )
+            return cur.fetchone()[0] == 1
+    finally:
+        conn.close()
+
+
+def _columns(dsn, table):
+    """``[(column_name, data_type, is_nullable, column_default)]`` ordered by position."""
+    conn = _connect(dsn)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT column_name, format_type(a.atttypid, a.atttypmod), "
+                "       c.is_nullable, c.column_default "
+                "FROM information_schema.columns c "
+                "JOIN pg_attribute a ON a.attrelid = %s::regclass "
+                "                   AND a.attname = c.column_name "
+                "WHERE c.table_schema = current_schema() AND c.table_name = %s "
+                "ORDER BY c.ordinal_position",
+                (table, table),
+            )
+            return cur.fetchall()
+    finally:
+        conn.close()
+
+
+class TestMigration032OnDisk:
+    """What can be proven by reading the files — so it runs on EVERY cell."""
+
+    def test_both_files_exist_and_024_is_still_on_disk(self):
+        assert MIGRATION_032_UP.exists(), MIGRATION_032_UP
+        assert MIGRATION_032_DOWN.exists(), MIGRATION_032_DOWN
+        assert MIGRATION_024_UP.exists(), (
+            "deleting an applied migration breaks schema_migrations reconciliation "
+            "and detect_applied_by_schema"
+        )
+
+    def test_the_down_ddl_is_copied_from_024_not_paraphrased(self):
+        """The CREATE TABLE body of the DOWN is 024's, character for character."""
+        def create_body(text):
+            start = text.index("CREATE TABLE IF NOT EXISTS a2a_messages (")
+            end = text.index(");", start) + 2
+            return text[start:end]
+
+        down = create_body(MIGRATION_032_DOWN.read_text(encoding="utf-8"))
+        original = create_body(MIGRATION_024_UP.read_text(encoding="utf-8"))
+        assert down == original, (
+            "the DOWN's CREATE TABLE differs from 024's:\n"
+            f"--- 024 ---\n{original}\n--- DOWN ---\n{down}"
+        )
+
+    def test_the_pair_shares_one_sentinel_and_every_file_has_one(self):
+        """The sentinel pair, asserted from the runner's own dict."""
+        from services import migrate_runner
+
+        sentinels = migrate_runner.MIGRATION_SENTINELS
+        assert sentinels["024-a2a-messages.sql"] == [("norelation", "a2a_messages")], (
+            "024's sentinel must be the POST-032 state, or a database at the "
+            "intended end state reads 024 as not applied"
+        )
+        assert sentinels["032-drop-a2a-messages.sql"] == [("norelation", "a2a_messages")]
+        names = {n for n, _, _ in migrate_runner.discover_migrations(str(MIGRATIONS_DIR))}
+        assert "032-drop-a2a-messages.sql" in names, sorted(names)
+        assert names - set(sentinels) == set(), (
+            f"migrations without a sentinel: {sorted(names - set(sentinels))}"
+        )
+
+
+@requires_pg
+class TestMigration032DropsTheTable:
+    """024 creates, 032 drops, the DOWN restores 024's exact columns."""
+
+    def test_032_dropped_it_and_the_down_restores_024s_exact_columns(
+            self, scratch_pg_dsn, record_property):
+        # 1. After a full apply (024 creates, 032 drops), the table is absent.
+        assert not _table_exists(scratch_pg_dsn, "a2a_messages"), (
+            "migration 032 did not drop a2a_messages"
+        )
+        record_property("89-05-after-full-apply", "a2a_messages absent")
+
+        # 2. The DOWN brings it back with 024's columns, not a paraphrase. The
+        # comparison is against a SECOND scratch database carrying only 024, so
+        # the expected column list is read from the real 024 rather than typed
+        # out here.
+        _exec_file(scratch_pg_dsn, MIGRATION_032_DOWN)
+        assert _table_exists(scratch_pg_dsn, "a2a_messages")
+        after_down = _columns(scratch_pg_dsn, "a2a_messages")
+
+        reference_dsn, drop_reference = _scratch_database()
+        try:
+            # The reference database went through the same pair, so re-apply 024
+            # on it alone: drop whatever is there, then run 024 verbatim.
+            _exec_file(reference_dsn, MIGRATION_032_UP)
+            _exec_file(reference_dsn, MIGRATION_024_UP)
+            from_024 = _columns(reference_dsn, "a2a_messages")
+        finally:
+            drop_reference()
+
+        assert after_down == from_024, (
+            "032's DOWN does not reproduce 024's columns.\n"
+            f"after DOWN: {after_down}\nfrom 024   : {from_024}"
+        )
+        record_property("89-05-down-columns", str(after_down))
+
+        # The index and the CHECK constraint come back under their own names too.
+        conn = _connect(scratch_pg_dsn)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT indexname FROM pg_indexes "
+                    "WHERE tablename = 'a2a_messages' ORDER BY indexname")
+                indexes = [r[0] for r in cur.fetchall()]
+                cur.execute(
+                    "SELECT conname FROM pg_constraint "
+                    "WHERE conrelid = 'a2a_messages'::regclass ORDER BY conname")
+                constraints = [r[0] for r in cur.fetchall()]
+        finally:
+            conn.close()
+        assert "idx_a2a_messages_to_agent_status" in indexes, indexes
+        assert "a2a_messages_kind_chk" in constraints, constraints
+        record_property("89-05-down-indexes", str(indexes))
+
+        # 3. Re-applying the UP drops it again, and a second apply_migrations is
+        # a no-op: 032 is already recorded.
+        _exec_file(scratch_pg_dsn, MIGRATION_032_UP)
+        assert not _table_exists(scratch_pg_dsn, "a2a_messages")
+
+        from services import migrate_runner
+
+        lines = []
+        result = migrate_runner.apply_migrations(
+            dsn=scratch_pg_dsn, log=lines.append)
+        assert result["pending"] == [], result
+        assert result["applied"] == [], result
+        assert "032-drop-a2a-messages.sql" not in result["pending"], result
+        record_property("89-05-second-apply",
+                        f"pending={result['pending']} applied={result['applied']} "
+                        f"already_applied={result['already_applied']}")
+
+
+@requires_pg
+class TestAutoBaselineInBothDatabaseShapes:
+    """The case the 024 sentinel existed for, and the case this change must not break.
+
+    ``detect_applied_by_schema`` classifies a migration by its sentinel, and
+    ``auto_baseline`` records the satisfied ones as applied without running them.
+    024 and 032 now share one sentinel, ("norelation", "a2a_messages"), so both
+    shapes below must come out right.
+    """
+
+    def test_a_fully_migrated_database_reads_024_and_032_as_applied(self, scratch_pg_dsn):
+        from services import migrate_runner
+
+        conn = _connect(scratch_pg_dsn)
+        try:
+            applied, unknown = migrate_runner.detect_applied_by_schema(conn)
+        finally:
+            conn.close()
+        assert "024-a2a-messages.sql" in applied, (
+            "a database at the intended end state reads 024 as NOT applied — the "
+            "exact hazard the shared sentinel removes"
+        )
+        assert "032-drop-a2a-messages.sql" in applied, applied
+        assert unknown == [], f"every migration must carry a sentinel; unknown: {unknown}"
+
+    def test_a_database_that_still_carries_the_table_reads_both_as_pending(
+            self, scratch_pg_dsn):
+        """And applying the pair converges on the table being gone."""
+        from services import migrate_runner
+
+        # Put the table back: the shape of a pre-089 database.
+        _exec_file(scratch_pg_dsn, MIGRATION_032_DOWN)
+        assert _table_exists(scratch_pg_dsn, "a2a_messages")
+
+        conn = _connect(scratch_pg_dsn)
+        try:
+            applied, unknown = migrate_runner.detect_applied_by_schema(conn)
+        finally:
+            conn.close()
+        assert "024-a2a-messages.sql" not in applied, (
+            "a database carrying the table must read 024 as pending so the pair can "
+            "converge"
+        )
+        assert "032-drop-a2a-messages.sql" not in applied, applied
+        assert unknown == [], unknown
+
+        # Convergence: 024's CREATE TABLE IF NOT EXISTS is a no-op, then 032 drops.
+        _exec_file(scratch_pg_dsn, MIGRATION_024_UP)
+        _exec_file(scratch_pg_dsn, MIGRATION_032_UP)
+        assert not _table_exists(scratch_pg_dsn, "a2a_messages")
+
+    def test_auto_baseline_on_an_untracked_database_records_the_pair(self):
+        """The real gsd-pg-data shape: GSD schema, no schema_migrations table."""
+        from services import migrate_runner
+
+        dsn, drop = _scratch_database()
+        try:
+            # Reproduce "migrated by the old untracked psql loop": the schema is
+            # there, the tracking table is not.
+            conn = _connect(dsn)
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("DROP TABLE IF EXISTS schema_migrations")
+            finally:
+                conn.close()
+
+            conn = _connect(dsn)
+            try:
+                baselined = migrate_runner.auto_baseline(
+                    conn, dry_run=True, log=lambda *_: None)
+            finally:
+                conn.close()
+            assert "024-a2a-messages.sql" in baselined, baselined
+            assert "032-drop-a2a-messages.sql" in baselined, baselined
+        finally:
+            drop()

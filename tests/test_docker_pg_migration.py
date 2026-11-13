@@ -1123,7 +1123,11 @@ class TestSentinelsUnit:
         assert stale == [], f"stale MIGRATION_SENTINELS entries: {stale}"
 
     def test_every_sentinel_kind_is_known(self):
-        known = {"relation", "column", "extension", "coltype", "unbounded"}
+        # "norelation" joined the closed vocabulary in Phase 89 plan 89-05:
+        # migration 032's whole job is a DROP, so the only observable that says it
+        # ran is the ABSENCE of the relation it dropped. The check is as closed as
+        # it was -- one more declared kind, not a wildcard.
+        known = {"relation", "norelation", "column", "extension", "coltype", "unbounded"}
         for name, sentinels in migrate_runner.MIGRATION_SENTINELS.items():
             assert sentinels, f"{name} has an empty sentinel list"
             for sentinel in sentinels:

@@ -460,5 +460,93 @@
     "owner": "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
     "owner_phase": 89,
     "exit_criterion": "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database. This is the PostgreSQL arm of plan 89-05's blackboard-inbox round trip (ORC-02 criterion 5); the SQLite arm runs on every cell. The scratch database needs every migration, and migrations 011/012/025 need ParadeDB's pg_search, which ships only as a Linux container today."
+  },
+  {
+    "name": "test_032_dropped_it_and_the_down_restores_024s_exact_columns",
+    "file": "tests/test_89_05_inbox_round_trip.py",
+    "platform": "darwin",
+    "context": "any",
+    "reason": "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "reason_class": "pg-no-disposable-database",
+    "owner": "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+    "owner_phase": 89,
+    "exit_criterion": "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database. This asserts migration 032 against a real server: that it drops a2a_messages, that its DOWN restores migration 024's exact columns, indexes and CHECK constraint, and that detect_applied_by_schema / auto_baseline read the 024+032 sentinel pair correctly in both database shapes. What can be proven from the files alone is in TestMigration032OnDisk, which runs on every cell."
+  },
+  {
+    "name": "test_032_dropped_it_and_the_down_restores_024s_exact_columns",
+    "file": "tests/test_89_05_inbox_round_trip.py",
+    "platform": "win32",
+    "context": "any",
+    "reason": "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "reason_class": "pg-no-disposable-database",
+    "owner": "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+    "owner_phase": 89,
+    "exit_criterion": "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database. This asserts migration 032 against a real server: that it drops a2a_messages, that its DOWN restores migration 024's exact columns, indexes and CHECK constraint, and that detect_applied_by_schema / auto_baseline read the 024+032 sentinel pair correctly in both database shapes. What can be proven from the files alone is in TestMigration032OnDisk, which runs on every cell."
+  },
+  {
+    "name": "test_a_fully_migrated_database_reads_024_and_032_as_applied",
+    "file": "tests/test_89_05_inbox_round_trip.py",
+    "platform": "darwin",
+    "context": "any",
+    "reason": "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "reason_class": "pg-no-disposable-database",
+    "owner": "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+    "owner_phase": 89,
+    "exit_criterion": "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database. This asserts migration 032 against a real server: that it drops a2a_messages, that its DOWN restores migration 024's exact columns, indexes and CHECK constraint, and that detect_applied_by_schema / auto_baseline read the 024+032 sentinel pair correctly in both database shapes. What can be proven from the files alone is in TestMigration032OnDisk, which runs on every cell."
+  },
+  {
+    "name": "test_a_fully_migrated_database_reads_024_and_032_as_applied",
+    "file": "tests/test_89_05_inbox_round_trip.py",
+    "platform": "win32",
+    "context": "any",
+    "reason": "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "reason_class": "pg-no-disposable-database",
+    "owner": "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+    "owner_phase": 89,
+    "exit_criterion": "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database. This asserts migration 032 against a real server: that it drops a2a_messages, that its DOWN restores migration 024's exact columns, indexes and CHECK constraint, and that detect_applied_by_schema / auto_baseline read the 024+032 sentinel pair correctly in both database shapes. What can be proven from the files alone is in TestMigration032OnDisk, which runs on every cell."
+  },
+  {
+    "name": "test_a_database_that_still_carries_the_table_reads_both_as_pending",
+    "file": "tests/test_89_05_inbox_round_trip.py",
+    "platform": "darwin",
+    "context": "any",
+    "reason": "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "reason_class": "pg-no-disposable-database",
+    "owner": "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+    "owner_phase": 89,
+    "exit_criterion": "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database. This asserts migration 032 against a real server: that it drops a2a_messages, that its DOWN restores migration 024's exact columns, indexes and CHECK constraint, and that detect_applied_by_schema / auto_baseline read the 024+032 sentinel pair correctly in both database shapes. What can be proven from the files alone is in TestMigration032OnDisk, which runs on every cell."
+  },
+  {
+    "name": "test_a_database_that_still_carries_the_table_reads_both_as_pending",
+    "file": "tests/test_89_05_inbox_round_trip.py",
+    "platform": "win32",
+    "context": "any",
+    "reason": "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "reason_class": "pg-no-disposable-database",
+    "owner": "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+    "owner_phase": 89,
+    "exit_criterion": "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database. This asserts migration 032 against a real server: that it drops a2a_messages, that its DOWN restores migration 024's exact columns, indexes and CHECK constraint, and that detect_applied_by_schema / auto_baseline read the 024+032 sentinel pair correctly in both database shapes. What can be proven from the files alone is in TestMigration032OnDisk, which runs on every cell."
+  },
+  {
+    "name": "test_auto_baseline_on_an_untracked_database_records_the_pair",
+    "file": "tests/test_89_05_inbox_round_trip.py",
+    "platform": "darwin",
+    "context": "any",
+    "reason": "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "reason_class": "pg-no-disposable-database",
+    "owner": "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+    "owner_phase": 89,
+    "exit_criterion": "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database. This asserts migration 032 against a real server: that it drops a2a_messages, that its DOWN restores migration 024's exact columns, indexes and CHECK constraint, and that detect_applied_by_schema / auto_baseline read the 024+032 sentinel pair correctly in both database shapes. What can be proven from the files alone is in TestMigration032OnDisk, which runs on every cell."
+  },
+  {
+    "name": "test_auto_baseline_on_an_untracked_database_records_the_pair",
+    "file": "tests/test_89_05_inbox_round_trip.py",
+    "platform": "win32",
+    "context": "any",
+    "reason": "no disposable Postgres: set GSD_TEST_POSTGRES_URL to run this test (CI provides one; the operator machine deliberately has none)",
+    "reason_class": "pg-no-disposable-database",
+    "owner": "Phase 89 (plan 89-07 gives every cell a disposable PostgreSQL)",
+    "owner_phase": 89,
+    "exit_criterion": "task 89-07-04 closes the pg-no-disposable-database class once the macOS and Windows cells have a database. This asserts migration 032 against a real server: that it drops a2a_messages, that its DOWN restores migration 024's exact columns, indexes and CHECK constraint, and that detect_applied_by_schema / auto_baseline read the 024+032 sentinel pair correctly in both database shapes. What can be proven from the files alone is in TestMigration032OnDisk, which runs on every cell."
   }
 ]
