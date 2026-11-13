@@ -5,6 +5,28 @@
   "note": "Plan 89-07 gave the macOS and Windows cells a disposable PostgreSQL, so the 386 pg-no-disposable-database entries plan 89-09 migrated into this shard excuse nothing on any cell and are removed. What this shard holds now is this plan own additions: one entry per test for the DEVELOPER machine, which has no disposable database (platform all, context local, owner Phase 100). The gate refuses a context local entry when CI is set, so none of them can ever excuse a CI cell.",
   "added": [
     [
+      "test_bm25_description_outranks_content_live",
+      "tests/test_65_hybrid_generic.py",
+      "darwin",
+      "any",
+      "the ParadeDB BM25 boost is what this test measures, and its corpus TIES on the plain-PostgreSQL substitute: row A carries the token ONCE in `description` (tsvector weight 0.8 in RLM_FTS_WEIGHTS) and row B TWICE in `content` (0.4), and ts_rank_cd sums per-occurrence weights -- so 1x0.8 == 2x0.4 EXACTLY and the order is arbitrary. Measured as a flake, which is how a tie shows up: the macOS cell passed it on run 43366250606 and failed it on 43370212942 with ['rowB_zx65','rowA_zx65'], same code and same corpus. Plan 89-06's own test asserts the SAME property on BOTH engines and passes, because its corpus does not tie; this older test is the gap 89-06 left.",
+      "paradedb-engine-unavailable",
+      "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
+      100,
+      "either the cell gets a real pg_search (plan 89-12 on darwin), or this test's corpus is changed so the two rows do not tie on the plain engine -- which is a change to plan 89-01's own fixture and not a CI-plan decision, and is unnecessary while tests/test_89_06_lexical_fallback.py::test_a_description_match_outranks_a_content_match_on_both_engines covers the property on both engines."
+    ],
+    [
+      "test_bm25_description_outranks_content_live",
+      "tests/test_65_hybrid_generic.py",
+      "win32",
+      "any",
+      "the ParadeDB BM25 boost is what this test measures, and its corpus TIES on the plain-PostgreSQL substitute: row A carries the token ONCE in `description` (tsvector weight 0.8 in RLM_FTS_WEIGHTS) and row B TWICE in `content` (0.4), and ts_rank_cd sums per-occurrence weights -- so 1x0.8 == 2x0.4 EXACTLY and the order is arbitrary. Measured as a flake, which is how a tie shows up: the macOS cell passed it on run 43366250606 and failed it on 43370212942 with ['rowB_zx65','rowA_zx65'], same code and same corpus. Plan 89-06's own test asserts the SAME property on BOTH engines and passes, because its corpus does not tie; this older test is the gap 89-06 left.",
+      "paradedb-engine-unavailable",
+      "Phase 100 (quality gates own the CI engine matrix: real ParadeDB where a build exists, and a written capability statement where none does)",
+      100,
+      "either the cell gets a real pg_search (plan 89-12 on darwin), or this test's corpus is changed so the two rows do not tie on the plain engine -- which is a change to plan 89-01's own fixture and not a CI-plan decision, and is unnecessary while tests/test_89_06_lexical_fallback.py::test_a_description_match_outranks_a_content_match_on_both_engines covers the property on both engines."
+    ],
+    [
       "test_relevance_mrr_at_k_on_the_deterministic_provider",
       "tests/test_89_01_relevance_check.py",
       "darwin",
