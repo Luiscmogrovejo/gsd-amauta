@@ -70,7 +70,7 @@ function harnessConfigScript() {
  * @returns {{status: number, payload: object}} exit status and parsed stdout
  * @throws {Error} when the resolver cannot be started or prints no JSON
  * @example
- *   harnessConfig(['get', 'retrieval.rerank_model']).payload.value  // 'rerank-3'
+ *   harnessConfig(['get', 'retrieval.rerank_model']).payload.value  // the configured model id
  */
 function harnessConfig(args) {
   const script = harnessConfigScript();

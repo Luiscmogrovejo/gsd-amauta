@@ -1049,23 +1049,66 @@ class TestRlmIntegration:
 
     def test_the_embedding_model_is_recorded_per_row(
             self, migrated_dsn, tmp_path, monkeypatch):
+        """The model that produced a vector is recorded beside it -- and, since
+        plan 89-08, a vector the store's ACTIVE model did not produce is not
+        written at all.
+
+        Until 89-08 this test asserted that a Qodo FALLBACK vector was written
+        into a store with its model name, and the search then filtered around
+        it. The model is a setting now and every store has one active model
+        (embedding_state, migration 034): a fallback vector of another model in
+        the live column is exactly the mixed store every vector query is
+        refused for, so ingestion drops it (the row keeps its text and the
+        lexical leg). Both halves are asserted: the drop on a store whose active
+        model is the default, and the recording on a store whose active model
+        IS the local one.
+        """
+        from services import embedding_backfill
         from services import rlm_embeddings as emb
         emb.clear_cache()
+        embedding_backfill.reset_caches()
         monkeypatch.setattr(emb, "_try_voyage", lambda text, input_type: None)
+        monkeypatch.setattr(emb, "_try_voyage_model", lambda text, input_type, model: None)
         monkeypatch.setattr(emb, "_try_qodo", lambda text: [0.01] * 1024)
         from services.rlm_ingestion import ingest_file
         source = tmp_path / "m.py"
         source.write_text("def f():\n    return 1\n", encoding="utf-8")
         conn = self._conn(migrated_dsn)
         try:
-            ingest_file(str(source), conn)
+            with conn.cursor() as cur:
+                cur.execute("SELECT active_model FROM embedding_state "
+                            "WHERE use = 'code_index'")
+                assert cur.fetchone()[0] == emb.VOYAGE_MODEL
+            conn.commit()
+            # 1. Active model = the configured Voyage model; only Qodo answers.
+            first = ingest_file(str(source), conn)
+            assert first["status"] == "inserted"
+            with conn.cursor() as cur:
+                cur.execute("SELECT embedding_code IS NULL, embedding_model "
+                            "FROM rlm_chunks WHERE file_path=%s",
+                            (str(source.resolve()),))
+                rows = cur.fetchall()
+            assert rows and all(r == (True, None) for r in rows), rows
+            conn.commit()
+
+            # 2. The store's active model IS the local one: recorded per row.
+            with conn.cursor() as cur:
+                cur.execute("UPDATE embedding_state SET active_model = %s "
+                            "WHERE use = 'code_index'", (emb.QODO_MODEL,))
+            conn.commit()
+            embedding_backfill.reset_caches()
+            second = ingest_file(str(source), conn, force=True)
+            assert second["status"] == "inserted"
+            assert second["embeddings_dropped"] == 0
             with conn.cursor() as cur:
                 cur.execute("SELECT DISTINCT embedding_model FROM rlm_chunks "
-                            "WHERE file_path=%s", (str(source.resolve()),))
+                            "WHERE file_path=%s AND embedding_code IS NOT NULL",
+                            (str(source.resolve()),))
                 assert [r[0] for r in cur.fetchall()] == [emb.QODO_MODEL]
         finally:
             conn.close()
             emb.clear_cache()
+            embedding_backfill.reset_caches()
 
     def test_the_file_filter_excludes_a_sibling_directory(
             self, migrated_dsn, tmp_path, monkeypatch):
@@ -1102,8 +1145,22 @@ class TestRlmIntegration:
 
     def test_the_vector_leg_ignores_rows_from_another_model(
             self, migrated_dsn, tmp_path, monkeypatch):
+        """A store holding another model's vector REFUSES the vector query.
+
+        The name is kept because the skip ledger keys on it; the contract is
+        not. Until plan 89-08 the vector leg filtered a foreign-model row out
+        and answered from the rest ("ignores"). Criterion 6 of RET-05 reverses
+        that deliberately: a mixed store returns plausible nonsense, so the
+        query is refused with a typed `embedding_model_mixed` error naming the
+        offending model and the row count, and it answers again once the
+        foreign row is gone. This test asserts MORE than its predecessor: the
+        clean store still ranks by vector, the mixed one raises, and the repair
+        restores the answer.
+        """
+        from services import embedding_backfill
         from services import rlm_embeddings as emb
         emb.clear_cache()
+        embedding_backfill.reset_caches()
         monkeypatch.setenv("VOYAGE_API_KEY", "k")
         monkeypatch.setattr(emb, "_try_voyage",
                             lambda text, input_type: [0.02] * 1024)
@@ -1117,6 +1174,13 @@ class TestRlmIntegration:
         conn = self._conn(migrated_dsn)
         try:
             ingest_directory(str(root), conn)
+            # Clean store: both rows were embedded by the active model and both
+            # take part in the vector leg.
+            clean = hybrid_search("plumbus", conn, top_k=10, file_filter=str(root))
+            assert len(clean) == 2
+            assert all(r["rank_vector"] <= RRF_CANDIDATE_K for r in clean), clean
+            conn.commit()
+
             with conn.cursor() as cur:
                 # `str(root)` is a raw path, and on Windows every separator in
                 # it is LIKE's own escape character -- pasted in unescaped the
@@ -1129,18 +1193,32 @@ class TestRlmIntegration:
                 assert cur.rowcount >= 1, (
                     "the foreign-model UPDATE matched no row, so the rest of "
                     "this test would assert nothing")
+                foreign_rows = cur.rowcount
             conn.commit()
-            results = {r["file_path"]: r for r in
-                       hybrid_search("plumbus", conn, top_k=10,
-                                     file_filter=str(root))}
-            foreign = [r for p, r in results.items() if p.endswith("two.py")]
-            native = [r for p, r in results.items() if p.endswith("one.py")]
-            assert native and native[0]["rank_vector"] <= RRF_CANDIDATE_K
-            assert foreign, "the foreign-model row must still reach BM25"
-            assert foreign[0]["rank_vector"] == RRF_CANDIDATE_K + 1
+            embedding_backfill.reset_caches()
+
+            with pytest.raises(embedding_backfill.EmbeddingModelMixedError) as refused:
+                hybrid_search("plumbus", conn, top_k=10, file_filter=str(root))
+            payload = refused.value.to_dict()
+            assert payload["error"] == "embedding_model_mixed"
+            assert payload["table"] == "rlm_chunks"
+            assert payload["active_model"] == emb.VOYAGE_MODEL
+            assert payload["offending_models"] == ["qodo-embed-1-1.5b"]
+            assert payload["rows"] == foreign_rows
+            conn.rollback()
+
+            # Repaired: the foreign row is gone and the query answers again.
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM rlm_chunks WHERE file_path LIKE %s",
+                            (like_escape(str(root)) + "%two.py",))
+            conn.commit()
+            answered = hybrid_search("plumbus", conn, top_k=10, file_filter=str(root))
+            assert [r["file_path"] for r in answered if r["file_path"].endswith("one.py")]
+            assert all(not r["file_path"].endswith("two.py") for r in answered)
         finally:
             conn.close()
             emb.clear_cache()
+            embedding_backfill.reset_caches()
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -1262,6 +1340,9 @@ class TestBaselineDetectionIntegration:
         "030-rlm-chunk-provenance.sql",
         "031-decimal-phase-number.sql",
         "032-drop-a2a-messages.sql",
+        # Plan 89-08: embedding_state and the *_next columns do not exist on a
+        # database that stops at 026.
+        "034-embedding-blue-green.sql",
     ]
 
     #: Also pending when the server has NO `pg_search` (plan 89-07, measured on
