@@ -212,7 +212,16 @@ describe('89-07 ci-postgres-cell: the argv, per platform', () => {
     const pgctl = calls.find((c) => /pg_ctl/.test(c.command));
     assert.strictEqual(pgctl.command, '/opt/homebrew/opt/postgresql@17/bin/pg_ctl');
     assert.ok(pgctl.args.includes('start'));
-    assert.ok(pgctl.args.includes('-p ' + SAFE_PORT + ' -c listen_addresses=127.0.0.1'));
+    assert.ok(pgctl.args.includes(cell.SERVER_OPTIONS.replace('{port}', String(SAFE_PORT))),
+      'the -o string is the ONE constant, with the port substituted: '
+      + JSON.stringify(pgctl.args));
+    // A disposable cluster has no durability requirement, and the flush is what
+    // made the Windows pytest cell exceed its 25-minute budget.
+    for (const guc of ['fsync=off', 'full_page_writes=off', 'synchronous_commit=off']) {
+      assert.ok(cell.SERVER_OPTIONS.includes(guc), guc);
+    }
+    assert.ok(cell.SERVER_OPTIONS.includes('listen_addresses=127.0.0.1'),
+      'and it never listens anywhere but loopback');
 
     assert.strictEqual(dsn, 'postgresql://gsd:gsd@127.0.0.1:' + SAFE_PORT + '/gsd_test');
   });

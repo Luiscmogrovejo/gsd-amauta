@@ -49,6 +49,23 @@ const ROLE = 'gsd';
 const PASSWORD = 'gsd';
 const DATABASE = 'gsd_test';
 
+/**
+ * The server options the disposable cluster starts with.
+ *
+ * `fsync`, `full_page_writes` and `synchronous_commit` are OFF, deliberately: a
+ * cluster that is `initdb`'d at the start of a job and deleted at the end has no
+ * durability requirement at all, and nothing a test can observe depends on them.
+ * Measured need (run 43363239147): the Windows `pytest` cell reached 39% of the
+ * suite in ~20 minutes and was cancelled at the job's timeout, because this
+ * suite creates a SCRATCH DATABASE per test and runs all 33 migrations into it —
+ * hundreds of small write transactions whose cost is almost entirely the flush.
+ *
+ * `{port}` is substituted, never concatenated by a caller, so the one place that
+ * builds this string is this constant.
+ */
+const SERVER_OPTIONS = '-p {port} -c listen_addresses=127.0.0.1'
+  + ' -c fsync=off -c full_page_writes=off -c synchronous_commit=off';
+
 /** How long to wait for the cluster to accept a real connection, in seconds. */
 const READY_TIMEOUT_S = Number(process.env.GSD_CI_PG_READY_TIMEOUT_S || 120);
 
@@ -468,7 +485,7 @@ async function up(opts) {
     start = run(
       toolPath(binDir, 'pg_ctl', plat),
       ['-D', dataDir, '-l', logFile,
-        '-o', '-p ' + port + ' -c listen_addresses=127.0.0.1', '-w', '-t', '90', 'start'],
+        '-o', SERVER_OPTIONS.replace('{port}', String(port)), '-w', '-t', '90', 'start'],
       { env, stdio: ['ignore', ctlFd, ctlFd] },
     );
   } finally {
@@ -608,6 +625,7 @@ async function main(argv) {
 
 module.exports = {
   CellError,
+  SERVER_OPTIONS,
   joinFor,
   DATABASE,
   LOG_TAIL_LINES,

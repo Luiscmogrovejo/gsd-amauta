@@ -33,7 +33,16 @@ jobs:
   test:
     name: test (${{ matrix.os }}, node ${{ matrix.node-version }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 25
+    # 25 -> 45 (plan 89-07). The budget was set when the macOS and Windows cells
+    # SKIPPED every Postgres-backed test; they now run ~206 of them each, and the
+    # measured wall clock is 15.6 min (windows node 22) and 12.6 min (macos node
+    # 20) on run 43363239147 against the old 25. That is still inside 25, but the
+    # margin is gone and the spread between two identical macOS rows was ten
+    # minutes in one run, so the next slow runner would cancel a REQUIRED cell
+    # and report it as a test failure. The time is in tests that used to be
+    # skipped, which is the point of the plan, so the budget moves rather than
+    # the suite.
+    timeout-minutes: 45
     continue-on-error: ${{ !matrix.required }}
 
     strategy:
@@ -502,7 +511,17 @@ jobs:
   pytest:
     name: pytest (${{ matrix.os }}, python ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 25
+    # 25 -> 60 (plan 89-07), and this one is not precautionary: measured on run
+    # 43363239147, `pytest (windows-latest)` was CANCELLED at the 25-minute
+    # timeout having reached 39% of the suite. The Python suite creates a SCRATCH
+    # DATABASE per Postgres test and runs all 33 migrations into each one, which
+    # is hundreds of small write transactions, and on Windows that is far slower
+    # than on the Linux container. The disposable cluster now starts with
+    # `fsync=off full_page_writes=off synchronous_commit=off` (see
+    # scripts/ci-postgres-cell.cjs SERVER_OPTIONS) because a cluster that is
+    # initdb'd per job and deleted after it has no durability requirement; the
+    # budget covers what remains.
+    timeout-minutes: 60
     # Operator decision 2026-11-11 ("All needs to pass even windows ... this is
     # a universal tool"): the Python suite must run and pass on Linux, macOS
     # and Windows. Plan 88-15 flipped the macOS and Windows rows to required,
