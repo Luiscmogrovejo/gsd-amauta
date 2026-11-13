@@ -802,14 +802,17 @@ def test_a_duration_limit_stops_the_run_at_the_measured_rate(db):
     seed_memories(db, 40)
     events = []
     with pytest.raises(eb.BackfillError) as stopped:
+        # One 429 first: its backoff is part of the measured time, as it is in a
+        # real run, so the estimate is seconds rather than a rounding of nothing.
         eb.run_backfill(dsn=db, use="memory", budget_tokens=10 ** 6, batch_size=4,
-                        provider=StubProvider(), pacer=pacer()[0], emit=events.append,
-                        max_duration_seconds=0)
+                        provider=StubProvider(fail_first=1), pacer=pacer()[0],
+                        emit=events.append, max_duration_seconds=0)
     assert stopped.value.code == "duration_exceeds_limit" and stopped.value.exit_code == 4
     measured = [e for e in events if e["event"] == "rate_measured"]
     assert len(measured) == 1 and measured[0]["requests"] == eb.CALIBRATION_REQUESTS
     assert measured[0]["tokens_per_minute"] > 0
-    assert measured[0]["estimated_duration_seconds"] is not None
+    assert measured[0]["estimated_duration_seconds"] > 1
+    assert measured[0]["rate_limit_events"] == 1
     assert _sql(db, "SELECT COUNT(embedding) FROM gsd_memory")[0][0] == 12
 
 
