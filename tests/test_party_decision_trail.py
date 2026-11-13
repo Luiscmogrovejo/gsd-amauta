@@ -418,3 +418,103 @@ def test_decision_trail_finding_id_unique():
     assert returned_ids == unique_ids, (
         f"list_decisions finding_ids {returned_ids!r} do not match post_decision ids {unique_ids!r}"
     )
+
+
+# ── Both backends (Phase 89 ORC-02 part 2, plan 89-13) ─────────────────────────
+#
+# `party_sessions` is PostgreSQL-ONLY: migration 021 creates it, the decisions
+# are `agent_findings` rows keyed to it by a UUID foreign key, and there is no
+# SQLite half (services/sqlite_store.py lists it among the tables it does not
+# carry; the daemon answers a typed 503 `requires_postgres` for the feature).
+# So "the decision trail on both backends" is two different facts, and this
+# test states each one instead of skipping the arm that has no table:
+#
+#   postgres  post three decisions of three DECISION_TYPES from two agents into
+#             one session; list them (ordered, attributable); summarise them;
+#             the summary matches the posts.
+#   sqlite    with no PostgreSQL configured, every party verb that touches the
+#             table answers a TYPED `requires_postgres` for `party_sessions` —
+#             not a traceback, not a silent empty trail — and writes nothing.
+
+def _cli_without_postgres(*argv):
+    """Run services/party_session_cli.py with no PostgreSQL configured.
+
+    Returns:
+        (returncode, parsed stdout JSON or None, stdout, stderr)
+    """
+    import json
+    import subprocess
+
+    env = dict(os.environ)
+    for key in ("GSD_POSTGRES_URL", "DATABASE_URL", "GSD_TEST_POSTGRES_URL"):
+        env[key] = ""
+    env["GSD_FORCE_SQLITE"] = "1"
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    proc = subprocess.run(
+        [sys.executable, os.path.join(repo_root, "services", "party_session_cli.py"), *argv],
+        capture_output=True, text=True, encoding="utf-8", timeout=60, cwd=repo_root, env=env,
+    )
+    try:
+        parsed = json.loads(proc.stdout)
+    except ValueError:
+        parsed = None
+    return proc.returncode, parsed, proc.stdout, proc.stderr
+
+
+@pytest.mark.parametrize("backend", ["sqlite", "postgres"])
+def test_decision_trail_on_both_backends(backend):
+    """Post, list, order, attribution and summary on PostgreSQL; the typed
+    `requires_postgres` answer where there is no PostgreSQL."""
+    if backend == "sqlite":
+        for argv in (
+            ("create", "--participants", "gsd-planner,gsd-checker", "--json"),
+            ("status", "--json"),
+            ("inspect", "00000000-0000-0000-0000-000000000000", "--json"),
+            ("get", "00000000-0000-0000-0000-000000000000", "--json"),
+        ):
+            code, parsed, out, err = _cli_without_postgres(*argv)
+            assert code == 2, f"party {argv[0]} with no PostgreSQL must exit 2; got {code}\n{out}\n{err}"
+            assert parsed is not None, f"party {argv[0]} must answer JSON, not a traceback:\n{out}\n{err}"
+            assert parsed["error"] == "requires_postgres", parsed
+            assert parsed["feature"] == "party_sessions", parsed
+            assert parsed["schema_version"] == "1.0", parsed
+            assert "GSD_POSTGRES_URL" in parsed["detail"], (
+                "the answer must still name the variable to set: " + parsed["detail"]
+            )
+            assert "Traceback" not in out + err
+        # The human-readable form says the same thing on stderr.
+        code, parsed, out, err = _cli_without_postgres("status")
+        assert code == 2 and out == "", (code, out)
+        assert "PostgreSQL" in err and "party_sessions" in err, err
+        return
+
+    _require_pg()
+    session = _make_active_session(["gsd-planner", "gsd-checker"])
+    sid = session["session_id"]
+    posts = [
+        ("gsd-planner", "propose", "Propose: one lexical engine per backend"),
+        ("gsd-checker", "dissent", "Dissent: the fallback is unmeasured"),
+        ("gsd-planner", "block", "Block: no cutover before the relevance check"),
+    ]
+    assert len({dt for _a, dt, _c in posts}) == 3 and len({a for a, _dt, _c in posts}) == 2
+    expected = []
+    for agent, dtype, content in posts:
+        fid = post_decision(sid, agent, dtype, content)
+        expected.append((fid, agent, dtype, content))
+        time.sleep(0.01)
+
+    trail = list_decisions(sid)
+    assert [(d["finding_id"], d["agent_name"], d["decision_type"], d["content"]) for d in trail] == expected, (
+        f"the trail must be the posts, in order and attributed:\n  expected {expected!r}\n  got {trail!r}"
+    )
+    stamps = [d["created_at"] for d in trail]
+    assert stamps == sorted(stamps), f"trail is not in created_at order: {stamps!r}"
+
+    summary = summarize_decisions(sid)
+    want = {dt: 0 for dt in DECISION_TYPES}
+    for _agent, dtype, _content in posts:
+        want[dtype] += 1
+    assert summary == want == {"propose": 1, "agree": 0, "dissent": 1, "block": 1}, (
+        f"the summary must match the posts: expected {want!r}, got {summary!r}"
+    )
+    assert sum(summary.values()) == len(trail)

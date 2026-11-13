@@ -21,7 +21,6 @@ from services.party_session import (
     start,
     post_finding,
     list_findings,
-    InvalidTransitionError,
     SessionNotFoundError,
 )
 

@@ -1,17 +1,19 @@
 'use strict';
 /**
- * Plan 50-04-01: party E2E lifecycle test.
+ * Plan 50-04-01: party E2E test — converted by plan 89-13 (Phase 89 ORC-02
+ * part 2) from a pause/resume lifecycle into a record-survives-restart test.
  *
- * Full end-to-end lifecycle via the public CLI surface:
- *   create -> start -> post 3 findings -> pause ->
- *   subprocess restart (SC4 Layer 2) -> resume + replay ->
- *   terminate -> post-terminate error check + shortcut equivalence.
+ * End to end via the public CLI surface:
+ *   create -> start -> post 3 findings -> an interruption (the removed `pause`
+ *   answers typed and touches nothing) -> subprocess restart (SC4 Layer 2) ->
+ *   read the record back with `get --with-findings` -> terminate ->
+ *   the record is still readable + shortcut equivalence.
  *
- * SC4 Layer 2 evidence: resume() call is a FRESH node/python subprocess
- * (gsd-tools.cjs spawnSyncs party_session_cli.py). No in-memory state is
- * carried across the "daemon restart" boundary — persistence lives entirely
- * in PG. The findings replay asserts all 3 findings are returned with correct
- * content, order, and agent attribution.
+ * SC4 Layer 2 evidence: the read-back is a FRESH node/python subprocess
+ * (gsd-tools.cjs spawns party_session_cli.py). No in-memory state is carried
+ * across the "daemon restart" boundary — persistence lives entirely in PG. It
+ * asserts all 3 findings are returned with correct content, order, and agent
+ * attribution, which is what `resume` used to return as its "replay".
  *
  * PG-down resilience: if PG is unavailable (detected via initial create probe)
  * the entire suite t.skip()'s cleanly. Canary test (50-04-02) has NO skip path.
@@ -259,62 +261,68 @@ describe('party-e2e (PG required)', (suite) => {
     assert.strictEqual(ids.size, 3, `All 3 finding_ids must be distinct; got: ${f1}, ${f2}, ${f3}`);
   });
 
-  // ── 3. e2e-pause ──────────────────────────────────────────────────────────
+  // ── 3. e2e-interruption-leaves-session-intact ─────────────────────────────
+  //
+  // Was `e2e-pause`.
+  // used to assert: `pause` exits 0, status "paused", paused_at set.
+  // asserts now: work is interrupted with no verb at all. `pause` answers the
+  // typed removal (exit 2) and the session is untouched: "active", paused_at null.
 
-  test('e2e-pause', (t) => {
+  test('e2e-interruption-leaves-session-intact', (t) => {
     if (!pgUp || sessionId === null) {
       t.skip(pg.SKIP_REASON);
       return;
     }
     const r = runParty(['pause', sessionId, '--json']);
-    assert.strictEqual(r.status, 0, `pause must exit 0; got: ${r.status}\nstderr: ${r.stderr}`);
-    let parsed;
-    try { parsed = JSON.parse(r.stdout); } catch (e) {
-      assert.fail(`pause stdout must be valid JSON; got: ${r.stdout}`);
-    }
-    assert.strictEqual(parsed.status, 'paused',
-      `status must be "paused" after pause; got: ${parsed.status}`);
+    assert.strictEqual(r.status, 2, `pause must exit 2 (removed); got: ${r.status}\nstderr: ${r.stderr}`);
+    const removed = JSON.parse(r.stdout);
+    assert.strictEqual(removed.error, 'party_verb_removed', `error must be "party_verb_removed"; got: ${removed.error}`);
+    assert.strictEqual(removed.action, 'pause');
+    assert.match(removed.detail, /recorded decisions/);
+
+    const getR = runParty(['get', sessionId, '--json']);
+    assert.strictEqual(getR.status, 0, `get must exit 0; got: ${getR.status}\nstderr: ${getR.stderr}`);
+    const parsed = JSON.parse(getR.stdout);
+    assert.strictEqual(parsed.status, 'active',
+      `status must still be "active"; got: ${parsed.status}`);
     assert.ok(
-      parsed.paused_at !== null && parsed.paused_at !== undefined && parsed.paused_at !== 'None',
-      `paused_at must not be null after pause; got: ${parsed.paused_at}`
+      parsed.paused_at === null || parsed.paused_at === undefined || parsed.paused_at === 'None',
+      `paused_at must still be null; got: ${parsed.paused_at}`
     );
-    assert.strictEqual(parsed.session_id, sessionId, 'session_id must match after pause');
+    assert.strictEqual(parsed.session_id, sessionId, 'session_id must match');
   });
 
-  // ── 4. e2e-simulated-daemon-restart-resume ────────────────────────────────
+  // ── 4. e2e-simulated-daemon-restart-read-back ─────────────────────────────
   //
-  // SC4 Layer 2: This resume() call is a FRESH node process → FRESH python3
-  // subprocess. No in-memory state is shared with the previous pause call.
-  // The entire psycopg2 connection pool is re-created inside the Python process.
-  // Findings are replayed exclusively from PG.
+  // Was `e2e-simulated-daemon-restart-resume`.
+  // used to assert: a FRESH-process `resume` flips paused -> active and
+  // replays the 3 findings in order with their agents.
+  // asserts now: a FRESH node process -> FRESH python subprocess reads the
+  // same 3 findings back, in order and attributed, with `get --with-findings`.
+  // No in-memory state is shared with the processes that wrote them, and no
+  // transition is needed to get the record.
 
-  test('e2e-simulated-daemon-restart-resume', (t) => {
+  test('e2e-simulated-daemon-restart-read-back', (t) => {
     if (!pgUp || sessionId === null) {
       t.skip(pg.SKIP_REASON);
       return;
     }
     // FRESH subprocess (node → gsd-tools.cjs → party_session_cli.py → psycopg2)
-    const r = runParty(['resume', sessionId, '--json']);
-    assert.strictEqual(r.status, 0, `resume must exit 0; got: ${r.status}\nstderr: ${r.stderr}`);
+    const r = runParty(['get', sessionId, '--json', '--with-findings']);
+    assert.strictEqual(r.status, 0, `get --with-findings must exit 0; got: ${r.status}\nstderr: ${r.stderr}`);
     let parsed;
     try { parsed = JSON.parse(r.stdout); } catch (e) {
-      assert.fail(`resume stdout must be valid JSON; got: ${r.stdout}`);
+      assert.fail(`get stdout must be valid JSON; got: ${r.stdout}`);
     }
 
-    // Session state assertions
     assert.strictEqual(parsed.status, 'active',
-      `status must be "active" after resume; got: ${parsed.status}`);
-    assert.ok(
-      parsed.paused_at === null || parsed.paused_at === undefined || parsed.paused_at === 'None',
-      `paused_at must be null after resume; got: ${parsed.paused_at}`
-    );
-    assert.strictEqual(parsed.session_id, sessionId, 'session_id must match after resume');
+      `status must be "active"; got: ${parsed.status}`);
+    assert.strictEqual(parsed.session_id, sessionId, 'session_id must match');
 
-    // SC4 findings replay assertions — full ordered list of 3 findings
     assert.ok(Array.isArray(parsed.findings),
-      `findings must be an array after resume; got: ${typeof parsed.findings}`);
+      `findings must be an array; got: ${typeof parsed.findings}`);
     assert.strictEqual(parsed.findings.length, 3,
-      `findings must have 3 entries after replay; got: ${parsed.findings.length}`);
+      `findings must have 3 entries; got: ${parsed.findings.length}`);
 
     // Order and content (ascending created_at order from PG)
     assert.strictEqual(parsed.findings[0].content, 'Wave 1 done',
@@ -355,28 +363,43 @@ describe('party-e2e (PG required)', (suite) => {
     assert.strictEqual(parsed.session_id, sessionId, 'session_id must match after terminate');
   });
 
-  // ── 6. e2e-terminated-cannot-resume ──────────────────────────────────────
+  // ── 6. e2e-terminated-record-still-readable ──────────────────────────────
+  //
+  // Was `e2e-terminated-cannot-resume`.
+  // used to assert: `resume` on the terminated session exits 1 with
+  // InvalidTransitionError.
+  // asserts now: `resume` answers the typed removal (exit 2) whatever the
+  // session's label, the session stays "terminated", and `inspect` still
+  // returns its 3 findings: closing a container deletes nothing.
 
-  test('e2e-terminated-cannot-resume', (t) => {
+  test('e2e-terminated-record-still-readable', (t) => {
     if (!pgUp || sessionId === null) {
       t.skip(pg.SKIP_REASON);
       return;
     }
     const r = runParty(['resume', sessionId, '--json']);
-    assert.strictEqual(r.status, 1,
-      `resume on terminated session must exit 1; got: ${r.status}\nstdout: ${r.stdout}`);
+    assert.strictEqual(r.status, 2,
+      `resume must exit 2 (removed); got: ${r.status}\nstdout: ${r.stdout}`);
     let parsed;
     try { parsed = JSON.parse(r.stdout); } catch (e) {
-      assert.fail(`stdout must be valid JSON on exit 1; got: ${r.stdout}`);
+      assert.fail(`stdout must be valid JSON on exit 2; got: ${r.stdout}`);
     }
-    assert.strictEqual(parsed.error, 'InvalidTransitionError',
-      `error must be "InvalidTransitionError"; got: ${parsed.error}`);
+    assert.strictEqual(parsed.error, 'party_verb_removed',
+      `error must be "party_verb_removed"; got: ${parsed.error}`);
     assert.ok(
       typeof parsed.detail === 'string' && parsed.detail.length > 0,
       `detail must be a non-empty string; got: ${parsed.detail}`
     );
     assert.strictEqual(parsed.schema_version, '1.0',
       `schema_version must be "1.0"; got: ${parsed.schema_version}`);
+
+    const inspectR = runParty(['inspect', sessionId, '--json']);
+    assert.strictEqual(inspectR.status, 0, `inspect must exit 0; got: ${inspectR.status}\nstderr: ${inspectR.stderr}`);
+    const inspected = JSON.parse(inspectR.stdout);
+    assert.strictEqual(inspected.session.status, 'terminated',
+      `the session must still be "terminated"; got: ${inspected.session.status}`);
+    assert.strictEqual(inspected.session.findings.length, 3,
+      `the 3 findings must still be readable after the close; got: ${inspected.session.findings.length}`);
   });
 
   // ── 7. e2e-shortcut-equivalence ───────────────────────────────────────────
