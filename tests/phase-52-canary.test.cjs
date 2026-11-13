@@ -151,7 +151,43 @@ const PHASE_52_BASE = '21438ae43fd368d814b5aa27732aeb8379d2f7c5';
 // This PR must be merged with a merge commit (NEVER squash, never rebase-merge) or this SHA stops resolving
 // on master. The full list is in
 // .planning/phases/89-postgres-primary-orchestration-cleanup/89-09-RECORD.md.
-const CANARY_BASE = 'cbed3c82dcf1d536a1bb765f6ab5814df6e03521';
+// RE-BASELINED AGAIN 2026-11-13 (plan 89-13 "party sessions keep only recorded decisions", ORC-02 part 2,
+// decision D2; operator sign-off: delegated in the task brief). THREE pinned paths changed on purpose since the
+// base above (cbed3c8), each in this PR:
+//   services/party_session.py       89-13-02 (59f95ef) VALID_TRANSITIONS, InvalidTransitionError, pause() and
+//                                   resume() (with its finding replay) are removed; start() and terminate() write
+//                                   a status LABEL and are never refused because of the label a row carries.
+//                                   post_finding / list_findings and the four decision members are untouched.
+//   services/party_session_cli.py   89-13-03 (674cd3a) the pause, resume and kill subparsers and handlers are
+//                                   removed; a removed verb answers a typed party_verb_removed; no PostgreSQL
+//                                   answers a typed requires_postgres.
+//   get-shit-done/bin/gsd-tools.cjs 89-13-03 (674cd3a) INSIDE the `case 'party':` block only: KNOWN_ACTIONS is
+//                                   the six surviving actions, the usage text follows, and REMOVED_ACTIONS answers
+//                                   the three removed verbs. The five dispatch-contract lines are byte-identical.
+// MEASURED, NOT ASSUMED: this PR's own diff (`git diff --name-only origin/master...HEAD`, 22 files) intersected
+// with the pinned list read out of the four canary files is exactly services/party_session.py,
+// services/party_session_cli.py and get-shit-done/bin/gsd-tools.cjs. Against the old base
+// (`git diff --name-only cbed3c8..HEAD`, 130 files, which includes plans 89-00..89-07 already on master) the
+// intersection adds only bin/cli.cjs — plan 89-05 removed its `a2a` branch, OUTSIDE both pinned blocks, which are
+// byte-identical (measured below) — and tests/phase-52-canary.test.cjs, that canary's own file name inside an
+// EXISTENCE check, the artefact every record since 88-15 has noted. agents/ did not move
+// (`git diff --name-only <base>...HEAD -- agents/` is empty) and tests/agents-compile-claude-target-byte-match.test.cjs
+// is green. The four byte-pinned BLOCKS, re-measured with this file's own extractBlock, before -> after:
+// gsd-tools `case 'module':` 6743 bytes / 139 lines -> the same; `case 'party':` 2130 / 43 -> 3565 / 62;
+// cli `if (command === 'module')` 877 / 17 -> the same; `if (command === 'party')` 364 / 9 -> the same
+// (bin/cli.cjs is not in this PR's diff).
+// The base is now the last commit of this series that touches a pinned path:
+//   674cd3aa980a593b7a4cff82a1ea3485f4465efd  refactor(89-13)!: the party CLI and dispatch shrink together, and a removed verb says what replaced it [89-13-03]
+// Every assertion is kept (11/11). This canary pins the two party services by whole-file diff and the
+// `case 'party':` block byte for byte, so nothing in it needed re-pointing: only the base moves.
+// PHASE_52_BASE is deliberately NOT moved: it is FROZEN and names none of this plan's files.
+// PHASE_50_BASE (party-canary) is deliberately NOT moved: it pins agents/, the v3.1 services, the module outputs and
+// the two `module` blocks, none of which this plan touches; party-canary was run green BEFORE this change.
+// Plan 89-11 moves PHASE_50_BASE and PHASE_51_BASE once more, from THIS value.
+// This PR must be merged with a merge commit (NEVER squash, never rebase-merge) or this SHA stops resolving
+// on master. The full list is in
+// .planning/phases/89-postgres-primary-orchestration-cleanup/89-13-RECORD.md.
+const CANARY_BASE = '674cd3aa980a593b7a4cff82a1ea3485f4465efd';
 
 const ROOT = path.resolve(__dirname, '..');
 

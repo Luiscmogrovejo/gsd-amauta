@@ -12,18 +12,19 @@
  * at PHASE_51_BASE (dd404b7ee48ad2c4a9fc46d55b14f1cf3eac2671).
  *
  * Protected surfaces verified:
- *   a. Phase 50 byte-preservation — services/party_session.py: 8 Phase 50
- *      functions (create/start/pause/resume/terminate/get/post_finding/
- *      list_findings), PartySession class body, Phase 50 constants
- *      (SCHEMA_VERSION/ALLOWED_STATUSES/VALID_TRANSITIONS) are byte-identical
- *      to PHASE_51_BASE. NEW additions (DECISION_TYPES, post_decision,
- *      list_decisions, summarize_decisions) must EXIST at HEAD.
- *   b. Phase 50 byte-preservation — services/party_session_cli.py: existing
- *      6 subparser blocks + 6 action handlers are byte-identical to PHASE_51_BASE.
- *      NEW 3 subparsers (status/inspect/kill) must EXIST at HEAD.
- *   c. Phase 50 byte-preservation — gsd-tools.cjs case 'party': dispatch-contract
- *      lines (args[1], args.slice(2), spawnSync, partyCli path, exit-code
- *      passthrough) are byte-identical. KNOWN_ACTIONS Set EXTENDED to 9 actions.
+ *   a. services/party_session.py: the 6 container/blackboard functions plan
+ *      89-13 left (create/start/terminate/get/post_finding/list_findings),
+ *      PartySession class body and the constants SCHEMA_VERSION/ALLOWED_STATUSES
+ *      are byte-identical to PHASE_51_BASE. DECISION_TYPES, post_decision,
+ *      list_decisions, summarize_decisions must EXIST at HEAD. pause, resume,
+ *      VALID_TRANSITIONS and InvalidTransitionError must NOT (plan 89-13,
+ *      ORC-02 part 2 removed them; the assertion is inverted, not dropped).
+ *   b. services/party_session_cli.py: the 4 Phase 50 subparser blocks + 4
+ *      action handlers that survive are byte-identical to PHASE_51_BASE.
+ *      status/inspect subparsers must EXIST at HEAD; pause/resume/kill must NOT.
+ *   c. gsd-tools.cjs case 'party': dispatch-contract lines (args[1],
+ *      args.slice(2), spawnPython, partyCli path, exit-code passthrough) are
+ *      byte-identical. KNOWN_ACTIONS Set is the 6 surviving actions.
  *   d. bin/cli.cjs party branch byte-identical (Phase 51 adds ZERO edits).
  *   e. 13 Phase 50 protected paths (v3.1 + Phase 48 + Phase 49) untouched.
  *
@@ -149,7 +150,42 @@ const crypto = require('node:crypto');
 // This PR must be merged with a merge commit (NEVER squash, never rebase-merge) or this SHA stops resolving
 // on master. The full list is in
 // .planning/phases/89-postgres-primary-orchestration-cleanup/89-09-RECORD.md.
-const PHASE_51_BASE = 'cbed3c82dcf1d536a1bb765f6ab5814df6e03521';
+// RE-BASELINED AGAIN 2026-11-13 (plan 89-13 "party sessions keep only recorded decisions", ORC-02 part 2,
+// decision D2; operator sign-off: delegated in the task brief). THREE pinned paths changed on purpose since the
+// base above (cbed3c8), each in this PR:
+//   services/party_session.py       89-13-02 (59f95ef) VALID_TRANSITIONS, InvalidTransitionError, pause() and
+//                                   resume() (with its finding replay) are removed; start() and terminate() write
+//                                   a status LABEL and are never refused because of the label a row carries.
+//                                   post_finding / list_findings and the four decision members are untouched.
+//   services/party_session_cli.py   89-13-03 (674cd3a) the pause, resume and kill subparsers and handlers are
+//                                   removed; a removed verb answers a typed party_verb_removed; no PostgreSQL
+//                                   answers a typed requires_postgres.
+//   get-shit-done/bin/gsd-tools.cjs 89-13-03 (674cd3a) INSIDE the `case 'party':` block only: KNOWN_ACTIONS is
+//                                   the six surviving actions, the usage text follows, and REMOVED_ACTIONS answers
+//                                   the three removed verbs. The five dispatch-contract lines are byte-identical.
+// MEASURED, NOT ASSUMED: this PR's own diff (`git diff --name-only origin/master...HEAD`, 22 files) intersected
+// with the pinned list read out of the four canary files is exactly services/party_session.py,
+// services/party_session_cli.py and get-shit-done/bin/gsd-tools.cjs. Against the old base
+// (`git diff --name-only cbed3c8..HEAD`, 130 files, which includes plans 89-00..89-07 already on master) the
+// intersection adds only bin/cli.cjs — plan 89-05 removed its `a2a` branch, OUTSIDE both pinned blocks, which are
+// byte-identical (measured below) — and tests/phase-52-canary.test.cjs, that canary's own file name inside an
+// EXISTENCE check, the artefact every record since 88-15 has noted. agents/ did not move
+// (`git diff --name-only <base>...HEAD -- agents/` is empty) and tests/agents-compile-claude-target-byte-match.test.cjs
+// is green. The four byte-pinned BLOCKS, re-measured with this file's own extractBlock, before -> after:
+// gsd-tools `case 'module':` 6743 bytes / 139 lines -> the same; `case 'party':` 2130 / 43 -> 3565 / 62;
+// cli `if (command === 'module')` 877 / 17 -> the same; `if (command === 'party')` 364 / 9 -> the same
+// (bin/cli.cjs is not in this PR's diff).
+// The base is now the last commit of this series that touches a pinned path:
+//   674cd3aa980a593b7a4cff82a1ea3485f4465efd  refactor(89-13)!: the party CLI and dispatch shrink together, and a removed verb says what replaced it [89-13-03]
+// Every assertion is kept (9/9). The assertions about pause, resume, kill and VALID_TRANSITIONS are INVERTED, not dropped:
+// subtests 7, 8 and 9 now fail if any of them comes back.
+// PHASE_50_BASE (party-canary) is deliberately NOT moved: it pins agents/, the v3.1 services, the module outputs and
+// the two `module` blocks, none of which this plan touches; party-canary was run green BEFORE this change.
+// Plan 89-11 moves PHASE_50_BASE and PHASE_51_BASE once more, from THIS value.
+// This PR must be merged with a merge commit (NEVER squash, never rebase-merge) or this SHA stops resolving
+// on master. The full list is in
+// .planning/phases/89-postgres-primary-orchestration-cleanup/89-13-RECORD.md.
+const PHASE_51_BASE = '674cd3aa980a593b7a4cff82a1ea3485f4465efd';
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -394,7 +430,7 @@ test('canary-bin-cli-party-branch-byte-preserved', { skip: SKIP_NO_HISTORY }, ()
   );
 });
 
-// Subtest 7: gsd-tools.cjs case 'party': dispatch-contract + KNOWN_ACTIONS extended to 9
+// Subtest 7: gsd-tools.cjs case 'party': dispatch-contract + KNOWN_ACTIONS reduced to 6 (plan 89-13)
 test('canary-gsd-tools-party-dispatch-lines-preserved', () => {
   const headSrc = fs.readFileSync(
     path.join(ROOT, 'get-shit-done', 'bin', 'gsd-tools.cjs'),
@@ -426,28 +462,40 @@ test('canary-gsd-tools-party-dispatch-lines-preserved', () => {
     );
   }
 
-  // KNOWN_ACTIONS Set must be EXTENDED to 9 actions (frozen order)
-  const expectedKnownActions = "'create', 'start', 'pause', 'resume', 'terminate', 'get', 'status', 'inspect', 'kill'";
+  // KNOWN_ACTIONS Set must be exactly the 6 actions plan 89-13 left (frozen order).
+  // It held 9 until then; pause, resume and kill were removed by ORC-02 part 2.
+  const expectedKnownActions = "const KNOWN_ACTIONS = new Set(['create', 'start', 'terminate', 'get', 'status', 'inspect']);";
   assert.ok(
     headBlock.includes(expectedKnownActions),
-    `case 'party': block must contain KNOWN_ACTIONS with all 9 actions:\n  ${expectedKnownActions}\n` +
+    `case 'party': block must contain KNOWN_ACTIONS with exactly the 6 actions:\n  ${expectedKnownActions}\n` +
     `Block excerpt: ${headBlock.slice(0, 500)}`
   );
+  // The removed verbs answer by name (REMOVED_ACTIONS) and are not dispatched.
+  assert.ok(
+    headBlock.includes('const REMOVED_ACTIONS = {') && headBlock.includes("error: 'party_verb_removed'"),
+    `case 'party': block must answer the removed verbs with a typed party_verb_removed`
+  );
+  for (const verb of ['pause', 'resume', 'kill']) {
+    assert.ok(
+      !new RegExp(`gsd-tools party ${verb}\\b`).test(headBlock) && !new RegExp(`\\|${verb}\\b`).test(headBlock),
+      `case 'party': block must not offer the removed verb "${verb}" in its usage text`
+    );
+  }
 });
 
-// Subtest 8: party_session.py — 8 Phase 50 functions + PartySession class +
-//   constants byte-identical; DECISION_TYPES/post_decision/list_decisions/
-//   summarize_decisions exist at HEAD. Uses indent-level scanning (WARN-04).
+// Subtest 8: party_session.py — the 6 surviving Phase 50 functions + PartySession
+//   class + constants byte-identical; DECISION_TYPES/post_decision/list_decisions/
+//   summarize_decisions exist at HEAD; pause/resume/VALID_TRANSITIONS/
+//   InvalidTransitionError do NOT (plan 89-13). Uses indent-level scanning (WARN-04).
 test('canary-party-session-py-phase-50-functions-preserved', { skip: SKIP_NO_HISTORY }, () => {
   const headSrc = fs.readFileSync(path.join(ROOT, 'services', 'party_session.py'), 'utf8');
   const baseSrc = gitShowBase('services/party_session.py');
 
-  // 8 Phase 50 function anchors
+  // The 6 Phase 50 function anchors plan 89-13 left (pause and resume are
+  // asserted ABSENT below)
   const phase50Fns = [
     'def create(',
     'def start(',
-    'def pause(',
-    'def resume(',
     'def terminate(',
     'def get(',
     'def post_finding(',
@@ -479,7 +527,6 @@ test('canary-party-session-py-phase-50-functions-preserved', { skip: SKIP_NO_HIS
   const ph50ConstantAnchors = [
     'SCHEMA_VERSION = ',
     'ALLOWED_STATUSES = ',
-    'VALID_TRANSITIONS = ',
   ];
   for (const anchor of ph50ConstantAnchors) {
     // For frozenset-style multi-line constants, use extractPythonBlock
@@ -490,6 +537,15 @@ test('canary-party-session-py-phase-50-functions-preserved', { skip: SKIP_NO_HIS
       baseConst,
       `Constant "${anchor}" in party_session.py must be byte-identical to Phase 51 base.\n` +
       `head sha=${sha256(headConst)}, base sha=${sha256(baseConst)}`
+    );
+  }
+
+  // Plan 89-13 (ORC-02 part 2): the transition machine is REMOVED. These were
+  // byte-pinned until then; the pin is inverted so their return fails here.
+  for (const gone of ['def pause(', 'def resume(', 'VALID_TRANSITIONS', 'InvalidTransitionError']) {
+    assert.ok(
+      !headSrc.includes(gone),
+      `party_session.py at HEAD must NOT contain ${JSON.stringify(gone)} (removed by plan 89-13)`
     );
   }
 
@@ -512,18 +568,17 @@ test('canary-party-session-py-phase-50-functions-preserved', { skip: SKIP_NO_HIS
   );
 });
 
-// Subtest 9: party_session_cli.py — 6 Phase 50 subparsers + 6 action handlers
-//   byte-identical; status/inspect/kill subparsers exist at HEAD.
+// Subtest 9: party_session_cli.py — the 4 surviving Phase 50 subparsers + 4 action
+//   handlers byte-identical; status/inspect subparsers exist at HEAD; pause/resume/
+//   kill do NOT, and answer as removed verbs (plan 89-13).
 test('canary-party-session-cli-phase-50-subparsers-preserved', { skip: SKIP_NO_HISTORY }, () => {
   const headSrc = fs.readFileSync(path.join(ROOT, 'services', 'party_session_cli.py'), 'utf8');
   const baseSrc = gitShowBase('services/party_session_cli.py');
 
-  // 6 Phase 50 subparser block anchors (add_parser lines)
+  // The 4 Phase 50 subparser block anchors plan 89-13 left (add_parser lines)
   const subparserAnchors = [
     'p_create = sub.add_parser("create"',
     'p_start = sub.add_parser("start"',
-    'p_pause = sub.add_parser("pause"',
-    'p_resume = sub.add_parser("resume"',
     'p_terminate = sub.add_parser("terminate"',
     'p_get = sub.add_parser("get"',
   ];
@@ -539,12 +594,10 @@ test('canary-party-session-cli-phase-50-subparsers-preserved', { skip: SKIP_NO_H
     );
   }
 
-  // 6 Phase 50 action handler anchors (if/elif args.action == lines)
+  // The 4 Phase 50 action handler anchors plan 89-13 left (if/elif args.action == lines)
   const handlerAnchors = [
     'if args.action == "create":',
     'elif args.action == "start":',
-    'elif args.action == "pause":',
-    'elif args.action == "resume":',
     'elif args.action == "terminate":',
     'elif args.action == "get":',
   ];
@@ -560,7 +613,7 @@ test('canary-party-session-cli-phase-50-subparsers-preserved', { skip: SKIP_NO_H
     );
   }
 
-  // Positively assert 3 new Phase 51 subparsers EXIST at HEAD
+  // Positively assert the 2 Phase 51 read subparsers EXIST at HEAD
   assert.ok(
     headSrc.includes('sub.add_parser("status"'),
     'party_session_cli.py at HEAD must have status subparser (Phase 51 addition)'
@@ -569,8 +622,16 @@ test('canary-party-session-cli-phase-50-subparsers-preserved', { skip: SKIP_NO_H
     headSrc.includes('sub.add_parser("inspect"'),
     'party_session_cli.py at HEAD must have inspect subparser (Phase 51 addition)'
   );
-  assert.ok(
-    headSrc.includes('sub.add_parser("kill"'),
-    'party_session_cli.py at HEAD must have kill subparser (Phase 51 addition)'
-  );
+  // Plan 89-13 (ORC-02 part 2): pause, resume and kill are REMOVED verbs. No
+  // subparser and no handler may come back, and each must be answered by name.
+  for (const verb of ['pause', 'resume', 'kill']) {
+    assert.ok(
+      !headSrc.includes(`sub.add_parser("${verb}"`) && !headSrc.includes(`args.action == "${verb}"`),
+      `party_session_cli.py at HEAD must NOT dispatch the removed verb "${verb}" (plan 89-13)`
+    );
+    assert.ok(
+      new RegExp(`^    "${verb}": \\($`, 'm').test(headSrc),
+      `party_session_cli.py REMOVED_ACTIONS must answer the removed verb "${verb}"`
+    );
+  }
 });

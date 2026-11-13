@@ -30,8 +30,9 @@
  *
  *   Group C — v3.2 Phase 50 outputs (full diff empty for migration; indent-scan for py):
  *     migrations/021-party-sessions.sql + DOWN
- *     services/party_session.py — Phase 50's 8 functions via indent-level scan
- *     services/party_session_cli.py — Phase 50's 6 subparser blocks via indent-level scan
+ *     services/party_session.py — the 6 Phase 50 functions plan 89-13 left, via indent-level scan
+ *     services/party_session_cli.py — the 4 Phase 50 subparser blocks plan 89-13 left, via indent-level scan
+ *     (pause and resume were removed by plan 89-13, ORC-02 part 2, and are asserted ABSENT)
  *
  *   Group D — v3.2 Phase 51 outputs:
  *     migrations/023-party-decisions.sql + DOWN (full diff empty)
@@ -142,7 +143,42 @@ const os = require('node:os');
 // This PR must be merged with a merge commit (NEVER squash, never rebase-merge) or this SHA stops resolving
 // on master. The full list is in
 // .planning/phases/89-postgres-primary-orchestration-cleanup/89-09-RECORD.md.
-const PHASE_53_BASE = 'cbed3c82dcf1d536a1bb765f6ab5814df6e03521';  // re-baselined 2026-11-12 by plan 89-09; see the block above
+// RE-BASELINED AGAIN 2026-11-13 (plan 89-13 "party sessions keep only recorded decisions", ORC-02 part 2,
+// decision D2; operator sign-off: delegated in the task brief). THREE pinned paths changed on purpose since the
+// base above (cbed3c8), each in this PR:
+//   services/party_session.py       89-13-02 (59f95ef) VALID_TRANSITIONS, InvalidTransitionError, pause() and
+//                                   resume() (with its finding replay) are removed; start() and terminate() write
+//                                   a status LABEL and are never refused because of the label a row carries.
+//                                   post_finding / list_findings and the four decision members are untouched.
+//   services/party_session_cli.py   89-13-03 (674cd3a) the pause, resume and kill subparsers and handlers are
+//                                   removed; a removed verb answers a typed party_verb_removed; no PostgreSQL
+//                                   answers a typed requires_postgres.
+//   get-shit-done/bin/gsd-tools.cjs 89-13-03 (674cd3a) INSIDE the `case 'party':` block only: KNOWN_ACTIONS is
+//                                   the six surviving actions, the usage text follows, and REMOVED_ACTIONS answers
+//                                   the three removed verbs. The five dispatch-contract lines are byte-identical.
+// MEASURED, NOT ASSUMED: this PR's own diff (`git diff --name-only origin/master...HEAD`, 22 files) intersected
+// with the pinned list read out of the four canary files is exactly services/party_session.py,
+// services/party_session_cli.py and get-shit-done/bin/gsd-tools.cjs. Against the old base
+// (`git diff --name-only cbed3c8..HEAD`, 130 files, which includes plans 89-00..89-07 already on master) the
+// intersection adds only bin/cli.cjs — plan 89-05 removed its `a2a` branch, OUTSIDE both pinned blocks, which are
+// byte-identical (measured below) — and tests/phase-52-canary.test.cjs, that canary's own file name inside an
+// EXISTENCE check, the artefact every record since 88-15 has noted. agents/ did not move
+// (`git diff --name-only <base>...HEAD -- agents/` is empty) and tests/agents-compile-claude-target-byte-match.test.cjs
+// is green. The four byte-pinned BLOCKS, re-measured with this file's own extractBlock, before -> after:
+// gsd-tools `case 'module':` 6743 bytes / 139 lines -> the same; `case 'party':` 2130 / 43 -> 3565 / 62;
+// cli `if (command === 'module')` 877 / 17 -> the same; `if (command === 'party')` 364 / 9 -> the same
+// (bin/cli.cjs is not in this PR's diff).
+// The base is now the last commit of this series that touches a pinned path:
+//   674cd3aa980a593b7a4cff82a1ea3485f4465efd  refactor(89-13)!: the party CLI and dispatch shrink together, and a removed verb says what replaced it [89-13-03]
+// Every assertion is kept (13/13). Test 5 keeps its byte pins on the six surviving functions and four surviving
+// subparsers, and its pins on pause and resume are INVERTED: it now fails if either comes back.
+// PHASE_50_BASE (party-canary) is deliberately NOT moved: it pins agents/, the v3.1 services, the module outputs and
+// the two `module` blocks, none of which this plan touches; party-canary was run green BEFORE this change.
+// Plan 89-11 moves PHASE_50_BASE and PHASE_51_BASE once more, from THIS value.
+// This PR must be merged with a merge commit (NEVER squash, never rebase-merge) or this SHA stops resolving
+// on master. The full list is in
+// .planning/phases/89-postgres-primary-orchestration-cleanup/89-13-RECORD.md.
+const PHASE_53_BASE = '674cd3aa980a593b7a4cff82a1ea3485f4465efd';  // re-baselined 2026-11-13 by plan 89-13; see the block above
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -346,8 +382,9 @@ test('v3_2_phase_49_outputs_unchanged', { skip: SKIP_NO_HISTORY }, () => {
 
 // ── Test 5: v3.2 Phase 50 outputs unchanged ───────────────────────────────────
 //   migrations byte-diff empty;
-//   party_session.py Phase 50 functions (8 funcs) via indent-scan;
-//   party_session_cli.py Phase 50 subparsers (6 blocks) via indent-scan.
+//   party_session.py Phase 50 functions (the 6 plan 89-13 left) via indent-scan;
+//   party_session_cli.py Phase 50 subparsers (the 4 plan 89-13 left) via indent-scan;
+//   pause and resume asserted ABSENT from both (plan 89-13, ORC-02 part 2).
 
 test('v3_2_phase_50_outputs_unchanged', { skip: SKIP_NO_HISTORY }, () => {
   // Migration files — full diff empty
@@ -364,15 +401,13 @@ test('v3_2_phase_50_outputs_unchanged', { skip: SKIP_NO_HISTORY }, () => {
     );
   }
 
-  // party_session.py — Phase 50's 8 functions via indent-level scan
+  // party_session.py — the 6 Phase 50 functions plan 89-13 left, via indent-level scan
   const headPsSrc = fs.readFileSync(path.join(ROOT, 'services', 'party_session.py'), 'utf8');
   const basePsSrc = gitShowBase('services/party_session.py');
 
   const phase50Fns = [
     'def create(',
     'def start(',
-    'def pause(',
-    'def resume(',
     'def terminate(',
     'def get(',
     'def post_finding(',
@@ -389,15 +424,22 @@ test('v3_2_phase_50_outputs_unchanged', { skip: SKIP_NO_HISTORY }, () => {
     );
   }
 
-  // party_session_cli.py — Phase 50's 6 subparser blocks via indent-level scan
+  // Plan 89-13 (ORC-02 part 2) removed pause() and resume(). They were pinned
+  // here; the pin is inverted so their return fails this canary.
+  for (const gone of ['def pause(', 'def resume(']) {
+    assert.ok(
+      !headPsSrc.includes(gone),
+      `party_session.py must NOT define ${JSON.stringify(gone)} (removed by plan 89-13)`
+    );
+  }
+
+  // party_session_cli.py — the 4 Phase 50 subparser blocks plan 89-13 left, via indent-level scan
   const headCliSrc = fs.readFileSync(path.join(ROOT, 'services', 'party_session_cli.py'), 'utf8');
   const baseCliSrc = gitShowBase('services/party_session_cli.py');
 
   const phase50Subparsers = [
     'p_create = sub.add_parser("create"',
     'p_start = sub.add_parser("start"',
-    'p_pause = sub.add_parser("pause"',
-    'p_resume = sub.add_parser("resume"',
     'p_terminate = sub.add_parser("terminate"',
     'p_get = sub.add_parser("get"',
   ];
@@ -409,6 +451,12 @@ test('v3_2_phase_50_outputs_unchanged', { skip: SKIP_NO_HISTORY }, () => {
       baseBlock,
       `party_session_cli.py subparser "${anchor}" must be byte-identical to PHASE_53_BASE.\n` +
       `head sha=${sha256(headBlock)}, base sha=${sha256(baseBlock)}`
+    );
+  }
+  for (const gone of ['sub.add_parser("pause"', 'sub.add_parser("resume"']) {
+    assert.ok(
+      !headCliSrc.includes(gone),
+      `party_session_cli.py must NOT define ${JSON.stringify(gone)} (removed by plan 89-13)`
     );
   }
 });
