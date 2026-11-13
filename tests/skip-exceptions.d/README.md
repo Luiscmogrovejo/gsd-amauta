@@ -98,3 +98,17 @@ and the fixtures are untouched. The repository root has no such file.
 
 `11 + 26 + 386 + 44 = 467`, set-equal to the pre-shard array on the full nine-field
 tuple — the proof is in `tests/89-09-skip-shards.test.cjs`.
+
+## What the shards hold now
+
+Every change since is declared in `delta/`, so this table is derivable rather than
+authoritative. New shards appear as their plans open them.
+
+| Shard | Change since 89-09 | Who removes what is left |
+|---|---|---|
+| `89-01.json` | plan 89-01 removed its 11 and added 16 | task 89-07-04 |
+| `89-02.json` | plan 89-02 opened it with 56 | task 89-07-04 |
+| `89-04.json` | plan 89-04 opened it with 51 | task 89-07-04 (46) and plan 89-07 (5) |
+| `89-05.json` | plan 89-05 removed the 26 `test_a2a_*` entries with the feature and added 24 for `tests/test_89_05_inbox_round_trip.py` | task 89-07-04 |
+| `89-07.json` | unchanged | plan 89-07 |
+| `carried.json` | unchanged | their own phases |

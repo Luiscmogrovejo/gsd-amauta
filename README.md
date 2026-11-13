@@ -37,13 +37,12 @@ See [docs/QUICKSTART.md](docs/QUICKSTART.md) for the full end-to-end walkthrough
 | Persistent memory across sessions | PostgreSQL + pgvector | None (stateless) | None | None | N/A |
 | Multi-agent orchestration | 35 specialist agents with routing | Single-agent | Single-agent | Wide agent roster, no PG | N/A |
 | RPETD pipeline enforcement | Mandatory 5-phase gate | No structure | No structure | Loose phase guidance | N/A |
-| Blackboard agent communication | agent_findings + agent_messages PG tables | None | None | None | N/A |
+| Blackboard agent communication | agent_findings + agent_messages, on PostgreSQL **and** SQLite | None | None | None | N/A |
 | Install method | `git clone` + `npm install` (not on npm yet) | Built into Claude Code | Built into Cursor | Manual copy | Package manager only |
 | Requires Docker | Recommended (PG + Valkey); SQLite fallback otherwise | No | No | No | No |
-| A2A agent-to-agent protocol | Experimental (v3.3) | No | No | No | No |
 | Module marketplace | Yes (`gsd-amauta module install`) | No | No | No | No |
 
-GSD-Amauta is the right choice when you want persistent memory, structured multi-agent orchestration, and a reproducible quality gate across your team. The honest tradeoff: the features that make it worth installing — semantic memory search, the RLM code index, the blackboard — need PostgreSQL, so in practice you want Docker.
+GSD-Amauta is the right choice when you want persistent memory, structured multi-agent orchestration, and a reproducible quality gate across your team. The honest tradeoff: two of the features that make it worth installing — semantic memory search and the RLM code index — need PostgreSQL, so in practice you want Docker. The blackboard does not: it runs on both backends.
 
 ---
 
@@ -104,14 +103,14 @@ When PostgreSQL is not available, init completes on SQLite and says so in a
 DEGRADED banner instead of reporting a clean install.
 
 **Works on SQLite:** memory store/search (keyword/FTS), tasks and the RPETD
-pipeline, SKB, validation records, audit log, agents, skills, commands, hooks.
+pipeline, SKB, validation records, audit log, agents, skills, commands, hooks,
+**and the blackboard** (`agent_findings` / `agent_messages`) — the agent-to-agent
+channel works on both backends and is tested on both.
 
 **Off on SQLite:**
 - vector / semantic memory search (pgvector)
 - the RLM code index (`rlm_chunks`)
-- the blackboard (`agent_findings` / `agent_messages`)
 - the semantic cache
-- the A2A exchange log
 
 **How to check:** `gsd-amauta doctor` prints a `backend` row — `OK` on
 PostgreSQL, `WARN  DEGRADED: running on sqlite fallback — OFF: ...` otherwise,
@@ -149,22 +148,46 @@ gsd-amauta module install github:owner/repo@tag
 
 ---
 
-## A2A Agent-to-Agent protocol (v3.3) — EXPERIMENTAL
+## Agent-to-agent communication: the blackboard
 
-> **Experimental.** The A2A protocol and party sessions ship as working
-> machinery with no production caller: nothing in the RPETD pipeline sends A2A
-> messages today, and the client's per-pair circuit breaker is never armed
-> (no Redis client is injected into it anywhere in the codebase). Treat both as
-> a preview surface to build on, not as a feature the harness relies on. The
-> exchange log also needs PostgreSQL — it is one of the things the SQLite
-> fallback turns off.
+**The bespoke A2A request/response protocol was removed in v3.7 (Phase 89,
+2026-11-12).** The client, the per-agent-pair circuit breaker, the capability
+registry, the `gsd-amauta a2a` and `gsd-tools a2a` verbs, the
+`GET /a2a/exchanges` exchange log and its `a2a_messages` table are all gone,
+because no production code path ever used them: nothing in the RPETD pipeline
+sent an A2A message and the circuit breaker was never armed.
 
-The protocol itself covers capability negotiation, timeout/retry, per-agent-pair
-circuit breakers and conversation threading, all audit-logged.
+**The blackboard inbox is the single agent-to-agent channel**, and it works on
+PostgreSQL **and** on SQLite:
+
+| Verb | What it does |
+|---|---|
+| `POST /api/findings` | publish something other agents should know |
+| `GET /api/findings/:task` | everything filed against one task |
+| `GET /api/findings?status=open` | the cross-task audit sweep |
+| `PATCH /api/findings/:id` | transition a finding (`ticketed`, `fixed`, …) |
+| `POST /api/messages` | send a typed message to one agent |
+| `GET /api/messages/:agent` | that agent's inbox (`pending`, `approved`) |
+| `GET /api/messages/:agent?status=responded` | read the answers |
+| `PATCH /api/messages/:id` | approve, deny or answer a message |
+
+`tests/test_89_05_inbox_round_trip.py` drives post → read → answer → read-the-
+answer over HTTP against both backends and compares the two field by field, so
+"works on both" is a measurement rather than a claim.
+
+What was lost with the protocol, and what replaces it:
+
+| Gone | Replacement |
+|---|---|
+| capability negotiation between agents | none. Capabilities are declared in each `AGENT.yaml` and read by `services/capability_access.py`; there is no runtime negotiation and nothing asked for one |
+| the per-agent-pair circuit breaker | none, and nothing was protected by it: no Redis client was ever injected, so it never opened |
+| the request/response client with threading and retry | the blackboard's typed messages. There is no correlation-id thread and no automatic retry — a caller that needs one asks again |
+| the `GET /a2a/exchanges` audit endpoint | `GET /api/findings` and `GET /api/messages/:agent`, both of which the audit log already covers |
+
+Party sessions are still experimental and are being reduced to recorded
+decisions:
 
 ```bash
-gsd-amauta a2a list                          # Registered capabilities
-gsd-amauta a2a tail                          # Stream A2A exchanges (daemon required)
 gsd-amauta party create --participants a,b   # Party sessions (experimental)
 ```
 
@@ -177,7 +200,6 @@ gsd-amauta init [--upgrade | --uninstall] [--yes] [--verbose] [--dry-run]
 gsd-amauta doctor [--json] [--strict] [--config-dir <path>]
 gsd-amauta module search <query>
 gsd-amauta module install <name>
-gsd-amauta a2a tail                  # experimental
 gsd-amauta party status              # experimental
 amauta board
 amauta show <task-id>

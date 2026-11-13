@@ -84,5 +84,16 @@
       "tests/88-18-python-portability.test.cjs",
       "tests/posix-literal-exceptions.json"
     ]
+  },
+  "deleted_since": {
+    "89-05": {
+      "note": "Phase 89 plan 89-05 (ORC-02) deleted the eight tests/test_a2a_*.py files with the feature they tested. These four were in task 88-18-03's entry and STAY there: the per-task gate judges the Phase 88 commits that are still reachable on every branch, and removing a name retroactively turns commit b1d4a491 into a violation. The entry is a record of what that task was allowed to touch, which does not change. This list exempts them from the existence check only, and that check asserts each one is really gone.",
+      "files": [
+        "tests/test_a2a_client.py",
+        "tests/test_a2a_migration.py",
+        "tests/test_a2a_registry.py",
+        "tests/test_a2a_tail_cli.py"
+      ]
+    }
   }
 }

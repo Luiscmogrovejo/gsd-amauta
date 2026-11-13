@@ -13,6 +13,22 @@ node bin/init.cjs                                    # Run setup
 npm test                                             # Verify tests pass
 ```
 
+### Agent-to-agent communication
+
+If you are looking for the A2A protocol: **it was removed in v3.7 (Phase 89,
+2026-11-12)** — the client, the per-agent-pair circuit breaker, the capability
+registry, the `gsd-amauta a2a` / `gsd-tools a2a` verbs, the `GET /a2a/exchanges`
+exchange log and the `a2a_messages` table. No production code path used it.
+
+**The blackboard is the single agent-to-agent channel**, and it works on
+PostgreSQL *and* on SQLite: `POST /api/findings`, `GET /api/findings/:task`,
+`GET /api/findings?status=open`, `PATCH /api/findings/:id`, `POST /api/messages`,
+`GET /api/messages/:agent[?status=…]`, `PATCH /api/messages/:id`. Add agent
+communication there — `services/amauta-daemon.py` for the route,
+`services/sqlite_store.py` for the SQLite half, and a both-backends test
+(`tests/test_89_05_inbox_round_trip.py` is the pattern). A route that works on
+only one backend is not finished.
+
 ## PR workflow
 
 1. Fork the repo and create a branch from `master` (e.g. `feat/my-feature`).
@@ -40,10 +56,10 @@ GSD-Amauta uses [Conventional Commits](https://www.conventionalcommits.org/):
 
 Examples:
 ```
-feat(a2a): add circuit breaker per agent-pair
+feat(blackboard): add a status filter to the agent inbox
 fix(init): correct --verbose flag not suppressing stack traces
 docs(readme): rewrite for external developer audience
-test(breaker): add 26-test mock suite for state machine
+test(migrations): add a two-shape auto_baseline suite
 ```
 
 Breaking changes: append `!` after the type/scope (`feat!:`) and add a `BREAKING CHANGE:` footer.

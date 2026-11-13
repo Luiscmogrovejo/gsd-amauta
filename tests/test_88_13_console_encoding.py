@@ -260,11 +260,13 @@ def _is_setup_call(stmt):
     )
 
 
-# Plan 89-04 added `services/backup_snapshot.py`, an 18th entry point. The
-# count is a CENSUS FLOOR, not a cap: it exists so a new `__main__` cannot ship
-# without the UTF-8 prelude, and so one cannot quietly disappear. A plan that
-# adds or removes an entry point updates this number and says so in its record.
-EXPECTED_ENTRY_POINTS = 18
+# Plan 89-04 added `services/backup_snapshot.py`, an 18th entry point. Plan 89-05
+# (ORC-02) DELETED `services/a2a_registry_cli.py` with the rest of the A2A
+# surface, taking it back to 17. The count is a CENSUS, not a cap: it exists so a
+# new `__main__` cannot ship without the UTF-8 prelude, and so one cannot quietly
+# disappear. A plan that adds or removes an entry point updates this number and
+# says so in its record — this one does.
+EXPECTED_ENTRY_POINTS = 17
 
 
 def test_every_entry_point_sets_up_stdio():

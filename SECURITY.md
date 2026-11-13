@@ -33,7 +33,7 @@ extensions granted for critical infrastructure dependencies outside our control)
 **In scope:**
 - Code in this repository (bin/, services/, get-shit-done/, scripts/, migrations/)
 - The `npx gsd-amauta init` installer and daemon startup
-- The A2A agent-to-agent protocol implementation
+- The blackboard agent-to-agent channel (`/api/findings`, `/api/messages`)
 - The module install/verify pipeline (signature verification, trusted-key store)
 
 **Out of scope:**

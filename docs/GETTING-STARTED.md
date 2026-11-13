@@ -28,7 +28,7 @@ python3 --version
 # Docker (for PostgreSQL + Valkey) — RECOMMENDED, not required.
 # Without it the install falls back to SQLite and `gsd-amauta doctor` reports
 # DEGRADED, naming the features that are off (semantic search, RLM index,
-# blackboard, semantic cache, A2A exchange log).
+# semantic cache). The blackboard works on both backends.
 docker --version
 
 # Claude Code

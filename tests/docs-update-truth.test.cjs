@@ -14,6 +14,11 @@
  *                 cli.cjs, called Docker a hard requirement, and presented A2A
  *                 and party sessions as shipped features.
  *
+ * Plan 89-05 (ORC-02) removed the A2A surface, so the README/docs assertions are
+ * INVERTED rather than deleted: the README must now SAY the removal happened,
+ * no page may offer a removed verb, no page may call the blackboard PG-only
+ * (measured false), and the deleted modules must be unimportable.
+ *
  * Run: node --test tests/docs-update-truth.test.cjs
  */
 
@@ -120,22 +125,57 @@ test('check-update makes no network call and spawns no process', () => {
 
 // ─── README / docs / cli ─────────────────────────────────────────────────────
 
-test('cli.cjs has the a2a branch the README documents', () => {
+// Plan 89-05 (ORC-02) removed the A2A surface, so the three assertions below are
+// INVERTED, not deleted: they used to pin "the README documents a verb that
+// exists", and they now pin "the README says the removal happened and documents
+// no removed verb". The docs and the code must still agree — in the other
+// direction.
+
+test('cli.cjs has no a2a branch, and `a2a` is just an unknown verb', () => {
   const src = read('bin/cli.cjs');
-  assert.match(src, /command === 'a2a'/, 'cli.cjs must dispatch a2a');
-  const res = spawnSync(process.execPath, [path.join(ROOT, 'bin', 'cli.cjs'), 'a2a'], {
+  assert.ok(!/a2a/i.test(src), 'bin/cli.cjs must not dispatch or document a2a');
+  const removed = spawnSync(process.execPath, [path.join(ROOT, 'bin', 'cli.cjs'), 'a2a'], {
+    encoding: 'utf-8', timeout: 20000,
+    env: { ...process.env, GSD_TEST_MODE: '1', GSD_FORCE_SQLITE: '1' },
+  });
+  assert.ok(!/a2a tail|a2a list|a2a capabilities/.test(removed.stdout + removed.stderr),
+    'gsd-amauta a2a must not reach an a2a usage: the verb is gone');
+  // The usage text must not offer it either.
+  const help = spawnSync(process.execPath, [path.join(ROOT, 'bin', 'cli.cjs'), '--help'], {
     encoding: 'utf-8', timeout: 20000,
   });
-  assert.match(res.stdout + res.stderr, /a2a tail/,
-    'gsd-amauta a2a must reach the a2a usage, not fall through to the task CLI');
+  assert.ok(!/a2a/i.test(help.stdout + help.stderr),
+    'the usage text still offers a2a');
+  assert.match(help.stdout, /party \.\.\./, 'the party verb must survive this plan');
 });
 
-test('README marks A2A and party sessions experimental', () => {
+test('gsd-tools has no a2a case and refuses the verb', () => {
+  assert.ok(!/a2a/i.test(read('get-shit-done/bin/gsd-tools.cjs')),
+    'gsd-tools.cjs must not dispatch or document a2a');
+  const res = spawnSync(
+    process.execPath,
+    [path.join(ROOT, 'get-shit-done', 'bin', 'gsd-tools.cjs'), 'a2a', 'tail'],
+    { encoding: 'utf-8', timeout: 20000,
+      env: { ...process.env, GSD_TEST_MODE: '1', GSD_DAEMON_PORT: '0', GSD_AMAUTA_PORT: '0' } },
+  );
+  assert.match(res.stdout + res.stderr, /Unknown command: a2a/,
+    'gsd-tools a2a must be refused by name, not poll a port');
+});
+
+test('the README says the A2A removal happened, and still marks party experimental', () => {
   const md = read('README.md');
-  assert.match(md, /A2A Agent-to-Agent protocol \(v3\.3\) — EXPERIMENTAL/);
-  assert.match(md, /no production caller/i);
-  assert.match(md, /circuit breaker is never armed/i);
-  assert.match(md, /party sessions/i);
+  assert.match(md, /The bespoke A2A request\/response protocol was removed in v3\.7/,
+    'criterion 5: the README must SAY the removal happened, not merely stop mentioning it');
+  assert.match(md, /no production code path ever used/i);
+  assert.match(md, /circuit breaker was never armed/i);
+  assert.match(md, /blackboard inbox is the single agent-to-agent channel/i);
+  assert.match(md, /PostgreSQL \*\*and\*\* on SQLite/,
+    'the README must say the channel works on both backends');
+  // The removed verbs are named only in the removal statement, never offered.
+  assert.ok(!/```[^`]*gsd-amauta a2a[^`]*```/s.test(md),
+    'no code block may still offer a removed a2a verb');
+  assert.ok(!/gsd-tools a2a tail/.test(md), 'no doc page may offer gsd-tools a2a tail');
+  assert.match(md, /party sessions/i, 'party sessions are still experimental, not this plan\'s');
 });
 
 test('README presents Docker as recommended with a documented SQLite fallback', () => {
@@ -143,24 +183,56 @@ test('README presents Docker as recommended with a documented SQLite fallback', 
   assert.ok(!/\| Requires Docker \| Yes \(PG \+ Valkey\)/.test(md),
     'the comparison table must not claim Docker is required');
   assert.match(md, /SQLite fallback: what actually works/);
-  for (const feature of ['pgvector', 'RLM code index', 'blackboard', 'semantic cache', 'A2A exchange log']) {
+  // The three features that really are off, and the A2A row is gone with the
+  // feature. "blackboard" moved to the WORKS list: plan 89-05 measured it on
+  // SQLite, so listing it as off was false.
+  for (const feature of ['pgvector', 'RLM code index', 'semantic cache']) {
     assert.ok(md.includes(feature), `the fallback section must name ${feature}`);
   }
+  assert.ok(!md.includes('A2A exchange log'),
+    'the fallback section still names a removed feature');
+  const worksOn = md.slice(md.indexOf('**Works on SQLite:**'), md.indexOf('**Off on SQLite:**'));
+  assert.match(worksOn, /blackboard/i,
+    'the blackboard works on SQLite and must be in the WORKS list, not the OFF list');
+  const offOn = md.slice(md.indexOf('**Off on SQLite:**'), md.indexOf('**How to check:**'));
+  assert.ok(!/blackboard/i.test(offOn), 'the blackboard is not off on SQLite');
   assert.match(md, /0 healthy \/ 1 degraded \/ 2 failing|0 = healthy, 1 = degraded, 2 = failing/,
     'doctor exit codes must be documented');
 });
 
-test('the A2A "no production caller" claim is still true', () => {
-  // If this fails, A2A gained a real caller — update the README instead of the test.
-  const clientSrc = read('services/a2a_client.py');
-  assert.match(clientSrc, /_A2A_REDIS_CLIENT = None/,
-    'the breaker client injector must still default to None');
-  const grep = spawnSync('grep', ['-rln', '--include=*.py', 'a2a_client', '.'],
-    { cwd: ROOT, encoding: 'utf-8' });
-  const callers = (grep.stdout || '').split('\n')
-    .filter(Boolean)
-    .filter((f) => !f.startsWith('./tests/'))
-    .filter((f) => f !== './services/a2a_client.py');
-  assert.deepStrictEqual(callers, [],
-    `a2a_client now has non-test importers: ${callers.join(', ')}`);
+test('no doc page and no package description names a removed verb or endpoint', () => {
+  const pages = ['README.md', 'CONTRIBUTING.md', 'SECURITY.md',
+    'docs/QUICKSTART.md', 'docs/GETTING-STARTED.md'];
+  for (const page of pages) {
+    const md = read(page);
+    for (const removed of ['gsd-amauta a2a tail', 'gsd-amauta a2a list',
+      'gsd-amauta a2a capabilities', 'gsd-tools a2a']) {
+      // The removal statement may NAME the verb; no page may present it as a
+      // command, which is what a shell prompt or a code fence does.
+      assert.ok(!new RegExp(`^\\s*(\\$\\s*)?${removed.replace(/ /g, '\\s+')}`, 'm').test(md),
+        `${page} still offers \`${removed}\` as a command`);
+    }
+  }
+  const pkg = require(path.join(ROOT, 'package.json'));
+  assert.ok(!/a2a/i.test(pkg.description),
+    `package.json's description still names the A2A protocol: ${pkg.description}`);
+  assert.match(pkg.description, /blackboard/i,
+    'the description should name the channel that replaced it');
+});
+
+test('the A2A modules are gone, so nothing can import them', () => {
+  for (const rel of ['services/a2a_client.py', 'services/a2a_breaker.py',
+    'services/a2a_registry.py', 'services/a2a_registry_cli.py']) {
+    assert.ok(!fs.existsSync(path.join(ROOT, rel)), `${rel} still exists`);
+  }
+  // Over the TRACKED tree: the untracked data/ and backups/ carry the string and
+  // would make this unreachable. tests/89-05-a2a-absent.test.cjs is the full walk.
+  const tracked = spawnSync('git', ['ls-files', '--', '*.py'],
+    { cwd: ROOT, encoding: 'utf-8' }).stdout.split('\n').filter(Boolean);
+  const importers = tracked.filter((f) => {
+    const text = fs.readFileSync(path.join(ROOT, f), 'utf-8');
+    return /^\s*(from|import)\s+(services\.)?a2a_/m.test(text);
+  });
+  assert.deepStrictEqual(importers, [],
+    `a tracked Python file still imports a deleted A2A module: ${importers.join(', ')}`);
 });

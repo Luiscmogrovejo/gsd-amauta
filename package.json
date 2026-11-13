@@ -1,7 +1,7 @@
 {
   "name": "gsd-amauta",
   "version": "3.3.0",
-  "description": "Quality-enforced AI development harness for Claude Code and MCP-compatible agents. RPETD pipeline, persistent PostgreSQL memory, 17 specialist agents, A2A protocol, and module marketplace.",
+  "description": "Quality-enforced AI development harness for Claude Code and MCP-compatible agents. RPETD pipeline, persistent PostgreSQL memory, 35 specialist agents, a blackboard agent channel, and module marketplace.",
   "bin": {
     "gsd-amauta": "bin/cli.cjs",
     "gsd-amauta-install": "bin/install.js",
