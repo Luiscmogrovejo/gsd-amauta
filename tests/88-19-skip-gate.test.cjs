@@ -423,11 +423,15 @@ describe('88-19 tests/skip-exceptions.d/ itself', () => {
     // gate's own SKIP_UNLISTED list on a local full run with CI unset and no
     // GSD_TEST_POSTGRES_URL -- 239 python + 65 node = 304 tests that RUN on all
     // nine CI cells and cannot run on a machine with no disposable PostgreSQL.
+    // Plan 89-13 re-measured it at 305: converting the party state-machine tests
+    // renamed 23 of the 304 (23 closed in 89-07.json, the same 23 reopened under
+    // their new names in 89-13.json, net zero) and added ONE, the PostgreSQL arm
+    // of test_decision_trail_on_both_backends -- 240 python + 65 node.
     const byClass = {};
     for (const e of local) byClass[e.reason_class] = (byClass[e.reason_class] || 0) + 1;
     assert.deepStrictEqual(byClass, {
       'scanner-not-installed-locally': 10,
-      'pg-no-disposable-database-local': 304,
+      'pg-no-disposable-database-local': 305,
     }, 'a local-only class changed size without being re-measured');
 
     for (const e of local) {

@@ -6,8 +6,12 @@
  *   create -> start -> post 4 decisions (propose+agree+dissent+block via inline
  *   python3 subprocess) -> status returns counts {1,1,1,1} ->
  *   inspect returns FROZEN shape with decision_trail length 4 + decision_summary ->
- *   kill records audit row (visible in session.findings, absent from decision_trail) ->
- *   kill already-terminated exits 1 -> cli-shortcut-equivalence.
+ *   the operator's closing reason is a recorded decision and `terminate` keeps the whole
+ *   trail (was: kill records an audit row) -> the removed `kill` answers typed and a second
+ *   `terminate` is idempotent (was: kill already-terminated exits 1) -> cli-shortcut-equivalence.
+ *
+ * Converted by plan 89-13 (Phase 89 ORC-02 part 2): `kill` is removed with `pause` and
+ * `resume`. Each converted subtest says what it used to assert.
  *
  * SC3 evidence at E2E layer: dissent does NOT rollback session (status stays active).
  * SC4 Layer 2 evidence: each postDecisionViaPython is a FRESH python3 subprocess —
@@ -463,134 +467,98 @@ describe('party-decisions-e2e (PG required)', (suite) => {
     );
   });
 
-  test('e2e-kill-records-audit-and-terminates', (t) => {
+  // Was `e2e-kill-records-audit-and-terminates`.
+  // used to assert: `kill --reason` terminates the session and writes an
+  // audit row (finding_type 'kill', agent 'operator') visible in
+  // session.findings, absent from decision_trail, leaving the summary at 1/1/1/1.
+  // asserts now: the operator's reason is a fifth recorded decision (`block`),
+  // `terminate` closes the session, and the trail read back afterwards is all
+  // five in order — the four from before the close byte-for-byte as they were.
+  test('e2e-terminate-keeps-the-whole-decision-trail', (t) => {
     if (!_pgUp || sessionId === null) {
       t.skip(pg.SKIP_REASON);
       return;
     }
+    assert.ok(_inspectParsed !== null, 'the four-decision inspect of the earlier subtest is needed here');
+    const trailBefore = _inspectParsed.decision_trail;
 
-    // Kill the session
-    const rKill = runParty(['kill', sessionId, '--reason', '51-04 closeout', '--json']);
-    assert.strictEqual(
-      rKill.status, 0,
-      `kill must exit 0; got: ${rKill.status}\nstderr: ${rKill.stderr}`
+    sleepMs(30);
+    const reasonId = postDecisionViaPython(
+      sessionId, 'gsd-operator', 'block', 'Session closed by operator. Reason: 51-04 closeout'
     );
-    let killParsed;
-    try {
-      killParsed = JSON.parse(rKill.stdout);
-    } catch (e) {
-      assert.fail(`kill stdout must be valid JSON; got: ${rKill.stdout}`);
-    }
 
-    // Session must be terminated
+    const rTerminate = runParty(['terminate', sessionId, '--json']);
     assert.strictEqual(
-      killParsed.session.status, 'terminated',
-      `session.status must be "terminated"; got: ${killParsed.session.status}`
+      rTerminate.status, 0,
+      `terminate must exit 0; got: ${rTerminate.status}\nstderr: ${rTerminate.stderr}`
+    );
+    const closed = JSON.parse(rTerminate.stdout);
+    assert.strictEqual(
+      closed.status, 'terminated',
+      `status must be "terminated"; got: ${closed.status}`
     );
     assert.ok(
-      killParsed.session.terminated_at !== null &&
-        killParsed.session.terminated_at !== undefined &&
-        killParsed.session.terminated_at !== 'None',
-      `session.terminated_at must not be null; got: ${killParsed.session.terminated_at}`
+      closed.terminated_at !== null && closed.terminated_at !== undefined && closed.terminated_at !== 'None',
+      `terminated_at must not be null; got: ${closed.terminated_at}`
     );
 
-    // audit_finding_id is a 36-char UUID
-    assert.ok(
-      typeof killParsed.audit_finding_id === 'string' && killParsed.audit_finding_id.length === 36,
-      `audit_finding_id must be a 36-char UUID; got: ${killParsed.audit_finding_id}`
-    );
-
-    // reason matches
-    assert.strictEqual(
-      killParsed.reason, '51-04 closeout',
-      `reason must be "51-04 closeout"; got: ${killParsed.reason}`
-    );
-
-    // Verify via inspect: kill audit row in session.findings; absent from decision_trail
     const rInspect = runParty(['inspect', sessionId, '--json']);
     assert.strictEqual(
       rInspect.status, 0,
-      `inspect after kill must exit 0; got: ${rInspect.status}`
+      `inspect after terminate must exit 0; got: ${rInspect.status}`
     );
-    let postKillInspect;
-    try {
-      postKillInspect = JSON.parse(rInspect.stdout);
-    } catch (e) {
-      assert.fail(`inspect stdout must be valid JSON; got: ${rInspect.stdout}`);
-    }
+    const after = JSON.parse(rInspect.stdout);
+    assert.strictEqual(after.session.status, 'terminated');
 
-    // Kill audit row must appear in session.findings
-    const findings = postKillInspect.session.findings || [];
-    const killRow = findings.find(
-      (f) => f.finding_type === 'kill' && f.agent_name === 'operator'
-    );
-    assert.ok(
-      killRow !== undefined,
-      `session.findings must contain a row with finding_type='kill' + agent_name='operator'; ` +
-      `findings: ${JSON.stringify(findings.map((f) => ({ ft: f.finding_type, an: f.agent_name })))}`
-    );
-    // The content must include the expected phrase "Session killed by operator"
-    assert.ok(
-      typeof killRow.content === 'string' &&
-        killRow.content.includes('Session killed by operator'),
-      `kill row content must include "Session killed by operator"; got: ${killRow.content}`
-    );
-    assert.ok(
-      killRow.content.includes('51-04 closeout'),
-      `kill row content must include "51-04 closeout"; got: ${killRow.content}`
-    );
+    const trail = after.decision_trail || [];
+    assert.strictEqual(trail.length, 5, `decision_trail must have 5 entries; got: ${JSON.stringify(trail)}`);
+    assert.deepStrictEqual(trail.slice(0, 4), trailBefore,
+      'the four decisions recorded before the close must read back unchanged and in order');
+    assert.strictEqual(trail[4].finding_id, reasonId, 'the closing reason is last in the trail');
+    assert.strictEqual(trail[4].agent_name, 'gsd-operator', 'the closing reason is attributed to the operator');
+    assert.strictEqual(trail[4].decision_type, 'block');
+    assert.ok(trail[4].content.includes('51-04 closeout'), `the reason must be readable; got: ${trail[4].content}`);
+    assert.deepStrictEqual(after.decision_summary, { propose: 1, agree: 1, dissent: 1, block: 2 },
+      'the summary must count the closing reason with the four before it');
 
-    // Kill audit row must NOT appear in decision_trail (decision_type is NULL)
-    const trail = postKillInspect.decision_trail || [];
-    const killInTrail = trail.find(
-      (e) => e.agent_name === 'operator' ||
-        (typeof e.content === 'string' && e.content.includes('Session killed'))
-    );
-    assert.ok(
-      killInTrail === undefined,
-      `kill audit row must NOT appear in decision_trail; trail: ${JSON.stringify(trail)}`
-    );
-
-    // decision_summary must still be {propose:1, agree:1, dissent:1, block:1} (kill is audit, not decision)
-    assert.strictEqual(
-      postKillInspect.decision_summary.propose, 1,
-      `decision_summary.propose must still be 1 after kill; got: ${postKillInspect.decision_summary.propose}`
-    );
-    assert.strictEqual(
-      postKillInspect.decision_summary.agree, 1,
-      `decision_summary.agree must still be 1 after kill; got: ${postKillInspect.decision_summary.agree}`
-    );
-    assert.strictEqual(
-      postKillInspect.decision_summary.dissent, 1,
-      `decision_summary.dissent must still be 1 after kill; got: ${postKillInspect.decision_summary.dissent}`
-    );
-    assert.strictEqual(
-      postKillInspect.decision_summary.block, 1,
-      `decision_summary.block must still be 1 after kill; got: ${postKillInspect.decision_summary.block}`
-    );
+    // Nothing writes a 'kill' audit row any more.
+    const findings = after.session.findings || [];
+    assert.ok(!findings.some((f) => f.finding_type === 'kill'),
+      `no finding_type='kill' row may exist; got: ${JSON.stringify(findings.map((f) => f.finding_type))}`);
   });
 
-  test('e2e-kill-already-terminated-exit-1', (t) => {
+  // Was `e2e-kill-already-terminated-exit-1`.
+  // used to assert: `kill` on the already-terminated session exits 1 with
+  // InvalidTransitionError.
+  // asserts now: `kill` answers the typed removal (exit 2); a second
+  // `terminate` exits 0 and moves nothing; the five-decision trail is intact.
+  test('e2e-kill-is-removed-and-terminate-is-idempotent', (t) => {
     if (!_pgUp || sessionId === null) {
       t.skip(pg.SKIP_REASON);
       return;
     }
-    // Session was killed in the previous subtest — second kill must exit 1
-    const r = runParty(['kill', sessionId, '--reason', 'should fail', '--json']);
+    const before = JSON.parse(runParty(['inspect', sessionId, '--json']).stdout);
+
+    const r = runParty(['kill', sessionId, '--reason', 'should not run', '--json']);
     assert.strictEqual(
-      r.status, 1,
-      `kill on already-terminated session must exit 1; got: ${r.status}\nstdout: ${r.stdout}`
+      r.status, 2,
+      `kill must exit 2 (removed); got: ${r.status}\nstdout: ${r.stdout}`
     );
-    let parsed;
-    try {
-      parsed = JSON.parse(r.stdout);
-    } catch (e) {
-      assert.fail(`stdout must be valid JSON on exit 1; got: ${r.stdout}`);
-    }
+    const parsed = JSON.parse(r.stdout);
     assert.strictEqual(
-      parsed.error, 'InvalidTransitionError',
-      `error must be "InvalidTransitionError"; got: ${parsed.error}`
+      parsed.error, 'party_verb_removed',
+      `error must be "party_verb_removed"; got: ${parsed.error}`
     );
+    assert.strictEqual(parsed.action, 'kill');
+
+    const again = runParty(['terminate', sessionId, '--json']);
+    assert.strictEqual(again.status, 0, `a second terminate must exit 0; got: ${again.status}\nstdout: ${again.stdout}`);
+    assert.strictEqual(JSON.parse(again.stdout).terminated_at, before.session.terminated_at,
+      'closing twice must not move the closing time');
+
+    const after = JSON.parse(runParty(['inspect', sessionId, '--json']).stdout);
+    assert.deepStrictEqual(after.decision_trail, before.decision_trail, 'the trail must be untouched');
+    assert.deepStrictEqual(after.decision_summary, before.decision_summary);
   });
 
   test('e2e-cli-shortcut-equivalence', (t) => {
