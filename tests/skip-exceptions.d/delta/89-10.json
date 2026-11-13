@@ -1,0 +1,20 @@
+{
+  "plan": "89-10",
+  "shard": "tests/skip-exceptions.d/89-10.json",
+  "shard_is_all_added": true,
+  "note": "Plan 89-10 OPENED this shard with one entry: the store-through-a-PostgreSQL-daemon acceptance of the managed keys file needs a disposable PostgreSQL, which every CI cell has (plan 89-07) and a developer machine does not. context is local, so the gate refuses it wherever CI is set; owner is Phase 100, never Phase 89. Nothing is removed.",
+  "added": [
+    [
+      "test_a_memory_stored_through_the_daemon_comes_back_embedded",
+      "tests/test_89_10_managed_env.py",
+      "all",
+      "local",
+      "no disposable Postgres on a developer machine: this test RUNS on all nine CI cells (plan 89-07 brings a disposable PostgreSQL up on the Linux, macOS and Windows cells of both jobs). Set GSD_TEST_POSTGRES_URL to run it here.",
+      "pg-no-disposable-database-local",
+      "Phase 100 (first run and quality gates offer a local disposable PostgreSQL)",
+      100,
+      "the harness can bring up a disposable PostgreSQL on a developer machine (Phase 100, alongside the scanner installs), or the developer sets GSD_TEST_POSTGRES_URL. These tests RUN on all nine CI cells."
+    ]
+  ],
+  "removed": []
+}

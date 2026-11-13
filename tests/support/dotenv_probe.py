@@ -37,11 +37,13 @@ Example:
     >>> dotenv_probe.probe(target)["GSD_DOTENV_SENTINEL"]     # doctest: +SKIP
     'leaked-from-dotenv'
 """
+import atexit
 import json
 import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 #: Repository root — ``tests/support/dotenv_probe.py`` is two directories down.
@@ -126,12 +128,64 @@ def build_tree(root, rel, env_text=SENTINEL_ENV, env_name=".env", loader=True):
     return dest
 
 
+#: An EMPTY home directory every probe child runs under (plan 89-10). The
+#: loader's first candidate is now ``<home>/.amauta/env``, and most cases here
+#: run the child OUTSIDE test mode on purpose — so without this a child would
+#: read the keys file of whoever runs the suite. Created on first use.
+_EMPTY_HOME = None
+
+
+def empty_home():
+    """A temporary, empty home directory shared by every probe child.
+
+    Returns:
+        str: the directory. It holds no ``.amauta/env`` unless a case writes one
+        into a home of its own and passes ``HOME``/``USERPROFILE`` as overrides.
+    """
+    global _EMPTY_HOME
+    if _EMPTY_HOME is None:
+        _EMPTY_HOME = tempfile.mkdtemp(prefix="gsd-dotenv-probe-home-")
+        atexit.register(shutil.rmtree, _EMPTY_HOME, ignore_errors=True)
+    return _EMPTY_HOME
+
+
+def home_env(home):
+    """The variables ``pathlib.Path.home()`` reads, all pointing at ``home``.
+
+    Args:
+        home: the directory to present as the home directory.
+
+    Returns:
+        dict: ``HOME`` (POSIX) and ``USERPROFILE`` (Windows).
+    """
+    return {"HOME": str(home), "USERPROFILE": str(home)}
+
+
+def write_owner_only(path, text):
+    """Write a managed keys file the way the installer does: mode ``0600``.
+
+    Args:
+        path: file to write.
+        text: its body.
+
+    Returns:
+        pathlib.Path: ``path``. On Windows ``chmod`` changes nothing that
+        matters and the loader does not check.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    os.chmod(str(path), 0o600)
+    return path
+
+
 def child_env(**overrides):
     """The child's environment: this process's, minus every name under test.
 
     Both the sentinel names and the loader's marker names are removed, so a
     value the child reports can only have come from a ``.env`` the probe wrote
-    or from ``overrides``.
+    or from ``overrides``. The home directory is an empty temporary one, so the
+    child can never read a real ``~/.amauta/env``.
 
     Args:
         **overrides: names to put back (``GSD_TEST_MODE="1"`` and friends).
@@ -140,6 +194,7 @@ def child_env(**overrides):
         dict: an environment mapping for :func:`subprocess.run`.
     """
     env = dict(os.environ)
+    env.update(home_env(empty_home()))
     for key in tuple(SENTINEL_KEYS) + tuple(MARKER_KEYS):
         env.pop(key, None)
     for key, value in overrides.items():

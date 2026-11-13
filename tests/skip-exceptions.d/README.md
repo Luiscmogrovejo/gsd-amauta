@@ -126,6 +126,7 @@ authoritative. New shards appear as their plans open them.
 | `89-05.json` | removed the 26 `test_a2a_*` entries with the feature, added 24, all 24 closed by plan 89-07 — **shard deleted** | — |
 | `89-06.json` | opened with 70, all 70 closed by plan 89-07 — **shard deleted** | — |
 | `89-07.json` | the 386 entries 89-09 migrated in are gone; the shard now holds plan 89-07's own 334 additions in two classes (see below) | Phase 100 |
+| `89-10.json` | opened with 1 `pg-no-disposable-database-local` entry (`all` / `local`): the store-through-a-PostgreSQL-daemon acceptance of the managed keys file | Phase 100 |
 | `89-13.json` | opened by plan 89-13 with 24 `pg-no-disposable-database-local` entries: the 23 party tests it renamed when it converted the state-machine, resume and kill tests into decision-trail tests (their old-name entries were closed in `89-07.json`), plus the PostgreSQL arm of `test_decision_trail_on_both_backends` | Phase 100 |
 | `carried.json` | unchanged | their own phases |
 
