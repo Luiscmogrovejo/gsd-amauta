@@ -1029,7 +1029,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          set -uo pipefail
+          set +e; set -uo pipefail
           OSMAJ="$(sw_vers -productVersion | cut -d. -f1)"
           case "$OSMAJ" in
             15) PLAT=sequoia ;;
@@ -1085,7 +1085,7 @@ jobs:
         continue-on-error: true
         shell: bash
         run: |
-          set -uo pipefail
+          set +e; set -uo pipefail
           export HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 HOMEBREW_NO_ENV_HINTS=1
           T0=$(date +%s)
           brew install "postgresql@${PG_MAJOR}" pgvector; echo "brew install exit=$?"
@@ -1099,17 +1099,17 @@ jobs:
           echo "pg_config --sharedir:  $("$BIN/pg_config" --sharedir)"
           echo "pg_config --bindir:    $("$BIN/pg_config" --bindir)"
           echo "=== pg_search anywhere BEFORE the installer (expected: nothing)"
-          find /opt/homebrew /usr/local /Library/PostgreSQL /Applications/Postgres.app -name 'pg_search*' 2>/dev/null | head -20
+          find /opt/homebrew /usr/local /Library/PostgreSQL /Applications/Postgres.app -name 'pg_search*' 2>/dev/null | wc -l
           echo "(end)"
 
       - name: M4 what the package is, then install it, then where the files landed
         continue-on-error: true
         shell: bash
         run: |
-          set -uo pipefail
+          set +e; set -uo pipefail
           PKG="$PDB_WORK/pg_search.pkg"
           echo "=== pkgutil --payload-files (what it would write)"
-          pkgutil --payload-files "$PKG" | head -80
+          pkgutil --payload-files "$PKG" | grep -v -- '--' 
           echo "=== expanded package: structure, PackageInfo, scripts"
           pkgutil --expand "$PKG" "$PDB_WORK/expanded"; echo "expand exit=$?"
           find "$PDB_WORK/expanded" -maxdepth 3 | head -60
@@ -1128,10 +1128,11 @@ jobs:
           pkgutil --pkgs | grep -i -E 'parade|pg_search|pgsearch' || echo "(no receipt matched)"
           for id in $(pkgutil --pkgs | grep -i -E 'parade|pg_search|pgsearch'); do
             echo "--- pkgutil --pkg-info $id"; pkgutil --pkg-info "$id"
-            echo "--- pkgutil --files $id";    pkgutil --files "$id" | head -80
+            echo "--- pkgutil --files $id";    pkgutil --files "$id" | grep -v -- '--'
           done
           echo "=== pg_search anywhere AFTER the installer"
-          find /opt/homebrew /usr/local /Library/PostgreSQL /Applications/Postgres.app -name 'pg_search*' 2>/dev/null | head -40
+          find /opt/homebrew /usr/local /Library/PostgreSQL /Applications/Postgres.app \( -name 'pg_search.dylib' -o -name 'pg_search.control' \) 2>/dev/null
+          ls -l /opt/homebrew/opt/paradedb /opt/homebrew/opt/paradedb/lib/postgresql
           BIN="$(brew --prefix "postgresql@${PG_MAJOR}")/bin"
           LIBDIR="$("$BIN/pg_config" --pkglibdir)"
           SHAREDIR="$("$BIN/pg_config" --sharedir)"
@@ -1149,7 +1150,7 @@ jobs:
         continue-on-error: true
         shell: bash
         run: |
-          set -uo pipefail
+          set +e; set -uo pipefail
           BIN="$(brew --prefix "postgresql@${PG_MAJOR}")/bin"
           PORT=$(node -e "process.stdout.write(String(require('./scripts/run-tests.cjs').freePort()))")
           DATA="$RUNNER_TEMP/gsd-ci-pg"
