@@ -180,6 +180,48 @@ def test_infra03_pg_search_installed(postgres_dsn):
         assert report['lexical_engine'] == infra_detect.LEXICAL_POSTGRES_FTS
         assert 'idx_rlm_chunks_fts' in indexes, \
             'pg_search is absent and migration 033 created no substitute'
+        assert 'idx_gsd_memory_fts_fallback' in indexes, \
+            'pg_search is absent and migration 033 created no memory substitute'
+
+    # Plan 89-07: the same answer must reach the two places an operator looks,
+    # ON THE CELL'S OWN DATABASE. Plan 89-06's doctor and /health tests take
+    # both engines in one test, so they are ParadeDB-gated and never execute on
+    # a server with no pg_search available -- which left the plain-PostgreSQL
+    # report unasserted exactly where it is the only report there is (the
+    # macOS and Windows cells). This asserts it for the engine PRESENT, so it
+    # runs, unskipped, on all nine cells.
+    from services import _89_06_reporting as reporting
+    from services import migrate_runner, report_hooks
+
+    expected = (infra_detect.LEXICAL_PG_SEARCH if row is not None
+                else infra_detect.LEXICAL_POSTGRES_FTS)
+    env = {'GSD_POSTGRES_URL': postgres_dsn}
+    reporting.reset_cache()
+    try:
+        rows = reporting.doctor_rows(env)
+        section = report_hooks.extra_health_rows(env)
+    finally:
+        reporting.reset_cache()
+    assert rows and len(rows) == 1, rows
+    status, category, detail, data = rows[0]
+    assert category == reporting.DOCTOR_CATEGORY
+    assert data['lexical_engine'] == expected, rows
+    assert status == (report_hooks.STATUS_OK if row is not None
+                      else report_hooks.STATUS_WARN), rows
+    fragment = section[reporting.HEALTH_KEY]
+    assert fragment['lexical_engine'] == expected, fragment
+    assert fragment['degraded'] is (row is None), fragment
+    assert fragment['reason'] == detail, (fragment, detail)
+    if row is None:
+        assert detail == infra_detect.LEXICAL_FALLBACK_SENTENCE, detail
+
+    # ... and the schema that database carries is the WHOLE schema: every
+    # migration on disk is recorded as applied, none pending, none drifted.
+    state = migrate_runner.status(dsn=postgres_dsn)
+    assert state['tracking_table'] is True, state
+    assert state['pending'] == [], state['pending']
+    assert state['drifted'] == [], state['drifted']
+    assert len(state['applied']) == state['total'] > 0, state
 
 
 @pytest.mark.integration
