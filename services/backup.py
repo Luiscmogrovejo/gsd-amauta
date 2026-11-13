@@ -7,10 +7,12 @@ THIS IS NOT A RESTORABLE SNAPSHOT. Read this before reaching for it.
 ``BackupManager`` writes a gzipped JSON export of SIX logical table types
 (memory, tasks, SKB, validations, agent performance, audit) — that is 6 of the
 ~22 tables a PostgreSQL install carries — and **it strips every embedding on the
-way out**. The stripping happens at three sites in ``services/pg_store.py`` —
-line 482 (``_score_core``), line 3021 (the memory-search scorer) and line 3320
-(``PGStore._rows_to_dicts``, the export path this module depends on) — each
-doing ``d.pop("embedding", None)``. Measured on 2026-11-12: a
+way out**. The stripping happens at three sites in ``services/pg_store.py``,
+named here by FUNCTION because a line number rots on every edit above it —
+``_score_core``, ``PGStore._score_semantic_results`` (the memory-search scorer)
+and ``PGStore._rows_to_dicts`` (the export path this module depends on) — each
+calling ``_strip_vectors(d)``, which removes the live vector and, since
+migration 034, the one being built beside it. Measured on 2026-11-12: a
 ``~/.amauta/backups/gsd-auto-*.json.gz`` file contains the string
 ``"embedding"`` exactly ZERO times and covers 6 tables.
 

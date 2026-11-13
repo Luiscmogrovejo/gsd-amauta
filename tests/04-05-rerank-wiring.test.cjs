@@ -21,7 +21,7 @@
  *    12. RLM-07 comment marks the rerank section
  *   RERANK-05: PGStore.rerank still exists
  *    13. rerank method exists in pg_store.py
- *    14. rerank calls rerank-2.5 model
+ *    14. rerank calls the catalogue's rerank model (rerank-3), not a literal
  */
 'use strict';
 const { describe, it } = require('node:test');
@@ -117,8 +117,26 @@ describe('RERANK-05: PGStore.rerank still exists', () => {
       'PGStore.rerank method must still exist');
   });
 
-  it('14. rerank calls rerank-2.5 model', () => {
-    assert.ok(pgStoreContent.includes('rerank-2.5'),
-      'PGStore.rerank should use rerank-2.5 model');
+  // Phase 89 plan 89-08 (RET-05): this used to assert that pg_store.py
+  // CONTAINS the literal of the old rerank model. The rerank model is a
+  // setting now (retrieval.rerank_model, default rerank-3 per the operator's
+  // decision of 2026-11-11), validated against the model catalogue, so the pin
+  // moves with it: the default is rerank-3, it is a rerank record of the
+  // catalogue, and pg_store.py reads the model from its resolved config
+  // instead of naming one.
+  it('14. rerank calls the catalogue rerank model (rerank-3), not a literal', () => {
+    const catalogue = JSON.parse(fs.readFileSync(
+      path.join(__dirname, '..', 'get-shit-done', 'config', 'embedding-models.json'), 'utf-8'));
+    assert.strictEqual(catalogue.uses.rerank.default, 'rerank-3',
+      'the default rerank model is rerank-3');
+    const record = catalogue.models.find((m) => m.id === catalogue.uses.rerank.default);
+    assert.ok(record && record.kind === 'rerank' && record.status === 'current',
+      'the default rerank model is a current rerank record of the catalogue');
+    assert.ok(pgStoreContent.includes('"model": cfg["rerank_model"]'),
+      'PGStore.rerank must send the resolved rerank model');
+    assert.ok(pgStoreContent.includes('_harness_config.USE_RERANK'),
+      'the rerank model must be resolved through the harness config');
+    assert.ok(!/["']rerank-\d[^"']*["']/.test(pgStoreContent),
+      'pg_store.py must not name a rerank model literally');
   });
 });
