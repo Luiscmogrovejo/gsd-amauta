@@ -79,6 +79,24 @@ QODO_OLLAMA_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 INPUT_TYPE_DOCUMENT = "document"
 INPUT_TYPE_QUERY = "query"
 
+#: Why the last Voyage call returned nothing: ``{"kind": "rate_limited" | "error",
+#: "error": <exception class name>}``, or None after a success. The provider
+#: path answers None for every failure (the documented graceful degradation), so
+#: without this a caller cannot tell "the account's rate limit declined the
+#: call" from "the call is broken" — and those two need different handling.
+LAST_VOYAGE_FAILURE = None
+
+
+def _classify_voyage_failure(exc) -> dict:
+    """``rate_limited`` for an HTTP 429 / the client's RateLimitError, else ``error``."""
+    name = type(exc).__name__
+    text = str(exc)
+    limited = ("RateLimit" in name or getattr(exc, "http_status", None) == 429
+               or getattr(exc, "status_code", None) == 429
+               or "429" in text or "rate limit" in text.lower())
+    return {"kind": "rate_limited" if limited else "error", "error": name}
+
+
 # In-memory embedding cache: (model, input_type, sha256(full text)) -> embedding
 _EMBED_CACHE: dict = {}
 _EMBED_CACHE_MAX = 500
@@ -260,6 +278,7 @@ def _try_voyage_model(text: str, input_type: str, model: str) -> Optional[list]:
     Every catalogue Voyage embedding model returns 1024 dimensions by default, so
     both paths produce the same dimensionality.
     """
+    global LAST_VOYAGE_FAILURE
     api_key = os.environ.get("VOYAGE_API_KEY", "")
     if not api_key:
         return None
@@ -289,9 +308,12 @@ def _try_voyage_model(text: str, input_type: str, model: str) -> Optional[list]:
         else:
             embedding = embedding[:VOYAGE_OUTPUT_DIMENSION]
         log.debug("voyage_embed_ok dims=%d input_type=%s", len(embedding), input_type)
+        LAST_VOYAGE_FAILURE = None
         return embedding
     except Exception as e:
-        log.warning("voyage_embed_failed error=%s", str(e))
+        LAST_VOYAGE_FAILURE = _classify_voyage_failure(e)
+        log.warning("voyage_embed_failed kind=%s error=%s",
+                    LAST_VOYAGE_FAILURE["kind"], str(e))
         return None
 
 

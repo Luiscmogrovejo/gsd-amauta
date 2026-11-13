@@ -436,3 +436,51 @@ def test_doctor_reports_the_embedding_state_phase_per_use(monkeypatch):
     fragment = reporting.health_fragment(PG_ENV)
     assert fragment["reembed_pending"] is True
     assert fragment["state"]["memory"]["phase"] == "backfilling"
+
+
+# ── fact F1: a provider rate limit is told apart from a broken call ──────────
+
+class _FakeRateLimitError(Exception):
+    pass
+
+
+def _fake_voyage(monkeypatch, error):
+    import types
+
+    module = types.ModuleType("voyageai")
+
+    class Client:
+        def __init__(self, api_key=None):
+            pass
+
+        def embed(self, *args, **kwargs):
+            raise error
+
+    module.Client = Client
+    monkeypatch.setitem(sys.modules, "voyageai", module)
+    monkeypatch.setenv("VOYAGE_API_KEY", "not-a-real-key")
+
+
+def test_a_rate_limit_is_classified_and_any_other_failure_is_not(monkeypatch):
+    """The real-provider CI step reports a rate limit and stays red on anything
+    else; that distinction is made HERE, in the product, not guessed in a test."""
+    from services import rlm_embeddings
+
+    rlm_embeddings.clear_cache()
+    _fake_voyage(monkeypatch, _FakeRateLimitError("You have exceeded 3 RPM"))
+    assert rlm_embeddings._try_voyage_model("probe", "document", "voyage-code-4") is None
+    assert rlm_embeddings.LAST_VOYAGE_FAILURE == {
+        "kind": "rate_limited", "error": "_FakeRateLimitError"}
+
+    _fake_voyage(monkeypatch, RuntimeError("HTTP 429 Too Many Requests"))
+    rlm_embeddings._try_voyage_model("probe", "document", "voyage-code-4")
+    assert rlm_embeddings.LAST_VOYAGE_FAILURE["kind"] == "rate_limited"
+
+    # An authentication failure, a refused connection, a wrong model: NOT a
+    # rate limit, so the real-provider test still fails on them.
+    for broken in (RuntimeError("401 invalid API key"), ConnectionError("refused"),
+                   ValueError("model voyage-code-9 not found")):
+        _fake_voyage(monkeypatch, broken)
+        assert rlm_embeddings._try_voyage_model("probe", "document", "voyage-code-4") is None
+        assert rlm_embeddings.LAST_VOYAGE_FAILURE["kind"] == "error", broken
+    monkeypatch.setattr(rlm_embeddings, "LAST_VOYAGE_FAILURE", None)
