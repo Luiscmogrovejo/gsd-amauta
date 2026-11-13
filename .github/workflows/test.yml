@@ -956,3 +956,243 @@ jobs:
         if: always() && runner.os == 'Linux'
         shell: bash
         run: docker rm -f gsd-test-valkey || true
+
+  # ── TEMPORARY, plan 89-12 task 01: the throwaway measurement ───────────────
+  # Removed again before the pull request is marked ready. It answers, on the
+  # hosted runner and nowhere else, which PostgreSQL the signed ParadeDB macOS
+  # package matches, what it costs, and whether it is reliable across three
+  # independent runners. Nothing here is permanent and nothing here can fail
+  # the workflow.
+  measure-pg-search-macos:
+    name: measure pg_search (macos-latest, attempt ${{ matrix.attempt }})
+    runs-on: macos-latest
+    timeout-minutes: 25
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        attempt: [1, 2, 3]
+    env:
+      PDB_TAG: 'v0.26.6'
+      PDB_VER: '0.26.6'
+      PG_MAJOR: '17'
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+          cache: 'npm'
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5
+        with:
+          python-version: '3.12'
+      - name: Install what the bring-up and the migration runner import
+        continue-on-error: true
+        shell: bash
+        env:
+          GSD_INSTALL_FILES_ONLY: '1'
+        run: |
+          npm ci
+          python -m pip install --disable-pip-version-check -r requirements.txt -r requirements-dev.txt
+
+      - name: M0 runner facts
+        continue-on-error: true
+        shell: bash
+        run: |
+          echo "=== sw_vers"; sw_vers
+          echo "=== uname -m: $(uname -m)"
+          echo "=== brew --version"; brew --version
+          echo "=== brew --prefix: $(brew --prefix)"
+          echo "=== cosign on PATH: $(command -v cosign || echo '(absent)')"
+          echo "=== gh on PATH: $(command -v gh || echo '(absent)')"
+          echo "=== postgres on PATH: $(command -v postgres || echo '(absent)')"
+          echo "=== brew list | grep -i postgres"; brew list 2>/dev/null | grep -i postgres || echo "(none)"
+
+      - name: M1 the current ParadeDB release and its macOS assets
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "=== latest release"
+          gh api repos/paradedb/paradedb/releases/latest \
+            --jq '"tag=\(.tag_name) published=\(.published_at) assets=\(.assets|length)"'
+          echo "=== .pkg assets of the latest release (name, size, digest GitHub records)"
+          gh api repos/paradedb/paradedb/releases/latest \
+            --jq '.assets[] | select(.name|test("\\.pkg")) | "\(.name)\t\(.size)\t\(.digest)"'
+          echo "=== assets naming windows / .zip / .dll / .exe (expected: none)"
+          gh api repos/paradedb/paradedb/releases/latest \
+            --jq '[.assets[] | select(.name|test("windows|win32|win64|\\.zip$|\\.dll$|\\.exe$|\\.msi$";"i")) | .name] | length'
+
+      - name: M2 download by URL, record the SHA-256, look for a verifier
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          OSMAJ="$(sw_vers -productVersion | cut -d. -f1)"
+          case "$OSMAJ" in
+            15) PLAT=sequoia ;;
+            26) PLAT=tahoe ;;
+            *)  PLAT=unknown ;;
+          esac
+          echo "macOS major $OSMAJ -> asset platform suffix: $PLAT"
+          echo "PDB_PLAT=$PLAT" >> "$GITHUB_ENV"
+          WORK="$RUNNER_TEMP/pdb"; rm -rf "$WORK"; mkdir -p "$WORK"
+          echo "PDB_WORK=$WORK" >> "$GITHUB_ENV"
+          NAME="pg_search@${PG_MAJOR}--${PDB_VER}.arm64_${PLAT}.pkg"
+          URL="https://github.com/paradedb/paradedb/releases/download/${PDB_TAG}/pg_search%40${PG_MAJOR}--${PDB_VER}.arm64_${PLAT}.pkg"
+          echo "URL=$URL"
+          T0=$(date +%s)
+          curl -fsSL --retry 3 --retry-all-errors -o "$WORK/pg_search.pkg" "$URL"; echo "curl pkg exit=$?"
+          curl -fsSL --retry 3 --retry-all-errors -o "$WORK/pg_search.pkg.cosign.bundle" "${URL}.cosign.bundle"; echo "curl bundle exit=$?"
+          T1=$(date +%s)
+          echo "DOWNLOAD_SECONDS=$((T1-T0))"
+          ls -l "$WORK"
+          echo "=== SHA-256 of the downloaded bytes"
+          shasum -a 256 "$WORK/pg_search.pkg" "$WORK/pg_search.pkg.cosign.bundle"
+          echo "=== the digest the GitHub release API records for the same asset"
+          gh api "repos/paradedb/paradedb/releases/tags/${PDB_TAG}" \
+            --jq ".assets[] | select(.name==\"${NAME}\" or .name==\"${NAME}.cosign.bundle\") | \"\(.name)\t\(.digest)\""
+          echo "=== Apple installer signature"
+          pkgutil --check-signature "$WORK/pg_search.pkg"; echo "pkgutil --check-signature exit=$?"
+          spctl --assess --type install -vv "$WORK/pg_search.pkg"; echo "spctl exit=$?"
+          echo "=== cosign bundle head"
+          head -c 600 "$WORK/pg_search.pkg.cosign.bundle"; echo
+          echo "=== verifier"
+          if command -v cosign >/dev/null 2>&1; then
+            echo "cosign preinstalled: $(cosign version 2>&1 | head -5)"
+          else
+            echo "cosign NOT preinstalled; timing 'brew install cosign'"
+            T2=$(date +%s)
+            HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 HOMEBREW_NO_ENV_HINTS=1 brew install cosign 2>&1 | tail -5
+            T3=$(date +%s)
+            echo "COSIGN_INSTALL_SECONDS=$((T3-T2))"
+            cosign version 2>&1 | head -8
+          fi
+          echo "--- cosign verify-blob (new bundle format)"
+          cosign verify-blob --new-bundle-format --bundle "$WORK/pg_search.pkg.cosign.bundle" \
+            --certificate-identity-regexp '^https://github.com/paradedb/paradedb/' \
+            --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+            "$WORK/pg_search.pkg"; echo "cosign(new) exit=$?"
+          echo "--- cosign verify-blob (legacy bundle format)"
+          cosign verify-blob --bundle "$WORK/pg_search.pkg.cosign.bundle" \
+            --certificate-identity-regexp '^https://github.com/paradedb/paradedb/' \
+            --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+            "$WORK/pg_search.pkg"; echo "cosign(legacy) exit=$?"
+
+      - name: M3 brew install postgresql@17 pgvector
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -uo pipefail
+          export HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 HOMEBREW_NO_ENV_HINTS=1
+          T0=$(date +%s)
+          brew install "postgresql@${PG_MAJOR}" pgvector; echo "brew install exit=$?"
+          T1=$(date +%s)
+          echo "BREW_SECONDS=$((T1-T0))"
+          BIN="$(brew --prefix "postgresql@${PG_MAJOR}")/bin"
+          echo "brew --prefix postgresql@${PG_MAJOR}: $(brew --prefix "postgresql@${PG_MAJOR}")"
+          echo "brew list --versions: $(brew list --versions "postgresql@${PG_MAJOR}" pgvector | tr '\n' ' ')"
+          echo "pg_config --version:   $("$BIN/pg_config" --version)"
+          echo "pg_config --pkglibdir: $("$BIN/pg_config" --pkglibdir)"
+          echo "pg_config --sharedir:  $("$BIN/pg_config" --sharedir)"
+          echo "pg_config --bindir:    $("$BIN/pg_config" --bindir)"
+          echo "=== pg_search anywhere BEFORE the installer (expected: nothing)"
+          find /opt/homebrew /usr/local /Library/PostgreSQL /Applications/Postgres.app -name 'pg_search*' 2>/dev/null | head -20
+          echo "(end)"
+
+      - name: M4 what the package is, then install it, then where the files landed
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -uo pipefail
+          PKG="$PDB_WORK/pg_search.pkg"
+          echo "=== pkgutil --payload-files (what it would write)"
+          pkgutil --payload-files "$PKG" | head -80
+          echo "=== expanded package: structure, PackageInfo, scripts"
+          pkgutil --expand "$PKG" "$PDB_WORK/expanded"; echo "expand exit=$?"
+          find "$PDB_WORK/expanded" -maxdepth 3 | head -60
+          for f in $(find "$PDB_WORK/expanded" -name PackageInfo -o -name Distribution); do
+            echo "--- $f"; cat "$f"; echo
+          done
+          for f in $(find "$PDB_WORK/expanded" -path '*Scripts*' -type f); do
+            echo "--- script $f"; head -80 "$f"; echo
+          done
+          echo "=== sudo installer"
+          T0=$(date +%s)
+          sudo installer -pkg "$PKG" -target / -verbose; echo "installer exit=$?"
+          T1=$(date +%s)
+          echo "INSTALLER_SECONDS=$((T1-T0))"
+          echo "=== receipts"
+          pkgutil --pkgs | grep -i -E 'parade|pg_search|pgsearch' || echo "(no receipt matched)"
+          for id in $(pkgutil --pkgs | grep -i -E 'parade|pg_search|pgsearch'); do
+            echo "--- pkgutil --pkg-info $id"; pkgutil --pkg-info "$id"
+            echo "--- pkgutil --files $id";    pkgutil --files "$id" | head -80
+          done
+          echo "=== pg_search anywhere AFTER the installer"
+          find /opt/homebrew /usr/local /Library/PostgreSQL /Applications/Postgres.app -name 'pg_search*' 2>/dev/null | head -40
+          BIN="$(brew --prefix "postgresql@${PG_MAJOR}")/bin"
+          LIBDIR="$("$BIN/pg_config" --pkglibdir)"
+          SHAREDIR="$("$BIN/pg_config" --sharedir)"
+          echo "=== in the Homebrew cluster's own directories?"
+          ls -l "$LIBDIR"/pg_search* 2>&1
+          ls -l "$SHAREDIR"/extension/pg_search* 2>&1 | head -20
+          for lib in "$LIBDIR"/pg_search*; do
+            [ -f "$lib" ] || continue
+            echo "--- file / otool -L / codesign $lib"
+            file "$lib"; otool -L "$lib"; codesign -dv "$lib" 2>&1 | head -8
+          done
+          cat "$SHAREDIR/extension/pg_search.control" 2>&1
+
+      - name: M5 bring-up, shared_preload_libraries, restart, CREATE EXTENSION, migrations
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -uo pipefail
+          BIN="$(brew --prefix "postgresql@${PG_MAJOR}")/bin"
+          PORT=$(node -e "process.stdout.write(String(require('./scripts/run-tests.cjs').freePort()))")
+          DATA="$RUNNER_TEMP/gsd-ci-pg"
+          export PGPASSWORD=gsd
+          Q() { "$BIN/psql" -h 127.0.0.1 -p "$PORT" -U gsd -d "$1" -w -v ON_ERROR_STOP=1 -tAc "$2"; }
+          T0=$(date +%s)
+          node scripts/ci-postgres-cell.cjs --up --port "$PORT" --data-dir "$DATA"; echo "bring-up exit=$?"
+          T1=$(date +%s)
+          echo "BRINGUP_SECONDS=$((T1-T0))"
+          echo "=== BEFORE: is pg_search available, what is preloaded"
+          Q gsd_test "SELECT name, default_version FROM pg_available_extensions WHERE name IN ('pg_search','vector')"
+          Q gsd_test "SHOW shared_preload_libraries"
+          echo "=== CREATE EXTENSION without the preload (recorded, expected to refuse or warn)"
+          Q gsd_test "CREATE EXTENSION pg_search CASCADE"; echo "create-without-preload exit=$?"
+          Q gsd_test "DROP EXTENSION IF EXISTS pg_search CASCADE"
+          echo "=== append shared_preload_libraries and restart"
+          printf "\nshared_preload_libraries = 'pg_search'\n" >> "$DATA/postgresql.conf"
+          cat "$DATA/postmaster.opts"
+          T2=$(date +%s)
+          "$BIN/pg_ctl" -D "$DATA" -l "$DATA.log" -w -t 90 restart > "$DATA.restart.out" 2>&1 < /dev/null; echo "pg_ctl restart exit=$?"
+          T3=$(date +%s)
+          cat "$DATA.restart.out"
+          echo "RESTART_SECONDS=$((T3-T2))"
+          Q gsd_test "SHOW shared_preload_libraries"
+          Q gsd_test "SHOW port"
+          echo "=== CREATE EXTENSION pg_search CASCADE"
+          Q gsd_test "CREATE EXTENSION pg_search CASCADE"; echo "create exit=$?"
+          echo "extversion: $(Q gsd_test "SELECT extversion FROM pg_extension WHERE extname='pg_search'")"
+          echo "server:     $(Q gsd_test "SHOW server_version")"
+          echo "vector:     $(Q gsd_test "SELECT extversion FROM pg_extension WHERE extname='vector'")"
+          echo "=== a BM25 index and one @@@ query, end to end"
+          Q gsd_test "CREATE TABLE m5 (id int primary key, body text); INSERT INTO m5 VALUES (1,'the quick brown fox'),(2,'a lazy dog'); CREATE INDEX m5_idx ON m5 USING bm25 (id, body) WITH (key_field='id'); SELECT id, paradedb.score(id) FROM m5 WHERE body @@@ 'fox' ORDER BY 2 DESC; DROP TABLE m5"; echo "bm25 smoke exit=$?"
+          echo "=== the product's own migrations, then what it says about the engine"
+          DSN="postgresql://gsd:gsd@127.0.0.1:${PORT}/gsd_test"
+          T4=$(date +%s)
+          python -c "import sys; sys.path.insert(0, '.'); from services import migrate_runner; print('migrations applied:', migrate_runner.apply_migrations(dsn='${DSN}'))"; echo "migrations exit=$?"
+          T5=$(date +%s)
+          echo "MIGRATIONS_SECONDS=$((T5-T4))"
+          python -c "import sys; sys.path.insert(0, '.'); from services import infra_detect; r = infra_detect.lexical_engine_for_dsn('${DSN}'); print('lexical_engine_for_dsn:', r)"
+          echo "--- indexes named bm25 or fts"
+          Q gsd_test "SELECT indexname FROM pg_indexes WHERE schemaname='public' AND (indexname ILIKE '%bm25%' OR indexname ILIKE '%fts%') ORDER BY 1"
+          echo "=== server log tail"
+          tail -40 "$DATA.log"
+          echo "=== stop"
+          node scripts/ci-postgres-cell.cjs --stop --data-dir "$DATA"
+          echo "M5_TOTAL_SECONDS=$(( $(date +%s) - T0 ))"
