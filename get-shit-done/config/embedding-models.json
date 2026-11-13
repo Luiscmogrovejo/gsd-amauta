@@ -1,0 +1,230 @@
+{
+  "catalog_version": 1,
+  "description": "The pinned catalogue of embedding and rerank models (Phase 89 plan 89-08, RET-05). It is the VALIDATOR for `config-set retrieval.*`: a model that is not listed here cannot be configured. Voyage publishes no model-list endpoint and no usage endpoint, so this file is the authority and a human updates it; see docs/EMBEDDING-MODELS.md for the procedure.",
+  "uses": {
+    "memory": {
+      "key": "retrieval.embedding_model.memory",
+      "kind": "embed",
+      "default": "voyage-code-4"
+    },
+    "code_index": {
+      "key": "retrieval.embedding_model.code_index",
+      "kind": "embed",
+      "default": "voyage-code-4"
+    },
+    "rerank": {
+      "key": "retrieval.rerank_model",
+      "kind": "rerank",
+      "default": "rerank-3"
+    }
+  },
+  "default_provider": "voyage",
+  "default_dimensions": 1024,
+  "token_estimate": {
+    "chars_per_token": 3,
+    "note": "The pre-spend count is ceil(characters / 3) per text. Code tokenises at roughly 3 to 4 characters per token, so this over-counts on purpose: a budget gate that under-counts is the dangerous direction. The spend that is RECORDED is the provider's own usage figure whenever the provider reports one."
+  },
+  "models": [
+    {
+      "id": "voyage-code-4",
+      "provider": "voyage",
+      "kind": "embed",
+      "dimensions": [
+        256,
+        512,
+        1024,
+        2048
+      ],
+      "default_dimension": 1024,
+      "max_texts_per_request": 1000,
+      "max_tokens_per_request": 120000,
+      "max_tokens_per_request_verified_at": null,
+      "max_tokens_per_request_note": "Not listed on the vendor's rate-limit page (read 2026-11-12) and not measured: a per-request cap cannot be measured without sending a request of that size. 120000 is the smallest cap the vendor lists for any model of this family, assumed until measured.",
+      "tpm_tier1": 8000000,
+      "rpm_tier1": 2000,
+      "price_per_mtok": 0.12,
+      "free_tokens": 200000000,
+      "status": "current",
+      "asymmetric": true,
+      "verified_at": "2026-11-13",
+      "verified_by": "plan 89-08: one live call (1 input, 5 tokens) returned 1024 dimensions; price, allowance and rate limits read from the vendor pages on 2026-11-12",
+      "source_url": "https://docs.voyageai.com/docs/pricing"
+    },
+    {
+      "id": "voyage-4",
+      "provider": "voyage",
+      "kind": "embed",
+      "dimensions": [
+        256,
+        512,
+        1024,
+        2048
+      ],
+      "default_dimension": 1024,
+      "max_texts_per_request": 1000,
+      "max_tokens_per_request": 320000,
+      "tpm_tier1": 8000000,
+      "rpm_tier1": 2000,
+      "price_per_mtok": 0.06,
+      "free_tokens": 200000000,
+      "status": "current",
+      "asymmetric": true,
+      "verified_at": "2026-11-12",
+      "verified_by": "phase 89 research section 7.6, read from the vendor pages",
+      "source_url": "https://docs.voyageai.com/docs/pricing"
+    },
+    {
+      "id": "voyage-4-large",
+      "provider": "voyage",
+      "kind": "embed",
+      "dimensions": [
+        256,
+        512,
+        1024,
+        2048
+      ],
+      "default_dimension": 1024,
+      "max_texts_per_request": 1000,
+      "max_tokens_per_request": 120000,
+      "tpm_tier1": 3000000,
+      "rpm_tier1": 2000,
+      "price_per_mtok": 0.12,
+      "free_tokens": 200000000,
+      "status": "current",
+      "asymmetric": true,
+      "verified_at": "2026-11-12",
+      "verified_by": "phase 89 research section 7.6, read from the vendor pages",
+      "source_url": "https://docs.voyageai.com/docs/pricing"
+    },
+    {
+      "id": "voyage-code-3",
+      "provider": "voyage",
+      "kind": "embed",
+      "dimensions": [
+        256,
+        512,
+        1024,
+        2048
+      ],
+      "default_dimension": 1024,
+      "max_texts_per_request": 1000,
+      "max_tokens_per_request": 120000,
+      "tpm_tier1": 3000000,
+      "rpm_tier1": 2000,
+      "price_per_mtok": 0.18,
+      "free_tokens": 0,
+      "status": "older",
+      "asymmetric": true,
+      "verified_at": "2026-11-12",
+      "verified_by": "phase 89 research section 7.6, read from the vendor pages",
+      "source_url": "https://docs.voyageai.com/docs/pricing"
+    },
+    {
+      "id": "rerank-3",
+      "provider": "voyage",
+      "kind": "rerank",
+      "dimensions": [
+        1
+      ],
+      "default_dimension": 1,
+      "default_dimension_note": "A reranker returns one relevance score per document, not a vector; 1 is that score. Dimension validation applies to kind=embed only.",
+      "max_texts_per_request": 1000,
+      "max_tokens_per_request": null,
+      "tpm_tier1": 2000000,
+      "rpm_tier1": 2000,
+      "price_per_mtok": 0.05,
+      "free_tokens": 200000000,
+      "status": "current",
+      "asymmetric": false,
+      "verified_at": "2026-11-12",
+      "verified_by": "phase 89 research section 7.6, read from the vendor pages",
+      "source_url": "https://docs.voyageai.com/docs/pricing"
+    },
+    {
+      "id": "rerank-3-lite",
+      "provider": "voyage",
+      "kind": "rerank",
+      "dimensions": [
+        1
+      ],
+      "default_dimension": 1,
+      "default_dimension_note": "A reranker returns one relevance score per document, not a vector; 1 is that score. Dimension validation applies to kind=embed only.",
+      "max_texts_per_request": 1000,
+      "max_tokens_per_request": null,
+      "tpm_tier1": 4000000,
+      "rpm_tier1": 2000,
+      "price_per_mtok": 0.02,
+      "free_tokens": 200000000,
+      "status": "current",
+      "asymmetric": false,
+      "verified_at": "2026-11-12",
+      "verified_by": "phase 89 research section 7.6, read from the vendor pages",
+      "source_url": "https://docs.voyageai.com/docs/pricing"
+    },
+    {
+      "id": "rerank-2.5",
+      "provider": "voyage",
+      "kind": "rerank",
+      "dimensions": [
+        1
+      ],
+      "default_dimension": 1,
+      "default_dimension_note": "A reranker returns one relevance score per document, not a vector; 1 is that score. Dimension validation applies to kind=embed only.",
+      "max_texts_per_request": 1000,
+      "max_tokens_per_request": null,
+      "tpm_tier1": 2000000,
+      "rpm_tier1": 2000,
+      "price_per_mtok": 0.05,
+      "free_tokens": 0,
+      "status": "older",
+      "asymmetric": false,
+      "verified_at": "2026-11-12",
+      "verified_by": "phase 89 research section 7.6, read from the vendor pages; no free allowance is stated for this model",
+      "source_url": "https://docs.voyageai.com/docs/pricing"
+    },
+    {
+      "id": "text-embedding-3-small",
+      "provider": "openai",
+      "kind": "embed",
+      "dimensions": [
+        512,
+        1024,
+        1536
+      ],
+      "default_dimension": 1024,
+      "default_dimension_note": "The model's native size is 1536; this product always requests 1024 through the `dimensions` parameter so the vector fits the vector(1024) columns.",
+      "max_texts_per_request": 2048,
+      "max_tokens_per_request": 300000,
+      "tpm_tier1": 1000000,
+      "rpm_tier1": 3000,
+      "price_per_mtok": 0.02,
+      "free_tokens": 0,
+      "status": "older",
+      "asymmetric": false,
+      "verified_at": null,
+      "verified_by": "not re-verified by plan 89-08: carried from services/pg_store.py, where it is the fallback provider",
+      "source_url": "https://platform.openai.com/docs/guides/embeddings"
+    },
+    {
+      "id": "qodo-embed-1-1.5b",
+      "provider": "local",
+      "kind": "embed",
+      "dimensions": [
+        1024
+      ],
+      "default_dimension": 1024,
+      "default_dimension_note": "The model's native size is 1536; services/rlm_embeddings.py truncates it to 1024 so it fits the column. Still a supported provider for the code index only (through a local Ollama).",
+      "max_texts_per_request": 1,
+      "max_tokens_per_request": null,
+      "tpm_tier1": null,
+      "rpm_tier1": null,
+      "price_per_mtok": 0,
+      "free_tokens": null,
+      "status": "older",
+      "asymmetric": false,
+      "verified_at": null,
+      "verified_by": "not re-verified by plan 89-08: carried from services/rlm_embeddings.py",
+      "source_url": "https://ollama.com/library"
+    }
+  ]
+}
