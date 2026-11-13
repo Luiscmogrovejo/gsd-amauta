@@ -48,7 +48,10 @@ UP_034 = MIGRATIONS / "034-embedding-blue-green.sql"
 DOWN_034 = MIGRATIONS / "034-embedding-blue-green-DOWN.sql"
 
 OLD = "voyage-code-4"   # migration 034's seeded active model
-NEW = "voyage-code-3"   # any other catalogue embedding model serves as the target
+#: The target. voyage-code-3 has NO free allowance in the catalogue, so every run
+#: towards it passes allow_paid=True — which is itself the product saying that
+#: "switch back to the older model" is a paid re-embed, never a free one.
+NEW = "voyage-code-3"
 
 #: Every vector column of the schema: (table, live column).
 VECTOR_COLUMNS = (
@@ -161,7 +164,7 @@ def db(_module_db):
     try:
         with conn.cursor() as cur:
             cur.execute("TRUNCATE gsd_memory, gsd_memory_archive, semantic_cache, "
-                        "rlm_chunks, task_completions, skill_invocations")
+                        "rlm_chunks, task_completions, skill_invocations CASCADE")
             cur.execute("DELETE FROM gsd_audit_log WHERE task_id = 'embeddings'")
             cur.execute(
                 "UPDATE embedding_state SET active_model = CASE use WHEN 'rerank' "
@@ -706,7 +709,7 @@ def test_the_request_token_cap_limits_a_batch(db, monkeypatch):
     provider = StubProvider()
     eb.run_backfill(dsn=db, use="memory", budget_tokens=10 ** 6, batch_size=128,
                     provider=provider, pacer=pacer()[0])
-    # 30 * 0.8 = 24 tokens per request; each text costs 12: two per request.
+    # 30 * 0.8 = 24 tokens per request; each 30-character text costs 10: two per request.
     assert [len(c["texts"]) for c in provider.calls] == [2, 2, 2]
 
 
@@ -895,7 +898,7 @@ def test_queries_answer_from_the_old_column_while_backfilling(db, monkeypatch):
     texts = seed_memories(db, 8, with_vectors_of=OLD)
     provider = StubProvider()
     result = eb.run_backfill(dsn=db, use="memory", budget_tokens=10 ** 6, batch_size=3,
-                             provider=provider, pacer=pacer()[0], env=target_env(NEW),
+                             provider=provider, pacer=pacer()[0], env=target_env(NEW), allow_paid=True,
                              on_batch=None)
     assert result["mode"] == eb.MODE_BLUE_GREEN and result["model"] == NEW
     assert {c["model"] for c in provider.calls} == {NEW}
@@ -937,7 +940,7 @@ def test_cutover_refuses_until_the_backfill_is_complete(db):
 
     with pytest.raises(RuntimeError):
         eb.run_backfill(dsn=db, use="memory", budget_tokens=10 ** 6, batch_size=2,
-                        provider=provider, pacer=pacer()[0], env=target_env(NEW),
+                        provider=provider, pacer=pacer()[0], env=target_env(NEW), allow_paid=True,
                         on_batch=stop)
     with pytest.raises(eb.BackfillError) as refused:
         eb.run_cutover(dsn=db, use="memory", provider=provider)
@@ -951,7 +954,7 @@ def test_cutover_refuses_a_worse_relevance_score_then_succeeds_audits_and_rolls_
     texts = seed_memories(db, 8, with_vectors_of=OLD)
     good = StubProvider()
     eb.run_backfill(dsn=db, use="memory", budget_tokens=10 ** 6, provider=good,
-                    pacer=pacer()[0], env=target_env(NEW))
+                    pacer=pacer()[0], env=target_env(NEW), allow_paid=True)
 
     # 1. REFUSED: the target's query side does not find its own documents.
     bad = StubProvider(noisy_queries_for=NEW)
@@ -1036,7 +1039,7 @@ def test_no_vector_exists_without_its_provenance_on_any_table(db, tree):
     eb.run_backfill(dsn=db, use="memory", budget_tokens=10 ** 6, provider=StubProvider(),
                     pacer=pacer()[0])
     eb.run_backfill(dsn=db, use="memory", budget_tokens=10 ** 6, provider=StubProvider(),
-                    pacer=pacer()[0], env=target_env(NEW))
+                    pacer=pacer()[0], env=target_env(NEW), allow_paid=True)
     spy, _calls = _code_spy()
     rlm_embeddings.set_provider_override(spy)
     conn = _connect(db, autocommit=False)
@@ -1347,8 +1350,13 @@ def test_the_store_records_the_model_on_every_memory_vector_it_writes(db, monkey
         _sql(db, "INSERT INTO gsd_memory (id, text, project_id) "
                  "VALUES ('bare-1', 'a memory stored while no key was set', 'p8908')",
              fetch=False)
+        # (the top-up asks which provider is configured, so it needs a key NAME
+        # to be present; the embedder itself is still the stand-in)
+        monkeypatch.setenv("VOYAGE_API_KEY", "not-a-real-key")
         filled = store.memory_backfill_embeddings(batch_size=10)
-        assert filled["error"] if "error" in filled else True
+        assert filled["succeeded"] == 1 and filled["failed"] == 0, filled
+        assert _sql(db, "SELECT embedding IS NOT NULL, embedding_model FROM gsd_memory "
+                        "WHERE id = 'bare-1'")[0] == (True, OLD)
         # ...and an archived row keeps the model of its vector.
         store.memory_archive_and_delete(new_id)
         assert _sql(db, "SELECT embedding IS NOT NULL, embedding_model "

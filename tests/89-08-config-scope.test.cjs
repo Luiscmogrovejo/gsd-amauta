@@ -258,6 +258,23 @@ describe('89-08: every project key behaves exactly as on master', () => {
 // ─── 2. the harness keys ─────────────────────────────────────────────────────
 
 describe('89-08: the six harness keys resolve to ~/.amauta/config.json', () => {
+  test('the catalogue, the resolver, the job and migration 034 are in the shipped set', () => {
+    // The installer's OWN rule, executed (bin/init.cjs is read, never edited).
+    const init = require(path.join(REPO, 'bin', 'init.cjs'));
+    const shipped = init.shippedFileMap(REPO);
+    for (const rel of [
+      'get-shit-done/config/embedding-models.json',
+      'services/harness_config.py',
+      'services/embedding_backfill.py',
+      'services/_89_08_reporting.py',
+      'migrations/034-embedding-blue-green.sql',
+      'migrations/034-embedding-blue-green-DOWN.sql',
+    ]) {
+      assert.ok(init.isShippedPath(rel), `${rel} is excluded by the installer's rule`);
+      assert.ok(rel in shipped, `${rel} is not in the shipped file map`);
+    }
+  });
+
   test('HARNESS_CONFIG_KEYS is the planned six, and the Python resolver agrees', () => {
     assert.deepStrictEqual([...config.HARNESS_CONFIG_KEYS].sort(), [...HARNESS_KEYS].sort());
     const { spawnPython } = require(path.join(LIB, 'platform.cjs'));

@@ -989,7 +989,7 @@ def run_backfill(dsn=None, use=None, budget_tokens=None, count_only=False,
                 elapsed = max(time.monotonic() - started, 1e-6) + sum(pacer.delays)
                 rate = spent / elapsed
                 remaining = max(tokens_total - spent, 0)
-                eta = round(remaining / rate, 1) if rate > 0 else None
+                eta = round(remaining / rate, 3) if rate > 0 else None
                 emit({"event": "batch", "table": spec.table, "rows": done,
                       "rows_done": rows_done, "rows_total": pending["rows_total"],
                       "tokens": used, "tokens_spent": spent,

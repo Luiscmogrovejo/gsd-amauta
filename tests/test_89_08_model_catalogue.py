@@ -26,7 +26,6 @@ import json
 import pathlib
 import re
 import shutil
-import subprocess
 import sys
 
 import pytest
@@ -112,24 +111,18 @@ def test_the_unmeasured_request_cap_says_so():
 
 
 def test_the_catalogue_is_in_the_shipped_set():
-    """Read through the installer's OWN rule (bin/init.cjs is not edited)."""
-    node = shutil.which("node")
-    if node is None:  # the pytest cells install Node; a bare machine may not
-        files = json.loads((_REPO / "package.json").read_text(encoding="utf-8"))["files"]
-        assert "get-shit-done" in files
-        return
-    script = (
-        "const i=require('./bin/init.cjs');"
-        "const m=i.shippedFileMap('.');"
-        "console.log(JSON.stringify(['get-shit-done/config/embedding-models.json',"
-        "'services/harness_config.py','services/embedding_backfill.py',"
-        "'migrations/034-embedding-blue-green.sql'].map(p=>[p, p in m])))"
-    )
-    out = subprocess.run([node, "-e", script], cwd=str(_REPO), capture_output=True,
-                         text=True, timeout=120)
-    assert out.returncode == 0, out.stderr
-    shipped = dict(json.loads(out.stdout.strip().splitlines()[-1]))
-    assert all(shipped.values()), shipped
+    """`get-shit-done/` ships whole (package.json `files`), and nothing in the
+    installer's exclusion rule names this file. The rule itself is EXECUTED, on
+    the installer's own `isShippedPath`/`shippedFileMap`, in
+    tests/89-08-config-scope.test.cjs — here it is read (bin/init.cjs is not
+    edited by this plan)."""
+    files = json.loads((_REPO / "package.json").read_text(encoding="utf-8"))["files"]
+    assert {"get-shit-done", "services", "migrations"} <= set(files)
+    init = (_REPO / "bin" / "init.cjs").read_text(encoding="utf-8")
+    suffixes = re.search(r"SHIPPED_EXCLUDE_SUFFIXES = \[([^\]]*)\]", init).group(1)
+    excluded = set(re.findall(r"'([^']+)'", suffixes))
+    assert excluded and not excluded & {".json", ".py", ".sql"}, excluded
+    assert CATALOGUE.is_file()
 
 
 # ── defaults ─────────────────────────────────────────────────────────────────
@@ -319,7 +312,7 @@ def test_the_config_path_is_under_the_home_directory(monkeypatch, tmp_path):
     monkeypatch.setattr(pathlib.Path, "home", classmethod(lambda cls: tmp_path))
     assert harness_config.config_path() == tmp_path / ".amauta" / "config.json"
     source = (_REPO / "services" / "harness_config.py").read_text(encoding="utf-8")
-    assert 'environ["HOME"]' not in source and "environ.get(\"HOME\"" not in source
+    assert "pathlib.Path.home()" in source
 
 
 def test_without_a_database_the_setting_is_saved_and_the_reembed_is_reported_unmarked(harness):
