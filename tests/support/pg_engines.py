@@ -269,9 +269,50 @@ def _engine_entry(dsn, report, engine):
             "applied": len(report["applied"]), "total": report["total"]}
 
 
+#: The ONE reason a ParadeDB-engine test gives when the server cannot install
+#: `pg_search` at all. Plan 89-07: before this plan every cell with a database
+#: was the Linux ParadeDB container, so `paradedb` could not fail; now the macOS
+#: and Windows cells have a PLAIN PostgreSQL, where `pg_available_extensions`
+#: carries no `pg_search` row (measured: run 43354540890,
+#: `pg_search_in_pg_available_extensions=0`) and this fixture would otherwise
+#: blow up inside migration 011 instead of saying why.
+PARADEDB_SKIP_REASON = (
+    "no pg_search on this server, so a ParadeDB-engine database cannot be built "
+    "here: this test asserts ParadeDB BM25 behaviour, not engine-agnostic "
+    "behaviour (ParadeDB has no Windows build at all; real ParadeDB on the macOS "
+    "cell is a separate, additive step)"
+)
+
+
+def server_can_install_pg_search(dsn):
+    """Whether the SERVER carries a `pg_search` control file at all.
+
+    Distinct from :func:`has_pg_search`, which asks whether the extension is
+    installed in one database. A plain PostgreSQL answers False here and no
+    `CREATE EXTENSION` can change that.
+
+    Args:
+        dsn: any DSN on the server.
+
+    Returns:
+        bool
+    """
+    import psycopg2
+
+    conn = psycopg2.connect(dsn, connect_timeout=10)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM pg_available_extensions WHERE name = 'pg_search'")
+            return cur.fetchone() is not None
+    finally:
+        conn.close()
+
+
 @pytest.fixture(scope="session")
 def paradedb(postgres_dsn):
-    """A fully migrated database WITH pg_search."""
+    """A fully migrated database WITH pg_search, or ONE named skip."""
+    if not server_can_install_pg_search(postgres_dsn):
+        pytest.skip(PARADEDB_SKIP_REASON)
     with migrated_database(postgres_dsn) as (dsn, report):
         yield _engine_entry(dsn, report, "pg_search_bm25")
 

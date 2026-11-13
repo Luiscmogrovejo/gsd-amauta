@@ -183,21 +183,37 @@ describe('89-07 the Postgres fixture daemon', () => {
     // schema. On SQLite the route degrades, so a successful round trip here is
     // positive evidence rather than an absence of errors.
     const body = JSON.stringify({
-      task_id: 'TK-8907', phase_number: 89.07, step_name: '89-07-fixture',
-      agent: 'executor-infra', summary: 'the fixture is on PostgreSQL',
+      workflow_name: 'plan-phase',
+      step_id: 'step-89-07-fixture',
+      task_id: 'daemon-8907-pg-fixture',
+      phase_number: 89,
+      completed_steps: [],
+      context_snapshot: { plan: '89-07' },
+      next_step: 'step-89-07-next',
+      escalation_flags: [],
     });
-    const code = await new Promise((resolve) => {
+    const answer = await new Promise((resolve) => {
       const req = http.request({
-        host: '127.0.0.1', port: daemon.port, path: '/api/steps/handoff', method: 'POST',
+        host: '127.0.0.1',
+        port: daemon.port,
+        path: '/api/steps/plan-phase/89/handoff',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
       }, (res) => {
-        res.resume();
-        resolve(res.statusCode);
+        let text = '';
+        res.on('data', (c) => {
+          text += c.toString();
+        });
+        res.on('end', () => resolve({ code: res.statusCode, text }));
       });
-      req.on('error', () => resolve(0));
+      req.on('error', (e) => resolve({ code: 0, text: e.message }));
       req.end(body);
     });
-    assert.ok(code >= 200 && code < 300, 'POST /api/steps/handoff answered ' + code);
+    assert.strictEqual(answer.code, 201,
+      'POST /api/steps/plan-phase/89/handoff answered ' + answer.code + ': ' + answer.text);
+    const row = JSON.parse(answer.text);
+    assert.ok(row.id, 'the row the PostgreSQL table minted: ' + answer.text);
+    assert.ok(row.created_at, answer.text);
   });
 
   test("master's shape -- test mode ON plus a DSN -- serves SQLITE, which is the defect", { skip: SKIP }, async () => {
