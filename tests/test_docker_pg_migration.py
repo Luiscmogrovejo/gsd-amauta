@@ -904,8 +904,24 @@ class TestRlmSearchUnit:
             (REPO_ROOT / "services" / "rlm_search.py").read_text(encoding="utf-8"))
         # Neither the hybrid leg nor the BM25-only leg may use a bare prefix LIKE.
         assert 'f"{file_filter}%"' not in src
-        assert "AND (c.file_path = %s OR c.file_path LIKE %s)" in src
-        assert "AND (file_path = %s OR file_path LIKE %s)" in src
+        # Plan 89-07 widened both clauses to bind ONE PATTERN PER SEPARATOR, so
+        # the clause text no longer fits on one line and the assertion is on the
+        # PROPERTY rather than on the old literal: each leg still matches the
+        # directory itself by equality, and everything beneath it through
+        # `beneath_patterns`, which is what makes a sibling impossible. The
+        # boundary is explicit there, so `/a/b` cannot match `/a/bc`.
+        assert "c.file_path = %s" in src, "the hybrid leg's exact match"
+        assert "file_path = %s" in src, "the bm25-only leg's exact match"
+        assert src.count("beneath_patterns(prefix)") == 2, (
+            "both legs must bind the per-separator pair, got "
+            + str(src.count("beneath_patterns(prefix)")))
+        from services.rlm_search import beneath_patterns
+        # Two patterns, and NEITHER is a bare prefix wildcard: each carries the
+        # separator that makes "beneath" mean beneath.
+        patterns = beneath_patterns("/a/b")
+        assert len(patterns) == 2, patterns
+        assert all(p.startswith("/a/b") and p[4] in "/\\" for p in patterns), patterns
+        assert "/a/b%" not in patterns, patterns
 
     def test_the_vector_leg_can_be_filtered_independently(self):
         import inspect
