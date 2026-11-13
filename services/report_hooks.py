@@ -66,7 +66,10 @@ DEGRADED_KEY = "_degraded"
 #: from an install is simply not a provider — never an error, because `doctor`
 #: must still run on a partial install. Plans 89-06, 89-08 and 89-10 add their
 #: module name HERE, not to the daemon or to doctor.
-PROVIDER_MODULES = ()
+#: plan 89-06 registered `_89_06_reporting` here (the lexical-engine row,
+#: decision D3) -- one line, in the file the contract above names, and NOT in
+#: services/doctor.py or services/amauta-daemon.py.
+PROVIDER_MODULES = ("_89_06_reporting",)
 
 
 def _import_providers():
