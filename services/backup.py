@@ -8,7 +8,7 @@ THIS IS NOT A RESTORABLE SNAPSHOT. Read this before reaching for it.
 (memory, tasks, SKB, validations, agent performance, audit) — that is 6 of the
 ~22 tables a PostgreSQL install carries — and **it strips every embedding on the
 way out**. The stripping happens at three sites in ``services/pg_store.py`` —
-line 456 (``_score_core``), line 2982 (the memory-search scorer) and line 3281
+line 482 (``_score_core``), line 3021 (the memory-search scorer) and line 3320
 (``PGStore._rows_to_dicts``, the export path this module depends on) — each
 doing ``d.pop("embedding", None)``. Measured on 2026-11-12: a
 ``~/.amauta/backups/gsd-auto-*.json.gz`` file contains the string

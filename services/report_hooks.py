@@ -24,7 +24,9 @@ THE CONTRACT FOR LATER PLANS — read this before editing the daemon or doctor
 ───────────────────────────────────────────────────────────────────────────
 Add a module with ``health_fragment()`` and/or ``doctor_rows()``, name it in
 :data:`PROVIDER_MODULES`, and **do not touch** ``services/amauta-daemon.py`` or
-``services/doctor.py``:
+``services/doctor.py``. A module may also expose ``HEALTH_KEY`` to choose the
+name its ``/health`` fragment is published under; without it the MODULE name is
+used, as it always was:
 
 * **plan 89-06** — the lexical-engine row: which engine answers the lexical leg
   (``pg_search`` or the plain-PostgreSQL full-text fallback, decision D3).
@@ -66,7 +68,10 @@ DEGRADED_KEY = "_degraded"
 #: from an install is simply not a provider — never an error, because `doctor`
 #: must still run on a partial install. Plans 89-06, 89-08 and 89-10 add their
 #: module name HERE, not to the daemon or to doctor.
-PROVIDER_MODULES = ()
+#: plan 89-06 registered `_89_06_reporting` here (the lexical-engine row,
+#: decision D3) -- one line, in the file the contract above names, and NOT in
+#: services/doctor.py or services/amauta-daemon.py.
+PROVIDER_MODULES = ("_89_06_reporting",)
 
 
 def _import_providers():
@@ -138,7 +143,16 @@ def _providers():
     """
     out = list(_BUILTIN_PROVIDERS)
     for name, module in _import_providers():
-        out.append((name, getattr(module, "health_fragment", None), getattr(module, "doctor_rows", None)))
+        # Plan 89-06: a provider may declare the name its /health fragment is
+        # published under. The default is still the MODULE name, so nothing
+        # that existed before this line changes -- but a module called
+        # `_89_06_reporting` would otherwise put a PLAN NUMBER into the public
+        # /health payload, which the Phase 92/96 console would then have to
+        # hard-code forever. `doctor` already lets a provider name its own
+        # category; this is the same freedom for the other reader.
+        out.append((getattr(module, "HEALTH_KEY", None) or name,
+                    getattr(module, "health_fragment", None),
+                    getattr(module, "doctor_rows", None)))
     return out
 
 

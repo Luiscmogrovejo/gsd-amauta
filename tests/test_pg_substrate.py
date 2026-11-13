@@ -9,6 +9,14 @@ Deviations from plan documented inline:
 - BM25 CREATE INDEX uses USING bm25 WITH (key_field='id') — paradedb.create_bm25() proc
   does not exist in pg_search v0.22.6
 - BM25 query syntax requires column prefix: 'content:term' (not bare term)
+
+Phase 89 / decision D3 (plan 89-06): pg_search is OPTIONAL. The seven tests
+that read migration TEXT are unchanged — 011 still carries every literal they
+assert, inside the guard. Of the three that need a database, two were about the
+EXTENSION and are now about THE ENGINE PRESENT: they assert the correct answer
+on a ParadeDB database and the correct answer on a plain PostgreSQL, so they
+pass on every cell and need no skip entry. The pgvector one is unchanged:
+pgvector is still required.
 """
 import pathlib
 import pytest
@@ -120,36 +128,96 @@ def test_infra02_pgvector_version_gte_080(postgres_dsn):
 
 @pytest.mark.integration
 def test_infra03_pg_search_installed(postgres_dsn):
-    """LIVE: pg_search extension is installed in running PG."""
+    """LIVE: the database says which lexical engine it has, and is consistent.
+
+    Phase 89 / decision D3 (plan 89-06) made pg_search OPTIONAL, so "the
+    extension is installed" is no longer the right assertion everywhere — it is
+    the right assertion on a ParadeDB database and the WRONG one on a plain
+    PostgreSQL, which is what the macOS and Windows cells get from plan 89-07.
+    This test now asserts the correct thing FOR THE ENGINE PRESENT, which is why
+    it needs no skip entry on any cell:
+
+      * pg_search installed  -> it has a version, the resolver says
+        `pg_search_bm25`, and the BM25 smoke index exists;
+      * pg_search absent     -> the resolver says `postgres_fts`, the capability
+        report agrees, and migration 033's substitute index exists.
+
+    Neither branch asserts a SCORE: the two engines are not claimed to rank
+    alike (services/rlm_search.py, RETR-08).
+    """
+    import sys as _sys
+
+    _REPO = pathlib.Path(__file__).resolve().parent.parent
+    if str(_REPO) not in _sys.path:
+        _sys.path.insert(0, str(_REPO))
+    from services import infra_detect
+
     try:
         import psycopg2
         conn = psycopg2.connect(postgres_dsn, connect_timeout=3)
-        cur = conn.cursor()
-        cur.execute("SELECT extversion FROM pg_extension WHERE extname='pg_search'")
-        row = cur.fetchone()
-        conn.close()
-        assert row is not None, 'pg_search extension not installed'
-        assert row[0] is not None, 'pg_search version must be non-null'
     except psycopg2.OperationalError:
         pytest.skip('PG not reachable — live integration test skipped')
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT extversion FROM pg_extension WHERE extname='pg_search'")
+            row = cur.fetchone()
+            cur.execute("SELECT indexname FROM pg_indexes WHERE schemaname='public'")
+            indexes = {r[0] for r in cur.fetchall()}
+        infra_detect.reset_lexical_engine_cache()
+        engine = infra_detect.lexical_engine(conn)
+    finally:
+        conn.close()
+
+    if row is not None:
+        assert row[0] is not None, 'pg_search version must be non-null'
+        assert engine['lexical_engine'] == infra_detect.LEXICAL_PG_SEARCH, engine
+        assert 'bm25_test_idx' in indexes, \
+            'pg_search is installed but migration 011 created no BM25 index'
+    else:
+        assert engine['lexical_engine'] == infra_detect.LEXICAL_POSTGRES_FTS, engine
+        ok, report = infra_detect.check_pg_capabilities(postgres_dsn)
+        assert ok, report['reason']
+        assert report['lexical_engine'] == infra_detect.LEXICAL_POSTGRES_FTS
+        assert 'idx_rlm_chunks_fts' in indexes, \
+            'pg_search is absent and migration 033 created no substitute'
 
 
 @pytest.mark.integration
 def test_infra03_bm25_query_returns_results(postgres_dsn):
-    """LIVE: BM25 query on bm25_test_table returns >= 1 result.
+    """LIVE: the lexical leg of the engine present finds the smoke row.
 
-    Deviation: BM25 query syntax requires column prefix 'content:hello' (not bare 'hello').
+    Phase 89 / decision D3 (plan 89-06): on a plain PostgreSQL there is no
+    `@@@` operator to call at all, so this asserts the same FACT — "a lexical
+    query for 'hello' finds the row that contains it" — through whichever
+    engine the database has. Membership, never a score.
     """
     try:
         import psycopg2
         conn = psycopg2.connect(postgres_dsn, connect_timeout=3)
-        cur = conn.cursor()
-        # pg_search v0.22.6 requires column-prefixed query: 'content:term'
-        cur.execute("SELECT count(*) FROM bm25_test_table WHERE bm25_test_table @@@ 'content:hello'")
-        row = cur.fetchone()
-        conn.close()
-        assert row[0] >= 1, f'BM25 query returned {row[0]} results, expected >= 1'
     except psycopg2.OperationalError:
         pytest.skip('PG not reachable — live integration test skipped')
+    has_pg_search = None
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM pg_extension WHERE extname='pg_search'")
+            has_pg_search = cur.fetchone() is not None
+            if has_pg_search:
+                # pg_search v0.22.6 requires column-prefixed query: 'content:term'
+                cur.execute(
+                    "SELECT count(*) FROM bm25_test_table "
+                    "WHERE bm25_test_table @@@ 'content:hello'")
+            else:
+                # bm25_test_idx was skipped by 011's guard and gets no 033
+                # substitute (three rows: see 033's header), so this is a
+                # deliberate sequential to_tsvector scan.
+                cur.execute(
+                    "SELECT count(*) FROM bm25_test_table "
+                    "WHERE to_tsvector('english', content) "
+                    "@@ plainto_tsquery('english', 'hello')")
+            row = cur.fetchone()
     except Exception as exc:
-        pytest.fail(f'BM25 query failed: {exc}')
+        conn.close()
+        pytest.fail(f'lexical query failed (pg_search={has_pg_search}): {exc}')
+    else:
+        conn.close()
+    assert row[0] >= 1, f'lexical query returned {row[0]} results, expected >= 1'

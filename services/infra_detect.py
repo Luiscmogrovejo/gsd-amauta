@@ -14,10 +14,17 @@ Three behaviours changed here, all of them previously silent failures:
   answering on 5432-5434 with any of three usernames, and CREATE DATABASE
   gsd_amauta on it if needed. A Homebrew ``postgresql@14`` with pgvector 0.1.x
   therefore outranked the Docker container, and migration 002 (HNSW) and 011
-  (pgvector >= 0.8.0 assertion + ``CREATE EXTENSION pg_search``) then failed on
-  it. A candidate server is now checked for server version, pgvector version
-  and pg_search availability BEFORE it is accepted, and every rejection is
-  recorded in ``result['rejected']`` with the reason.
+  (pgvector >= 0.8.0 assertion) then failed on it. A candidate server is now
+  checked for server version and pgvector version BEFORE it is accepted, and
+  every rejection is recorded in ``result['rejected']`` with the reason.
+
+  **Phase 89 / decision D3 (plan 89-06):** ``pg_search`` was in that same
+  pre-check and REJECTED every PostgreSQL without ParadeDB, which is half of
+  why 412 Postgres-gated tests never ran on the macOS and Windows cells. It is
+  a PREFERRED extension now: a server without it is accepted, the gap is a
+  named entry in ``report['degradations']``, and ``report['lexical_engine']``
+  says which engine will answer the lexical leg. See
+  :func:`lexical_engine` -- the one place that answer is computed.
 
 * **Per-service start results.** ``docker compose up -d`` on the whole stack
   exited non-zero whenever the Valkey container could not bind 6379 (a
@@ -54,11 +61,79 @@ except ImportError:  # pragma: no cover - script-launched from services/
 # Derived from the migrations, not guessed:
 #   002-embedding-index.sql  -> HNSW index        (pgvector >= 0.5.0)
 #   011-paradedb-setup.sql   -> DO block RAISEs   (pgvector >= 0.8.0)
-#   011-paradedb-setup.sql   -> CREATE EXTENSION pg_search
 #   001-init.sql             -> gen_random_uuid() built in (PostgreSQL >= 13)
 MIN_SERVER_MAJOR = 13
 MIN_PGVECTOR = (0, 8, 0)
-REQUIRED_EXTENSIONS = ("vector", "pg_search")
+
+#: Without these the migrations cannot run at all. `vector` is genuinely
+#: required: 002 builds an HNSW index and 011 RAISEs below pgvector 0.8.0, and
+#: both assertions stay HARD.
+REQUIRED_EXTENSIONS = ("vector",)
+
+#: Phase 89 / decision D3 (plan 89-06). `pg_search` used to sit in
+#: REQUIRED_EXTENSIONS, so `check_pg_capabilities` REJECTED a plain PostgreSQL
+#: before a single migration was attempted -- which, together with 011's
+#: unguarded CREATE EXTENSION, is why 412 Postgres-gated tests never ran on the
+#: macOS and Windows cells (pg_search has no Windows build at all). It is
+#: PREFERRED now: present, the lexical leg is ParadeDB BM25; absent, the leg is
+#: plain PostgreSQL full-text (migration 033's GIN to_tsvector substitutes) and
+#: the capability report, `doctor` and `/health` all SAY SO. A preferred
+#: extension that is missing is a named degradation, never a rejection.
+PREFERRED_EXTENSIONS = ("pg_search",)
+
+# ── Which engine answers the lexical leg ────────────────────────────────────
+#: The two engine names. ONE vocabulary for the capability report, `doctor`,
+#: `/health`, services/rlm_search.py's probe and migration 011's opt-out.
+LEXICAL_PG_SEARCH = "pg_search_bm25"
+LEXICAL_POSTGRES_FTS = "postgres_fts"
+
+#: The third answer, and the only honest one when the catalogue cannot be read:
+#: a connection that is a test double, already in an aborted transaction, or
+#: dead. It is NOT the same as "the extension is absent" -- reporting it as
+#: `postgres_fts` would state a fact nobody measured, and routing a query on it
+#: would silently change the ranking for a reason that has nothing to do with
+#: the server. Readers treat it as "keep doing what this code has always done,
+#: and SAY that you could not tell".
+LEXICAL_UNKNOWN = "unknown"
+
+#: The capability report's degradation key for the extension this phase is
+#: about. The keys are mechanical (see :func:`degradation_key`) rather than a
+#: special case for one name; this constant exists so a caller can compare
+#: against it instead of spelling the suffix itself.
+DEGRADATION_PG_SEARCH_ABSENT = "pg_search_absent"
+
+
+def degradation_key(extension):
+    """The report's key for a missing PREFERRED extension.
+
+    Args:
+        extension: the extension name.
+
+    Returns:
+        str: ``"<extension>_absent"``.
+
+    Example:
+        >>> degradation_key("pg_search") == DEGRADATION_PG_SEARCH_ABSENT
+        True
+    """
+    return "%s_absent" % extension
+
+#: Database-scoped opt-out, read by migration 011 at create time and by
+#: :func:`lexical_engine` at query time. `ALTER DATABASE <db> SET
+#: gsd.lexical_engine = 'postgres_fts'` pins the plain-PostgreSQL leg even where
+#: pg_search is installable -- a real operator switch (one engine across a fleet
+#: whose Windows boxes cannot have ParadeDB) and the mechanism plan 89-06's own
+#: tests use to obtain a genuinely pg_search-less DATABASE on a ParadeDB
+#: CLUSTER, which is the only Postgres any CI cell has today.
+LEXICAL_ENGINE_SETTING = "gsd.lexical_engine"
+
+#: The sentence decision D3 requires wherever the fallback is active. One
+#: string, so `doctor`, `/health` and the capability report cannot word it
+#: three different ways.
+LEXICAL_FALLBACK_SENTENCE = (
+    "lexical search: plain PostgreSQL full-text (pg_search not installed) "
+    "— ranking differs from the ParadeDB BM25 leg"
+)
 
 #: Ports scanned for a pre-existing local PostgreSQL.
 LOCAL_PG_PORTS = (5432, 5433, 5434)
@@ -104,14 +179,165 @@ def _version_tuple(text):
     return tuple(parts[:3])
 
 
+#: Per-connection cache for :func:`lexical_engine`, the same shape as
+#: services/rlm_search.py's ``_HAS_EMBEDDING_MODEL_COLUMN``: one probe per
+#: connection, bounded key space, cleared wholesale rather than evicted.
+_LEXICAL_ENGINE_CACHE = {}
+
+#: One statement answers both halves -- is the extension installed, and has
+#: this database opted out -- so the probe is ONE round trip per connection.
+_LEXICAL_PROBE_SQL = (
+    "SELECT (SELECT extversion FROM pg_extension WHERE extname = 'pg_search'), "
+    "coalesce(current_setting(%s, true), '')"
+)
+
+
+def _conn_cache_key(conn):
+    """A cache key that cannot be reused by a different connection.
+
+    ``id(conn)`` alone is what the house pattern uses, and CPython reuses the
+    id of a garbage-collected object -- so a closed connection's answer could
+    be served to its successor. The backend pid is local to the client (no
+    round trip) and differs per server session, which closes that window
+    wherever the object exposes it.
+    """
+    try:
+        return (id(conn), conn.get_backend_pid())
+    except Exception:
+        return (id(conn), None)
+
+
+def lexical_engine(conn, use_cache=True):
+    """Which engine answers the lexical leg on this connection.
+
+    THE single computation of that answer (Phase 89 / D3, plan 89-06). The
+    capability report below, ``services/_89_06_reporting.py``'s ``doctor`` row
+    and ``/health`` fragment, and ``services/rlm_search.py``'s
+    ``_has_pg_search`` probe all read it here -- three readers, one answer, so
+    they cannot disagree about which engine is running.
+
+    Ground truth is ``pg_extension``: the extension is either installed in THIS
+    database or it is not. :data:`LEXICAL_ENGINE_SETTING` can force the plain
+    leg on a database that has it (see the constant), and in that mixed state
+    the BM25 indexes may exist while migration 033's substitutes do not -- the
+    FTS leg is then correct but unindexed, which the reason string says.
+
+    Args:
+        conn: an open psycopg2 connection (or anything with ``cursor()``).
+        use_cache: False for a short-lived connection, so its answer is never
+            served to a later connection that happens to reuse its id.
+
+    Returns:
+        dict: ``{"lexical_engine": "pg_search_bm25"|"postgres_fts"|"unknown",
+        "reason": "<the human sentence>"}``. A probe that cannot run answers
+        :data:`LEXICAL_UNKNOWN` and is NOT cached, so an aborted transaction
+        costs one re-probe rather than a wrong answer for the connection's
+        whole life.
+    """
+    key = _conn_cache_key(conn)
+    if use_cache and key in _LEXICAL_ENGINE_CACHE:
+        return dict(_LEXICAL_ENGINE_CACHE[key])
+
+    version, forced = None, ""
+    try:
+        with conn.cursor() as cur:
+            cur.execute(_LEXICAL_PROBE_SQL, (LEXICAL_ENGINE_SETTING,))
+            row = cur.fetchone()
+        if row:
+            version, forced = row[0], (row[1] or "").strip()
+        else:
+            raise ValueError("the lexical probe returned no row")
+    except Exception as exc:  # noqa: BLE001 - "I could not tell" is an answer
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return {
+            "lexical_engine": LEXICAL_UNKNOWN,
+            "reason": "lexical search: could not determine the engine "
+                      "(the pg_search probe failed: %s)" % exc,
+        }
+
+    if version is None:
+        answer = {"lexical_engine": LEXICAL_POSTGRES_FTS,
+                  "reason": LEXICAL_FALLBACK_SENTENCE}
+    elif forced == LEXICAL_POSTGRES_FTS:
+        answer = {
+            "lexical_engine": LEXICAL_POSTGRES_FTS,
+            "reason": (
+                "lexical search: plain PostgreSQL full-text, forced by %s = %s "
+                "while pg_search %s IS installed — ranking differs from the "
+                "ParadeDB BM25 leg, and migration 033's substitute indexes were "
+                "not created on this database"
+                % (LEXICAL_ENGINE_SETTING, LEXICAL_POSTGRES_FTS, version)
+            ),
+        }
+    else:
+        answer = {
+            "lexical_engine": LEXICAL_PG_SEARCH,
+            "reason": "lexical search: ParadeDB pg_search BM25 (pg_search %s)" % version,
+        }
+
+    if use_cache:
+        if len(_LEXICAL_ENGINE_CACHE) > 32:
+            _LEXICAL_ENGINE_CACHE.clear()
+        _LEXICAL_ENGINE_CACHE[key] = dict(answer)
+    return answer
+
+
+def reset_lexical_engine_cache():
+    """Forget every cached probe answer. For tests and for a reconnect."""
+    _LEXICAL_ENGINE_CACHE.clear()
+
+
+def lexical_engine_for_dsn(dsn, connect_timeout=3):
+    """:func:`lexical_engine` for a DSN, on a connection of its own.
+
+    The reporting hooks (``services/_89_06_reporting.py``) are handed an
+    environment, not a connection, so they need this spelling.
+
+    Args:
+        dsn: a PostgreSQL DSN. Never logged, never returned.
+        connect_timeout: seconds.
+
+    Returns:
+        dict: as :func:`lexical_engine`, or None when psycopg2 is absent or the
+        server cannot be reached -- "I could not tell" is not an engine name.
+    """
+    try:
+        import psycopg2
+    except ImportError:
+        return None
+    conn = None
+    try:
+        conn = psycopg2.connect(dsn, connect_timeout=connect_timeout)
+        return lexical_engine(conn, use_cache=False)
+    except Exception:  # noqa: BLE001 - unreachable is not an engine
+        return None
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
 def check_pg_capabilities(url, min_pgvector=MIN_PGVECTOR,
                           required_extensions=REQUIRED_EXTENSIONS,
-                          min_server_major=MIN_SERVER_MAJOR):
+                          min_server_major=MIN_SERVER_MAJOR,
+                          preferred_extensions=PREFERRED_EXTENSIONS):
     """Decide whether a reachable PostgreSQL can actually run our migrations.
 
     Returns ``(ok, report)``. ``report`` always carries a human-readable
     ``reason`` when ``ok`` is False, plus whatever was discovered.
+
+    Phase 89 / D3: a server missing a PREFERRED extension is accepted and the
+    gap is reported in ``report["degradations"]`` under a stable key, with the
+    human sentence in ``report["lexical_engine_reason"]``. Only
+    ``required_extensions`` can still reject. Passing ``pg_search`` back in as a
+    required extension is how tests prove that split is load-bearing.
     """
+    preferred_extensions = tuple(preferred_extensions or ())
     report = {
         "url": mask_dsn(url),
         "reachable": False,
@@ -119,6 +345,11 @@ def check_pg_capabilities(url, min_pgvector=MIN_PGVECTOR,
         "pgvector_version": None,
         "extensions_available": [],
         "extensions_missing": [],
+        "preferred_available": [],
+        "preferred_missing": [],
+        "degradations": [],
+        "lexical_engine": None,
+        "lexical_engine_reason": None,
         "reason": None,
     }
     try:
@@ -136,16 +367,33 @@ def check_pg_capabilities(url, min_pgvector=MIN_PGVECTOR,
             report["server_major"] = int(cur.fetchone()[0]) // 10000
 
             # pg_available_extensions covers both installed and installable.
+            wanted = list(required_extensions) + [
+                name for name in preferred_extensions
+                if name not in required_extensions
+            ]
             cur.execute(
                 "SELECT name, COALESCE(installed_version, default_version) "
                 "FROM pg_available_extensions WHERE name = ANY(%s)",
-                (list(required_extensions),),
+                (wanted,),
             )
             found = {row[0]: row[1] for row in cur.fetchall()}
-        report["extensions_available"] = sorted(found)
+            engine = lexical_engine(conn, use_cache=False)
+        report["extensions_available"] = sorted(
+            name for name in found if name in required_extensions
+        )
         report["extensions_missing"] = sorted(
             set(required_extensions) - set(found)
         )
+        report["preferred_available"] = sorted(
+            name for name in found if name in preferred_extensions
+        )
+        report["preferred_missing"] = sorted(
+            set(preferred_extensions) - set(found)
+        )
+        report["lexical_engine"] = engine["lexical_engine"]
+        report["lexical_engine_reason"] = engine["reason"]
+        report["degradations"] = [degradation_key(name)
+                                  for name in report["preferred_missing"]]
         if "vector" in found:
             report["pgvector_version"] = found["vector"]
     except Exception as exc:  # noqa: BLE001 - any failure means "not usable"
@@ -168,7 +416,8 @@ def check_pg_capabilities(url, min_pgvector=MIN_PGVECTOR,
     if report["extensions_missing"]:
         report["reason"] = (
             "missing extension(s): " + ", ".join(report["extensions_missing"])
-            + " (011-paradedb-setup.sql installs pg_search; 002 needs pgvector)"
+            + " (002-embedding-index.sql needs pgvector's HNSW and"
+              " 011-paradedb-setup.sql RAISEs below pgvector 0.8.0)"
         )
         return False, report
 

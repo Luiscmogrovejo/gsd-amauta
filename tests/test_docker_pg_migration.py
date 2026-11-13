@@ -490,10 +490,17 @@ class TestCapabilityPrecheckUnit:
         assert infra_detect._version_tuple("0.8") == (0, 8, 0)
 
     def test_the_floor_matches_what_the_migrations_demand(self):
+        # Phase 89 plan 89-06 (decision D3): pg_search moved from REQUIRED to
+        # PREFERRED, so this test moved with it rather than being deleted. The
+        # pin is as strong as it was -- the floor is still asserted against the
+        # migration that enforces it, and the extension is still asserted to be
+        # DECLARED somewhere; what changed is which list it is declared in, and
+        # that it may no longer appear in the rejecting one.
         assert infra_detect.MIN_PGVECTOR == (0, 8, 0)
         assert "0.8.0" in (MIGRATIONS_DIR / "011-paradedb-setup.sql").read_text(encoding="utf-8")
-        assert "pg_search" in infra_detect.REQUIRED_EXTENSIONS
         assert "vector" in infra_detect.REQUIRED_EXTENSIONS
+        assert "pg_search" not in infra_detect.REQUIRED_EXTENSIONS
+        assert "pg_search" in infra_detect.PREFERRED_EXTENSIONS
 
     def test_an_unreachable_server_is_rejected_with_a_reason(self):
         ok, report = infra_detect.check_pg_capabilities(
@@ -1127,11 +1134,53 @@ class TestSentinelsUnit:
         # migration 032's whole job is a DROP, so the only observable that says it
         # ran is the ABSENCE of the relation it dropped. The check is as closed as
         # it was -- one more declared kind, not a wildcard.
-        known = {"relation", "norelation", "column", "extension", "coltype", "unbounded"}
+        #
+        # "ifext" joined it in plan 89-06 (decision D3): 011, 012, 025 and 033
+        # create DIFFERENT objects depending on whether pg_search is installed,
+        # so one branch of the pair is the observable. Its two branches are
+        # checked RECURSIVELY against the same closed set, so wrapping a
+        # sentinel in "ifext" cannot smuggle an unknown kind past this test.
+        known = {"relation", "norelation", "column", "extension", "coltype",
+                 "unbounded", "ifext"}
+
+        def check(name, sentinel):
+            assert sentinel[0] in known, f"{name}: unknown kind {sentinel[0]!r}"
+            if sentinel[0] == "ifext":
+                assert len(sentinel) == 4, f"{name}: ifext takes (kind, ext, present, absent)"
+                assert isinstance(sentinel[1], str) and sentinel[1], \
+                    f"{name}: ifext needs an extension name"
+                assert not (sentinel[2] is None and sentinel[3] is None), \
+                    f"{name}: an ifext with two None branches asserts nothing"
+                for branch in (sentinel[2], sentinel[3]):
+                    if branch is not None:
+                        check(name, branch)
+
         for name, sentinels in migrate_runner.MIGRATION_SENTINELS.items():
             assert sentinels, f"{name} has an empty sentinel list"
             for sentinel in sentinels:
-                assert sentinel[0] in known, f"{name}: unknown kind {sentinel[0]!r}"
+                check(name, sentinel)
+
+    def test_the_pg_search_dependent_sentinels_are_all_conditional(self):
+        """Plan 89-06: the three files that skip a BM25 index without pg_search.
+
+        Each must carry an ("ifext", "pg_search", ...) row -- an unconditional
+        ("relation", "idx_..._bm25") is the defect 89-06 fixed, and it would be
+        re-introduced the moment someone "simplified" one of these entries back.
+        """
+        for filename in ("011-paradedb-setup.sql", "012-rlm-chunks.sql",
+                         "025-memory-hybrid-index.sql",
+                         "033-plain-fts-fallback.sql"):
+            entry = migrate_runner.MIGRATION_SENTINELS[filename]
+            conditional = [s for s in entry
+                           if s[0] == "ifext" and s[1] == "pg_search"]
+            assert conditional, f"{filename}: no pg_search-conditional sentinel"
+            # The BM25 INDEXES must never be named outside an ifext.
+            # bm25_test_TABLE may: 011 creates it on every engine.
+            bm25_indexes = {"bm25_test_idx", "idx_rlm_chunks_bm25",
+                            "idx_gsd_memory_bm25"}
+            flat = {part for s in entry if s[0] != "ifext" for part in s}
+            assert not (flat & bm25_indexes), \
+                f"{filename}: a BM25 index is asserted unconditionally"
 
     def test_003_sentinel_is_the_column_type_it_would_otherwise_rewrite(self):
         """003 NULLs every embedding unless the column is already vector(1024)."""
@@ -1185,13 +1234,28 @@ class TestBaselineDetectionIntegration:
         "032-drop-a2a-messages.sql",
     ]
 
+    def _expected_detected(self):
+        """Every file on disk, minus the ones still pending.
+
+        DERIVED, not written down -- the same reasoning plan 89-02 gives in
+        test_a_gap_in_the_middle_is_found_not_assumed_away below: a hard-coded
+        count turns every new migration into a failure in a test whose subject
+        is something else. It was `25` until plan 89-06 added migration 033,
+        whose effect on a ParadeDB database is NIL -- so, exactly like 024 and
+        032, its only observable is the ABSENCE of what it would have created,
+        and it reads as applied on an engine where it had nothing to do.
+        """
+        discovered = {n for n, _, _ in migrate_runner.discover_migrations(MIGRATIONS_DIR)}
+        return len(discovered) - len(self.PENDING_AFTER_OLD_WAY_26)
+
     def test_status_infers_what_is_applied_without_writing(self, scratch_dsn):
         self._apply_the_old_way(scratch_dsn, 26)
         report = migrate_runner.status(dsn=scratch_dsn)
         assert report["tracking_table"] is False
         assert report["pre_migrated_detected"] is True
-        # 25, not 26: 024 shares 032's sentinel and the table is still here.
-        assert len(report["detected_by_schema"]) == 25
+        # One per file on disk except the pending list: 024 shares 032's
+        # sentinel and the table is still here, 027..032 have not run.
+        assert len(report["detected_by_schema"]) == self._expected_detected()
         assert "024-a2a-messages.sql" not in report["detected_by_schema"]
         assert report["pending"] == self.PENDING_AFTER_OLD_WAY_26
 
@@ -1199,7 +1263,7 @@ class TestBaselineDetectionIntegration:
         self._apply_the_old_way(scratch_dsn, 26)
         result = migrate_runner.apply_migrations(dsn=scratch_dsn,
                                                  log=lambda *_: None)
-        assert len(result["baselined"]) == 25
+        assert len(result["baselined"]) == self._expected_detected()
         assert result["applied"] == self.PENDING_AFTER_OLD_WAY_26
         again = migrate_runner.apply_migrations(dsn=scratch_dsn, log=lambda *_: None)
         assert again["applied"] == []

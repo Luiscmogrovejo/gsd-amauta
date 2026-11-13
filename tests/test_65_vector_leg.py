@@ -85,7 +85,20 @@ def _vec_literal(active_dim: int, total: int = 1024) -> str:
 class _RaiseOnceCursor:
     """Stub cursor: raises on its first execute() (simulating the vector
     leg's SQL failing), succeeds on every subsequent execute() (simulating
-    the BM25-only fallback query)."""
+    the BM25-only fallback query).
+
+    Phase 89 plan 89-06 (decision D3): `hybrid_search_generic` now asks the
+    catalogue which engine answers the lexical leg before it builds its SQL. A
+    CAPABILITY PROBE is not a retrieval statement, and "the first retrieval
+    statement fails" is this stub's entire purpose -- if the probe consumed that
+    budget, the vector leg would SUCCEED and the test would measure nothing.
+    Probes are therefore counted separately and still raise, which is the right
+    answer for a double with no catalogue: `_has_pg_search` reads an unreadable
+    catalogue as "unknown" and keeps the `@@@` statement this test is about.
+    """
+
+    #: Statements that identify a capability probe rather than a retrieval leg.
+    PROBE_MARKERS = ("pg_extension", "information_schema")
 
     def __init__(self, shared_state):
         self._state = shared_state
@@ -97,6 +110,9 @@ class _RaiseOnceCursor:
         return False
 
     def execute(self, sql, params=None):
+        if any(marker in sql for marker in self.PROBE_MARKERS):
+            self._state["probe_calls"] = self._state.get("probe_calls", 0) + 1
+            raise Exception("simulated: this stub has no catalogue")
         self._state["execute_calls"] += 1
         if self._state["execute_calls"] == 1:
             raise Exception("simulated vector leg failure")
@@ -115,7 +131,8 @@ class _RaiseOnceConn:
     """Stub pg_conn pairing _RaiseOnceCursor with a rollback() call tracker."""
 
     def __init__(self):
-        self._state = {"execute_calls": 0, "fallback_sql": None}
+        self._state = {"execute_calls": 0, "fallback_sql": None,
+                       "probe_calls": 0}
         self.rollback_calls = 0
 
     def cursor(self):

@@ -9,8 +9,9 @@
 -- Staleness detection: sha256 column (Phase 21 SHA-256 pattern from 009-rpetd-context.sql)
 -- This migration is idempotent: safe to re-run.
 --
--- Predecessor: 011-paradedb-setup.sql (pg_search installed, bm25_test_table created)
--- Dependency: pg_search extension must be in shared_preload_libraries
+-- Predecessor: 011-paradedb-setup.sql (pg_search installed IF AVAILABLE, bm25_test_table created)
+-- Dependency: the BM25 index below needs the pg_search extension; the table does
+--   not. Phase 89 / D3 (plan 89-06) made that index conditional -- see its guard.
 
 BEGIN;
 
@@ -61,10 +62,26 @@ CREATE INDEX IF NOT EXISTS idx_rlm_chunks_file_path
 --   b=0.6 and position_decay=0.05 are implemented at query time via custom scoring SQL
 --   (see Wave 3 RRF hybrid query in plan 27-03). The index uses pg_search defaults
 --   for storage; ranking adjustments apply in the search query.
-DROP INDEX IF EXISTS idx_rlm_chunks_bm25;
-CREATE INDEX idx_rlm_chunks_bm25 ON rlm_chunks
-    USING bm25 (id, content, description, symbol_name, file_path)
-    WITH (key_field = 'id');
+--
+-- Phase 89 / decision D3 (plan 89-06): guarded in the DO block
+-- migrations/025-memory-hybrid-index.sql:35-46 already uses. The rlm_chunks
+-- TABLE above is unconditional -- only this index needs pg_search. Testing
+-- `pg_extension` (not `pg_available_extensions`) is right HERE: 011 is the file
+-- that installs the extension, so by the time 012 runs the catalogue already
+-- carries the answer, including 011's `gsd.lexical_engine = 'postgres_fts'`
+-- opt-out. The substitute for this index is idx_rlm_chunks_fts, created by
+-- migrations/033-plain-fts-fallback.sql with the condition inverted.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_search') THEN
+        RAISE NOTICE 'pg_search extension not installed — skipping idx_rlm_chunks_bm25 (RLM-02 BM25 leg falls back to plain PostgreSQL full-text via migration 033''s idx_rlm_chunks_fts; ranking differs from the ParadeDB BM25 leg)';
+    ELSE
+        DROP INDEX IF EXISTS idx_rlm_chunks_bm25;
+        CREATE INDEX idx_rlm_chunks_bm25 ON rlm_chunks
+            USING bm25 (id, content, description, symbol_name, file_path)
+            WITH (key_field = 'id');
+    END IF;
+END $$;
 
 COMMENT ON TABLE rlm_chunks IS
     'Phase 27 RLM-01/RLM-02: AST-aware code chunks with pg_search BM25 index. '

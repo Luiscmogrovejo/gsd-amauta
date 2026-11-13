@@ -96,10 +96,41 @@ LEGACY_SENTINELS = ("gsd_memory", "gsd_tasks", "gsd_shared_kb")
 #   ("extension", name)                 -- extension installed
 #   ("coltype", table, column, type)    -- column has exactly this format_type
 #   ("unbounded", table, column)        -- column has no length limit (TEXT)
+#   ("ifext", ext, when_present, when_absent_or_None)
+#                                       -- evaluate ONE of two inner sentinels,
+#                                          by whether `ext` is installed here
 #
 # "norelation" exists for a DROP migration (Phase 89 plan 89-05, migration 032).
 # Every other kind asserts that something the file CREATED is there; a file whose
 # whole job is a DROP is detectable only by the absence of what it dropped.
+#
+# "ifext" exists because a migration can now create DIFFERENT objects on two
+# engines (Phase 89 / decision D3, plan 89-06). 011, 012 and 025 each create a
+# pg_search BM25 index where the extension is installed and nothing where it is
+# not -- 033 then creates a plain-PostgreSQL substitute instead. A sentinel that
+# names only the BM25 index therefore reads "not applied" forever on a
+# pg_search-less database, which is a PRE-EXISTING DEFECT this plan fixes:
+# MIGRATION_SENTINELS["025-memory-hybrid-index.sql"] has required
+# ("relation", "idx_gsd_memory_bm25") since Phase 66 even though
+# 025-memory-hybrid-index.sql:35-46 SKIPS that very index when pg_search is
+# absent, so detect_applied_by_schema / auto_baseline is wrong on such a
+# database today, before this plan changes anything
+# (tests/test_89_06_pg_search_optional.py proves it against master's dict).
+#
+# WHY A SENTINEL KIND AND NOT A SENTINEL LIST BUILT FROM THE CONNECTION:
+# building the list per connection would move the condition out of this table,
+# and this table is the thing a reader checks against a migration file. The
+# condition stays declarative and next to what it guards, MIGRATION_SENTINELS
+# stays a static, importable, unit-testable dict (tests/test_89_02_decimal_phase
+# and tests/test_89_05_inbox_round_trip both read it without a database), and
+# `_sentinel_satisfied` keeps being the only place a sentinel is evaluated.
+#
+# The test is `pg_extension` -- installed in THIS database -- never
+# `pg_available_extensions` and never 011's `gsd.lexical_engine` opt-out: what
+# decides which objects exist is which branch of the guard RAN, and that is
+# exactly what `pg_extension` records. (Mixed state: a database that had
+# pg_search when it was migrated and was pinned to the plain leg afterwards
+# keeps its BM25 indexes, so the "present" branch is still the right one.)
 MIGRATION_SENTINELS = {
     "001-init.sql": [
         ("relation", "gsd_memory"), ("relation", "gsd_shared_kb"),
@@ -129,12 +160,25 @@ MIGRATION_SENTINELS = {
     "008-applied-count.sql": [("column", "gsd_memory", "applied_count")],
     "009-rpetd-context.sql": [("relation", "rpetd_context")],
     "010-semantic-cache.sql": [("relation", "semantic_cache")],
+    # Phase 89 plan 89-06 (D3). bm25_test_table is created UNCONDITIONALLY by
+    # 011 and by nothing else, so it carries the "011 ran" fact on both
+    # engines. The extension and its smoke index are the pg_search half: where
+    # the extension is installed they must both be there (an index USING bm25
+    # cannot exist without it, which is why the old explicit
+    # ("extension", "pg_search") row is now redundant rather than dropped);
+    # where it is not, 011 skipped them with a RAISE NOTICE and there is
+    # nothing to find. bm25_test_idx gets no 033 substitute -- see 033's header.
     "011-paradedb-setup.sql": [
-        ("extension", "pg_search"), ("relation", "bm25_test_table"),
-        ("relation", "bm25_test_idx"),
+        ("relation", "bm25_test_table"),
+        ("ifext", "pg_search", ("relation", "bm25_test_idx"), None),
     ],
+    # Phase 89 plan 89-06 (D3): 012's TABLE is unconditional; its lexical index
+    # is idx_rlm_chunks_bm25 with pg_search and 033's idx_rlm_chunks_fts
+    # without, so the sentinel names whichever one this engine should have.
     "012-rlm-chunks.sql": [
-        ("relation", "rlm_chunks"), ("relation", "idx_rlm_chunks_bm25"),
+        ("relation", "rlm_chunks"),
+        ("ifext", "pg_search",
+         ("relation", "idx_rlm_chunks_bm25"), ("relation", "idx_rlm_chunks_fts")),
     ],
     "013-code-embeddings.sql": [("column", "rlm_chunks", "embedding_code")],
     "014-agent-findings.sql": [("relation", "agent_findings")],
@@ -171,8 +215,17 @@ MIGRATION_SENTINELS = {
     #     existed): both recorded as applied without running, and the end state
     #     is identical to running them.
     "024-a2a-messages.sql": [("norelation", "a2a_messages")],
+    # Phase 89 plan 89-06 (D3) fixes the pre-existing defect described in the
+    # "ifext" note above: 025 itself skips idx_gsd_memory_bm25 when pg_search
+    # is absent (025-memory-hybrid-index.sql:35-46), so requiring that index
+    # unconditionally made this entry unsatisfiable on exactly the databases
+    # Phase 89 exists to support. pg_trgm stays unconditional -- 025 is the only
+    # file in migrations/ that creates it, and it creates it on every engine.
     "025-memory-hybrid-index.sql": [
-        ("extension", "pg_trgm"), ("relation", "idx_gsd_memory_bm25"),
+        ("extension", "pg_trgm"),
+        ("ifext", "pg_search",
+         ("relation", "idx_gsd_memory_bm25"),
+         ("relation", "idx_gsd_memory_fts_fallback")),
     ],
     "026-bitemporal-memory.sql": [
         ("column", "gsd_memory", "valid_at"),
@@ -205,12 +258,35 @@ MIGRATION_SENTINELS = {
     # written there. A DROP migration is detectable only by the absence of what
     # it dropped.
     "032-drop-a2a-messages.sql": [("norelation", "a2a_messages")],
+    # Phase 89 plan 89-06 (D3). 033 creates the plain-PostgreSQL substitutes
+    # where pg_search is absent and NOTHING where it is present -- a ParadeDB
+    # database comes out of it byte-unchanged. So on ParadeDB the only
+    # observable is the absence of both substitutes, which is what the inverted
+    # branch says; the "norelation" pair is the same device 024/032 use for a
+    # file whose effect on this engine is nil.
+    "033-plain-fts-fallback.sql": [
+        ("ifext", "pg_search",
+         ("norelation", "idx_rlm_chunks_fts"), ("relation", "idx_rlm_chunks_fts")),
+        ("ifext", "pg_search",
+         ("norelation", "idx_gsd_memory_fts_fallback"),
+         ("relation", "idx_gsd_memory_fts_fallback")),
+    ],
 }
 
 
 def _sentinel_satisfied(cur, sentinel):
     """Evaluate one sentinel spec against the live catalog."""
     kind = sentinel[0]
+    if kind == "ifext":
+        # Phase 89 plan 89-06: pick the branch this engine should satisfy. A
+        # None branch means "this engine creates nothing here", which is
+        # satisfied by definition -- never a silent False.
+        _kind, ext, when_present, when_absent = sentinel
+        inner = (when_present if _sentinel_satisfied(cur, ("extension", ext))
+                 else when_absent)
+        if inner is None:
+            return True
+        return _sentinel_satisfied(cur, inner)
     if kind == "relation":
         cur.execute("SELECT to_regclass(%s) IS NOT NULL", (sentinel[1],))
         return bool(cur.fetchone()[0])

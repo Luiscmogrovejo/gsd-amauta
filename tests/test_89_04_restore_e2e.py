@@ -512,7 +512,12 @@ def test_services_backup_py_carries_the_honest_label():
     assert "not a restorable snapshot" in doc
     assert "backup_snapshot" in doc
     assert "6 of" in doc and "22" in doc
-    for site in ("456", "2982", "3281"):
+    # Plan 89-06 moved all three down (services/pg_store.py gained the D3
+    # lexical-leg declaration and its comment): 456->482, 2982->3021,
+    # 3281->3320. The numbers are re-measured, not re-guessed -- this pin and
+    # the test below are exactly the mechanism that forced the label in
+    # services/backup.py to be corrected in the same commit.
+    for site in ("482", "3021", "3320"):
         assert site in doc, site
 
 
@@ -530,7 +535,8 @@ def test_the_embedding_stripping_is_pinned_at_all_three_sites():
     lines = source.splitlines()
     sites = [i + 1 for i, line in enumerate(lines)
              if 'd.pop("embedding", None)' in line]
-    assert sites == [456, 2982, 3281], sites
+    # Plan 89-06's pg_store.py edit moved all three; see the note above.
+    assert sites == [482, 3021, 3320], sites
 
     # Site 1 is the module-level scorer, and it is exercised directly.
     scored = pg_store._score_core(
