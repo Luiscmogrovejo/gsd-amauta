@@ -701,14 +701,20 @@ def _scratch_database():
 
 
 def _stored_row(dsn, text):
-    """``(found, has_embedding, dimensions)`` of the memory row holding ``text``."""
+    """``(has_embedding, dimensions, embedding_model)`` of the row holding ``text``.
+
+    Plan 89-08 added the third element: migration 034 gives ``gsd_memory`` an
+    ``embedding_model`` column and the store writes the model in the statement
+    that writes the vector, so a vector stored through the daemon must carry
+    its provenance and a row stored without a key must carry none.
+    """
     import psycopg2
 
     conn = psycopg2.connect(dsn, connect_timeout=10)
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT embedding IS NOT NULL, vector_dims(embedding) "
-                        "FROM gsd_memory WHERE text = %s", (text,))
+            cur.execute("SELECT embedding IS NOT NULL, vector_dims(embedding), "
+                        "embedding_model FROM gsd_memory WHERE text = %s", (text,))
             rows = cur.fetchall()
     finally:
         conn.close()
@@ -754,7 +760,7 @@ def test_a_memory_stored_through_the_daemon_comes_back_embedded(tmp_path):
                                        {"text": text, "source": "test-89-10"})
             assert status == 200, raw
             _assert_no_secret(raw)
-            assert _stored_row(dsn, text) == (True, 1024)
+            assert _stored_row(dsn, text) == (True, 1024, "voyage-code-4")
         finally:
             daemon.stop()
         _assert_no_secret(*daemon.transcripts())
@@ -770,7 +776,7 @@ def test_a_memory_stored_through_the_daemon_comes_back_embedded(tmp_path):
             status, raw, _body = _http(daemon.port, "POST", "/api/memory/store",
                                        {"text": text, "source": "test-89-10"})
             assert status == 200, raw
-            assert _stored_row(dsn, text) == (False, None)
+            assert _stored_row(dsn, text) == (False, None, None)
         finally:
             daemon.stop()
         _assert_no_secret(*daemon.transcripts())
