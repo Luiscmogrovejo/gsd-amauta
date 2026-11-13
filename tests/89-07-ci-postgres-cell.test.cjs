@@ -36,13 +36,25 @@ function recorder(answers = {}) {
   const calls = [];
   const run = (command, args, options) => {
     calls.push({ command, args, options });
-    const base = path.basename(String(command)).replace(/\.exe$/i, '');
+    // Split on EITHER separator: a win32-flavoured path reaching a POSIX host's
+    // `path.basename` comes back whole, and the answers table then misses.
+    const base = baseName(command);
     const stdout = Object.prototype.hasOwnProperty.call(answers, base)
       ? answers[base]
       : defaultStdout(base, args);
     return { status: 0, stdout, stderr: '', signal: null, error: null };
   };
   return { calls, run };
+}
+
+/**
+ * The tool's bare name, from a path in EITHER platform's flavour.
+ *
+ * @param {string} command
+ * @returns {string}
+ */
+function baseName(command) {
+  return String(command).split(/[\\/]/).pop().replace(/\.exe$/i, '');
 }
 
 /**
@@ -185,7 +197,7 @@ describe('89-07 ci-postgres-cell: the argv, per platform', () => {
   test('darwin resolves the Homebrew keg and spawns absolute paths', async () => {
     const { calls, dsn } = await driveUp('darwin');
     const brew = calls[0];
-    assert.strictEqual(path.basename(brew.command), 'brew');
+    assert.strictEqual(baseName(brew.command), 'brew');
     assert.deepStrictEqual(brew.args, ['--prefix', 'postgresql@' + cell.PG_MAJOR]);
 
     const initdb = calls.find((c) => /initdb/.test(c.command));
@@ -213,6 +225,22 @@ describe('89-07 ci-postgres-cell: the argv, per platform', () => {
       assert.ok(c, tool + ' was spawned');
       assert.ok(/\.exe$/.test(c.command), tool + ' is spawned as ' + tool + '.exe, got ' + c.command);
       assert.ok(c.command.startsWith('C:\\Program Files\\PostgreSQL\\17\\bin'), c.command);
+    }
+  });
+
+  test('every argv path uses the TARGET platform\'s separator, not the host\'s', async () => {
+    // On the Windows cells `path.join` turned the simulated POSIX prefixes into
+    // `\\opt\\homebrew\\...` (run 43360624446). `joinFor` picks the flavour, so
+    // these assertions are exact on all six Node cells.
+    assert.strictEqual(cell.joinFor('darwin', '/opt/homebrew', 'bin'), '/opt/homebrew/bin');
+    assert.strictEqual(cell.joinFor('linux', '/usr/lib', 'bin'), '/usr/lib/bin');
+    assert.strictEqual(cell.joinFor('win32', 'C:\\PG', 'bin'), 'C:\\PG\\bin');
+    for (const [plat, sep, wrong] of [['darwin', '/', '\\'], ['linux', '/', '\\'], ['win32', '\\', '/']]) {
+      const { calls } = await driveUp(plat);
+      for (const c of calls.filter((x) => /initdb|pg_ctl|psql/.test(x.command))) {
+        assert.ok(c.command.includes(sep), plat + ': ' + c.command);
+        assert.ok(!c.command.includes(wrong), plat + ' must not carry the other separator: ' + c.command);
+      }
     }
   });
 
@@ -245,13 +273,14 @@ describe('89-07 ci-postgres-cell: the argv, per platform', () => {
 
   test('win32 falls back to the image default when PGBIN is unset', () => {
     const dir = cell.resolveBinDir({ platform: 'win32', env: ciEnv(), run: () => assert.fail('no spawn') });
-    assert.strictEqual(dir, path.join('C:\\', 'Program Files', 'PostgreSQL', cell.PG_MAJOR, 'bin'));
+    assert.strictEqual(dir, 'C:\\Program Files\\PostgreSQL\\' + cell.PG_MAJOR + '\\bin',
+      'the image default, in Windows form whatever cell this test runs on');
   });
 
   test('linux resolves through pg_config --bindir', async () => {
     const { calls } = await driveUp('linux');
     const first = calls[0];
-    assert.strictEqual(path.basename(first.command), 'pg_config');
+    assert.strictEqual(baseName(first.command), 'pg_config');
     assert.deepStrictEqual(first.args, ['--bindir']);
     const initdb = calls.find((c) => /initdb/.test(c.command));
     assert.strictEqual(initdb.command, '/usr/lib/postgresql/16/bin/initdb');

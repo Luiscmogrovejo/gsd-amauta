@@ -307,7 +307,14 @@ jobs:
 
       - name: Start the disposable PostgreSQL (macOS and Windows)
         if: runner.os != 'Linux'
-        continue-on-error: true
+        # BLOCKING, deliberately (plan 89-07 task 05). It was PERMISSIVE for
+        # exactly one baseline round, as plan 88-15 did for a new cell, and the
+        # allowance is gone. A step that may fail silently is not a cell with a
+        # database; it is a cell that SOMETIMES has one, which is worse than
+        # none, because the skip arithmetic then depends on the weather: the 304
+        # `pg-no-disposable-database-local` rows cannot excuse a CI cell, so a
+        # cell that quietly lost its database would report ~300 unlisted skips
+        # on one run and none on the next.
         shell: bash
         # One helper for both jobs and both systems, so the setup is not six
         # blocks of shell (three of them bash on a Windows runner). It refuses
@@ -415,7 +422,10 @@ jobs:
       # GSD_BACKUP_ALLOW_DOCKER, no container client.
       - name: Install a PostgreSQL client of the disposable server's major (Linux)
         if: runner.os == 'Linux'
-        continue-on-error: true
+        # BLOCKING for the same reason: five restore round-trip tests are gated
+        # on the MEASUREMENT `backup_snapshot.restore_client_available(dsn)`, so
+        # a silent failure here would turn them back into skips with no entry
+        # and the gate would report them unlisted rather than this step red.
         shell: bash
         env:
           PGC_DEB: 'postgresql-client-16_16.16-1.pgdg24.04+1_amd64.deb'
@@ -662,7 +672,14 @@ jobs:
 
       - name: Start the disposable PostgreSQL (macOS and Windows)
         if: runner.os != 'Linux'
-        continue-on-error: true
+        # BLOCKING, deliberately (plan 89-07 task 05). It was PERMISSIVE for
+        # exactly one baseline round, as plan 88-15 did for a new cell, and the
+        # allowance is gone. A step that may fail silently is not a cell with a
+        # database; it is a cell that SOMETIMES has one, which is worse than
+        # none, because the skip arithmetic then depends on the weather: the 304
+        # `pg-no-disposable-database-local` rows cannot excuse a CI cell, so a
+        # cell that quietly lost its database would report ~300 unlisted skips
+        # on one run and none on the next.
         shell: bash
         # One helper for both jobs and both systems, so the setup is not six
         # blocks of shell (three of them bash on a Windows runner). It refuses
@@ -748,7 +765,10 @@ jobs:
       # GSD_BACKUP_ALLOW_DOCKER, no container client.
       - name: Install a PostgreSQL client of the disposable server's major (Linux)
         if: runner.os == 'Linux'
-        continue-on-error: true
+        # BLOCKING for the same reason: five restore round-trip tests are gated
+        # on the MEASUREMENT `backup_snapshot.restore_client_available(dsn)`, so
+        # a silent failure here would turn them back into skips with no entry
+        # and the gate would report them unlisted rather than this step red.
         shell: bash
         env:
           PGC_DEB: 'postgresql-client-16_16.16-1.pgdg24.04+1_amd64.deb'

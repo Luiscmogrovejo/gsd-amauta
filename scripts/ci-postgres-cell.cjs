@@ -184,6 +184,27 @@ function portInUse(port, opts = {}) {
 }
 
 /**
+ * Join path parts the way the TARGET platform does, not the host.
+ *
+ * `path.join` uses the host separator, which is right in production — the
+ * platform always IS the host there — and wrong under a platform override: on
+ * the Windows cells the unit tests asserted `/opt/homebrew/...` and got
+ * `\\opt\\homebrew\\...` (run 43360624446). Choosing the flavour makes the argv
+ * assertions exact on every cell and changes nothing when `plat` is the host.
+ *
+ * @param {string} plat - the target platform.
+ * @param {...string} parts
+ * @returns {string}
+ * @example
+ *   joinFor('darwin', '/opt/homebrew', 'bin');  // '/opt/homebrew/bin'
+ *   joinFor('win32', 'C:\\PG', 'bin');          // 'C:\\PG\\bin'
+ */
+function joinFor(plat, ...parts) {
+  const flavour = String(plat || process.platform).startsWith('win') ? path.win32 : path.posix;
+  return flavour.join(...parts);
+}
+
+/**
  * The directory holding this cell's PostgreSQL client and server binaries.
  *
  * macOS: the Homebrew `postgresql@17` keg (keg-only, so never on PATH).
@@ -214,12 +235,12 @@ function resolveBinDir(opts = {}) {
         { status: r && r.status, stderr: String((r && r.stderr) || '').slice(0, 400) },
       );
     }
-    return path.join(prefix, 'bin');
+    return joinFor(plat, prefix, 'bin');
   }
   if (String(plat).startsWith('win')) {
     const fromEnv = String(env.PGBIN || '').trim();
     if (fromEnv) return fromEnv;
-    return path.join('C:\\', 'Program Files', 'PostgreSQL', PG_MAJOR, 'bin');
+    return joinFor(plat, 'C:\\', 'Program Files', 'PostgreSQL', PG_MAJOR, 'bin');
   }
   const r = run('pg_config', ['--bindir'], { env, encoding: 'utf8' });
   const dir = String((r && r.stdout) || '').trim().split(/\r?\n/)[0];
@@ -246,7 +267,7 @@ function resolveBinDir(opts = {}) {
  */
 function toolPath(binDir, name, plat) {
   const p = String(plat || process.platform);
-  return path.join(binDir, p.startsWith('win') ? name + '.exe' : name);
+  return joinFor(p, binDir, p.startsWith('win') ? name + '.exe' : name);
 }
 
 /**
@@ -587,6 +608,7 @@ async function main(argv) {
 
 module.exports = {
   CellError,
+  joinFor,
   DATABASE,
   LOG_TAIL_LINES,
   PASSWORD,

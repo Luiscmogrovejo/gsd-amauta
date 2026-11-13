@@ -1234,19 +1234,69 @@ class TestBaselineDetectionIntegration:
         "032-drop-a2a-messages.sql",
     ]
 
-    def _expected_detected(self):
-        """Every file on disk, minus the ones still pending.
+    #: Also pending when the server has NO `pg_search` (plan 89-07, measured on
+    #: the macOS cell in run 43360624446, where this file ran against a plain
+    #: PostgreSQL for the first time: 23 detected where 26 was expected).
+    #:
+    #: It is not a divergence to paper over -- it is `detect_applied_by_schema`
+    #: being RIGHT. Plan 89-06 made 012's and 025's lexical sentinels
+    #: engine-conditional: with `pg_search` they name the ParadeDB BM25 index,
+    #: without it they name migration **033**'s plain full-text substitute. This
+    #: fixture stops at 026, so on a plain engine 033 has not run, those two
+    #: substitutes do not exist, and 012, 025 and 033 itself are all genuinely
+    #: not-yet-applied. On a ParadeDB database 033 is a no-op, so -- exactly like
+    #: 024 and 032 -- its only observable is the ABSENCE of what it would have
+    #: created, and all three read as applied.
+    PENDING_AFTER_OLD_WAY_26_PLAIN_ENGINE = [
+        "012-rlm-chunks.sql",
+        "025-memory-hybrid-index.sql",
+        "033-plain-fts-fallback.sql",
+    ]
+
+    @staticmethod
+    def _server_has_pg_search(dsn):
+        """Whether this scratch database carries the `pg_search` extension."""
+        import psycopg2
+
+        conn = psycopg2.connect(dsn, connect_timeout=10)
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1 FROM pg_extension WHERE extname = 'pg_search'")
+                return cur.fetchone() is not None
+        finally:
+            conn.close()
+
+    def _pending_after_old_way(self, dsn):
+        """The ORDERED pending list this fixture leaves, for this engine.
+
+        Args:
+            dsn: the scratch database, which decides the lexical sentinels.
+
+        Returns:
+            list[str]: filenames, in `discover_migrations` order.
+        """
+        pending = set(self.PENDING_AFTER_OLD_WAY_26)
+        if not self._server_has_pg_search(dsn):
+            pending |= set(self.PENDING_AFTER_OLD_WAY_26_PLAIN_ENGINE)
+        ordered = [n for n, _, _ in migrate_runner.discover_migrations(MIGRATIONS_DIR)
+                   if n in pending]
+        assert len(ordered) == len(pending), (
+            "a name in the pending list is not a migration on disk: %r"
+            % (pending - set(ordered),))
+        return ordered
+
+    def _expected_detected(self, dsn):
+        """Every file on disk, minus the ones still pending on THIS engine.
 
         DERIVED, not written down -- the same reasoning plan 89-02 gives in
         test_a_gap_in_the_middle_is_found_not_assumed_away below: a hard-coded
         count turns every new migration into a failure in a test whose subject
-        is something else. It was `25` until plan 89-06 added migration 033,
-        whose effect on a ParadeDB database is NIL -- so, exactly like 024 and
-        032, its only observable is the ABSENCE of what it would have created,
-        and it reads as applied on an engine where it had nothing to do.
+        is something else. It was `25` until plan 89-06 added migration 033, and
+        it is engine-dependent since plan 89-07 gave the macOS and Windows cells
+        a plain PostgreSQL.
         """
         discovered = {n for n, _, _ in migrate_runner.discover_migrations(MIGRATIONS_DIR)}
-        return len(discovered) - len(self.PENDING_AFTER_OLD_WAY_26)
+        return len(discovered) - len(self._pending_after_old_way(dsn))
 
     def test_status_infers_what_is_applied_without_writing(self, scratch_dsn):
         self._apply_the_old_way(scratch_dsn, 26)
@@ -1254,17 +1304,21 @@ class TestBaselineDetectionIntegration:
         assert report["tracking_table"] is False
         assert report["pre_migrated_detected"] is True
         # One per file on disk except the pending list: 024 shares 032's
-        # sentinel and the table is still here, 027..032 have not run.
-        assert len(report["detected_by_schema"]) == self._expected_detected()
+        # sentinel and the table is still here, 027..032 have not run, and on a
+        # plain engine 012/025/033 have not reached their end state either.
+        assert len(report["detected_by_schema"]) == self._expected_detected(scratch_dsn)
         assert "024-a2a-messages.sql" not in report["detected_by_schema"]
-        assert report["pending"] == self.PENDING_AFTER_OLD_WAY_26
+        assert report["pending"] == self._pending_after_old_way(scratch_dsn)
 
     def test_only_the_missing_migrations_are_applied(self, scratch_dsn):
         self._apply_the_old_way(scratch_dsn, 26)
         result = migrate_runner.apply_migrations(dsn=scratch_dsn,
                                                  log=lambda *_: None)
-        assert len(result["baselined"]) == self._expected_detected()
-        assert result["applied"] == self.PENDING_AFTER_OLD_WAY_26
+        expected_pending = self._pending_after_old_way(scratch_dsn)
+        assert len(result["baselined"]) == len(
+            {n for n, _, _ in migrate_runner.discover_migrations(MIGRATIONS_DIR)}
+        ) - len(expected_pending)
+        assert result["applied"] == expected_pending
         again = migrate_runner.apply_migrations(dsn=scratch_dsn, log=lambda *_: None)
         assert again["applied"] == []
         # And the convergence actually happened: 024 re-created nothing and 032

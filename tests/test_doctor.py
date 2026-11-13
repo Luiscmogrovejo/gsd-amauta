@@ -68,12 +68,21 @@ def hermetic_env(extra=None):
 
 
 def run_doctor(env=None, args=()):
-    """Run services/doctor.py and return (returncode, stdout, stderr)."""
+    """Run services/doctor.py and return (returncode, stdout, stderr).
+
+    Phase 89 plan 89-07 raised the budget from 20 s to 90 s, and only the
+    budget. `doctor` now has a PostgreSQL to inspect on the macOS and Windows
+    cells as well — it reports the active lexical engine, which means a real
+    connection and a catalog query — and the `pytest` cell's work roughly
+    doubled in the same job, so 20 s started to expire on a loaded runner
+    (`subprocess.TimeoutExpired` on `pytest (macos-latest)`, run 43360624446).
+    A timeout here says nothing about `doctor`; it says the cell was busy.
+    """
     result = subprocess.run(
         [PYTHON, "services/doctor.py", *args],
         capture_output=True,
         text=True,
-        timeout=20,
+        timeout=90,
         env=env if env is not None else hermetic_env(),
         encoding="utf-8",
     )

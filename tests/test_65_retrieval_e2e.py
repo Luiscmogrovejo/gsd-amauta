@@ -319,12 +319,24 @@ class TestCliPrintsHybridProvenance:
         if shutil.which("node") is None:
             pytest.skip("node not on PATH")
 
+        # Phase 89 plan 89-07: this file's module-level collection skip is gone
+        # on the macOS and Windows cells (they have a disposable PostgreSQL now),
+        # and on the FIRST run where it executed there the CLI exited 3 with its
+        # own message: "RLM: timed out after 20s ... Raise GSD_RLM_DEADLINE_MS to
+        # wait longer". The macOS `pytest` cell went from 4 to 11 minutes of work
+        # in the same job, so a cold RLM start plus an ingest plus a query no
+        # longer fits a 20-second deadline there. The BUDGET is raised; nothing
+        # about the assertion changes, and a stall is still a non-zero exit
+        # rather than a pass.
+        env = dict(os.environ)
+        env["GSD_RLM_DEADLINE_MS"] = "120000"
         result = subprocess.run(
             ["node", _GSD_RLM_CJS, "query", "frobnicate_widget", "--dir", fixture_project, "--json"],
             cwd=_REPO_ROOT,
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=180,
+            env=env,
             encoding="utf-8",
         )
         assert result.returncode == 0, (
